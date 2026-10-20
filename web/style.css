@@ -84,6 +84,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; background: var(--page); }
 body {
   margin: 0;
@@ -163,7 +164,7 @@ main:focus, main:focus-visible { outline: none; }
 .note strong { color: inherit; }
 
 /* ---------- stat tiles ---------- */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 15px; box-shadow: var(--shadow); min-width: 0; }
 .tile .label { color: var(--ink-2); font-size: 12px; }
 .tile .value { font-size: 23px; font-weight: 600; margin-top: 4px; line-height: 1.15; overflow-wrap: anywhere; }
@@ -236,6 +237,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
 .tbl td { white-space: nowrap; }
 .tbl td.wrap { min-width: 160px; max-width: 340px; white-space: normal; }
 .empty { color: var(--muted); padding: 18px 0; text-align: center; }
+.tbl td.empty { white-space: normal; }
 .pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12px; }
 .pager button { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); cursor: pointer; }
 .pager button:disabled { opacity: 0.4; cursor: default; }
@@ -337,6 +339,7 @@ a.bar-row:hover { text-decoration: none; }
 .kv dd { margin: 1px 0 0; overflow-wrap: anywhere; }
 .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
+@media (max-width: 420px) { .status-pill .st-date { display: none; } }
 @media (max-width: 760px) {
   .global-search { display: none; }
   .top-inner { gap: 8px; }

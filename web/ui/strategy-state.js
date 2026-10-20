@@ -12,7 +12,15 @@
   var SB = window.SB, ui = SB.ui, S = SB.strategy;
   var KEY = 'strategies:v1';
 
-  function load() { return ui.store.get(KEY, { active: 'sheet', custom: {}, history: {}, confirmed: {} }); }
+  function load() {
+    var st = ui.store.get(KEY, null) || {};
+    st.active = st.active || 'sheet'; st.custom = st.custom || {}; st.history = st.history || {};
+    st.confirmed = st.confirmed || {}; st.versions = st.versions || {};
+    return st;
+  }
+  // timestamps in IST (the market's time zone), independent of the viewer's clock zone
+  function istNow() { return new Date(Date.now() + 330 * 60000).toISOString().slice(0, 16).replace('T', ' ') + ' IST'; }
+  function norm(cfg) { var v = S.validate(cfg).config; delete v.__valid; return v; }
   function persist(st) { ui.store.set(KEY, st); }
 
   function list() {
@@ -30,7 +38,7 @@
     return null;
   }
   function activeId() { var st = load(); return get(st.active) ? st.active : 'sheet'; }
-  function setActive(id) { var st = load(); if (get(id)) { st.active = id; persist(st); cache = null; } }
+  function setActive(id) { var st = load(); if (get(id)) { st.active = id; persist(st); } }
 
   /** Save an edited config: validates, bumps version, records the diff. */
   function save(cfg, note) {
@@ -39,34 +47,36 @@
     var st = load(), prev = get(cfg.id);
     var next = v.config;
     delete next.__valid;
-    var changes = prev ? S.diff(prev, next) : ['created'];
+    var changes = prev ? S.diff(norm(prev), next) : ['created'];
     if (prev && !changes.length) return { ok: true, errors: [], config: prev, unchanged: true };
-    next.version = (prev ? prev.version : 0) + 1;
-    next.updatedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    next.version = Math.max(prev ? prev.version : 0, st.versions[next.id] || 0) + 1;   // never reused, even after a reset
+    st.versions[next.id] = next.version;
+    next.updatedAt = istNow();
     if (next.source === 'discovered' && changes.length) next.source = 'discovered-edited';
     st.custom[next.id] = next;
     (st.history[next.id] = st.history[next.id] || []).unshift({ version: next.version, at: next.updatedAt, note: note || '', changes: changes });
     st.history[next.id] = st.history[next.id].slice(0, 50);
     delete st.confirmed[next.id];               // a changed rule set needs confirming again
     persist(st);
-    cache = null;
+    drop(next.id);
     return { ok: true, errors: [], config: next, changes: changes };
   }
   function resetToPreset(id) {
     var st = load();
     if (!S.PRESETS[id]) return;
     delete st.custom[id];
-    (st.history[id] = st.history[id] || []).unshift({ version: S.PRESETS[id].version, at: new Date().toISOString().slice(0, 16).replace('T', ' '), note: 'reset to the original preset', changes: [] });
+    (st.history[id] = st.history[id] || []).unshift({ version: S.PRESETS[id].version, at: istNow(), note: 'reset to the original preset (next save continues from v' + ((st.versions[id] || 1) + 1) + ')', changes: [] });
     delete st.confirmed[id];
     persist(st);
-    cache = null;
+    drop(id);
   }
   function confirm(id, yes) {
     var st = load(), c = get(id);
     if (!c) return;
-    if (yes) st.confirmed[id] = { version: c.version, at: new Date().toISOString().slice(0, 16).replace('T', ' ') };
+    if (yes) st.confirmed[id] = { version: c.version, at: istNow() };
     else delete st.confirmed[id];
     persist(st);
+    Object.keys(cache).forEach(function (k) { if (cache[k].result.config.id === id) cache[k].result.confirmed = isConfirmed(id); });
   }
   /** Confirmed = the viewer confirmed THIS version of the rules (DEMO can never be). */
   function isConfirmed(id) {
@@ -80,12 +90,15 @@
     try { cfg = JSON.parse(text); } catch (e) { return { ok: false, errors: ['not valid JSON'] }; }
     if (!cfg || typeof cfg !== 'object') return { ok: false, errors: ['not a strategy'] };
     cfg.id = String(cfg.id || 'custom-' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'custom';
-    if (cfg.source === 'demo' && !S.PRESETS[cfg.id]) cfg.source = 'custom';
+    // a file cannot claim to be "from your sheet" or turn DEMO into something confirmable
+    if (S.PRESETS[cfg.id]) cfg.source = S.PRESETS[cfg.id].source === 'demo' ? 'demo' : 'discovered-edited';
+    else cfg.source = 'custom';
     return save(cfg, 'imported');
   }
 
   // ---------- running ----------
-  var candleMap = null, cache = null, running = null;
+  var candleMap = null, cache = {}, running = {};   // cache/running keyed by strategy id
+  function drop(id) { delete cache[id]; delete running[id]; }
   function candles() {
     var H = SB.ctx.history;
     if (!H) return null;
@@ -100,24 +113,27 @@
   /** Promise<run result> for the active (or given) strategy. */
   function runActive(id) {
     var cfg = get(id || activeId());
-    var key = cfg.id + '@' + cfg.version + '@' + (SB.ctx.market.asOf || '') + '@' + SB.ctx.market.state;
-    if (cache && cache.key === key) return Promise.resolve(cache.result);
-    if (running && running.key === key) return running.p;
+    if (!cfg) return Promise.reject(new Error('unknown strategy ' + id));
+    var key = cfg.id + '@' + cfg.version + '@' + (cfg.updatedAt || '') + '@' + (SB.ctx.market.asOf || '') + '@' + SB.ctx.market.state;
+    var c = cache[cfg.id], rn = running[cfg.id];
+    if (c && c.key === key) return Promise.resolve(c.result);
+    if (rn && rn.key === key) return rn.p;
     var p = SB.loadHistory().then(function (H) {
       if (!H) throw new Error('no candle history file (data/history.js)');
-      var r = S.run(cfg, SB.ctx.stocks, candles(), { usePrice: true, latestDate: H.dates[H.dates.length - 1] });
+      var r = S.run(cfg, SB.ctx.stocks, candles(), { usePrice: true, latestDate: H.dates[H.dates.length - 1], refDate: ui.iso(SB.ctx.refDate) });
       r.dataAsOf = H.dates[H.dates.length - 1];
       r.dataSource = H.source;
       r.confirmed = isConfirmed(cfg.id);
-      r.ranAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
-      cache = { key: key, result: r };
-      running = null;
+      r.ranAt = istNow();
+      cache[cfg.id] = { key: key, result: r };
+      delete running[cfg.id];
       return r;
-    }, function (e) { running = null; throw e; });
-    running = { key: key, p: p };
+    }, function (e) { delete running[cfg.id]; throw e; });
+    running[cfg.id] = { key: key, p: p };
     return p;
   }
-  function lastRun() { return cache ? cache.result : null; }
+  /** Last run of the given (default: ACTIVE) strategy, or null. */
+  function lastRun(id) { var c = cache[id || activeId()]; return c ? c.result : null; }
 
   SB.strategies = {
     list: list, get: get, activeId: activeId, setActive: setActive, save: save, resetToPreset: resetToPreset,

@@ -103,7 +103,22 @@
     });
   }
 
+  // The api/ functions exist only on the Vercel deployment. Skip the probe on
+  // hosts that are static by design (localhost python server, Firebase, file://)
+  // unless the viewer forces it (localStorage sb:api = true, e.g. for vercel dev).
+  function apiPossible() {
+    if (ui.store.get('api', null) === true) return true;
+    var h = location.hostname;
+    if (location.protocol === 'file:' || !h) return false;
+    return !/^(localhost|127\.0\.0\.1|\[::1\])$|\.web\.app$|\.firebaseapp\.com$/.test(h);
+  }
+
   function initMarket() {
+    if (!apiPossible()) {
+      ctx.market.message = 'This host serves the static site only (no market-data API) - showing the sheet snapshot.';
+      setStatus();
+      return;
+    }
     apiGet('api/market-status', 8000).then(function (st) {
       ctx.market.provider = st.provider && st.provider.name;
       ctx.market.session = st.session;
@@ -131,7 +146,7 @@
   function setStatus() {
     var m = ctx.market, el = $('#status');
     el.className = 'status-pill st-' + m.state;
-    el.textContent = m.state + (m.asOf ? ' · ' + F.dateTime(m.asOf).replace(/ \d{4}( |$)/, '$1') : '');
+    el.innerHTML = esc(m.state) + (m.asOf ? '<span class="st-date"> · ' + esc(F.dateTime(m.asOf).replace(/ \d{4}( |$)/, '$1')) + '</span>' : '');
     el.title = (m.source ? 'Source: ' + m.source + '. ' : '') + (m.message || '');
   }
   SB.setStatus = setStatus;
@@ -214,7 +229,7 @@
         '<p class="sub">' + esc(s.name || '') + ' · ' + esc(s.exchange) + '</p></div></div>' +
         '<div style="display:flex;align-items:baseline;gap:12px;margin-top:12px;flex-wrap:wrap"><span style="font-size:28px;font-weight:600">' + F.price(s.price) +
         '</span>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div>' +
-        (tags.length ? '<div class="tags" style="margin-top:10px">' + tags.map(function (t) { return ui.badge(t); }).join('') + '</div>' : '') +
+        (tags.length ? '<div class="tags" style="margin-top:10px">' + tags.map(function (t, i) { return ui.badge(t, i === 0 && s.sig ? undefined : ''); }).join('') + '</div>' : '') +
         '<div id="drawer-strategy"></div>';
       var kv = [
         ['Category', esc(s.catName)], ['Sector', esc(s.sector || '–')], ['Basic industry', esc(s.ind || '–')], ['Index', esc(s.idx || '–')],

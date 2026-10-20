@@ -114,7 +114,11 @@
   }
   function firstReason(r) {
     if (!r) return null;
-    if (r.status === 'qualified') return (r.triggersPassed && r.triggersPassed[0]) || 'all conditions met';
+    if (r.status === 'qualified') {
+      var t = (r.checks || []).filter(function (k) { return k.group === 'trigger' && k.res && k.res.pass === true && !k.watchOnly; })[0];
+      if (t) return t.res.detail ? t.label.replace(/\s*\(.*\)$/, '') + ' - ' + t.res.detail : t.label;
+      return (r.triggersPassed && r.triggersPassed[0]) || 'all screen conditions met';
+    }
     return (r.failed && r.failed[0]) || null;
   }
 
@@ -358,7 +362,7 @@
       ui.tile('Strategy qualified', '<span id="ic-qual">…</span>', '<span id="ic-qual-note">running the active strategy…</span>') +
       '</div>';
     h += strategyNote(info);
-    h += '<div class="grid g2">' +
+    h += '<div class="grid g2" style="align-items:start">' +
       ui.card('By NSE basic industry', 'Stock count and averages · select a basic industry to filter the table below', '<div id="ic-bi"></div>') +
       ui.card('Upcoming results', upcoming.length ? F.int(upcoming.length) + ' stock' + (upcoming.length === 1 ? '' : 's') + ' with a result date from ' + F.date(ui.iso(ctx.refDate)) + ' · Main tab Result Date' : 'Main tab Result Date', '<div id="ic-up"></div>') +
       '</div>';
@@ -412,7 +416,7 @@
     }).mount($('#ic-bi', el));
 
     // --- upcoming results
-    var MAXUP = 10;
+    var MAXUP = 8;
     $('#ic-up', el).innerHTML = upcoming.length ? '<ul class="list">' + upcoming.slice(0, MAXUP).map(function (x) {
       var s = x.s;
       return '<li><span class="num" style="min-width:92px;text-align:left">' + F.date(s.rdate) + '</span><div class="grow">' + ui.stockCell(s.sym, s.name) + '</div>' +
@@ -432,26 +436,23 @@
         { key: 'chg', label: 'Today', type: 'pct', digits: 2 },
         { key: 'd10', label: '10D', type: 'pct' },
         { key: 'd30', label: '30D', type: 'pct' },
-        { key: 'down52', label: 'From 52W high', type: 'pct' },
+        { key: 'down52', label: 'vs 52W high', type: 'pct', title: '% below the 52-week high' },
         { key: 'sig', label: 'TTM Signal', type: 'badge', title: 'The sheet\'s TTM Signal: Buy when the TTM target is above the price with EPS growth ≥ 0 and EPS > 0, otherwise Avoid. Not a recommendation.' },
-        { key: 'strat', label: 'Strategy', get: function (r) { var x = resOf(r); return x ? x.statusLabel : null; },
+        // status badge with the first reason under it; the reason is also its own CSV column.
+        // (The engine's "results due" warnings are measured from the last candle date, which can be
+        // older than the data date, so they are not shown - the Result date column has the timing.)
+        { key: 'strat', label: 'Strategy', wrap: true, title: 'Status under the active strategy, with the first reason',
+          get: function (r) { var x = resOf(r); return x ? x.statusLabel : null; },
           html: function (r) {
             var x = resOf(r);
-            if (x) return ui.badge(x.statusLabel, STATUS_CLS[x.status] != null ? STATUS_CLS[x.status] : '');
-            if (runErr) return '<span class="sub">–</span>';
-            return '<span class="sub">' + (run ? 'not evaluated' : '…') + '</span>';
+            if (!x) return '<span class="sub">' + (runErr ? '–' : run ? 'not evaluated' : '…') + '</span>';
+            var s = firstReason(x);
+            return ui.badge(x.statusLabel, STATUS_CLS[x.status] != null ? STATUS_CLS[x.status] : '') +
+              (s ? '<span class="co" style="white-space:normal;max-width:none;margin-top:2px" title="' + esc(s) + '">' + esc(clip(s.replace(/\s*\([^()]*\)(?= - )/, ''), 80)) + '</span>' : '');
           } },
         { key: 'score', label: 'Score', type: 'num', digits: 0, title: 'Share of the active strategy\'s requirements met (0-100)',
           get: function (r) { var x = resOf(r); return x && x.status !== 'insufficient' ? x.score : null; } },
-        // the engine's "results due" warnings are measured from the last candle date, which can be
-        // older than the data date - the Result date column shows the timing from the data date instead
-        { key: 'reason', label: 'Strategy reason', wrap: true,
-          get: function (r) { return firstReason(resOf(r)); },
-          html: function (r) {
-            var s = firstReason(resOf(r));
-            if (!s) return '<span class="sub">–</span>';
-            return '<span style="display:block;min-width:220px" title="' + esc(s) + '">' + esc(clip(s, 96)) + '</span>';
-          } },
+        { key: 'reason', label: 'Strategy reason', csvOnly: true, get: function (r) { return firstReason(resOf(r)); } },
         { key: 'rdate', label: 'Result date', type: 'date',
           html: function (r) {
             if (!r.rdate) return '<span class="sub">–</span>';

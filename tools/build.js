@@ -58,9 +58,13 @@ try {
     const body = fs.readFileSync(path.join(WEB, src), 'utf8').replace(/<\/script/gi, '<\\/script');
     page = page.replace('<script src="' + src + '"></script>', '<script>\n' + body + '\n</script>');
   }
-  // history.js is normally loaded on demand; inline it so the preview works from file://
-  const hist = fs.readFileSync(path.join(WEB, 'data', 'history.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
-  page = page.replace('<script>\n', '<script>\n' + hist + '\n</script>\n<script>\n');
+  // on-demand data files are inlined so the preview also works from file://
+  for (const f of ['history.js', 'workbook-analysis.js']) {
+    const p = path.join(WEB, 'data', f);
+    if (!fs.existsSync(p)) continue;
+    const body = fs.readFileSync(p, 'utf8').replace(/<\/script/gi, '<\\/script');
+    page = page.replace('<script>\n', '<script>\n' + body + '\n</script>\n<script>\n');
+  }
   fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
   fs.writeFileSync(path.join(ROOT, 'dist', 'stock-blueprint-preview.html'), page);
   ok('dist/stock-blueprint-preview.html ' + Math.round(page.length / 1024) + ' KB');

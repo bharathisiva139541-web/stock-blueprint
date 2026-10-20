@@ -42,6 +42,11 @@
       o[k] = v;
     });
     if (o.riskPct > 10) errors.push('risk per trade above 10% is not accepted');
+    if (o.maxHeatPct > 100) errors.push('max portfolio heat must be 100% or less');
+    if (o.dailyLossPct > 100) errors.push('daily loss limit must be 100% or less');
+    if (o.costPctPerSide > 5) errors.push('cost per side above 5% looks wrong');
+    o.maxPositions = Math.max(1, Math.floor(o.maxPositions));
+    o.lotSize = Math.floor(o.lotSize);
     if (o.capital <= 0) errors.push('capital must be above 0');
     if (o.lotSize < 1) o.lotSize = 1;
     return { settings: o, errors: errors };
@@ -118,9 +123,10 @@
     var s = validateSettings(settingsIn).settings;
     var risk = 0, value = 0, byInd = {};
     (positions || []).forEach(function (p) {
-      var e = num(p.entry), st = num(p.stop), q = num(p.qty);
+      var e = num(p.entry), st = num(p.stop), q = num(p.qty), short = p.side === 'short';
       if (!(e > 0) || !(q > 0)) return;
-      var r = st > 0 ? Math.max(0, (e - st) * q) : e * q;    // no stop -> the whole position is at risk
+      // no stop -> the whole position value is counted as at risk
+      var r = st > 0 ? Math.max(0, (short ? st - e : e - st) * q) : e * q;
       risk += r; value += e * q;
       byInd[p.industry || 'Unclassified'] = (byInd[p.industry || 'Unclassified'] || 0) + e * q;
     });

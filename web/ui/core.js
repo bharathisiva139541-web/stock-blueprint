@@ -50,7 +50,8 @@
       if (!isNum(v)) return '–';
       var k = d == null ? 1 : d;
       var s = Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: k, maximumFractionDigits: k });
-      return (v > 0 ? '+' : v < 0 ? '−' : '') + s + '%';
+      var shown = Math.round(Math.abs(v) * Math.pow(10, k));          // what is displayed, so tiny values get no sign
+      return (shown && v > 0 ? '+' : shown && v < 0 ? '−' : '') + s + '%';
     },
     cr: function (v) { return isNum(v) ? Math.round(v).toLocaleString('en-IN') + ' Cr' : '–'; },
     inr: function (v) { return isNum(v) ? '₹' + Math.round(v).toLocaleString('en-IN') : '–'; },
@@ -188,7 +189,9 @@
   Table.prototype.mount = function (host) {
     this.host = host;
     var self = this;
+    host.__sbTable = this;                       // re-mounting on the same host: only the newest table reacts
     host.addEventListener('click', function (e) {
+      if (host.__sbTable !== self) return;
       var th = e.target.closest('th[data-k]');
       if (th) { self.toggleSort(th.getAttribute('data-k')); return; }
       var pb = e.target.closest('[data-page]');
@@ -201,6 +204,7 @@
       }
     });
     host.addEventListener('keydown', function (e) {
+      if (host.__sbTable !== self) return;
       var th = e.target.closest('th[data-k]');
       if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); self.toggleSort(th.getAttribute('data-k')); }
     });

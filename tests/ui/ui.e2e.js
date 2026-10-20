@@ -82,15 +82,22 @@ function check(name, fn) {
           assert.ok(r.chip && r.chip.indexOf('(' + r.q + ')') > 0, 'chip shows ' + r.q);
           assert.ok(r.cards === Math.min(20, r.q) || (r.q === 0 && r.cards === 0), 'cards ' + r.cards);
         });
-        await check('theme toggle switches and persists', async () => {
-          await page.goto(base + '#overview', { waitUntil: 'load' });
-          await page.click('#theme');
-          const t1 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
-          await page.reload({ waitUntil: 'load' });
-          const t2 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+        await check('theme toggle switches and persists (default light)', async () => {
+          const c2 = await browser.newContext({ viewport: vp });       // no init script: real persistence
+          const p2 = await c2.newPage();
+          await p2.goto(base + '#overview', { waitUntil: 'load' });
+          const t0 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          await p2.click('#theme');
+          const t1 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          await p2.reload({ waitUntil: 'load' });
+          const t2 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          await p2.click('#theme');
+          const t3 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          await c2.close();
+          assert.strictEqual(t0, null, 'starts light');
           assert.strictEqual(t1, 'dark');
-          assert.strictEqual(t2, 'dark');
-          await page.click('#theme');
+          assert.strictEqual(t2, 'dark', 'persists after reload');
+          assert.strictEqual(t3, null, 'back to light');
         });
       }
       await ctx.close();

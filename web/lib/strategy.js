@@ -40,6 +40,9 @@
     var ctx = { stock: stock || {}, candles: candles, n: n, i: i, bar: last, t: last ? last.t : null, cache: {} };
     ctx.price = opts.usePrice && stock && isNum(stock.price) ? stock.price : (last ? last.c : NaN);
     ctx.pointInTime = !!opts.pointInTime;     // true in backtests: fundamentals unavailable
+    // "today" for calendar rules (results due...): the data date when screening live,
+    // the candle date in backtests
+    ctx.refDate = opts.refDate || (last ? String(last.t).slice(0, 10) : null);
     ctx.fvgCfg = opts.fvgCfg || null;
     ctx.patternCfg = opts.patternCfg || null;
     return ctx;
@@ -88,7 +91,7 @@
     params: [{ key: 'days', label: 'Days', def: 3 }],
     eval: function (x, p) {
       var d = x.stock.rdate ? new Date(String(x.stock.rdate).slice(0, 10) + 'T00:00:00') : null;
-      var ref = x.t ? new Date(String(x.t).slice(0, 10) + 'T00:00:00') : null;
+      var ref = x.refDate ? new Date(String(x.refDate).slice(0, 10) + 'T00:00:00') : null;
       if (!d || !ref || isNaN(d.getTime())) return { pass: true, detail: 'no result date' };
       var dd = Math.round((d.getTime() - ref.getTime()) / 864e5);
       if (dd < 0) return { pass: true, detail: 'last result ' + (-dd) + ' days ago' };
@@ -341,12 +344,17 @@
     var out = [];
     function walk(x, y, path) {
       if (JSON.stringify(x) === JSON.stringify(y)) return;
+      if (Array.isArray(x) && Array.isArray(y) && (typeof x[0] === 'object' || typeof y[0] === 'object')) {
+        if (x.length !== y.length) { out.push(path + ': ' + x.length + ' → ' + y.length + ' rules'); return; }
+        for (var i = 0; i < x.length; i++) walk(x[i], y[i], path + '[' + (i + 1) + ']');
+        return;
+      }
       if (x && y && typeof x === 'object' && typeof y === 'object' && !Array.isArray(x) && !Array.isArray(y)) {
         Object.keys(Object.assign({}, x, y)).forEach(function (k) { walk(x[k], y[k], path ? path + '.' + k : k); });
       } else out.push(path + ': ' + JSON.stringify(x) + ' → ' + JSON.stringify(y));
     }
     walk(a, b, '');
-    return out.filter(function (s) { return !/^version:|^history|^confirmed/.test(s); });
+    return out.filter(function (s) { return !/^version:|^history|^confirmed|^updatedAt|^__valid/.test(s); });
   }
 
   function label(rule) {
@@ -421,8 +429,8 @@
 
     var lv = stopTarget(cfg, x, tPass);
     res.entry = lv.entry; res.stop = lv.stop; res.target = lv.target; res.rr = lv.rr; res.stopNote = lv.stopNote; res.targetNote = lv.targetNote;
-    if (x.stock && x.stock.rdate && cfg.events && cfg.events.warnDays) {
-      var rd = new Date(String(x.stock.rdate).slice(0, 10) + 'T00:00:00'), ref = new Date(String(x.t).slice(0, 10) + 'T00:00:00');
+    if (x.stock && x.stock.rdate && x.refDate && cfg.events && cfg.events.warnDays) {
+      var rd = new Date(String(x.stock.rdate).slice(0, 10) + 'T00:00:00'), ref = new Date(String(x.refDate).slice(0, 10) + 'T00:00:00');
       var dd = Math.round((rd.getTime() - ref.getTime()) / 864e5);
       if (dd >= 0 && dd <= cfg.events.warnDays) res.warnings.push('Results due in ' + dd + ' day' + (dd === 1 ? '' : 's') + ' (' + String(x.stock.rdate).slice(0, 10) + ')');
     }
@@ -472,13 +480,13 @@
       var candles = history[s.sym] || [];
       /** @type {any} */ var r;
       if (cfg.mode === 'screen') {
-        r = evaluate(cfg, buildContext(s, candles, candles.length - 1, { usePrice: true, fvgCfg: opts.fvgCfg, patternCfg: opts.patternCfg }));
+        r = evaluate(cfg, buildContext(s, candles, candles.length - 1, { usePrice: true, refDate: opts.refDate, fvgCfg: opts.fvgCfg, patternCfg: opts.patternCfg }));
       } else if (!candles.length) {
         r = { status: 'insufficient', statusLabel: 'Insufficient data', failed: ['no daily candles for this symbol'], checks: [], warnings: [], score: 0, setupTypes: [] };
       } else if (opts.latestDate && candles[candles.length - 1].t < opts.latestDate) {
         r = { status: 'insufficient', statusLabel: 'Insufficient data', failed: ['latest candle ' + candles[candles.length - 1].t + ' is older than the latest session ' + opts.latestDate], checks: [], warnings: [], score: 0, setupTypes: [] };
       } else {
-        r = evaluate(cfg, buildContext(s, candles, candles.length - 1, { usePrice: opts.usePrice, fvgCfg: opts.fvgCfg, patternCfg: opts.patternCfg }));
+        r = evaluate(cfg, buildContext(s, candles, candles.length - 1, { usePrice: opts.usePrice, refDate: opts.refDate, fvgCfg: opts.fvgCfg, patternCfg: opts.patternCfg }));
       }
       r.sym = s.sym;
       r.asOf = candles.length ? candles[candles.length - 1].t : null;
