@@ -38,12 +38,20 @@
       s.classIssues = c.issues;
       s.priceState = 'CACHED';
       s.priceAsOf = data.asOf || data.generated;
+      s.sigSheet = s.sig;               // the cell as exported; s.sig follows the price shown
+      applySignal(s);
       return s;
     });
     ctx.bySym = {};
     ctx.stocks.forEach(function (s) { ctx.bySym[s.sym] = s; });
     ctx.refDate = ui.parseDate(data.asOf) || ui.parseDate(data.generated) || new Date();
     ctx.market.asOf = data.asOf || data.generated;
+  }
+
+  // TTM Signal by the sheet's fixed rule (ab_fixSignalFormulas_) at the price shown,
+  // so every page agrees with the strategy engine. No TTM target -> keep the sheet cell.
+  function applySignal(s) {
+    s.sig = isNum(s.tgt) && isNum(s.price) ? SB.strategy.ttmSignal(s, s.price) || null : s.sigSheet || null;
   }
 
   // History candles (data/history.js -> window.SB_HISTORY) are loaded on demand.
@@ -70,16 +78,18 @@
   }
   SB.api = apiGet;
 
+  var QUOTE_TTL = { LIVE: 5 * 60000, DELAYED: 30 * 60000 };   // older than this -> shown as CACHED
   function refreshQuotes() {
     var syms = ctx.stocks.map(function (s) { return s.sym; });
     var batches = [];
     for (var i = 0; i < syms.length; i += 500) batches.push(syms.slice(i, i + 500));
-    var got = 0, state = null, asOf = null, source = null;
+    var got = 0, states = [], asOf = null, source = null;
     return batches.reduce(function (p, b) {
       return p.then(function () {
         return apiGet('api/quotes?symbols=' + encodeURIComponent(b.join(','))).then(function (q) {
           if (!q || !q.items) return;
-          state = q.state; asOf = q.asOf; source = q.source;
+          if (!asOf || (q.asOf && q.asOf < asOf)) asOf = q.asOf;      // oldest batch time
+          source = q.source;
           q.items.forEach(function (it) {
             var s = ctx.bySym[it.symbol];
             if (!s || !isNum(it.ltp) || it.state === 'UNAVAILABLE') return;
@@ -88,19 +98,46 @@
             s.priceState = it.state || q.state;
             s.priceAsOf = it.lastTradeTime || q.asOf;
             s.liveVol = it.volume;
+            applySignal(s);
+            states.push(s.priceState);
             got++;
           });
         });
       });
     }, Promise.resolve()).then(function () {
       if (got) {
-        ctx.market.state = state || 'DELAYED';
-        ctx.market.asOf = asOf;
-        ctx.market.source = source || ctx.market.provider;
-        ctx.market.message = got + ' of ' + syms.length + ' prices updated from ' + (source || 'provider');
+        var m = ctx.market;
+        m.state = ui.leastFresh(states);                 // never better than the stalest price returned
+        m.asOf = asOf;
+        m.fetchedAt = Date.now();
+        m.source = source || m.provider;
+        m.partial = got < syms.length;
+        m.message = got + ' of ' + syms.length + ' prices updated from ' + (source || 'provider') + (m.partial ? '; the rest are the sheet snapshot (CACHED)' : '');
       }
       return got;
     });
+  }
+  // a failed refresh or an expired quote must not keep a LIVE / DELAYED label
+  function downgrade(reason) {
+    var m = ctx.market;
+    if (m.state !== 'LIVE' && m.state !== 'DELAYED') return false;
+    m.state = 'CACHED';
+    m.message = reason + ' - prices shown are the last ones received (' + F.dateTime(m.asOf) + ').';
+    ctx.stocks.forEach(function (s) { if (s.priceState === 'LIVE' || s.priceState === 'DELAYED') s.priceState = 'CACHED'; });
+    return true;
+  }
+  function checkExpiry() {
+    var m = ctx.market, ttl = QUOTE_TTL[m.state];
+    if (ttl && m.fetchedAt && Date.now() - m.fetchedAt > ttl && downgrade('Quotes not refreshed for over ' + Math.round(ttl / 60000) + ' minutes')) { setStatus(); rerender(); }
+  }
+  // re-draw the current page with the new prices, unless the viewer is typing in it
+  function rerender() {
+    var a = document.activeElement;
+    if (a && a.closest && a.closest('#app') && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return;
+    if (!$('#drawer').hidden) return;
+    var y = window.scrollY;
+    route();
+    window.scrollTo(0, y);
   }
 
   // The api/ functions exist only on the Vercel deployment. Skip the probe on
@@ -130,10 +167,16 @@
       }
       return refreshQuotes().then(function (n) {
         setStatus();
-        if (n) route();
+        if (n) rerender();
+        window.setInterval(checkExpiry, 30000);
+        var fails = 0;
         if (ctx.market.state === 'LIVE') setTimeout(function loop() {
-          refreshQuotes().then(function () { setStatus(); }).catch(function () {}).then(function () {
-            if (ctx.market.state === 'LIVE') setTimeout(loop, 60000);
+          refreshQuotes().then(function (k) { fails = 0; setStatus(); if (k) rerender(); }, function (e) {
+            fails++;
+            if (downgrade('Quote refresh failed (' + e.message + ')')) { setStatus(); rerender(); }
+          }).then(function () {
+            // poll while quotes are live; after a failure retry a few times so a short outage recovers
+            if (ctx.market.state === 'LIVE' || (fails > 0 && fails < 5)) setTimeout(loop, 60000);
           });
         }, 60000);
       });
@@ -146,7 +189,7 @@
   function setStatus() {
     var m = ctx.market, el = $('#status');
     el.className = 'status-pill st-' + m.state;
-    el.innerHTML = esc(m.state) + (m.asOf ? '<span class="st-date"> · ' + esc(F.dateTime(m.asOf).replace(/ \d{4}( |$)/, '$1')) + '</span>' : '');
+    el.innerHTML = esc(m.state) + (m.asOf ? '<span class="st-date"> · ' + esc(F.dateTime(m.asOf).replace(/ \d{4}( |$)/, '$1')) + (m.partial ? ' · partial' : '') + '</span>' : '');
     el.title = (m.source ? 'Source: ' + m.source + '. ' : '') + (m.message || '');
   }
   SB.setStatus = setStatus;
@@ -224,12 +267,12 @@
     if (!s) {
       h = '<h2 id="drawer-title">' + esc(sym) + '</h2><p class="sub">Not in the Main watchlist.</p>';
     } else {
-      var tags = [s.sig, s.pat, s.fvg, s.e10, s.e21, s.zone].filter(Boolean);
+      var tags = [s.sig ? 'TTM Signal: ' + s.sig : '', s.pat, s.fvg, s.e10, s.e21, s.zone].filter(Boolean);
       h = '<div class="stock" style="padding-right:44px">' + ui.logoHtml(s.sym, 'lg') + '<div><h2 id="drawer-title">' + esc(s.sym) + '</h2>' +
         '<p class="sub">' + esc(s.name || '') + ' · ' + esc(s.exchange) + '</p></div></div>' +
         '<div style="display:flex;align-items:baseline;gap:12px;margin-top:12px;flex-wrap:wrap"><span style="font-size:28px;font-weight:600">' + F.price(s.price) +
         '</span>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div>' +
-        (tags.length ? '<div class="tags" style="margin-top:10px">' + tags.map(function (t, i) { return ui.badge(t, i === 0 && s.sig ? undefined : ''); }).join('') + '</div>' : '') +
+        (tags.length ? '<div class="tags" style="margin-top:10px">' + tags.map(function (t, i) { return ui.badge(t, i === 0 && s.sig ? (s.sig === 'Buy' ? 's-good' : s.sig === 'Avoid' ? 's-bad' : '') : ''); }).join('') + '</div>' : '') +
         '<div id="drawer-strategy"></div>';
       var kv = [
         ['Category', esc(s.catName)], ['Sector', esc(s.sector || '–')], ['Basic industry', esc(s.ind || '–')], ['Index', esc(s.idx || '–')],
@@ -282,6 +325,14 @@
       var el = e.target.closest && e.target.closest('[data-tip]');
       if (el) { var r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.top); } else tip.hidden = true;
     });
+    // touch screens have no hover: a tap on a tip-bearing element shows its tip
+    document.addEventListener('click', function (e) {
+      var el = e.target.closest && e.target.closest('[data-tip]');
+      if (!el) { tip.hidden = true; return; }
+      if (el.closest('.chart') || el.closest('button, a[href]')) return;
+      var r = el.getBoundingClientRect();
+      show(el, r.left + r.width / 2, r.top);
+    });
     document.addEventListener('scroll', function () { tip.hidden = true; }, true);
   }
 
@@ -306,7 +357,10 @@
     }
   });
   window.addEventListener('hashchange', function () { closeDrawer(); route(); $('#app').focus({ preventScroll: true }); window.scrollTo(0, 0); });
-  $('#status').addEventListener('click', function () { location.hash = '#overview/data'; });
+  $('#status').addEventListener('click', function () {
+    if (location.hash === '#overview/data') { var d = $('#ov-data'); if (d) d.scrollIntoView({ block: 'start' }); }   // no hashchange: scroll again
+    else location.hash = '#overview/data';
+  });
 
   function initTheme() {
     var root = document.documentElement, btn = $('#theme');

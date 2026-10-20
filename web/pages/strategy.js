@@ -588,7 +588,7 @@
     var c = ensureShape(saved);
     var onCount = function (g) { return c[g].filter(function (r) { return r.enabled; }).length; };
     var h = '<section class="card" id="st-detail"><div class="card-head"><div><h2 style="overflow-wrap:anywhere">' + esc(saved.name || id) + '</h2>' +
-      '<p>Version ' + saved.version + ' · ' + (saved.updatedAt ? 'saved ' + F.dateTime(saved.updatedAt) + ' UTC in this browser' : preset ? 'original preset' : 'saved in this browser') + ' · id ' + esc(id) + '</p></div>' +
+      '<p>Version ' + saved.version + ' · ' + (saved.updatedAt ? 'saved ' + F.dateTime(saved.updatedAt) + ' IST in this browser' : preset ? 'original preset' : 'saved in this browser') + ' · id ' + esc(id) + '</p></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       (active ? '<button type="button" class="btn" disabled>✓ In use for Daily Suggestions</button>' : '<button type="button" class="btn primary" id="st-use" data-act="use">Use this strategy</button>') +
       '<button type="button" class="btn" id="st-dup" data-act="dup">Duplicate as custom</button>' +
@@ -646,7 +646,7 @@
   }
 
   function historyCard() {
-    return '<section class="card"><div class="card-head"><div><h2>Change history</h2><p>Saved versions of this strategy in this browser, newest first (the last 50 are kept). Times are UTC.</p></div></div><div id="st-hist"></div></section>';
+    return '<section class="card"><div class="card-head"><div><h2>Change history</h2><p>Saved versions of this strategy in this browser, newest first (the last 50 are kept). Times are IST.</p></div></div><div id="st-hist"></div></section>';
   }
 
   function changesHtml(list) {
@@ -679,8 +679,8 @@
     if (mode === 'screen' && r.counts.watch) labels.splice(1, 0, ['watch', 'Watch']);
     var h = '<div class="tags">' + (demo ? ui.badge('DEMO results - not your strategy', 's-warn') : conf ? ui.badge('Confirmed version ' + saved.version, 's-good') : ui.badge('Unconfirmed rules', 's-warn')) +
       ui.badge('Version ' + saved.version, '') + '</div>';
-    h += '<p class="sub" style="margin-top:8px">Candles ' + ui.stateBadge('CACHED', H.asOf, r.dataSource || H.source) + ' latest session ' + F.date(r.dataAsOf) +
-      ' · Prices ' + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + ' · tested ' + esc(F.dateTime(r.ranAt)) + ' UTC</p>';
+    h += '<p class="sub" style="margin-top:8px">Daily candles ' + ui.stateBadge(SB.candleState(H), r.dataAsOf, r.dataSource || H.source) + ' newest candle ' + F.date(r.dataAsOf) +
+      ' · Prices ' + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + ' · tested ' + esc(F.dateTime(r.ranAt)) + ' IST</p>';
     if (r.errors && r.errors.length) h += '<div class="note bad" style="margin-top:8px"><strong>The engine reported problems with this version:</strong>' + listHtml(r.errors) + '</div>';
     var q = r.counts.qualified || 0;
     h += '<p style="margin-top:10px"><strong>' + F.int(q) + '</strong> of ' + plural(n, 'stock') + ' ' + (mode === 'screen' ? 'match the screen' : 'qualified') +
@@ -783,7 +783,7 @@
       rows: hist, pageSize: 10,
       columns: [
         { key: 'version', label: 'Version', type: 'num', digits: 0 },
-        { key: 'at', label: 'Saved (UTC)', type: 'datetime' },
+        { key: 'at', label: 'Saved (IST)', type: 'datetime' },
         { key: 'note', label: 'Note', wrap: true },
         { key: 'changes', label: 'Changes', wrap: true, get: function (r) { return (r.changes || []).join('; '); },
           html: function (r) {

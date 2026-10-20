@@ -11,16 +11,8 @@
     ['exits', 'Exit / risk warnings'], ['avoid', 'Avoid / no-trade'], ['insufficient', 'Insufficient data'], ['none', 'No valid signal']
   ];
 
-  function journalOpen() {
-    var j = ui.store.get('journal:v1', null);
-    var arr = Array.isArray(j) ? j : j && Array.isArray(j.trades) ? j.trades : j && Array.isArray(j.entries) ? j.entries : [];
-    return arr.filter(function (t) {
-      var closed = t.closed || t.status === 'closed' || isNum(Number(t.exitPrice)) && Number(t.exitPrice) > 0 || isNum(Number(t.exit)) && Number(t.exit) > 0;
-      return !closed;
-    }).map(function (t) {
-      return { sym: String(t.sym || t.symbol || '').toUpperCase(), entry: Number(t.entry || t.entryPrice), stop: Number(t.stop || t.stopLoss || t.stoploss), target: Number(t.target), qty: Number(t.qty || t.quantity) };
-    }).filter(function (p) { return p.sym && p.entry > 0; });
-  }
+  // open journal positions, read through the journal page's own cleaner (side included)
+  function journalOpen() { return SB.journal ? SB.journal.open() : []; }
 
   function checksHtml(r) {
     return '<ul class="checks">' + (r.checks || []).map(function (k) {
@@ -30,9 +22,10 @@
     }).join('') + '</ul>';
   }
 
-  function itemHtml(r, s, run, risk) {
+  function itemHtml(r, s, run, risk, rc) {
     var size = null;
-    if (r.stop > 0 && r.entry > 0) size = SB.risk.sizePosition({ entry: r.entry, stop: r.stop, target: r.target, industry: s.catName }, risk);
+    // sized like the journal's calculator: your risk settings + open journal positions (heat, max positions, daily loss)
+    if (r.stop > 0 && r.entry > 0) size = SB.risk.sizePosition({ entry: r.entry, stop: r.stop, target: r.target, industry: s.catName }, risk, rc);
     var setup = (r.setupTypes || []).filter(function (t) { return t !== 'screen'; }).map(function (t) { return t === 'pullback' ? 'Pullback / support' : t === 'reversal' ? 'Reversal pattern' : t === 'breakout' ? 'Breakout' : t; });
     var screen = run.config.mode === 'screen';
     var h = '<article class="sugg-item">';
@@ -49,7 +42,9 @@
         '<dt>Stop-loss</dt><dd>' + (r.stop > 0 ? F.price(r.stop) + ' <span class="sub">' + esc(r.stopNote || '') + '</span>' : '–') + '</dd>' +
         '<dt>Target</dt><dd>' + (r.target > 0 ? F.price(r.target) + ' <span class="sub">' + esc(r.targetNote || '') + '</span>' : '–') + '</dd>' +
         '<dt>Reward : risk</dt><dd>' + (isNum(r.rr) ? '1 : ' + F.num(r.rr, 2) : '–') + '</dd>' +
-        '<dt>Position size</dt><dd>' + (size && size.ok ? F.int(size.qty) + ' sh · risk ' + F.inr(size.riskAmount) : size ? '<span class="sub">' + esc(size.errors[0] || 'n/a') + '</span>' : '–') + '</dd></dl>';
+        '<dt>Position size</dt><dd>' + (size && size.ok ? F.int(size.qty) + ' sh · risk ' + F.inr(size.riskAmount) +
+          (size.warnings.length ? ' <span class="sub">(' + esc(size.warnings[0]) + ')</span>' : '') : size ? '<span class="sub">' + esc(size.errors[0] || 'n/a') + '</span>' : '–') +
+          '<div class="sub">your risk settings' + (rc && rc.openPositions.length ? ' + ' + rc.openPositions.length + ' open journal position' + (rc.openPositions.length === 1 ? '' : 's') : '') + '</div></dd></dl>';
     }
     h += '</div>';
     h += '<div><div class="sub">Why</div>' + checksHtml(r) +
@@ -64,11 +59,11 @@
       var confirmed = SB.strategies.isConfirmed(cfg.id);
       var head = '<div class="page-head"><div><h1>Daily suggestions</h1><p>Stocks that meet the active strategy\'s rules, with the reason for every pass and fail. ' +
         'Research and decision-support only - no orders are placed.</p></div><div class="actions"><a class="btn" href="#strategy">Strategy settings</a><button class="btn" type="button" id="sg-csv">Export CSV</button></div></div>';
-      var badge = cfg.source === 'demo' ? ui.badge('DEMO', 's-warn') : confirmed ? ui.badge('Confirmed by you (v' + cfg.version + ')', 's-good') : ui.badge('From your sheet - not yet confirmed', 's-warn');
+      var dsc = SB.strategies.describe(cfg), badge = ui.badge(dsc.tag, dsc.cls);
       head += '<section class="card"><div class="card-head"><div><h2>' + esc(cfg.name) + ' · v' + cfg.version + '</h2><p>' + esc(cfg.description || '') + '</p></div><div class="tags">' + badge +
         ui.badge(cfg.mode === 'screen' ? 'Fundamental screen' : 'Entry setups', 's-info') + ui.badge((cfg.style || 'swing') + ' · daily candles', '') + '</div></div>' +
         (cfg.source === 'demo' ? '<div class="note bad"><strong>DEMO strategy.</strong> Its results are for testing the engine only - they are not your strategy and not recommendations.</div>' :
-          !confirmed ? '<div class="note warn"><strong>Unconfirmed rules.</strong> These rules were taken from your sheet (Code.gs), but the way they are combined into a suggestion, and the stop/target method, are assumptions until you confirm them in <a href="#strategy">Strategy settings</a>. Treat this as a research shortlist.' +
+          !confirmed ? '<div class="note warn"><strong>Unconfirmed rules.</strong> ' + esc(dsc.long) + ' Confirm them in <a href="#strategy">Strategy settings</a>; until then treat this as a research shortlist.' +
             (cfg.assumptions && cfg.assumptions.length ? '<ul style="margin:6px 0 0 18px;padding:0">' + cfg.assumptions.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>' : '') + '</div>' : '') +
         '<div id="sg-fresh" style="margin-top:10px"></div></section>';
       el.innerHTML = head + '<section class="card"><div id="sg-body">' + ui.skeleton(6) + '</div></section>' +
@@ -85,9 +80,8 @@
       SB.strategies.runActive().then(function (run) {
         var H = ctx.history;
         var latest = run.dataAsOf;
-        var refIso = ui.iso(ctx.refDate);
-        var stale = latest && latest < refIso;
-        $('#sg-fresh', el).innerHTML = '<div class="tags">' + ui.stateBadge(stale ? 'CACHED' : 'EOD', latest, H && H.source) + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) +
+        var stale = SB.candleState(H) !== 'EOD';
+        $('#sg-fresh', el).innerHTML = '<div class="tags">' + ui.stateBadge(SB.candleState(H), latest, H && H.source) + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) +
           '<span class="sub">Signals use daily candles up to ' + F.date(latest) + '; price rules use the latest price shown. Strategy run ' + esc(run.ranAt) + '.</span></div>' +
           (stale ? '<div class="note warn" style="margin-top:8px">The newest candle is ' + F.date(latest) + ', older than the price snapshot (' + F.dateTime(ctx.market.asOf) + '). Signals are as of the ' + F.date(latest) + ' close - update the sheet export for newer candles.</div>' : '') +
           (run.errors.length ? '<div class="note bad" style="margin-top:8px">Strategy problems: ' + run.errors.map(esc).join('; ') + '</div>' : '');
@@ -100,6 +94,7 @@
 
   function draw(el, ctx, run) {
     var risk = ui.store.get('risk:settings', {});
+    var rc = SB.journal ? SB.journal.riskContext(ctx) : null;
     var exits = SB.strategy.positionWarnings(journalOpen(), ctx.bySym, SB.strategies.candles());
     var counts = {};
     LISTS.forEach(function (l) { counts[l[0]] = l[0] === 'exits' ? exits.filter(function (x) { return x.warnings.length; }).length : (run.lists[l[0]] || []).length; });
@@ -130,9 +125,9 @@
       $('#sg-count', body).textContent = F.int(list.length) + ' stocks';
       if (ST.list === 'exits') {
         if (!list.length) { host.innerHTML = '<p class="empty">No open positions in your trade journal (Alerts &amp; Trades page). Exit warnings are checked for journal positions only - never for broker accounts.</p>'; return; }
-        host.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Stock</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Price</th><th class="num">P&amp;L</th><th>Warnings</th></tr></thead><tbody>' +
+        host.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Stock</th><th>Side</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Price</th><th class="num">P&amp;L</th><th>Warnings</th></tr></thead><tbody>' +
           list.map(function (x) {
-            return '<tr><td>' + ui.stockCell(x.sym, ctx.bySym[x.sym] && ctx.bySym[x.sym].name) + '</td><td class="num">' + F.price(x.position.entry) + '</td><td class="num">' + F.price(x.position.stop) +
+            return '<tr><td>' + ui.stockCell(x.sym, ctx.bySym[x.sym] && ctx.bySym[x.sym].name) + '</td><td>' + (x.position.side === 'short' ? 'Short' : 'Long') + '</td><td class="num">' + F.price(x.position.entry) + '</td><td class="num">' + F.price(x.position.stop) +
               '</td><td class="num">' + F.price(x.price) + '</td><td class="num">' + ui.deltaHtml(x.pnlPct, 2) + '</td><td class="wrap">' + (x.warnings.length ? x.warnings.map(function (w) { return ui.badge(w, /stop|below/.test(w) ? 's-bad' : 's-warn'); }).join(' ') : '<span class="sub">no warning</span>') + '</td></tr>';
           }).join('') + '</tbody></table></div>';
         return;
@@ -153,10 +148,15 @@
         return;
       }
       var showN = Math.min(ST.shown, list.length);
-      host.innerHTML = '<div class="sugg">' + list.slice(0, showN).map(function (r) { return itemHtml(r, ctx.bySym[r.sym], run, risk); }).join('') + '</div>' +
+      host.innerHTML = '<div class="sugg">' + list.slice(0, showN).map(function (r) { return itemHtml(r, ctx.bySym[r.sym], run, risk, rc); }).join('') + '</div>' +
         (list.length > showN ? '<div style="text-align:center;margin-top:12px"><button class="btn" type="button" id="sg-more">Show ' + Math.min(20, list.length - showN) + ' more (' + (list.length - showN) + ' left)</button></div>' : '');
       var more = $('#sg-more', host);
-      if (more) more.addEventListener('click', function () { ST.shown += 20; paint(); });
+      if (more) more.addEventListener('click', function () {
+        ST.shown += 20; paint();
+        var first = host.querySelectorAll('.sugg-item')[showN];          // keep keyboard focus on the first new card
+        var b = first && first.querySelector('button[data-sym]');
+        if (b) b.focus();
+      });
     }
     ui.bindChips(body, 'sgl', function (v) { ST.list = v; ST.shown = 20; paint(); });
     $('#sg-q', body).addEventListener('input', function (e) { ST.q = e.target.value.trim(); ST.shown = 20; paint(); });

@@ -145,7 +145,8 @@
     ref: 'Main TTM Signal (ab_fixSignalFormulas_ rule)', params: [],
     eval: function (x) {
       var s = ttmSignal(x.stock, x.price);
-      return { pass: s === 'Buy', value: s || null, detail: s ? 'TTM Signal ' + s + (x.stock.sig && x.stock.sig !== s ? ' (sheet cell shows ' + x.stock.sig + ')' : '') : 'no TTM target' };
+      var cell = x.stock.sigSheet !== undefined ? x.stock.sigSheet : x.stock.sig;   // the exported cell (sigSheet once the site recomputes sig)
+      return { pass: s === 'Buy', value: s || null, detail: s ? 'TTM Signal ' + s + ' at ' + (Math.round(x.price * 100) / 100) + (cell && cell !== s ? ' (sheet cell shows ' + cell + ')' : '') : 'no TTM target' };
     } });
   def('qualityWatch', { label: 'Quality Watch (TTM Buy + EPS ≥ 0 + OPM rising QoQ & YoY)', kind: 'sheet', setGroup: 'confirm', pit: false,
     ref: 'Code.gs ab_qualityWatchSymbols_', params: [],
@@ -505,21 +506,26 @@
     return out;
   }
 
-  /** Exit / risk warnings for open positions [{sym, entry, stop, target, qty}] at the latest data. */
+  /** Exit / risk warnings for open positions [{sym, side, entry, stop, target, qty}] at the latest data.
+   *  side 'short' mirrors every check (stop above, target below, close above the 21 EMA). */
   function positionWarnings(positions, stocksBySym, history) {
     return (positions || []).map(function (p) {
       var s = stocksBySym[p.sym] || {}, c = history[p.sym] || [], last = c[c.length - 1];
-      var px = isNum(s.price) ? s.price : last ? last.c : NaN, w = [];
+      var px = isNum(s.price) ? s.price : last ? last.c : NaN, w = [], short = p.side === 'short', sg = short ? -1 : 1;
       if (!isNum(px)) w.push('no current price');
       else {
-        if (p.stop > 0 && px <= p.stop) w.push('at or below your stop-loss ' + p.stop);
-        else if (p.stop > 0 && (px - p.stop) / px * 100 <= 2) w.push('within 2% of the stop-loss');
-        if (p.target > 0 && px >= p.target) w.push('target ' + p.target + ' reached');
-        if (c.length >= 22) { var e = I.ema(c, 21)[c.length - 1]; if (last && last.c < e) w.push('closed below the 21 EMA'); }
-        // sheet rule: Loss when close <= stop, Win when close >= entry x 1.10
-        if (p.entry > 0 && px >= p.entry * 1.10) w.push('+10% from entry (the sheet\'s Win rule)');
+        if (p.stop > 0 && sg * (px - p.stop) <= 0) w.push((short ? 'at or above' : 'at or below') + ' your stop-loss ' + p.stop);
+        else if (p.stop > 0 && sg * (px - p.stop) / px * 100 <= 2) w.push('within 2% of the stop-loss');
+        if (p.target > 0 && sg * (px - p.target) >= 0) w.push('target ' + p.target + ' reached');
+        if (c.length >= 22) {
+          var e = I.ema(c, 21)[c.length - 1];
+          if (last && sg * (last.c - e) < 0) w.push(short ? 'closed above the 21 EMA' : 'closed below the 21 EMA');
+        }
+        // sheet rule (long only): Loss when close <= stop, Win when close >= entry x 1.10
+        if (!short && p.entry > 0 && px >= p.entry * 1.10) w.push('+10% from entry (the sheet\'s Win rule)');
+        if (short && p.entry > 0 && px <= p.entry * 0.90) w.push('10% in your favour from entry');
       }
-      return { sym: p.sym, price: px, pnlPct: isNum(px) && p.entry > 0 ? (px / p.entry - 1) * 100 : NaN, warnings: w, position: p };
+      return { sym: p.sym, price: px, pnlPct: isNum(px) && p.entry > 0 ? sg * (px / p.entry - 1) * 100 : NaN, warnings: w, position: p };
     });
   }
 

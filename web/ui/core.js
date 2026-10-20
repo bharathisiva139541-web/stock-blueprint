@@ -1,7 +1,7 @@
 /* Shared UI helpers for all pages (browser only).
    window.SB.ui = { esc, F, deltaHtml, badge, stockCell, logoHtml, Table, bars,
                     lineChart, tile, card, chips, bindChips, textMatch, store,
-                    download, stateBadge, skeleton, objRows } */
+                    download, stateBadge, leastFresh, skeleton, objRows } */
 (function () {
   'use strict';
   var SB = window.SB = window.SB || {};
@@ -136,10 +136,17 @@
     CACHED: 'Saved copy (snapshot exported from the sheet) - not current',
     UNAVAILABLE: 'No data available'
   };
+  // freshness order: a mix of states is described by its least fresh member
+  var FRESH = ['LIVE', 'DELAYED', 'EOD', 'CACHED', 'UNAVAILABLE'];
+  function leastFresh(states) {
+    var worst = -1;
+    (states || []).forEach(function (st) { var i = FRESH.indexOf(st || 'UNAVAILABLE'); if (i > worst) worst = i; });
+    return worst < 0 ? 'UNAVAILABLE' : FRESH[worst];
+  }
   function stateBadge(state, asOf, source) {
     var s = state || 'UNAVAILABLE';
     var cls = { LIVE: 's-good', DELAYED: 's-info', EOD: 's-info', CACHED: 's-warn', UNAVAILABLE: 's-bad' }[s] || '';
-    return '<span class="badge ' + cls + '" data-tip="' + esc(STATE_HELP[s] || s) + (source ? ' · Source: ' + esc(source) : '') + '">' + esc(s) +
+    return '<span class="badge ' + cls + '" tabindex="0" data-tip="' + esc(STATE_HELP[s] || s) + (source ? ' · Source: ' + esc(source) : '') + '">' + esc(s) +
       (asOf ? ' · ' + F.dateTime(asOf) : '') + '</span>';
   }
 
@@ -294,7 +301,8 @@
   // series: [{name, points:[{x:'YYYY-MM-DD', y:number}], color}], opts: {height, fmt, zeroLine}
   function lineChart(host, series, opts) {
     opts = opts || {};
-    var W = 760, H = opts.height || 220, P = { l: 52, r: 12, t: 10, b: 24 };
+    // drawn at the container's width so labels keep their size on phones
+    var W = Math.max(300, Math.round(host.clientWidth || 760)), H = opts.height || 220, P = { l: 52, r: 12, t: 10, b: 24 };
     var all = [];
     series.forEach(function (s) { s.points.forEach(function (p) { if (isNum(p.y)) all.push(p); }); });
     if (!all.length) { host.innerHTML = '<p class="empty">No data to chart</p>'; return; }
@@ -316,7 +324,7 @@
     var ticks = Math.min(6, xs.length);
     for (var t = 0; t < ticks; t++) {
       var i = Math.round(t * (xs.length - 1) / Math.max(1, ticks - 1));
-      svg += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(F.date(xs[i]).replace(/ \d{4}$/, '')) + '</text>';
+      svg += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (t === ticks - 1 && ticks > 1 ? 'end' : t === 0 && P.l < 30 ? 'start' : 'middle') + '">' + esc(F.date(xs[i]).replace(/ \d{4}$/, '')) + '</text>';
     }
     if (opts.zeroLine) svg += '<line class="axis" x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '"/>';
     series.forEach(function (s) {
@@ -430,7 +438,7 @@
 
   SB.ui = {
     $: $, esc: esc, isNum: isNum, objRows: objRows, parseDate: parseDate, iso: iso, dayDiff: dayDiff, F: F,
-    deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, stockCell: stockCell, stateBadge: stateBadge,
+    deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, stockCell: stockCell, stateBadge: stateBadge, leastFresh: leastFresh,
     Table: Table, bars: bars, lineChart: lineChart, tile: tile, card: card, chips: chips, bindChips: bindChips,
     textMatch: textMatch, skeleton: skeleton, store: store, toCsv: toCsv, download: download, loadScript: loadScript
   };

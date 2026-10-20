@@ -437,7 +437,7 @@
         { key: 'd10', label: '10D', type: 'pct' },
         { key: 'd30', label: '30D', type: 'pct' },
         { key: 'down52', label: 'vs 52W high', type: 'pct', title: '% below the 52-week high' },
-        { key: 'sig', label: 'TTM Signal', type: 'badge', title: 'The sheet\'s TTM Signal: Buy when the TTM target is above the price with EPS growth ≥ 0 and EPS > 0, otherwise Avoid. Not a recommendation.' },
+        { key: 'sig', label: 'TTM Signal', type: 'badge', title: 'The sheet\'s TTM Signal rule at the price shown: Buy when the TTM target is above the price with EPS growth ≥ 0 and EPS > 0, otherwise Avoid. Not a recommendation.' },
         // status badge with the first reason under it; the reason is also its own CSV column.
         // (The engine's "results due" warnings are measured from the last candle date, which can be
         // older than the data date, so they are not shown - the Result date column has the timing.)

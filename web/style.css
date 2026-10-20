@@ -56,7 +56,7 @@
   --ink-2: #b9bec8;
   --muted: #8d939e;
   --accent: #4c95ef;
-  --accent-ink: #ffffff;
+  --accent-ink: #0f1115;     /* dark text on the light-blue accent: 6:1 contrast */
   --accent-wash: #16263b;
   --up: #3fcf6f;
   --up-wash: #11281a;

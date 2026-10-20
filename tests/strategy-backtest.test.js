@@ -101,3 +101,19 @@ test('Smart Dashboard presets match the sheet definitions', () => {
   assert.strictEqual(ev('beatenDown', Object.assign({}, base, { opmq: 'Aggressive Increase', down52: -30 })).status, 'qualified');
   assert.strictEqual(ev('beatenDown', Object.assign({}, base, { opmq: 'Aggressive Increase', down52: null })).status, 'none', 'missing value fails');
 });
+
+test('position warnings mirror every check for short positions', () => {
+  const by = { A: { price: 95 }, B: { price: 112 } };
+  const long = S.positionWarnings([{ sym: 'B', side: 'long', entry: 100, stop: 90, target: 110 }], by, {})[0];
+  assert.ok(long.warnings.some((w) => /target 110 reached/.test(w)));
+  assert.ok(long.warnings.some((w) => /Win rule/.test(w)));
+  assert.ok(Math.abs(long.pnlPct - 12) < 1e-9);
+  const shortStop = S.positionWarnings([{ sym: 'B', side: 'short', entry: 100, stop: 110, target: 90 }], by, {})[0];
+  assert.ok(shortStop.warnings.some((w) => /at or above your stop-loss 110/.test(w)), shortStop.warnings.join('; '));
+  assert.ok(!shortStop.warnings.some((w) => /target|Win rule/.test(w)), 'a rising price is not a short target');
+  assert.ok(shortStop.pnlPct < 0, 'short loses when the price rises');
+  const shortWin = S.positionWarnings([{ sym: 'A', side: 'short', entry: 100, stop: 110, target: 96 }], by, {})[0];
+  assert.ok(shortWin.warnings.some((w) => /target 96 reached/.test(w)));
+  assert.ok(!shortWin.warnings.some((w) => /stop/.test(w)));
+  assert.ok(Math.abs(shortWin.pnlPct - 5) < 1e-9);
+});

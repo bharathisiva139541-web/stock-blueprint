@@ -1072,9 +1072,9 @@
     var h = '<section class="card" id="xa-reg"><div class="card-head"><div><h2>Rule registry and review</h2><p>Every rule the dashboard took from your Code.gs / sheet, where it came from, ' +
       'and whether the active strategy uses it. "Discovered" means read from your files; only you can mark a strategy as confirmed.</p></div></div>';
     if (info) {
-      var badge = info.demo ? ui.badge('DEMO - for testing only', 's-warn') : info.confirmed ? ui.badge('Confirmed by you (v' + info.cfg.version + ')', 's-good') : ui.badge('Discovered - not confirmed by you', 's-warn');
+      var dsc = SB.strategies.describe(info.cfg), badge = ui.badge(dsc.tag, dsc.cls);
       h += '<div class="note' + (info.confirmed && !info.demo ? ' good' : ' warn') + '">Active strategy: <b>' + esc(info.cfg.name) + '</b> · v' + esc(info.cfg.version) + ' ' + badge +
-        (info.confirmed && !info.demo ? '' : '<br>Its rules were discovered from your workbook and Code.gs, but how they are combined is an assumption until you confirm it.') +
+        (info.confirmed && !info.demo ? '' : '<br>' + esc(dsc.long)) +
         ' <a href="#strategy">Review in Strategy settings</a></div>';
     } else h += '<div class="note warn">The strategy module did not load, so rule usage cannot be shown.</div>';
     h += '<div id="xa-reg-t" style="margin-top:12px"></div>';
@@ -1134,7 +1134,7 @@
         return '<option value="' + esc(o[0]) + '"' + (o[0] === ST.cat ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
       }).join('') + '</select>' : '') +
       '<span class="count" id="xa-st-n"></span></div><div id="xa-st-t"></div>' +
-      '<p class="sub" style="margin-top:8px" id="xa-st-note">' + esc('Source: ' + st.basis + '. Price and TTM Signal come from the Main snapshot (CACHED); TTM Signal is the sheet\'s own target-price signal, not advice.') + '</p>';
+      '<p class="sub" style="margin-top:8px" id="xa-st-note">' + esc('Source: ' + st.basis + '. Price comes from the Main tab (state shown on each page); TTM Signal is the sheet\'s own target-price rule recomputed at that price, not advice.') + '</p>';
     return h + '</section>';
   }
   function applyStocks() {

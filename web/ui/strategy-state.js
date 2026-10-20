@@ -5,7 +5,7 @@
    - runActive() loads the daily candles once and caches the run per
      strategy version + data date, so pages share one result.
    API: SB.strategies = { list, get, activeId, setActive, save, resetToPreset, confirm,
-                          isConfirmed, history, exportJson, importJson, runActive, lastRun, candles }
+                          isConfirmed, history, exportJson, importJson, runActive, lastRun, candles, describe }
         SB.strategyResults(ctx) -> last run of the active strategy or null (sync) */
 (function () {
   'use strict';
@@ -135,10 +135,34 @@
   /** Last run of the given (default: ACTIVE) strategy, or null. */
   function lastRun(id) { var c = cache[id || activeId()]; return c ? c.result : null; }
 
+  /** One honest wording of where a strategy's rules come from, for every page.
+   *  -> { tag: short text, cls: badge class, long: sentence } */
+  function describe(cfg) {
+    if (!cfg) return { tag: 'no strategy', cls: 's-bad', long: 'No strategy is selected.' };
+    var conf = isConfirmed(cfg.id), v = ' v' + cfg.version;
+    if (cfg.source === 'demo') return { tag: 'DEMO', cls: 's-warn', long: 'DEMO strategy - for testing the engine only, not your strategy and not recommendations.' };
+    if (cfg.source === 'custom') return conf ? { tag: 'Your own rules · confirmed' + v, cls: 's-good', long: 'Your own rules (made or imported in this browser), confirmed by you.' }
+      : { tag: 'Your own rules · not confirmed', cls: 's-warn', long: 'Your own rules (made or imported in this browser), not yet confirmed.' };
+    if (cfg.source === 'discovered-edited') return conf ? { tag: 'Edited from your sheet · confirmed' + v, cls: 's-good', long: 'Rules taken from your sheet and edited by you, confirmed by you.' }
+      : { tag: 'Edited from your sheet · not confirmed', cls: 's-warn', long: 'Rules taken from your sheet and edited in this browser, not yet confirmed.' };
+    return conf ? { tag: 'From your sheet · confirmed' + v, cls: 's-good', long: 'Rules taken from your sheet (Code.gs), confirmed by you.' }
+      : { tag: 'From your sheet · not confirmed', cls: 's-warn', long: 'Rules taken from your sheet (Code.gs); how they combine into a suggestion and the stop/target method are assumptions until you confirm them.' };
+  }
+
   SB.strategies = {
+    describe: describe,
     list: list, get: get, activeId: activeId, setActive: setActive, save: save, resetToPreset: resetToPreset,
     confirm: confirm, isConfirmed: isConfirmed, history: history, exportJson: exportJson, importJson: importJson,
     runActive: runActive, lastRun: lastRun, candles: candles
   };
   SB.strategyResults = function () { return lastRun(); };
+
+  /** EOD only when the newest daily candle covers the last completed NSE session
+   *  (from the market-data API) or, without the API, the price snapshot's date. Otherwise CACHED. */
+  SB.candleState = function (H) {
+    if (!H || !H.dates || !H.dates.length) return 'UNAVAILABLE';
+    var last = H.dates[H.dates.length - 1], m = SB.ctx.market;
+    var need = m && m.session && m.session.lastCompletedSession || ui.iso(SB.ctx.refDate);
+    return last >= need ? 'EOD' : 'CACHED';
+  };
 })();

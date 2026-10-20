@@ -9,8 +9,9 @@
   function dataStatus(ctx) {
     var D = ctx.D, H = ctx.history, m = ctx.market, pi = m.providerInfo;
     var rows = [
-      ['Prices (Main tab)', ctx.stocks[0] ? ctx.stocks[0].priceState : 'CACHED', m.asOf, m.source || 'Sheet snapshot (GOOGLEFINANCE, ~20 min delayed when exported)'],
-      ['Daily candles (History30)', H ? 'EOD' : 'CACHED', H ? H.dates[H.dates.length - 1] : null, H ? H.source : 'loads on demand'],
+      ['Prices (Main tab)', ui.leastFresh(ctx.stocks.map(function (s) { return s.priceState; })), m.asOf,
+        (m.source || 'Sheet snapshot (GOOGLEFINANCE, ~20 min delayed when exported)') + (m.partial ? ' - partial: some prices are still the sheet snapshot' : '')],
+      ['Daily candles (History30)', H ? SB.candleState(H) : 'CACHED', H ? H.dates[H.dates.length - 1] : null, H ? H.source : 'not loaded yet (loads with the strategy)'],
       ['Pattern Dashboard tab', 'CACHED', D.patterns && D.patterns.asOf, 'Sheet tab, refreshed by Code.gs'],
       ['Results Performance', 'CACHED', D.asOf, 'Sheet tab, refreshed by Results Day runs']
     ];
@@ -41,7 +42,7 @@
       var h = '<div class="page-head"><div><h1>Market overview</h1><p>Your ' + F.int(stocks.length) + '-stock NSE watchlist: benchmarks, breadth, sectors, strategy setups, results and alerts. ' +
         ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + '</p></div></div>';
       h += '<div class="tiles">' +
-        ui.tile('NIFTY 50', n50 ? F.price(n50['Current Price']) : '–', n50 ? ui.deltaHtml(n50['Day change'], 2) + ' today · ' + F.pct(n50['Drop from all time high']) + ' from ATH' : 'not in Indextracker', 'hero') +
+        ui.tile('NIFTY 50', n50 ? F.price(n50['Current Price']) : '–', n50 ? ui.deltaHtml(n50['Day change'], 2) + ' today · ' + F.pct(n50['Drop from all time high']) + ' from ATH · ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Indextracker tab of your sheet') : 'not in Indextracker', 'hero') +
         ui.tile('Breadth', adv + ' / ' + dec, 'advancing / declining · ' + flat + ' unchanged') +
         ui.tile('Strategy setups', '<span id="ov-q">…</span>', '<span id="ov-qn">active strategy</span>') +
         ui.tile('Results season' + (season ? ' · ' + season.season : ''), F.int(season ? season.tracked : 0), F.int(pend) + ' still waiting on screener.in') +
@@ -58,7 +59,7 @@
       }).sort(function (a, b) { return b.value - a.value; });
 
       h += '<div class="grid g2">' +
-        ui.card('Benchmarks', 'NSE indices from your Indextracker tab', '<div id="ov-idx"></div>') +
+        ui.card('Benchmarks', 'NSE indices from your Indextracker tab ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Indextracker tab of your sheet'), '<div id="ov-idx"></div>') +
         ui.card('Industry performance today', 'Average % change per category - click a bar for the industry page', ui.bars(catItems, { diverging: true, fmt: function (v) { return F.pct(v, 2); } }) +
           '<div class="legend"><span><i style="background:var(--bar)"></i>Average up</span><span><i style="background:var(--bar-neg)"></i>Average down</span></div>') + '</div>';
       h += '<section class="card"><div class="card-head"><div><h2>Top strategy setups</h2><p id="ov-strat-sub">Running the active strategy…</p></div><a class="btn" href="#suggestions">All suggestions</a></div><div id="ov-strat">' + ui.skeleton(4) + '</div></section>';
@@ -93,14 +94,9 @@
 
       // portfolio heat from the viewer's own journal + risk settings (this browser only)
       try {
-        var j = ui.store.get('journal:v1', null);
-        var arr = Array.isArray(j) ? j : j && (j.trades || j.entries) || [];
-        var open = arr.filter(function (t) { return !(t.closed || t.status === 'closed' || Number(t.exitPrice) > 0); }).map(function (t) {
-          var s = ctx.bySym[String(t.sym || t.symbol || '').toUpperCase()];
-          return { entry: Number(t.entry || t.entryPrice), stop: Number(t.stop || t.stopLoss), qty: Number(t.qty || t.quantity), industry: s && s.catName };
-        });
+        var open = SB.journal ? SB.journal.open() : [];
         if (open.length) {
-          var pr = SB.risk.portfolioRisk(open, ui.store.get('risk:settings', {}));
+          var pr = SB.journal.portfolio(ctx);
           $('#ov-heat', el).innerHTML = F.num(pr.heatPct, 1) + '%';
           $('#ov-heatn', el).textContent = open.length + ' open journal positions · limit ' + pr.heatLimitPct + '%';
         } else $('#ov-heatn', el).textContent = 'no open journal positions';
@@ -108,10 +104,13 @@
 
       SB.strategies.runActive().then(function (run) {
         var cfg = run.config, q = run.lists.qualified;
+        var ds = $('#ov-data', el);
+        if (ds) ds.outerHTML = dataStatus(ctx);           // the candle file is loaded now: show its state
         $('#ov-q', el).textContent = F.int(q.length);
+        var dsc = SB.strategies.describe(cfg);
         $('#ov-qn', el).textContent = (cfg.mode === 'screen' ? 'match ' : 'qualified · ') + cfg.name.replace(/ \(.*\)$/, '') + (cfg.source === 'demo' ? ' (DEMO)' : SB.strategies.isConfirmed(cfg.id) ? '' : ' (unconfirmed)');
         $('#ov-strat-sub', el).innerHTML = esc(cfg.name) + ' v' + cfg.version + ' · candles to ' + F.date(run.dataAsOf) + ' · ' +
-          (cfg.source === 'demo' ? '<b>DEMO - not recommendations</b>' : SB.strategies.isConfirmed(cfg.id) ? 'confirmed by you' : 'rules from your sheet, not yet confirmed');
+          (cfg.source === 'demo' ? '<b>DEMO - not recommendations</b>' : esc(dsc.tag));
         var top = q.slice(0, 8).map(function (r) { var s = ctx.bySym[r.sym]; return { sym: r.sym, name: s.name, catName: s.catName, price: s.price, chg: s.chg, score: r.score, conf: r.confluence, rr: r.rr, why: (r.triggersPassed || []).join(' + ') }; });
         if (!top.length) { $('#ov-strat', el).innerHTML = '<p class="empty">No qualifying setup currently.</p>'; return; }
         new ui.Table({

@@ -20,7 +20,7 @@
   var TILES = ' style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"';   // two tiles per row on phones
   var STORE_FAIL = 'Not saved: this browser is blocking site storage or it is full (private window?). Nothing was changed.';
   var DISCLAIMER = 'Alerts are checked only while this page is open, against snapshot/delayed data - they are not real-time and are not pushed to your phone. ' +
-    'Your sheet\'s own alerts (email/Pushbullet) remain the real-time channel.';
+    'Your sheet\'s own alerts (Code.gs e-mail / Pushbullet, on its time triggers with ~20-minute delayed GOOGLEFINANCE prices) keep working as before.';
 
   // ---------- small helpers ----------
   function istNow() { return new Date(Date.now() + 330 * 60000).toISOString().slice(0, 16).replace('T', ' '); }
@@ -255,6 +255,17 @@
     var todayPnl = total(trades.filter(function (t) { return t.status === 'closed' && t.exitDate === today; }).map(function (t) { return calc(t).pnl; }));
     return { openPositions: open, realizedTodayLoss: Math.max(0, -todayPnl), todayPnl: todayPnl };
   }
+  // shared with Overview / Daily suggestions: the journal is read through the same cleaner everywhere
+  SB.journal = {
+    open: openTrades,
+    riskContext: function (ctx) { return riskContext({ ctx: ctx }); },
+    portfolio: function (ctx, settings) {
+      return SB.risk.portfolioRisk(openTrades().map(function (t) {
+        var s = ctx.bySym[t.sym];
+        return { entry: t.entry, stop: t.stop, qty: t.qty, side: t.side, industry: s ? s.catName : 'Unclassified' };
+      }), settings || loadRisk().s);
+    }
+  };
   function review(closed) {
     var rows = closed.map(function (t) { var c = calc(t); c.t = t; return c; });
     var wins = rows.filter(function (c) { return c.pnl > 0; }), losses = rows.filter(function (c) { return c.pnl < 0; });
@@ -1177,7 +1188,8 @@
     if (!isNum(input.entry) && !isNum(input.stop)) { box.innerHTML = '<p class="empty">Enter an entry price and a stop-loss to size a position.</p>'; P.lastSize = null; return; }
     var rc = riskContext(P), z = SB.risk.sizePosition(input, risk, rc);
     P.lastSize = { z: z, input: input, sym: s ? sym : '' };
-    var h = '';
+    var lv = P.levelsSrc && P.levelsSrc.sym === sym && P.levelsSrc.entry === input.entry ? P.levelsSrc : null;
+    var h = lv ? '<p class="sub" style="margin-bottom:8px">' + esc(lv.text) + '</p>' : '';
     if (z.qty > 0 || z.steps.length) {
       h += '<div class="tiles"' + TILES + '>' +
         ui.tile('Quantity', F.int(z.qty), risk.lotSize > 1 ? 'in lots of ' + F.int(risk.lotSize) : 'shares') +
@@ -1203,11 +1215,7 @@
         '<div style="text-align:center"><button class="btn" type="button" data-act="goto-journal">Open the trade journal</button></div>';
       return;
     }
-    var pos = open.map(function (t) {
-      var s = P.ctx.bySym[t.sym], st = t.stop > 0 ? (t.side === 'short' ? 2 * t.entry - t.stop : t.stop) : NaN;   // portfolioRisk assumes long: mirror a short's stop
-      return { entry: t.entry, stop: st, qty: t.qty, industry: s ? s.catName : 'Unclassified' };
-    });
-    var pr = SB.risk.portfolioRisk(pos, risk), heatW = Math.min(100, pr.heatPct / pr.heatLimitPct * 100);
+    var pr = SB.journal.portfolio(P.ctx, risk), heatW = Math.min(100, pr.heatPct / pr.heatLimitPct * 100);
     var inds = Object.keys(pr.byIndustry).sort(function (a, b) { return pr.byIndustry[b] - pr.byIndustry[a]; });
     var h = '<div class="tiles"' + TILES + '>' +
       ui.tile('Open positions', F.int(open.length) + ' <span class="sub">/ ' + F.int(risk.maxPositions) + '</span>', 'your maximum is ' + F.int(risk.maxPositions)) +
@@ -1302,10 +1310,14 @@
     if (!P.run) { msg(P, box, 'warn', P.runErr ? 'The strategy could not run: ' + esc(P.runErr) : 'The strategy is still loading - try again in a moment.'); return false; }
     var r = P.run.bySym[sym];
     if (!r || !(r.stop > 0)) { msg(P, box, 'warn', 'The active strategy has no stop-loss for ' + esc(sym) + (r ? ' (' + esc(r.stopNote || r.statusLabel) + ')' : '') + '.'); return false; }
+    // stop and target are computed from the strategy's entry reference, so the entry is filled with it too
+    $('#' + prefix + '-entry', P.el).value = String(r.entry);
     $('#' + prefix + '-stop', P.el).value = String(Math.round(r.stop * 100) / 100);
-    if (r.target > 0) $('#' + prefix + '-target', P.el).value = String(Math.round(r.target * 100) / 100);
-    if (!fval(P, prefix + '-entry')) $('#' + prefix + '-entry', P.el).value = String(r.entry);
-    if (prefix === 'jr') msg(P, 'jr-msg', P.run.config.source === 'demo' ? 'warn' : '', 'Filled the stop ' + rupee(r.stop) + ' and target ' + rupee(r.target) + ' from ' + esc(P.run.config.name + ' v' + P.run.config.version) +
+    $('#' + prefix + '-target', P.el).value = r.target > 0 ? String(Math.round(r.target * 100) / 100) : '';
+    if (prefix === 'rk') P.levelsSrc = { sym: sym, entry: r.entry, text: 'Entry ' + rupee(r.entry) + ' = close of ' + F.date(r.asOf || P.run.dataAsOf) + '; stop and target from ' + P.run.config.name + ' v' + P.run.config.version +
+      (P.run.config.source === 'demo' ? ' (DEMO strategy - testing only)' : SB.strategies.isConfirmed(P.run.config.id) ? '' : ' (unconfirmed rules)') + '.' };
+    if (prefix === 'jr') msg(P, 'jr-msg', P.run.config.source === 'demo' ? 'warn' : '', 'Filled entry ' + rupee(r.entry) + ' (close of ' + esc(F.date(r.asOf || P.run.dataAsOf)) + '), stop ' + rupee(r.stop) +
+      (r.target > 0 ? ' and target ' + rupee(r.target) : '') + ' from ' + esc(P.run.config.name + ' v' + P.run.config.version) +
       (P.run.config.source === 'demo' ? ' - a DEMO strategy, for testing only.' : SB.strategies.isConfirmed(P.run.config.id) ? '.' : ' (unconfirmed rules). Check them against your own plan.'));
     return true;
   }

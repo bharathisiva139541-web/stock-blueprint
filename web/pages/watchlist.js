@@ -10,7 +10,8 @@
       var cats = {};
       stocks.forEach(function (s) { cats[s.cat || ''] = (cats[s.cat || ''] || 0) + 1; });
       var notes = ui.store.get('notes', {});
-      var strat = SB.strategyResults ? SB.strategyResults(ctx) : null;
+      var strat = SB.strategies.lastRun();
+      var cfg = SB.strategies.get(SB.strategies.activeId()), dsc = SB.strategies.describe(cfg);
 
       var h = '<div class="page-head"><div><h1>Watchlist</h1><p>All ' + F.int(stocks.length) +
         ' stocks from the Main tab (NSE). Click a symbol for details; click a column to sort. Prices: ' +
@@ -27,6 +28,7 @@
           ['all', 'All'], ['qualified', 'Strategy: qualified'], ['buy', 'TTM Buy'], ['pattern', 'Has pattern'], ['fvg', 'Has FVG'],
           ['ema', 'EMA support'], ['results', 'Result due ≤14 days'], ['done', 'Results ticked'], ['near', 'Within 10% of 52W high'], ['notes', 'With notes']
         ], ST.f) + '<span class="count" id="wl-count"></span></div>' +
+        '<p class="sub" id="wl-strat">Strategy column: ' + esc(cfg.name) + ' v' + cfg.version + ' ' + ui.badge(dsc.tag, dsc.cls) + ' <span id="wl-strat-st">' + (strat ? '' : '· running…') + '</span></p>' +
         '<div id="wl-table"></div></section>';
       el.innerHTML = h;
 
@@ -44,7 +46,9 @@
           { key: 'down52', label: 'From 52W high', type: 'pct' },
           { key: 'pevs', label: 'PE / Ind PE', type: 'num', title: 'PE ratio divided by industry PE' },
           { key: 'sig', label: 'TTM Signal', type: 'badge' },
-          { key: 'strat', label: 'Strategy', get: function (r) { var x = strat && strat.bySym[r.sym]; return x ? x.statusLabel : null; },
+          { key: 'strat', label: 'Strategy', title: cfg.name + ' v' + cfg.version + ' - ' + dsc.tag,
+            get: function (r) { var x = strat && strat.bySym[r.sym]; return x ? x.statusLabel : null; },
+            csv: function (r) { var x = strat && strat.bySym[r.sym]; return x ? x.statusLabel + ' (' + cfg.name + ' v' + cfg.version + (cfg.source === 'demo' ? ', DEMO' : SB.strategies.isConfirmed(cfg.id) ? '' : ', unconfirmed') + ')' : ''; },
             html: function (r) { var x = strat && strat.bySym[r.sym]; return x ? ui.badge(x.statusLabel) : '<span class="sub">–</span>'; } },
           { key: 'pat', label: 'Pattern', wrap: true },
           { key: 'rdate', label: 'Result date', type: 'date' },
@@ -85,6 +89,15 @@
       $('#wl-csv', el).addEventListener('click', function () { ui.download('watchlist.csv', ui.toCsv(t.toCsvRows())); });
       ui.bindChips(el, 'wl', function (v) { ST.f = v; apply(); });
       apply();
+      // the Strategy column and "Strategy: qualified" filter need a run of the active strategy
+      if (!strat) {
+        SB.strategies.runActive().then(function (run) {
+          if (!el.isConnected) return;
+          strat = run;
+          $('#wl-strat-st', el).textContent = '· candles to ' + F.date(run.dataAsOf);
+          apply();
+        }).catch(function (e) { if (el.isConnected) $('#wl-strat-st', el).textContent = '· could not run: ' + e.message; });
+      } else $('#wl-strat-st', el).textContent = '· candles to ' + F.date(strat.dataAsOf);
     }
   });
 })();

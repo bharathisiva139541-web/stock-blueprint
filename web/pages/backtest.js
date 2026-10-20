@@ -467,8 +467,9 @@
       setBusy(P, false);
       $('#bt-status', P.el).textContent = (res && res.ok ? 'Finished' : 'Stopped') + ' in ' + secs(ms) + '.';
       paintResults(P);
-      var head = $('#bt-res h2', P.el);
+      var head = $('#bt-res h2', P.el) || $('#bt-res .note', P.el);
       if (head && head.scrollIntoView && window.innerWidth < 900) head.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      if (head) { head.setAttribute('tabindex', '-1'); head.focus({ preventScroll: true }); }   // the Run button was disabled: keep focus on the result
     }, 60);
   }
 
