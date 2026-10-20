@@ -47,9 +47,11 @@
   var PRICE_HEADER_RE = /price|^ltp$|^cmp$|\bclose\b|\bopen\b|\bhigh\b|\blow\b|clspric|opnpric|hghpric|lwpric|stop\s*-?\s*loss|target/i;
   var NOT_PRICE_RE = /%|change|chg|band|date|time|source|type|signal|y\/n|ratio|drop|down|\bup\b|\bfrom\b|gain|loss %|return|diff|vs\b|count|vol|median|avg|average|mean/i;
   var NOT_SYMBOL_HEADER_RE = /index|series|type|status|signal|zone|pattern|category|source|sector|industry|flag|alerted|y\/n|verdict|quarter|season|outcome|colou?r/i;
-  var PERSONAL_SHEET_RE = /portfolio|risk manager|control panel|trade log|trade dashboard/i;
+  var PERSONAL_SHEET_RE = /portfolio|risk manager|control panel|trade log|trade dashboard|alert log|alert dashboard|entry alerts?/i;
   var PERSONAL_HEADER_RE = /\b(qty|quantity)\b|\bbuy value\b|\bsell value\b|^(profit|loss|p\s*&\s*l|pnl)\b|\bprofit\s*[\/&]\s*loss\b|\bcapital\b|\binvested\b/i;
-  var PERSONAL_COLUMN_RE = /entry|stop\s*-?\s*loss|exit price|\b(qty|quantity)\b|capital|invested|buy value|sell value|buy price|sell price|avg (buy )?price|profit\s*[\/&]\s*loss|p\s*&\s*l|\bpnl\b/i;
+  // columns whose VALUES are the owner's own levels/trades (alert levels, triggers,
+  // outcomes too: they reveal positions) - public mode keeps only their structure
+  var PERSONAL_COLUMN_RE = /entry|stop\s*-?\s*loss|exit price|\b(qty|quantity)\b|capital|invested|buy value|sell value|buy price|sell price|avg (buy )?price|profit\s*[\/&]\s*loss|p\s*&\s*l|\bpnl\b|alert (price|level)|trigger(ed)?|after alert|since alert|win\s*\/\s*loss|^outcome$/i;
   var NOT_PERSONAL_HEADER_RE = /working capital|share capital|equity capital|capital (goods|employed|markets?)/i;
   var TYPE_HEADER_RE = /\btype\b/i;
   var PRIVATE_ROW_VALUE_RE = /^(entry|position|holding|trade)$/i;
@@ -673,7 +675,8 @@
         if (typeof v2 === 'number' ? v2 <= 0 : true) {
           count++;
           var hideRow = hideValues || (prof.priv !== null && prof.priv[r2] === 1);
-          if (samples.length < 10) samples.push(hideRow ? { cell: col.letter + (r2 + 1) } : { cell: col.letter + (r2 + 1), value: sampleValue(v2) });
+          // a hidden column/row gives no cell reference either (row -> symbol would leak)
+          if (samples.length < 10 && !hideRow) samples.push({ cell: col.letter + (r2 + 1), value: sampleValue(v2) });
         }
       }
       if (count) priceIssues.push({ column: col.letter, header: col.header, count: count, cells: samples });

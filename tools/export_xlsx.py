@@ -207,6 +207,34 @@ def export(path):
         stocks.append([clean(r[i] if i < len(r) else None, k) for (i, k) in idx.values()])
     data['main'] = {'cols': list(idx.keys()), 'rows': stocks}
 
+    # Symbols that are (or were) the user's own trades: any Main row with an
+    # Entry Price or Stoploss typed in, plus every Trade Log symbol. Their alert
+    # rows are never published, because the alert levels and outcomes of a
+    # trade reveal the position.
+    private_syms = set()
+    for name in ('entry price', 'stoploss'):
+        if name in hdr:
+            ci = hdr.index(name)
+            for r in m[2:]:
+                v = r[ci] if ci < len(r) else None
+                if sym_i < len(r) and r[sym_i] and v not in (None, '') and clean(v, 'num'):
+                    private_syms.add(str(r[sym_i]).strip().upper())
+    if 'Trade Log' in wb.sheetnames:
+        for r in rows_of(wb['Trade Log'])[1:]:
+            if len(r) > 1 and r[1]:
+                private_syms.add(str(r[1]).strip().upper())
+    # holdings (Portfolio 'Symbol' column) and the Risk Manager's open trades
+    for tab in ('Portfolio', 'Risk Manager'):
+        if tab not in wb.sheetnames:
+            continue
+        tr = rows_of(wb[tab])
+        for i, r in enumerate(tr):
+            if r and norm(r[0]) == 'symbol':
+                for r2 in tr[i + 1:]:
+                    v = r2[0] if r2 else None
+                    if isinstance(v, str) and re.fullmatch(r'[A-Z0-9&_-]{1,20}', v.strip().upper()):
+                        private_syms.add(v.strip().upper())
+
     # Results season
     data['resultsTracker'] = table(rows_of(wb['Results Tracker']), 'Symbol', stop_blank=False)
     rp = rows_of(wb['Results Performance'])
@@ -267,9 +295,12 @@ def export(path):
     al = table(rows_of(wb['Alert Log']), 'Date', stop_blank=False)
     keep = [c for c in al['cols'] if c in ALERT_COLS]
     ti = al['cols'].index('Alert Type') if 'Alert Type' in al['cols'] else None
-    data['alerts'] = {'cols': keep, 'rows': [
-        [r[al['cols'].index(c)] for c in keep] for r in al['rows']
-        if ti is not None and r[ti] in PUBLIC_ALERT_TYPES]}
+    si = al['cols'].index('Symbol') if 'Symbol' in al['cols'] else None
+    rows = [r for r in al['rows'] if ti is not None and r[ti] in PUBLIC_ALERT_TYPES
+            and si is not None and str(r[si] or '').strip().upper() not in private_syms]
+    data['alerts'] = {'cols': keep, 'rows': [[r[al['cols'].index(c)] for c in keep] for r in rows],
+                      'note': 'watch alerts only; symbols with your own entry/stop-loss or a Trade Log row are left out'}
+    print('  alerts: kept', len(rows), 'of', len(al['rows']), '- left out', len(private_syms), 'trade symbols')
 
     # Markets
     ix = table(rows_of(wb['Indextracker']), 'NSE Symbol', stop_blank=False)
