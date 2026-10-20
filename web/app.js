@@ -287,8 +287,6 @@
     var season = (D.resultsPerf && D.resultsPerf.seasons && D.resultsPerf.seasons[0]) || null;
     var alerts = objRows(D.alerts);
     var openA = alerts.filter(function (a) { return a.Outcome === 'Open'; }).length;
-    var stats = {};
-    (D.tradeStats || []).forEach(function (p) { stats[p[0]] = p[1]; });
 
     var h = '<div class="page-head"><div><h1>Market overview</h1><p>Today’s picture of your ' + F.int(STOCKS.length) +
       '-stock watchlist: breadth, movers, results season and alerts.</p></div></div>';
@@ -297,8 +295,7 @@
       tile('TTM Buy signals', F.int(buys), F.num(buys / Math.max(1, STOCKS.length) * 100, 0) + '% of watchlist') +
       tile('With pattern / FVG tag', F.int(withPat), 'see Patterns & FVG') +
       tile('Results updated' + (season ? ' · ' + season.season : ''), F.int(tc.Updated), F.int(tc.Pending) + ' pending · ' + F.int(tc['Gave up']) + ' gave up') +
-      tile('Open alerts', F.int(openA), alerts.length + ' alerts logged') +
-      (isNum(stats['Win Rate %']) ? tile('Trade win rate', F.num(stats['Win Rate %'], 1) + '%', F.int(stats['Total Resolved']) + ' resolved trades') : '') +
+      tile('Open watch alerts', F.int(openA), alerts.length + ' breakout / price-fall alerts') +
       '</div>';
 
     // movers
@@ -638,9 +635,6 @@
   // Alerts & trades
   pages.alerts = function (el) {
     var alerts = objRows(D.alerts);
-    var trades = objRows(D.trades);
-    var stats = {};
-    (D.tradeStats || []).forEach(function (p) { stats[p[0]] = p[1]; });
     var byType = {};
     alerts.forEach(function (a) {
       var t = a['Alert Type'] || 'Other';
@@ -651,15 +645,7 @@
     });
     var types = Object.keys(byType).sort();
 
-    var h = '<div class="page-head"><div><h1>Alerts &amp; trades</h1><p>Price alerts set in the sheet and how the resolved trades turned out.</p></div></div>';
-    h += '<div class="tiles">' +
-      tile('Win rate', isNum(stats['Win Rate %']) ? F.num(stats['Win Rate %'], 1) + '%' : '–', F.int(stats.Wins) + ' wins · ' + F.int(stats.Losses) + ' losses') +
-      tile('Average win', deltaHtml(stats['Avg Win % (from entry)'], 2), 'from entry') +
-      tile('Average loss', deltaHtml(stats['Avg Loss % (from entry)'], 2), 'from entry') +
-      tile('Risk : reward', isNum(stats['Risk:Reward (1 : X)']) ? '1 : ' + F.num(stats['Risk:Reward (1 : X)'], 2) : '–') +
-      tile('Expectancy per trade', deltaHtml(stats['Expectancy % per trade'], 2)) +
-      tile('Alerts armed', F.int(stats['Alerts Armed (level set)']), F.int(stats.Triggered) + ' triggered · ' + F.int(stats['Not Yet Triggered']) + ' waiting') +
-      '</div>';
+    var h = '<div class="page-head"><div><h1>Alerts</h1><p>Breakout and price-fall watch alerts from the sheet. Personal entries, positions and trade results are not published.</p></div></div>';
 
     h += '<div class="grid g2">' +
       card('Alerts by type', 'Hit rate = wins ÷ (wins + losses)', '<div id="al-type"></div>') +
@@ -670,7 +656,6 @@
       '<div class="legend"><span><i style="background:var(--series-1)"></i>Up since alert</span><span><i style="background:var(--neg-mark)"></i>Down since alert</span></div>') +
       '</div>';
     h += card('Alert log', alerts.length + ' alerts', '<div id="al-log"></div>');
-    h += card('Trade log', trades.length + ' resolved trades', '<div id="al-trades"></div>');
     el.innerHTML = h;
 
     new Table({
@@ -703,21 +688,6 @@
         { key: 'Outcome', label: 'Outcome', type: 'badge' }
       ]
     }).mount($('#al-log', el));
-
-    new Table({
-      rows: trades, pageSize: 25, sort: { key: 'Resolved Date', dir: -1 },
-      columns: [
-        { key: 'Resolved Date', label: 'Resolved', type: 'date' },
-        { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
-        { key: 'Alert Type', label: 'Type' },
-        { key: 'Entry Price', label: 'Entry', type: 'price' },
-        { key: 'Stoploss', label: 'Stoploss', type: 'price' },
-        { key: 'Exit Price', label: 'Exit', type: 'price' },
-        { key: '% From Entry', label: 'Result', type: 'pct', digits: 2 },
-        { key: 'Days Held', label: 'Days', type: 'num', digits: 0 },
-        { key: 'Outcome', label: 'Outcome', type: 'badge' }
-      ]
-    }).mount($('#al-trades', el));
   };
 
   // IPOs & markets

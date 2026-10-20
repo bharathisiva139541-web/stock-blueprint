@@ -3,9 +3,10 @@ website's data file  web/data/dashboard.js  (sets window.SB_DATA).
 
     python tools/export_xlsx.py "Copy of Stock Blueprint.xlsx"
 
-Only market / signal tabs are exported. Personal tabs (Portfolio, Risk
-Manager, Control Panel, Trade Dashboard capital figures, logs with e-mails)
-are never read, because the website is public.
+Only market / signal tabs are exported. Personal data is never exported,
+because the website is public: Portfolio, Risk Manager, Control Panel,
+Trade Log, Trade Dashboard, and 'Entry' alerts (those carry the user's own
+entry prices / open positions).
 """
 import datetime as dt
 import json
@@ -61,6 +62,13 @@ MAIN_COLS = [
     ('volchg', '%vol Change', 'frac'),
     ('ipo', 'IPO Level', 'str'),
 ]
+
+
+# Alert Log columns that may be published (no personal position data)
+ALERT_COLS = ('Date', 'Symbol', 'Company', 'Alert Type', 'Alert Level', 'Trigger Price',
+              'Pattern @ Alert', 'FVG Tags @ Alert', 'Current Price', '% Since Alert',
+              'Days Since', 'Outcome')
+PUBLIC_ALERT_TYPES = ('Breakout', 'Price Fall')
 
 
 def clean(v, kind='auto'):
@@ -226,6 +234,7 @@ def export(path):
     # Signals
     pd_ = rows_of(wb['Pattern Dashboard'])
     kp = {}
+    m_ = re.search(r'refreshed (\d{2}/\d{2}/\d{4} \d{2}:\d{2})', ' '.join(str(c) for r in pd_[:3] for c in r if c))
     for i in range(len(pd_)):
         if pd_[i] and norm(pd_[i][0]) == 'stocks scanned':
             kp = {str(h): clean(v) for h, v in zip(pd_[i], pd_[i + 1]) if h}
@@ -234,6 +243,7 @@ def export(path):
     clk = {'Avg % Change': 'frac'}
     stk = {k: 'frac' for k in ('% Change', '10-day %', '30-day %')}
     data['patterns'] = {
+        'asOf': text_date(m_.group(1)) if m_ else None,
         'kpis': kp,
         'signals': table(pd_, 'Type', kinds=sigk),
         'clusters': table(pd_, 'Basic Industry', kinds=clk),
@@ -243,18 +253,25 @@ def export(path):
     data['gapup'] = table(rows_of(wb['GapUpFVG']), 'Symbol', stop_blank=False)
     data['watchLog'] = table(rows_of(wb['Signal Watchlist Log']), 'Date Flagged', stop_blank=False)
 
-    # Alerts & trades (levels and outcomes only - no capital / quantities)
-    data['alerts'] = table(rows_of(wb['Alert Log']), 'Date', stop_blank=False)
-    data['trades'] = table(rows_of(wb['Trade Log']), 'Resolved Date', stop_blank=False)
-    td = rows_of(wb['Trade Dashboard'])
-    stats = []
-    for r in td:
-        if r and r[0] and len(r) > 1 and isinstance(r[1], (int, float)) and not isinstance(r[1], bool):
-            stats.append([str(r[0]).strip(), round(float(r[1]), 2)])
-    data['tradeStats'] = stats
+    # Alerts: watch-level alerts only. 'Entry' alerts are the user's real
+    # positions (alert level = their entry price), and the Trade Log / Trade
+    # Dashboard are their personal trading results - never exported.
+    al = table(rows_of(wb['Alert Log']), 'Date', stop_blank=False)
+    keep = [c for c in al['cols'] if c in ALERT_COLS]
+    ti = al['cols'].index('Alert Type') if 'Alert Type' in al['cols'] else None
+    data['alerts'] = {'cols': keep, 'rows': [
+        [r[al['cols'].index(c)] for c in keep] for r in al['rows']
+        if ti is not None and r[ti] in PUBLIC_ALERT_TYPES]}
 
     # Markets
-    data['indices'] = table(rows_of(wb['Indextracker']), 'NSE Symbol', stop_blank=False)
+    ix = table(rows_of(wb['Indextracker']), 'NSE Symbol', stop_blank=False)
+    seen, rows = set(), []
+    for r in ix['rows']:            # drop label rows and the repeated block
+        if r[0] in seen or not any(isinstance(v, (int, float)) for v in r[1:]):
+            continue
+        seen.add(r[0])
+        rows.append(r)
+    data['indices'] = {'cols': ix['cols'], 'rows': rows}
     data['ipos'] = table(rows_of(wb['IPOs']), 'NSE SYMBOL', stop_blank=False)
     data['newIpos'] = table(rows_of(wb['New IPOs']), 'COMPANY NAME', stop_blank=False, max_rows=300)
     data['priceBands'] = table(rows_of(wb['Price Band Changes']), 'Report Date', stop_blank=False)
