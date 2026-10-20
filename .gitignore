@@ -8,3 +8,8 @@ pcbridge/ScreenerBridge/bridge.log
 node_modules/
 *.check.js
 __pycache__/
+
+# firebase cli
+.firebase/
+firebase-debug.log
+.vercel/

@@ -1,0 +1,9 @@
+{
+  "hosting": {
+    "public": "web",
+    "ignore": ["**/.*"],
+    "headers": [
+      { "source": "/data/**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  }
+}

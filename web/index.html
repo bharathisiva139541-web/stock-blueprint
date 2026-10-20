@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Blueprint</title>
+<meta name="description" content="Stock Blueprint dashboard - watchlist, results season, patterns, FVG zones, alerts and IPOs from the Stock Blueprint sheet.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>
+  // apply the saved theme before first paint (no flash)
+  try { var t = localStorage.getItem('sb-theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#overview" aria-label="Stock Blueprint home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>Stock Blueprint</span>
+    </a>
+    <span id="updated" class="updated"></span>
+    <button id="theme" class="icon-btn" type="button" aria-label="Switch light / dark theme" title="Light / dark"></button>
+  </div>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#overview" data-tab="overview">Overview</a>
+    <a href="#watchlist" data-tab="watchlist">Watchlist</a>
+    <a href="#results" data-tab="results">Results</a>
+    <a href="#signals" data-tab="signals">Patterns &amp; FVG</a>
+    <a href="#alerts" data-tab="alerts">Alerts &amp; Trades</a>
+    <a href="#markets" data-tab="markets">IPOs &amp; Markets</a>
+  </nav>
+</header>
+
+<main id="app" tabindex="-1">
+  <p class="loading">Loading…</p>
+</main>
+
+<div id="drawer" class="drawer" hidden>
+  <div class="drawer-back" data-close></div>
+  <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <button class="icon-btn drawer-x" type="button" data-close aria-label="Close">✕</button>
+    <div id="drawer-body"></div>
+  </aside>
+</div>
+<div id="tip" class="tip" role="status" hidden></div>
+
+<footer class="foot">
+  Data from the Stock Blueprint Google Sheet. Prices may be delayed. Not investment advice.
+</footer>
+
+<script src="config.js"></script>
+<script src="data/dashboard.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

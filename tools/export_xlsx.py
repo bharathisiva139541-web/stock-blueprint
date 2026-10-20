@@ -1,0 +1,272 @@
+"""Export a downloaded copy of the Stock Blueprint sheet (.xlsx) into the
+website's data file  web/data/dashboard.js  (sets window.SB_DATA).
+
+    python tools/export_xlsx.py "Copy of Stock Blueprint.xlsx"
+
+Only market / signal tabs are exported. Personal tabs (Portfolio, Risk
+Manager, Control Panel, Trade Dashboard capital figures, logs with e-mails)
+are never read, because the website is public.
+"""
+import datetime as dt
+import json
+import os
+import re
+import sys
+
+import openpyxl
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(HERE, '..', 'web', 'data', 'dashboard.js')
+
+ERRORS = ('#N/A', '#DIV/0!', '#REF!', '#VALUE!', '#ERROR!', '#NAME?', '#NUM!', '#NULL!', 'Loading...')
+
+# Main tab: (output key, header name in row 2, kind)
+#   kind: str | num | pct (already a percent number) | frac (fraction -> x100) | date | bool
+MAIN_COLS = [
+    ('sym', 'SYMBOL', 'str'),
+    ('name', 'StockName', 'str'),
+    ('sector', 'Sector', 'str'),
+    ('ind', 'Basic Industry', 'str'),
+    ('idx', 'INDICES', 'str'),
+    ('rdate', 'Result Date', 'date'),
+    ('done', 'Checkbox', 'bool'),
+    ('mcap', 'MCAP(CR)', 'num'),
+    ('price', 'MKT Price', 'num'),
+    ('chg', '% Change', 'pct'),
+    ('d10', '10 day%', 'frac'),
+    ('d30', '30Day%', 'frac'),
+    ('hi52', '52W High', 'num'),
+    ('down52', '% down', 'frac'),
+    ('pe', 'PE Ratio', 'num'),
+    ('ipe', 'Industry PE', 'num'),
+    ('pevs', 'PE vs Industry PE', 'num'),
+    ('epsg', 'TTM EPS Growth', 'num'),
+    ('peg', 'TTM PEG Ratio', 'num'),
+    ('tgt', 'TargetPrice', 'num'),
+    ('sig', 'TTM Signal', 'str'),
+    ('up', 'Upside Potential', 'frac'),
+    ('qrev', 'QoQ[Revenue Growth%}', 'pct'),
+    ('qnp', 'QoQ[NP Growth %]', 'pct'),
+    ('yrev', 'YoY[Revenue Growth %]', 'pct'),
+    ('ynp', 'YoY[NP Growth %]', 'pct'),
+    ('promo', 'Promotor Holding', 'str'),
+    ('fii', 'FII Activity', 'str'),
+    ('opmy', 'OPM YoY%', 'str'),
+    ('opmq', 'OPM QoQ%', 'str'),
+    ('pat', 'Pattern', 'str'),
+    ('fvg', 'FVG', 'str'),
+    ('e10', '10 EMA', 'str'),
+    ('e21', '21 EMA', 'str'),
+    ('zone', 'Zone', 'str'),
+    ('volchg', '%vol Change', 'frac'),
+    ('ipo', 'IPO Level', 'str'),
+]
+
+
+def clean(v, kind='auto'):
+    if v is None:
+        return None
+    if isinstance(v, str):
+        s = v.strip()
+        if s == '' or s in ERRORS or s.startswith('#'):
+            return None
+        if kind in ('num', 'pct', 'frac'):
+            try:
+                v = float(s.replace(',', ''))
+            except ValueError:
+                return None
+        else:
+            return text_date(s) or s
+    if isinstance(v, bool):
+        return v if kind in ('bool', 'auto') else None
+    if isinstance(v, (dt.datetime, dt.date)):
+        if kind in ('num', 'pct', 'frac'):
+            return None
+        if isinstance(v, dt.datetime) and (v.hour or v.minute):
+            return v.strftime('%Y-%m-%d %H:%M')
+        return v.strftime('%Y-%m-%d')
+    if isinstance(v, (int, float)):
+        if kind == 'frac':
+            v = v * 100
+        if kind in ('str', 'date'):
+            return str(v)
+        return round(float(v), 4)
+    return str(v)
+
+
+TEXT_DATES = ('%d-%b-%Y %H:%M', '%d-%b-%Y', '%d-%b-%y', '%d/%m/%Y %H:%M', '%d/%m/%Y')
+
+
+def text_date(s):
+    """'21-Aug-2026', '01/10/2026 20:23' ... -> ISO text (sorts correctly)."""
+    if not (8 <= len(s) <= 17 and s[:2].isdigit()):
+        return None
+    for f in TEXT_DATES:
+        try:
+            d = dt.datetime.strptime(s, f)
+        except ValueError:
+            continue
+        return d.strftime('%Y-%m-%d %H:%M' if '%H' in f else '%Y-%m-%d')
+    return None
+
+
+def norm(h):
+    return ' '.join(str(h or '').split()).lower()
+
+
+class Rows(list):
+    """Cell values row by row, plus .fmt: the matching number formats."""
+    fmt = ()
+
+
+def rows_of(ws):
+    # read-only mode returns short (or empty) tuples for sparse rows: pad to 1
+    out, fmt = Rows(), []
+    for r in ws.iter_rows():
+        vals = [c.value for c in r] or [None]
+        out.append(vals)
+        fmt.append([getattr(c, 'number_format', 'General') for c in r] or ['General'])
+    out.fmt = fmt
+    return out
+
+
+def is_frac_format(f):
+    """True for formats such as 0.00% that show a fraction as a percent
+    (a quoted "%" is a literal sign: the value is already a percent)."""
+    f = re.sub(r'"[^"]*"', '', str(f or ''))
+    f = re.sub(r'\\.', '', f)
+    return '%' in f
+
+
+def col_kind(rows, idxs, j):
+    """Infer frac/auto for column j from its first numeric data cell
+    (idxs = the table's own data row numbers, so nothing below it counts)."""
+    for i in idxs[:200]:
+        r = rows[i]
+        if j < len(r) and isinstance(r[j], (int, float)) and not isinstance(r[j], bool):
+            fr = rows.fmt[i] if getattr(rows, 'fmt', None) and i < len(rows.fmt) else []
+            return 'frac' if j < len(fr) and is_frac_format(fr[j]) else 'auto'
+    return 'auto'
+
+
+def table(rows, first_header, start=0, stop_blank=True, kinds=None, max_rows=None):
+    """Find the row whose first cell is `first_header` (at or after `start`),
+    read headers from it and data rows below until the first blank first cell."""
+    for i in range(start, len(rows)):
+        if rows[i] and norm(rows[i][0]) == norm(first_header):
+            hdr = [str(h).strip() if h is not None else '' for h in rows[i]]
+            while hdr and not hdr[-1]:
+                hdr.pop()
+            idxs = []
+            for k in range(i + 1, len(rows)):
+                r = rows[k]
+                if not r or r[0] in (None, ''):
+                    if stop_blank:
+                        break
+                    continue
+                idxs.append(k)
+                if max_rows and len(idxs) >= max_rows:
+                    break
+            kinds = kinds or {}
+            ks = [kinds.get(h) or col_kind(rows, idxs, j) for j, h in enumerate(hdr)]
+            out = [[clean(rows[k][j] if j < len(rows[k]) else None, ks[j]) for j in range(len(hdr))] for k in idxs]
+            return {'cols': hdr, 'rows': out}
+    return {'cols': [], 'rows': []}
+
+
+def export(path):
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    data = {'generated': dt.datetime.now().strftime('%Y-%m-%d %H:%M'), 'source': os.path.basename(path)}
+
+    # Main
+    m = rows_of(wb['Main'])
+    hdr = [norm(h) for h in m[1]]
+    idx = {}
+    for key, name, kind in MAIN_COLS:
+        try:
+            idx[key] = (hdr.index(norm(name)), kind)
+        except ValueError:
+            print('  ! Main column not found:', name)
+    sym_i = idx['sym'][0]
+    stocks = []
+    for r in m[2:]:
+        if sym_i >= len(r) or r[sym_i] in (None, ''):
+            continue
+        stocks.append([clean(r[i] if i < len(r) else None, k) for (i, k) in idx.values()])
+    data['main'] = {'cols': list(idx.keys()), 'rows': stocks}
+
+    # Results season
+    data['resultsTracker'] = table(rows_of(wb['Results Tracker']), 'Symbol', stop_blank=False)
+    rp = rows_of(wb['Results Performance'])
+    perf = {'note': clean(rp[1][0]) if len(rp) > 1 else None, 'seasons': [], 'verdicts': [], 'lines': []}
+    for i in range(len(rp)):
+        if rp[i] and norm(rp[i][0]) == 'season':
+            j = i + 1
+            while j < len(rp) and norm(rp[j][0]) != 'symbol':
+                r = rp[j]
+                if r and r[0] not in (None, '') and len(r) > 5 and r[1] is not None and not str(r[0]).startswith(('Best', 'Worst')):
+                    perf['seasons'].append({'season': clean(r[0]), 'tracked': clean(r[1], 'num'),
+                                            'avg': clean(r[2], 'frac'), 'median': clean(r[3], 'frac'),
+                                            'above': clean(r[4]), 'soldOff': clean(r[5], 'num')})
+                elif r and r[0]:
+                    perf['lines'].append(clean(r[0]))
+                if r and len(r) > 11 and r[7] not in (None, ''):
+                    perf['verdicts'].append({'verdict': clean(r[7]), 'stocks': clean(r[8], 'num'),
+                                             'avg': clean(r[9], 'frac'), 'positive': clean(r[10], 'frac'),
+                                             'day': clean(r[11], 'frac')})
+                j += 1
+            break
+    perf['table'] = table(rp, 'Symbol')
+    data['resultsPerf'] = perf
+    # "as of" = when the sheet last refreshed (from the Results Performance note)
+    m_ = re.search(r'last refreshed (\d{2}/\d{2}/\d{4} \d{2}:\d{2})', perf['note'] or '')
+    if m_:
+        data['asOf'] = text_date(m_.group(1))
+
+    # Signals
+    pd_ = rows_of(wb['Pattern Dashboard'])
+    kp = {}
+    for i in range(len(pd_)):
+        if pd_[i] and norm(pd_[i][0]) == 'stocks scanned':
+            kp = {str(h): clean(v) for h, v in zip(pd_[i], pd_[i + 1]) if h}
+            break
+    sigk = {k: 'frac' for k in ('Avg % Change', '% Advancing', 'Avg 10-day %', 'Avg 30-day %')}
+    clk = {'Avg % Change': 'frac'}
+    stk = {k: 'frac' for k in ('% Change', '10-day %', '30-day %')}
+    data['patterns'] = {
+        'kpis': kp,
+        'signals': table(pd_, 'Type', kinds=sigk),
+        'clusters': table(pd_, 'Basic Industry', kinds=clk),
+        'stocks': table(pd_, 'Symbol', kinds=stk),
+    }
+    data['fvg'] = table(rows_of(wb['UnmitigatedFVG']), 'Symbol', stop_blank=False)
+    data['gapup'] = table(rows_of(wb['GapUpFVG']), 'Symbol', stop_blank=False)
+    data['watchLog'] = table(rows_of(wb['Signal Watchlist Log']), 'Date Flagged', stop_blank=False)
+
+    # Alerts & trades (levels and outcomes only - no capital / quantities)
+    data['alerts'] = table(rows_of(wb['Alert Log']), 'Date', stop_blank=False)
+    data['trades'] = table(rows_of(wb['Trade Log']), 'Resolved Date', stop_blank=False)
+    td = rows_of(wb['Trade Dashboard'])
+    stats = []
+    for r in td:
+        if r and r[0] and len(r) > 1 and isinstance(r[1], (int, float)) and not isinstance(r[1], bool):
+            stats.append([str(r[0]).strip(), round(float(r[1]), 2)])
+    data['tradeStats'] = stats
+
+    # Markets
+    data['indices'] = table(rows_of(wb['Indextracker']), 'NSE Symbol', stop_blank=False)
+    data['ipos'] = table(rows_of(wb['IPOs']), 'NSE SYMBOL', stop_blank=False)
+    data['newIpos'] = table(rows_of(wb['New IPOs']), 'COMPANY NAME', stop_blank=False, max_rows=300)
+    data['priceBands'] = table(rows_of(wb['Price Band Changes']), 'Report Date', stop_blank=False)
+
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    js = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+    with open(OUT, 'w', encoding='utf-8') as f:
+        f.write('// Generated by tools/export_xlsx.py - do not edit by hand\nwindow.SB_DATA = ' + js + ';\n')
+    print('wrote', os.path.normpath(OUT), f'{len(js) / 1024:.0f} KB,', len(stocks), 'stocks')
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    export(sys.argv[1])
