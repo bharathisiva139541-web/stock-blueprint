@@ -946,6 +946,7 @@ function onOpen() {
         .addSeparator()
         .addItem('PC Bridge: setup info (address + secret code)', 'runBridgeSetupInfo')
         .addItem('PC Bridge: status', 'runBridgeStatus')
+        .addItem('Website feed: setup info (read-only token)', 'runFeedSetupInfo')
         .addSeparator()
         .addItem('Selected row(s)', 'runQuarterlyTrendForSelection')
         .addItem('Paste symbol list...', 'runQuarterlyTrendForSymbolPrompt')
@@ -8333,6 +8334,8 @@ function doGet(e) {
 function doPost(e) {
   let req = null;
   try { req = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { req = null; }
+  // Website feed: read-only, its own token (never the bridge token, which can write).
+  if (req && req.action === 'snapshot') return ab_feedSnapshot_(req);
   const real = ab_bridgeToken_(false);
   if (!req || !real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
 
@@ -8378,6 +8381,68 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------------------------------------------------------------------
+// WEBSITE FEED (read-only). The dashboard's server (Vercel api/, env
+// SHEET_FEED_URL + SHEET_FEED_TOKEN) posts {token, action:'snapshot'} and
+// gets Main's symbol / MKT Price / % Change. Prices are GOOGLEFINANCE, so
+// the site labels them DELAYED (~20 min). Separate token from the PC
+// bridge: this one can only read.
+// ---------------------------------------------------------------------
+const AB_FEED_TOKEN_PROP = 'AB_FEED_TOKEN';
+
+function ab_feedToken_(create) {
+  const props = PropertiesService.getScriptProperties();
+  let t = props.getProperty(AB_FEED_TOKEN_PROP) || '';
+  if (!t && create) {
+    t = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+    props.setProperty(AB_FEED_TOKEN_PROP, t);
+  }
+  return t;
+}
+
+function ab_feedSnapshot_(req) {
+  const real = ab_feedToken_(false);
+  if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
+  try {
+    const layout = ab_getMainLayout_();
+    const rows = [];
+    for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
+      const row = layout.data[r];
+      const sym = String(row[layout.symbol] || '').trim().toUpperCase();
+      if (!sym) continue;                     // blank rows inside the range are skipped, not a stop
+      const num = function (v) { return (v === '' || v === null || v === undefined) ? NaN : Number(v); };
+      const price = num(row[layout.mktPrice]);
+      const chg = layout.pctChange === -1 ? NaN : num(row[layout.pctChange]);
+      rows.push([sym, isFinite(price) && price > 0 ? price : null, isFinite(chg) ? chg : null]);
+    }
+    return ab_bridgeJson_({
+      ok: true,
+      asOf: Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm'),
+      delayMinutes: 20,
+      source: 'GOOGLEFINANCE via Stock Blueprint sheet',
+      cols: ['sym', 'price', 'chg'],
+      rows: rows
+    });
+  } catch (err) {
+    return ab_bridgeJson_({ ok: false, error: err.message });
+  }
+}
+
+/** Menu: shows the read-only token for the website's server settings. */
+function runFeedSetupInfo() {
+  const ui = SpreadsheetApp.getUi();
+  const token = ab_feedToken_(true);
+  ui.alert('Website feed - setup info',
+    'READ-ONLY FEED TOKEN (copy exactly):\n' + token + '\n\n' +
+    'In Vercel > your project > Settings > Environment Variables add:\n' +
+    '  MARKET_DATA_PROVIDER = sheet\n' +
+    '  SHEET_FEED_URL = the same web app address the PC bridge uses (ends with /exec)\n' +
+    '  SHEET_FEED_TOKEN = the token above\n' +
+    'then redeploy the site. This token can only read prices; it cannot change the sheet.\n\n' +
+    'The web app must be on the NEW version of this code: Deploy > Manage deployments > pencil > Version: New version > Deploy.',
+    ui.ButtonSet.OK);
 }
 
 /** Menu: shows the web app address and the secret code to type into the PC program. */

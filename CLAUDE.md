@@ -54,3 +54,11 @@ You are taking over an existing Google Apps Script project called **"AUTO OHLC +
 - The latest `Code.gs` I downloaded from the chat (most recent delivery).
 - `ScreenerBridge.zip` (Python bridge) from the earlier chat delivery.
 - Optionally the Tamil guidebook (`Stock_Blueprint_Guidebook_Tamil.docx/.pdf`).
+
+## 8. Website (web/, api/, tools/) - added Oct 2026
+- Static dashboard in `web/` (no build), engine modules in `web/lib/` ported 1:1 from Code.gs and verified by `tests/sheet-parity.test.js` (patterns col W, FVG col X, EMA cols Y/AA, ATR col Z, confluence). If Code.gs rules change, port the change to `web/lib/` and keep the parity tests green.
+- Data: `tools/export_xlsx.py <export.xlsx>` -> `web/data/dashboard.js` + `history.js`; `node tools/analyze_workbook.js <export.xlsx>` -> `web/data/workbook-analysis.js`.
+- PRIVACY (repo and site are public): never export Portfolio, Risk Manager, Control Panel, Trade Log, Trade Dashboard, Entry alerts, entry/stop/qty columns, e-mails or tokens. Viewer data (risk settings, journal, alert rules, strategy edits) lives only in the browser's localStorage. `npm run build` scans web/data for personal markers.
+- Themes: light (default) + dark via `:root[data-theme="dark"]` tokens in style.css; never hard-code colours.
+- Code.gs `doPost` action `snapshot` (read-only, token `AB_FEED_TOKEN`, menu "Website feed: setup info") feeds the Vercel `sheet` provider; it needs a New version deploy of the EXISTING web app.
+- Checks: `npm test && npm run lint && npm run typecheck && npm run build`. Docs: docs/STRATEGY.md, docs/MARKET_DATA.md, docs/DEPLOY.md.
