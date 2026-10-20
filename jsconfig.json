@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "strict": false,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": [
+    "web/lib/**/*.js",
+    "api/**/*.js",
+    "types/**/*.d.ts"
+  ]
+}
