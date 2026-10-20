@@ -1,0 +1,10 @@
+# secrets - never commit
+pcbridge/ScreenerBridge/config.json
+pcbridge/ScreenerBridge/bridge.log
+.clasprc.json
+*.token
+.env
+# local scratch
+node_modules/
+*.check.js
+__pycache__/
