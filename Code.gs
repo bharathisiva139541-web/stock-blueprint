@@ -947,6 +947,8 @@ function onOpen() {
         .addItem('PC Bridge: setup info (address + secret code)', 'runBridgeSetupInfo')
         .addItem('PC Bridge: status', 'runBridgeStatus')
         .addItem('Website feed: setup info (read-only token)', 'runFeedSetupInfo')
+        .addItem('Website feed: rebuild now', 'runSiteFeedRebuildNow')
+        .addItem('Website feed: stop auto-refresh', 'runSiteFeedStopAutoRefresh')
         .addSeparator()
         .addItem('Selected row(s)', 'runQuarterlyTrendForSelection')
         .addItem('Paste symbol list...', 'runQuarterlyTrendForSymbolPrompt')
@@ -8387,9 +8389,12 @@ function doPost(e) {
 // ---------------------------------------------------------------------
 // WEBSITE FEED (read-only). The dashboard's server (Vercel api/, env
 // SHEET_FEED_URL + SHEET_FEED_TOKEN) posts {token, action:'snapshot'} and
-// gets Main's symbol / MKT Price / % Change. Prices are GOOGLEFINANCE, so
-// the site labels them DELAYED (~20 min). Separate token from the PC
-// bridge: this one can only read.
+// gets Main's symbol / MKT Price / % Change (only the header rows and
+// those 3 columns are read). Prices are GOOGLEFINANCE, so the site labels
+// them DELAYED (~20 min). Separate token from the PC bridge: this one can
+// never change the owner's data - it reads the sheet and keeps only the
+// website's own stored copy (hidden tab Site_Feed, action 'site') and that
+// copy's 30-minute refresh trigger.
 // ---------------------------------------------------------------------
 const AB_FEED_TOKEN_PROP = 'AB_FEED_TOKEN';
 
@@ -8411,7 +8416,7 @@ function ab_feedSnapshot_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
   try {
-    const layout = ab_getMainLayout_();
+    const layout = ab_feedPriceLayout_();
     const rows = [];
     for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
       const row = layout.data[r];
@@ -8439,8 +8444,58 @@ function ab_feedSnapshot_(req) {
   }
 }
 
+/**
+ * Just what the price snapshot needs from Main: the header row (found in
+ * the first 10 rows by the same rules as ab_getMainLayout_) and the
+ * SYMBOL / MKT Price / % Change cells of the rows below it. Reading the
+ * whole tab (~1,800 rows x 64 formula columns) made every call slow.
+ * Returns the ab_getMainLayout_ fields the snapshot uses, with the same
+ * errors; data[r] holds only those three cells of row r.
+ */
+function ab_feedPriceLayout_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MAIN_SHEET);
+  if (!sh) throw new Error('Could not find a "' + AB_MAIN_SHEET + '" tab.');
+  // the same rows / columns getDataRange() covers
+  const lastRow = Math.max(sh.getLastRow(), 1), lastCol = Math.max(sh.getLastColumn(), 1);
+  const head = sh.getRange(1, 1, Math.min(10, lastRow), lastCol).getValues();
+  let headerRowIdx = -1;
+  for (let r = 0; r < head.length; r++) {
+    const row = head[r].map(v => String(v).trim());
+    if (row.indexOf('StockName') !== -1 && row.indexOf('SYMBOL') !== -1) {
+      headerRowIdx = r;
+      break;
+    }
+  }
+  if (headerRowIdx === -1) throw new Error('Could not find the StockName/SYMBOL header row in Main.');
+  const header = head[headerRowIdx].map(v => String(v).trim());
+  function col(name) { return header.indexOf(name); }
+  // ab_getMainLayout_ refuses a Main without its alert columns - so does this
+  const missing = ['Price Fall Alert Price', 'Breakout Alert Price', 'Triggered Y/N'].filter(function (h) { return col(h) === -1; });
+  if (missing.length) throw new Error('Main is missing expected alert column(s): ' + missing.join(', '));
+
+  const layout = { headerRowIdx: headerRowIdx, symbol: col('SYMBOL'), mktPrice: col('MKT Price'), pctChange: col('% Change'), data: [] };
+  for (let r = 0; r < lastRow; r++) layout.data.push([]);
+  const n = lastRow - headerRowIdx - 1;
+  if (n < 1) return layout;
+  // one read per run of side-by-side columns (MKT Price and % Change usually are)
+  const want = [layout.symbol, layout.mktPrice, layout.pctChange]
+    .filter(function (c, i, a) { return c !== -1 && a.indexOf(c) === i; })
+    .sort(function (a, b) { return a - b; });
+  for (let i = 0; i < want.length;) {
+    let j = i;
+    while (j + 1 < want.length && want[j + 1] === want[j] + 1) j++;
+    const vals = sh.getRange(headerRowIdx + 2, want[i] + 1, n, j - i + 1).getValues();
+    for (let r = 0; r < n; r++) {
+      for (let k = i; k <= j; k++) layout.data[headerRowIdx + 1 + r][want[k]] = vals[r][k - i];
+    }
+    i = j + 1;
+  }
+  return layout;
+}
+
 // ---------------------------------------------------------------------
-// WEBSITE SITE FEED (read-only, same token as 'snapshot'). The website's
+// WEBSITE SITE FEED (same token as 'snapshot'; never changes the owner's
+// data, writes only its stored copy - see STORED COPY below). The website's
 // server (Vercel api/site) posts {token, action:'site', part} and gets
 //   part 'main'    -> the object tools/export_xlsx.py export() writes as
 //                     window.SB_DATA (web/data/dashboard.js)
@@ -8452,8 +8507,9 @@ function ab_feedSnapshot_(req) {
 // Portfolio, Risk Manager, Control Panel, Trade Log, Trade Dashboard,
 // 'Entry' alerts and the entry / stop / qty columns are never sent; Trade
 // Log, Portfolio and Risk Manager are read ONLY for their symbol column,
-// to leave those symbols' alerts out. No lock (it never writes), so it
-// can't hold up the PC bridge or the alert job.
+// to leave those symbols' alerts out. No lock (it writes only its own
+// stored copy, see STORED COPY below), so it can't hold up the PC bridge
+// or the alert job.
 // Check against a downloaded copy: node tools/compare_site_feed.js <file.xlsx>
 // ---------------------------------------------------------------------
 const AB_SITE_SOURCE = 'Google Sheet (live feed)';
@@ -8500,17 +8556,27 @@ const AB_SITE_TEXT_DATES = (function () {
 })();
 const AB_SITE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
+/**
+ * doPost action 'site'. Answers from the STORED copy (hidden tab Site_Feed,
+ * kept fresh by ab_siteFeedTrigger_ - see "WEBSITE SITE FEED - STORED
+ * COPY" below) without reading Main / History30: building the feed takes
+ * 30+ s, longer than the website's server waits. Only when no stored copy
+ * exists yet is the part built on demand (slow once; it is stored too).
+ */
 function ab_feedSite_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
   const part = req.part;
   if (part !== 'main' && part !== 'history') return ab_bridgeJson_({ ok: false, error: 'unknown part' });
+  try { ab_siteFeedTriggerCheck_(); } catch (e) { /* never break the answer over the trigger */ }
   try {
-    const readAt = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const cx = { ss: ss, tz: ss.getSpreadsheetTimeZone() || AB_TZ, tabs: {}, dates: {} };
-    const data = part === 'main' ? ab_site_main_(cx, readAt) : ab_site_history_(cx);
-    return ab_bridgeJson_({ ok: true, part: part, readAt: readAt, tz: AB_TZ, data: data });
+    const stored = ab_siteFeedRead_(part);
+    if (stored) return ab_siteFeedReply_(part, stored.meta, stored.text, true);
+    if (ab_siteBuildRunning_()) return ab_bridgeJson_({ ok: false, error: AB_SITE_PREPARING });
+    const got = {};
+    const sum = ab_siteBuild_([part], 'request', { out: got })[part];
+    if (got[part]) return ab_siteFeedReply_(part, got[part], got[part].text, false);
+    return ab_bridgeJson_({ ok: false, error: sum.busy ? AB_SITE_PREPARING : sum.error });
   } catch (err) {
     return ab_bridgeJson_({ ok: false, error: err.message });
   }
@@ -8961,7 +9027,384 @@ function ab_site_isFracFormat_(f) {
 
 function ab_site_isBlank_(v) { return v === null || v === undefined || v === ''; }
 
-/** Menu: shows the read-only token for the website's server settings. */
+// ---------------------------------------------------------------------
+// WEBSITE SITE FEED - STORED COPY. Building part 'main' / 'history' reads
+// big tabs and takes 30+ s in Apps Script (a page load sends several
+// requests at once and they slow each other down) - longer than the
+// website's server waits (25 s). So the feed is built AHEAD of time and
+// stored, and doPost 'site' hands out the stored text at once.
+//   Hidden tab Site_Feed: col 1 / 2 = main slot 0 / 1, col 3 / 4 = history
+//   slot 0 / 1. A slot holds JSON.stringify(data) - exactly what
+//   ab_site_main_ / ab_site_history_ return - in chunks of <= 45,000
+//   characters (a cell holds 50,000), one per row from row 1. Every cell
+//   starts with '~<build id>~', so Sheets never takes a chunk for a
+//   number, date or formula and chunks of two builds can't be mixed up.
+//   Script Properties AB_SITE_FEED_META_MAIN / _HISTORY describe the copy:
+//   { slot, chunks, length, id, readAt, readMs, builtAt, buildMs, by, fmt }
+//   (readAt / builtAt 'yyyy-MM-dd HH:mm' IST; readAt = when the sheet was
+//   read, the time the website's DELAYED / EOD / CACHED label uses; fmt =
+//   AB_SITE_FEED_FORMAT of the code that built it).
+// A build writes the slot NOT in use, then points the meta at it, so a
+// reader never sees half-written data; a failed build (e.g. History30 is
+// being rewritten) keeps the previous copy. No LockService (the 5-minute
+// alert job and the PC bridge use the script lock): Script Property
+// AB_SITE_BUILDING_SINCE ('<ms>:<run id>') stops two builds overlapping. A
+// property is not a lock (two runs can both find it empty), so a build only
+// points the meta at its slot while the mark and the slot's first cell are
+// still its own. Nothing is written anywhere but the Site_Feed tab and these
+// properties.
+// Kept fresh by the time-driven ab_siteFeedTrigger_ (every 30 min; rules
+// in ab_siteFeedDue_). Menu: 3. Quarterly Results & Trend Tags > Website
+// feed: rebuild now / stop auto-refresh.
+// The trigger and the menu run the SAVED code, doPost the DEPLOYED version:
+// saving (clasp push) a Code.gs that changes the feed changes what the site
+// gets within ~30 min, even before the New version deploy. So keep the
+// storage layout readable by the older deployed reader, and bump
+// AB_SITE_FEED_FORMAT whenever ab_site_main_ / ab_site_history_ output or
+// the allow-list changes: a copy built by older code is then rebuilt by the
+// next trigger run and never served by the newer deployed version.
+// ---------------------------------------------------------------------
+const AB_SITE_FEED_FORMAT = 1;
+const AB_SITE_FEED_SHEET = 'Site_Feed';
+const AB_SITE_FEED_PARTS = ['main', 'history'];
+const AB_SITE_FEED_CHUNK = 45000;
+const AB_SITE_FEED_MARK = '~';
+const AB_SITE_FEED_META_PROPS = { main: 'AB_SITE_FEED_META_MAIN', history: 'AB_SITE_FEED_META_HISTORY' };
+const AB_SITE_BUILDING_PROP = 'AB_SITE_BUILDING_SINCE';
+const AB_SITE_BUILD_STALE_MS = 10 * 60 * 1000;          // a build "running" longer than this has died
+const AB_SITE_PREPARING = 'site feed is being prepared - try again in a minute';
+const AB_SITE_TRIGGER_FN = 'ab_siteFeedTrigger_';
+const AB_SITE_TRIGGER_CHECK_PROP = 'AB_SITE_FEED_TRIGGER_CHECKED';
+const AB_SITE_TRIGGER_CHECK_MS = 6 * 60 * 60 * 1000;    // doPost looks at the trigger at most this often
+const AB_SITE_AUTO_OFF_PROP = 'AB_SITE_FEED_AUTO_OFF';  // set by "stop auto-refresh"
+const AB_SITE_BUDGET_MS = 4.5 * 60 * 1000;              // a trigger run starts no build after this
+const AB_SITE_SETTLE_MIN = 16 * 60;                     // 16:00 IST: api/'s SETTLE_TIME, prices hold the close from here
+const AB_SITE_PHASE_SLACK_MIN = 25;                     // a daily phase: nearMinute +/-15 min, runs <= 6 min, + margin
+
+/** The Site_Feed tab (made on first use: hidden, 4 columns), or null. */
+function ab_siteFeedSheet_(create) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_SITE_FEED_SHEET);
+  if (!sh && create) {
+    let active = null;
+    try { active = ss.getActiveSheet(); } catch (e) { active = null; }
+    try {
+      sh = ss.insertSheet(AB_SITE_FEED_SHEET, ss.getNumSheets());
+    } catch (e) {
+      // another run (the other part's request, the trigger) made it a moment ago
+      sh = ss.getSheetByName(AB_SITE_FEED_SHEET);
+      if (!sh) throw e;
+      return sh;
+    }
+    // cosmetic, each on its own: fewer cells against the file's limit, back to
+    // the tab the owner was on (insertSheet switched to the new one), hidden
+    try { if (sh.getMaxColumns() > 4) sh.deleteColumns(5, sh.getMaxColumns() - 4); } catch (e) { /* cosmetic */ }
+    try { if (active) active.activate(); } catch (e) { /* no UI (web app / trigger) */ }
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+function ab_siteFeedCol_(part, slot) { return (part === 'main' ? 1 : 3) + slot; }
+
+/** The stored copy's description for `part`, or null when there is none. */
+function ab_siteFeedMeta_(part) {
+  const raw = PropertiesService.getScriptProperties().getProperty(AB_SITE_FEED_META_PROPS[part]);
+  if (!raw) return null;
+  try {
+    const m = JSON.parse(raw);
+    return m && (m.slot === 0 || m.slot === 1) && m.chunks >= 1 && m.length >= 1 ? m : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** True when the copy was built by code with an older AB_SITE_FEED_FORMAT (or before it existed). */
+function ab_siteFeedOldFormat_(meta) {
+  return (Number(meta.fmt) || 0) < AB_SITE_FEED_FORMAT;
+}
+
+/**
+ * The stored text of `part` as { text, meta }, or null when there is none,
+ * it was built by older code (AB_SITE_FEED_FORMAT) or it doesn't add up (a
+ * chunk of another build, a different total length). A NEWER format is
+ * served: that is the saved code's trigger running ahead of the deployment.
+ */
+function ab_siteFeedRead_(part) {
+  const meta = ab_siteFeedMeta_(part);
+  if (!meta || ab_siteFeedOldFormat_(meta)) return null;
+  try {
+    const sh = ab_siteFeedSheet_(false);
+    if (!sh) return null;
+    const vals = sh.getRange(1, ab_siteFeedCol_(part, meta.slot), meta.chunks, 1).getValues();
+    const tag = AB_SITE_FEED_MARK + (meta.id || '') + AB_SITE_FEED_MARK;
+    const pieces = [];
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i][0];
+      if (typeof v !== 'string' || v.slice(0, tag.length) !== tag) return null;
+      pieces.push(v.slice(tag.length));
+    }
+    const text = pieces.join('');
+    return text.length === meta.length ? { text: text, meta: meta } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** `text` in pieces of <= AB_SITE_FEED_CHUNK characters, never splitting an emoji (surrogate pair). */
+function ab_siteFeedChunks_(text) {
+  const out = [];
+  for (let i = 0; i < text.length;) {
+    let j = Math.min(i + AB_SITE_FEED_CHUNK, text.length);
+    const c = text.charCodeAt(j - 1);
+    if (j < text.length && c >= 0xD800 && c <= 0xDBFF) j--;
+    out.push(text.slice(i, j));
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Writes `text` into the free slot of `part`, then points the meta at it and
+ * returns the meta. info: { readAt, readMs, builtAt, buildMs, by }.
+ * mark (ab_siteBuild_'s AB_SITE_BUILDING_SINCE value): when another build
+ * has taken over meanwhile - the mark or the slot's first cell is no longer
+ * this build's - the meta is left as it is and null is returned.
+ */
+function ab_siteFeedStore_(part, text, info, mark) {
+  const sh = ab_siteFeedSheet_(true);
+  const props = PropertiesService.getScriptProperties();
+  const old = ab_siteFeedMeta_(part);
+  const slot = old && old.slot === 0 ? 1 : 0;
+  const col = ab_siteFeedCol_(part, slot);
+  const id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  const tag = AB_SITE_FEED_MARK + id + AB_SITE_FEED_MARK;
+  const chunks = ab_siteFeedChunks_(text);
+  const rows = Math.max(chunks.length, sh.getLastRow());   // '' below the chunks clears an older, longer copy
+  if (sh.getMaxRows() < rows) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
+  const vals = [];
+  for (let i = 0; i < rows; i++) vals.push([i < chunks.length ? tag + chunks[i] : '']);
+  sh.getRange(1, col, rows, 1).setValues(vals);
+  SpreadsheetApp.flush();
+  const first = sh.getRange(1, col).getValue();
+  if (typeof first !== 'string' || first.slice(0, tag.length) !== tag) return null;
+  if (mark && props.getProperty(AB_SITE_BUILDING_PROP) !== mark) return null;
+  const meta = { slot: slot, chunks: chunks.length, length: text.length, id: id, readAt: info.readAt, readMs: info.readMs,
+                 builtAt: info.builtAt, buildMs: info.buildMs, by: info.by, fmt: AB_SITE_FEED_FORMAT };
+  props.setProperty(AB_SITE_FEED_META_PROPS[part], JSON.stringify(meta));
+  return meta;
+}
+
+/** True while another run is building (its AB_SITE_BUILDING_SINCE mark '<ms>:<run id>' is under 10 min old). */
+function ab_siteBuildRunning_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(AB_SITE_BUILDING_PROP) || '';
+  const since = Number(raw.split(':')[0]) || 0;
+  const age = Date.now() - since;
+  return since > 0 && age >= 0 && age < AB_SITE_BUILD_STALE_MS;
+}
+
+/**
+ * Builds `parts` (['main'], ['history'] or both) with ab_site_main_ /
+ * ab_site_history_ and stores them. Returns a short summary:
+ *   { part: { ok:true, ms, bytes, readAt } | { ok:false, error, busy? } }
+ * reason: who asked ('request' | 'auto' | 'menu'), kept in the meta / log.
+ * opt.deadline (ms): a part is only started while its last build time
+ * still fits before it (the first one always is). opt.out = {} receives
+ * { part: { text, readAt, builtAt } } of each part built (even if storing
+ * it failed), for doPost's on-demand answer.
+ */
+function ab_siteBuild_(parts, reason, opt) {
+  opt = opt || {};
+  const out = {};
+  if (ab_siteBuildRunning_()) {
+    parts.forEach(function (p) { out[p] = { ok: false, busy: true, error: 'another build is running' }; });
+    return out;
+  }
+  const props = PropertiesService.getScriptProperties();
+  const mark = Date.now() + ':' + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+  props.setProperty(AB_SITE_BUILDING_PROP, mark);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let started = 0;
+    parts.forEach(function (part) {
+      if (AB_SITE_FEED_PARTS.indexOf(part) === -1) { out[part] = { ok: false, error: 'unknown part' }; return; }
+      const last = ab_siteFeedMeta_(part);
+      const expectMs = last && last.buildMs > 0 ? last.buildMs : 60 * 1000;
+      if (opt.deadline && started && Date.now() + expectMs > opt.deadline) {
+        out[part] = { ok: false, error: 'skipped - no time left in this run' };
+        return;
+      }
+      started++;
+      const t0 = Date.now();
+      let text, info;
+      try {
+        const readAt = Utilities.formatDate(new Date(t0), AB_TZ, 'yyyy-MM-dd HH:mm');
+        const cx = { ss: ss, tz: ss.getSpreadsheetTimeZone() || AB_TZ, tabs: {}, dates: {} };
+        text = JSON.stringify(part === 'main' ? ab_site_main_(cx, readAt) : ab_site_history_(cx));
+        info = { readAt: readAt, readMs: t0, builtAt: Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm'),
+                 buildMs: Date.now() - t0, by: String(reason || '') };
+        if (opt.out) opt.out[part] = { text: text, readAt: info.readAt, builtAt: info.builtAt };
+      } catch (e) {
+        out[part] = { ok: false, error: e.message };
+        return;
+      }
+      try {
+        out[part] = ab_siteFeedStore_(part, text, info, mark)
+          ? { ok: true, ms: Date.now() - t0, bytes: text.length, readAt: info.readAt }
+          : { ok: false, busy: true, error: 'another build is running' };   // it stores its own copy
+      } catch (e) {
+        out[part] = { ok: false, error: 'built but not stored: ' + e.message };
+      }
+    });
+  } finally {
+    // only our own mark: a run that took over keeps its guard
+    if (props.getProperty(AB_SITE_BUILDING_PROP) === mark) props.deleteProperty(AB_SITE_BUILDING_PROP);
+  }
+  Logger.log('Website feed build (' + reason + '): ' + JSON.stringify(out));
+  return out;
+}
+
+/** doPost answer for a stored / just-built text, made without parsing the text again. */
+function ab_siteFeedReply_(part, meta, text, stored) {
+  return ContentService.createTextOutput('{"ok":true,"part":' + JSON.stringify(part) +
+    ',"readAt":' + JSON.stringify(String(meta.readAt || '')) + ',"builtAt":' + JSON.stringify(String(meta.builtAt || '')) +
+    ',"stored":' + (stored ? 'true' : 'false') + ',"tz":' + JSON.stringify(AB_TZ) + ',"data":' + text + '}')
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Is the stored `part` due for a rebuild at nowMs? Always when it was
+ * built by older code (AB_SITE_FEED_FORMAT). Age = since the sheet was
+ * read (IST clock):
+ *   main    - 25 min on weekdays 09:00-16:15 (market hours + GOOGLEFINANCE
+ *             delay) and every day 17:30-21:30 (Results Day ~18:00, the
+ *             evening phases 18:45-19:30); 3 h otherwise. And on weekdays
+ *             once from 16:00 when read before 16:00 today (a read in the
+ *             first half hour after the 15:30 close may hold pre-close
+ *             prices; the website calls it EOD).
+ *   history - 6 h; and once from the evening cutoff (ab_siteEveningMin_,
+ *             ~19:26) when read before it today: by then Phase 1 has
+ *             rewritten History30 and Phase 2 / 3 PatternData's tags.
+ */
+function ab_siteFeedDue_(part, meta, nowMs) {
+  if (!meta || !(meta.readMs > 0) || ab_siteFeedOldFormat_(meta)) return true;
+  const age = nowMs - meta.readMs;
+  const w = Utilities.formatDate(new Date(nowMs), AB_TZ, 'u HH mm yyyy-MM-dd').split(' ');
+  const dow = Number(w[0]), mins = Number(w[1]) * 60 + Number(w[2]);
+  // from minute-of-day m, once: the copy was read before m today
+  const readBefore = function (m) {
+    const hhmm = ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + m % 60).slice(-2);
+    return mins >= m && Utilities.formatDate(new Date(meta.readMs), AB_TZ, 'yyyy-MM-dd HH:mm') < w[3] + ' ' + hhmm;
+  };
+  if (part === 'main') {
+    const busy = (dow <= 5 && mins >= 9 * 60 && mins <= 16 * 60 + 15) || (mins >= 17 * 60 + 30 && mins <= 21 * 60 + 30);
+    return age >= (busy ? 25 : 180) * 60 * 1000 || (dow <= 5 && readBefore(AB_SITE_SETTLE_MIN));
+  }
+  return age >= 6 * 60 * 60 * 1000 || readBefore(ab_siteEveningMin_());
+}
+
+/**
+ * Minute of the day (IST) from which today's evening run has written
+ * History30 (Phase 1) and PatternData's tags (Phase 2, ATR in Phase 3):
+ * the latest of the Control Panel's Phase 1-3 times + AB_SITE_PHASE_SLACK_MIN
+ * (19:01 + 25 = 19:26 by default).
+ */
+function ab_siteEveningMin_() {
+  const at = function (h, m) { return Number(h) * 60 + Number(m); };
+  const last = Math.max(at(AB_DAILY_P1_HOUR, AB_DAILY_P1_MIN), at(AB_DAILY_P2_HOUR, AB_DAILY_P2_MIN),
+                        at(AB_DAILY_P3_HOUR, AB_DAILY_P3_MIN));
+  return isFinite(last) ? Math.min(last + AB_SITE_PHASE_SLACK_MIN, 23 * 60 + 59) : 19 * 60 + 26;
+}
+
+/**
+ * Time-driven, every 30 min (ab_ensureSiteFeedTrigger_): rebuilds the
+ * parts that are due. Runs 48 times a day against Google's daily
+ * trigger-runtime quota, so when nothing is due it only reads two Script
+ * Properties and returns. A run starts no build after ~4.5 minutes.
+ */
+function ab_siteFeedTrigger_(e) {
+  const t0 = Date.now();
+  const due = AB_SITE_FEED_PARTS.filter(function (p) { return ab_siteFeedDue_(p, ab_siteFeedMeta_(p), t0); });
+  if (!due.length || ab_siteBuildRunning_()) return;
+  ab_siteBuild_(due, 'auto', { deadline: t0 + AB_SITE_BUDGET_MS });
+}
+
+/**
+ * Exactly one ab_siteFeedTrigger_ trigger, every 30 minutes (extra copies
+ * are deleted). After creating one it looks again: two requests arriving
+ * together can both find none and both create one.
+ */
+function ab_ensureSiteFeedTrigger_() {
+  const mine = function () {
+    return ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === AB_SITE_TRIGGER_FN; });
+  };
+  let list = mine();
+  const created = !list.length;
+  if (created) {
+    ScriptApp.newTrigger(AB_SITE_TRIGGER_FN).timeBased().everyMinutes(30).create();
+    list = mine();
+  }
+  let removed = 0;
+  for (let i = 1; i < list.length; i++) {
+    try { ScriptApp.deleteTrigger(list[i]); removed++; } catch (e) { /* the other request deleted it already */ }
+  }
+  return { created: created, removed: removed };
+}
+
+/** doPost: makes sure the refresh trigger exists - at most every 6 h, and not after "stop auto-refresh". */
+function ab_siteFeedTriggerCheck_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(AB_SITE_AUTO_OFF_PROP)) return;
+  const last = Number(props.getProperty(AB_SITE_TRIGGER_CHECK_PROP)) || 0;
+  const age = Date.now() - last;
+  if (last && age >= 0 && age < AB_SITE_TRIGGER_CHECK_MS) return;
+  props.setProperty(AB_SITE_TRIGGER_CHECK_PROP, String(Date.now()));   // first: a failing check is not retried on every request
+  ab_ensureSiteFeedTrigger_();
+}
+
+/** Menu: build both parts now and (re)start the 30-minute auto-refresh. Run once after each New version deploy. */
+function runSiteFeedRebuildNow() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty(AB_SITE_AUTO_OFF_PROP);
+  let auto;
+  try {
+    const t = ab_ensureSiteFeedTrigger_();
+    props.setProperty(AB_SITE_TRIGGER_CHECK_PROP, String(Date.now()));
+    auto = 'Auto-refresh: ON - every 30 minutes' + (t.created ? ' (switched on now)' : '') + '.';
+  } catch (e) {
+    auto = 'Auto-refresh could NOT be switched on: ' + e.message;
+  }
+  const r = ab_siteBuild_(AB_SITE_FEED_PARTS, 'menu');
+  const lines = AB_SITE_FEED_PARTS.map(function (p) {
+    const x = r[p];
+    return p + ': ' + (x.ok
+      ? 'OK - ' + Math.max(1, Math.round(x.bytes / 1024)) + ' KB in ' + Math.round(x.ms / 1000) + ' s (sheet read ' + x.readAt + ' IST)'
+      : 'NOT rebuilt - ' + x.error + (x.busy ? ' (try again in a minute)' : '') + '. The previous copy (if any) is still used.');
+  });
+  ui.alert('Website feed - rebuild now',
+    lines.join('\n') + '\n\n' + auto + '\n\n' +
+    'The website gets these stored copies at once (no waiting for the sheet).\n' +
+    'Market hours and evenings: refreshed every ~30 min; otherwise every 3-6 h.',
+    ui.ButtonSet.OK);
+}
+
+/** Menu: remove the refresh trigger (doPost no longer re-creates it until "rebuild now"). */
+function runSiteFeedStopAutoRefresh() {
+  const ui = SpreadsheetApp.getUi();
+  PropertiesService.getScriptProperties().setProperty(AB_SITE_AUTO_OFF_PROP, String(Date.now()));
+  let n = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === AB_SITE_TRIGGER_FN) { ScriptApp.deleteTrigger(t); n++; }
+  });
+  ui.alert('Website feed - auto-refresh stopped',
+    (n ? 'The 30-minute refresh trigger was removed.' : 'No refresh trigger was installed.') + '\n\n' +
+    'The website keeps getting the last stored copy (labelled CACHED once it is old).\n' +
+    'To switch it back on: Website feed: rebuild now.',
+    ui.ButtonSet.OK);
+}
+
+/** Menu: shows the website feed token (it never changes the owner's data) for the website's server settings. */
 function runFeedSetupInfo() {
   const ui = SpreadsheetApp.getUi();
   const token = ab_feedToken_(true);
@@ -8974,10 +9417,13 @@ function runFeedSetupInfo() {
     '  MARKET_DATA_PROVIDER = sheet\n' +
     '  SHEET_FEED_URL = the same web app address the PC bridge uses (ends with /exec)\n' +
     '  SHEET_FEED_TOKEN = the token above\n' +
-    'then redeploy the site. This token can only read; it cannot change the sheet.\n\n' +
+    'then redeploy the site. This token cannot change your data: it reads the sheet and\n' +
+    'only keeps the website\'s own stored copy (hidden tab Site_Feed) and its 30-minute\n' +
+    'refresh trigger.\n\n' +
     'The web app must be on the NEW version of this code - update the EXISTING deployment\n' +
     '(never "New deployment": that changes the address the PC bridge uses):\n' +
-    'Deploy > Manage deployments > pencil > Version: New version > Deploy.',
+    'Deploy > Manage deployments > pencil > Version: New version > Deploy.\n' +
+    'Then run Website feed: rebuild now once (it stores the site data and starts its 30-minute refresh).',
     ui.ButtonSet.OK);
 }
 

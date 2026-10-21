@@ -247,8 +247,10 @@ function setup(at, o) {
   const marketEnv = Object.assign({ MARKET_DATA_PROVIDER: 'sheet' }, env);
   return {
     clock: clock, app: app,
-    /** move the clock (the sheet answers at the new time too) */
+    /** move the clock (the sheet answers at the new time too; Code.gs starts afresh: no stored copy) */
     set: function (s) { clock.t = IST(s); app.at(clock.t); },
+    /** move the clock of both sides, keeping Code.gs's state (stored copy, Script Properties) */
+    tick: function (s) { clock.t = IST(s); app.gs.setNow(clock.t); },
     site: siteApi.createHandler(deps(env)),
     quotes: quotesApi.createHandler(deps(marketEnv)),
     status: statusApi.createHandler(deps(marketEnv))
@@ -539,6 +541,77 @@ test('e2e quotes (option 2): Code.gs snapshot -> api/quotes + api/market-status,
   assert.deepEqual(q.body.errors, [{ symbol: 'NOPE', reason: 'not in the sheet' }]);
   [st, q].forEach(function (x, i) { assertPublic(i ? 'api/quotes' : 'api/market-status', x.text); });
   assertPublic('Code.gs snapshot', s.app.replies[0]);
+});
+
+test('e2e stored copy: the refresh trigger stores the feed; api/site gets it at once, labelled by the build\'s readAt', async () => {
+  const s = setup('2026-10-21 10:30');
+  s.app.gs.call('ab_siteFeedTrigger_');                    // the 30-minute refresh: nothing stored yet, builds both parts
+  const fresh = setup('2026-10-21 10:30');                 // the same sheet read on demand in the same minute
+  const onDemand = { main: (await site(fresh, 'main')).body, history: (await site(fresh, 'history')).body };
+  assert.equal(JSON.parse(fresh.app.replies[0]).stored, false, 'on-demand path');
+
+  s.tick('2026-10-21 10:40');
+  for (const part of ['main', 'history']) {
+    s.app.gs.reads.length = 0;
+    s.app.gs.ranges.length = 0;
+    const res = await site(s, part);
+    const raw = JSON.parse(s.app.replies[s.app.replies.length - 1]);
+    assert.equal(raw.ok, true, raw.error);
+    assert.equal(raw.stored, true, part + ': stored path');
+    assert.equal(raw.readAt, '2026-10-21 10:30');
+    assert.equal(raw.builtAt, '2026-10-21 10:30');
+    assert.deepEqual(s.app.gs.ranges.filter(function (g) { return g.sheet !== 'Site_Feed'; }), [], part + ': no Main / History30 read');
+    const r = res.body;
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(Object.keys(r), ['ok', 'configured', 'part', 'readAt', 'fetchedAt', 'stale', 'session', 'priceState', 'data']);
+    assert.equal(r.readAt, '2026-10-21 10:30', part + ': when the sheet was read, not when it was served');
+    assert.equal(r.fetchedAt, '2026-10-21 10:40');
+    assert.equal(r.stale, false);
+    assert.equal(r.priceState, 'DELAYED');
+    assert.deepEqual(r.data, onDemand[part].data, part + ': the same data as an on-demand read');
+    assertPublic('stored ' + part, res.text);
+    assertPublic('Code.gs stored ' + part, s.app.replies[s.app.replies.length - 1]);
+  }
+  const main = (await site(s, 'main')).body;
+  const b = browser(IST('2026-10-21 10:41'));
+  assert.equal(b.app.validMain(main.data), true);
+  b.app.prepare(main.data, { live: true, resp: main });
+  assert.equal(b.ctx.market.state, 'DELAYED');
+  assert.equal(b.ctx.site.readAt, '2026-10-21 10:30');
+  assert.deepEqual(b.ctx.stocks.map(function (x) { return x.sym; }), SYMS);
+
+  // built after the close: EOD; a copy from the previous session (refresh stopped): CACHED
+  const eve = setup('2026-10-21 18:30');
+  eve.app.gs.call('ab_siteFeedTrigger_');
+  eve.tick('2026-10-21 19:00');
+  const e = (await site(eve, 'main')).body;
+  assert.equal(e.readAt, '2026-10-21 18:30');
+  assert.equal(e.priceState, 'EOD');
+  const old = setup('2026-10-21 15:00');
+  old.app.gs.call('ab_siteFeedTrigger_');
+  old.tick('2026-10-22 10:00');
+  const o = (await site(old, 'main')).body;
+  assert.equal(JSON.parse(old.app.replies[0]).stored, true);
+  assert.equal(o.readAt, '2026-10-21 15:00');
+  assert.equal(o.priceState, 'CACHED', 'an old stored copy is never shown as DELAYED');
+});
+
+test('e2e stored copy: a build already running and nothing stored -> ok:false, the browser keeps its saved copy', async () => {
+  const s = setup(WED_OPEN, { props: Object.assign({ AB_SITE_BUILDING_SINCE: String(IST(WED_OPEN) - 60000) }, PROPS) });
+  const res = await site(s, 'main');
+  assert.deepEqual(JSON.parse(s.app.replies[0]), { ok: false, error: 'site feed is being prepared - try again in a minute' });
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.configured, true);
+  assert.equal(res.headers['cache-control'], cacheLib.unavailableCacheControl());
+  assertPublic('being prepared', res.text);
+  // the build finishes (mark cleared, copy stored): the next request is served from it
+  s.app.gs.props.deleteProperty('AB_SITE_BUILDING_SINCE');
+  s.app.gs.call('ab_siteBuild_', ['main'], 'test');
+  s.tick('2026-10-21 11:01');
+  const ok = (await site(s, 'main')).body;
+  assert.equal(ok.ok, true);
+  assert.equal(ok.readAt, '2026-10-21 11:00');
+  assert.equal(JSON.parse(s.app.replies[1]).stored, true);
 });
 
 test('e2e price state: DELAYED in session and until 16:00, EOD after it, on weekends and holidays', async () => {

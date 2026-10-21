@@ -6,8 +6,10 @@ in one of two ways:
 - **Live feed** (Vercel and the Firebase copy): the page asks the Vercel
   function `api/site` for the sheet's current data. `api/site` reads the
   Google Sheet through the EXISTING Apps Script web app (`Code.gs` action
-  `site`, read-only token) and keeps a copy for 5 minutes (daily candles:
-  30 minutes). Prices are shown as **DELAYED** in market hours and **EOD**
+  `site`, website feed token) and keeps a copy for 5 minutes (daily candles:
+  30 minutes). `Code.gs` answers at once from a stored copy (hidden tab
+  `Site_Feed`) that a 30-minute trigger keeps fresh, because reading the
+  whole sheet takes longer than `api/site` waits. Prices are shown as **DELAYED** in market hours and **EOD**
   after the close - never LIVE (GOOGLEFINANCE is ~20 min behind).
   `api/quotes` (provider `sheet`) refreshes the prices every 5 minutes while
   the market is open.
@@ -41,15 +43,26 @@ With clasp instead: `./tools/check.sh`, then `clasp push`.
 With clasp: `clasp deployments` (find the EXISTING ID), then
 `clasp deploy -i <EXISTING_DEPLOYMENT_ID> -d "site feed"`.
 
-### Step 3 - Copy the read-only website token
+### Step 3 - Copy the website feed token
 
 1. Reload the Google Sheet tab (**F5**) so the menu picks up the new code.
 2. Menu **Auto Bhavcopy → 3. Quarterly Results & Trend Tags → Website feed:
    setup info (read-only token)** (the first time Google may ask you to
    authorise - allow it).
-3. Copy the token exactly. It can only read the sheet; it is not the PC
-   bridge's secret code. The same token feeds the prices (`api/quotes`) and
-   the whole site (`api/site`).
+3. Copy the token exactly. It cannot change your data: it reads the sheet
+   and only keeps the website's own stored copy (hidden tab `Site_Feed`) and
+   its 30-minute refresh trigger. It is not the PC bridge's secret code. The
+   same token feeds the prices (`api/quotes`) and the whole site (`api/site`).
+4. **Once after every New version deploy:** menu **Auto Bhavcopy → 3.
+   Quarterly Results & Trend Tags → Website feed: rebuild now**. It reads the
+   sheet (about a minute), stores the website data in the hidden tab
+   `Site_Feed` and switches on its 30-minute auto-refresh. The box should say
+   **main: OK** and **history: OK** (*history: NOT rebuilt - sheet is
+   updating* while Phase 1 runs: try again later). **Website feed: stop
+   auto-refresh** removes the refresh trigger; *rebuild now* switches it back on.
+   Note: the refresh trigger runs the SAVED code (step 1), so saving a new
+   `Code.gs` can change what the website shows within ~30 minutes, even
+   before the New version deploy.
 
 ### Step 4 - Vercel environment variables
 
@@ -98,7 +111,9 @@ at the Vercel API; after that it shows the live data by itself):
    - *did not return JSON* → the web app's **Who has access** must stay as it
      was (Anyone);
    - *sheet is updating* / *timed out* → Phase 1 is rewriting the sheet; try
-     again in a few minutes.
+     again in a few minutes;
+   - *sheet feed returned an error* (or *timed out*) right after deploying →
+     step 3 point 4 (**Website feed: rebuild now**) was not run yet.
 
 ## 2. Saved copy (optional, on your PC)
 

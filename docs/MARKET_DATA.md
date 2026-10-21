@@ -114,12 +114,15 @@ with the same column keys as `main` in `web/data/dashboard.js` (`sym`,
 missing) is the time the sheet was read. The snapshot is cached for 60 s.
 
 - `Code.gs` answers `snapshot` in `ab_feedSnapshot_` (Main's SYMBOL /
-  MKT Price / % Change). The web app only runs new `Code.gs` after
+  MKT Price / % Change; it reads only Main's first 10 rows to find the
+  header and then just those 3 columns). The web app only runs new `Code.gs` after
   **Deploy > Manage deployments > pencil > Version: New version > Deploy**
   on the EXISTING deployment (never "New deployment": that changes the URL
   the PC bridge uses). An older version answers `bad token` or
   `unknown action`, which the site reports.
-- `SHEET_FEED_TOKEN` is the **separate, read-only** feed token (script
+- `SHEET_FEED_TOKEN` is the **separate** feed token, which never changes the
+  owner's data (it reads the sheet; `site` keeps only its own stored copy in
+  `Site_Feed` and that copy's refresh trigger) (script
   property `AB_FEED_TOKEN`; sheet menu *3. Quarterly Results & Trend Tags >
   Website feed: setup info (read-only token)*), never the PC bridge token:
   the bridge token can also write (`put`, `process`). The same feed token
@@ -146,8 +149,25 @@ GET /api/site?part=history   -> data = window.SB_HISTORY (history.js shape)
 - Needs only `SHEET_FEED_URL` + `SHEET_FEED_TOKEN` (independent of
   `MARKET_DATA_PROVIDER`). The server POSTs `{token, action:'site', part}`
   to the web app (25 s timeout; `vercel.json` allows 30 s) and expects
-  `{ ok:true, part, readAt:'YYYY-MM-DD HH:MM', tz:'Asia/Kolkata', data }`
-  from `Code.gs` (`ab_feedSite_`, same read-only token as `snapshot`).
+  `{ ok:true, part, readAt:'YYYY-MM-DD HH:MM', builtAt, stored, tz:'Asia/Kolkata', data }`
+  from `Code.gs` (`ab_feedSite_`, same feed token as `snapshot`).
+- **Stored copy** (`Code.gs`, "WEBSITE SITE FEED - STORED COPY"): building a
+  part takes 30+ s, so `Code.gs` builds it ahead and keeps the JSON in the
+  hidden tab `Site_Feed` (two slots per part, 45,000-character cells, meta in
+  Script Properties). `site` answers from it at once (`stored: true`, no
+  Main / History30 read); `readAt` stays "when the sheet was read" (the
+  build), so the price state below ages correctly. The time trigger
+  `ab_siteFeedTrigger_` (every 30 min) rebuilds `main` after 25 min on
+  weekdays 09:00-16:15 and every day 17:30-21:30 (otherwise 3 h) plus once
+  from 16:00 on weekdays (settled close), and `history` every 6 h plus once
+  after the evening cutoff (the latest Control Panel Phase 1-3 time + 25 min,
+  ~19:26). A copy built by code with an older `AB_SITE_FEED_FORMAT` is never
+  served and is rebuilt (bump it when the feed output or allow-list
+  changes); the trigger runs the SAVED code, so a push alone updates the
+  stored feed within ~30 min. No stored copy yet: built on
+  demand (`stored: false`, slow once), or `site feed is being prepared` while
+  another build runs. Menu: *Website feed: rebuild now* (run once after each
+  New version deploy) / *stop auto-refresh*.
 - `part` other than `main` / `history` -> `400 {error}` (`no-store`).
 - Not configured -> `200 { ok:false, configured:false, part, message }`
   naming the missing variable(s).
@@ -187,15 +207,16 @@ GET /api/site?part=history   -> data = window.SB_HISTORY (history.js shape)
 | `unknown action` / `unknown part` | `the sheet web app does not support action/part "..." yet (... deploy a New version of the EXISTING web-app deployment)` |
 | `sheet busy ...` | `sheet busy - try again shortly` |
 | `sheet is updating (History30 has N of M symbols) ...` | `sheet is updating (History30 has N of M symbols) - try again shortly` (Phase 1 is rewriting History30) |
+| `site feed is being prepared - try again in a minute` (no stored copy yet, a build is running) | `sheet feed returned an error` |
 | `data` without `main.cols/rows` or `dates/cols/bars`, or empty | `malformed site feed (...)` / `the sheet feed returned no Main rows ...` / `... no History30 bars` |
 | any other error | `sheet feed returned an error` |
 
 - An old web-app version answers `bad token` for `site` (the request falls
   through to the PC-bridge token check), hence the hint in that message.
 - Size: `main` is about 1 MB of JSON, `history` about 2 MB (Vercel's limit
-  is 4.5 MB per response). One read costs the Apps Script web app several
-  seconds, which is why the CDN keeps `main` for 5 min and `history` for
-  30 min.
+  is 4.5 MB per response; in `Site_Feed` about 24 and 44 cells). Serving the
+  stored copy takes the web app a second or two; the CDN still keeps `main`
+  for 5 min and `history` for 30 min.
 
 ## How the data state is decided
 
