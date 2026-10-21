@@ -11,7 +11,13 @@ browser  ->  /api/quotes, /api/history, /api/market-status   (Vercel functions)
                  +-- provider "dhan"   -> DhanHQ v2 REST API (your Dhan account)
                  +-- provider "sheet"  -> your Google Sheet's Apps Script web app
                  +-- provider "none"   -> nothing (default): always UNAVAILABLE
+
+browser  ->  /api/site?part=main|history   (any provider setting)
+                 +-- always your Google Sheet's Apps Script web app (action "site")
 ```
+
+`/api/site` (the **live site feed**, see below) gives the website the whole
+sheet export live; it only needs `SHEET_FEED_URL` + `SHEET_FEED_TOKEN`.
 
 ## Endpoints
 
@@ -26,6 +32,7 @@ A provider problem (not configured, auth failed, rate limit, ...) is still a
 | `GET /api/market-status` | `{ provider:{name, configured, requires, licensing}, session:{state, now, lastCompletedSession, isTradingDay, holiday, nextTradingDay, calendarCovered}, status:{ok, state, message} }` |
 | `GET /api/quotes?symbols=SBIN,TCS` | `{ state, source, asOf, items:[...], errors:[{symbol, reason}] }` |
 | `GET /api/history?symbol=SBIN&from=YYYY-MM-DD&to=YYYY-MM-DD` | `{ state, source, symbol, from, to, interval:'1d', candles:[{t,o,h,l,c,v}], errors }` |
+| `GET /api/site?part=main\|history` | `{ ok, configured, part, readAt, fetchedAt, stale, staleReason?, session, priceState, data }` - see "Live site feed" |
 
 Quote item: `{ id:'NSE:SBIN', symbol, exchange:'NSE', ltp, prevClose, open,
 high, low, volume, changePct, lastTradeTime, state }`. `changePct` is a
@@ -50,7 +57,7 @@ Input rules:
 |---|---|---|---|
 | `none` (default / empty) | - | nothing | always `UNAVAILABLE` |
 | `dhan` | `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` | real-time quotes + daily history | `LIVE` / `DELAYED` / `EOD` |
-| `sheet` | `SHEET_FEED_URL`, `SHEET_FEED_TOKEN` | the sheet's own prices (GOOGLEFINANCE, ~20 min late) | `DELAYED` / `CACHED`, never `LIVE`; no history |
+| `sheet` | `SHEET_FEED_URL`, `SHEET_FEED_TOKEN` | the sheet's own prices (GOOGLEFINANCE, ~20 min late) | `DELAYED` / `EOD` / `CACHED`, never `LIVE`; no history |
 
 An unknown value behaves like `none` and says so in the message.
 
@@ -97,27 +104,98 @@ The server POSTs `{token, action:'snapshot'}` to the web app `/exec` URL and
 expects
 
 ```json
-{ "ok": true, "asOf": "YYYY-MM-DD HH:MM", "delayMinutes": 20,
+{ "ok": true, "asOf": "YYYY-MM-DD HH:MM", "readAt": "YYYY-MM-DD HH:MM", "delayMinutes": 20,
   "cols": ["sym", "price", "chg", "..."], "rows": [["SBIN", 812.5, 1.56, "..."]] }
 ```
 
 with the same column keys as `main` in `web/data/dashboard.js` (`sym`,
 `price`, `chg` are required; `prevClose`/`prev`, `open`, `high`, `low`,
-`volume`/`vol` are used when present). The snapshot is cached for 60 s.
+`volume`/`vol` are used when present). `asOf` (or `readAt` when `asOf` is
+missing) is the time the sheet was read. The snapshot is cached for 60 s.
 
-- `Code.gs` does **not** have a `snapshot` action yet (it answers
-  `unknown action`, which the site reports). Adding it is a `Code.gs`
-  change, and the web app only sees it after **Deploy > Manage deployments >
-  pencil > Version: New version > Deploy** on the EXISTING deployment
-  (never "New deployment": that changes the URL the PC bridge uses).
-- Use a **separate, read-only token** for `SHEET_FEED_TOKEN` (for example
-  a new script property) rather than the PC bridge token: the bridge token
-  can also write (`put`, `process`).
+- `Code.gs` answers `snapshot` in `ab_feedSnapshot_` (Main's SYMBOL /
+  MKT Price / % Change). The web app only runs new `Code.gs` after
+  **Deploy > Manage deployments > pencil > Version: New version > Deploy**
+  on the EXISTING deployment (never "New deployment": that changes the URL
+  the PC bridge uses). An older version answers `bad token` or
+  `unknown action`, which the site reports.
+- `SHEET_FEED_TOKEN` is the **separate, read-only** feed token (script
+  property `AB_FEED_TOKEN`; sheet menu *3. Quarterly Results & Trend Tags >
+  Website feed: setup info (read-only token)*), never the PC bridge token:
+  the bridge token can also write (`put`, `process`). The same feed token
+  serves both `snapshot` (prices) and `site` (the live site feed).
 - `SHEET_FEED_URL` must be the `https://script.google.com/.../exec` URL and
   the web app must allow access by "Anyone", otherwise Google returns a
   sign-in page ("did not return JSON").
 - `history()` is always `UNAVAILABLE`: the sheet keeps only about 30 daily
   bars (History30), not enough for charts/backtests.
+
+## Live site feed (`/api/site`)
+
+The website's own data (everything `tools/export_xlsx.py` puts into
+`web/data/dashboard.js` and `history.js`) read **live** from the Google
+Sheet, so the site no longer needs the manual xlsx export. The static
+files stay as the offline / failure fallback (the browser decides, see
+`docs/ARCHITECTURE.md`).
+
+```
+GET /api/site?part=main      -> data = window.SB_DATA    (dashboard.js shape)
+GET /api/site?part=history   -> data = window.SB_HISTORY (history.js shape)
+```
+
+- Needs only `SHEET_FEED_URL` + `SHEET_FEED_TOKEN` (independent of
+  `MARKET_DATA_PROVIDER`). The server POSTs `{token, action:'site', part}`
+  to the web app (25 s timeout; `vercel.json` allows 30 s) and expects
+  `{ ok:true, part, readAt:'YYYY-MM-DD HH:MM', tz:'Asia/Kolkata', data }`
+  from `Code.gs` (`ab_feedSite_`, same read-only token as `snapshot`).
+- `part` other than `main` / `history` -> `400 {error}` (`no-store`).
+- Not configured -> `200 { ok:false, configured:false, part, message }`
+  naming the missing variable(s).
+- Success -> `200`:
+
+```json
+{ "ok": true, "configured": true, "part": "main",
+  "readAt": "2026-10-14 10:55", "fetchedAt": "2026-10-14 11:00",
+  "stale": false,
+  "session": { "state": "open", "lastCompletedSession": "2026-10-13" },
+  "priceState": "DELAYED",
+  "data": { "...": "same keys as window.SB_DATA / window.SB_HISTORY" } }
+```
+
+  `readAt` = when the sheet was read (IST), `fetchedAt` = when this answer
+  was made, `priceState` = `sheetPriceState(readAt, now)` (table below).
+- A refresh that fails (sheet busy / updating, timeout, bad answer, privacy
+  guard) serves the **last good copy** of the warm instance instead:
+  `stale: true`, `staleReason: "<why>"`, `priceState: "CACHED"`. With no
+  copy at all the answer is `200 { ok:false, configured:true, part, message }`
+  and the browser uses the static files.
+- **Privacy guard**: before anything is cached or served, the JSON of
+  `data` is checked for the same markers as the build's scan of `web/data`
+  (an e-mail address, `script.google.com/macros`, an `AKfyc...` deployment
+  id, `"trades":`, `"tradeStats"`). A hit is a failure: `blocked: the sheet
+  feed contained personal-data markers`. The allow-list itself lives in
+  `Code.gs` (same rules as `tools/export_xlsx.py`).
+- Reasons are fixed texts; the sheet's own error text is never passed on:
+
+| Sheet answer | `message` / `staleReason` |
+|---|---|
+| no answer in 25 s | `sheet feed timed out (the sheet may be busy)` |
+| network error | `sheet feed not reachable (network error)` |
+| HTML / empty page | `sheet feed did not return JSON (is the web app deployed with access "Anyone"?)` |
+| non-2xx | `sheet feed failed (HTTP <status>)` |
+| `bad token` | `auth failed: the sheet rejected SHEET_FEED_TOKEN (if the token is right, the web app still runs an older version without the site feed: deploy a New version of the EXISTING web-app deployment)` |
+| `unknown action` / `unknown part` | `the sheet web app does not support action/part "..." yet (... deploy a New version of the EXISTING web-app deployment)` |
+| `sheet busy ...` | `sheet busy - try again shortly` |
+| `sheet is updating (History30 has N of M symbols) ...` | `sheet is updating (History30 has N of M symbols) - try again shortly` (Phase 1 is rewriting History30) |
+| `data` without `main.cols/rows` or `dates/cols/bars`, or empty | `malformed site feed (...)` / `the sheet feed returned no Main rows ...` / `... no History30 bars` |
+| any other error | `sheet feed returned an error` |
+
+- An old web-app version answers `bad token` for `site` (the request falls
+  through to the PC-bridge token check), hence the hint in that message.
+- Size: `main` is about 1 MB of JSON, `history` about 2 MB (Vercel's limit
+  is 4.5 MB per response). One read costs the Apps Script web app several
+  seconds, which is why the CDN keeps `main` for 5 min and `history` for
+  30 min.
 
 ## How the data state is decided
 
@@ -145,9 +223,21 @@ Dhan quote, per item:
 The response `state` is the **least fresh** item state, so a response is
 `LIVE` only if every item is. Dhan history is always `EOD`.
 
-Sheet: `DELAYED` when `asOf` is from today while the market is open, or
-from the last completed session (or later) when it is closed; otherwise
-`CACHED` (the sheet stopped refreshing). Never `LIVE`.
+Sheet data (the `sheet` provider and `/api/site`, both use
+`sheetPriceState(readAt, now)` in `api/_lib/providers/sheet.js`), never
+`LIVE` because GOOGLEFINANCE is ~20 min late:
+
+| Sheet read time (`readAt` / `asOf`) | State |
+|---|---|
+| missing | `CACHED` |
+| today, 09:15 or later, while the market is open | `DELAYED` |
+| today, 09:15 or later, after the close but before 16:00 (last prices still settling) | `DELAYED` |
+| after the 15:30 close of the last completed session (evenings, weekends, holidays, before 09:15) | `EOD` |
+| older than that (the sheet stopped refreshing, or an old copy) | `CACHED` |
+
+Weekends and holidays are therefore `EOD` (or `CACHED`), never `DELAYED`.
+`/api/site` answers `CACHED` whenever it serves its last good copy after a
+failed refresh (`stale: true`).
 
 ## Caching
 
@@ -156,7 +246,10 @@ from the last completed session (or later) when it is closed; otherwise
 | quotes | `s-maxage` 15 s open, 30 s pre-open, 60 s closed/holiday/weekend | same |
 | history | `s-maxage` 6 h | 6 h |
 | market-status | `s-maxage` 30 s | Dhan profile 60 s, sheet snapshot 60 s |
-| UNAVAILABLE / partial | `s-maxage` 15 s | not cached |
+| site `part=main` | `s-maxage` 5 min, `stale-while-revalidate` 1 h | 5 min (last good copy kept for stale-on-error) |
+| site `part=history` | `s-maxage` 30 min, `stale-while-revalidate` 6 h | 30 min (same) |
+| site served stale (`stale: true`) | `s-maxage` 60 s | - |
+| UNAVAILABLE / partial / site `ok:false` | `s-maxage` 15 s | not cached |
 | 4xx / 5xx | `no-store` | - |
 
 The memory cache only lives while Vercel keeps an instance warm; the CDN
@@ -168,11 +261,14 @@ cache is what protects the providers from many visitors.
 2. Add `MARKET_DATA_PROVIDER` = `dhan` (or `sheet`), then the provider's
    variables (`DHAN_CLIENT_ID` + `DHAN_ACCESS_TOKEN`, or `SHEET_FEED_URL` +
    `SHEET_FEED_TOKEN`). Tick the environments (Production / Preview).
-   Mark the tokens as **Sensitive**.
+   Mark the tokens (and `SHEET_FEED_URL`) as **Sensitive**.
+   `SHEET_FEED_URL` + `SHEET_FEED_TOKEN` also switch on the live site feed
+   (`/api/site`), whatever `MARKET_DATA_PROVIDER` says.
 3. **Deployments** > latest > **...** > **Redeploy** (variables only reach
    functions after a new deployment).
 4. Open `https://<your-site>/api/market-status` and check `provider.configured`
-   and `status.message`.
+   and `status.message`; open `https://<your-site>/api/site?part=main` and
+   check `ok` (or `message`).
 
 For local testing with `vercel dev`, copy `.env.example` to `.env`
 (git-ignored) and fill it in. Never commit real values; never paste tokens
@@ -200,9 +296,14 @@ generate a new token in your Dhan account (DhanHQ / API section), update
 ## Privacy
 
 No personal data (positions, capital, trades, e-mails) goes through these
-functions. Responses never contain environment values; secret values are
-also scrubbed from every string in a response and from log lines as a
-second line of defence. Upstream error texts are not passed through.
+functions. `/api/site` carries only what the public export carries:
+`Code.gs` applies the `tools/export_xlsx.py` allow-list (never Portfolio,
+Risk Manager, Control Panel, Trade Log, Trade Dashboard, Entry alerts,
+entry/stop/qty columns), and the server's privacy guard refuses any answer
+with personal-data markers. Responses never contain environment values;
+secret values are also scrubbed from every string in a response and from
+log lines as a second line of defence. Upstream error texts are not passed
+through.
 
 ## Limitations
 
@@ -225,11 +326,12 @@ second line of defence. Upstream error texts are not passed through.
 
 | File | What |
 |---|---|
-| `api/market-status.js`, `api/quotes.js`, `api/history.js` | the endpoints (`module.exports = async (req, res)`; `.createHandler(deps)` for tests) |
+| `api/market-status.js`, `api/quotes.js`, `api/history.js`, `api/site.js` | the endpoints (`module.exports = async (req, res)`; `.createHandler(deps)` for tests) |
+| `api/_lib/sheet-feed.js` | `postFeed()` / `configured()`: the one client for the sheet web app (used by `sheet` and `api/site.js`) |
 | `api/_lib/providers/index.js` | `getProvider(env, deps)` |
-| `api/_lib/providers/{none,dhan,sheet}.js` | the providers; `dhan-scrip-master.js` parses the CSV |
+| `api/_lib/providers/{none,dhan,sheet}.js` | the providers; `dhan-scrip-master.js` parses the CSV; `sheet.js` also exports `sheetPriceState` |
 | `api/_lib/market-calendar.js` | IST helpers, NSE holidays, `sessionState`, `lastCompletedSession` |
 | `api/_lib/cache.js` | memory TTL cache + `Cache-Control` values |
 | `api/_lib/validate.js` | query validation |
 | `api/_lib/http.js`, `api/_lib/fetch-util.js` | JSON/CORS replies, redaction, fetch with timeout |
-| `tests/providers.test.js`, `tests/market-calendar.test.js` | `node --test` (fetch is mocked; no network) |
+| `tests/providers.test.js`, `tests/market-calendar.test.js`, `tests/site-api.test.js` | `node --test` (fetch is mocked; no network) |

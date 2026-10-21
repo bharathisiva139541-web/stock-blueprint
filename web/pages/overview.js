@@ -6,24 +6,50 @@
 
   function avg(a) { var s = a.filter(isNum); return s.length ? s.reduce(function (x, y) { return x + y; }, 0) / s.length : null; }
 
+  function tipBadge(text, cls, tip) {
+    return '<span class="badge ' + cls + '" tabindex="0" data-tip="' + esc(tip) + '">' + esc(text) + '</span>';
+  }
+
   function dataStatus(ctx) {
-    var D = ctx.D, H = ctx.history, m = ctx.market, pi = m.providerInfo;
+    var D = ctx.D, H = ctx.history, m = ctx.market, pi = m.providerInfo, S = ctx.site || {};
+    // first row: where the whole site's data came from (live sheet feed or the saved copy)
+    var site = S.live
+      ? ['Site data (Google Sheet)', 'Live feed', S.readAt,
+        'Live feed: read from your Google Sheet by the site API (Code.gs, read-only token), same tabs as the Excel export' +
+          (S.stale ? ' - this is the last good copy: the newest read failed (' + (S.staleReason || 'unknown reason') + ')' : ''),
+        tipBadge('Live feed', S.stale ? 's-warn' : 's-info', 'Read directly from your Google Sheet. Its prices are GOOGLEFINANCE (DELAYED / EOD), never real-time.')]
+      : ['Site data (Google Sheet)', 'Saved copy', S.generated,
+        'Saved copy (data/dashboard.js, exported from the sheet) - ' +
+          (S.reason ? 'live data could not be loaded: ' + S.reason : 'this host has no data API, so it is not updated automatically'),
+        tipBadge('Saved copy', 's-warn', 'Exported from the sheet earlier and published with the site - not current.')];
+    var candleSrc = !H ? 'not loaded yet (loads with the strategy)'
+      : H.live ? 'Live feed: ' + H.source + (H.stale ? ' - last good copy' : '')
+        : H.source + ' - saved copy (data/history.js)' + (S.historyReason ? '; live candles could not be loaded: ' + S.historyReason : '');
+    var tab = S.live ? ' (read live; shown with the tab\'s own refresh time)' : ' (saved copy)';
     var rows = [
+      site,
       ['Prices (Main tab)', ui.leastFresh(ctx.stocks.map(function (s) { return s.priceState; })), m.asOf,
-        (m.source || 'Sheet snapshot (GOOGLEFINANCE, ~20 min delayed when exported)') + (m.partial ? ' - partial: some prices are still the sheet snapshot' : '')],
-      ['Daily candles (History30)', H ? SB.candleState(H) : 'CACHED', H ? H.dates[H.dates.length - 1] : null, H ? H.source : 'not loaded yet (loads with the strategy)'],
-      ['Pattern Dashboard tab', 'CACHED', D.patterns && D.patterns.asOf, 'Sheet tab, refreshed by Code.gs'],
-      ['Results Performance', 'CACHED', D.asOf, 'Sheet tab, refreshed by Results Day runs']
+        (m.source || 'Sheet snapshot (GOOGLEFINANCE, ~20 min delayed when exported)') + (m.partial ? ' - partial: some prices are still the sheet data' : '')],
+      ['Daily candles (History30)', H ? SB.candleState(H) : 'CACHED', H ? H.dates[H.dates.length - 1] : null, candleSrc],
+      ['Pattern Dashboard tab', 'CACHED', D.patterns && D.patterns.asOf, 'Sheet tab, refreshed by Code.gs' + tab],
+      ['Results Performance', 'CACHED', D.asOf, 'Sheet tab, refreshed by Results Day runs' + tab]
     ];
-    return '<section class="card" id="ov-data"><div class="card-head"><div><h2>Data &amp; provider status</h2><p>Where every number on this site comes from, and how fresh it is. Nothing is shown as LIVE unless a provider returned it as real-time.</p></div></div>' +
+    return '<section class="card" id="ov-data"><div class="card-head"><div><h2>Data &amp; provider status</h2><p>Where every number on this site comes from, and how fresh it is. Nothing is shown as LIVE unless a provider returned it as real-time; sheet data is DELAYED, EOD or CACHED.</p></div></div>' +
       '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Dataset</th><th>State</th><th>As of</th><th>Source</th></tr></thead><tbody>' +
-      rows.map(function (r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + ui.badge(r[1]) + '</td><td>' + F.dateTime(r[2]) + '</td><td class="wrap">' + esc(r[3]) + '</td></tr>'; }).join('') +
+      rows.map(function (r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + (r[4] || ui.badge(r[1])) + '</td><td>' + F.dateTime(r[2]) + '</td><td class="wrap">' + esc(r[3]) + '</td></tr>'; }).join('') +
       '</tbody></table></div><div class="note" style="margin-top:10px">' +
       (pi ? '<b>Market-data provider:</b> ' + esc(pi.name) + (pi.configured ? ' (configured)' : ' - not configured: set ' + esc((pi.requires || []).join(', ')) + ' in the server settings') +
-        (pi.licensing ? '<br><span class="sub">' + esc(pi.licensing) + '</span>' : '') + (m.session ? '<br><b>NSE session:</b> ' + esc(m.session.state) + (m.session.lastCompletedSession ? ' · last completed session ' + esc(m.session.lastCompletedSession) : '') : '')
+        (pi.licensing ? '<br><span class="sub">' + esc(pi.licensing) + '</span>' : '') + (m.session ? '<br><b>NSE session:</b> ' + esc(m.session.state) + (m.session.lastCompletedSession ? ' · last completed session ' + esc(m.session.lastCompletedSession) : '') : '') +
+        (m.message ? '<br><b>Status:</b> ' + esc(m.message) : '')
         : '<b>Market-data provider:</b> none on this host. ' + esc(m.message || '') + ' Live/delayed quotes need the Vercel deployment with a provider (see docs/MARKET_DATA.md).') +
       '</div></section>';
   }
+
+  // app.js calls this whenever the market status or quotes change (the section is drawn once per visit)
+  SB.refreshDataStatus = function () {
+    var ds = document.getElementById('ov-data');
+    if (ds && SB.ctx.D) ds.outerHTML = dataStatus(SB.ctx);
+  };
 
   SB.page('overview', {
     render: function (el, params, ctx) {

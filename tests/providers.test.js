@@ -563,9 +563,41 @@
       assert.match(h.message, /~30/);
       assert.deepEqual(h.candles, []);
     } finally { m.restore(); }
-    // weekend: Friday's snapshot is current -> DELAYED
-    assert.equal(sheetLib.sheetState(IST('2026-10-16 15:10'), IST('2026-10-18 12:00')), 'DELAYED');
-    assert.equal(sheetLib.sheetState(null, IST('2026-10-18 12:00')), 'CACHED');
+    // weekend: a read after Friday's close is that close -> EOD (never DELAYED);
+    // a Friday mid-session copy is older than the close -> CACHED
+    assert.equal(sheetLib.sheetPriceState(IST('2026-10-18 11:55'), IST('2026-10-18 12:00')), 'EOD');
+    assert.equal(sheetLib.sheetPriceState(IST('2026-10-16 15:45'), IST('2026-10-18 12:00')), 'EOD');
+    assert.equal(sheetLib.sheetPriceState(IST('2026-10-16 15:10'), IST('2026-10-18 12:00')), 'CACHED');
+    assert.equal(sheetLib.sheetPriceState(null, IST('2026-10-18 12:00')), 'CACHED');
+  });
+
+  test('sheet provider: after the close -> DELAYED until 16:00, then EOD (status says so)', async function () {
+    let asOf = '2026-10-14 15:40';
+    const m = mockFetch(function () { return json(200, Object.assign({}, SHEET_OK, { asOf: asOf })); });
+    try {
+      const settling = await providers.getProvider(SHEET_ENV, deps('2026-10-14 15:45')).quotes(['SBIN']);
+      assert.equal(settling.state, 'DELAYED');
+      assert.equal(settling.items[0].state, 'DELAYED');
+      asOf = '2026-10-14 16:25';
+      const p = providers.getProvider(SHEET_ENV, deps('2026-10-14 16:30'));
+      const q = await p.quotes(['SBIN']);
+      assert.equal(q.state, 'EOD');
+      assert.equal(q.items[0].state, 'EOD');
+      const st = await p.status();
+      assert.equal(st.ok, true);
+      assert.equal(st.state, 'EOD');
+      assert.match(st.message, /market closed: prices are the 2026-10-14 close/);
+      noSecrets(st);
+      // the snapshot's readAt is used when asOf is missing
+      const noAsOf = Object.assign({}, SHEET_OK, { readAt: '2026-10-14 16:25' });
+      delete noAsOf.asOf;
+      const m2 = mockFetch(function () { return json(200, noAsOf); });
+      try {
+        const q2 = await providers.getProvider(SHEET_ENV, deps('2026-10-14 16:30')).quotes(['SBIN']);
+        assert.equal(q2.asOf, '2026-10-14 16:25');
+        assert.equal(q2.state, 'EOD');
+      } finally { m2.restore(); }
+    } finally { m.restore(); }
   });
 
   test('sheet provider: bad token, non-JSON page, unknown action, not configured', async function () {

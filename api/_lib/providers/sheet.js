@@ -4,8 +4,8 @@
 //
 // env: SHEET_FEED_URL (the web app /exec URL - treat it as a secret),
 //      SHEET_FEED_TOKEN (shared secret checked by doPost).
-// Request : POST {token, action:'snapshot'}
-// Response: { ok:true, asOf:'YYYY-MM-DD HH:MM', delayMinutes:20,
+// Request : POST {token, action:'snapshot'}   (sent by ../sheet-feed.js)
+// Response: { ok:true, asOf:'YYYY-MM-DD HH:MM', readAt, delayMinutes:20,
 //             cols:['sym','price','chg',...], rows:[[...], ...] }
 //           (column keys as in web/data/dashboard.js "main")
 (function () {
@@ -14,11 +14,15 @@
   const cal = require('../market-calendar');
   const cacheLib = require('../cache');
   const fetchUtil = require('../fetch-util');
+  const sheetFeed = require('../sheet-feed');
   const common = require('./common');
 
-  const REQUIRES = ['SHEET_FEED_URL', 'SHEET_FEED_TOKEN'];
+  const REQUIRES = sheetFeed.REQUIRES;
   const SNAPSHOT_TTL_MS = 60 * 1000;
   const DEFAULT_DELAY_MIN = 20;
+  // GOOGLEFINANCE lags ~20 min, so a sheet read in the first half hour after
+  // the 15:30 close may still hold pre-close prices.
+  const SETTLE_TIME = '16:00';
 
   const LICENSING = 'Prices come from GOOGLEFINANCE inside your own Google Sheet: delayed (~20 min), ' +
     'informational only, not for trading; Google and the exchanges restrict redistribution. Verify terms.';
@@ -45,59 +49,49 @@
   }
 
   /**
-   * State of a sheet snapshot (never LIVE):
-   *   DELAYED when the snapshot is from the current session (market open) or,
-   *           outside market hours, from the last completed session or later;
-   *   CACHED  when it is older than that (sheet not refreshing) or has no time.
+   * Honest state of prices read from the sheet at `readAtMs` (never LIVE):
+   *   DELAYED  read during today's session (09:15 or later) while the market
+   *            is open, or until 16:00 after the close (last minutes settling);
+   *   EOD      read after the close of the last completed session (evenings,
+   *            weekends, holidays, before 09:15): the prices are that close;
+   *   CACHED   no read time, or read before that close (an old copy).
+   * Weekends / holidays are never DELAYED.
    */
-  function sheetState(asOfMs, nowMs) {
-    if (asOfMs === null) return 'CACHED';
+  function sheetPriceState(readAtMs, nowMs) {
+    if (readAtMs === null || readAtMs === undefined || !isFinite(readAtMs)) return 'CACHED';
     const session = cal.sessionState(nowMs);
-    const ref = session === 'open' ? cal.istDateStr(nowMs) : cal.lastCompletedSession(nowMs);
-    return ref && cal.istDateStr(asOfMs) >= ref ? 'DELAYED' : 'CACHED';
+    if (!session) return 'CACHED';
+    const today = cal.istDateStr(nowMs);
+    if ((session === 'open' || session === 'closed') && cal.istDateStr(readAtMs) === today) {
+      const openMs = cal.parseIstDateTime(today + ' ' + cal.SESSION.open);
+      const settleMs = cal.parseIstDateTime(today + ' ' + SETTLE_TIME);
+      if (readAtMs >= openMs && nowMs < settleMs) return 'DELAYED';
+    }
+    const last = cal.lastCompletedSession(nowMs);
+    const closeMs = last ? cal.sessionCloseMs(last) : null;
+    return closeMs !== null && readAtMs >= closeMs ? 'EOD' : 'CACHED';
+  }
+
+  /** One sentence for status(): what the state means for the visitor. */
+  function stateNote(state, nowMs) {
+    if (state === 'EOD') return ' - market closed: prices are the ' + cal.lastCompletedSession(nowMs) + ' close';
+    if (state === 'CACHED') return ' - snapshot is older than the latest session';
+    return '';
   }
 
   function createSheetProvider(env, deps) {
     const e = env || {};
     const d = deps || {};
-    const url = String(e.SHEET_FEED_URL || '').trim();
-    const token = String(e.SHEET_FEED_TOKEN || '').trim();
-    const urlOk = /^https:\/\/[^\s]+$/i.test(url);
-    const configured = !!(url && token && urlOk);
+    const configured = sheetFeed.configured(e);
     const now = typeof d.now === 'function' ? d.now : function () { return Date.now(); };
     const cache = d.cache || cacheLib.shared;
     const timeoutMs = d.timeoutMs > 0 ? d.timeoutMs : fetchUtil.DEFAULT_TIMEOUT_MS;
-
-    const missing = REQUIRES.filter(function (k) { return !String(e[k] || '').trim(); });
-    const notConfigured = missing.length
-      ? 'Sheet feed is selected but not configured: set ' + missing.join(' and ') +
-        ' in Vercel > Project > Settings > Environment Variables, then redeploy.'
-      : 'SHEET_FEED_URL must be the https:// /exec URL of the Apps Script web app.';
+    const notConfigured = sheetFeed.notConfiguredMessage(e, 'Sheet feed is selected but not configured');
 
     async function fetchSnapshot() {
-      const resp = await fetchUtil.requestJson(d.fetch, url, {
-        method: 'POST',
-        redirect: 'follow', // Apps Script answers via a 302 to googleusercontent.com
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ token: token, action: 'snapshot' })
-      }, timeoutMs);
-      if (resp.error === 'timeout') return { ok: false, reason: 'sheet feed timed out (the sheet may be busy)' };
-      if (resp.error === 'network' || resp.error === 'no-fetch') return { ok: false, reason: 'sheet feed not reachable (network error)' };
-      if (resp.error === 'malformed') {
-        return { ok: false, reason: 'sheet feed did not return JSON (is the web app deployed with access "Anyone"?)' };
-      }
-      if (!resp.ok) return { ok: false, reason: 'sheet feed failed (HTTP ' + resp.status + ')' };
-      const data = resp.data || {};
-      if (data.ok !== true) {
-        const err = String(data.error || '');
-        if (/token/i.test(err)) return { ok: false, auth: true, reason: 'auth failed: the sheet rejected SHEET_FEED_TOKEN' };
-        if (/unknown action/i.test(err)) {
-          return { ok: false, reason: 'the sheet web app does not support action "snapshot" yet ' +
-            '(add it to Code.gs and deploy a new version of the EXISTING deployment)' };
-        }
-        if (/busy/i.test(err)) return { ok: false, reason: 'sheet busy - try again shortly' };
-        return { ok: false, reason: 'sheet feed returned an error' };
-      }
+      const resp = await sheetFeed.postFeed(e, { fetch: d.fetch }, { action: 'snapshot' }, timeoutMs);
+      if (!resp.ok) return resp.auth ? { ok: false, auth: true, reason: resp.reason } : { ok: false, reason: resp.reason };
+      const data = resp.data;
       const cols = Array.isArray(data.cols) ? data.cols.map(function (c) { return String(c); }) : null;
       const rows = Array.isArray(data.rows) ? data.rows : null;
       if (!cols || !rows) return { ok: false, reason: 'malformed sheet feed (cols/rows missing)' };
@@ -111,7 +105,8 @@
         if (s.indexOf('NSE:') === 0) s = s.slice(4);
         if (s && !bySymbol.has(s)) bySymbol.set(s, row);
       });
-      const asOf = typeof data.asOf === 'string' && cal.parseIstDateTime(data.asOf) !== null ? data.asOf.trim() : null;
+      const asOfRaw = typeof data.asOf === 'string' ? data.asOf : data.readAt;
+      const asOf = typeof asOfRaw === 'string' && cal.parseIstDateTime(asOfRaw) !== null ? asOfRaw.trim() : null;
       const delay = common.toNum(data.delayMinutes);
       return { ok: true, asOf: asOf, delayMinutes: delay !== null && delay >= 0 ? delay : DEFAULT_DELAY_MIN,
                idx: idx, bySymbol: bySymbol, rowCount: rows.length };
@@ -132,11 +127,11 @@
       const s = await snapshot();
       if (!s.ok) return { ok: false, state: 'UNAVAILABLE', message: s.reason };
       const asOfMs = s.asOf ? cal.parseIstDateTime(s.asOf) : null;
-      const state = sheetState(asOfMs, now());
+      const nowMs = now();
+      const state = sheetPriceState(asOfMs, nowMs);
       return { ok: true, state: state,
                message: 'Sheet feed reachable: ' + s.bySymbol.size + ' symbols, as of ' + (s.asOf || 'unknown time') +
-                 ' IST (GOOGLEFINANCE, ~' + s.delayMinutes + ' min delayed)' +
-                 (state === 'CACHED' ? ' - snapshot is older than the latest session' : '') + '.' };
+                 ' IST (GOOGLEFINANCE, ~' + s.delayMinutes + ' min delayed)' + stateNote(state, nowMs) + '.' };
     }
 
     async function quotes(symbols) {
@@ -148,7 +143,7 @@
       if (!s.ok) return common.unavailableQuotes('sheet', s.reason, nowMs);
 
       const asOfMs = s.asOf ? cal.parseIstDateTime(s.asOf) : null;
-      const state = sheetState(asOfMs, nowMs);
+      const state = sheetPriceState(asOfMs, nowMs);
       const items = [], errors = clean.errors.slice();
       const ix = s.idx;
       const cell = function (row, k) { return ix[k] >= 0 ? row[ix[k]] : null; };
@@ -195,5 +190,6 @@
     return { name: 'sheet', describe: describe, status: status, quotes: quotes, history: history };
   }
 
-  module.exports = { createSheetProvider: createSheetProvider, sheetState: sheetState, SNAPSHOT_TTL_MS: SNAPSHOT_TTL_MS };
+  module.exports = { createSheetProvider: createSheetProvider, sheetPriceState: sheetPriceState,
+                     SNAPSHOT_TTL_MS: SNAPSHOT_TTL_MS, SETTLE_TIME: SETTLE_TIME };
 })();

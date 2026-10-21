@@ -36,6 +36,11 @@ console.log('2. index.html references');
 const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 const refs = [...html.matchAll(/<(?:script|link)[^>]+(?:src|href)="([^"#:]+)"/g)].map((m) => m[1]);
 for (const r of refs) if (!fs.existsSync(path.join(WEB, r))) fail('missing ' + r);
+// web/config.js (remote API base for the static copies) must load before app.js;
+// data/dashboard.js is loaded by app.js itself (after trying the live feed)
+const jsRefs = refs.filter((r) => r.endsWith('.js'));
+if (jsRefs.indexOf('config.js') < 0 || jsRefs.indexOf('config.js') > jsRefs.indexOf('app.js')) fail('config.js must be loaded before app.js');
+if (jsRefs.indexOf('data/dashboard.js') >= 0) fail('index.html must not load data/dashboard.js (app.js loads it as the fallback)');
 ok(refs.length + ' local references');
 
 console.log('3. data files');
@@ -53,17 +58,20 @@ if (fs.existsSync(wa) && /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/.test(fs.r
 
 console.log('4. single-file preview');
 try {
-  let page = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + fs.readFileSync(path.join(WEB, 'style.css'), 'utf8') + '\n</style>');
+  // replacer functions: a string replacement would expand $& / $' found in the code or data
+  const css = fs.readFileSync(path.join(WEB, 'style.css'), 'utf8');
+  let page = html.replace('<link rel="stylesheet" href="style.css">', () => '<style>\n' + css + '\n</style>');
   for (const src of refs.filter((r) => r.endsWith('.js'))) {
     const body = fs.readFileSync(path.join(WEB, src), 'utf8').replace(/<\/script/gi, '<\\/script');
-    page = page.replace('<script src="' + src + '"></script>', '<script>\n' + body + '\n</script>');
+    page = page.replace('<script src="' + src + '"></script>', () => '<script>\n' + body + '\n</script>');
   }
-  // on-demand data files are inlined so the preview also works from file://
-  for (const f of ['history.js', 'workbook-analysis.js']) {
+  // data files (loaded on demand on the site) are inlined so the preview also works
+  // offline from file:// - window.SB_DATA present means app.js uses it as the saved copy
+  for (const f of ['dashboard.js', 'history.js', 'workbook-analysis.js']) {
     const p = path.join(WEB, 'data', f);
     if (!fs.existsSync(p)) continue;
     const body = fs.readFileSync(p, 'utf8').replace(/<\/script/gi, '<\\/script');
-    page = page.replace('<script>\n', '<script>\n' + body + '\n</script>\n<script>\n');
+    page = page.replace('<script>\n', () => '<script>\n' + body + '\n</script>\n<script>\n');
   }
   fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
   fs.writeFileSync(path.join(ROOT, 'dist', 'stock-blueprint-preview.html'), page);
