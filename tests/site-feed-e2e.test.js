@@ -331,7 +331,11 @@ function browser(nowMs) {
 // objects keyed by data (symbols, KPI names): compare one value's shape, not the keys
 const DATA_KEYED = ['data.patterns.kpis', 'history.bars', 'history.sheetTags'];
 
-/** Same shape as the saved copy: key order, tables, nested object keys. */
+/**
+ * Same shape as the saved copy: every key it has (in the same order), tables,
+ * nested objects. The saved copy is regenerated from the owner's workbook, so
+ * a blank cell (null) in either copy, or a tab it lacks, is not a mismatch.
+ */
 function sameShape(live, saved, where) {
   const kind = function (v) {
     if (v === null || v === undefined) return 'null';
@@ -339,13 +343,17 @@ function sameShape(live, saved, where) {
     if (typeof v === 'object') return Array.isArray(v.cols) && Array.isArray(v.rows) ? 'table' : 'object';
     return typeof v;
   };
-  assert.equal(kind(live), kind(saved), where + ': ' + kind(live) + ' vs saved ' + kind(saved));
-  if (kind(saved) === 'object' && DATA_KEYED.indexOf(where) >= 0) {
+  const ks = kind(saved), kl = kind(live);
+  if (ks === 'null' || (kl === 'null' && ks !== 'object' && ks !== 'table' && ks !== 'array')) return;
+  assert.equal(kl, ks, where + ': ' + kl + ' vs saved ' + ks);
+  if (ks === 'object' && DATA_KEYED.indexOf(where) >= 0) {
     const a = Object.keys(live), b = Object.keys(saved);
     assert.ok(a.length, where + ' is empty');
     if (b.length && where !== 'data.patterns.kpis') sameShape(live[a[0]], saved[b[0]], where + '[*]');
-  } else if (kind(saved) === 'object') {
-    assert.deepEqual(Object.keys(live), Object.keys(saved), where + ' keys');
+  } else if (ks === 'object') {
+    const keys = Object.keys(live);
+    assert.deepEqual(Object.keys(saved).filter(function (k) { return keys.indexOf(k) >= 0; }), Object.keys(saved), where + ' keys');
+    assert.deepEqual(keys.filter(function (k) { return k in saved; }), Object.keys(saved), where + ' key order');
     Object.keys(saved).forEach(function (k) { sameShape(live[k], saved[k], where + '.' + k); });
   }
   if (kind(saved) === 'array' && saved.length && live.length) sameShape(live[0], saved[0], where + '[0]');
@@ -380,9 +388,13 @@ test('e2e main: Code.gs -> api/site -> the reply web/app.js boots from', async (
   assert.equal(r.priceState, 'DELAYED', 'GOOGLEFINANCE in market hours');
   assert.deepEqual(r.data, raw.data, 'data passes through unchanged');
 
-  // same keys / tables / nesting as the saved copy every page was written against
+  // the export_xlsx.py keys (every tab present), and the same shape as the saved copy every page was written against
+  assert.deepEqual(Object.keys(r.data), ['generated', 'source', 'main', 'resultsTracker', 'resultsPerf', 'asOf', 'patterns',
+    'fvg', 'gapup', 'watchLog', 'fvgBacktest', 'mitigatedLog', 'alerts', 'indices', 'ipos', 'newIpos', 'priceBands']);
   sameShape(r.data, SAVED, 'data');
-  assert.deepEqual(r.data.main.cols, SAVED.main.cols, 'Main columns in the saved copy order');
+  assert.deepEqual(r.data.main.cols, MAIN_COLS.map(function (x) { return x[0]; }), 'every Main column, in Code.gs order');
+  assert.deepEqual(r.data.main.cols.filter(function (k) { return SAVED.main.cols.indexOf(k) >= 0; }), SAVED.main.cols,
+    'the saved copy columns, same order');
   assert.equal(r.data.generated, r.readAt);
   assert.equal(r.data.source, 'Google Sheet (live feed)');
   assert.equal(r.data.asOf, '2026-10-21 10:45', 'Results Performance refresh time');
@@ -420,7 +432,7 @@ test('e2e main: privacy - personal tabs, columns, e-mails and position alerts ne
   const s = setup(WED_OPEN);
   const r = (await site(s, 'main')).body;
   const al = r.data.alerts;
-  assert.deepEqual(al.cols, SAVED.alerts.cols, 'only the public alert columns');
+  assert.deepEqual(al.cols, JSON.parse(JSON.stringify(s.app.gs.run('AB_SITE_ALERT_COLS'))), 'only the public alert columns');
   const si = al.cols.indexOf('Symbol'), ti = al.cols.indexOf('Alert Type');
   // TCS Entry (a position), INFY (Entry Price), HDFCBANK (Stoploss), WIPRO (Trade Log),
   // ITC (Portfolio), LT (Risk Manager) and the Stop Hit alert are all left out
