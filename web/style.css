@@ -136,6 +136,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tabs a:hover { background: var(--surface-3); text-decoration: none; }
 .tabs a[aria-current="page"] { background: var(--accent); color: var(--accent-ink); }
 
+/* data-source banner under the header: saved copy in use / live feed served its last good copy */
+.site-banner { max-width: 1280px; margin: 12px auto 0; padding: 0 16px; }
+.site-banner .note { overflow-wrap: anywhere; }
 main { padding-top: 18px; padding-bottom: 32px; }
 main:focus, main:focus-visible { outline: none; }
 .foot { color: var(--muted); font-size: 12px; padding-bottom: 28px; }

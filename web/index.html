@@ -31,6 +31,7 @@
   </div>
   <nav class="tabs" aria-label="Sections"></nav>
 </header>
+<div id="site-banner" class="site-banner" role="status" hidden></div>
 
 <main id="app" tabindex="-1">
   <div class="skeleton" aria-busy="true"><i style="width:40%"></i><i style="width:75%"></i><i style="width:60%"></i></div>
@@ -46,11 +47,12 @@
 <div id="tip" class="tip" role="status" hidden></div>
 
 <footer class="foot">
-  Research and decision-support only - no orders are placed. Data from the Stock Blueprint Google Sheet and, when configured,
-  a licensed market-data provider. Prices may be delayed or cached; the status badge shows which. Not investment advice.
+  Research and decision-support only - no orders are placed. Data from the Stock Blueprint Google Sheet (read live when the
+  site feed is set up, otherwise a saved copy) and, when configured, a licensed market-data provider. Prices may be delayed or
+  cached; the status badge shows which. Not investment advice.
 </footer>
 
-<script src="data/dashboard.js"></script>
+<script src="config.js"></script>
 <script src="data/logos.js"></script>
 <script src="lib/classify.js"></script>
 <script src="lib/indicators.js"></script>

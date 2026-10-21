@@ -101,6 +101,11 @@
   const HISTORY_TTL_S = 6 * 3600;
   const STATUS_TTL_S = 30;
   const UNAVAILABLE_TTL_S = 15;
+  // Live site feed (api/site): the sheet changes a few times a day, and one
+  // read costs the Apps Script web app several seconds.
+  const SITE_TTL_S = { main: 300, history: 1800 };
+  const SITE_SWR_S = { main: 3600, history: 21600 };
+  const SITE_STALE_TTL_S = 60;
 
   /** Seconds a quotes response may be cached for, by NSE session state. */
   function quotesTtlSeconds(session) {
@@ -127,6 +132,21 @@
   /** Cache-Control for a provider-level UNAVAILABLE payload (short, so a fix shows quickly). */
   function unavailableCacheControl() { return publicCache(UNAVAILABLE_TTL_S, 0); }
 
+  /** Seconds a site-feed part ('main' | 'history') is kept (memory and CDN). */
+  function siteTtlSeconds(part) {
+    return Object.prototype.hasOwnProperty.call(SITE_TTL_S, part) ? SITE_TTL_S[part] : SITE_TTL_S.main;
+  }
+
+  /**
+   * Cache-Control for /api/site. A copy served after a failed refresh
+   * (stale) is kept on the CDN for 60 s only, so a recovery shows quickly.
+   */
+  function siteCacheControl(part, stale) {
+    if (stale) return publicCache(SITE_STALE_TTL_S, 0);
+    const key = Object.prototype.hasOwnProperty.call(SITE_TTL_S, part) ? part : 'main';
+    return publicCache(SITE_TTL_S[key], SITE_SWR_S[key]);
+  }
+
   /** Cache-Control for errors (bad input, method not allowed, crashes). */
   function noStore() { return 'no-store'; }
 
@@ -136,10 +156,13 @@
     QUOTES_TTL_S: QUOTES_TTL_S,
     HISTORY_TTL_S: HISTORY_TTL_S,
     STATUS_TTL_S: STATUS_TTL_S,
+    SITE_TTL_S: SITE_TTL_S,
     quotesTtlSeconds: quotesTtlSeconds,
     quotesCacheControl: quotesCacheControl,
     historyCacheControl: historyCacheControl,
     statusCacheControl: statusCacheControl,
+    siteTtlSeconds: siteTtlSeconds,
+    siteCacheControl: siteCacheControl,
     unavailableCacheControl: unavailableCacheControl,
     noStore: noStore
   };

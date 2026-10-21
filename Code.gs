@@ -8336,6 +8336,7 @@ function doPost(e) {
   try { req = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { req = null; }
   // Website feed: read-only, its own token (never the bridge token, which can write).
   if (req && req.action === 'snapshot') return ab_feedSnapshot_(req);
+  if (req && req.action === 'site') return ab_feedSite_(req);
   const real = ab_bridgeToken_(false);
   if (!req || !real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
 
@@ -8402,6 +8403,10 @@ function ab_feedToken_(create) {
   return t;
 }
 
+// Main SYMBOL cells that look like an NSE ticker (notes / labels below the
+// list never reach the website's price feed).
+const AB_FEED_TICKER_RE = /^[A-Z0-9][A-Z0-9&._-]{0,19}$/;
+
 function ab_feedSnapshot_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
@@ -8412,14 +8417,18 @@ function ab_feedSnapshot_(req) {
       const row = layout.data[r];
       const sym = String(row[layout.symbol] || '').trim().toUpperCase();
       if (!sym) continue;                     // blank rows inside the range are skipped, not a stop
+      if (sym === 'SYMBOL') break;            // a repeated header row: another table starts below
+      if (!AB_FEED_TICKER_RE.test(sym)) continue;
       const num = function (v) { return (v === '' || v === null || v === undefined) ? NaN : Number(v); };
       const price = num(row[layout.mktPrice]);
       const chg = layout.pctChange === -1 ? NaN : num(row[layout.pctChange]);
       rows.push([sym, isFinite(price) && price > 0 ? price : null, isFinite(chg) ? chg : null]);
     }
+    const now = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
     return ab_bridgeJson_({
       ok: true,
-      asOf: Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm'),
+      asOf: now,
+      readAt: now,
       delayMinutes: 20,
       source: 'GOOGLEFINANCE via Stock Blueprint sheet',
       cols: ['sym', 'price', 'chg'],
@@ -8430,18 +8439,545 @@ function ab_feedSnapshot_(req) {
   }
 }
 
+// ---------------------------------------------------------------------
+// WEBSITE SITE FEED (read-only, same token as 'snapshot'). The website's
+// server (Vercel api/site) posts {token, action:'site', part} and gets
+//   part 'main'    -> the object tools/export_xlsx.py export() writes as
+//                     window.SB_DATA (web/data/dashboard.js)
+//   part 'history' -> what export_history() writes as window.SB_HISTORY
+//                     (web/data/history.js)
+// so the site shows the sheet's CURRENT data without a manual export.
+// The Python exporter is the reference: same tabs, keys and value
+// conversions, and the same privacy allow-list (the site is public).
+// Portfolio, Risk Manager, Control Panel, Trade Log, Trade Dashboard,
+// 'Entry' alerts and the entry / stop / qty columns are never sent; Trade
+// Log, Portfolio and Risk Manager are read ONLY for their symbol column,
+// to leave those symbols' alerts out. No lock (it never writes), so it
+// can't hold up the PC bridge or the alert job.
+// Check against a downloaded copy: node tools/compare_site_feed.js <file.xlsx>
+// ---------------------------------------------------------------------
+const AB_SITE_SOURCE = 'Google Sheet (live feed)';
+const AB_SITE_ERRORS = ['#N/A', '#DIV/0!', '#REF!', '#VALUE!', '#ERROR!', '#NAME?', '#NUM!', '#NULL!', 'Loading...'];
+
+// Main tab: [output key, header name in row 2, kind]
+//   kind: str | num | pct (already a percent number) | frac (fraction -> x100) | date | bool
+const AB_SITE_MAIN_COLS = [
+  ['sym', 'SYMBOL', 'str'], ['name', 'StockName', 'str'], ['sector', 'Sector', 'str'],
+  ['industry', 'Industry', 'str'], ['ind', 'Basic Industry', 'str'], ['idx', 'INDICES', 'str'],
+  ['rdate', 'Result Date', 'date'], ['done', 'Checkbox', 'bool'], ['mcap', 'MCAP(CR)', 'num'],
+  ['price', 'MKT Price', 'num'], ['chg', '% Change', 'pct'], ['d10', '10 day%', 'frac'],
+  ['d30', '30Day%', 'frac'], ['hi52', '52W High', 'num'], ['down52', '% down', 'frac'],
+  ['pe', 'PE Ratio', 'num'], ['ipe', 'Industry PE', 'num'], ['pevs', 'PE vs Industry PE', 'num'],
+  ['ttmEps', 'TTM EPS', 'num'], ['lfyEps', 'Last FY EPS', 'num'], ['epsg', 'TTM EPS Growth', 'num'],
+  ['peg', 'TTM PEG Ratio', 'num'], ['tgt', 'TargetPrice', 'num'], ['sig', 'TTM Signal', 'str'],
+  ['up', 'Upside Potential', 'frac'], ['sig2', 'Signal', 'str'],
+  ['qrev', 'QoQ[Revenue Growth%}', 'pct'], ['qnp', 'QoQ[NP Growth %]', 'pct'],
+  ['yrev', 'YoY[Revenue Growth %]', 'pct'], ['ynp', 'YoY[NP Growth %]', 'pct'],
+  ['promo', 'Promotor Holding', 'str'], ['fii', 'FII Activity', 'str'], ['opmy', 'OPM YoY%', 'str'],
+  ['opmq', 'OPM QoQ%', 'str'], ['pat', 'Pattern', 'str'], ['fvg', 'FVG', 'str'],
+  ['e10', '10 EMA', 'str'], ['e21', '21 EMA', 'str'], ['zone', 'Zone', 'str'],
+  ['volchg', '%vol Change', 'frac'], ['ipo', 'IPO Level', 'str']
+];
+
+// Alert Log columns that may be published (no personal position data)
+const AB_SITE_ALERT_COLS = ['Date', 'Symbol', 'Company', 'Alert Type', 'Alert Level', 'Trigger Price',
+  'Pattern @ Alert', 'FVG Tags @ Alert', 'Current Price', '% Since Alert', 'Days Since', 'Outcome'];
+const AB_SITE_PUBLIC_ALERT_TYPES = ['Breakout', 'Price Fall'];
+
+// Python strptime formats of text_date(), in its order (%d %m %H %M take 1-2
+// digits, %b a 3-letter month in any letter case).
+const AB_SITE_TEXT_DATES = (function () {
+  const d = '(3[01]|[12]\\d|0[1-9]|[1-9]| [1-9])', m = '(1[0-2]|0[1-9]|[1-9])';
+  const b = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)', t = '\\s+(2[0-3]|[01]\\d|\\d):([0-5]\\d|\\d)';
+  const f = function (src, month, year, time) { return { re: new RegExp('^' + src + '$', 'i'), month: month, year: year, time: time }; };
+  return [
+    f(d + '-' + b + '-(\\d{4})' + t, 'b', 'Y', true),
+    f(d + '-' + b + '-(\\d{4})', 'b', 'Y', false),
+    f(d + '-' + b + '-(\\d{2})', 'b', 'y', false),
+    f(d + '/' + m + '/(\\d{4})' + t, 'm', 'Y', true),
+    f(d + '/' + m + '/(\\d{4})', 'm', 'Y', false)
+  ];
+})();
+const AB_SITE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+function ab_feedSite_(req) {
+  const real = ab_feedToken_(false);
+  if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
+  const part = req.part;
+  if (part !== 'main' && part !== 'history') return ab_bridgeJson_({ ok: false, error: 'unknown part' });
+  try {
+    const readAt = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const cx = { ss: ss, tz: ss.getSpreadsheetTimeZone() || AB_TZ, tabs: {}, dates: {} };
+    const data = part === 'main' ? ab_site_main_(cx, readAt) : ab_site_history_(cx);
+    return ab_bridgeJson_({ ok: true, part: part, readAt: readAt, tz: AB_TZ, data: data });
+  } catch (err) {
+    return ab_bridgeJson_({ ok: false, error: err.message });
+  }
+}
+
+/** Part 'main' = export_xlsx.py export() (window.SB_DATA). */
+function ab_site_main_(cx, readAt) {
+  const data = { generated: readAt, source: AB_SITE_SOURCE };
+
+  // Main: headers on row 2, data from row 3; blank rows are skipped
+  const mainTab = ab_site_tab_(cx, AB_MAIN_SHEET);
+  if (!mainTab) throw new Error('Could not find a "' + AB_MAIN_SHEET + '" tab.');
+  const m = mainTab.values;
+  const hdr = (m[1] || []).map(function (h) { return ab_site_norm_(cx, h); });
+  const idx = [];                               // [key, column, kind]
+  AB_SITE_MAIN_COLS.forEach(function (c) {
+    const j = hdr.indexOf(ab_site_norm_(cx, c[1]));
+    if (j !== -1) idx.push([c[0], j, c[2]]);
+  });
+  const symI = hdr.indexOf('symbol');
+  if (symI === -1) throw new Error('Main has no SYMBOL column on row 2.');
+  const stocks = [];
+  for (let r = 2; r < m.length; r++) {
+    if (ab_site_isBlank_(m[r][symI])) continue;
+    stocks.push(idx.map(function (c) { return ab_site_clean_(cx, m[r][c[1]], c[2]); }));
+  }
+  data.main = { cols: idx.map(function (c) { return c[0]; }), rows: stocks };
+  const priv = ab_site_privateSymbols_(cx, m, hdr, symI);
+
+  // Results season
+  data.resultsTracker = ab_site_table_(cx, ab_site_tab_(cx, 'Results Tracker'), 'Symbol', { stopBlank: false });
+  const perf = ab_site_resultsPerf_(cx, ab_site_tab_(cx, 'Results Performance'));
+  data.resultsPerf = perf;
+  // "as of" = when the sheet last refreshed (from the Results Performance note)
+  const asOf = ab_site_asOf_(perf.note);
+  if (asOf) data.asOf = asOf;
+
+  // Signals
+  data.patterns = ab_site_patterns_(cx, ab_site_tab_(cx, 'Pattern Dashboard'));
+  data.fvg = ab_site_table_(cx, ab_site_tab_(cx, 'UnmitigatedFVG'), 'Symbol', { stopBlank: false });
+  data.gapup = ab_site_table_(cx, ab_site_tab_(cx, 'GapUpFVG'), 'Symbol', { stopBlank: false });
+  data.watchLog = ab_site_table_(cx, ab_site_tab_(cx, 'Signal Watchlist Log'), 'Date Flagged', { stopBlank: false });
+  const bt = ab_site_tab_(cx, 'FVG Backtest');
+  if (bt) data.fvgBacktest = ab_site_table_(cx, bt, 'Flagged On', { stopBlank: false });
+  const ml = ab_site_tab_(cx, 'Mitigated FVG Log');
+  if (ml) data.mitigatedLog = ab_site_table_(cx, ml, 'Date', { stopBlank: false });
+
+  // Alerts: watch-level alerts only (see ab_site_alerts_)
+  data.alerts = ab_site_alerts_(cx, ab_site_tab_(cx, 'Alert Log'), priv);
+
+  // Markets
+  data.indices = ab_site_indices_(cx, ab_site_tab_(cx, 'Indextracker'));
+  data.ipos = ab_site_table_(cx, ab_site_tab_(cx, 'IPOs'), 'NSE SYMBOL', { stopBlank: false });
+  data.newIpos = ab_site_table_(cx, ab_site_tab_(cx, 'New IPOs'), 'COMPANY NAME', { stopBlank: false, maxRows: 300 });
+  data.priceBands = ab_site_table_(cx, ab_site_tab_(cx, 'Price Band Changes'), 'Report Date', { stopBlank: false });
+  return data;
+}
+
+/**
+ * Symbols that are (or were) the user's own trades: any Main row with an
+ * Entry Price or Stoploss typed in, every Trade Log symbol (col B), and the
+ * Portfolio / Risk Manager 'Symbol' blocks (col A). Their alert rows are
+ * never published, because alert levels and outcomes reveal the position.
+ * Only those symbol cells are read from the personal tabs.
+ */
+function ab_site_privateSymbols_(cx, m, hdr, symI) {
+  const priv = {};
+  ['entry price', 'stoploss'].forEach(function (name) {
+    const ci = hdr.indexOf(name);
+    if (ci === -1) return;
+    for (let r = 2; r < m.length; r++) {
+      const v = m[r][ci];
+      if (m[r][symI] && !ab_site_isBlank_(v) && ab_site_clean_(cx, v, 'num')) {
+        priv[ab_site_pyStr_(cx, m[r][symI]).trim().toUpperCase()] = true;
+      }
+    }
+  });
+  ab_site_column_(cx, 'Trade Log', 2).slice(1).forEach(function (v) {
+    if (v) priv[ab_site_pyStr_(cx, v).trim().toUpperCase()] = true;
+  });
+  ['Portfolio', 'Risk Manager'].forEach(function (name) {
+    const col = ab_site_column_(cx, name, 1);
+    let from = -1;
+    for (let i = 0; i < col.length && from === -1; i++) if (ab_site_norm_(cx, col[i]) === 'symbol') from = i + 1;
+    if (from === -1) return;
+    for (let i = from; i < col.length; i++) {
+      const v = col[i];
+      if (typeof v === 'string' && /^[A-Z0-9&_-]{1,20}$/.test(v.trim().toUpperCase())) priv[v.trim().toUpperCase()] = true;
+    }
+  });
+  return priv;
+}
+
+/** Results Performance: A2 note, the season / verdict block, the stock table. */
+function ab_site_resultsPerf_(cx, tab) {
+  const rp = tab ? tab.values : [];
+  const C = function (v, kind) { return ab_site_clean_(cx, v, kind); };
+  const perf = { note: rp.length > 1 ? C(rp[1][0]) : null, seasons: [], verdicts: [], lines: [] };
+  for (let i = 0; i < rp.length; i++) {
+    if (ab_site_norm_(cx, rp[i][0]) !== 'season') continue;
+    for (let j = i + 1; j < rp.length && ab_site_norm_(cx, rp[j][0]) !== 'symbol'; j++) {
+      const r = rp[j];
+      if (!ab_site_isBlank_(r[0]) && r.length > 5 && !ab_site_isBlank_(r[1]) &&
+          !/^(Best|Worst)/.test(ab_site_pyStr_(cx, r[0]))) {
+        perf.seasons.push({ season: C(r[0]), tracked: C(r[1], 'num'), avg: C(r[2], 'frac'),
+                            median: C(r[3], 'frac'), above: C(r[4]), soldOff: C(r[5], 'num') });
+      } else if (r[0]) {
+        perf.lines.push(C(r[0]));
+      }
+      if (r.length > 11 && !ab_site_isBlank_(r[7])) {
+        perf.verdicts.push({ verdict: C(r[7]), stocks: C(r[8], 'num'), avg: C(r[9], 'frac'),
+                             positive: C(r[10], 'frac'), day: C(r[11], 'frac') });
+      }
+    }
+    break;
+  }
+  perf.table = ab_site_table_(cx, tab, 'Symbol');
+  return perf;
+}
+
+/** 'last refreshed dd/MM/yyyy HH:mm' in the Results Performance note -> ISO text. */
+function ab_site_asOf_(note) {
+  const mt = /last refreshed (\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})/.exec(note === null || note === undefined ? '' : String(note));
+  return mt ? ab_site_textDate_(mt[1]) : null;
+}
+
+/** Pattern Dashboard: refresh time, KPI row, signals / clusters / stocks tables. */
+function ab_site_patterns_(cx, tab) {
+  const pd = tab ? tab.values : [];
+  const top = [];
+  pd.slice(0, 3).forEach(function (r) { r.forEach(function (c) { if (c) top.push(ab_site_pyStr_(cx, c)); }); });
+  const mt = /refreshed (\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})/.exec(top.join(' '));
+  const kp = {};
+  for (let i = 0; i < pd.length; i++) {
+    if (ab_site_norm_(cx, pd[i][0]) !== 'stocks scanned') continue;
+    const next = pd[i + 1] || [];
+    for (let j = 0; j < Math.min(pd[i].length, next.length); j++) {
+      if (pd[i][j]) kp[ab_site_pyStr_(cx, pd[i][j])] = ab_site_clean_(cx, next[j]);
+    }
+    break;
+  }
+  return {
+    asOf: mt ? ab_site_textDate_(mt[1]) : null,
+    kpis: kp,
+    signals: ab_site_table_(cx, tab, 'Type', { kinds: { 'Avg % Change': 'frac', '% Advancing': 'frac', 'Avg 10-day %': 'frac', 'Avg 30-day %': 'frac' } }),
+    clusters: ab_site_table_(cx, tab, 'Basic Industry', { kinds: { 'Avg % Change': 'frac' } }),
+    stocks: ab_site_table_(cx, tab, 'Symbol', { kinds: { '% Change': 'frac', '10-day %': 'frac', '30-day %': 'frac' } })
+  };
+}
+
+/**
+ * Alert Log: watch-level alerts only. 'Entry' alerts are the user's real
+ * positions (alert level = their entry price) and private symbols are left
+ * out; only the AB_SITE_ALERT_COLS columns are sent.
+ */
+function ab_site_alerts_(cx, tab, priv) {
+  const al = ab_site_table_(cx, tab, 'Date', { stopBlank: false });
+  const keep = al.cols.filter(function (c) { return AB_SITE_ALERT_COLS.indexOf(c) !== -1; });
+  const ti = al.cols.indexOf('Alert Type'), si = al.cols.indexOf('Symbol');
+  const rows = al.rows.filter(function (r) {
+    if (ti === -1 || si === -1 || AB_SITE_PUBLIC_ALERT_TYPES.indexOf(r[ti]) === -1) return false;
+    const sym = r[si] === null || r[si] === undefined ? '' : String(r[si]).trim().toUpperCase();
+    return !priv[sym];
+  });
+  return {
+    cols: keep,
+    rows: rows.map(function (r) { return keep.map(function (c) { return r[al.cols.indexOf(c)]; }); }),
+    note: 'watch alerts only; symbols with your own entry/stop-loss or a Trade Log row are left out'
+  };
+}
+
+/** Indextracker: drop label rows (no numbers) and the repeated block. */
+function ab_site_indices_(cx, tab) {
+  const ix = ab_site_table_(cx, tab, 'NSE Symbol', { stopBlank: false });
+  const seen = {}, rows = [];
+  ix.rows.forEach(function (r) {
+    const key = typeof r[0] === 'string' ? 's' + r[0] : r[0] === null ? 'null' : 'n' + Number(r[0]);
+    const hasNum = r.slice(1).some(function (v) { return typeof v === 'number' || typeof v === 'boolean'; });
+    if (seen[key] || !hasNum) return;
+    seen[key] = true;
+    rows.push(r);
+  });
+  return { cols: ix.cols, rows: rows };
+}
+
+/**
+ * Part 'history' = export_xlsx.py export_history() (window.SB_HISTORY):
+ * History30 daily candles + PatternData W..AA tags. Refused while Phase 1 is
+ * rewriting History30 (bars for fewer than half of the Main symbols).
+ */
+function ab_site_history_(cx) {
+  const tab = ab_site_tab_(cx, 'History30');
+  if (!tab) throw new Error('Could not find a "History30" tab.');
+  const rows = tab.values;
+  const hdr = (rows[0] || []).map(function (h) { return ab_site_norm_(cx, h); });
+  const ci = {};
+  ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume'].forEach(function (k) {
+    ci[k] = hdr.indexOf(k);
+    if (ci[k] === -1) throw new Error('History30 has no "' + k + '" column.');
+  });
+  const ohlcv = [ci.open, ci.high, ci.low, ci.close, ci.volume];
+  let dates = [];
+  const didx = {}, bars = {}, dayOf = {};
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r], sym = row[ci.symbol];
+    if (!sym) continue;
+    const raw = row[ci.date];
+    const key = raw instanceof Date ? 'd' + raw.getTime() : typeof raw + ':' + raw;
+    let d = dayOf[key];
+    if (d === undefined) {                      // ~30 distinct dates in ~54,000 rows
+      d = ab_site_clean_(cx, raw, 'date');
+      d = d && d.indexOf('/') !== -1 ? ab_site_textDate_(d) : d;
+      d = dayOf[key] = d ? d.slice(0, 10) : '';
+    }
+    if (!d) continue;
+    if (didx[d] === undefined) { didx[d] = dates.length; dates.push(d); }
+    const bar = [didx[d]];
+    for (let k = 0; k < ohlcv.length; k++) bar.push(ab_site_clean_(cx, row[ohlcv[k]], 'num'));
+    const s = ab_site_pyStr_(cx, sym).trim().toUpperCase();
+    (bars[s] = bars[s] || []).push(bar);
+  }
+  // re-index dates in calendar order
+  const order = dates.map(function (x, i) { return i; }).sort(function (a, b) { return dates[a] < dates[b] ? -1 : dates[a] > dates[b] ? 1 : 0; });
+  const remap = {};
+  order.forEach(function (old, i) { remap[old] = i; });
+  dates = order.map(function (i) { return dates[i]; });
+  Object.keys(bars).forEach(function (s) {
+    bars[s] = bars[s].map(function (b) { return [remap[b[0]]].concat(b.slice(1)); })
+      .sort(function (a, b) { return a[0] - b[0]; });
+  });
+
+  const have = Object.keys(bars).length, want = ab_site_mainSymbolCount_(cx);
+  if (have * 2 < want) {
+    throw new Error('sheet is updating (History30 has ' + have + ' of ' + want + ' symbols) - try again shortly');
+  }
+
+  // [pattern W, fvg X, 10 EMA Y, ATR14 Z, 21 EMA AA] per PatternData symbol (col D)
+  const tags = {};
+  const pdTab = ab_site_tab_(cx, 'PatternData');
+  if (pdTab) {
+    const pr = pdTab.values;
+    const ph = (pr[0] || []).map(function (h) { return ab_site_norm_(cx, h); });
+    const col = function (name, dflt) { const j = ph.indexOf(name); return j === -1 ? dflt : j; };
+    const at = [col('pattern', 22), col('long fvg touch', 23), col('10 ema support', 24),
+                col('atr14 (ema)', 25), col('21 ema support', 26)];
+    for (let r = 1; r < pr.length; r++) {
+      const sym = pr[r].length > 3 ? pr[r][3] : null;
+      if (!sym) continue;
+      tags[ab_site_pyStr_(cx, sym).trim().toUpperCase()] = at.map(function (j) {
+        const v = j < pr[r].length ? pr[r][j] : null;
+        return typeof v === 'number' ? v : v instanceof Date ? ab_site_clean_(cx, v) : (v || '');
+      });
+    }
+  }
+  const note = ab_site_resultsNote_(cx);
+  return { asOf: ab_site_asOf_(note), source: 'History30 tab (GOOGLEFINANCE daily candles)', timeframe: '1d',
+           dates: dates, cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: bars, sheetTags: tags };
+}
+
+/** The Results Performance A2 note (holds 'last refreshed dd/MM/yyyy HH:mm'). */
+function ab_site_resultsNote_(cx) {
+  const sh = cx.ss.getSheetByName('Results Performance');
+  return sh && sh.getLastRow() >= 2 ? ab_site_clean_(cx, sh.getRange(2, 1).getValue()) : null;
+}
+
+/** Distinct non-blank Main SYMBOLs (row 2 header), reading that column only. */
+function ab_site_mainSymbolCount_(cx) {
+  const sh = cx.ss.getSheetByName(AB_MAIN_SHEET);
+  if (!sh || sh.getLastRow() < 3 || sh.getLastColumn() < 1) return 0;
+  const hdr = sh.getRange(2, 1, 1, sh.getLastColumn()).getValues()[0]
+    .map(function (h) { return ab_site_norm_(cx, h); });
+  const j = hdr.indexOf('symbol');
+  if (j === -1) return 0;
+  const seen = {};
+  sh.getRange(3, j + 1, sh.getLastRow() - 2, 1).getValues().forEach(function (r) {
+    if (!ab_site_isBlank_(r[0])) seen[ab_site_pyStr_(cx, r[0]).trim().toUpperCase()] = true;
+  });
+  return Object.keys(seen).length;
+}
+
+/** A whole tab, read once per call: { sheet, values } or null. */
+function ab_site_tab_(cx, name) {
+  if (!Object.prototype.hasOwnProperty.call(cx.tabs, name)) {
+    const sh = cx.ss.getSheetByName(name);
+    cx.tabs[name] = sh ? { sheet: sh, values: sh.getDataRange().getValues() } : null;
+  }
+  return cx.tabs[name];
+}
+
+/** One column of a tab (1-based), e.g. the symbols of a personal tab - nothing else is read. */
+function ab_site_column_(cx, name, col) {
+  const sh = cx.ss.getSheetByName(name);
+  if (!sh || sh.getLastRow() < 1 || sh.getLastColumn() < col) return [];
+  return sh.getRange(1, col, sh.getLastRow(), 1).getValues().map(function (r) { return r[0]; });
+}
+
+/**
+ * export_xlsx.py table(): find the row whose first cell is `firstHeader`,
+ * read headers from it and data rows below until the first blank first cell
+ * (opt.stopBlank false: skip blank rows instead). opt.kinds = {header: kind};
+ * other columns get frac/auto from the number format of their first numeric
+ * cell (formats are read for those rows only). opt.maxRows caps the rows.
+ */
+function ab_site_table_(cx, tab, firstHeader, opt) {
+  opt = opt || {};
+  const stopBlank = opt.stopBlank !== false, kinds = opt.kinds || {};
+  const rows = tab ? tab.values : [];
+  const want = ab_site_norm_(cx, firstHeader);
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i].length || ab_site_norm_(cx, rows[i][0]) !== want) continue;
+    const hdr = rows[i].map(function (h) { return ab_site_isBlank_(h) ? '' : ab_site_pyStr_(cx, h).trim(); });
+    while (hdr.length && !hdr[hdr.length - 1]) hdr.pop();
+    const idxs = [];
+    for (let k = i + 1; k < rows.length; k++) {
+      if (!rows[k].length || ab_site_isBlank_(rows[k][0])) {
+        if (stopBlank) break;
+        continue;
+      }
+      idxs.push(k);
+      if (opt.maxRows && idxs.length >= opt.maxRows) break;
+    }
+    let fmts = null;
+    const fmtAt = function (k, j) {
+      if (!fmts) {
+        const hi = idxs[Math.min(idxs.length, 200) - 1];
+        fmts = tab.sheet.getRange(idxs[0] + 1, 1, hi - idxs[0] + 1, rows[i].length).getNumberFormats();
+      }
+      const fr = fmts[k - idxs[0]] || [];
+      return j < fr.length ? fr[j] : '';
+    };
+    const ks = hdr.map(function (h, j) {
+      if (Object.prototype.hasOwnProperty.call(kinds, h) && kinds[h]) return kinds[h];
+      for (let n = 0; n < Math.min(idxs.length, 200); n++) {   // col_kind(): first numeric cell
+        if (typeof rows[idxs[n]][j] === 'number') return ab_site_isFracFormat_(fmtAt(idxs[n], j)) ? 'frac' : 'auto';
+      }
+      return 'auto';
+    });
+    return {
+      cols: hdr,
+      rows: idxs.map(function (k) { return hdr.map(function (h, j) { return ab_site_clean_(cx, rows[k][j], ks[j]); }); })
+    };
+  }
+  return { cols: [], rows: [] };
+}
+
+/**
+ * export_xlsx.py clean(v, kind): one cell -> JSON value.
+ *   kind: str | num | pct | frac (x100) | date | bool | auto (default)
+ * Errors ('#N/A', 'Loading...', anything starting with '#') and blanks ->
+ * null; numbers rounded to 4 dp; dates -> 'yyyy-MM-dd' ('yyyy-MM-dd HH:mm'
+ * when the time isn't midnight) in the spreadsheet's time zone; text dates
+ * such as '21-Aug-2026' -> ISO text.
+ */
+function ab_site_clean_(cx, v, kind) {
+  kind = kind || 'auto';
+  if (v === null || v === undefined) return null;
+  const numeric = kind === 'num' || kind === 'pct' || kind === 'frac';
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (s === '' || s.charAt(0) === '#' || AB_SITE_ERRORS.indexOf(s) !== -1) return null;
+    if (!numeric) return ab_site_textDate_(s) || s;
+    v = ab_site_pyFloat_(s.replace(/,/g, ''));
+    if (v === null) return null;
+  }
+  if (typeof v === 'boolean') return kind === 'bool' || kind === 'auto' ? v : null;
+  if (v instanceof Date) {
+    const t = ab_site_fmtDate_(cx, v);
+    if (t.slice(0, 10) === '1899-12-30') return t.slice(11);   // time-only cell: Python str(time)
+    if (numeric) return null;
+    return t.slice(11, 16) === '00:00' ? t.slice(0, 10) : t.slice(0, 16);
+  }
+  if (typeof v === 'number') {
+    if (kind === 'frac') v = v * 100;
+    if (kind === 'str' || kind === 'date') return ab_site_pyStr_(cx, v);
+    return ab_site_round4_(v);
+  }
+  return String(v);
+}
+
+/** Date -> 'yyyy-MM-dd HH:mm:ss' in the spreadsheet's zone (cached: History30 repeats ~30 dates). */
+function ab_site_fmtDate_(cx, d) {
+  const k = d.getTime();
+  if (!(k in cx.dates)) cx.dates[k] = Utilities.formatDate(d, cx.tz, 'yyyy-MM-dd HH:mm:ss');
+  return cx.dates[k];
+}
+
+/** export_xlsx.py text_date(): '21-Aug-2026', '01/10/2026 20:23' ... -> ISO text, or null. */
+function ab_site_textDate_(s) {
+  if (!(s.length >= 8 && s.length <= 17 && /^\d\d/.test(s))) return null;
+  for (let i = 0; i < AB_SITE_TEXT_DATES.length; i++) {
+    const f = AB_SITE_TEXT_DATES[i], mt = f.re.exec(s);
+    if (!mt) continue;
+    const day = Number(mt[1]);
+    const mon = f.month === 'b' ? AB_SITE_MONTHS.indexOf(mt[2].toLowerCase()) + 1 : Number(mt[2]);
+    let year = Number(mt[3]);
+    if (f.year === 'y') year += year <= 68 ? 2000 : 1900;
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    if (day > [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mon - 1]) continue;
+    const p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    const ymd = ('000' + year).slice(-4) + '-' + p2(mon) + '-' + p2(day);
+    return f.time ? ymd + ' ' + p2(Number(mt[4])) + ':' + p2(Number(mt[5])) : ymd;
+  }
+  return null;
+}
+
+/** export_xlsx.py norm(): collapse whitespace, lower-case. */
+function ab_site_norm_(cx, h) {
+  return (h ? ab_site_pyStr_(cx, h) : '').split(/\s+/).filter(String).join(' ').toLowerCase();
+}
+
+/** Python str() of a cell value as openpyxl reads it (whole numbers are int). */
+function ab_site_pyStr_(cx, v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'True' : 'False';
+  if (v instanceof Date) {
+    const t = ab_site_fmtDate_(cx, v);
+    return t.slice(0, 10) === '1899-12-30' ? t.slice(11) : t;
+  }
+  if (typeof v !== 'number') return String(v);
+  if (!isFinite(v)) return isNaN(v) ? 'nan' : v > 0 ? 'inf' : '-inf';
+  if (Number.isInteger(v) && Math.abs(v) < 1e16) return String(v);
+  const e = v.toExponential().split('e'), x = Number(e[1]);   // shortest digits, like Python repr
+  if (x >= -4 && x < 16) return String(v);
+  return e[0] + 'e' + (x < 0 ? '-' : '+') + (Math.abs(x) < 10 ? '0' : '') + Math.abs(x);
+}
+
+/** Python float(text), or null (also for nan / inf, which JSON can't carry). */
+function ab_site_pyFloat_(s) {
+  const t = s.trim();
+  if (!/^[+-]?(\d(_?\d)*(\.(\d(_?\d)*)?)?|\.\d(_?\d)*)([eE][+-]?\d(_?\d)*)?$/.test(t)) return null;
+  return Number(t.replace(/_/g, ''));
+}
+
+/** Python round(v, 4): nearest 4-dp value, exact ties (odd multiples of 1/32) to even. */
+function ab_site_round4_(v) {
+  if (!isFinite(v)) return null;
+  if (Number.isInteger(v * 32) && (v * 32) % 2 !== 0 && Math.abs(v) < 1e10) {
+    const f = Math.floor(v * 10000);
+    return (f % 2 === 0 ? f : f + 1) / 10000;
+  }
+  return Number(v.toFixed(4));
+}
+
+/** True for formats such as 0.00% (a quoted "%" or \% is a literal sign: the value is already a percent). */
+function ab_site_isFracFormat_(f) {
+  return String(f || '').replace(/"[^"]*"/g, '').replace(/\\./g, '').indexOf('%') !== -1;
+}
+
+function ab_site_isBlank_(v) { return v === null || v === undefined || v === ''; }
+
 /** Menu: shows the read-only token for the website's server settings. */
 function runFeedSetupInfo() {
   const ui = SpreadsheetApp.getUi();
   const token = ab_feedToken_(true);
   ui.alert('Website feed - setup info',
     'READ-ONLY FEED TOKEN (copy exactly):\n' + token + '\n\n' +
+    'This one token feeds BOTH the website\'s price feed and its full live data\n' +
+    '(the same tabs the Excel export publishes - never Portfolio, Risk Manager,\n' +
+    'Control Panel, Trade Log, Trade Dashboard or Entry alerts).\n\n' +
     'In Vercel > your project > Settings > Environment Variables add:\n' +
     '  MARKET_DATA_PROVIDER = sheet\n' +
     '  SHEET_FEED_URL = the same web app address the PC bridge uses (ends with /exec)\n' +
     '  SHEET_FEED_TOKEN = the token above\n' +
-    'then redeploy the site. This token can only read prices; it cannot change the sheet.\n\n' +
-    'The web app must be on the NEW version of this code: Deploy > Manage deployments > pencil > Version: New version > Deploy.',
+    'then redeploy the site. This token can only read; it cannot change the sheet.\n\n' +
+    'The web app must be on the NEW version of this code - update the EXISTING deployment\n' +
+    '(never "New deployment": that changes the address the PC bridge uses):\n' +
+    'Deploy > Manage deployments > pencil > Version: New version > Deploy.',
     ui.ButtonSet.OK);
 }
 

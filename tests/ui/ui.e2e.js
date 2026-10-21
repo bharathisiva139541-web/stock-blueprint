@@ -4,6 +4,9 @@
 // Checks: every page renders without errors in light and dark themes, no
 // horizontal page scroll at 360 px, theme tokens apply, the industry page
 // only lists its own category, and Daily Suggestions matches the engine.
+// Live site feed: api/site, api/market-status and api/quotes are MOCKED with
+// page routes (same-origin Vercel, the Firebase copy's remote API, failures);
+// every other request off the test server is blocked - no network is used.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +25,88 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream' });
   fs.createReadStream(p).pipe(res);
 });
+
+// ---------- live-feed mocks ----------
+function windowVar(file, name) { const w = {}; new Function('window', fs.readFileSync(file, 'utf8'))(w); return w[name]; }
+const CFG = windowVar(path.join(WEB, 'config.js'), 'SB_CONFIG');
+const REMOTE = new URL(CFG.remoteApi);                    // the API the Firebase copy uses (mocked, never contacted)
+const FIREBASE = 'http://stock-blueprint.web.app/';      // served from web/ by a route: no DNS, no network
+const SAVED = windowVar(path.join(WEB, 'data', 'dashboard.js'), 'SB_DATA');
+const HIST = windowVar(path.join(WEB, 'data', 'history.js'), 'SB_HISTORY');
+const SENTINEL = 43210.98;                                // a price only the mocked live feed has
+// IST 'YYYY-MM-DD HH:MM' a few minutes ago: web/app.js ages a DELAYED read from readAt
+const istAgo = (min) => new Date(Date.now() + (330 - min) * 60000).toISOString().slice(0, 16).replace('T', ' ');
+const READ_AT = istAgo(2);
+const LIVE_MAIN = JSON.parse(JSON.stringify(SAVED));
+LIVE_MAIN.generated = READ_AT;
+LIVE_MAIN.source = 'Google Sheet (live feed)';
+const SENT_SYM = LIVE_MAIN.main.rows[0][LIVE_MAIN.main.cols.indexOf('sym')];
+LIVE_MAIN.main.rows[0][LIVE_MAIN.main.cols.indexOf('price')] = SENTINEL;
+
+/** API answers for one scenario: url -> { json, status } | 'abort'. */
+function liveApi(o) {
+  return (u) => {
+    const part = u.searchParams.get('part');
+    if (u.pathname === '/api/site') {
+      if (o.site === 'abort') return 'abort';
+      if (o.site === 'fail') return { json: { ok: false, configured: true, part, message: 'mock failure: sheet is updating (History30 has 3 of 1800 symbols) - try again shortly' } };
+      return { json: { ok: true, configured: true, part, readAt: READ_AT, fetchedAt: istAgo(1), stale: false,
+        session: { state: o.session, lastCompletedSession: '2026-10-20' }, priceState: o.priceState, data: part === 'history' ? HIST : LIVE_MAIN } };
+    }
+    if (u.pathname === '/api/market-status') {
+      return { json: o.provider === 'sheet'
+        ? { provider: { name: 'sheet', configured: true, requires: ['SHEET_FEED_URL', 'SHEET_FEED_TOKEN'], licensing: 'mock licensing note' },
+            session: { state: o.session, now: '2026-10-21 10:06', lastCompletedSession: '2026-10-20' }, status: { ok: false, state: 'UNAVAILABLE', message: 'mock provider: sheet feed timed out' } }
+        : { provider: { name: 'none', configured: false, requires: ['MARKET_DATA_PROVIDER'], licensing: '' },
+            session: { state: o.session, now: '2026-10-21 10:06', lastCompletedSession: '2026-10-20' }, status: { ok: false, state: 'UNAVAILABLE', message: 'no provider' } } };
+    }
+    if (u.pathname === '/api/quotes') {
+      return { json: { state: 'UNAVAILABLE', source: 'sheet', asOf: null, items: [], errors: [{ symbol: '*', reason: 'mock provider: sheet feed timed out' }], message: 'mock provider: sheet feed timed out' } };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  };
+}
+/** Route every request of a context: mocked api/, web/ files, everything else blocked. */
+async function routeAll(context, siteBase, api, calls) {
+  const site = new URL(siteBase);
+  await context.route('**/*', async (route) => {
+    const u = new URL(route.request().url());
+    if ((u.origin === site.origin || u.origin === REMOTE.origin) && u.pathname.indexOf('/api/') === 0) {
+      calls.push(u.origin + u.pathname + u.search);
+      const r = api(u);
+      if (r === 'abort') return route.abort('failed');
+      return route.fulfill({ status: r.status || 200, contentType: 'application/json; charset=utf-8',
+        headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(r.json) });
+    }
+    if (u.origin !== site.origin) return route.abort('blockedbyclient');   // nothing leaves the machine
+    if (site.hostname !== '127.0.0.1') {                                   // the fake Firebase host: serve web/
+      const f = path.join(WEB, decodeURIComponent(u.pathname).replace(/^\/$/, '/index.html'));
+      if (!f.startsWith(WEB) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
+      return route.fulfill({ path: f, contentType: TYPES[path.extname(f)] || 'application/octet-stream' });
+    }
+    return route.continue();
+  });
+}
+function watchErrors(page) {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  return errors;
+}
+const dataReady = () => window.SB && window.SB.ctx && window.SB.ctx.D && document.querySelector('#app .page');
+async function pageState(page) {
+  return page.evaluate(() => {
+    const pill = document.querySelector('#status'), ban = document.querySelector('#site-banner');
+    const first = document.querySelector('#ov-data tbody tr');
+    return {
+      pillCls: pill.className, pill: pill.textContent, tip: pill.title,
+      banner: ban.hidden ? null : ban.textContent, live: window.SB.ctx.site.live, state: window.SB.ctx.market.state,
+      message: window.SB.ctx.market.message, apiBase: window.SB.apiBase(), siteRow: first ? first.textContent : '',
+      liveBadge: [...document.querySelectorAll('.badge, .status-pill')].some((b) => /^LIVE\b/.test(b.textContent.trim())),
+      overflow: document.documentElement.scrollWidth - window.innerWidth
+    };
+  });
+}
 
 const PAGES = ['overview', 'watchlist', 'suggestions', 'industries', 'industries/it', 'industries/review', 'strategy', 'signals', 'excel', 'results', 'alerts', 'backtest', 'markets'];
 let failures = 0;
@@ -103,6 +188,136 @@ function check(name, fn) {
       await ctx.close();
     }
   }
+
+  console.log('live site feed (mocked api/)');
+  await check('static host: saved copy with banner, no API calls', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    const calls = [];
+    await routeAll(c, base, liveApi({}), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#overview', { waitUntil: 'load' });
+    await p.waitForFunction(dataReady, null, { timeout: 15000 });
+    await p.waitForTimeout(300);
+    const st = await pageState(p);
+    const bases = await p.evaluate(() => {
+      const f = window.SB.apiBaseFor, R = 'https://example.vercel.app';
+      return [f('stock-blueprint.web.app', 'https:', null, R), f('x.firebaseapp.com', 'https:', true, R), f('stock-blueprint.web.app', 'https:', null, ''),
+        f('stock-blueprint-sandy.vercel.app', 'https:', null, R), f('localhost', 'http:', null, R), f('localhost', 'http:', true, R), f('', 'file:', null, R)];
+    });
+    await c.close();
+    assert.deepStrictEqual(bases, ['https://example.vercel.app/', 'https://example.vercel.app/', null, '', null, '', null], 'API base per host');
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.deepStrictEqual(calls, [], 'no api/ request on a static host');
+    assert.strictEqual(st.apiBase, null);
+    assert.strictEqual(st.live, false);
+    assert.ok(/st-CACHED/.test(st.pillCls), 'pill CACHED: ' + st.pillCls);
+    assert.ok(st.banner && /Showing a saved copy/.test(st.banner) && /not updated automatically/.test(st.banner), 'banner: ' + st.banner);
+    assert.ok(/Site data \(Google Sheet\)\s*Saved copy/.test(st.siteRow), 'site row: ' + st.siteRow);
+  });
+
+  await check('live feed (same-origin api/): DELAYED pill, live prices + candles, provider failure shown, no banner', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#overview', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB && window.SB.ctx && window.SB.ctx.D && /Quotes unavailable/.test(window.SB.ctx.market.message || ''), null, { timeout: 15000 });
+    const st = await pageState(p);
+    const drawer = await p.evaluate((sym) => { window.SB.openStock(sym); return document.querySelector('#drawer-body').textContent; }, SENT_SYM);
+    await p.keyboard.press('Escape');
+    await p.goto(base + '#suggestions', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB.ctx.history, null, { timeout: 15000 });
+    const H = await p.evaluate(() => ({ live: window.SB.ctx.history.live, readAt: window.SB.ctx.history.readAt, reason: window.SB.ctx.site.historyReason }));
+    await p.waitForTimeout(500);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.strictEqual(st.apiBase, '');
+    assert.strictEqual(st.live, true);
+    assert.ok(/st-DELAYED/.test(st.pillCls) && /^DELAYED/.test(st.pill), 'pill DELAYED: ' + st.pill);
+    assert.ok(!st.liveBadge, 'sheet data is never labelled LIVE');
+    assert.ok(/mock provider: sheet feed timed out/.test(st.tip), 'provider failure in the pill tooltip: ' + st.tip);
+    assert.strictEqual(st.banner, null, 'no stale banner');
+    assert.ok(/Site data \(Google Sheet\)\s*Live feed/.test(st.siteRow), 'site row: ' + st.siteRow);
+    assert.ok(drawer.indexOf('43,210.98') >= 0, 'sentinel price from the live feed is shown');
+    assert.ok(H.live === true && H.readAt === READ_AT && !H.reason, 'candles from the live feed: ' + JSON.stringify(H));
+    assert.ok(calls.some((u) => /\/api\/site\?part=main$/.test(u)) && calls.some((u) => /\/api\/site\?part=history$/.test(u)), 'calls: ' + calls.join(' '));
+    assert.ok(calls.every((u) => u.indexOf(new URL(base).origin) === 0), 'same-origin API only');
+  });
+
+  await check('Firebase copy: remote API from web/config.js, EOD pill, no overflow at 360 px', async () => {
+    const c = await browser.newContext({ viewport: { width: 360, height: 780 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:theme', '"dark"'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    await routeAll(c, FIREBASE, liveApi({ priceState: 'EOD', session: 'closed' }), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(FIREBASE + '#overview', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB && window.SB.ctx && window.SB.ctx.D && /No market-data provider/.test(window.SB.ctx.market.message || ''), null, { timeout: 15000 });
+    const st = await pageState(p);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.strictEqual(st.apiBase, REMOTE.href);
+    assert.ok(calls.length && calls.every((u) => u.indexOf(REMOTE.origin + '/api/') === 0), 'remote API only: ' + calls.join(' '));
+    assert.ok(/st-EOD/.test(st.pillCls) && /^EOD/.test(st.pill), 'pill EOD: ' + st.pill);
+    assert.strictEqual(st.banner, null, 'no stale banner');
+    assert.ok(st.overflow <= 0, 'horizontal page overflow ' + st.overflow + 'px');
+  });
+
+  await check('live feed fails (ok:false): saved copy + banner with the reason, candles from data/history.js', async () => {
+    const c = await browser.newContext({ viewport: { width: 360, height: 780 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    await routeAll(c, base, liveApi({ site: 'fail', session: 'open' }), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#overview', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB && window.SB.ctx && window.SB.ctx.D && /No market-data provider/.test(window.SB.ctx.market.message || ''), null, { timeout: 15000 });
+    const st = await pageState(p);
+    const price = await p.evaluate((sym) => window.SB.ctx.bySym[sym].price, SENT_SYM);
+    await p.goto(base + '#suggestions', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB.ctx.history, null, { timeout: 15000 });
+    const hLive = await p.evaluate(() => !!window.SB.ctx.history.live);
+    await p.waitForTimeout(500);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.strictEqual(st.live, false);
+    assert.ok(/st-CACHED/.test(st.pillCls), 'pill CACHED: ' + st.pillCls);
+    assert.ok(st.banner && /Showing a saved copy/.test(st.banner) && /Live data could not be loaded: mock failure: sheet is updating/.test(st.banner), 'banner: ' + st.banner);
+    assert.ok(/Saved copy/.test(st.siteRow) && /mock failure/.test(st.siteRow), 'site row: ' + st.siteRow);
+    assert.notStrictEqual(price, SENTINEL, 'saved prices, not the live mock');
+    assert.strictEqual(hLive, false, 'candles from data/history.js');
+    assert.ok(!calls.some((u) => /part=history/.test(u)), 'no live candle request after a failed boot');
+    assert.ok(st.overflow <= 0, 'horizontal page overflow ' + st.overflow + 'px');
+  });
+
+  await check('live feed unreachable (network error): saved copy + banner', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await routeAll(c, base, () => 'abort', []);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#overview', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB && window.SB.ctx && window.SB.ctx.D && /Market-data API not available/.test(window.SB.ctx.market.message || ''), null, { timeout: 15000 });
+    const st = await pageState(p);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.ok(st.banner && /Live data could not be loaded: /.test(st.banner), 'banner: ' + st.banner);
+    assert.ok(/st-CACHED/.test(st.pillCls), 'pill CACHED');
+  });
+
+  const preview = path.join(__dirname, '..', '..', 'dist', 'stock-blueprint-preview.html');
+  if (fs.existsSync(preview)) {
+    await check('single-file preview (file://) renders the inlined saved copy', async () => {
+      const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+      const p = await c.newPage(), errors = watchErrors(p);
+      await p.goto('file://' + preview + '#overview', { waitUntil: 'load' });
+      await p.waitForFunction(dataReady, null, { timeout: 15000 });
+      const st = await pageState(p);
+      await c.close();
+      assert.deepStrictEqual(errors, [], 'console/page errors');
+      assert.strictEqual(st.apiBase, null);
+      assert.ok(st.banner && /not updated automatically/.test(st.banner), 'banner: ' + st.banner);
+    });
+  } else console.log('  - single-file preview: skipped (run npm run build first)');
+
   await browser.close();
   server.close();
   console.log(failures ? '\n' + failures + ' UI check(s) failed' : '\nall UI checks passed');
