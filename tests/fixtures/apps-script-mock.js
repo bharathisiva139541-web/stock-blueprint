@@ -10,6 +10,12 @@
  *   env.run('AB_TZ')                                         -> evaluate in the Code.gs scope
  *   env.reads (getSheetByName names) / env.ranges (cells read: {sheet, kind, row, col, rows, cols})
  *   env.writes / env.mails / env.alerts / env.calls          -> what Code.gs tried to do
+ *   env.sheet(name)                                           -> a tab's cells (values written by setValues
+ *                                                                read back by getValues), or null
+ *   env.triggers ([{ id, handler, everyMinutes, ... }])       -> installed triggers (ScriptApp.newTrigger)
+ *   env.props                                                 -> the Script Properties store
+ *   env.setNow(ms) (with opts.now)                            -> move the frozen clock
+ *   env.onRead = function (range) {...}                       -> called on every getValues (tests move the clock)
  *
  * Workbook = the shape web/lib/xlsx-reader.js returns ({ sheets: [{ name, rows,
  * numFmts }] }), so a real .xlsx can be fed in. null cells read as '' (like
@@ -19,6 +25,9 @@
  * Apps Script returns them; time-only values sit on 1899-12-30 like Sheets
  * serials. JS Date cells are copied into the vm realm (instanceof works).
  * Unknown service methods are harmless no-ops (recorded in env.calls).
+ * Tabs made by insertSheet have Sheets' default size (1000 x 26) and refuse
+ * ranges outside it (insertRowsAfter / deleteColumns change it); workbook
+ * tabs grow as needed.
  */
 'use strict';
 
@@ -115,14 +124,18 @@ function a1ToRange(a1) {
 
 /**
  * Build the fake services for `workbook` inside vm context `ctx`.
- * opts: { tz ('Asia/Kolkata'), props: {key: value}, lockBusy, now: Date|ms (frozen clock) }
+ * opts: { tz ('Asia/Kolkata'), props: {key: value}, lockBusy, now: Date|ms (frozen clock, env.setNow moves it),
+ *         triggers: ['handlerName', ...] (already installed) }
  */
 function createEnv(workbook, opts) {
   opts = opts || {};
   const ctx = vm.createContext({});
   const RealmDate = vm.runInContext('Date', ctx);
   const tz = opts.tz || 'Asia/Kolkata';
-  const env = { context: ctx, writes: [], reads: [], ranges: [], mails: [], alerts: [], calls: [], logs: [], tz: tz };
+  const env = { context: ctx, writes: [], reads: [], ranges: [], mails: [], alerts: [], calls: [], logs: [], tz: tz,
+                triggers: [], onRead: null };
+
+  const tabs = {};   // name -> { grid, size, hidden() } for env.sheet
 
   // ---- cells -> Apps Script values (in the vm realm)
   const OFF = Object.prototype.hasOwnProperty.call(FIXED_OFFSETS, tz) ? FIXED_OFFSETS[tz] : 330;
@@ -144,6 +157,10 @@ function createEnv(workbook, opts) {
     const grid = (spec.rows || []).map(function (r, i) {
       return (r || []).map(function (v, j) { return toCell(v, fmts[i] && fmts[i][j]); });
     });
+    // inserted tabs have a fixed size like Sheets (1000 x 26); workbook tabs grow as needed
+    const size = spec.size ? { rows: spec.size.rows, cols: spec.size.cols } : null;
+    let hidden = !!spec.hidden;
+    tabs[spec.name] = { grid: grid, size: size, hidden: function () { return hidden; } };
     function lastRow() {
       for (let r = grid.length - 1; r >= 0; r--) if (grid[r].some(function (v) { return v !== ''; })) return r + 1;
       return 0;
@@ -158,6 +175,9 @@ function createEnv(workbook, opts) {
     let sheet = null;
     function makeRange(row, col, nr, nc) {
       if (!(row >= 1 && col >= 1 && nr >= 1 && nc >= 1)) throw new Error('Range mock: bad coordinates ' + [row, col, nr, nc].join(','));
+      if (size && (row + nr - 1 > size.rows || col + nc - 1 > size.cols)) {
+        throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+      }
       function grid2(f) {
         const out = [];
         for (let r = 0; r < nr; r++) {
@@ -168,7 +188,11 @@ function createEnv(workbook, opts) {
         return out;
       }
       function copy(v) { return v instanceof RealmDate ? new RealmDate(v.getTime()) : v; }
-      function seen(kind) { env.ranges.push({ sheet: spec.name, kind: kind, row: row, col: col, rows: nr, cols: nc }); }
+      function seen(kind) {
+        const g = { sheet: spec.name, kind: kind, row: row, col: col, rows: nr, cols: nc };
+        env.ranges.push(g);
+        if (typeof env.onRead === 'function') env.onRead(g);
+      }
       function write(kind, vals) {
         env.writes.push({ sheet: spec.name, kind: kind, row: row, col: col });
         if (kind !== 'values') return;
@@ -223,15 +247,30 @@ function createEnv(workbook, opts) {
       getSheetName: function () { return spec.name; },
       getLastRow: lastRow,
       getLastColumn: lastCol,
-      getMaxRows: function () { return Math.max(grid.length, 1); },
-      getMaxColumns: function () { return Math.max(lastCol(), 1); },
+      getMaxRows: function () { return size ? size.rows : Math.max(grid.length, 1); },
+      getMaxColumns: function () { return size ? size.cols : Math.max(lastCol(), 1); },
+      insertRowsAfter: function (after, n) {
+        env.writes.push({ sheet: spec.name, kind: 'insertRows', row: after + 1, col: 1 });
+        if (size) size.rows += n;
+        grid.splice.apply(grid, [Math.min(after, grid.length), 0].concat(Array.from({ length: n }, function () { return []; })));
+        return sheet;
+      },
+      deleteColumns: function (from, n) {
+        env.writes.push({ sheet: spec.name, kind: 'deleteColumns', row: 1, col: from });
+        if (size) size.cols -= n;
+        grid.forEach(function (r) { r.splice(from - 1, n); });
+        return sheet;
+      },
+      hideSheet: function () { hidden = true; return sheet; },
+      showSheet: function () { hidden = false; return sheet; },
+      activate: function () { active = sheet; return sheet; },
       getDataRange: function () { return makeRange(1, 1, Math.max(lastRow(), 1), Math.max(lastCol(), 1)); },
       getRange: function (a, b, c, d) {
         if (typeof a === 'string') { const g = a1ToRange(a); return makeRange(g[0], g[1], g[2], g[3]); }
         return makeRange(a, b, c === undefined ? 1 : c, d === undefined ? 1 : d);
       },
       getFrozenRows: function () { return 0; },
-      isSheetHidden: function () { return !!spec.hidden; },
+      isSheetHidden: function () { return hidden; },
       getSheetId: function () { return spec.id || 0; },
       getParent: function () { return ss; }
     };
@@ -240,6 +279,7 @@ function createEnv(workbook, opts) {
   }
 
   const sheets = (workbook && workbook.sheets || []).map(makeSheet);
+  let active = sheets[0] || null;
   const ss = makeLenient('Spreadsheet', {
     getSheetByName: function (n) {
       env.reads.push(n);
@@ -247,6 +287,27 @@ function createEnv(workbook, opts) {
       return null;
     },
     getSheets: function () { return sheets.slice(); },
+    getNumSheets: function () { return sheets.length; },
+    getActiveSheet: function () { return active; },
+    setActiveSheet: function (sh) { active = sh; return sh; },
+    insertSheet: function (name, index) {
+      if (typeof name !== 'string') throw new Error('insertSheet mock: give the tab a name');
+      if (sheets.some(function (x) { return x.getName() === name; })) {
+        throw new Error('A sheet with the name "' + name + '" already exists. Please enter another name.');
+      }
+      const sh = makeSheet({ name: name, rows: [], size: { rows: 1000, cols: 26 } });
+      sheets.splice(index === undefined ? sheets.length : Math.max(0, Math.min(index, sheets.length)), 0, sh);
+      env.writes.push({ sheet: name, kind: 'insertSheet', row: 1, col: 1 });
+      active = sh;                                   // like Sheets: the new tab becomes the active one
+      return sh;
+    },
+    deleteSheet: function (sh) {
+      const i = sheets.indexOf(sh);
+      if (i === -1) throw new Error('deleteSheet mock: not a tab of this spreadsheet');
+      sheets.splice(i, 1);
+      env.writes.push({ sheet: sh.getName(), kind: 'deleteSheet', row: 1, col: 1 });
+      if (active === sh) active = sheets[0] || null;
+    },
     getSpreadsheetTimeZone: function () { return tz; },
     getName: function () { return 'Mock workbook'; },
     getId: function () { return 'mock-spreadsheet-id'; },
@@ -285,6 +346,40 @@ function createEnv(workbook, opts) {
       putAll: function (o) { Object.keys(o || {}).forEach(function (k) { m[k] = String(o[k]); }); },
       removeAll: function (ks) { (ks || []).forEach(function (k) { delete m[k]; }); }
     }, env.calls);
+  }
+
+  // ---- triggers: ScriptApp.newTrigger(fn).timeBased().everyMinutes(n).create() ...
+  let triggerSeq = 0;
+  function addTrigger(t) { t.id = 'trigger-' + (++triggerSeq); env.triggers.push(t); return t; }
+  (opts.triggers || []).forEach(function (h) { addTrigger({ handler: h, kind: 'CLOCK' }); });
+  function triggerObj(t) {
+    return {
+      getHandlerFunction: function () { return t.handler; },
+      getUniqueId: function () { return t.id; },
+      getEventType: function () { return t.kind; },
+      getTriggerSource: function () { return 'CLOCK'; }
+    };
+  }
+  function triggerBuilder(handler) {
+    const t = { handler: String(handler), kind: 'CLOCK' };
+    const b = {
+      timeBased: function () { return b; },
+      everyMinutes: function (n) {
+        if ([1, 5, 10, 15, 30].indexOf(n) === -1) throw new Error('everyMinutes mock: Apps Script allows 1, 5, 10, 15 or 30');
+        t.everyMinutes = n; return b;
+      },
+      everyHours: function (n) { t.everyHours = n; return b; },
+      everyDays: function (n) { t.everyDays = n; return b; },
+      everyWeeks: function (n) { t.everyWeeks = n; return b; },
+      onWeekDay: function (d) { t.weekDay = d; return b; },
+      atHour: function (h) { t.atHour = h; return b; },
+      nearMinute: function (m) { t.nearMinute = m; return b; },
+      inTimezone: function (z) { t.tz = z; return b; },
+      after: function (ms) { t.after = ms; return b; },
+      at: function (d) { t.at = d; return b; },
+      create: function () { return triggerObj(addTrigger(t)); }
+    };
+    return b;
   }
 
   const lock = makeLenient('Lock', {
@@ -351,7 +446,14 @@ function createEnv(workbook, opts) {
     }, env.calls),
     ScriptApp: makeLenient('ScriptApp', {
       getService: function () { return { getUrl: function () { return ''; } }; },
-      getProjectTriggers: function () { return []; },
+      getProjectTriggers: function () { env.triggerReads = (env.triggerReads || 0) + 1; return env.triggers.map(triggerObj); },
+      deleteTrigger: function (t) {
+        const id = t && t.getUniqueId ? t.getUniqueId() : null;
+        const i = env.triggers.findIndex(function (x) { return x.id === id; });
+        if (i === -1) throw new Error('deleteTrigger mock: no such trigger');
+        env.triggers.splice(i, 1);
+      },
+      newTrigger: function (handler) { return triggerBuilder(handler); },
       AuthMode: { FULL: 'FULL', LIMITED: 'LIMITED', NONE: 'NONE' },
       EventType: { CLOCK: 'CLOCK', ON_OPEN: 'ON_OPEN', ON_EDIT: 'ON_EDIT' }
     }, env.calls),
@@ -367,12 +469,24 @@ function createEnv(workbook, opts) {
   Object.keys(globals).forEach(function (k) { ctx[k] = globals[k]; });
 
   if (opts.now !== undefined) {
-    // frozen clock: new Date() / Date.now() return opts.now inside Code.gs
-    const fixed = typeof opts.now === 'number' ? opts.now : opts.now.getTime();
-    vm.runInContext('(function (fixed) { const D = Date; function F(...a) { return a.length ? new D(...a) : new D(fixed); }' +
-      ' F.prototype = D.prototype; F.now = function () { return fixed; }; F.UTC = D.UTC; F.parse = D.parse; Date = F; })', ctx)(fixed);
+    // frozen clock: new Date() / Date.now() return clock.t inside Code.gs; env.setNow(ms) moves it
+    const clock = { t: typeof opts.now === 'number' ? opts.now : opts.now.getTime() };
+    vm.runInContext('(function (clock) { const D = Date; function F(...a) { return a.length ? new D(...a) : new D(clock.t); }' +
+      ' F.prototype = D.prototype; F.now = function () { return clock.t; }; F.UTC = D.UTC; F.parse = D.parse; Date = F; })', ctx)(clock);
+    env.setNow = function (ms) { clock.t = typeof ms === 'number' ? ms : ms.getTime(); };
+    env.now = function () { return clock.t; };
+  } else {
+    env.setNow = function () { throw new Error('env.setNow needs opts.now (a frozen clock)'); };
+    env.now = function () { return Date.now(); };
   }
   env.Date = vm.runInContext('Date', ctx);
+
+  /** A tab's cells as Code.gs left them ([] rows of values; '' = empty), its size and hidden flag, or null. */
+  env.sheet = function (name) {
+    const t = tabs[name];
+    if (!t || !sheets.some(function (x) { return x.getName() === name; })) return null;
+    return { rows: t.grid, size: t.size, hidden: t.hidden() };
+  };
   return env;
 }
 

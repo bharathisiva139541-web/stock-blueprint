@@ -335,6 +335,59 @@ test('publicMode on normal sheets: redacts personal columns and Entry rows, mask
   assert.ok(!EMAIL.test(JSON.stringify(pm)));
 });
 
+test('system tab Site_Feed (the website feed Code.gs stores): structure only in every mode, none of its JSON text', function () {
+  // the real stored layout, written by Code.gs itself in the Apps Script mock
+  const mock = require('./fixtures/apps-script-mock.js');
+  const env = mock.loadCodeGs({ sheets: [{ name: 'Main', rows: [['Stock Blueprint']] }] }, { props: {}, now: Date.UTC(2026, 9, 21, 5, 0) });
+  const info = { readAt: '2026-10-21 10:30', readMs: Date.UTC(2026, 9, 21, 5, 0), builtAt: '2026-10-21 10:30', buildMs: 1, by: 'test' };
+  const note = 'Tata Consultancy Services quarterly note '.repeat(3000);          // > 45,000 characters: several cells
+  env.call('ab_siteFeedStore_', 'main', JSON.stringify({ generated: '2026-10-21 10:30', main: { cols: ['sym'], rows: [['TCS']] }, note: note }), info);
+  env.call('ab_siteFeedStore_', 'history', JSON.stringify({ dates: ['2026-10-20'], bars: { TCS: [[0, 1, 2, 3, 4, 5]] } }), info);
+  const id = JSON.parse(env.props.getProperty('AB_SITE_FEED_META_MAIN')).id;
+  const chunks = JSON.parse(env.props.getProperty('AB_SITE_FEED_META_MAIN')).chunks;
+  assert.ok(chunks >= 3);
+  const stored = env.sheet('Site_Feed').rows.map(function (r) {
+    return [0, 1, 2, 3].map(function (c) { return r[c] === undefined || r[c] === '' ? null : r[c]; });
+  });
+  const sf = sheetOf('Site_Feed', stored, { state: 'hidden' });
+
+  [false, true].forEach(function (pub) {
+    const a = A.analyzeSheet(sf, { publicMode: pub });
+    assert.equal(a.ok, true);
+    assert.equal(a.system, true, 'publicMode ' + pub);
+    assert.equal(a.publicStructureOnly, true);
+    assert.equal(a.personal, false);
+    assert.equal(a.updated, undefined);
+    const text = JSON.stringify(a);
+    [id, 'generated', 'Tata', 'TCS', 'quarterly', 'dates', 'bars'].forEach(function (v) { assert.ok(text.indexOf(v) < 0, 'leaked ' + v); });
+    assert.ok(text.length < 3000, 'a few hundred bytes, not the stored JSON (' + text.length + ')');
+    const b = block(a);
+    assert.equal(b.title, undefined);
+    assert.deepEqual(b.strategyColumns, []);
+    assert.equal(b.symbolColumn, null);
+    b.columns.forEach(function (c) {
+      assert.equal(c.header, null, 'its "headers" are JSON pieces');
+      assert.deepEqual(Object.keys(c).filter(function (k) { return ['samples', 'min', 'max', 'mean', 'distinct', 'minDate', 'maxDate', 'values'].indexOf(k) >= 0; }), [], c.letter);
+    });
+    const colA = b.columns.find(function (c) { return c.letter === 'A'; });
+    assert.equal(colA.type, 'text');
+    assert.equal(colA.filled + (b.headerRow === 1 ? 1 : 0), chunks, 'structure: one cell per stored chunk');
+  });
+
+  // a whole workbook in public mode, as tools/analyze_workbook.js writes web/data/workbook-analysis.js
+  const wb = { sheets: [sheetOf('Main', [['SYMBOL', 'StockName'], ['TCS', 'Tata Consultancy Services']]), sf] };
+  const res = A.analyzeWorkbook(wb, { publicMode: true });
+  const s = res.sheets.find(function (x) { return x.name === 'Site_Feed'; });
+  assert.equal(s.system, true);
+  assert.equal(s.state, 'hidden');
+  assert.ok(JSON.stringify(s).indexOf('Tata') < 0);
+  assert.deepEqual(res.summary.personalSheets, []);
+  // only that tab: a normal sheet with a similar name keeps its samples
+  const other = A.analyzeSheet(sheetOf('Site Feed notes', [['Symbol', 'Note'], ['TCS', 'hello'], ['INFY', 'world']]));
+  assert.equal(other.system, undefined);
+  assert.deepEqual(col(block(other), 'Note').samples, ['hello', 'world']);
+});
+
 test('results are plain JSON and bad input never throws', function () {
   const a = A.analyzeSheet(sheetOf('X', [['Symbol', 'Price'], ['TCS', 1], ['INFY', '#N/A']]), { master: masterMap() });
   assert.deepEqual(roundTrip(a), a);

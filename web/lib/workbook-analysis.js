@@ -20,6 +20,11 @@
  * sheets, personal-looking columns (entry price, stoploss, qty, capital,
  * P&L ...) and rows typed 'Entry'/'Position'/'Trade' are left out of every
  * value-revealing field, and any e-mail address left in a string is masked.
+ *
+ * System tabs (the script's own storage, e.g. 'Site_Feed' = the website
+ * feed's stored JSON in 45,000-character cells) are structure only in every
+ * mode: counts and types, no samples, values, titles or header text
+ * (result.system = true).
  */
 (function (/** @type {any} */ root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -55,6 +60,8 @@
   var NOT_PERSONAL_HEADER_RE = /working capital|share capital|equity capital|capital (goods|employed|markets?)/i;
   var TYPE_HEADER_RE = /\btype\b/i;
   var PRIVATE_ROW_VALUE_RE = /^(entry|position|holding|trade)$/i;
+  // tabs Code.gs keeps for itself: the website feed's stored copy (cells of raw JSON text)
+  var SYSTEM_SHEET_RE = /^site_feed$/i;
   var HEADER_WORD_RE = /(^|[^a-z])(symbol|ticker|name|company|date|time|price|open|high|low|close|volume|vol|sector|industry|type|status|qty|value|signal|pattern|index|count|total|change|avg|score|level|zone|source|series|notes?|remarks?|setting|key|description)($|[^a-z])|%/i;
 
   var DEFAULTS = { maxSamples: 5, maxDistinct: 30, maxList: 30, headerScanRows: 12, maxTrackDistinct: 20000 };
@@ -882,7 +889,8 @@
 
     var reasons = personalCheck(sheet, S, blocksRaw);
     var personal = reasons.length > 0;
-    var structureOnly = personal && o.publicMode;
+    var system = SYSTEM_SHEET_RE.test(String(sheet.name == null ? '' : sheet.name).trim());
+    var structureOnly = system || (personal && o.publicMode);
     var privateRowsFor = o.publicMode ? makePrivateRows(sheet, S) : function () { return null; };
     var updated = null;
 
@@ -950,7 +958,12 @@
       }
       out.quality = q;
       out.strategyColumns = strategyColumns(prof.columns, prof.accs, o, redact);
-      if (structureOnly) {
+      if (system) {
+        // its "headers" are pieces of stored JSON, not column names
+        out.symbolColumn = out.nameColumn = out.sectorColumn = out.industryColumn = out.basicIndustryColumn = null;
+        out.columns.forEach(function (col) { col.header = null; delete col.group; });
+        out.strategyColumns = [];
+      } else if (structureOnly) {
         out.strategyColumns = out.strategyColumns.map(function (s) { return { column: s.column, header: s.header, type: s.type, reasons: s.reasons, keywords: s.keywords }; });
       } else {
         var extra = industryAndMaster(sheet, S, blk, prof, sem, o);
@@ -993,6 +1006,7 @@
     };
     if (updated && !structureOnly) result.updated = updated;
     if (structureOnly) result.publicStructureOnly = true;
+    if (system) result.system = true;
     return o.publicMode ? scrub(result) : result;
   }
 

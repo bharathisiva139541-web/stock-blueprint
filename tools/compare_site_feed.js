@@ -9,10 +9,13 @@
  * the Apps Script mock (tests/fixtures/apps-script-mock.js); ab_feedSite_ runs
  * for part 'main' and part 'history' and its `data` is compared with
  * window.SB_DATA / window.SB_HISTORY (top-level generated / source of main
- * are ignored; numbers equal within 1e-4). Exit 1 on any mismatch.
+ * are ignored; numbers equal within 1e-4). Each part is asked twice: the
+ * first answer is built on demand (and stored in the mock's hidden Site_Feed
+ * tab), the second must come from that stored copy with byte-identical
+ * `data`. Exit 1 on any mismatch, or if the feed wrote anywhere else.
  *
  * The workbook is private: only paths, column names and counts are printed,
- * never cell values. Nothing is written; no network.
+ * never cell values. Nothing is written to disk; no network.
  */
 'use strict';
 
@@ -153,6 +156,15 @@ async function main() {
     const resp = env.post({ token: token, action: 'site', part: p.part });
     const ms = Date.now() - t1;
     if (!resp.ok) { console.log('  ' + p.part + ': feed error: ' + resp.error); bad++; return; }
+    if (resp.stored !== false) { console.log('  ' + p.part + ': the first answer should be built on demand (stored:false)'); bad++; }
+    // the second request is served from the stored copy (Site_Feed tab): same data, byte for byte
+    const dataText = env.lastOutput.getContent().replace(/^\{"ok":true,.*?,"data":/, '');
+    const again = env.post({ token: token, action: 'site', part: p.part });
+    const againText = env.lastOutput.getContent().replace(/^\{"ok":true,.*?,"data":/, '');
+    let storedNote;
+    if (again.stored !== true) { storedNote = 'the second answer did not come from the stored copy'; bad++; }
+    else if (againText !== dataText) { storedNote = 'the stored copy differs from the on-demand answer'; bad++; }
+    else storedNote = 'stored copy identical (' + JSON.parse(env.props.getProperty('AB_SITE_FEED_META_' + p.part.toUpperCase())).chunks + ' cells)';
     const json = JSON.stringify(resp);
     if (EMAIL_RE.test(json)) { console.log('  ' + p.part + ': PRIVACY: the feed contains an e-mail address'); bad++; }
     const exp = Object.assign({}, p.expected), got = Object.assign({}, resp.data);
@@ -162,8 +174,10 @@ async function main() {
     console.log(p.part + ': ' + countLeaves(exp) + ' values compared, feed ' + Math.round(json.length / 1024) +
       ' KB in ' + ms + ' ms (mock), readAt ' + (resp.readAt ? 'set' : 'MISSING'));
     if (list.length) { summarize(p.part, list); bad++; } else console.log('  ' + p.part + ': match');
+    console.log('  ' + p.part + ': ' + storedNote);
   });
-  if (env.writes.length) { console.log('  the feed WROTE to the sheet ' + env.writes.length + ' time(s)'); bad++; }
+  const elsewhere = env.writes.filter(function (w) { return w.sheet !== 'Site_Feed'; });
+  if (elsewhere.length) { console.log('  the feed WROTE outside its Site_Feed tab ' + elsewhere.length + ' time(s)'); bad++; }
   console.log(bad ? 'MISMATCH' : 'OK: the live feed reproduces export_xlsx.py');
   process.exit(bad ? 1 : 0);
 }
