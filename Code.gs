@@ -18422,6 +18422,41 @@ function logRun_(ts, dateUsed, rowCount, status, notes) {
  * (updateAllCandlestickPatterns). Same detection logic, same
  * output column (W), just reading this spreadsheet's own tabs.
  *****************************************************************/
+/*****************************************************************
+ * BULLISH HARAMI + INVERTED HAMMER (2 candles; c1 = red, c2 = green)
+ * -----------------------------------------------------------------
+ * c1: big red body, at least AB_HIH_C1_BODY_MIN of its High-Low range.
+ * c2: small green body (25-50% of c1's body) opening at c1's close
+ *     (within AB_HIH_OPEN_TOL) and staying in the lower half of c1's
+ *     body; a long upper wick (>= 1.5 x its body) reaching above c1's
+ *     open but not above c1's high; almost no lower wick (<= 10% of
+ *     its range). Selling is fading but sellers still capped the high,
+ *     so it is a watch signal on its own - the "(confirmed)" tag needs
+ *     the NEXT close above c2's high.
+ * Candles are {Opn, High, Low, Cls}. Ported 1:1 to web/lib/patterns.js.
+ *****************************************************************/
+const AB_HIH_C1_BODY_MIN = 0.65;
+const AB_HIH_BODY_MIN = 0.25;
+const AB_HIH_BODY_MAX = 0.50;
+const AB_HIH_OPEN_TOL = 0.005;
+const AB_HIH_UPPER_WICK_MIN = 1.5;
+const AB_HIH_LOWER_WICK_MAX = 0.10;
+
+function ab_isHaramiInvHammerPair_(c1, c2) {
+  const v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls];
+  if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
+  const c1Body = c1.Opn - c1.Cls, c1Range = c1.High - c1.Low;
+  const c2Body = c2.Cls - c2.Opn, c2Range = c2.High - c2.Low;
+  if (!(c1Body > 0 && c1Range > 0 && c2Body > 0 && c2Range > 0)) return false;   // red, then green
+  return (c1Body / c1Range >= AB_HIH_C1_BODY_MIN) &&
+    (c2Body >= AB_HIH_BODY_MIN * c1Body) && (c2Body <= AB_HIH_BODY_MAX * c1Body) &&
+    (Math.abs(c2.Opn - c1.Cls) <= AB_HIH_OPEN_TOL * c1.Cls) &&
+    (c2.Cls <= (c1.Opn + c1.Cls) / 2) &&
+    (c2.High - c2.Cls >= AB_HIH_UPPER_WICK_MIN * c2Body) &&
+    (c2.High > c1.Opn) && (c2.High <= c1.High) &&
+    (c2.Opn - c2.Low <= AB_HIH_LOWER_WICK_MAX * c2Range);
+}
+
 function updateAllCandlestickPatterns() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet2 = ss.getSheetByName(AB_PATTERN_SHEET);
@@ -18799,6 +18834,15 @@ function updateAllCandlestickPatterns() {
           allPatterns.push('FVGTouch');
         }
       }
+    }
+
+    // Bullish Harami + Inverted Hammer: today's pair, and yesterday's pair
+    // confirmed by today's close above yesterday's high
+    if (yRow && tRow && ab_isHaramiInvHammerPair_(yRow, tRow)) {
+      allPatterns.push('Bullish Harami + Inverted Hammer');
+    }
+    if (thRow && yRow && tRow && ab_isHaramiInvHammerPair_(thRow, yRow) && tRow.Cls > yRow.High) {
+      allPatterns.push('Bullish Harami + Inverted Hammer (confirmed)');
     }
 
     sheet2.getRange(i + 1, AB_COL_W).setValue(allPatterns.join(', '));

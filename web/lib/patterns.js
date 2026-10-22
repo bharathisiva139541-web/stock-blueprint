@@ -1,5 +1,5 @@
-/* Candlestick patterns - a faithful port of Code.gs updateAllCandlestickPatterns
-   (lines ~17378-17759) and ab_isSpringPair_ (~15008). Same tags, same order,
+/* Candlestick patterns - a faithful port of Code.gs updateAllCandlestickPatterns,
+   ab_isSpringPair_ and ab_isHaramiInvHammerPair_. Same tags, same order,
    same thresholds, same strict/inclusive comparisons. Only bullish patterns
    exist in the sheet engine.
    Candles: [{t,o,h,l,c,v}] oldest first. patternsAt(candles, i) evaluates bar i
@@ -22,7 +22,10 @@
     AB_ENGULFING_REQUIRE_BIGGER: true
   };
   var ORDER = ['Spring', 'Piercing', 'Bullish Engulfing', 'Bullish Harami', 'Tweezer Bottoms', 'Spring?',
-    'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch'];
+    'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch',
+    'Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)'];
+  // Code.gs AB_HIH_* (Bullish Harami + Inverted Hammer)
+  var HIH = { c1BodyMin: 0.65, bodyMin: 0.25, bodyMax: 0.50, openTol: 0.005, upperWickMin: 1.5, lowerWickMax: 0.10 };
 
   function cfgOf(cfg) {
     var o = {};
@@ -48,6 +51,23 @@
       (Math.abs(c2.Cls - c2.Opn) < (cfg.day2BodyMax / 100) * c1Body) &&
       (c2.Low <= c1.Low * (1 - cfg.undercut / 100)) &&
       (c2.High <= c1.Low + (cfg.reclaimMax / 100) * c1Range);
+  }
+
+  /** ab_isHaramiInvHammerPair_: c1 big red, c2 small green inside c1's lower body half
+   *  with a long upper wick above c1's open (not above c1's high). Candles {Opn,High,Low,Cls}. */
+  function isHaramiInvHammerPair(c1, c2) {
+    var v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls];
+    if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
+    var c1Body = c1.Opn - c1.Cls, c1Range = c1.High - c1.Low;
+    var c2Body = c2.Cls - c2.Opn, c2Range = c2.High - c2.Low;
+    if (!(c1Body > 0 && c1Range > 0 && c2Body > 0 && c2Range > 0)) return false;
+    return (c1Body / c1Range >= HIH.c1BodyMin) &&
+      (c2Body >= HIH.bodyMin * c1Body) && (c2Body <= HIH.bodyMax * c1Body) &&
+      (Math.abs(c2.Opn - c1.Cls) <= HIH.openTol * c1.Cls) &&
+      (c2.Cls <= (c1.Opn + c1.Cls) / 2) &&
+      (c2.High - c2.Cls >= HIH.upperWickMin * c2Body) &&
+      (c2.High > c1.Opn) && (c2.High <= c1.High) &&
+      (c2.Opn - c2.Low <= HIH.lowerWickMax * c2Range);
   }
 
   /** Tags for bar i, in the sheet's fixed order. Returns [] when bar i is missing. */
@@ -180,6 +200,12 @@
         }
       }
     }
+
+    // Bullish Harami + Inverted Hammer: today's pair, and yesterday's pair confirmed by today's close
+    if (yRow && tRow && isHaramiInvHammerPair(yRow, tRow)) all.push('Bullish Harami + Inverted Hammer');
+    if (thRow && yRow && tRow && isHaramiInvHammerPair(thRow, yRow) && tRow.Cls > yRow.High) {
+      all.push('Bullish Harami + Inverted Hammer (confirmed)');
+    }
     return all;
   }
 
@@ -194,5 +220,6 @@
     return String(s || '').split(/,(?![^()]*\))/).map(function (x) { return x.trim(); }).filter(Boolean);
   }
 
-  return { DEFAULTS: DEFAULTS, ORDER: ORDER, isSpringPair: isSpringPair, patternsAt: patternsAt, latestTags: latestTags, splitTags: splitTags };
+  return { DEFAULTS: DEFAULTS, ORDER: ORDER, HIH: HIH, isSpringPair: isSpringPair, isHaramiInvHammerPair: isHaramiInvHammerPair,
+    patternsAt: patternsAt, latestTags: latestTags, splitTags: splitTags };
 });
