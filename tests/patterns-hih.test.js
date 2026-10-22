@@ -23,6 +23,11 @@ test('matches the reference pair and tags it', () => {
   assert.ok(tags.indexOf(CONFIRMED) < 0);
 });
 
+test('the wick only has to reach candle 1 open (equal is enough)', () => {
+  assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 100, 90.0, 93.2))), 'high = open 1');
+  assert.ok(!P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 99.9, 90.0, 93.2))), 'high just below open 1');
+});
+
 test('each rule is enforced', () => {
   const bad = {
     'candle 1 green': [c(90, 101, 89.5, 100), GREEN],
@@ -32,7 +37,7 @@ test('each rule is enforced', () => {
     'opens more than 0.5% away from close 1': [RED, c(91, 100.8, 90.9, 94.2)],
     'closes above the middle of body 1': [c(100, 101, 89.5, 90), c(90.2, 100.9, 90.0, 95.1)],
     'upper wick under 1.5 x body': [c(100, 103, 89.5, 90), c(90.2, 100.1, 90.0, 94.2)],
-    'high not above open 1': [RED, c(90.2, 99.9, 90.0, 93.2)],
+    'high below open 1': [RED, c(90.2, 99.9, 90.0, 93.2)],
     'high above high 1': [RED, c(90.2, 101.2, 90.0, 94.2)],
     'lower wick over 10% of range': [c(100, 101, 88, 90), c(90.2, 100.8, 88.9, 94.2)],
     'low below candle 1 low': [c(100, 101, 90, 90), c(90.2, 100.8, 89.95, 94.2)],
