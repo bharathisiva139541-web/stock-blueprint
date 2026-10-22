@@ -58,6 +58,7 @@
     if (aged) state = 'CACHED';
     var asOf = live ? r.readAt || data.generated : data.asOf || data.generated;
     var stocks = ui.objRows(data.main).map(function (s) {
+      s.raw = { sector: s.sector, industry: s.industry, ind: s.ind };   // as typed in the sheet (Industry Explorer verifies these)
       var c = C.classify({ sector: s.sector, industry: s.industry, ind: s.ind });
       s.id = 'NSE:' + s.sym;
       s.exchange = 'NSE';
