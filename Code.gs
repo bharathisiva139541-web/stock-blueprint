@@ -18419,7 +18419,8 @@ function logRun_(ts, dateUsed, rowCount, status, notes) {
  *     (within AB_HIH_OPEN_TOL) and staying in the lower half of c1's
  *     body; a long upper wick (>= 1.5 x its body) reaching above c1's
  *     open but not above c1's high; almost no lower wick (<= 10% of
- *     its range). Selling is fading but sellers still capped the high,
+ *     its range) and its low never below c1's low (owner's strict rule).
+ *     Selling is fading but sellers still capped the high,
  *     so it is a watch signal on its own - the "(confirmed)" tag needs
  *     the NEXT close above c2's high.
  * Candles are {Opn, High, Low, Cls}. Ported 1:1 to web/lib/patterns.js.
@@ -18443,7 +18444,8 @@ function ab_isHaramiInvHammerPair_(c1, c2) {
     (c2.Cls <= (c1.Opn + c1.Cls) / 2) &&
     (c2.High - c2.Cls >= AB_HIH_UPPER_WICK_MIN * c2Body) &&
     (c2.High > c1.Opn) && (c2.High <= c1.High) &&
-    (c2.Opn - c2.Low <= AB_HIH_LOWER_WICK_MAX * c2Range);
+    (c2.Opn - c2.Low <= AB_HIH_LOWER_WICK_MAX * c2Range) &&
+    (c2.Low >= c1.Low);
 }
 
 function updateAllCandlestickPatterns() {
