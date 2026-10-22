@@ -59,7 +59,7 @@ labels the presets *unconfirmed* until you confirm them in Strategy Settings:
   use `<=`. Ported as coded.
 - "FVG Unmitigated" looks only at the newest gap; an older untouched gap is
   not reported when the newest one was touched. Ported as coded.
-- FVG+Spring uses hard-coded Spring thresholds, not the Control Panel ones.
+- FVG+Spring (changed Oct 2026, owner's rule): a Spring pair with the Spring pattern's Control Panel thresholds, inside ANY 30-day FVG (touched or not) that still holds - no longer only the 2nd touch of the latest gap.
 - EMA support has no lower bound (a low far below the EMA still counts).
 - Zone minimum age and "days held" use calendar days, not trading days.
 - About 25 basic industries have no row in the BasicIndustry PE tab, so
