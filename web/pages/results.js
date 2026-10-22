@@ -43,7 +43,7 @@
           '<div class="legend"><span><i style="background:var(--bar)"></i>Up since results</span><span><i style="background:var(--bar-neg)"></i>Down since results</span></div>') +
         '</div>';
       h += ui.card('Upcoming results (next 30 days)', upcoming.length + ' stocks · from the Main tab Result Date (NSE results calendar pasted in the Results tab)', '<div id="up-t"></div>');
-      h += ui.card('Results performance', esc(perf.note || ''), '<div class="controls"><input class="search" id="rp-q" type="search" placeholder="Search symbol or industry" aria-label="Search results performance"><button class="btn" type="button" id="rp-csv">Export CSV</button></div><div id="rp-table"></div>');
+      h += ui.card('Results performance', esc(perf.note || '') + ' · FII trend and TTM EPS growth: Main tab', '<div class="controls"><input class="search" id="rp-q" type="search" placeholder="Search symbol or industry" aria-label="Search results performance"><button class="btn" type="button" id="rp-csv">Export CSV</button></div><div id="rp-table"></div>');
       h += '<section class="card"><div class="card-head"><div><h2>Results tracker</h2><p>Every stock whose result date has arrived. Pending = screener.in does not show the new quarter yet (retried every run).</p></div></div>' +
         '<div class="controls">' + ui.chips('rs', [['all', 'All (' + tracker.length + ')'], ['Updated', 'Updated (' + tracker.filter(function (r) { return r.Status === 'Updated'; }).length + ')'],
           ['Pending', 'Pending (' + tracker.filter(function (r) { return r.Status === 'Pending'; }).length + ')'],
@@ -65,7 +65,13 @@
         ]
       }).mount($('#up-t', el));
 
-      var perfRows = ui.objRows(perf.table);
+      // FII trend and TTM EPS growth are not in the Results Performance tab: take them from Main
+      var perfRows = ui.objRows(perf.table).map(function (r) {
+        var s = ctx.bySym[r.Symbol];
+        r.fiiTrend = s ? s.fii : null;
+        r.epsGrowth = s ? s.epsg : null;
+        return r;
+      });
       var pt = new ui.Table({
         rows: perfRows, pageSize: 25, sort: { key: '% Since Results', dir: -1 },
         columns: [
@@ -79,6 +85,12 @@
           { key: 'Max Drawdown %', label: 'Max drawdown', type: 'pct' },
           { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
           { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 },
+          { key: 'Rev QoQ %', label: 'Rev QoQ', type: 'pct', digits: 0 },
+          { key: 'NP QoQ %', label: 'Profit QoQ', type: 'pct', digits: 0 },
+          { key: 'OPM QoQ', label: 'OPM QoQ', type: 'badge', title: 'Operating profit margin trend vs the previous quarter' },
+          { key: 'OPM YoY', label: 'OPM YoY', type: 'badge', title: 'Operating profit margin trend vs the same quarter last year' },
+          { key: 'fiiTrend', label: 'FII', type: 'badge', title: 'FII holding trend (Main tab "FII Activity")' },
+          { key: 'epsGrowth', label: 'EPS growth', type: 'pct', digits: 0, title: 'TTM EPS growth % (Main tab)' },
           { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
           { key: 'Market Reaction', label: 'Reaction', type: 'badge' }
         ]
