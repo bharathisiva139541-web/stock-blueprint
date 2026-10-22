@@ -23,8 +23,11 @@
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
   function round(v, d) { var k = Math.pow(10, d || 2); return Math.round(v * k) / k; }
   function inrShort(v) { return v >= 1e7 ? '₹' + round(v / 1e7, 1) + ' Cr' : '₹' + round(v / 1e5, 1) + ' lakh'; }
+  // 'Bullish Harami + Inverted Hammer' alone is a watch signal (sellers still capped the high); only its
+  // confirmed form (next close above its high) counts as bullish, like 'Spring?' is offered but not default
   var BULLISH_PATTERNS = ['Spring', 'Piercing', 'Bullish Engulfing', 'Bullish Harami', 'Tweezer Bottoms',
-    'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch'];
+    'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch',
+    'Bullish Harami + Inverted Hammer (confirmed)'];
   var OPM_UP = ['increasing', 'aggressive increase', 'slightly increasing'];
   var UP3 = ['Aggressive Increase', 'Increasing', 'Slightly Increasing'];
   var FIELD_LABEL = { opmq: 'OPM QoQ%', opmy: 'OPM YoY%', promo: 'Promoter holding', fii: 'FII activity', sig: 'TTM Signal',
@@ -100,7 +103,7 @@
 
   def('pattern', { label: 'Bullish candlestick pattern on the latest bar', kind: 'sheet', setGroup: 'trigger', type: 'reversal', pit: true,
     ref: 'Code.gs updateAllCandlestickPatterns (PatternData col W)',
-    params: [{ key: 'names', label: 'Patterns', def: BULLISH_PATTERNS.slice(), options: BULLISH_PATTERNS.concat(['Spring?']) }],
+    params: [{ key: 'names', label: 'Patterns', def: BULLISH_PATTERNS.slice(), options: BULLISH_PATTERNS.concat(['Spring?', 'Bullish Harami + Inverted Hammer']) }],
     eval: function (x, p) {
       var got = patternsOf(x), hit = got.filter(function (t) { return p.names.indexOf(t) >= 0; });
       return { pass: hit.length > 0, value: hit.join(', ') || null, detail: got.length ? got.join(', ') : 'no pattern' };

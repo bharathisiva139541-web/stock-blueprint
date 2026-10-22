@@ -20,12 +20,20 @@ function last4(candles) {
   return candles;
 }
 
+// Patterns added to Code.gs after the saved export was made: until a newer export
+// contains them, the JS tags for them are left out of the comparison.
+const NEW_TAGS = ['Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)'];
+const EXPORT_HAS_NEW = !!H && Object.keys(H.sheetTags).some((k) => NEW_TAGS.some((t) => String(H.sheetTags[k][0] || '').indexOf(t) >= 0));
+function dropNew(tags) {
+  return EXPORT_HAS_NEW ? tags : P.splitTags(tags).filter((t) => NEW_TAGS.indexOf(t) < 0).join(', ');
+}
+
 test('patterns (col W) match the sheet for every symbol', { skip: !H && 'no web/data/history.js' }, () => {
   let n = 0; const bad = [];
   for (const sym of Object.keys(H.bars)) {
     const sheet = H.sheetTags[sym];
     if (!sheet) continue;
-    const got = P.latestTags(last4(candlesOf(sym)));
+    const got = dropNew(P.latestTags(last4(candlesOf(sym))));
     n++;
     if (got !== String(sheet[0] || '')) bad.push(sym + ': sheet="' + sheet[0] + '" js="' + got + '"');
   }
@@ -73,6 +81,7 @@ test('Pattern Dashboard confluence = non-empty count of the four PatternData cel
     if (!s) continue;
     const want = [s[0], s[1], s[2], s[4]].filter((v) => !!v).length;
     const c = candlesOf(sym);
+    if (dropNew(P.latestTags(c)) !== P.latestTags(c)) continue;   // a new pattern the old export cannot know
     const got = S.CONDITIONS.sheetConfluence.eval(S.buildContext({ sym }, c, c.length - 1), { min: 3, touchPct: 0.5 }).value;
     n++;
     if (got !== want) bad.push(sym + ' sheet=' + want + ' js=' + got);

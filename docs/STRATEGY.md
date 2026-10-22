@@ -6,7 +6,7 @@ workbook (`tests/sheet-parity.test.js`: 0 mismatches over 1,746 symbols).
 
 | Rule | Code.gs source | Website | Parity |
 |---|---|---|---|
-| 13 bullish candlestick patterns (Spring, Piercing, Bullish Engulfing, Bullish Harami, Tweezer Bottoms, Spring?, Three Day Low Rejection, Morningstar, Trio, FVG 1234, FVG 123, FVG 123 Type 2, FVGTouch) | `updateAllCandlestickPatterns` (~17378), `ab_isSpringPair_` | `patterns.js` | PatternData col W: exact |
+| 15 bullish candlestick patterns (Spring, Piercing, Bullish Engulfing, Bullish Harami, Tweezer Bottoms, Spring?, Three Day Low Rejection, Morningstar, Trio, FVG 1234, FVG 123, FVG 123 Type 2, FVGTouch, Bullish Harami + Inverted Hammer, Bullish Harami + Inverted Hammer (confirmed)) | `updateAllCandlestickPatterns`, `ab_isSpringPair_`, `ab_isHaramiInvHammerPair_` | `patterns.js` | PatternData col W: exact (the two Harami + Inverted Hammer tags: Code.gs = JS by `tests/patterns-hih.test.js`, until an export contains them) |
 | 3-candle bullish FVG, first touch, confirmed, FVG+Spring, unmitigated zone | `ab_longFvgDetail_` (~5092) | `fvg.js longFvgDetail` | col X: exact |
 | Gap-up FVG (3-5 %), circuit-lock and turnover filters | `ab_gapUpFvgs_`, `ab_isCircuitLocked_`, `ab_avgTurnover_` | `fvg.js` | col X: exact |
 | 10 / 21 EMA support (touch & hold, last 4 bars) | `ab_computeEmaSupportTag_` | `indicators.js` | cols Y, AA: exact |
