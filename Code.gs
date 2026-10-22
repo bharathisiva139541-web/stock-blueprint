@@ -5076,14 +5076,15 @@ function ab_refreshOhlcAndHistory_() {
  * Both are 2/3-state machines that reset once they fire, exactly
  * mirroring the Pine Script's `var ..._current_state` logic.
  *
- * FVG+Spring (custom, your own definition): on the SECOND time price
- * comes back down and touches that same gap (not the first touch),
- * check whether that touch's own 2-candle shape is a "Spring" -
- * price fakes a breakdown below the prior candle's low, then closes
- * back above it on a small body (same rejection logic as the
- * existing 'Spring' tag in updateAllCandlestickPatterns, just
- * applied to the day of the gap's 2nd touch instead of Yesterday/
- * Today).
+ * FVG+Spring (custom, your own definition): a 'Spring' candle pair -
+ * the same test and Control Panel thresholds as the Spring pattern
+ * (ab_isSpringPair_: a big red candle, then a small candle that fakes
+ * a breakdown below its low and closes back above it) - whose 2nd
+ * candle dips into ANY bullish gap formed earlier in the 30-day
+ * window, touched before (mitigated) or not (unmitigated), while that
+ * gap still holds: no close below the gap's bottom between the gap and
+ * the pair, the Spring candle's low reaches the gap top or lower, and
+ * it closes back at or above the gap bottom.
  *
  * FVG Unmitigated (custom): the most recent gap somewhere in the
  * 30-day window that has never been touched at all, right up through
@@ -5145,34 +5146,22 @@ function ab_longFvgDetail_(candles) {
     }
   }
 
-  // Count which touch (1st, 2nd, 3rd...) each longCont2 event is, for
-  // the CURRENT gap - resets to 0 whenever a new gap forms.
-  const touchOrdinal = new Array(n).fill(0);
-  let curTouchCount = 0;
-  for (let i = 0; i < n; i++) {
-    if (isFVGUp[i]) curTouchCount = 0; // new gap - forget prior touches
-    if (longCont2[i]) curTouchCount += 1;
-    touchOrdinal[i] = curTouchCount;
-  }
-
-  // FVG+Spring: only on the 2nd touch of a gap, check if that touch day
-  // (c2) + the prior day (c1) form the same rejection shape as 'Spring'.
+  // FVG+Spring: a Spring pair (c1 = i-1, c2 = i) whose c2 dips into any
+  // gap formed before c1 that still holds (see the header above).
+  const springCfg = ab_springCfg_();
   const springSignal = new Array(n).fill(false);
-  for (let i = 1; i < n; i++) {
-    if (!longCont2[i] || touchOrdinal[i] !== 2) continue;
-    const c1 = candles[i - 1], c2 = candles[i];
-    const c1Body = Math.abs(c1.Cls - c1.Opn);
-    const c1Large = c1Body / c1.Opn >= 0.005;
-    const c1Range = c1.High - c1.Low;
-    const cond1 = c1.Cls < c1.Opn;
-    const cond2 = c1Large;
-    const cond3 = c2.Low < c1.Low;
-    const cond4 = c2.Cls > c1.Low;
-    const cond5 = Math.abs(c2.Cls - c2.Opn) < 0.3 * c1Body;
-    const cond6 = c2.Low <= c1.Low * (1 - 0.0010);
-    const cond7 = c2.High <= c1.Low + (0.5 * c1Range);
-    if (cond1 && cond2 && cond3 && cond4 && cond5 && cond6 && cond7) {
-      springSignal[i] = true;
+  for (let i = 3; i < n; i++) {
+    if (!ab_isSpringPair_(candles[i - 1], candles[i], springCfg)) continue;
+    const c2 = candles[i];
+    for (let g = 2; g <= i - 2 && !springSignal[i]; g++) {
+      if (!isFVGUp[g]) continue;
+      const top = candles[g].Low, bottom = candles[g - 2].High;
+      if (!(c2.Low <= top && c2.Cls >= bottom)) continue;
+      let holds = true;
+      for (let k = g + 1; k <= i - 2; k++) {
+        if (candles[k].Cls < bottom) { holds = false; break; }
+      }
+      if (holds) springSignal[i] = true;
     }
   }
 

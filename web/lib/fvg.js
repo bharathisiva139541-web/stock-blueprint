@@ -10,6 +10,10 @@
      14-bar average (High-Low) range ending at bar i. Zone = [High[i-2], Low[i]].
    - Touch: Low crosses under the active gap top (Low[i-1] >= top && Low[i] < top).
    - Confirm: Close crosses back above the High of the latest touch candle.
+   - FVG+Spring: a Spring pair (patterns.js isSpringPair, the Spring pattern's
+     thresholds) whose 2nd candle dips into ANY gap formed before the pair
+     (touched or not) that still holds: no close below its bottom in between,
+     Low <= top and Close >= bottom.
    - Gap-up FVG: Low[i] > High[i-1] by AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT %,
      neither candle circuit-locked; dropped once any later (non-locked)
      candle has Low <= top.
@@ -17,9 +21,9 @@
    fillState() says open / partially filled / fully filled, and
    bearishGaps() is the mirror rule, shown for information only. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else (root.SB = root.SB || /** @type {any} */ ({})).fvg = factory();
-})(/** @type {any} */ (typeof self !== 'undefined' ? self : this), function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./patterns.js'));
+  else { var SB = root.SB = root.SB || /** @type {any} */ ({}); SB.fvg = factory(SB.patterns); }
+})(/** @type {any} */ (typeof self !== 'undefined' ? self : this), function (P) {
   'use strict';
 
   var DEFAULTS = {
@@ -59,8 +63,8 @@
     return n ? sum / n : NaN;
   }
 
-  /** ab_longFvgDetail_ -> { tags, unmitigated, events } */
-  function longFvgDetail(candlesIn) {
+  /** ab_longFvgDetail_ -> { tags, unmitigated, events }. cfg: Spring keys of patterns.js DEFAULTS. */
+  function longFvgDetail(candlesIn, cfgIn) {
     var candles = (candlesIn || []).map(S);
     var n = candles.length;
     if (n < 17) return { tags: [], unmitigated: null, events: [] };
@@ -92,19 +96,26 @@
     for (i = 1; i < n; i++) {
       if (!isNaN(cont2High[i - 1]) && !isNaN(cont2High[i]) && candles[i - 1].Cls <= cont2High[i - 1] && candles[i].Cls > cont2High[i]) longCont2Conf[i] = true;
     }
-    var touchOrdinal = new Array(n).fill(0), cnt = 0;
-    for (i = 0; i < n; i++) {
-      if (isFVGUp[i]) cnt = 0;
-      if (longCont2[i]) cnt += 1;
-      touchOrdinal[i] = cnt;
-    }
+    // FVG+Spring (ab_longFvgDetail_): Spring pair i-1 -> i dipping into a gap formed before it that still holds
+    var sc = cfgIn || {}, D = P.DEFAULTS;
+    var springCfg = {
+      bodyMin: sc.AB_SPRING_BODY_MIN_PCT != null ? sc.AB_SPRING_BODY_MIN_PCT : D.AB_SPRING_BODY_MIN_PCT,
+      day2BodyMax: sc.AB_SPRING_DAY2_BODY_MAX_PCT != null ? sc.AB_SPRING_DAY2_BODY_MAX_PCT : D.AB_SPRING_DAY2_BODY_MAX_PCT,
+      undercut: sc.AB_SPRING_UNDERCUT_PCT != null ? sc.AB_SPRING_UNDERCUT_PCT : D.AB_SPRING_UNDERCUT_PCT,
+      reclaimMax: sc.AB_SPRING_RECLAIM_MAX_PCT != null ? sc.AB_SPRING_RECLAIM_MAX_PCT : D.AB_SPRING_RECLAIM_MAX_PCT
+    };
     var springSignal = new Array(n).fill(false);
-    for (i = 1; i < n; i++) {
-      if (!longCont2[i] || touchOrdinal[i] !== 2) continue;
-      var c1 = candles[i - 1], c2 = candles[i];
-      var c1Body = Math.abs(c1.Cls - c1.Opn), c1Range = c1.High - c1.Low;
-      if (c1.Cls < c1.Opn && c1Body / c1.Opn >= 0.005 && c2.Low < c1.Low && c2.Cls > c1.Low &&
-          Math.abs(c2.Cls - c2.Opn) < 0.3 * c1Body && c2.Low <= c1.Low * (1 - 0.0010) && c2.High <= c1.Low + (0.5 * c1Range)) springSignal[i] = true;
+    for (i = 3; i < n; i++) {
+      if (!P.isSpringPair(candles[i - 1], candles[i], springCfg)) continue;
+      var c2 = candles[i];
+      for (var g = 2; g <= i - 2 && !springSignal[i]; g++) {
+        if (!isFVGUp[g]) continue;
+        var gTop = candles[g].Low, gBottom = candles[g - 2].High;
+        if (!(c2.Low <= gTop && c2.Cls >= gBottom)) continue;
+        var holds = true;
+        for (k = g + 1; k <= i - 2; k++) if (candles[k].Cls < gBottom) { holds = false; break; }
+        if (holds) springSignal[i] = true;
+      }
     }
     var ftSignal = new Array(n).fill(false), ftState = 0, cur;
     for (i = 0; i < n; i++) {

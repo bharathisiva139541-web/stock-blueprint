@@ -41,14 +41,18 @@ test('patterns (col W) match the sheet for every symbol', { skip: !H && 'no web/
   assert.deepStrictEqual(bad.slice(0, 15), [], bad.length + ' mismatches of ' + n);
 });
 
+// FVG+Spring changed to the owner's broader rule (Oct 2026) after the saved export
+// was made, so its tag is set aside here; tests/fvg-spring.test.js checks Code.gs = JS.
+function dropSpring(tags) { return P.splitTags(tags).filter((t) => !/^FVG\+Spring/.test(t)).join(', '); }
+
 test('FVG tags (col X) match the sheet for every symbol', { skip: !H && 'no web/data/history.js' }, () => {
   let n = 0; const bad = [];
   for (const sym of Object.keys(H.bars)) {
     const sheet = H.sheetTags[sym];
     if (!sheet) continue;
-    const got = FVG.columnTags(candlesOf(sym));
+    const got = dropSpring(FVG.columnTags(candlesOf(sym)));
     n++;
-    if (got !== String(sheet[1] || '')) bad.push(sym + ': sheet="' + sheet[1] + '" js="' + got + '"');
+    if (got !== dropSpring(String(sheet[1] || ''))) bad.push(sym + ': sheet="' + sheet[1] + '" js="' + got + '"');
   }
   assert.ok(n > 1500, 'compared ' + n);
   assert.deepStrictEqual(bad.slice(0, 15), [], bad.length + ' mismatches of ' + n);
@@ -82,6 +86,8 @@ test('Pattern Dashboard confluence = non-empty count of the four PatternData cel
     const want = [s[0], s[1], s[2], s[4]].filter((v) => !!v).length;
     const c = candlesOf(sym);
     if (dropNew(P.latestTags(c)) !== P.latestTags(c)) continue;   // a new pattern the old export cannot know
+    const x = FVG.columnTags(c);
+    if (dropSpring(x) !== x && !/FVG\+Spring/.test(String(s[1] || ''))) continue;   // FVG+Spring under the new rule
     const got = S.CONDITIONS.sheetConfluence.eval(S.buildContext({ sym }, c, c.length - 1), { min: 3, touchPct: 0.5 }).value;
     n++;
     if (got !== want) bad.push(sym + ' sheet=' + want + ' js=' + got);

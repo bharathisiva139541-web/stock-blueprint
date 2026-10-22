@@ -121,7 +121,7 @@
       var t = fvgOf(x).tags.filter(function (s) { return /^FVG First Touch Confirmed/.test(s); })[0];
       return { pass: !!t && ageOfTag(t) <= p.maxAge, value: t || null, detail: t || 'not confirmed' };
     } });
-  def('fvgSpring', { label: 'FVG + Spring on the 2nd touch', kind: 'sheet', setGroup: 'trigger', type: 'reversal', pit: true,
+  def('fvgSpring', { label: 'FVG + Spring (Spring candle pair inside a 30-day FVG that still holds)', kind: 'sheet', setGroup: 'trigger', type: 'reversal', pit: true,
     ref: 'Code.gs ab_longFvgDetail_ "FVG+Spring"', params: [{ key: 'maxAge', label: 'Max age (bars)', def: 3 }],
     eval: function (x, p) {
       var t = fvgOf(x).tags.filter(function (s) { return /^FVG\+Spring/.test(s); })[0];
