@@ -54,7 +54,7 @@
   }
 
   /** ab_isHaramiInvHammerPair_: c1 big red, c2 small green inside c1's lower body half
-   *  with a long upper wick above c1's open (not above c1's high), almost no lower wick and
+   *  with a long upper wick reaching at least c1's open (not above c1's high), almost no lower wick and
    *  its low never below c1's low. Candles {Opn,High,Low,Cls}. */
   function isHaramiInvHammerPair(c1, c2) {
     var v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls];
@@ -67,7 +67,7 @@
       (Math.abs(c2.Opn - c1.Cls) <= HIH.openTol * c1.Cls) &&
       (c2.Cls <= (c1.Opn + c1.Cls) / 2) &&
       (c2.High - c2.Cls >= HIH.upperWickMin * c2Body) &&
-      (c2.High > c1.Opn) && (c2.High <= c1.High) &&
+      (c2.High >= c1.Opn) && (c2.High <= c1.High) &&
       (c2.Opn - c2.Low <= HIH.lowerWickMax * c2Range) &&
       (c2.Low >= c1.Low);
   }
