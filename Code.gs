@@ -8367,6 +8367,9 @@ function doPost(e) {
     if (req.action === 'process') {
       return ab_bridgeJson_({ ok: true, result: ab_bridgeProcess_() });
     }
+    if (req.action === 'pricebands') {
+      return ab_bridgeJson_(ab_pbFromBridge_(req));
+    }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return ab_bridgeJson_({ ok: false, error: err.message });
@@ -12642,7 +12645,11 @@ function runApplyUpdatedIndustryPeNow() {
  *
  * NSE's own download link is deliberately NOT fetched by the script:
  * NSE does not answer Google's servers, and the attempt just hangs
- * until the script times out.
+ * until the script times out. Instead the PC bridge (screener_bridge.py)
+ * downloads NSE's "Price Band changes from next trade date" CSV
+ * (eq_band_changes_DDMMYYYY.csv) on the owner's computer at each run and
+ * posts it to doPost action 'pricebands' (ab_pbFromBridge_), which files it
+ * exactly like a paste. The paste tab stays as the manual fallback.
  *****************************************************************/
 const AB_PB_SHEET = 'Price Band Changes';
 const AB_PB_PASTE_SHEET = 'Priceband';
@@ -12791,6 +12798,33 @@ function ab_pbImport_(reportDate, rows) {
   });
   if (added.length || !SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_PB_SHEET)) ab_pbWriteLog_(log);
   return added;
+}
+
+
+/**
+ * PC bridge: one day's NSE price band file, downloaded on the owner's PC.
+ * req = { reportDate: 'yyyy-mm-dd' (the date in the file name), rows: [{ symbol, series, name, from, to }] }.
+ * Same import as the paste tab (duplicates ignored). The day's email goes out only while
+ * its changes are current (effective today or later); older catch-up days are filed quietly.
+ */
+function ab_pbFromBridge_(req) {
+  const m = String(req.reportDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return { ok: false, error: 'reportDate must be yyyy-mm-dd' };
+  const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const rows = [];
+  (Array.isArray(req.rows) ? req.rows : []).forEach(function (r) {
+    const sym = String((r && r.symbol) || '').trim().toUpperCase();
+    const from = ab_pbBand_(r && r.from), to = ab_pbBand_(r && r.to);
+    if (!sym || /\s/.test(sym) || sym === 'SYMBOL' || (isNaN(from) && isNaN(to))) return;
+    rows.push({ symbol: sym, series: String(r.series || '').trim(), name: String(r.name || '').trim(), from: from, to: to });
+  });
+  if (!rows.length) return { ok: true, rows: 0, added: 0, inMain: 0, emailed: false, quiet: false };
+  const added = ab_pbImport_(day, rows);
+  const mainSyms = ab_pbMainSymbols_();
+  const inMain = added.filter(function (x) { return mainSyms[x.symbol]; }).length;
+  const current = ab_pbNextWeekday_(day) >= ab_pbDayStart_(new Date());
+  const emailed = !!(added.length && current && AB_PB_EMAIL && ab_pbSendEmail_(added, mainSyms));
+  return { ok: true, rows: rows.length, added: added.length, inMain: inMain, emailed: emailed, quiet: !!(added.length && !current) };
 }
 
 

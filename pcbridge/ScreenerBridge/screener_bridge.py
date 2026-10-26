@@ -10,16 +10,25 @@ Sheet cannot read it. This small program runs on YOUR computer instead:
   3. sends the page text back to your sheet,
   4. tells the sheet to process it (same Results Day / Quarterly logic as before).
 
+It also downloads NSE's daily "Price Band changes from next trade date" file
+(eq_band_changes_DDMMYYYY.csv - NSE does not answer Google's servers either)
+and hands it to the sheet, which files it on the "Price Band Changes" tab and
+sends the day's email - no more copy/paste.
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
-  python screener_bridge.py test       check the connection to the sheet and to screener.in
+  python screener_bridge.py test       check the connection to the sheet, screener.in and NSE
+  python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
 Needs only Python 3.8+ (nothing else to install). Files it creates sit next to
 this script: config.json (your settings) and bridge.log (what it did).
 """
+import csv
+import gzip
+import io
 import json
 import os
 import random
@@ -31,12 +40,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from http.cookiejar import CookieJar
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, 'config.json')
 LOG_PATH = os.path.join(HERE, 'bridge.log')
 LOCK_PATH = os.path.join(HERE, 'bridge.lock')
+PB_STATE_PATH = os.path.join(HERE, 'pricebands_state.json')
 TASK_NAME = 'AutoBhavcopyScreenerBridge'
 STARTUP_FILE = 'AutoBhavcopyScreenerBridge.vbs'
 
@@ -49,6 +60,7 @@ DEFAULTS = {
     'delay_max': 4.5,
     'batch_size': 5,           # pages sent to the sheet at a time
     'abort_after_failures': 5, # stop the run after this many failures in a row
+    'price_bands': True,       # download NSE's price band changes at every run
 }
 
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -186,6 +198,227 @@ def polite_sleep(cfg):
     time.sleep(random.uniform(float(cfg['delay_min']), float(cfg['delay_max'])))
 
 
+# ------------------------------------------------------------- NSE price bands
+# NSE > All Reports > Equities & SME > "Price Band changes from next trade date (csv)".
+# Published every trading evening as eq_band_changes_DDMMYYYY.csv (DDMMYYYY = that day).
+PB_URLS = ('https://nsearchives.nseindia.com/content/equities/eq_band_changes_{d}.csv',
+           'https://archives.nseindia.com/content/equities/eq_band_changes_{d}.csv')
+PB_REPORTS_API = 'https://www.nseindia.com/api/merged-daily-reports?key=favCapital'   # the All Reports page's own list
+PB_LOOKBACK_DAYS = 7     # catch up on days missed while the computer was off (older ones are skipped)
+PB_FIRST_DAYS = 3        # the very first run looks back only this many days
+
+
+def nse_session():
+    """An opener that keeps NSE's cookies (NSE wants them before it hands out files)."""
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    for url, ref in (('https://www.nseindia.com/', 'https://www.google.com/'),
+                     ('https://www.nseindia.com/all-reports', 'https://www.nseindia.com/')):
+        try:
+            nse_get(opener, url, referer=ref, timeout=20)
+        except (OSError, urllib.error.URLError, socket.timeout):
+            pass
+    return opener
+
+
+def nse_get(opener, url, referer='https://www.nseindia.com/all-reports', timeout=30):
+    """Returns (status, bytes). Network problems raise OSError/URLError."""
+    req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': '*/*', 'Accept-Language': 'en-US,en;q=0.9',
+                                               'Accept-Encoding': 'identity', 'Referer': referer})
+    try:
+        with opener.open(req, timeout=timeout) as r:
+            raw = r.read()
+            status = r.status
+    except urllib.error.HTTPError as e:
+        return e.code, b''
+    if raw[:2] == b'\x1f\x8b':
+        raw = gzip.decompress(raw)
+    return status, raw
+
+
+def _pb_norm(v):
+    return re.sub(r'[^A-Z0-9]', '', str(v).upper())
+
+
+def pb_parse(raw):
+    """The band file's bytes -> [{symbol, series, name, from, to}], or None when it is not that file."""
+    text = raw.decode('utf-8-sig', errors='replace')
+    if '<html' in text[:600].lower():
+        return None
+    table = list(csv.reader(io.StringIO(text)))
+    head, ix = -1, None
+    for i, row in enumerate(table[:5]):
+        h = [_pb_norm(c) for c in row]
+        f = next((j for j, c in enumerate(h) if c == 'FROM' or c.endswith('FROM')), -1)
+        t = next((j for j, c in enumerate(h) if c == 'TO' or (c.endswith('TO') and j != f)), -1)
+        if 'SYMBOL' in h and f >= 0 and t >= 0:
+            ix = {'symbol': h.index('SYMBOL'), 'from': f, 'to': t,
+                  'series': h.index('SERIES') if 'SERIES' in h else -1,
+                  'name': h.index('SECURITYNAME') if 'SECURITYNAME' in h else -1}
+            head = i
+            break
+    if ix is None:
+        return None
+    out = []
+    for row in table[head + 1:]:
+        def cell(k):
+            j = ix[k]
+            return row[j].strip() if 0 <= j < len(row) else ''
+        sym = cell('symbol').upper()
+        if sym:
+            out.append({'symbol': sym, 'series': cell('series'), 'name': cell('name'), 'from': cell('from'), 'to': cell('to')})
+    return out
+
+
+def pb_fetch(opener, day, url=None):
+    """('ok', rows) | ('missing', None) - not published (yet) or a holiday | ('error', reason).
+    The first address is NSE's current one: its 404 means "not there", its failure is an error."""
+    tag = day.strftime('%d%m%Y')
+    outcomes = []          # per address: 'missing' or an error text
+    for u in ([url] if url else [t.format(d=tag) for t in PB_URLS]):
+        try:
+            status, raw = nse_get(opener, u)
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            outcomes.append('NSE did not answer (%s)' % e)
+            continue
+        if status == 404:
+            outcomes.append('missing')
+            continue
+        if status != 200:
+            outcomes.append('HTTP %s from NSE' % status)
+            continue
+        rows = pb_parse(raw)
+        if rows is None:
+            outcomes.append('NSE did not send the CSV file (a web page came back instead)')
+            continue
+        return 'ok', rows
+    if outcomes and (outcomes[0] == 'missing' or all(o == 'missing' for o in outcomes)):
+        return 'missing', None
+    return 'error', next((o for o in outcomes if o != 'missing'), 'nothing tried')
+
+
+def pb_links_from_api(opener):
+    """[(date, url)] of band files listed on NSE's All Reports page - in case the address changes."""
+    try:
+        status, raw = nse_get(opener, PB_REPORTS_API, timeout=30)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        return []
+    if status != 200:
+        return []
+    out = {}
+    for m in re.finditer(r'(https?:\\?/\\?/[^"\s]+?eq_band_changes_(\d{2})(\d{2})(\d{4})\.csv)', raw.decode('utf-8', errors='replace')):
+        try:
+            out[date(int(m.group(4)), int(m.group(3)), int(m.group(2)))] = m.group(1).replace('\\/', '/')
+        except ValueError:
+            pass
+    return sorted(out.items())
+
+
+def pb_load_state():
+    try:
+        with open(PB_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def pb_save_state(st):
+    try:
+        with open(PB_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f, indent=2)
+    except OSError as e:
+        log('Price bands: could not save %s (%s)' % (PB_STATE_PATH, e))
+
+
+def pb_days_to_check(today, last):
+    """Weekdays after the last file the sheet received, up to today (at most PB_LOOKBACK_DAYS back)."""
+    start = today - timedelta(days=PB_LOOKBACK_DAYS)
+    if last:
+        start = max(start, last + timedelta(days=1))
+    else:
+        start = max(start, today - timedelta(days=PB_FIRST_DAYS))
+    days = []
+    d = start
+    while d <= today:
+        if d.weekday() < 5:
+            days.append(d)
+        d += timedelta(days=1)
+    return days
+
+
+def pb_send(cfg, day, rows, st):
+    """Hands one day's file to the sheet. True when the sheet filed it."""
+    label = day.strftime('%d-%m-%Y')
+    try:
+        res = api(cfg, 'pricebands', {'reportDate': day.isoformat(), 'rows': rows}, timeout=180)
+    except RuntimeError as e:
+        log('Price bands %s: sending to the sheet failed (%s) - the next run tries again.' % (label, e))
+        return False
+    if not res.get('ok'):
+        err = res.get('error') or 'unknown error'
+        if err == 'unknown action':
+            err = ('the sheet\'s web app does not know price bands yet - in Apps Script: Deploy > Manage deployments > '
+                   'pencil > Version: New version > Deploy')
+        log('Price bands %s: the sheet refused - %s' % (label, err))
+        return False
+    note = ', email sent' if res.get('emailed') else (', filed quietly (an older day)' if res.get('quiet') else '')
+    log('Price bands %s: %d change(s) from NSE, %d new on the sheet, %d in Main%s.'
+        % (label, res.get('rows', 0), res.get('added', 0), res.get('inMain', 0), note))
+    st['last'] = day.isoformat()
+    st['last_sent_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+    pb_save_state(st)
+    return True
+
+
+def price_bands_step(cfg, today=None):
+    """Downloads every price band file the sheet has not had yet and hands it over. Never raises."""
+    if not cfg.get('price_bands', True):
+        return
+    try:
+        st = pb_load_state()
+        today = today or date.today()
+        last = None
+        if st.get('last'):
+            try:
+                last = date.fromisoformat(st['last'])
+            except ValueError:
+                last = None
+        days = pb_days_to_check(today, last)
+        if not days:
+            log('Price bands: up to date (last file %s).' % last.strftime('%d-%m-%Y'))
+            return
+        opener = nse_session()
+        sent, problems, today_missing = 0, [], False
+        for i, d in enumerate(days):
+            kind, val = pb_fetch(opener, d)
+            if kind == 'ok':
+                if not pb_send(cfg, d, val, st):
+                    return
+                sent += 1
+            elif kind == 'missing':
+                today_missing = today_missing or d == today
+            else:
+                problems.append('%s: %s' % (d.strftime('%d-%m-%Y'), val))
+            if i < len(days) - 1:
+                time.sleep(1.5)
+        if not sent and (problems or today_missing):
+            # the file address may have changed: look it up on NSE's All Reports list
+            newer = [(d, u) for d, u in pb_links_from_api(opener) if (last is None or d > last) and d in days]
+            for d, u in newer:
+                kind, val = pb_fetch(opener, d, url=u)
+                if kind == 'ok' and pb_send(cfg, d, val, st):
+                    sent += 1
+        if today_missing and not sent:
+            log('Price bands: today\'s file is not on NSE yet - the next run tries again.')
+        if problems and not sent:
+            log('Price bands: could not download from NSE - %s. If this keeps happening, use the Priceband paste tab.'
+                % '; '.join(problems[-2:]))
+        elif not sent and not today_missing:
+            log('Price bands: no new file on NSE (holiday?).')
+    except Exception as e:   # never let price bands stop the screener work
+        log('Price bands: unexpected problem - %s' % e)
+
+
 # ------------------------------------------------------------------- the run
 def acquire_lock():
     try:
@@ -236,6 +469,7 @@ def run_once(cfg):
         if not ans.get('ok'):
             log('Sheet refused: %s' % ans.get('error'))
             return 1
+        price_bands_step(cfg)
         priority = [s for s in ans.get('priority', [])]
         missing = [s for s in ans.get('missing', [])][:int(cfg['max_missing_per_run'])]
         todo = priority + [s for s in missing if s not in priority]
@@ -341,6 +575,28 @@ def cmd_test(cfg):
         print('   OK - screener.in opened fine from this computer.' if kind == 'ok' else '   Reached screener.in (TCS page not found?).')
     except Blocked as e:
         ok = False
+        print('   PROBLEM - %s' % e)
+    print('3) NSE price band file from this computer ...')
+    try:
+        opener = nse_session()
+        found = None
+        d = date.today()
+        for _ in range(8):
+            if d.weekday() < 5:
+                kind, val = pb_fetch(opener, d)
+                if kind == 'ok':
+                    found = (d, val)
+                    break
+                if kind == 'error':
+                    print('   %s: %s' % (d.strftime('%d-%m-%Y'), val))
+            d -= timedelta(days=1)
+        if found:
+            print('   OK - downloaded the file of %s (%d price band changes). Nothing was sent.'
+                  % (found[0].strftime('%d-%m-%Y'), len(found[1])))
+        else:
+            print('   PROBLEM - could not download a price band file from NSE (the screener part still works;'
+                  ' paste the file by hand meanwhile).')
+    except Exception as e:
         print('   PROBLEM - %s' % e)
     return 0 if ok else 1
 
@@ -472,6 +728,12 @@ def main(argv):
         return run_once(cfg)
     if cmd == 'test':
         return cmd_test(cfg)
+    if cmd == 'pricebands':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        price_bands_step(dict(cfg, price_bands=True))
+        return 0
     if cmd == 'login':
         return run_after_login(cfg)
     if cmd == 'reschedule':

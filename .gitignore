@@ -1,6 +1,8 @@
 # secrets - never commit
 pcbridge/ScreenerBridge/config.json
 pcbridge/ScreenerBridge/bridge.log
+pcbridge/ScreenerBridge/bridge.lock
+pcbridge/ScreenerBridge/pricebands_state.json
 .clasprc.json
 *.token
 .env
