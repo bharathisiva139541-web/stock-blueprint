@@ -1,0 +1,1372 @@
+{
+  "macroSectors": [
+    {
+      "id": "m-financial-services",
+      "description": "The macro-economic sector for businesses whose product is money itself: deposits, loans, insurance, investment management and the infrastructure of payments and markets. In India it links household savings with the borrowing needs of companies, individuals and government, and is shaped heavily by the RBI, SEBI and IRDAI. Its fortunes track the economic cycle, interest rates and capital market activity."
+    }
+  ],
+  "sectors": [
+    {
+      "id": "s-financial-services",
+      "description": "The single sector inside this macro group, covering banks, non-bank lenders, insurers, capital-market intermediaries and fintech companies. Together they collect savings, lend, carry risk and run the plumbing of payments and markets. They are judged with their own yardsticks - margins, asset quality, capital and assets under management - rather than ordinary operating margins."
+    }
+  ],
+  "industries": [
+    {
+      "id": "i-finance",
+      "description": "Non-bank lenders and finance-related companies: NBFCs, housing financiers, microfinance lenders, government-owned development financiers, investment and holding companies and other specialists.",
+      "businessOverview": "Most lenders here borrow wholesale - from banks, bond investors and sometimes the public - and lend on to individuals, small businesses or infrastructure projects at a higher rate. Each type has its own customer and risk profile: housing financiers lend long against property, microfinance lenders make small unsecured group loans, and development financiers fund state utilities and infrastructure. The industry also holds investment and holding companies, whose value comes from the shares and securities they own rather than from lending, plus niches such as asset reconstruction and securitisation. The RBI is the main regulator for almost all of them.",
+      "keyDemandDrivers": [
+        "Credit demand from consumers, MSMEs and infrastructure",
+        "Cost and availability of bank and bond funding",
+        "Rural incomes and the property market",
+        "Government infrastructure and housing programmes",
+        "Equity market levels (for investment and holding companies)"
+      ],
+      "keyRisks": [
+        "Funding and liquidity squeezes",
+        "Rising bad loans in a downturn",
+        "RBI regulatory tightening",
+        "Competition from banks and fintech lenders",
+        "Holding-company discounts and governance issues"
+      ]
+    },
+    {
+      "id": "i-banks",
+      "description": "Licensed banks that accept public deposits and lend: public sector, private sector and specialised (small finance and payments) banks.",
+      "businessOverview": "Banks gather deposits, keep part of them as mandatory cash and government bonds, and lend the rest to households, businesses and the government. Their profit is the spread between loan and deposit rates, plus fees, minus operating costs and provisions for bad loans. Public sector banks are majority-owned by the government, private banks by private shareholders, and differentiated banks serve niche customers under special licences. RBI monetary policy and supervision affect all of them at once.",
+      "keyDemandDrivers": [
+        "Economic growth and loan demand",
+        "RBI policy rates and system liquidity",
+        "Household savings and deposit growth",
+        "Government spending and policy lending",
+        "Retail credit and digital banking adoption"
+      ],
+      "keyRisks": [
+        "Rising non-performing assets",
+        "Margin squeeze from rate cuts or costlier deposits",
+        "Capital and regulatory requirements",
+        "Cyber security and technology outages",
+        "Government intervention (for state-owned banks)"
+      ]
+    },
+    {
+      "id": "i-capital-markets",
+      "description": "Businesses that run, serve or sell through India's securities markets: asset managers, exchanges, depositories and registrars, brokers, distributors, rating agencies and capital-raising specialists.",
+      "businessOverview": "These firms earn fees linked to how much money is invested in markets and how actively it trades, rather than from lending. Market infrastructure (exchanges, depositories, registrars) has few competitors and strong network effects, while brokers, distributors and merchant bankers face more competition and swing more with sentiment. Asset managers and distributors earn a share of the assets they manage or influence, so both market levels and new inflows matter. SEBI regulates nearly all of them.",
+      "keyDemandDrivers": [
+        "Shift of household savings into equities and mutual funds",
+        "Retail trading and derivatives activity",
+        "Equity market levels and volatility",
+        "IPO and bond issuance cycles",
+        "Growth in demat accounts and SIPs"
+      ],
+      "keyRisks": [
+        "Market downturns that cut volumes and AUM",
+        "SEBI changes to fees and products",
+        "Price competition from low-cost platforms",
+        "Technology outages and cyber attacks",
+        "Heavy reliance on derivatives trading income"
+      ]
+    },
+    {
+      "id": "i-insurance",
+      "description": "Companies that carry insurance risk (life, general and specialist insurers) and companies that sell or service insurance (brokers, aggregators, TPAs).",
+      "businessOverview": "Insurers collect premiums upfront, invest the money and pay claims or benefits later. Life insurers sell long-term protection, savings and pension policies and are judged on the value of new business they write. General insurers sell mostly one-year covers for health, motor, property and crops, earning from underwriting and from investing the premium float. Distributors and TPAs earn commissions and service fees without bearing claims risk, and IRDAI regulates products, solvency and expenses across the industry.",
+      "keyDemandDrivers": [
+        "Low insurance penetration and rising incomes",
+        "Health-cost awareness and employer group cover",
+        "Vehicle sales and credit-linked covers",
+        "Bank and digital distribution reach",
+        "Interest rates and equity markets (investment income)"
+      ],
+      "keyRisks": [
+        "Rule changes on commissions, surrender values and pricing",
+        "Claim spikes from catastrophes or epidemics",
+        "Price competition",
+        "Tax changes affecting savings products",
+        "Investment losses"
+      ]
+    },
+    {
+      "id": "i-financial-technology-fintech",
+      "description": "Technology-led companies that deliver financial services or the systems behind them, such as payments, digital lending platforms, financial marketplaces, card making and banking software.",
+      "businessOverview": "Fintech firms use software, data and mobile channels to offer payments, credit, insurance and investment products, often in partnership with banks, NBFCs and insurers that hold the licences and balance sheets. Revenue usually comes from small fees on large transaction volumes, commissions or software licences, so scale and pricing power decide profitability. India's public digital infrastructure - UPI, Aadhaar-based eKYC and account aggregators - lowers costs for everyone and keeps competition intense. RBI rules on payments and digital lending are the main regulatory factor.",
+      "keyDemandDrivers": [
+        "Shift from cash to digital payments",
+        "Smartphone and internet adoption",
+        "Merchant digitisation",
+        "Demand for quick digital credit and insurance",
+        "Public digital infrastructure"
+      ],
+      "keyRisks": [
+        "Sudden RBI or payment-network rule changes",
+        "Thin margins and price wars",
+        "Dependence on bank and lender partners",
+        "Fraud, cyber attacks and data breaches",
+        "Losses and need for fresh funding"
+      ]
+    }
+  ],
+  "basicIndustries": [
+    {
+      "id": "b-financial-institution",
+      "simplifiedExplanation": "Mostly government-owned lenders set up to finance national priorities such as power, railways, renewable energy, infrastructure, exports or small industry. They raise money mainly by selling bonds and lend large amounts for long periods.",
+      "productsAndServices": [
+        "Long-term loans to state and central power utilities",
+        "Renewable energy project loans",
+        "Infrastructure project finance",
+        "Leasing of assets to government users",
+        "Refinance to banks and other lenders",
+        "Capital-gains and other retail bonds"
+      ],
+      "valueChainPosition": "Wholesale financiers between the bond market (insurers, pension funds, banks, retail bondholders) and large public-sector or infrastructure borrowers. Several also act as nodal agencies that route government schemes in their sector.",
+      "howTheyMakeMoney": "They earn a thin but steady spread between lending rates and bond borrowing costs, made possible by strong credit ratings linked to government ownership. Some lease assets to government users on a cost-plus basis.",
+      "revenueSources": [
+        "Interest on utility and project loans",
+        "Lease income",
+        "Fees for scheme management and loan syndication",
+        "Treasury income"
+      ],
+      "operatingCosts": [
+        "Interest on bonds and bank borrowings",
+        "Provisions on stressed projects",
+        "Hedging costs on foreign-currency borrowings",
+        "A small employee base (low operating costs)"
+      ],
+      "customersAndEndMarkets": "State electricity distribution and generation companies, central PSUs, railways, renewable and infrastructure developers, and other lenders seeking refinance.",
+      "demandSupplyDrivers": "Lending follows government capex plans in power, transmission, railways and renewables, and the financial health of state utilities. Bond-market rates and investor appetite decide funding costs.",
+      "domesticInternationalExposure": "Lending is domestic; some raise foreign-currency loans or bonds and manage currency and rate risk with hedges.",
+      "capexIntensity": "Low",
+      "capexNote": "They own few physical assets beyond leased ones; the balance sheet itself is the business.",
+      "workingCapital": "Asset-liability management is central: very long loans are funded by bonds of mixed maturities, so refinancing and rate risk are watched closely.",
+      "regulation": "RBI regulates them as infrastructure-finance NBFCs or all-India financial institutions, with exposure and provisioning norms; the government as owner sets mandates, dividends and board appointments.",
+      "competitiveAdvantages": "Sovereign-linked ratings give low borrowing costs, and sector expertise plus policy roles are hard for private lenders to match.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Central schemes for power, railways and green energy decide how much these lenders disburse." },
+        { "factor": "Infrastructure spending", "impact": "Higher public capex means bigger loan books and more project pipelines." },
+        { "factor": "Interest rates", "impact": "Bond yields set their cost of funds and therefore their spread." },
+        { "factor": "Electricity demand", "impact": "Rising power demand pushes utilities to borrow for generation, transmission and distribution." },
+        { "factor": "State utility finances", "impact": "Timely payments by state discoms keep asset quality healthy." }
+      ],
+      "risks": [
+        { "risk": "Borrower concentration", "detail": "Heavy exposure to a few state utilities or government users magnifies any payment delay." },
+        { "risk": "Policy dependence", "detail": "Changes in government priorities or scheme design can slow lending." },
+        { "risk": "Spread squeeze", "detail": "Margins narrow if borrowing costs rise faster than loans can be repriced." },
+        { "risk": "Project stress", "detail": "Private infrastructure or renewable projects can turn into bad loans." },
+        { "risk": "Stake sales", "detail": "Government share sales add supply of shares in the market." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Lending is driven by multi-year government programmes rather than the consumer cycle, but asset quality depends on state finances and project execution.",
+      "metricSet": "nbfc",
+      "relatedBasicIndustries": ["b-non-banking-financial-company-nbfc", "b-public-sector-bank", "b-integrated-power-utilities", "b-power-generation", "b-railways"],
+      "aliases": ["financial institution", "development financial institution", "dfi", "infrastructure finance company", "nbfc-ifc", "power finance", "psu financier", "aifi", "railway finance"],
+      "themes": ["PSU", "Infrastructure", "Renewable energy"]
+    },
+    {
+      "id": "b-housing-finance-company",
+      "simplifiedExplanation": "Lenders that specialise in loans to buy, build or repair homes, plus loans against property. They are not banks, so they fund themselves by borrowing from banks and the bond market instead of from savings accounts.",
+      "productsAndServices": [
+        "Home loans for salaried and self-employed borrowers",
+        "Affordable housing loans in smaller towns",
+        "Loans against property (LAP)",
+        "Construction finance to developers",
+        "Home improvement and plot loans",
+        "Public deposits (deposit-taking HFCs only)"
+      ],
+      "valueChainPosition": "Downstream of the real estate market: they finance home buyers and developers, and are funded by banks, mutual funds, insurers, National Housing Bank refinance and depositors.",
+      "howTheyMakeMoney": "They earn the spread between home-loan rates and their borrowing cost over very long tenures, plus processing fees and gains from selling loan pools. Home loans are secured, so credit losses are usually low but spreads are thin.",
+      "revenueSources": [
+        "Interest on home loans and LAP",
+        "Interest on developer loans",
+        "Processing and other fees",
+        "Gains on assignment or securitisation of loans",
+        "Insurance cross-sell commissions"
+      ],
+      "operatingCosts": [
+        "Interest on borrowings",
+        "Employee and branch costs",
+        "Sourcing payouts to loan agents and connectors",
+        "Credit provisions",
+        "Legal and valuation checks on properties"
+      ],
+      "customersAndEndMarkets": "Individual home buyers, including low and middle-income families with informal incomes, and real estate developers needing project finance.",
+      "demandSupplyDrivers": "Housing demand, property prices, incomes and interest rates set loan demand, and government affordable-housing schemes add support. Banks offering cheaper home loans are the main competitive pressure.",
+      "domesticInternationalExposure": "Purely domestic lending; some raise funds through external commercial borrowings or foreign investors.",
+      "capexIntensity": "Low",
+      "capexNote": "Spending goes mainly on branches and loan-origination technology.",
+      "workingCapital": "Long loans funded by shorter borrowings create an asset-liability mismatch, so liquidity buffers and steady access to bonds and bank lines are critical.",
+      "regulation": "RBI regulates HFCs, with the National Housing Bank handling supervision and refinance; rules cover capital, loan-to-value limits and deposits. RERA affects developer lending and tax benefits on home-loan interest support demand.",
+      "competitiveAdvantages": "Low funding cost from a strong parent or rating, skill in assessing informal-income borrowers and branch reach in small towns.",
+      "drivers": [
+        { "factor": "Interest rates", "impact": "Lower rates cut funding costs and make EMIs affordable; rising rates do the opposite." },
+        { "factor": "Real estate cycle", "impact": "Home sales and prices drive loan demand and the safety of developer loans." },
+        { "factor": "Government policy", "impact": "Affordable-housing subsidies and tax breaks on home loans widen the borrower base." },
+        { "factor": "Credit growth", "impact": "Bank appetite to lend to HFCs and to buy their loan pools sets funding availability." },
+        { "factor": "Consumer demand", "impact": "Job security and income growth decide how many families buy homes." }
+      ],
+      "risks": [
+        { "risk": "Bank competition", "detail": "Banks lure good borrowers away with cheaper balance-transfer offers." },
+        { "risk": "Funding shock", "detail": "A freeze in bond or bank funding can stall lending and raise costs." },
+        { "risk": "Developer loan stress", "detail": "Stalled projects make construction loans the riskiest part of the book." },
+        { "risk": "Rate spikes", "detail": "Higher EMIs slow new demand and stretch weaker borrowers." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Retail home loans tend to be resilient, but growth and developer exposure follow the property cycle and interest rates.",
+      "metricSet": "housing-finance",
+      "relatedBasicIndustries": ["b-private-sector-bank", "b-non-banking-financial-company-nbfc", "b-residential-commercial-projects", "b-securitisation"],
+      "aliases": ["hfc", "housing finance", "home loan company", "mortgage lender", "home finance", "affordable housing finance", "loan against property"],
+      "themes": ["Affordable housing"]
+    },
+    {
+      "id": "b-investment-company",
+      "simplifiedExplanation": "Companies whose main business is holding and managing investments - shares, bonds, government securities or stakes in other businesses - rather than making products or giving retail loans. Their value largely tracks what they own.",
+      "productsAndServices": [
+        "Portfolios of listed and unlisted shares",
+        "Government securities underwriting and dealing (primary dealers)",
+        "Bond and money-market investments",
+        "Stakes in financial-services subsidiaries",
+        "Inter-corporate loans and deposits",
+        "Treasury management"
+      ],
+      "valueChainPosition": "Investors in the capital market rather than service providers: they deploy their own or group capital into securities and businesses. Primary dealers underwrite and trade government bonds at RBI auctions.",
+      "howTheyMakeMoney": "Through dividends, interest, trading gains and fair-value changes on holdings; primary dealers also earn underwriting commissions. Reported profit can jump around with market prices.",
+      "revenueSources": [
+        "Dividend income",
+        "Interest on bonds and loans",
+        "Gains on sale of investments",
+        "Fair-value (mark-to-market) gains",
+        "Underwriting commissions (gilt dealers)"
+      ],
+      "operatingCosts": [
+        "Interest on borrowings for leveraged portfolios",
+        "Employee and management costs",
+        "Mark-to-market losses",
+        "Taxes on gains and dividends"
+      ],
+      "customersAndEndMarkets": "Few outside customers: the business is investing in companies and the bond market, and shareholders benefit through dividends and the value of holdings.",
+      "demandSupplyDrivers": "Earnings and book value follow equity prices, interest rates and the results of investee companies. For gilt dealers, the size of government borrowing and the direction of rates matter most.",
+      "domesticInternationalExposure": "Holdings are mainly Indian; global sentiment and foreign flows move the value of listed holdings.",
+      "capexIntensity": "Low",
+      "capexNote": "Almost no physical assets; capital sits in securities.",
+      "workingCapital": "Liquidity of holdings matters; gilt dealers run large bond books funded short-term, which are sensitive to rate moves.",
+      "regulation": "Most are RBI-registered NBFCs (investment and credit companies, core investment companies or primary dealers) with capital and leverage norms; SEBI listing rules apply.",
+      "competitiveAdvantages": "Quality and liquidity of holdings, low leverage and a strong parent; for primary dealers, RBI authorisation and bond-market skill.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Rising share prices lift portfolio values and trading gains." },
+        { "factor": "Interest rates", "impact": "Falling yields raise bond values; rising yields cause mark-to-market losses." },
+        { "factor": "Investee performance", "impact": "Dividends and value depend on how the companies held perform." },
+        { "factor": "Regulation", "impact": "RBI rules on leverage and investments limit how the portfolio can be run." }
+      ],
+      "risks": [
+        { "risk": "Market swings", "detail": "A falling market cuts both profits and book value quickly." },
+        { "risk": "Holding discount", "detail": "Shares often trade well below the value of the investments held." },
+        { "risk": "Rate risk", "detail": "Bond-heavy books lose value when yields rise." },
+        { "risk": "Related-party dealings", "detail": "Loans or investments in group firms may not serve minority shareholders." },
+        { "risk": "Low liquidity", "detail": "Many such shares trade thinly, so prices can be erratic." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Profits and net worth move with equity and bond markets.",
+      "metricSet": "holding-company",
+      "relatedBasicIndustries": ["b-holding-company", "b-asset-management-company", "b-non-banking-financial-company-nbfc", "b-stockbroking-and-allied"],
+      "aliases": ["investment company", "nbfc-ic", "investment and credit company", "primary dealer", "gilt company", "treasury company", "investment firm"],
+      "themes": []
+    },
+    {
+      "id": "b-non-banking-financial-company-nbfc",
+      "simplifiedExplanation": "Lending companies registered with the RBI that are not banks. They give loans for vehicles, gold, consumer goods, small businesses and personal needs, often to customers banks serve poorly, and fund themselves through borrowings.",
+      "productsAndServices": [
+        "Vehicle loans (new and used cars, two-wheelers, trucks, tractors)",
+        "Gold loans",
+        "Personal and consumer-durable loans",
+        "MSME and business loans",
+        "Loans against property",
+        "Co-branded credit cards and digital loans with partners",
+        "Equipment finance and leasing"
+      ],
+      "valueChainPosition": "Midstream credit providers: they borrow wholesale from banks, mutual funds and bond investors (some also take public deposits) and lend retail, sourcing through dealers, retailers and fintech partners and often co-lending with banks.",
+      "howTheyMakeMoney": "Their loans carry higher rates than bank loans, so the spread over their higher borrowing cost is wider. Fees, insurance cross-sell and gains on selling loan pools add income, while credit losses are the main swing factor.",
+      "revenueSources": [
+        "Interest on loans",
+        "Processing and late-payment fees",
+        "Insurance and cross-sell commissions",
+        "Gains on loan assignment and co-lending",
+        "Collection and other charges"
+      ],
+      "operatingCosts": [
+        "Interest on borrowings",
+        "Credit losses and write-offs",
+        "Employee and branch costs",
+        "Sourcing commissions to dealers and partners",
+        "Collection and recovery costs",
+        "Technology"
+      ],
+      "customersAndEndMarkets": "Retail borrowers, self-employed people, small transport operators, farmers, small businesses and new-to-credit customers across urban and rural India.",
+      "demandSupplyDrivers": "Consumption, vehicle sales, rural incomes and MSME activity drive loan demand, while the cost and availability of bank and bond funding drive supply. Gold-loan demand also moves with gold prices.",
+      "domesticInternationalExposure": "Domestic lending; some raise foreign-currency loans or bonds.",
+      "capexIntensity": "Low",
+      "capexNote": "Branches and underwriting and collection technology need modest spending; capital is the real requirement for growth.",
+      "workingCapital": "Borrowing tenures must match loan tenures; reliance on short-term commercial paper has caused liquidity crises before, so diversified funding matters.",
+      "regulation": "RBI's scale-based regulation (base, middle, upper and top layers) sets capital, provisioning, governance and lending norms; RBI digital-lending and fair-practice rules and bank risk weights on loans to NBFCs also matter.",
+      "competitiveAdvantages": "Niche underwriting skill, local collection teams, cheap funding from a strong parent or rating, and dealer and partner relationships.",
+      "drivers": [
+        { "factor": "Credit growth", "impact": "Strong demand for retail and MSME credit expands loan books." },
+        { "factor": "Interest rates", "impact": "Borrowing costs rise and fall faster than many fixed-rate loans reprice, moving margins." },
+        { "factor": "Consumer demand", "impact": "Vehicle, durable and personal spending create loan demand." },
+        { "factor": "Rural demand", "impact": "Farm incomes drive tractor, two-wheeler and gold-loan demand and repayments." },
+        { "factor": "Regulation", "impact": "RBI curbs on unsecured or digital lending can slow growth quickly." },
+        { "factor": "Gold prices", "impact": "Higher gold prices let gold lenders lend more against the same jewellery." }
+      ],
+      "risks": [
+        { "risk": "Liquidity crunch", "detail": "A loss of lender confidence can choke funding and force a growth slowdown." },
+        { "risk": "Asset quality", "detail": "Defaults rise quickly in unsecured and small-ticket loans during stress." },
+        { "risk": "Regulatory action", "detail": "RBI can restrict products, pricing or sourcing practices." },
+        { "risk": "Competition", "detail": "Banks and fintech lenders compete for the best borrowers." },
+        { "risk": "Concentration", "detail": "Dependence on one product or region magnifies local shocks." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Loan growth and credit losses follow consumption, vehicle sales and funding conditions.",
+      "metricSet": "nbfc",
+      "relatedBasicIndustries": ["b-private-sector-bank", "b-housing-finance-company", "b-microfinance-institutions", "b-2-3-wheelers", "b-commercial-vehicles"],
+      "aliases": ["nbfc", "non banking financial company", "non-banking finance company", "finance company", "vehicle finance", "gold loan company", "consumer finance", "msme lender", "shadow bank"],
+      "themes": ["Rural demand"]
+    },
+    {
+      "id": "b-other-financial-services",
+      "simplifiedExplanation": "A catch-all for financial businesses that are neither banks nor regular lenders - for example asset reconstruction companies that buy bad loans, factoring and forex firms, gift-voucher platforms, advisory boutiques and app-based credit businesses.",
+      "productsAndServices": [
+        "Purchase and recovery of stressed loans (asset reconstruction)",
+        "Factoring and bill discounting",
+        "Foreign exchange and money changing",
+        "Gift cards, vouchers and rewards programmes",
+        "Corporate finance advisory",
+        "Buy-now-pay-later and small digital credit"
+      ],
+      "valueChainPosition": "Specialists at the edges of the lending system: asset reconstruction companies take bad loans off bank books, factors finance suppliers' invoices to large buyers, and voucher or rewards platforms serve corporates and banks.",
+      "howTheyMakeMoney": "It depends on the model: asset reconstruction companies earn management fees plus a share of recoveries above the purchase price, factors and digital lenders earn interest spreads, and voucher, forex and advisory firms earn margins or fees.",
+      "revenueSources": [
+        "Recoveries and management fees on stressed assets",
+        "Interest and discount income",
+        "Forex spreads and commissions",
+        "Voucher and rewards margins",
+        "Advisory fees"
+      ],
+      "operatingCosts": [
+        "Borrowing costs",
+        "Legal and resolution expenses",
+        "Staff and technology",
+        "Customer acquisition and partner payouts",
+        "Credit losses"
+      ],
+      "customersAndEndMarkets": "Banks and NBFCs selling bad loans, MSME suppliers, corporates running reward schemes, travellers and students needing forex, and retail app users.",
+      "demandSupplyDrivers": "Asset reconstruction depends on how many bad loans banks sell and how fast recoveries happen under IBC and SARFAESI; the other models follow consumer spending, trade flows and deal activity.",
+      "domesticInternationalExposure": "Mostly domestic; forex businesses depend on outbound travel and overseas education and are affected by rupee moves.",
+      "capexIntensity": "Low",
+      "capexNote": "The needs are people, technology and capital to buy assets, not plants.",
+      "workingCapital": "Asset reconstruction needs patient capital because recoveries take years; factors and short-term lenders turn money over quickly but rely on bank lines.",
+      "regulation": "RBI regulates asset reconstruction companies under the SARFAESI Act, as well as factors, money changers and digital lending; the Insolvency and Bankruptcy Code shapes recovery timelines; SEBI covers advisory and merchant banking.",
+      "competitiveAdvantages": "Capital, recovery skill and bank relationships for reconstruction firms; partner networks and technology for platform models.",
+      "drivers": [
+        { "factor": "Regulation", "impact": "RBI and insolvency rules decide how bad loans are sold, priced and resolved." },
+        { "factor": "Bad-loan sales by banks", "impact": "More stressed loans for sale means more buying opportunities for reconstruction firms." },
+        { "factor": "Credit growth", "impact": "Faster economic activity raises demand for invoice finance and small credit." },
+        { "factor": "Consumer demand", "impact": "Spending on gifting, rewards and travel drives voucher and forex volumes." },
+        { "factor": "Interest rates", "impact": "Funding costs set margins for factoring and lending models." }
+      ],
+      "risks": [
+        { "risk": "Slow recoveries", "detail": "Court and insolvency delays can erode the value of stressed assets bought." },
+        { "risk": "Rule changes", "detail": "RBI tightening on stressed-asset deals or digital credit can reshape the business." },
+        { "risk": "Credit losses", "detail": "Small-ticket digital and invoice loans can default in bulk." },
+        { "risk": "Partner dependence", "detail": "Platform models often rely on a few banks or corporate clients." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Reconstruction firms find more assets in bad times, while consumer-linked models do better in good times.",
+      "metricSet": "nbfc",
+      "relatedBasicIndustries": ["b-non-banking-financial-company-nbfc", "b-securitisation", "b-public-sector-bank", "b-financial-technology-fintech", "b-other-capital-market-related-services"],
+      "aliases": ["other financial services", "asset reconstruction company", "arc", "factoring", "forex dealer", "money changer", "gift card company", "bnpl"],
+      "themes": []
+    },
+    {
+      "id": "b-holding-company",
+      "simplifiedExplanation": "Companies that exist mainly to own large or controlling stakes in a business group's operating companies. They do little business of their own; their worth comes from those stakes.",
+      "productsAndServices": [
+        "Stakes in listed group companies",
+        "Stakes in unlisted subsidiaries",
+        "Brand ownership and royalty arrangements",
+        "Group treasury and inter-company loans",
+        "Some house financial-services subsidiaries (broking, lending, advisory)"
+      ],
+      "valueChainPosition": "At the top of a business group's ownership chain, between the promoter family and the operating companies.",
+      "howTheyMakeMoney": "Dividends from group companies, interest on loans to them, occasional brand fees and gains when stakes are sold. Consolidated results mirror the subsidiaries.",
+      "revenueSources": [
+        "Dividends from investee companies",
+        "Interest on inter-corporate loans",
+        "Brand or management fees",
+        "Gains on stake sales"
+      ],
+      "operatingCosts": [
+        "Small head-office and staff costs",
+        "Interest on any borrowings",
+        "Taxes on dividends and gains"
+      ],
+      "customersAndEndMarkets": "Their main counterparties are their own group companies; investors buy them as an indirect route into the group's businesses.",
+      "demandSupplyDrivers": "Value depends on the market price of the stakes held, the dividends paid and whether the gap to underlying value narrows or widens, for example on restructuring, mergers or buybacks.",
+      "domesticInternationalExposure": "Follows the businesses owned; some group companies operate globally.",
+      "capexIntensity": "Low",
+      "capexNote": "Capital is tied up in shareholdings, not physical assets.",
+      "workingCapital": "Minimal; cash flow is lumpy and depends on when group companies pay dividends.",
+      "regulation": "Those mainly holding group-company shares may need RBI registration as core investment companies with leverage limits; SEBI takeover and listing rules govern stake changes; dividend taxation affects how much value passes through.",
+      "competitiveAdvantages": "There is no operating moat of its own; quality of the underlying companies and promoter governance are what count.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Prices of the listed stakes drive the value of the holding company." },
+        { "factor": "Group company performance", "impact": "Profits and dividends of investees flow up as income." },
+        { "factor": "Group restructuring", "impact": "Mergers, demergers or simplification can narrow the holding discount." },
+        { "factor": "Regulation", "impact": "Tax and RBI rules on core investment companies shape payouts and borrowing." }
+      ],
+      "risks": [
+        { "risk": "Holding discount", "detail": "Shares often trade far below the value of the stakes held." },
+        { "risk": "Low liquidity", "detail": "Thin trading makes prices volatile and exits hard." },
+        { "risk": "Governance", "detail": "Decisions may favour the promoter group over minority holders." },
+        { "risk": "Concentration", "detail": "Value often rests on one or two group companies." },
+        { "risk": "Tax leakage", "detail": "Dividends taxed at several layers reduce what reaches shareholders." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "It mirrors the industries of the companies held - steady if they are stable, cyclical if they are not.",
+      "metricSet": "holding-company",
+      "relatedBasicIndustries": ["b-investment-company", "b-diversified", "b-asset-management-company", "b-stockbroking-and-allied"],
+      "aliases": ["holding company", "holdco", "promoter holding company", "group holding company", "core investment company", "cic", "investment holding company"],
+      "themes": []
+    },
+    {
+      "id": "b-microfinance-institutions",
+      "simplifiedExplanation": "Lenders that give small loans without collateral, mainly to women in low-income households, usually through groups that meet regularly and repay in small, frequent instalments.",
+      "productsAndServices": [
+        "Joint liability group (JLG) loans",
+        "Individual micro-enterprise loans",
+        "Income-generation and livestock loans",
+        "Small loans for home repair, sanitation or solar products",
+        "Credit-linked life insurance",
+        "Small MSME loans for graduating borrowers"
+      ],
+      "valueChainPosition": "Last-mile lenders funded by banks, development financiers and bond investors; field staff meet borrowers in their villages and neighbourhoods to disburse and collect.",
+      "howTheyMakeMoney": "Relatively high lending rates pay for a costly field-staff model and credit losses; profit is the spread left after these costs. Selling loan pools to banks, which count them as priority-sector loans, helps fund growth.",
+      "revenueSources": [
+        "Interest on microloans",
+        "Processing fees",
+        "Insurance commissions",
+        "Gains on securitisation and assignment of loans"
+      ],
+      "operatingCosts": [
+        "Interest on borrowings",
+        "Salaries of a large field staff",
+        "Credit losses",
+        "Branch and travel costs",
+        "Collection technology"
+      ],
+      "customersAndEndMarkets": "Low-income women, rural households, small traders, artisans and farm-linked micro-businesses.",
+      "demandSupplyDrivers": "Credit demand from under-banked households is large; supply depends on bank funding and investor confidence. Several lenders chasing the same borrower is the main danger to the whole system.",
+      "domesticInternationalExposure": "Domestic lending; foreign impact investors sometimes provide equity or debt.",
+      "capexIntensity": "Low",
+      "capexNote": "Branches are small and simple; spending goes mainly on people and collection technology.",
+      "workingCapital": "Short loan tenures with frequent repayments roughly match their borrowings, so collection efficiency directly drives liquidity.",
+      "regulation": "RBI's microfinance framework defines microloans by household income, caps repayment burden relative to income and sets fair-practice rules; industry self-regulatory guardrails limit the number of lenders per borrower.",
+      "competitiveAdvantages": "Dense field networks, borrower relationships, credit-bureau discipline and wide geographic spread; scale lowers funding cost.",
+      "drivers": [
+        { "factor": "Rural demand", "impact": "Village incomes drive both demand for loans and ability to repay." },
+        { "factor": "Monsoon & agriculture", "impact": "A poor monsoon hurts farm-linked borrowers and collections." },
+        { "factor": "Borrower over-indebtedness", "impact": "Borrowers juggling several lenders push defaults up across the industry." },
+        { "factor": "Regulation", "impact": "RBI and self-regulatory limits shape loan size, pricing and lender count per borrower." },
+        { "factor": "Credit growth", "impact": "Bank appetite to lend to MFIs or buy their pools governs growth." }
+      ],
+      "risks": [
+        { "risk": "Over-lending cycle", "detail": "Rapid industry growth can end in sharp spikes in defaults." },
+        { "risk": "Local disruptions", "detail": "Floods, elections, unrest or local laws can halt collections in a region." },
+        { "risk": "Political risk", "detail": "Loan-waiver talk or state action can make borrowers stop repaying." },
+        { "risk": "Funding", "detail": "Banks pull back from the segment during stress, raising costs." },
+        { "risk": "State concentration", "detail": "Heavy exposure to a few states magnifies local shocks." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Credit costs jump during rural shocks or over-lending phases and then normalise.",
+      "metricSet": "microfinance",
+      "relatedBasicIndustries": ["b-other-bank", "b-non-banking-financial-company-nbfc", "b-private-sector-bank", "b-securitisation"],
+      "aliases": ["mfi", "microfinance", "micro finance", "nbfc-mfi", "microlender", "jlg loans", "group lending", "micro credit"],
+      "themes": ["Financial inclusion", "Rural demand"]
+    },
+    {
+      "id": "b-securitisation",
+      "simplifiedExplanation": "Securitisation turns a pool of loans (vehicle, home, microfinance or other loans) into securities that investors can buy. Entities here are mostly special-purpose trusts or companies that hold such pools and pass the borrowers' repayments to investors.",
+      "productsAndServices": [
+        "Pass-through certificates (PTCs) backed by loan pools",
+        "Listed securitised debt instruments",
+        "Security receipts on stressed assets",
+        "Senior and junior tranches with credit enhancement",
+        "Servicing and collection of pooled loans"
+      ],
+      "valueChainPosition": "Sits between loan originators (banks, NBFCs, HFCs, MFIs) and investors (banks, mutual funds, insurers); rating agencies rate the tranches and trustees oversee the trust.",
+      "howTheyMakeMoney": "The vehicle itself is built to pass cash through rather than earn a profit. The originator keeps any excess spread and servicing fees, investors earn the coupon, and arrangers and trustees earn fees.",
+      "revenueSources": [
+        "Interest and principal from the loan pool (passed to investors)",
+        "Excess spread retained for the originator",
+        "Servicing fees",
+        "Structuring and trustee fees"
+      ],
+      "operatingCosts": [
+        "Payouts to investors",
+        "Servicing and collection costs",
+        "Rating, trustee and legal fees",
+        "Losses absorbed by credit enhancement"
+      ],
+      "customersAndEndMarkets": "Banks buying retail or priority-sector pools, mutual funds, insurers and other fixed-income investors; originators use it to raise funds and free up capital.",
+      "demandSupplyDrivers": "Issuance rises when lenders need funding beyond bank loans or want to sell priority-sector pools; investor appetite depends on interest rates and how earlier pools performed.",
+      "domesticInternationalExposure": "A domestic market; foreign portfolio investors take part occasionally.",
+      "capexIntensity": "Low",
+      "capexNote": "These are legal structures with no physical assets.",
+      "workingCapital": "Borrower collections are passed to investors on a fixed schedule; shortfalls hit the junior tranche and credit enhancement first.",
+      "regulation": "RBI's securitisation directions set minimum holding periods, minimum retention by the originator and allowed structures; SEBI rules govern listed securitised debt; security receipts fall under the SARFAESI Act.",
+      "competitiveAdvantages": "Originator quality, a clean pool-performance record and high ratings decide pricing; for equity investors this is rarely a listed operating business.",
+      "drivers": [
+        { "factor": "Interest rates", "impact": "Rate levels decide the yield investors demand and whether deals make sense for originators." },
+        { "factor": "Credit growth", "impact": "Fast retail lending creates more pools to sell." },
+        { "factor": "Regulation", "impact": "RBI holding-period and retention rules shape deal volumes." },
+        { "factor": "Pool asset quality", "impact": "Defaults in underlying loans decide tranche losses and future appetite." }
+      ],
+      "risks": [
+        { "risk": "Pool defaults", "detail": "Borrower stress can exhaust credit enhancement and hit investors." },
+        { "risk": "Prepayment", "detail": "Early repayments shorten the life and yield of the securities." },
+        { "risk": "Rule changes", "detail": "New RBI or SEBI norms can make structures uneconomic." },
+        { "risk": "Thin secondary market", "detail": "Investors may struggle to sell before maturity." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Issuance and pool performance follow the credit cycle and funding conditions.",
+      "metricSet": "nbfc",
+      "relatedBasicIndustries": ["b-non-banking-financial-company-nbfc", "b-housing-finance-company", "b-microfinance-institutions", "b-other-financial-services", "b-ratings"],
+      "aliases": ["securitisation", "securitization", "ptc", "pass through certificate", "securitised debt instrument", "sdi", "asset backed securities", "abs"],
+      "themes": []
+    },
+    {
+      "id": "b-public-sector-bank",
+      "simplifiedExplanation": "Banks in which the Government of India holds a majority stake. They take deposits from the public and lend to individuals, businesses, farmers and the government through large branch networks that reach small towns and villages.",
+      "productsAndServices": [
+        "Savings, current and fixed deposits",
+        "Corporate and infrastructure loans",
+        "Agricultural and MSME loans",
+        "Home, vehicle and personal loans",
+        "Government business and welfare payments",
+        "Treasury and government bond investments",
+        "Insurance and mutual fund sales through branches"
+      ],
+      "valueChainPosition": "Core of India's credit system: they collect household savings and channel them to companies, small businesses, farmers and the government (through bond holdings), and act as bankers to central and state governments.",
+      "howTheyMakeMoney": "Mainly the spread between interest earned on loans and bonds and interest paid on deposits. Fees and cross-selling add income, and treasury gains or losses on bonds can swing profits when rates move.",
+      "revenueSources": [
+        "Interest on loans",
+        "Interest on government and other bonds",
+        "Fees and commissions",
+        "Treasury (bond trading) gains",
+        "Recoveries from written-off loans"
+      ],
+      "operatingCosts": [
+        "Interest on deposits and borrowings",
+        "Employee salaries and pensions",
+        "Provisions for bad loans",
+        "Branch network and technology",
+        "Deposit insurance premium"
+      ],
+      "customersAndEndMarkets": "Retail savers across urban and rural India, large corporates and PSUs, MSMEs, farmers and government departments.",
+      "demandSupplyDrivers": "Loan demand follows economic activity, corporate investment and government infrastructure spending; deposit growth depends on household savings and competition from mutual funds and small-savings schemes. RBI rate changes reprice loans faster than deposits, moving margins.",
+      "domesticInternationalExposure": "Mostly domestic; some run overseas branches and GIFT City units serving Indian businesses and the diaspora. Global rates matter through bond yields.",
+      "capexIntensity": "Low",
+      "capexNote": "Branches and core-banking IT are modest next to the balance sheet; growth instead consumes regulatory capital from retained profit, share sales or the government.",
+      "workingCapital": "The usual working-capital idea does not apply; what matters is liquidity (cash and bonds held under CRR, SLR and liquidity-coverage rules) and matching loan and deposit maturities.",
+      "regulation": "RBI regulates them under the Banking Regulation Act (capital, CRR/SLR, priority-sector lending, NPA recognition, prompt corrective action); the government as owner appoints top management, injects capital and may steer policy lending.",
+      "competitiveAdvantages": "A huge low-cost deposit base, deep rural reach, government business and the trust that comes with state ownership; slower decisions and technology catch-up are common weaknesses.",
+      "drivers": [
+        { "factor": "Interest rates", "impact": "RBI rate moves change loan yields, deposit costs and the value of large bond holdings." },
+        { "factor": "Credit growth", "impact": "Corporate and infrastructure borrowing revive loan books in an upswing." },
+        { "factor": "Government policy", "impact": "Recapitalisation, mergers, stake sales and directed lending shape returns." },
+        { "factor": "Infrastructure spending", "impact": "Public capex creates demand for project and working-capital loans." },
+        { "factor": "Asset quality cycle", "impact": "Recoveries lift profits; new stress forces heavy provisions." }
+      ],
+      "risks": [
+        { "risk": "Bad loans", "detail": "Corporate or farm stress can raise NPAs and provisions quickly." },
+        { "risk": "Government directives", "detail": "Policy lending, loan waivers or forced mergers can hurt minority shareholders." },
+        { "risk": "Bond-yield spikes", "detail": "Rising yields cause mark-to-market losses on big bond portfolios." },
+        { "risk": "Deposit competition", "detail": "Savers moving to markets or private banks raise funding costs." },
+        { "risk": "Equity dilution", "detail": "New share issues to fund growth or meet capital rules dilute holders." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Profits swing with the credit cycle - strong when bad loans recover, weak when they pile up.",
+      "metricSet": "bank",
+      "relatedBasicIndustries": ["b-private-sector-bank", "b-other-bank", "b-financial-institution", "b-life-insurance", "b-non-banking-financial-company-nbfc"],
+      "aliases": ["psu bank", "public sector bank", "psb", "nationalised bank", "nationalized bank", "government bank", "state-owned bank", "public bank"],
+      "themes": ["PSU"]
+    },
+    {
+      "id": "b-private-sector-bank",
+      "simplifiedExplanation": "Banks owned mainly by private shareholders - promoters, institutions and the public. They do the same basic job as public banks but usually lean more on retail customers, fee products and digital channels.",
+      "productsAndServices": [
+        "Savings, current and term deposits",
+        "Home, auto and personal loans and credit cards",
+        "Business banking and working-capital loans",
+        "Corporate and transaction banking",
+        "Wealth management and third-party product sales",
+        "Mobile and internet banking"
+      ],
+      "valueChainPosition": "Intermediaries between savers and borrowers, competing with public banks for deposits and with NBFCs and fintechs for retail and small-business loans; many own insurance, asset management and broking subsidiaries.",
+      "howTheyMakeMoney": "Net interest income is the main engine, backed by a large fee stream from cards, payments and sales of insurance and mutual funds. Higher-yield retail and unsecured loans lift margins but add credit risk.",
+      "revenueSources": [
+        "Interest on retail and corporate loans",
+        "Investment income on bonds",
+        "Card, payment and transaction fees",
+        "Insurance and mutual fund distribution commissions",
+        "Forex and treasury income"
+      ],
+      "operatingCosts": [
+        "Interest on deposits and borrowings",
+        "Employee salaries and incentives",
+        "Loan-loss provisions",
+        "Technology, cybersecurity and branch expansion",
+        "Customer acquisition and marketing"
+      ],
+      "customersAndEndMarkets": "Urban and semi-urban retail customers, salaried professionals, SMEs and corporates; older regional private banks often have a loyal home-state base.",
+      "demandSupplyDrivers": "Retail credit demand, business working-capital needs and the ability to raise deposits drive growth. The fight for low-cost CASA deposits and RBI rules on unsecured lending set how fast they can grow.",
+      "domesticInternationalExposure": "Business is largely domestic, but foreign investors often own large stakes, so global fund flows affect valuations.",
+      "capexIntensity": "Low",
+      "capexNote": "Spending goes on branches and technology; capital from profits and share issues is the real constraint on growth.",
+      "workingCapital": "Judged through liquidity and the loan-to-deposit ratio rather than inventory; fast loan growth without matching deposits strains funding.",
+      "regulation": "RBI licensing and supervision cover capital, CRR/SLR, priority-sector targets, promoter-holding limits and approval of top management; foreign-ownership limits are set by the government.",
+      "competitiveAdvantages": "Strong brands, low-cost deposit franchises, technology, cross-selling and underwriting discipline protect the leaders; smaller banks rely on regional relationships.",
+      "drivers": [
+        { "factor": "Credit growth", "impact": "Retail and SME loan demand sets the pace of balance-sheet growth." },
+        { "factor": "Interest rates", "impact": "Rate cuts reprice floating-rate loans faster than deposits, squeezing margins for a while." },
+        { "factor": "Consumer demand", "impact": "Spending on homes, cars and cards drives fee and loan growth." },
+        { "factor": "Deposit competition", "impact": "The cost of attracting savings decides how cheaply they can fund loans." },
+        { "factor": "Regulation", "impact": "Higher risk weights or curbs on certain loans can slow growth." },
+        { "factor": "Technology change", "impact": "Digital channels cut costs but raise competition from fintechs." }
+      ],
+      "risks": [
+        { "risk": "Unsecured loan stress", "detail": "Credit card and personal loan defaults can rise fast in a slowdown." },
+        { "risk": "Deposit squeeze", "detail": "Slow deposit growth forces costlier funding or slower lending." },
+        { "risk": "Governance and leadership", "detail": "RBI scrutiny or management change can shake confidence." },
+        { "risk": "Tech outages", "detail": "Repeated outages can lead RBI to restrict new customers or products." },
+        { "risk": "Regional concentration", "detail": "Smaller banks depend heavily on one or two states." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Loan growth and credit costs move with the economy, though strong franchises tend to stay profitable through it.",
+      "metricSet": "bank",
+      "relatedBasicIndustries": ["b-public-sector-bank", "b-other-bank", "b-non-banking-financial-company-nbfc", "b-life-insurance", "b-asset-management-company"],
+      "aliases": ["private bank", "private sector bank", "new generation bank", "old private bank", "commercial bank", "retail bank", "scheduled bank"],
+      "themes": []
+    },
+    {
+      "id": "b-other-bank",
+      "simplifiedExplanation": "Banks with special, narrower licences - mainly small finance banks, which lend to small borrowers and the underbanked, and payments banks, which take small deposits and handle payments but cannot lend.",
+      "productsAndServices": [
+        "Microfinance (group) loans",
+        "Small business and MSME loans",
+        "Affordable home, vehicle and gold loans",
+        "Savings accounts and fixed deposits",
+        "Remittances, bill payments and cash withdrawal at agent points",
+        "Debit cards, wallets and UPI services"
+      ],
+      "valueChainPosition": "The last mile of the banking system, serving rural and semi-urban customers that larger banks find costly to reach. Many began as microfinance NBFCs and became banks to tap deposits.",
+      "howTheyMakeMoney": "Small finance banks earn wide spreads because their loans carry higher rates, offset by higher operating and credit costs. Payments banks earn transaction and remittance fees plus interest on the government securities where they must park deposits.",
+      "revenueSources": [
+        "Interest on small loans",
+        "Interest on government securities",
+        "Processing and transaction fees",
+        "Commissions on insurance and other products",
+        "Merchant and remittance fees"
+      ],
+      "operatingCosts": [
+        "Interest on deposits, often priced higher to attract savers",
+        "Field staff and branch network",
+        "Credit losses on unsecured loans",
+        "Technology and agent commissions",
+        "Compliance and deposit insurance"
+      ],
+      "customersAndEndMarkets": "Low-income households, women borrower groups, micro-entrepreneurs, small traders and farmers; payments banks also serve migrant workers and merchants.",
+      "demandSupplyDrivers": "Demand for small loans is large and under-served; growth depends on raising deposits cheaply and keeping collections steady. Rural incomes and competition from fintech lenders also matter.",
+      "domesticInternationalExposure": "Entirely domestic business.",
+      "capexIntensity": "Low",
+      "capexNote": "Branch and agent expansion and core-banking systems need steady spending, but capital adequacy is the bigger constraint.",
+      "workingCapital": "Liquidity and deposit stability matter most; reliance on bulk or high-cost deposits makes funding sensitive to confidence.",
+      "regulation": "RBI's differentiated licences: small finance banks must meet priority-sector and small-loan requirements, payments banks cannot lend and have caps on balances per customer, and moving to a universal licence needs RBI approval.",
+      "competitiveAdvantages": "Deep local knowledge, field collection processes and low-cost reach to remote areas; building a trusted deposit franchise is the main barrier.",
+      "drivers": [
+        { "factor": "Rural demand", "impact": "Rural incomes decide loan demand and repayment capacity." },
+        { "factor": "Monsoon & agriculture", "impact": "Farm stress quickly shows up in small-loan collections." },
+        { "factor": "Interest rates", "impact": "Deposit rates they must offer set the cost of funding." },
+        { "factor": "Regulation", "impact": "Licence conditions limit products and decide when they can graduate to full banks." },
+        { "factor": "Credit growth", "impact": "Formal credit reaching new borrowers expands their market." }
+      ],
+      "risks": [
+        { "risk": "Microfinance stress", "detail": "Over-indebted borrowers or local disruptions can spike defaults." },
+        { "risk": "High funding cost", "detail": "Smaller brands must pay more for deposits than large banks." },
+        { "risk": "Geographic concentration", "detail": "Many depend on a few states." },
+        { "risk": "Regulatory action", "detail": "RBI restrictions can halt new accounts or products." },
+        { "risk": "Fintech competition", "detail": "Apps compete for payments and small-ticket credit." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Asset quality is sensitive to rural incomes, local events and borrower over-borrowing.",
+      "metricSet": "bank",
+      "relatedBasicIndustries": ["b-microfinance-institutions", "b-private-sector-bank", "b-public-sector-bank", "b-financial-technology-fintech", "b-non-banking-financial-company-nbfc"],
+      "aliases": ["small finance bank", "sfb", "payments bank", "payment bank", "differentiated bank", "local area bank", "co-operative bank"],
+      "themes": ["Financial inclusion", "Rural demand"]
+    },
+    {
+      "id": "b-asset-management-company",
+      "simplifiedExplanation": "Companies that run mutual funds and other investment pools for investors. They pool money from many people, invest it in shares, bonds or other assets, and charge a fee based on the money they manage.",
+      "productsAndServices": [
+        "Equity, debt and hybrid mutual funds",
+        "Index funds and ETFs",
+        "Systematic investment plans (SIPs)",
+        "Portfolio management services (PMS)",
+        "Alternative investment funds (AIFs)",
+        "Offshore and advisory mandates"
+      ],
+      "valueChainPosition": "They manufacture investment products; distributors, banks, brokers and online platforms sell them, while registrars, custodians and depositories handle records and safekeeping.",
+      "howTheyMakeMoney": "A management fee charged as a share of assets under management, within SEBI's limits on scheme expense ratios. Equity funds earn higher fees than debt or index funds, so the product mix matters as much as total AUM.",
+      "revenueSources": [
+        "Management fees on mutual fund AUM",
+        "PMS and AIF fees, including performance fees",
+        "Advisory fees on offshore mandates",
+        "Returns on own investments"
+      ],
+      "operatingCosts": [
+        "Employee costs for fund managers and sales",
+        "Distributor commissions not borne by schemes",
+        "Marketing and investor education",
+        "Technology and registrar charges",
+        "Regulatory fees"
+      ],
+      "customersAndEndMarkets": "Retail investors (often via SIPs), wealthy individuals, corporates, banks, insurers and retirement funds.",
+      "demandSupplyDrivers": "Inflows depend on households shifting savings from deposits and gold to market products, SIP habits, fund returns and distributor reach. Market levels change AUM even without new money.",
+      "domesticInternationalExposure": "Mostly Indian investors and assets; some manage offshore funds or advise global investors on Indian equities.",
+      "capexIntensity": "Low",
+      "capexNote": "A people-and-technology business with little physical capital.",
+      "workingCapital": "Fees are taken from scheme assets on a running basis, so receivables are low and cash generation is strong.",
+      "regulation": "SEBI mutual fund rules govern expense-ratio caps, scheme categories, skin-in-the-game requirements and disclosures; AMFI sets distributor norms; changes in tax on fund gains affect demand.",
+      "competitiveAdvantages": "Brand, long performance records, distribution reach and scale (low cost per rupee managed); the move to passive funds pressures fees.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Rising markets lift AUM and attract fresh equity inflows." },
+        { "factor": "Household savings shift", "impact": "Savings moving from deposits and gold into funds widens the base." },
+        { "factor": "Regulation", "impact": "Changes to expense-ratio caps or commissions reset fee yields." },
+        { "factor": "Interest rates", "impact": "Rate moves shift money between debt funds, deposits and equities." },
+        { "factor": "Tax rules", "impact": "Changes in tax on fund gains alter the appeal of debt and equity schemes." }
+      ],
+      "risks": [
+        { "risk": "Market downturn", "detail": "Falling prices shrink AUM and can trigger redemptions." },
+        { "risk": "Fee cuts", "detail": "Lower allowed expense ratios reduce revenue per rupee managed." },
+        { "risk": "Weak fund performance", "detail": "Lagging returns push investors to rival fund houses." },
+        { "risk": "Passive shift", "detail": "Growth of low-fee index funds compresses margins." },
+        { "risk": "Key-person risk", "detail": "Exit of star fund managers can cause outflows." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "AUM and fees follow markets, but recurring SIP flows and sticky assets soften the swings.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-financial-products-distributor", "b-depositories-clearing-houses-and-other-intermediaries", "b-stockbroking-and-allied", "b-life-insurance", "b-exchange-and-data-platform"],
+      "aliases": ["amc", "asset management company", "mutual fund house", "fund house", "asset manager", "mutual fund company", "investment manager", "pms"],
+      "themes": ["Financialisation of savings"]
+    },
+    {
+      "id": "b-depositories-clearing-houses-and-other-intermediaries",
+      "simplifiedExplanation": "The back-office plumbing of the market: depositories hold shares and bonds in electronic (demat) form, and registrars keep investor records for mutual funds and companies. They earn small fees on a very large number of accounts and transactions.",
+      "productsAndServices": [
+        "Demat holding and transfer of securities",
+        "Corporate actions and e-voting",
+        "KYC registration (KRA) services",
+        "Mutual fund registrar and transfer agency",
+        "Share registry and IPO processing for companies",
+        "Investor statements, data and technology services",
+        "Insurance repository and other record-keeping"
+      ],
+      "valueChainPosition": "Market infrastructure used by exchanges, brokers, depository participants, fund houses and listed companies; they serve the whole market rather than competing for end investors.",
+      "howTheyMakeMoney": "Depositories charge annual fees to issuers, charges on debit transactions and fees for KYC, e-voting and data; registrars charge fund houses fees linked to assets or folios. Costs are largely fixed, so higher volumes lift margins.",
+      "revenueSources": [
+        "Annual issuer charges",
+        "Transaction and settlement charges",
+        "KYC and account-related fees",
+        "Registrar fees from mutual funds and companies",
+        "E-voting, data and technology services"
+      ],
+      "operatingCosts": [
+        "Technology and data centres",
+        "Cybersecurity and disaster recovery",
+        "Employee costs",
+        "Regulatory and investor-protection fund contributions"
+      ],
+      "customersAndEndMarkets": "Listed and unlisted companies, mutual funds, depository participants (brokers and banks), exchanges and, indirectly, every investor.",
+      "demandSupplyDrivers": "Growth in demat accounts, trading activity, new listings and mutual fund folios drives revenue, while SEBI pricing decisions can reset fee levels.",
+      "domesticInternationalExposure": "Domestic; some sell software or services abroad and in GIFT City.",
+      "capexIntensity": "Medium",
+      "capexNote": "Resilient systems, data centres and security need continuous investment.",
+      "workingCapital": "Light; most fees are collected in advance or quickly.",
+      "regulation": "SEBI recognises depositories and clearing corporations as market infrastructure institutions and registers registrars and KRAs, controlling ownership, governance and fees.",
+      "competitiveAdvantages": "Regulatory licences, network effects, high switching costs for fund houses and issuers, and very few competitors.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "More trading, IPOs and new investors raise transaction and account fees." },
+        { "factor": "Mutual fund growth", "impact": "Rising fund AUM and folios lift registrar income." },
+        { "factor": "Regulation", "impact": "SEBI decisions on fees and processes directly change revenue." },
+        { "factor": "Technology change", "impact": "New digital services (KYC, data, e-voting) add income but need investment." }
+      ],
+      "risks": [
+        { "risk": "Fee cuts", "detail": "SEBI can lower or restructure charges paid by investors and issuers." },
+        { "risk": "Market slowdown", "detail": "Fewer transactions and listings reduce variable income." },
+        { "risk": "System outages", "detail": "Failures invite penalties and reputational damage." },
+        { "risk": "Client concentration", "detail": "Registrars depend on a limited number of large fund houses." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Annual and record-keeping fees are steady, while transaction and IPO income follows market activity.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-exchange-and-data-platform", "b-stockbroking-and-allied", "b-asset-management-company", "b-data-processing-services"],
+      "aliases": ["depository", "demat", "registrar and transfer agent", "rta", "kra", "clearing corporation", "clearing house", "market infrastructure institution"],
+      "themes": ["Financialisation of savings", "Digital"]
+    },
+    {
+      "id": "b-financial-products-distributor",
+      "simplifiedExplanation": "Firms that sell and advise on investment products made by others - mainly mutual funds, plus insurance, bonds, PMS and AIFs. Wealth managers in this group look after the money of affluent families.",
+      "productsAndServices": [
+        "Mutual fund distribution",
+        "Wealth management for affluent families",
+        "Insurance distribution",
+        "Bonds, structured products and fixed deposits",
+        "PMS and AIF distribution",
+        "Online platforms for sub-distributors and advisers"
+      ],
+      "valueChainPosition": "Downstream of fund houses and insurers, linking product makers to investors through relationship managers, partner networks or digital platforms.",
+      "howTheyMakeMoney": "Mostly trail commissions paid by fund houses as a share of client assets, so income grows with the assets they influence; wealth managers also earn on structured products and advisory fees.",
+      "revenueSources": [
+        "Trail commissions on mutual fund assets",
+        "Fees on structured products",
+        "Insurance commissions",
+        "Advisory and platform fees"
+      ],
+      "operatingCosts": [
+        "Relationship manager salaries and incentives",
+        "Payouts to sub-distributors and partners",
+        "Technology platforms",
+        "Compliance and marketing"
+      ],
+      "customersAndEndMarkets": "Retail investors in smaller towns reached through partner networks, affluent and high-net-worth families, and independent advisers using their platforms.",
+      "demandSupplyDrivers": "Market levels, SIP flows and the shift of savings to market products drive assets; investors moving to direct plans or fee-only advisers shrink the commission pool.",
+      "domesticInternationalExposure": "Domestic; some also serve non-resident Indians.",
+      "capexIntensity": "Low",
+      "capexNote": "A people-driven business with light technology spend.",
+      "workingCapital": "Light; commissions arrive regularly from product makers.",
+      "regulation": "AMFI registration and SEBI rules on distributors, separation of advice from distribution, commission disclosure and expense-ratio limits; IRDAI governs insurance commissions.",
+      "competitiveAdvantages": "Sticky client relationships, trust, adviser networks and broad product shelves; low-cost platforms compete on price.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Rising markets increase client assets and trail income." },
+        { "factor": "Household savings shift", "impact": "More families investing in funds enlarges the client base." },
+        { "factor": "Regulation", "impact": "Rules on commissions and advice can change how they are paid." },
+        { "factor": "Technology change", "impact": "Direct and app-based investing competes with commission-based distribution." }
+      ],
+      "risks": [
+        { "risk": "Commission cuts", "detail": "Lower expense ratios flow through to lower trail payouts." },
+        { "risk": "Direct plans", "detail": "Investors bypassing distributors shrink the paying base." },
+        { "risk": "Market fall", "detail": "Asset-linked income falls with prices." },
+        { "risk": "Banker attrition", "detail": "Relationship managers leaving can take clients with them." },
+        { "risk": "Mis-selling", "detail": "Unsuitable product sales invite penalties and reputational harm." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Income tracks market values and investor sentiment.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-asset-management-company", "b-stockbroking-and-allied", "b-insurance-distributors", "b-depositories-clearing-houses-and-other-intermediaries"],
+      "aliases": ["mutual fund distributor", "mfd", "wealth manager", "wealth management", "financial advisor", "investment adviser", "financial planner", "distribution platform"],
+      "themes": ["Financialisation of savings"]
+    },
+    {
+      "id": "b-ratings",
+      "simplifiedExplanation": "Credit rating agencies give opinions, as letter grades, on how likely a borrower is to repay its debt. Companies and lenders pay for ratings because banks, regulators and bond investors rely on them.",
+      "productsAndServices": [
+        "Ratings on bonds, debentures and commercial paper",
+        "Bank loan ratings",
+        "Securitisation and structured finance ratings",
+        "Ratings for SMEs, infrastructure and municipal bonds",
+        "Research, industry reports and risk analytics",
+        "Outsourced analytics and ESG services"
+      ],
+      "valueChainPosition": "Information intermediaries between borrowers (companies, NBFCs, municipalities) and lenders or investors; their grades decide bank capital needs and whether investors may buy a paper.",
+      "howTheyMakeMoney": "Mostly an issuer-pays model: an initial fee when a debt is rated and annual surveillance fees while it is outstanding. Research, analytics and outsourcing services add non-rating income.",
+      "revenueSources": [
+        "Initial rating fees",
+        "Annual surveillance fees",
+        "Research and data subscriptions",
+        "Analytics and outsourcing services"
+      ],
+      "operatingCosts": [
+        "Analyst salaries (the main cost)",
+        "Technology and data",
+        "Compliance",
+        "Office costs"
+      ],
+      "customersAndEndMarkets": "Corporates, banks, NBFCs, infrastructure projects and municipal bodies, plus investors and lenders who buy research.",
+      "demandSupplyDrivers": "Bond and commercial-paper issuance, bank credit growth and securitisation volumes drive new mandates, while surveillance fees on existing ratings give a recurring base.",
+      "domesticInternationalExposure": "Ratings are domestic; some have analytics or research arms serving global clients.",
+      "capexIntensity": "Low",
+      "capexNote": "An analyst-driven service business.",
+      "workingCapital": "Fees are collected upfront or yearly, so receivables are modest.",
+      "regulation": "SEBI's credit rating agency regulations cover conflicts of interest, disclosures and rating performance; RBI accreditation lets bank-loan ratings be used for capital calculations.",
+      "competitiveAdvantages": "Reputation, regulatory accreditation and long rating histories make entry hard; the industry has few players.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Busy bond and commercial-paper markets mean more instruments to rate." },
+        { "factor": "Credit growth", "impact": "Bank lending to rated borrowers drives bank-loan rating demand." },
+        { "factor": "Interest rates", "impact": "Lower rates encourage companies to issue more bonds." },
+        { "factor": "Regulation", "impact": "Rules requiring rated instruments create steady demand." }
+      ],
+      "risks": [
+        { "risk": "Issuance slowdown", "detail": "Fewer bonds and loans mean fewer new mandates." },
+        { "risk": "Rating failures", "detail": "Missing a major default damages credibility." },
+        { "risk": "Regulatory penalties", "detail": "SEBI can fine or restrict agencies over lapses." },
+        { "risk": "Fee competition", "detail": "Agencies may undercut each other to win issuers." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Surveillance fees are steady, while new rating income follows borrowing and bond-market activity.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-other-capital-market-related-services", "b-securitisation", "b-non-banking-financial-company-nbfc", "b-consulting-services", "b-exchange-and-data-platform"],
+      "aliases": ["credit rating agency", "rating agency", "cra", "credit ratings", "bond ratings", "ratings company"],
+      "themes": []
+    },
+    {
+      "id": "b-exchange-and-data-platform",
+      "simplifiedExplanation": "Exchanges are organised marketplaces where buyers and sellers trade shares, derivatives, commodities or electricity under set rules. They earn a small fee on each trade and charge for listings, data and technology access.",
+      "productsAndServices": [
+        "Equity cash and derivatives trading",
+        "Commodity futures and options",
+        "Electricity and energy-certificate trading",
+        "Listing services for companies and bonds",
+        "Market data feeds and index licensing",
+        "Co-location and trading technology",
+        "Clearing and settlement through clearing corporations"
+      ],
+      "valueChainPosition": "Core market infrastructure: brokers bring orders, the exchange matches them, clearing corporations settle them and depositories record ownership; data goes to brokers, vendors and fund managers.",
+      "howTheyMakeMoney": "Transaction charges on traded value or option premium, plus listing fees, data and index licence fees, co-location charges and income on clearing funds. Costs are largely fixed, so higher volumes bring strong operating leverage.",
+      "revenueSources": [
+        "Transaction charges",
+        "Listing and annual fees",
+        "Data, index and licensing fees",
+        "Co-location and technology services",
+        "Clearing and settlement fees",
+        "Treasury income"
+      ],
+      "operatingCosts": [
+        "Technology and software licences",
+        "SEBI regulatory fees",
+        "Settlement guarantee fund contributions",
+        "Employee costs",
+        "Investor protection and other mandated funds"
+      ],
+      "customersAndEndMarkets": "Brokers and their clients (retail, institutional, proprietary traders), listed companies, power producers and distributors for power exchanges, and data users.",
+      "demandSupplyDrivers": "Volatility, retail participation, derivatives activity, IPO pipelines and gaps in power supply drive volumes; curbs on speculative trading can reduce them.",
+      "domesticInternationalExposure": "Domestic markets, with some international activity through GIFT City; global events drive volatility and volumes.",
+      "capexIntensity": "Medium",
+      "capexNote": "Trading systems, data centres and cybersecurity need constant upgrades.",
+      "workingCapital": "Light; fees are collected promptly, and member margins held for settlement are client money, not the exchange's own working capital.",
+      "regulation": "SEBI recognises and regulates stock and commodity exchanges, approving products and fees, capping ownership and setting guarantee-fund rules; power exchanges come under CERC, including any market-coupling decisions.",
+      "competitiveAdvantages": "Liquidity attracts more liquidity: network effects, licences and ownership caps make new entry very difficult.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "More traders and higher volatility raise transaction volumes." },
+        { "factor": "Regulation", "impact": "SEBI or CERC changes to products, fees or trading rules move volumes directly." },
+        { "factor": "Technology change", "impact": "Faster, reliable systems and new products are needed to keep volumes." },
+        { "factor": "Electricity demand", "impact": "Supply shortages and price swings drive spot power trading." },
+        { "factor": "IPO pipeline", "impact": "New listings add listing fees and investor interest." }
+      ],
+      "risks": [
+        { "risk": "Derivatives curbs", "detail": "Rules to cool retail F&O trading can cut the largest revenue stream." },
+        { "risk": "Pricing pressure", "detail": "Regulators or competition can force lower transaction charges." },
+        { "risk": "System outages", "detail": "Glitches bring penalties and loss of trust." },
+        { "risk": "Market coupling", "detail": "Pooling of power-exchange bids could weaken a leading exchange's edge." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Volumes jump in active markets and fade in quiet ones, but dominant exchanges stay profitable.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-depositories-clearing-houses-and-other-intermediaries", "b-stockbroking-and-allied", "b-power-trading", "b-asset-management-company"],
+      "aliases": ["stock exchange", "commodity exchange", "power exchange", "energy exchange", "bourse", "derivatives exchange", "market data", "index provider"],
+      "themes": ["Financialisation of savings"]
+    },
+    {
+      "id": "b-stockbroking-and-allied",
+      "simplifiedExplanation": "Brokers let investors buy and sell shares, derivatives and commodities on exchanges, and often add margin funding, research, wealth management and investment banking. They range from low-cost app-based brokers to full-service and wealth firms.",
+      "productsAndServices": [
+        "Equity, derivatives, currency and commodity broking",
+        "Margin trading funding (MTF)",
+        "Depository participant services",
+        "Mutual fund and IPO distribution",
+        "Research and advisory",
+        "Wealth management and investment banking",
+        "Institutional broking"
+      ],
+      "valueChainPosition": "The front end of the market: they bring retail and institutional orders to exchanges and route settlement through clearing corporations and depositories.",
+      "howTheyMakeMoney": "Brokerage per order or as a share of trade value, interest on margin funding and on funds kept with exchanges, depository charges and distribution commissions; wealth firms earn fees on assets they manage or advise.",
+      "revenueSources": [
+        "Brokerage",
+        "Interest on margin funding",
+        "Depository charges",
+        "Distribution and advisory fees",
+        "Investment banking fees",
+        "Interest on exchange deposits"
+      ],
+      "operatingCosts": [
+        "Exchange and clearing charges",
+        "Employee and sub-broker payouts",
+        "Marketing and client acquisition",
+        "Technology and cloud costs",
+        "Interest on borrowings for margin funding"
+      ],
+      "customersAndEndMarkets": "Retail traders and investors, wealthy families, institutions such as mutual funds and foreign investors, and companies raising capital.",
+      "demandSupplyDrivers": "New investor accounts, retail derivatives trading, market sentiment and IPO activity drive revenue; competition and SEBI rules shape what brokers can charge.",
+      "domesticInternationalExposure": "Domestic; institutional brokers depend partly on foreign investor flows.",
+      "capexIntensity": "Low",
+      "capexNote": "Spending goes on trading apps and technology rather than physical assets.",
+      "workingCapital": "Client margins and settlement need large funds and bank guarantees, and margin-funding books are financed with borrowings, making part of the business lender-like.",
+      "regulation": "SEBI stock-broker rules govern client-fund handling, margins, the derivatives framework, charge disclosure and cybersecurity; exchange-level fee rules affect broker economics.",
+      "competitiveAdvantages": "Scale, brand and app experience for discount brokers; client relationships and research for full-service and wealth firms.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Bull markets bring new accounts and higher trading volumes." },
+        { "factor": "Regulation", "impact": "SEBI changes to derivatives, margins or client funds directly hit revenue." },
+        { "factor": "Technology change", "impact": "Low-cost apps have reshaped pricing and customer acquisition." },
+        { "factor": "Interest rates", "impact": "Rates set the yield on margin funding and the cost of borrowing for it." },
+        { "factor": "Market volatility", "impact": "Volatile phases raise derivatives activity." }
+      ],
+      "risks": [
+        { "risk": "F&O curbs", "detail": "Restrictions on retail derivatives can sharply cut order volumes." },
+        { "risk": "Market slump", "detail": "Activity and new accounts drop in prolonged downturns." },
+        { "risk": "Price wars", "detail": "Zero or flat-fee brokerage compresses revenue per trade." },
+        { "risk": "Tech glitches", "detail": "App outages on busy days cause losses and complaints." },
+        { "risk": "Client defaults", "detail": "Sharp market moves can leave margin-funded clients unable to pay." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Revenue rises sharply in bull markets and shrinks when trading activity dries up.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-exchange-and-data-platform", "b-depositories-clearing-houses-and-other-intermediaries", "b-financial-products-distributor", "b-financial-technology-fintech", "b-asset-management-company"],
+      "aliases": ["stock broker", "stockbroker", "share broker", "broking", "discount broker", "full-service broker", "trading app", "wealth management"],
+      "themes": ["Digital", "Financialisation of savings"]
+    },
+    {
+      "id": "b-other-capital-market-related-services",
+      "simplifiedExplanation": "Smaller specialists that help companies raise money or support market activity - merchant bankers and IPO lead managers (especially for SME IPOs), market makers, corporate advisers, debenture trustees and similar firms.",
+      "productsAndServices": [
+        "IPO and rights issue management",
+        "SME IPO lead management and market making",
+        "Corporate finance and M&A advisory",
+        "Debenture trustee and custody services",
+        "Valuation and registered research services",
+        "Proprietary investments"
+      ],
+      "valueChainPosition": "Service providers to issuers and exchanges at the capital-raising end of the market, working alongside brokers, registrars, rating agencies and lawyers.",
+      "howTheyMakeMoney": "Issue-management fees (often a share of money raised), market-making spreads, advisory retainers and success fees; some also keep stakes in companies they bring to market.",
+      "revenueSources": [
+        "Issue management fees",
+        "Market-making and trading income",
+        "Advisory and success fees",
+        "Trustee and custody fees"
+      ],
+      "operatingCosts": [
+        "Professional staff",
+        "Capital tied up in underwriting and market making",
+        "Legal and compliance",
+        "Marketing and deal sourcing"
+      ],
+      "customersAndEndMarkets": "Small and mid-sized companies raising capital, their promoters, investors and bond issuers.",
+      "demandSupplyDrivers": "Business follows the IPO and fundraising cycle, especially on SME platforms; tighter SME listing norms reduce deal flow.",
+      "domesticInternationalExposure": "Domestic.",
+      "capexIntensity": "Low",
+      "capexNote": "Advisory work needs little fixed capital.",
+      "workingCapital": "Market making and underwriting tie up money in share inventory; fee receipts are lumpy and deal-based.",
+      "regulation": "SEBI merchant banker, debenture trustee and research analyst regulations, plus SME listing rules and exchange due-diligence requirements.",
+      "competitiveAdvantages": "Relationships, deal track record and SEBI registration; low entry barriers mean many small players.",
+      "drivers": [
+        { "factor": "Capital market activity", "impact": "Hot primary markets bring a flood of mandates." },
+        { "factor": "IPO pipeline", "impact": "The number of SME and mainboard issues sets fee income." },
+        { "factor": "Regulation", "impact": "SEBI tightening on SME IPOs or merchant bankers can cut deal flow." }
+      ],
+      "risks": [
+        { "risk": "Deal drought", "detail": "Fee income can vanish in a weak market." },
+        { "risk": "Regulatory action", "detail": "SEBI scrutiny of SME issues can bring penalties or bans." },
+        { "risk": "Reputation", "detail": "Poor post-listing performance of their IPOs hurts future mandates." },
+        { "risk": "Inventory losses", "detail": "Shares held for market making can fall in value." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Fee income booms in hot primary markets and dries up in downturns.",
+      "metricSet": "capital-markets",
+      "relatedBasicIndustries": ["b-stockbroking-and-allied", "b-exchange-and-data-platform", "b-ratings", "b-consulting-services"],
+      "aliases": ["merchant banker", "investment banker", "ipo lead manager", "market maker", "sme ipo", "debenture trustee", "capital market services"],
+      "themes": []
+    },
+    {
+      "id": "b-general-insurance",
+      "simplifiedExplanation": "Insurers that cover non-life risks - motor, health, property, crops, travel and business liabilities - usually with one-year policies. They collect premiums upfront, pay claims when losses happen and invest the money in between.",
+      "productsAndServices": [
+        "Motor own-damage and third-party insurance",
+        "Health and personal accident insurance",
+        "Fire and property insurance",
+        "Crop insurance under government schemes",
+        "Marine, engineering and liability covers",
+        "Travel and home insurance",
+        "Reinsurance (for reinsurers)"
+      ],
+      "valueChainPosition": "Risk carriers between customers (individuals, businesses, government schemes) and reinsurers; they sell through agents, brokers, banks, motor dealers and online aggregators.",
+      "howTheyMakeMoney": "Underwriting profit (earned premium minus claims and expenses) plus investment income on the float of premiums held before claims are paid. Many run close to break-even on underwriting and earn mainly from investments.",
+      "revenueSources": [
+        "Net earned premium",
+        "Investment income on the float",
+        "Gains on equity investments",
+        "Commission on business ceded to reinsurers"
+      ],
+      "operatingCosts": [
+        "Claims paid and reserved",
+        "Commissions to agents, brokers and banks",
+        "Employee and management expenses",
+        "Reinsurance premiums ceded",
+        "Marketing and technology"
+      ],
+      "customersAndEndMarkets": "Vehicle owners, families and employers buying health cover, businesses insuring assets and liabilities, and farmers through government crop schemes.",
+      "demandSupplyDrivers": "Vehicle sales, rising medical costs and awareness, credit-linked covers, economic activity and government schemes drive premiums; competition and pricing freedom set margins.",
+      "domesticInternationalExposure": "Risks are mainly Indian, but reinsurance links them to global reinsurers; reinsurers also write overseas business, so global catastrophe losses and pricing matter.",
+      "capexIntensity": "Low",
+      "capexNote": "Branches and technology; capital is held mainly to meet solvency rules.",
+      "workingCapital": "Premiums arrive before claims, creating a float; long-tail motor third-party and liability claims can take years to settle, so reserving discipline matters.",
+      "regulation": "IRDAI regulates product filing, solvency, expense limits, claims practices and investments; motor third-party premiums are set by the authorities rather than by insurers; GST applies to premiums.",
+      "competitiveAdvantages": "Pricing discipline, efficient claims handling, distribution tie-ups with banks and dealers, hospital networks and data-driven underwriting.",
+      "drivers": [
+        { "factor": "Healthcare spending", "impact": "Rising medical costs and awareness push health insurance demand." },
+        { "factor": "Consumer demand", "impact": "New vehicle sales drive motor premiums." },
+        { "factor": "Regulation", "impact": "IRDAI rules on pricing, expenses and products shape margins." },
+        { "factor": "Interest rates", "impact": "Bond yields decide investment income on the float." },
+        { "factor": "Natural catastrophes", "impact": "Floods, cyclones and other disasters drive spikes in claims." },
+        { "factor": "Capital market activity", "impact": "Equity gains boost investment income in good markets." }
+      ],
+      "risks": [
+        { "risk": "Catastrophe losses", "detail": "A large disaster can wipe out a year's underwriting profit." },
+        { "risk": "Claims inflation", "detail": "Hospital and repair costs can rise faster than premiums." },
+        { "risk": "Price wars", "detail": "Aggressive pricing in group health and motor erodes margins." },
+        { "risk": "Reserve shortfalls", "detail": "Underestimated long-tail claims hit future profits." },
+        { "risk": "Regulated pricing", "detail": "Third-party motor rates may not keep up with claims." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Demand for cover is steady, but profits swing with claims experience, catastrophes and investment gains.",
+      "metricSet": "insurance-general",
+      "relatedBasicIndustries": ["b-life-insurance", "b-insurance-distributors", "b-other-insurance-companies", "b-passenger-cars-and-utility-vehicles", "b-hospital"],
+      "aliases": ["general insurer", "non-life insurance", "health insurance", "motor insurance", "standalone health insurer", "reinsurance", "reinsurer", "p&c insurance"],
+      "themes": []
+    },
+    {
+      "id": "b-life-insurance",
+      "simplifiedExplanation": "Insurers that pay out on death or provide long-term savings and pensions. Customers pay premiums for many years, and the insurer invests that money and pays benefits as the policy promises.",
+      "productsAndServices": [
+        "Term (pure protection) plans",
+        "Non-participating savings plans with guaranteed returns",
+        "Participating (bonus) plans",
+        "Unit-linked insurance plans (ULIPs)",
+        "Annuity and pension products",
+        "Group term and credit-life cover",
+        "Group fund management for gratuity and superannuation"
+      ],
+      "valueChainPosition": "Long-term savings managers and risk carriers; they sell mainly through bank partners (bancassurance), agents, brokers and online channels, and invest heavily in government bonds and equities.",
+      "howTheyMakeMoney": "Profit is earned over each policy's life from mortality margins (protection), investment spreads (savings and annuities) and fund charges (ULIPs). Accounting profit lags sales, so value of new business and embedded value are the main yardsticks.",
+      "revenueSources": [
+        "First-year and renewal premiums",
+        "Single premiums from annuities and group business",
+        "Investment income",
+        "Fund management charges on ULIPs"
+      ],
+      "operatingCosts": [
+        "Benefits paid and reserves set aside",
+        "Commissions to banks, agents and brokers",
+        "Employee and branch costs",
+        "Hedging and reinsurance costs",
+        "Marketing"
+      ],
+      "customersAndEndMarkets": "Salaried and self-employed families, retirees, borrowers needing loan cover and employers buying group schemes.",
+      "demandSupplyDrivers": "Rising incomes, a large protection gap, retirement needs, bank-partner reach, tax incentives and equity markets (for ULIPs) drive demand; interest rates affect guaranteed-product pricing and annuity appeal.",
+      "domesticInternationalExposure": "Business is domestic; foreign partners are common shareholders within government ownership limits, and global reinsurers take part of the mortality risk.",
+      "capexIntensity": "Low",
+      "capexNote": "Distribution and technology rather than physical assets; capital is held for solvency.",
+      "workingCapital": "Premiums arrive long before benefits are paid, building a large investment book; matching assets to guaranteed liabilities is critical.",
+      "regulation": "IRDAI regulates products, surrender values, commissions and expenses, solvency and investments; tax rules on premiums and maturity proceeds influence demand; GST applies to premiums.",
+      "competitiveAdvantages": "Access to distribution (especially bank tie-ups), brand trust, high persistency, product design and cost efficiency.",
+      "drivers": [
+        { "factor": "Interest rates", "impact": "Rates shape pricing of guaranteed plans, annuity demand and investment returns." },
+        { "factor": "Capital market activity", "impact": "Strong equity markets lift ULIP sales and fund-based income." },
+        { "factor": "Regulation", "impact": "IRDAI rules on surrender values and commissions change product margins." },
+        { "factor": "Tax incentives", "impact": "Changes in tax benefits on premiums or maturity alter savings-product appeal." },
+        { "factor": "Consumer demand", "impact": "Income growth and protection awareness drive term and savings sales." }
+      ],
+      "risks": [
+        { "risk": "Regulatory margin squeeze", "detail": "New surrender-value or commission rules can cut new-business margins." },
+        { "risk": "Tax changes", "detail": "Withdrawal of tax benefits can hurt high-premium savings sales." },
+        { "risk": "Rate risk", "detail": "Falling rates make guaranteed promises costly if not hedged." },
+        { "risk": "Bank partner dependence", "detail": "Losing or sharing a bank channel can hit sales sharply." },
+        { "risk": "Mis-selling and lapses", "detail": "Poor persistency erodes profitability and invites regulatory action." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Protection and renewal premiums are steady, while ULIP sales and investment values follow equity markets.",
+      "metricSet": "insurance-life",
+      "relatedBasicIndustries": ["b-general-insurance", "b-insurance-distributors", "b-asset-management-company", "b-private-sector-bank", "b-public-sector-bank"],
+      "aliases": ["life insurer", "life insurance company", "term insurance", "ulip", "pension plan", "annuity", "bancassurance", "life cover"],
+      "themes": ["Financialisation of savings"]
+    },
+    {
+      "id": "b-other-insurance-companies",
+      "simplifiedExplanation": "A small, residual bucket for insurance businesses that do not fit neatly into life or general insurance - for example specialist credit or export-credit covers, micro-insurance or holding structures that own insurers.",
+      "productsAndServices": [
+        "Trade credit, surety and export-credit covers",
+        "Micro-insurance for low-income groups",
+        "Specialist crop or weather covers",
+        "Stakes in insurance subsidiaries",
+        "Scheme administration for government programmes"
+      ],
+      "valueChainPosition": "Niche risk carriers or owners of insurers, working with banks, exporters, government schemes and reinsurers.",
+      "howTheyMakeMoney": "Like other insurers, through underwriting margins and investment income on premiums held; holding structures earn dividends and value from the insurers they own.",
+      "revenueSources": [
+        "Premiums on specialist covers",
+        "Investment income",
+        "Dividends from insurance subsidiaries",
+        "Scheme administration fees"
+      ],
+      "operatingCosts": [
+        "Claims",
+        "Reinsurance",
+        "Distribution commissions",
+        "Employee and administrative costs"
+      ],
+      "customersAndEndMarkets": "Exporters, lenders, MSMEs, farmers in government schemes and low-income households.",
+      "demandSupplyDrivers": "Trade volumes, credit growth, government scheme design and awareness drive premiums; claims depend on default cycles and weather.",
+      "domesticInternationalExposure": "Export-credit and trade covers are tied to overseas buyer risk, and reinsurance links them to global markets.",
+      "capexIntensity": "Low",
+      "capexNote": "Capital is held for solvency rather than physical assets.",
+      "workingCapital": "Premium float as for other insurers; claims on credit-type covers can bunch together in downturns.",
+      "regulation": "IRDAI licensing, product approval and solvency rules; government-owned specialist insurers also follow ministry mandates.",
+      "competitiveAdvantages": "Specialist underwriting data, government backing or mandates and reinsurer relationships.",
+      "drivers": [
+        { "factor": "Regulation", "impact": "IRDAI product and solvency rules decide what niche covers can be offered." },
+        { "factor": "Government policy", "impact": "Scheme design and subsidies drive crop and export-credit volumes." },
+        { "factor": "Exports & global demand", "impact": "Trade activity and buyer defaults abroad move credit-cover premiums and claims." },
+        { "factor": "Credit growth", "impact": "More lending to small firms raises demand for credit guarantees." }
+      ],
+      "risks": [
+        { "risk": "Concentrated claims", "detail": "Credit and weather covers can see many claims at once." },
+        { "risk": "Policy dependence", "detail": "Changes to government schemes can shrink the business." },
+        { "risk": "Reinsurance cost", "detail": "Global reinsurance price rises squeeze margins." },
+        { "risk": "Thin market", "detail": "Few comparable listed companies make valuation hard." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Premiums are fairly steady, but credit-type and weather-linked claims rise in bad years.",
+      "metricSet": "insurance-general",
+      "relatedBasicIndustries": ["b-general-insurance", "b-life-insurance", "b-insurance-distributors"],
+      "aliases": ["other insurance", "specialist insurer", "credit insurance", "surety insurance", "export credit insurance", "micro insurance", "insurance holding company"],
+      "themes": []
+    },
+    {
+      "id": "b-insurance-distributors",
+      "simplifiedExplanation": "Businesses that sell or service insurance without carrying the risk themselves - insurance brokers, corporate agents, online insurance marketplaces and third-party administrators (TPAs) that process health claims for insurers and employers.",
+      "productsAndServices": [
+        "Insurance broking for retail and corporate clients",
+        "Corporate agency distribution",
+        "Online insurance comparison and sales",
+        "Health claims processing and cashless hospital settlement (TPA)",
+        "Employee benefits administration",
+        "Reinsurance broking"
+      ],
+      "valueChainPosition": "Between insurers and policyholders: they source policies and service claims, and TPAs connect insurers, hospitals and insured employees or families.",
+      "howTheyMakeMoney": "Commissions and brokerage as a share of premium sold, within IRDAI's overall expense limits for insurers, plus administration fees per policy or member for TPAs and fees for marketing or technology services.",
+      "revenueSources": [
+        "Brokerage and commissions",
+        "TPA administration fees",
+        "Marketing and rewards fees from insurers",
+        "Technology and consulting services"
+      ],
+      "operatingCosts": [
+        "Employee and call-centre costs",
+        "Technology platforms",
+        "Marketing and customer acquisition",
+        "Medical review staff and hospital network management (TPAs)"
+      ],
+      "customersAndEndMarkets": "Insurers, which pay commissions and fees; corporates buying group health and employee benefits; retail buyers; and hospitals in TPA networks.",
+      "demandSupplyDrivers": "Insurance penetration, employer group health cover, medical inflation and digital adoption drive volumes; insurers handling claims in-house and expense rules shape margins.",
+      "domesticInternationalExposure": "Mainly domestic; some brokers and TPAs serve overseas insurers or clients.",
+      "capexIntensity": "Low",
+      "capexNote": "Technology platforms and service centres need modest spending.",
+      "workingCapital": "Light; commissions and fees come from insurers on regular cycles, though some dues from insurers or government schemes can stretch.",
+      "regulation": "IRDAI regulates brokers, corporate agents, web aggregators and TPAs, and its limits on insurers' expenses cap what can be paid to distributors; health-claims rules shape TPA work.",
+      "competitiveAdvantages": "Scale in claims processing, hospital network relationships, insurer tie-ups, brand and low customer acquisition cost.",
+      "drivers": [
+        { "factor": "Healthcare spending", "impact": "More health cover and higher claims volumes raise TPA and broking income." },
+        { "factor": "Regulation", "impact": "IRDAI expense and distribution rules decide commission levels." },
+        { "factor": "Technology change", "impact": "Online buying and digital claims shift share to tech-led players." },
+        { "factor": "Insurance penetration", "impact": "More first-time buyers enlarge the market for distributors." }
+      ],
+      "risks": [
+        { "risk": "Commission pressure", "detail": "Insurers or regulators can cut payouts to intermediaries." },
+        { "risk": "Insurer in-sourcing", "detail": "Insurers handling claims or sales themselves reduce TPA and broker roles." },
+        { "risk": "Client concentration", "detail": "A few large insurers or corporates may dominate revenue." },
+        { "risk": "Data privacy", "detail": "Health and personal data breaches bring legal and reputational damage." },
+        { "risk": "Platform competition", "detail": "A regulator-backed common insurance marketplace could reduce the role of private aggregators." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Insurance renewals and group health cover stay fairly steady through economic cycles.",
+      "metricSet": "insurance-distribution",
+      "relatedBasicIndustries": ["b-general-insurance", "b-life-insurance", "b-financial-technology-fintech", "b-healthcare-service-provider", "b-financial-products-distributor"],
+      "aliases": ["insurance broker", "insurance distributor", "tpa", "third party administrator", "insurance aggregator", "web aggregator", "corporate agent", "insurance marketplace"],
+      "themes": ["Digital"]
+    },
+    {
+      "id": "b-financial-technology-fintech",
+      "simplifiedExplanation": "Technology companies that provide financial services or the systems behind them - digital payments, online lending and insurance marketplaces, payment card making, banking software and identity checks. Many earn small fees on very large volumes.",
+      "productsAndServices": [
+        "Payment gateway and aggregator services",
+        "Point-of-sale and QR payment solutions",
+        "Digital lending platforms with partner banks and NBFCs",
+        "Online insurance and loan marketplaces",
+        "Payment card manufacturing and personalisation",
+        "Banking, payment and KYC software",
+        "Bill payments and prepaid instruments"
+      ],
+      "valueChainPosition": "The technology layer between banks, NBFCs and insurers and their customers or merchants; they run on bank partners, card networks and UPI rails and sell to merchants, consumers and financial institutions.",
+      "howTheyMakeMoney": "Fees on payments processed, commissions from lenders and insurers for customers sourced, software subscriptions or licences, sale of cards and devices, and interest where they lend. Scale lowers cost per transaction, so profits hinge on volume and pricing power.",
+      "revenueSources": [
+        "Payment processing fees",
+        "Loan and insurance distribution commissions",
+        "Software subscriptions and licences",
+        "Card and device sales",
+        "Interest income on loans or float"
+      ],
+      "operatingCosts": [
+        "Payment network and bank charges",
+        "Marketing and customer acquisition",
+        "Technology, cloud and security",
+        "Employee costs including stock options",
+        "Credit losses where they share loan risk",
+        "Chips and materials for card makers"
+      ],
+      "customersAndEndMarkets": "Merchants, consumers, banks, NBFCs, insurers and government agencies.",
+      "demandSupplyDrivers": "The shift from cash to digital payments, smartphone use, merchant digitisation and credit demand drive volumes; pricing is shaped by rules such as zero merchant fees on UPI.",
+      "domesticInternationalExposure": "Mostly domestic; some sell software, card or identity solutions abroad and handle cross-border payments.",
+      "capexIntensity": "Medium",
+      "capexNote": "Platforms need ongoing software and data-centre spending, and card or device makers need machinery.",
+      "workingCapital": "Payment firms hold settlement money that belongs to merchants; card makers carry chip inventory and bank receivables; lending models tie up capital in loans.",
+      "regulation": "RBI rules on payment aggregators, prepaid instruments, digital lending and default-loss guarantees, NPCI rules for UPI, IRDAI and SEBI rules for marketplaces, and the Digital Personal Data Protection Act.",
+      "competitiveAdvantages": "Network effects, merchant and bank relationships, licences, brand and data; low switching costs in payments keep pricing competitive.",
+      "drivers": [
+        { "factor": "Technology change", "impact": "New payment rails and mobile adoption expand what can be done digitally." },
+        { "factor": "Regulation", "impact": "RBI and NPCI rules decide pricing, licences and lending models." },
+        { "factor": "Consumer demand", "impact": "Online spending and digital habits drive transaction volumes." },
+        { "factor": "Credit growth", "impact": "Demand for digital loans raises distribution and lending income." },
+        { "factor": "Government policy", "impact": "Support for digital payments and public digital infrastructure lowers costs and widens reach." }
+      ],
+      "risks": [
+        { "risk": "Rule changes", "detail": "Sudden licensing, pricing or lending rules can upend business models." },
+        { "risk": "Thin margins", "detail": "Zero-fee payment rails leave little room for profit." },
+        { "risk": "Partner dependence", "detail": "Loss of a bank or lender partner can halt products." },
+        { "risk": "Fraud and cyber attacks", "detail": "Breaches cause losses, penalties and loss of trust." },
+        { "risk": "Cash burn", "detail": "Loss-making firms depend on fresh funding to keep growing." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Payment volumes grow steadily, while lending and marketplace income follow the credit cycle.",
+      "metricSet": "fintech",
+      "relatedBasicIndustries": ["b-it-enabled-services", "b-software-products", "b-other-bank", "b-insurance-distributors", "b-non-banking-financial-company-nbfc"],
+      "aliases": ["fintech", "financial technology", "payments company", "payment gateway", "payment aggregator", "digital lending", "card manufacturer", "insurtech", "wealthtech", "upi"],
+      "themes": ["Digital", "Financial inclusion"]
+    }
+  ]
+}

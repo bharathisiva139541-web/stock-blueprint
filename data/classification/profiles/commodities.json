@@ -1,0 +1,1730 @@
+{
+  "macroSectors": [
+    {
+      "id": "m-commodities",
+      "description": "Covers businesses that make or trade basic materials sold largely on price and specification: chemicals and fertilisers, cement and building materials, metals and minerals, and paper, wood and jute. Their earnings move with input costs, global commodity prices, capacity cycles and demand from Indian construction, farming and manufacturing."
+    }
+  ],
+  "sectors": [
+    {
+      "id": "s-chemicals",
+      "description": "Makers of bulk, specialty and petroleum-based chemicals, industrial gases, explosives, inks, dyes and carbon black, plus fertilisers and crop-protection products. Profits depend on the spread between product prices and feedstock costs such as crude derivatives, natural gas and imported intermediates, and on export demand and competition from China."
+    },
+    {
+      "id": "s-construction-materials",
+      "description": "Cement and other materials used to build homes, offices and infrastructure, such as roofing sheets, boards, blocks and facade systems. Demand follows housing, government infrastructure spending and the construction season, while fuel and freight are the main costs."
+    },
+    {
+      "id": "s-metals-and-mining",
+      "description": "Producers of steel and ferro alloys, non-ferrous metals such as aluminium, copper and zinc, precious metals and mined minerals, along with metal and mineral traders. Earnings track global metal prices, raw material costs, the rupee and import competition, making this one of the most cyclical parts of the market."
+    },
+    {
+      "id": "s-forest-materials",
+      "description": "Paper and paperboard makers, wood and other forest-product businesses, and jute mills. Their fortunes depend on fibre costs (wood, waste paper, raw jute), packaging and education demand, government buying of jute bags and imports from neighbouring countries."
+    }
+  ],
+  "industries": [
+    {
+      "id": "i-chemicals-and-petrochemicals",
+      "description": "Companies that make bulk, specialty and petroleum-based chemicals, industrial gases, inks, dyes, carbon black and explosives, or trade in chemicals.",
+      "businessOverview": "Chemical makers convert feedstocks such as crude derivatives, natural gas, coal tar, salt and minerals into products used by almost every other industry. Bulk players compete mainly on cost and scale, while specialty players earn better margins from know-how, customer approvals and tailored products. Many Indian plants sell both at home and abroad, and pricing often moves with global supply, especially from China. Environmental clearances and pollution-control compliance are central to running a plant.",
+      "keyDemandDrivers": [
+        "Industrial and manufacturing activity",
+        "Export demand and China+1 sourcing",
+        "Downstream textiles, pharma, agrochemicals, autos and packaging",
+        "Mining and infrastructure activity",
+        "Import substitution"
+      ],
+      "keyRisks": [
+        "Feedstock and crude price swings",
+        "Cheap imports and global oversupply",
+        "Pollution and safety incidents",
+        "Customer and product concentration",
+        "Currency moves"
+      ]
+    },
+    {
+      "id": "i-fertilizers-and-agrochemicals",
+      "description": "Makers and marketers of fertilisers and crop-protection chemicals used by Indian and overseas farmers.",
+      "businessOverview": "Fertiliser companies produce or import urea, phosphatic and potassic nutrients and sell them to farmers at prices shaped by government subsidy schemes. Agrochemical companies make insecticides, herbicides and fungicides, either as branded products for Indian farmers or as technical-grade molecules for export. Both depend on the cropping season and the monsoon, and both carry heavy working capital through the year. Government policy on subsidies, product registrations and import duties shapes profitability.",
+      "keyDemandDrivers": [
+        "Monsoon and sown area",
+        "Crop prices and farm incomes",
+        "Subsidy rates and payment timing",
+        "Export demand for generic agrochemicals",
+        "New molecules and registrations"
+      ],
+      "keyRisks": [
+        "Delayed subsidy payments",
+        "Weak or erratic monsoon",
+        "Swings in imported input and gas prices",
+        "Channel inventory build-up",
+        "Product bans and policy changes"
+      ]
+    },
+    {
+      "id": "i-cement-and-cement-products",
+      "description": "Producers of cement and related products such as clinker and ready-mix concrete.",
+      "businessOverview": "Cement plants quarry limestone, burn it with fuel into clinker and grind it with gypsum, fly ash or slag into different cement types. Because cement is heavy and cheap per tonne, markets are regional and freight matters almost as much as production cost. Sales go through dealers to individual home builders and directly to developers and infrastructure contractors. Profit depends on regional demand, price discipline, fuel costs and how fully plants are used.",
+      "keyDemandDrivers": [
+        "Urban and rural housing",
+        "Government infrastructure spending",
+        "Commercial and industrial construction",
+        "Regional demand-supply balance"
+      ],
+      "keyRisks": [
+        "Capacity additions running ahead of demand",
+        "Coal, petcoke and diesel price spikes",
+        "Long monsoons or labour shortages slowing construction",
+        "Regional price wars"
+      ]
+    },
+    {
+      "id": "i-other-construction-materials",
+      "description": "Makers and suppliers of building materials other than cement, such as roofing sheets, boards, blocks and facade systems.",
+      "businessOverview": "This group supplies materials that go into walls, roofs, ceilings and building exteriors. Products range from fibre-cement sheets and boards to aerated blocks, gypsum products and glass facade systems, and some firms run supply platforms for builders. Demand comes from homes, commercial buildings and rural construction, and many products compete with bricks, metal sheets and site-made plaster. Brands, dealer networks and project execution skills separate stronger players.",
+      "keyDemandDrivers": [
+        "Housing and rural construction",
+        "Commercial real estate and office build-out",
+        "Infrastructure and warehousing projects",
+        "Shift to faster, factory-made building materials"
+      ],
+      "keyRisks": [
+        "Input cost swings (cement, fibre, glass, aluminium)",
+        "Competition from unorganised players",
+        "Project delays and slow receivables",
+        "Health and regulatory issues around certain materials"
+      ]
+    },
+    {
+      "id": "i-ferrous-metals",
+      "description": "Producers of iron, steel and the ferro alloys used to make steel.",
+      "businessOverview": "Ferrous metal companies turn iron ore, coal and other minerals into products ranging from sponge iron and pig iron to finished steel and alloys. Integrated plants run blast furnaces, often with captive raw materials, while secondary producers use electric or induction furnaces fed with sponge iron and scrap. Steel prices move with domestic demand, global prices and import flows, so margins swing widely. Raw material security and cost of production decide who comes through downturns in good shape.",
+      "keyDemandDrivers": [
+        "Infrastructure and construction",
+        "Automobiles, appliances and capital goods",
+        "Government capex on railways, roads and housing",
+        "Export demand and global steel prices"
+      ],
+      "keyRisks": [
+        "Imports and global oversupply",
+        "Coking coal and iron ore price swings",
+        "Environmental and carbon rules",
+        "High debt during downturns"
+      ]
+    },
+    {
+      "id": "i-non-ferrous-metals",
+      "description": "Producers and refiners of aluminium, copper, zinc, lead and precious metals.",
+      "businessOverview": "Non-ferrous companies mine ores, smelt and refine metals, or recycle scrap, and sell them as ingots, rods, sheets and alloys. Prices are mostly set on global exchanges such as the London Metal Exchange, so earnings depend on global prices, the rupee and the cost of power and raw materials. Integrated miners with captive ore usually have lower costs than converters that buy concentrate or scrap. Demand comes from power, construction, autos, packaging, electricals and, for gold and silver, jewellery and investment.",
+      "keyDemandDrivers": [
+        "Global metal prices",
+        "Power grids, renewables and EV build-out",
+        "Construction and galvanised steel demand",
+        "Jewellery and investment demand for gold and silver"
+      ],
+      "keyRisks": [
+        "Sharp falls in global metal prices",
+        "Power and coal cost increases",
+        "Mining lease and royalty changes",
+        "Import competition and duty changes"
+      ]
+    },
+    {
+      "id": "i-diversified-metals",
+      "description": "Companies producing or recycling several different metals rather than one.",
+      "businessOverview": "Diversified metal companies run a mix of mining, smelting and recycling operations across metals such as zinc, lead, aluminium, copper, iron ore and silver, sometimes alongside oil, gas or power. A spread of metals can smooth earnings because metal prices do not always move together. Smaller players in this group recycle scrap, used batteries or residues into several metals. Group structure, debt and how cash moves between group entities can matter as much as the metal cycle.",
+      "keyDemandDrivers": [
+        "Global metal prices",
+        "Infrastructure and industrial activity",
+        "Electrification and battery demand",
+        "Availability of scrap and recycling feedstock"
+      ],
+      "keyRisks": [
+        "Several metal prices falling together",
+        "High group debt and refinancing",
+        "Regulatory and environmental disputes",
+        "Scrap import and feedstock disruptions"
+      ]
+    },
+    {
+      "id": "i-minerals-and-mining",
+      "description": "Miners and processors of industrial minerals such as iron ore, bauxite, bentonite, kaolin and calcium carbonate.",
+      "businessOverview": "Mining companies hold leases granted by state governments, extract ore or minerals and sell them raw, processed or upgraded. Some grind and purify minerals into fine grades used in paints, plastics, ceramics, drilling fluids and foundries. Earnings depend on volumes mined, realised prices and costs including royalty and other statutory payments. Lease tenure, environmental clearances and logistics to customers are key.",
+      "keyDemandDrivers": [
+        "Steel and foundry production",
+        "Paints, plastics, ceramics and paper output",
+        "Infrastructure and construction",
+        "Export demand for processed minerals"
+      ],
+      "keyRisks": [
+        "Lease expiry or auction outcomes",
+        "Mining bans, environmental and court orders",
+        "Royalty and levy changes",
+        "Global price and freight swings"
+      ]
+    },
+    {
+      "id": "i-metals-and-minerals-trading",
+      "description": "Traders and distributors of metals, scrap and minerals such as coal.",
+      "businessOverview": "Trading companies buy metals, scrap or minerals from producers or overseas suppliers and sell them to manufacturers, power plants and smaller buyers. They earn a margin per tonne plus income from services like credit, logistics, processing and sourcing. Margins are usually thin, so volume, inventory control and working-capital discipline drive returns. Price moves between purchase and sale can create gains or losses.",
+      "keyDemandDrivers": [
+        "Industrial and construction activity",
+        "Import demand for coal and scrap",
+        "Fragmented buyers needing credit and small lots",
+        "Global commodity prices"
+      ],
+      "keyRisks": [
+        "Inventory losses when prices fall",
+        "Customer defaults and stretched receivables",
+        "Currency moves on imports",
+        "Import duty and policy changes"
+      ]
+    },
+    {
+      "id": "i-paper-forest-and-jute-products",
+      "description": "Makers of paper and paperboard, forest-based products and jute goods.",
+      "businessOverview": "Paper mills turn wood, agricultural residue or waste paper into writing paper, packaging board, newsprint and specialty grades. Forest-product businesses deal in timber, wood and other produce from forests and plantations. Jute mills spin raw jute into sacking, hessian and yarn, much of it bought by government agencies to pack food grains. All three depend on fibre costs, energy and environmental compliance, and face import competition.",
+      "keyDemandDrivers": [
+        "Packaging demand from FMCG and e-commerce",
+        "Education and office paper use",
+        "Government food-grain procurement (jute sacks)",
+        "Shift away from single-use plastics"
+      ],
+      "keyRisks": [
+        "Wood, waste paper and raw jute cost swings",
+        "Cheap imports",
+        "Pollution and effluent norms",
+        "Changes to jute packaging mandates"
+      ]
+    }
+  ],
+  "basicIndustries": [
+    {
+      "id": "b-commodity-chemicals",
+      "simplifiedExplanation": "Companies that make basic chemicals in large volumes, such as acids, alkalis, solvents and intermediates. These are standard products, so buyers mostly choose on price and reliable supply.",
+      "productsAndServices": [
+        "Caustic soda and chlorine",
+        "Soda ash",
+        "Sulphuric, nitric and other acids",
+        "Phenol, acetone and solvents",
+        "Methanol and ammonia derivatives",
+        "Phthalic anhydride and plasticiser inputs",
+        "Hydrogen peroxide and bleaching chemicals"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: buys salt, minerals, natural gas, coal and crude derivatives, and supplies other chemical makers plus textile, glass, detergent, paper, pharma and agrochemical industries.",
+      "howTheyMakeMoney": "They sell large volumes at prices close to domestic and import-parity levels. Profit is the spread between product price and feedstock plus energy cost, multiplied by how fully the plant runs.",
+      "revenueSources": [
+        "Bulk chemical sales to industrial buyers",
+        "Co-products and by-products",
+        "Exports of surplus volumes",
+        "Surplus power or steam (some)"
+      ],
+      "operatingCosts": [
+        "Feedstock (salt, gas, benzene, propylene and similar)",
+        "Power and fuel",
+        "Freight and handling of bulk liquids",
+        "Plant maintenance",
+        "Effluent treatment and compliance"
+      ],
+      "customersAndEndMarkets": "Downstream chemical makers, textile processors, glass, soap and detergent makers, aluminium refiners, paper mills, pharma and water-treatment users.",
+      "demandSupplyDrivers": "Demand follows general industrial output. Supply is lumpy: a large new plant at home or abroad, or cheap Chinese and Middle Eastern exports, can pull prices down across the market.",
+      "domesticInternationalExposure": "Mostly sold in India but priced against imports; global prices of benzene, propylene, ammonia and similar feedstocks feed straight into costs.",
+      "capexIntensity": "High",
+      "capexNote": "Large continuous-process plants need heavy investment and scale to be cost-competitive.",
+      "workingCapital": "Moderate: feedstock and finished-goods stocks plus credit to industrial customers; price falls can hurt inventory values.",
+      "regulation": "Environmental clearance from MoEF and state pollution control boards, hazardous-chemical storage rules, and anti-dumping duties set on DGTR recommendations shape operations.",
+      "competitiveAdvantages": "Scale, feedstock integration, captive power and locations near customers or ports lower costs; costly plants and slow approvals keep new entrants few.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Product and feedstock prices move with global chemical cycles and set the spread." },
+        { "factor": "Imports & dumping", "impact": "Cheap imports cap domestic prices; anti-dumping duties can restore them." },
+        { "factor": "Capacity utilisation", "impact": "High fixed costs mean profits jump when plants run full and drop sharply when they do not." },
+        { "factor": "Crude oil prices", "impact": "Crude-linked feedstocks and fuel make up a large part of costs for many products." },
+        { "factor": "Exports & global demand", "impact": "Weak global demand pushes surplus product into India and lowers prices." }
+      ],
+      "risks": [
+        { "risk": "Price cycles", "detail": "Global capacity additions can cause long stretches of low prices." },
+        { "risk": "Plant shutdowns", "detail": "Accidents, breakdowns or pollution orders can halt output." },
+        { "risk": "Energy costs", "detail": "Power and fuel price spikes squeeze spreads quickly." },
+        { "risk": "Duty changes", "detail": "Lapse of anti-dumping protection can expose producers to imports." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Earnings swing with global chemical spreads and industrial demand.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-petrochemicals", "b-specialty-chemicals", "b-fertilizers", "b-trading-chemicals", "b-glass-industrial"],
+      "aliases": ["commodity chemicals", "bulk chemicals", "basic chemicals", "chlor alkali", "caustic soda", "soda ash", "industrial acids", "industrial chemicals"],
+      "themes": []
+    },
+    {
+      "id": "b-specialty-chemicals",
+      "simplifiedExplanation": "Companies that make chemicals designed for a specific job, such as an ingredient for a medicine, a crop-protection molecule or a coating additive. They sell on performance and quality, not just price.",
+      "productsAndServices": [
+        "Pharma and agrochemical intermediates",
+        "Fluorochemicals",
+        "Surfactants and textile chemicals",
+        "Construction chemicals and admixtures",
+        "Flavours, fragrances and aroma chemicals",
+        "Polymer and rubber additives",
+        "Water-treatment and oilfield chemicals",
+        "Custom synthesis and contract manufacturing"
+      ],
+      "valueChainPosition": "Midstream: buys basic and petrochemical inputs and supplies pharma, agrochemical, personal-care, paint, textile, construction and electronics makers in India and abroad.",
+      "howTheyMakeMoney": "They earn margins from process know-how, purity and reliability, often as an approved vendor or under multi-year supply agreements. Contract manufacturing for global innovators pays for dedicated capacity and technical skill.",
+      "revenueSources": [
+        "Product sales to industrial customers",
+        "Custom synthesis and contract manufacturing",
+        "Exports to regulated markets",
+        "Technical service and formulation support"
+      ],
+      "operatingCosts": [
+        "Raw materials and intermediates (often imported)",
+        "Power, steam and utilities",
+        "R&D and skilled chemists",
+        "Effluent treatment and safety systems",
+        "Plant depreciation"
+      ],
+      "customersAndEndMarkets": "Global and domestic pharma, agrochemical, personal-care, paint, textile, construction and electronics companies.",
+      "demandSupplyDrivers": "Demand depends on end-market growth and on global buyers shifting supply away from China. Customer destocking and Chinese price cuts can cause sharp temporary falls.",
+      "domesticInternationalExposure": "Many companies export a large part of output, so global demand, the rupee and Chinese competition matter a lot; several key inputs are imported.",
+      "capexIntensity": "Medium",
+      "capexNote": "Multipurpose plants need steady investment, plus spending on R&D, customer approvals and pollution control.",
+      "workingCapital": "Fairly high: export receivables, stocks of many raw materials and long customer qualification phases tie up cash.",
+      "regulation": "Pollution control board consents and environmental clearances, hazardous-chemical rules, and export-market rules such as EU REACH registration; customer audits act as a further check.",
+      "competitiveAdvantages": "Chemistry skills, long customer approval processes, safety and compliance records and backward integration make switching suppliers slow and costly.",
+      "drivers": [
+        { "factor": "Exports & global demand", "impact": "Orders from global pharma, agrochemical and consumer companies drive volumes." },
+        { "factor": "China+1 sourcing", "impact": "Buyers diversifying away from China can bring new contracts to Indian makers." },
+        { "factor": "Imports & dumping", "impact": "Low-priced Chinese products pressure prices in India and export markets." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee lifts export realisations; a stronger rupee reduces them." },
+        { "factor": "Technology change", "impact": "New molecules and greener chemistry open niches for skilled makers." }
+      ],
+      "risks": [
+        { "risk": "Customer destocking", "detail": "Global customers cutting inventory can reduce orders for several quarters." },
+        { "risk": "Concentration", "detail": "A few large clients or molecules can dominate revenue." },
+        { "risk": "Plant accidents", "detail": "Fires or leaks can halt production and invite regulatory action." },
+        { "risk": "Chinese pricing", "detail": "Aggressive pricing from Chinese producers can erode margins." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Steadier than bulk chemicals, but exposed to global inventory cycles and end-market slowdowns.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-commodity-chemicals", "b-pesticides-and-agrochemicals", "b-pharmaceuticals", "b-dyes-and-pigments", "b-paints"],
+      "aliases": ["specialty chemicals", "speciality chemicals", "fine chemicals", "performance chemicals", "CDMO chemicals", "custom synthesis", "fluorochemicals", "chemical intermediates"],
+      "themes": ["China+1", "Exports"]
+    },
+    {
+      "id": "b-carbon-black",
+      "simplifiedExplanation": "Carbon black is a fine black powder made by burning heavy oil in a controlled way. It makes tyres and rubber stronger and gives black colour to inks, paints and plastics.",
+      "productsAndServices": [
+        "Rubber-grade carbon black for tyres",
+        "Grades for belts, hoses and moulded rubber",
+        "Specialty grades for plastics, inks and coatings",
+        "Conductive carbon for batteries and cables",
+        "Co-generated power from process tail gas",
+        "Coal-tar pitch and related products (some)"
+      ],
+      "valueChainPosition": "Midstream: buys carbon black feedstock oil from refineries and coal-tar distillers and supplies tyre makers, rubber goods makers and ink, paint and plastics compounders.",
+      "howTheyMakeMoney": "They sell by the tonne, usually under price formulas that pass feedstock changes to tyre customers with a lag. Specialty grades earn higher margins, and selling surplus power made from tail gas adds income.",
+      "revenueSources": [
+        "Tyre-grade carbon black",
+        "Specialty and performance grades",
+        "Exports",
+        "Power sales from co-generation"
+      ],
+      "operatingCosts": [
+        "Carbon black feedstock oil",
+        "Natural gas and fuel",
+        "Freight and packaging",
+        "Plant maintenance",
+        "Emission control"
+      ],
+      "customersAndEndMarkets": "Tyre makers are the largest buyers, followed by mechanical rubber goods, plastics masterbatch, ink, paint and battery makers.",
+      "demandSupplyDrivers": "Demand follows tyre production, which tracks new vehicle sales and replacement tyre demand. New plants and imports affect pricing.",
+      "domesticInternationalExposure": "Feedstock prices follow crude and coal-tar markets; Indian makers export to global tyre companies and face imports in turn.",
+      "capexIntensity": "High",
+      "capexNote": "Reactors, feedstock handling and co-generation plants are capital heavy.",
+      "workingCapital": "Moderate: feedstock is often imported in large lots and tyre customers get credit periods.",
+      "regulation": "State pollution control board consents and emission norms are important; anti-dumping duties on imported carbon black have been used in the past.",
+      "competitiveAdvantages": "Long approval cycles with tyre makers, scale, feedstock sourcing and a rising specialty mix protect established players.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Feedstock cost moves with heavy oil and coal-tar prices." },
+        { "factor": "Consumer demand", "impact": "Vehicle sales and replacement tyre demand set volumes." },
+        { "factor": "Exports & global demand", "impact": "Global tyre makers sourcing from India support export volumes." },
+        { "factor": "Imports & dumping", "impact": "Cheaper imports can pressure domestic prices." },
+        { "factor": "EV battery materials", "impact": "Conductive carbon for batteries is a newer, higher-value market." }
+      ],
+      "risks": [
+        { "risk": "Pass-through lag", "detail": "Fast feedstock price moves can hurt margins before contract prices reset." },
+        { "risk": "Tyre slowdown", "detail": "Weak vehicle or tyre demand cuts volumes." },
+        { "risk": "Emission norms", "detail": "Tighter pollution rules can raise costs or restrict plants." },
+        { "risk": "Customer concentration", "detail": "A small number of tyre makers buy most of the output." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Tied to auto and tyre cycles and crude-linked feedstock costs.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-tyres-and-rubber-products", "b-refineries-and-marketing", "b-specialty-chemicals", "b-rubber", "b-printing-inks"],
+      "aliases": ["carbon black", "furnace black", "tyre carbon", "rubber black", "conductive carbon", "specialty black"],
+      "themes": ["EV", "Exports"]
+    },
+    {
+      "id": "b-dyes-and-pigments",
+      "simplifiedExplanation": "Companies that make colours: dyes that colour fabric, yarn and leather, and pigments that colour paints, inks and plastics.",
+      "productsAndServices": [
+        "Reactive, disperse and acid dyes",
+        "Organic pigments",
+        "Inorganic pigments such as ultramarine and iron oxide",
+        "Dye intermediates",
+        "Pigment preparations for plastics",
+        "Detergent and specialty colourants"
+      ],
+      "valueChainPosition": "Midstream: buys benzene- and naphthalene-based intermediates and minerals, and supplies textile processors and paint, ink, plastics and detergent makers.",
+      "howTheyMakeMoney": "They sell colours by the kilogram, with margins tied to shade range, batch consistency and customer approvals. Backward integration into intermediates can widen margins.",
+      "revenueSources": [
+        "Dyes for textile processors",
+        "Pigments for paint, ink and plastic makers",
+        "Intermediate sales",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Aromatic intermediates and raw materials",
+        "Effluent treatment",
+        "Power and steam",
+        "Freight",
+        "Technical and colour-lab staff"
+      ],
+      "customersAndEndMarkets": "Textile dyeing and printing units serving garment makers and exporters, paint companies, ink makers, plastics compounders and detergent makers.",
+      "demandSupplyDrivers": "Textile and garment demand and paint and ink volumes drive sales. Pollution crackdowns in India or China can suddenly cut supply and lift prices.",
+      "domesticInternationalExposure": "Exports are significant and Chinese supply largely sets global prices; many intermediates are imported.",
+      "capexIntensity": "Medium",
+      "capexNote": "Batch plants are moderately costly, with significant spending on effluent treatment.",
+      "workingCapital": "High: many shades and grades must be stocked, and textile customers often take long credit.",
+      "regulation": "Close scrutiny of effluent by state pollution control boards and the National Green Tribunal; export markets restrict banned amines and heavy metals.",
+      "competitiveAdvantages": "Shade libraries, consistent quality, a clean compliance record and integration into intermediates protect established makers.",
+      "drivers": [
+        { "factor": "Exports & global demand", "impact": "Global textile and coatings demand sets export orders." },
+        { "factor": "Imports & dumping", "impact": "Chinese supply and pricing heavily influence realisations." },
+        { "factor": "Regulation", "impact": "Pollution enforcement can shut capacity in India or abroad, changing supply." },
+        { "factor": "Raw material availability", "impact": "Supply and price of aromatic intermediates drive costs." },
+        { "factor": "Consumer demand", "impact": "Clothing and paint demand drives dye and pigment volumes." }
+      ],
+      "risks": [
+        { "risk": "Pollution action", "detail": "Closure orders over effluent can halt plants." },
+        { "risk": "Textile slowdown", "detail": "Weak garment demand reduces dye offtake." },
+        { "risk": "Chinese competition", "detail": "Low-cost imports can compress margins." },
+        { "risk": "Receivable stress", "detail": "Small textile customers may delay payments." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Moves with textile and paint cycles and Chinese supply conditions.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-specialty-chemicals", "b-paints", "b-printing-inks", "b-other-textile-products", "b-garments-and-apparels"],
+      "aliases": ["dyes", "pigments", "dyestuff", "colourants", "colorants", "reactive dyes", "organic pigments", "dye intermediates"],
+      "themes": ["Exports", "China+1"]
+    },
+    {
+      "id": "b-explosives",
+      "simplifiedExplanation": "Companies that make industrial explosives and detonators used to break rock in mines and construction, and, in some cases, ammunition and propellants for defence.",
+      "productsAndServices": [
+        "Bulk and packaged (cartridge) explosives",
+        "Detonators and initiating systems",
+        "Ammonium-nitrate-based emulsions",
+        "Blasting services at mine sites",
+        "Propellants, warheads and ammunition for defence",
+        "Boosters and blasting accessories"
+      ],
+      "valueChainPosition": "Midstream: buys ammonium nitrate and other chemicals and supplies coal, limestone and metal-ore miners, infrastructure contractors and the armed forces.",
+      "howTheyMakeMoney": "Mining explosives are sold through tenders and supply contracts, often with price-variation clauses linked to ammonium nitrate. Defence products are sold against orders from the Ministry of Defence and export customers, usually at higher margins.",
+      "revenueSources": [
+        "Bulk explosives and blasting services for mines",
+        "Packaged explosives and detonators",
+        "Defence products",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Ammonium nitrate and fuel oils",
+        "Other chemicals and packaging",
+        "Safety systems and licensed storage",
+        "Transport under special rules",
+        "Skilled manpower"
+      ],
+      "customersAndEndMarkets": "Coal and metal miners, limestone quarries of cement makers, tunnel, road and dam builders, and defence buyers in India and abroad.",
+      "demandSupplyDrivers": "Demand follows mining output, especially coal, and tunnelling and quarrying for infrastructure. Defence demand depends on procurement orders and export approvals.",
+      "domesticInternationalExposure": "Mining demand is mostly domestic, with growing exports of industrial explosives and defence items; ammonium nitrate prices follow global markets.",
+      "capexIntensity": "Medium",
+      "capexNote": "Licensed plants and magazines need investment; defence facilities need more specialised spending.",
+      "workingCapital": "Moderate to high: tender customers can pay slowly and defence orders tie up inventory.",
+      "regulation": "Tightly licensed under the Explosives Act through PESO, with Ammonium Nitrate Rules on storage and handling; defence items need Ministry of Defence licences and export authorisation.",
+      "competitiveAdvantages": "Licences, safety records, on-site blasting know-how and defence qualifications make entry difficult.",
+      "drivers": [
+        { "factor": "Infrastructure spending", "impact": "Roads, tunnels, dams and railways raise blasting needs." },
+        { "factor": "Coal mining output", "impact": "Coal production is the largest user of bulk explosives." },
+        { "factor": "Defence spending", "impact": "Ammunition and propellant orders add higher-margin revenue." },
+        { "factor": "Commodity prices", "impact": "Ammonium nitrate cost changes flow into margins until contract prices reset." },
+        { "factor": "Exports & global demand", "impact": "Overseas mining and defence orders widen the market." }
+      ],
+      "risks": [
+        { "risk": "Safety incidents", "detail": "An accident can stop plants and trigger licence reviews." },
+        { "risk": "Tender pricing", "detail": "Competitive tenders from large miners can keep margins thin." },
+        { "risk": "Order timing", "detail": "Defence orders are lumpy and can slip." },
+        { "risk": "Input costs", "detail": "Ammonium nitrate price spikes squeeze margins." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Mining demand is fairly steady, while defence orders follow government budgets.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-coal", "b-aerospace-and-defense", "b-fertilizers", "b-industrial-minerals", "b-civil-construction"],
+      "aliases": ["explosives", "industrial explosives", "detonators", "blasting", "emulsion explosives", "ammunition", "propellants"],
+      "themes": ["Defence", "Infrastructure"]
+    },
+    {
+      "id": "b-petrochemicals",
+      "simplifiedExplanation": "Companies that turn oil- and gas-based feedstocks into plastics, synthetic rubber and chemical building blocks used to make thousands of everyday products.",
+      "productsAndServices": [
+        "Polyethylene and polypropylene",
+        "PVC and other vinyls",
+        "ABS and engineering plastics",
+        "Linear alkyl benzene (LAB) for detergents",
+        "PTA and MEG for polyester",
+        "Benzene, toluene and xylene",
+        "Synthetic rubber",
+        "Plasticisers and solvents"
+      ],
+      "valueChainPosition": "Midstream: buys naphtha, natural gas, ethylene, propylene or aromatics from refineries and crackers, and supplies plastics processors and polyester, detergent, packaging and auto-part makers.",
+      "howTheyMakeMoney": "They earn the spread between polymer or chemical prices and feedstock cost, which tracks Asian benchmark prices. Running large plants at high utilisation is key.",
+      "revenueSources": [
+        "Polymer and resin sales",
+        "Chemical intermediates",
+        "Specialty compounds and grades",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Naphtha, gas or monomer feedstock",
+        "Power and utilities",
+        "Catalysts and additives",
+        "Freight",
+        "Plant depreciation and maintenance"
+      ],
+      "customersAndEndMarkets": "Plastics processors, packaging converters, polyester and textile makers, detergent makers, and pipe, appliance and auto-part manufacturers.",
+      "demandSupplyDrivers": "Demand tracks packaging, construction, consumer goods and autos. Large new crackers in China and the Middle East can depress global spreads for long periods.",
+      "domesticInternationalExposure": "India imports a good part of its polymer needs, so domestic prices follow import parity; feedstock prices follow crude and global gas.",
+      "capexIntensity": "High",
+      "capexNote": "Crackers and polymer plants are among the most capital-intensive projects in industry.",
+      "workingCapital": "Moderate: feedstock and product stocks carry price risk, while distributors carry much of the credit to small processors.",
+      "regulation": "Environmental clearance and pollution norms, BIS quality control orders on several polymers and chemicals, and anti-dumping or safeguard duties via DGTR affect imports.",
+      "competitiveAdvantages": "Feedstock integration with refineries, scale and nearness to customers give cost leadership; smaller players survive in niche grades.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Naphtha and other feedstocks move with crude, shifting costs." },
+        { "factor": "Commodity prices", "impact": "Global polymer and chemical spreads decide profitability." },
+        { "factor": "Imports & dumping", "impact": "Import parity and trade duties set domestic prices." },
+        { "factor": "Consumer demand", "impact": "Packaging, appliances and autos drive polymer use." },
+        { "factor": "Capacity utilisation", "impact": "Global capacity additions versus demand shape the cycle." }
+      ],
+      "risks": [
+        { "risk": "Global oversupply", "detail": "New capacity abroad can depress spreads for years." },
+        { "risk": "Feedstock volatility", "detail": "Sudden crude moves can squeeze margins." },
+        { "risk": "Plastic rules", "detail": "Bans on single-use plastics can reduce some end uses." },
+        { "risk": "Plant outages", "detail": "Unplanned shutdowns hit volumes and fixed-cost absorption." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Spreads follow global petrochemical capacity cycles and crude prices.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-refineries-and-marketing", "b-commodity-chemicals", "b-plastic-products-industrial", "b-packaging", "b-gas-transmission-marketing"],
+      "aliases": ["petrochemicals", "petchem", "polymers", "plastic resin", "polyethylene", "polypropylene", "PVC", "ABS", "LAB"],
+      "themes": []
+    },
+    {
+      "id": "b-printing-inks",
+      "simplifiedExplanation": "Companies that make the inks used to print packaging, newspapers, magazines and labels.",
+      "productsAndServices": [
+        "Gravure and flexo inks for flexible packaging",
+        "Offset inks for publications and commercial print",
+        "News inks",
+        "Label and narrow-web inks",
+        "Digital and UV-curable inks",
+        "Coatings, varnishes and packaging adhesives"
+      ],
+      "valueChainPosition": "Midstream: buys pigments, resins, solvents and additives, and supplies packaging converters, printing presses and newspaper publishers.",
+      "howTheyMakeMoney": "They sell formulated inks with colour matching and on-press technical support, often as approved suppliers to packaging converters. Margins depend on the gap between selling prices and petroleum-based raw material costs.",
+      "revenueSources": [
+        "Packaging inks",
+        "Publication and commercial printing inks",
+        "Coatings and adhesives",
+        "Exports (some)"
+      ],
+      "operatingCosts": [
+        "Pigments and resins",
+        "Solvents linked to crude",
+        "Technical service staff",
+        "Freight and packaging",
+        "Technology fees (some)"
+      ],
+      "customersAndEndMarkets": "Flexible packaging converters serving food and FMCG brands, carton makers, commercial printers and newspaper publishers.",
+      "demandSupplyDrivers": "Packaged food and FMCG volumes drive packaging inks, while newspaper and magazine circulation trends drive publication inks.",
+      "domesticInternationalExposure": "Sales are mainly domestic; key pigments, resins and solvents follow global petrochemical prices and some are imported.",
+      "capexIntensity": "Low",
+      "capexNote": "Mixing and milling plants need modest investment relative to sales.",
+      "workingCapital": "Moderate: many colours and grades in stock, plus credit to converters and printers.",
+      "regulation": "Pollution control consents for solvent handling; food-packaging inks are expected to meet BIS standards referenced in FSSAI packaging rules.",
+      "competitiveAdvantages": "Colour-matching capability, technical service at the press, approvals with large brand owners and access to global technology.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Packaged food and FMCG sales drive packaging print volumes." },
+        { "factor": "Crude oil prices", "impact": "Solvents and resins track crude, moving costs." },
+        { "factor": "Technology change", "impact": "Digital printing and shrinking print media change the product mix." },
+        { "factor": "Regulation", "impact": "Food-safety norms push demand toward safer, premium inks." }
+      ],
+      "risks": [
+        { "risk": "Print media decline", "detail": "Falling newspaper use reduces publication-ink demand." },
+        { "risk": "Input cost spikes", "detail": "Pigment and solvent price rises can run ahead of selling-price hikes." },
+        { "risk": "Customer bargaining power", "detail": "Large converters negotiate hard on price." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Packaging demand is steady, but margins swing with petrochemical input costs.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-packaging", "b-dyes-and-pigments", "b-print-media", "b-printing-and-publication", "b-specialty-chemicals"],
+      "aliases": ["printing inks", "inks", "packaging inks", "gravure inks", "flexo inks", "offset inks", "news ink"],
+      "themes": []
+    },
+    {
+      "id": "b-trading-chemicals",
+      "simplifiedExplanation": "Companies that buy chemicals from manufacturers or overseas suppliers and resell them to smaller industrial users. They are distributors, not manufacturers.",
+      "productsAndServices": [
+        "Solvents and bulk liquids",
+        "Imported specialty chemicals",
+        "Agrochemical and pharma inputs",
+        "Polymers and additives",
+        "Storage, repacking and delivery",
+        "Agency (indenting) services for foreign suppliers"
+      ],
+      "valueChainPosition": "Midstream distribution: sits between chemical producers or importers and small and mid-sized manufacturers who buy in smaller lots.",
+      "howTheyMakeMoney": "They earn a trading margin or commission on each lot sold, plus value from the storage, credit and logistics they offer buyers.",
+      "revenueSources": [
+        "Trading margin on chemical sales",
+        "Agency commissions",
+        "Logistics and repacking services"
+      ],
+      "operatingCosts": [
+        "Cost of goods bought",
+        "Warehousing and tank storage",
+        "Freight",
+        "Interest on working capital",
+        "Sales staff"
+      ],
+      "customersAndEndMarkets": "Small and mid-sized makers of paints, textiles, pharma, agrochemicals, plastics and cleaning products.",
+      "demandSupplyDrivers": "Volumes follow activity among small manufacturers; price swings between buying and selling change profits.",
+      "domesticInternationalExposure": "Many traders import their products, so currency moves, freight and global chemical prices matter.",
+      "capexIntensity": "Low",
+      "capexNote": "Assets are mainly warehouses, tanks and vehicles.",
+      "workingCapital": "High: inventory and customer credit are the core of the business, funded mostly by bank lines.",
+      "regulation": "Hazardous-chemical storage and transport rules, GST and customs compliance; some chemicals need special licences.",
+      "competitiveAdvantages": "Supplier agency rights, storage near industrial clusters, credit-assessment skill and customer relationships.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Rising prices give inventory gains; falling prices cause losses." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the cost of imported products." },
+        { "factor": "Credit growth", "impact": "Access to bank credit limits how much stock and customer credit a trader can carry." },
+        { "factor": "Consumer demand", "impact": "Downstream manufacturing activity sets volumes." }
+      ],
+      "risks": [
+        { "risk": "Inventory losses", "detail": "Sharp price falls hurt stock bought at higher prices." },
+        { "risk": "Bad debts", "detail": "Small buyers may default or pay late." },
+        { "risk": "Loss of agency", "detail": "Suppliers can switch distributors or sell directly." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes and margins follow chemical price cycles and small-industry demand.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": ["b-commodity-chemicals", "b-specialty-chemicals", "b-trading-and-distributors", "b-distributors", "b-petrochemicals"],
+      "aliases": ["chemical trading", "chemical distributor", "chemical traders", "chemicals dealer", "solvent trading", "chemical importer"],
+      "themes": []
+    },
+    {
+      "id": "b-industrial-gases",
+      "simplifiedExplanation": "Companies that separate air into oxygen, nitrogen and argon, or make gases such as hydrogen, carbon dioxide and refrigerants, and supply them to factories and hospitals.",
+      "productsAndServices": [
+        "Oxygen, nitrogen and argon",
+        "Medical oxygen",
+        "Hydrogen and carbon dioxide",
+        "Specialty and calibration gases",
+        "Refrigerant and fluorinated gases",
+        "On-site gas plants and steam supply",
+        "Cylinders, tankers and gas equipment"
+      ],
+      "valueChainPosition": "Midstream: uses air, electricity and chemical feedstock to produce gases and supplies steel, chemicals, refining, glass, electronics, healthcare and food industries.",
+      "howTheyMakeMoney": "Large customers such as steel plants get gas from on-site plants under long-term take-or-pay contracts, giving steady income. Smaller customers buy liquid gas by tanker or cylinder at higher prices, and medical and specialty gases earn premium margins.",
+      "revenueSources": [
+        "Long-term on-site supply contracts",
+        "Merchant liquid gas sales",
+        "Cylinder and packaged gases",
+        "Medical gases and hospital pipeline systems",
+        "Equipment and project engineering"
+      ],
+      "operatingCosts": [
+        "Electricity for air separation",
+        "Distribution by tanker and cylinder",
+        "Plant maintenance",
+        "Feedstock for hydrogen and CO2",
+        "Depreciation of plants and cylinders"
+      ],
+      "customersAndEndMarkets": "Steel plants, refineries, chemical and glass makers, electronics and solar units, hospitals, food and beverage companies and metal fabricators.",
+      "demandSupplyDrivers": "Steel and industrial output drive bulk volumes, while hospital and specialty uses grow more steadily; merchant prices depend on local surplus capacity.",
+      "domesticInternationalExposure": "Mostly domestic because gases are costly to transport; some specialty gases and refrigerants are imported or exported.",
+      "capexIntensity": "High",
+      "capexNote": "Air separation units, cylinders and tanker fleets need heavy upfront investment.",
+      "workingCapital": "Low to moderate: contracts bill monthly, though hospital and government dues can be slow.",
+      "regulation": "Cylinders, tankers and storage are regulated by PESO; medical oxygen falls under drug rules and can face price controls; refrigerants face phase-down rules under the Montreal Protocol.",
+      "competitiveAdvantages": "Long-term contracts, plants located at customer sites, dense distribution and safety know-how create high entry barriers.",
+      "drivers": [
+        { "factor": "Power tariffs", "impact": "Electricity is the largest cost of air separation, so tariff changes move margins." },
+        { "factor": "Capacity utilisation", "impact": "Steel and industrial output decide how fully gas plants run." },
+        { "factor": "Healthcare spending", "impact": "Hospital growth drives medical oxygen and gas systems." },
+        { "factor": "Technology change", "impact": "Electronics, solar and green hydrogen projects create new gas demand." },
+        { "factor": "Regulation", "impact": "Price caps on medical oxygen and refrigerant phase-downs affect earnings." }
+      ],
+      "risks": [
+        { "risk": "Anchor customer slowdown", "detail": "A steel plant cutting output reduces on-site volumes." },
+        { "risk": "Merchant oversupply", "detail": "Surplus liquid gas can drive down spot prices." },
+        { "risk": "Safety incidents", "detail": "Cylinder or plant accidents bring regulatory action." },
+        { "risk": "Power cost increase", "detail": "Higher tariffs hurt margins where contracts lack pass-through." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Contracted on-site supply is steady, while merchant volumes follow industrial cycles.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": ["b-iron-and-steel", "b-specialty-chemicals", "b-hospital", "b-commodity-chemicals", "b-medical-equipment-and-supplies"],
+      "aliases": ["industrial gases", "oxygen", "nitrogen", "argon", "medical oxygen", "air separation", "hydrogen", "refrigerant gas", "specialty gases"],
+      "themes": []
+    },
+    {
+      "id": "b-fertilizers",
+      "simplifiedExplanation": "Companies that make or import plant nutrients such as urea, DAP and complex fertilisers and sell them to farmers, mostly at prices shaped by government subsidies.",
+      "productsAndServices": [
+        "Urea",
+        "DAP (di-ammonium phosphate)",
+        "NPK complex fertilisers",
+        "Single super phosphate (SSP)",
+        "Muriate of potash (traded)",
+        "Specialty and water-soluble fertilisers",
+        "Ammonia and industrial chemicals (some)",
+        "Nano and bio fertilisers"
+      ],
+      "valueChainPosition": "Upstream-to-downstream: buys natural gas, rock phosphate, phosphoric acid, ammonia and potash (much of it imported) and sells through dealers and cooperatives to farmers.",
+      "howTheyMakeMoney": "Urea sells at a government-fixed farm price and the maker receives a subsidy covering the gap to its normative cost, so beating efficiency norms drives profit. Phosphatic and potassic fertilisers get a fixed subsidy per nutrient under the Nutrient Based Subsidy scheme, so margins depend on global raw material prices and the selling price companies can charge.",
+      "revenueSources": [
+        "Sales to farmers through dealers",
+        "Government subsidy receipts",
+        "Traded imported fertilisers",
+        "Industrial chemicals and specialty nutrients"
+      ],
+      "operatingCosts": [
+        "Natural gas and LNG (urea)",
+        "Phosphoric acid, rock phosphate and ammonia",
+        "Imported finished fertilisers",
+        "Freight and bagging",
+        "Interest on subsidy dues"
+      ],
+      "customersAndEndMarkets": "Farmers across India, reached through dealers, cooperatives and state marketing federations; some industrial buyers for chemicals.",
+      "demandSupplyDrivers": "Demand depends on the monsoon, cropped area and crop mix, and on the farm price after subsidy. Supply depends on global raw material availability and government import planning.",
+      "domesticInternationalExposure": "India relies heavily on imported gas, phosphates and potash, so global prices and the rupee matter, while sales are almost entirely domestic.",
+      "capexIntensity": "High",
+      "capexNote": "Urea, ammonia and phosphoric acid plants are large and energy- or acid-intensive.",
+      "workingCapital": "High and seasonal: subsidy dues from the government and stocking ahead of kharif and rabi seasons tie up cash.",
+      "regulation": "Heavily controlled by the Department of Fertilizers through urea pricing policy, the Nutrient Based Subsidy scheme and movement plans; quality is governed by the Fertiliser Control Order.",
+      "competitiveAdvantages": "Energy-efficient plants, raw material tie-ups abroad, strong dealer networks and brand recall among farmers.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Subsidy rates, urea pricing norms and import decisions directly set profits." },
+        { "factor": "Monsoon & agriculture", "impact": "Rainfall and sown area drive fertiliser offtake each season." },
+        { "factor": "Commodity prices", "impact": "Global prices of gas, ammonia, phosphates and potash move costs." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the cost of imported inputs." },
+        { "factor": "Interest rates", "impact": "Delayed subsidies are funded with borrowing, so rates affect costs." }
+      ],
+      "risks": [
+        { "risk": "Subsidy delays", "detail": "Late government payments raise debt and interest costs." },
+        { "risk": "Subsidy rate cuts", "detail": "Lower nutrient subsidies can squeeze phosphatic margins." },
+        { "risk": "Raw material shocks", "detail": "Global supply disruptions can spike input costs." },
+        { "risk": "Poor monsoon", "detail": "Weak rains reduce demand and leave stock unsold." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Farm demand is steady, but margins depend on subsidy policy and global input prices.",
+      "metricSet": "agrochem-fertilizers",
+      "relatedBasicIndustries": ["b-pesticides-and-agrochemicals", "b-commodity-chemicals", "b-gas-transmission-marketing", "b-other-agricultural-products", "b-sugar"],
+      "aliases": ["fertilizers", "fertilisers", "urea", "DAP", "NPK", "complex fertiliser", "SSP", "potash", "agri inputs"],
+      "themes": ["Rural demand"]
+    },
+    {
+      "id": "b-pesticides-and-agrochemicals",
+      "simplifiedExplanation": "Companies that make chemicals protecting crops from insects, weeds and diseases, sold as branded products to farmers or as bulk ingredients to global agrochemical companies.",
+      "productsAndServices": [
+        "Insecticides",
+        "Herbicides (weedicides)",
+        "Fungicides",
+        "Technical-grade active ingredients",
+        "Ready-to-use formulations",
+        "Plant growth regulators and bio-stimulants",
+        "Custom synthesis for global innovators"
+      ],
+      "valueChainPosition": "Midstream-to-downstream: buys chemical intermediates (many from China) to make technical-grade molecules, which are formulated and sold through distributors and retailers to farmers, or exported.",
+      "howTheyMakeMoney": "Branded domestic sellers earn from distribution reach and farmer trust; generic exporters earn from low-cost manufacturing and product registrations in many countries; contract makers earn from producing patented molecules for innovators.",
+      "revenueSources": [
+        "Branded formulations in India",
+        "Technical-grade exports",
+        "Generic formulations sold abroad",
+        "Contract manufacturing",
+        "Registration data licensing (some)"
+      ],
+      "operatingCosts": [
+        "Intermediates and raw materials",
+        "Registration and regulatory data costs",
+        "Distribution and farmer marketing",
+        "Effluent treatment and safety",
+        "R&D"
+      ],
+      "customersAndEndMarkets": "Indian farmers through dealers and retailers, global agrochemical companies, and distributors in the Americas, Europe, Africa and Asia.",
+      "demandSupplyDrivers": "Pest pressure, rainfall and crop prices drive farmer demand; global channel inventory and Chinese pricing drive export demand.",
+      "domesticInternationalExposure": "Many companies are strongly export-oriented; reliance on Chinese intermediates and global pricing makes them sensitive to China and the rupee.",
+      "capexIntensity": "Medium",
+      "capexNote": "Multipurpose chemical plants and formulation units need steady investment and pollution-control spending.",
+      "workingCapital": "High and seasonal: stock is built before kharif and rabi, dealers get long credit and export receivables are large.",
+      "regulation": "Products must be registered with the Central Insecticides Board and Registration Committee under the Insecticides Act; molecule bans and export-market registrations (such as US EPA and EU rules) shape portfolios.",
+      "competitiveAdvantages": "Product registrations, distribution reach, brand trust among farmers, low-cost chemistry and long relationships with global innovators.",
+      "drivers": [
+        { "factor": "Monsoon & agriculture", "impact": "Rains, pest incidence and crop area decide domestic sales each season." },
+        { "factor": "Exports & global demand", "impact": "Global farm demand and channel inventory drive export orders." },
+        { "factor": "Imports & dumping", "impact": "Chinese technical prices set the floor for generic molecules." },
+        { "factor": "Regulation", "impact": "Registrations and bans change which products can be sold." },
+        { "factor": "Currency (INR)", "impact": "Moves export realisations and imported input costs." }
+      ],
+      "risks": [
+        { "risk": "Channel destocking", "detail": "Excess stock with distributors can cut orders sharply." },
+        { "risk": "Weather", "detail": "Drought or floods reduce pesticide use." },
+        { "risk": "Molecule bans", "detail": "Bans in India or abroad can wipe out product lines." },
+        { "risk": "China dependence", "detail": "Supply or price shocks in Chinese intermediates hurt costs." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Crop protection is a farm necessity, but export cycles and weather cause sharp swings.",
+      "metricSet": "agrochem-fertilizers",
+      "relatedBasicIndustries": ["b-fertilizers", "b-specialty-chemicals", "b-commodity-chemicals", "b-other-agricultural-products"],
+      "aliases": ["pesticides", "agrochemicals", "agro chemicals", "crop protection", "insecticides", "herbicides", "fungicides", "weedicides"],
+      "themes": ["Rural demand", "Exports", "China+1"]
+    },
+    {
+      "id": "b-cement-and-cement-products",
+      "simplifiedExplanation": "Companies that make cement, the grey powder that binds concrete, and related products like ready-mix concrete. Plants sit near limestone mines and sell mostly within their region.",
+      "productsAndServices": [
+        "Ordinary Portland Cement (OPC)",
+        "Portland Pozzolana Cement (PPC) and slag cement",
+        "Clinker",
+        "Ready-mix concrete",
+        "White cement and wall putty",
+        "Dry-mix mortars and concrete blocks"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: mines limestone and buys coal, petcoke, gypsum, fly ash and slag, then sells through dealers to home builders and directly to developers and infrastructure contractors.",
+      "howTheyMakeMoney": "They earn the price per tonne minus the cost of fuel, power, raw materials and freight. Selling through dealers to individual home builders (trade sales) usually fetches better prices than bulk project sales.",
+      "revenueSources": [
+        "Trade sales via dealers",
+        "Non-trade sales to developers and infrastructure projects",
+        "Ready-mix concrete",
+        "Clinker sales",
+        "Surplus or waste-heat power (some)"
+      ],
+      "operatingCosts": [
+        "Coal, petcoke and other fuel",
+        "Power",
+        "Rail and road freight",
+        "Limestone, fly ash, slag and gypsum",
+        "Packing bags",
+        "Royalty on limestone"
+      ],
+      "customersAndEndMarkets": "Individual home builders, real estate developers, road, rail, metro and irrigation contractors, and industrial and commercial construction.",
+      "demandSupplyDrivers": "Demand follows housing, infrastructure and commercial construction and slows during the monsoon. Large capacity additions in a region can hurt prices until demand catches up.",
+      "domesticInternationalExposure": "Almost fully domestic; imported coal and petcoke prices and the rupee affect fuel costs.",
+      "capexIntensity": "High",
+      "capexNote": "Integrated plants, limestone mines, captive power and logistics require heavy investment per tonne of capacity.",
+      "workingCapital": "Low: dealer sales are largely on short credit or advance, with some fuel and clinker inventory.",
+      "regulation": "Limestone leases are auctioned under the MMDR Act, cement needs BIS certification, environmental clearance and emission norms apply, and the CCI watches pricing conduct.",
+      "competitiveAdvantages": "Limestone reserves, plants close to markets, low-cost fuel and power, brand pull with dealers and efficient logistics.",
+      "drivers": [
+        { "factor": "Infrastructure spending", "impact": "Government spending on roads, rail and housing boosts volumes." },
+        { "factor": "Real estate cycle", "impact": "Housing and commercial construction drive dealer and project demand." },
+        { "factor": "Commodity prices", "impact": "Coal, petcoke and diesel costs move cost per tonne." },
+        { "factor": "Capacity utilisation", "impact": "Regional supply additions versus demand decide pricing power." },
+        { "factor": "Monsoon & agriculture", "impact": "Rains pause construction; good harvests support rural housing." }
+      ],
+      "risks": [
+        { "risk": "Oversupply", "detail": "Fresh capacity in a region can trigger price cuts." },
+        { "risk": "Fuel price spikes", "detail": "Costlier coal and petcoke squeeze margins." },
+        { "risk": "Demand slowdown", "detail": "Weak housing or delayed government projects reduce volumes." },
+        { "risk": "Regulatory action", "detail": "Mining, environmental or competition rulings can affect operations." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes and prices follow construction activity and regional capacity cycles.",
+      "metricSet": "cement",
+      "relatedBasicIndustries": ["b-other-construction-materials", "b-coal", "b-civil-construction", "b-residential-commercial-projects", "b-industrial-minerals"],
+      "aliases": ["cement", "cement companies", "OPC", "PPC", "clinker", "ready mix concrete", "RMC", "white cement"],
+      "themes": ["Infrastructure"]
+    },
+    {
+      "id": "b-other-construction-materials",
+      "simplifiedExplanation": "Companies that make or supply building materials other than cement, such as roofing sheets, boards, blocks, panels and glass facades.",
+      "productsAndServices": [
+        "Fibre-cement roofing sheets and boards",
+        "Autoclaved aerated concrete (AAC) blocks",
+        "Gypsum boards and plaster",
+        "Glass facades and curtain walls",
+        "Fly-ash bricks and pavers",
+        "Wall panels and prefabricated building systems",
+        "B2B supply of building materials"
+      ],
+      "valueChainPosition": "Midstream: buys cement, fly ash, fibre, gypsum, glass and aluminium, and supplies dealers, developers, contractors and facade projects.",
+      "howTheyMakeMoney": "Product makers sell through dealers or directly to projects, earning margins from brands, reach and a lower installed cost than traditional methods. Facade and supply-platform firms earn on project contracts or trading margins.",
+      "revenueSources": [
+        "Dealer sales of sheets, boards and blocks",
+        "Facade and building-system contracts",
+        "Material supply to builders",
+        "Exports (some)"
+      ],
+      "operatingCosts": [
+        "Cement, fly ash, fibre and gypsum",
+        "Glass and aluminium sections",
+        "Power and fuel",
+        "Freight",
+        "Dealer and marketing expenses"
+      ],
+      "customersAndEndMarkets": "Rural and semi-urban households (roofing), real estate developers, commercial and office buildings, warehouses and infrastructure contractors.",
+      "demandSupplyDrivers": "Housing, rural incomes and commercial construction drive demand, helped by a shift from site-made bricks and plaster to factory-made products.",
+      "domesticInternationalExposure": "Mostly domestic; inputs such as fibre, gypsum and glass are partly imported or priced globally.",
+      "capexIntensity": "Medium",
+      "capexNote": "Plants are moderately capital-intensive, while project and trading businesses need little fixed capital.",
+      "workingCapital": "Moderate to high: dealer stocks and project receivables, with retention money held back on facade contracts.",
+      "regulation": "BIS standards for building products and environmental norms; asbestos-based products face health and regulatory scrutiny.",
+      "competitiveAdvantages": "Brand, dealer reach in rural markets, plants near fly-ash sources and design and execution skill for facades.",
+      "drivers": [
+        { "factor": "Real estate cycle", "impact": "Residential and commercial construction drive product demand." },
+        { "factor": "Rural demand", "impact": "Farm incomes affect demand for roofing sheets and low-cost building products." },
+        { "factor": "Infrastructure spending", "impact": "Public projects and warehouses add volume." },
+        { "factor": "Commodity prices", "impact": "Cement, fibre, glass and aluminium costs move margins." },
+        { "factor": "Technology change", "impact": "Prefabricated and lighter materials replace bricks and plaster." }
+      ],
+      "risks": [
+        { "risk": "Unorganised competition", "detail": "Local makers compete hard on price." },
+        { "risk": "Input cost swings", "detail": "Raw material spikes are hard to pass on quickly." },
+        { "risk": "Project delays", "detail": "Facade and supply contracts suffer when developers slow down." },
+        { "risk": "Material restrictions", "detail": "Curbs on asbestos or other materials could hit product lines." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Demand rises and falls with housing and commercial construction.",
+      "metricSet": "building-materials",
+      "relatedBasicIndustries": ["b-cement-and-cement-products", "b-plywood-boards-laminates", "b-glass-industrial", "b-ceramics", "b-residential-commercial-projects"],
+      "aliases": ["building materials", "construction materials", "roofing sheets", "fibre cement", "AAC blocks", "gypsum board", "facade", "curtain wall"],
+      "themes": ["Infrastructure", "Rural demand"]
+    },
+    {
+      "id": "b-ferro-and-silica-manganese",
+      "simplifiedExplanation": "Companies that smelt manganese ore, chrome ore or quartz with coke in electric furnaces to make ferro alloys, the additives steelmakers use to strengthen steel and remove oxygen from it.",
+      "productsAndServices": [
+        "Silico manganese",
+        "High-carbon and medium-carbon ferro manganese",
+        "Ferro chrome",
+        "Ferro silicon",
+        "Low-carbon and specialty ferro alloys",
+        "Surplus captive power (some)"
+      ],
+      "valueChainPosition": "Midstream: buys manganese and chrome ore, coke, quartz and large amounts of electricity, and sells alloys to steel mills and foundries in India and abroad.",
+      "howTheyMakeMoney": "They earn the gap between the alloy price and the cost of ore, reductant and power per tonne. Power is the biggest cost, so units with captive power or cheap tariffs earn better spreads.",
+      "revenueSources": [
+        "Alloy sales to domestic steel mills",
+        "Exports of ferro alloys",
+        "Conversion jobs for steelmakers (some)",
+        "Sale of surplus power (some)"
+      ],
+      "operatingCosts": [
+        "Electricity",
+        "Manganese and chrome ore",
+        "Coke and coal used as reductants",
+        "Electrode paste and quartz",
+        "Freight and handling"
+      ],
+      "customersAndEndMarkets": "Integrated and secondary steel plants, stainless steel makers, foundries and overseas steel producers.",
+      "demandSupplyDrivers": "Demand tracks steel production, especially stainless and alloy grades. Supply depends on ore availability, power costs and output decisions in large producing countries.",
+      "domesticInternationalExposure": "Alloy and ore prices follow global markets; many producers export and import manganese ore, so overseas steel demand and the rupee matter.",
+      "capexIntensity": "Medium",
+      "capexNote": "Submerged arc furnaces cost moderately, but adding a captive power plant raises the investment sharply.",
+      "workingCapital": "Moderate: ore and coke are bought in bulk ahead of use, and export receivables add to the cash tied up.",
+      "regulation": "State electricity tariffs and open-access rules, mining leases under the MMDR Act for captive ore, pollution control norms and changes in trade duties on ores and alloys.",
+      "competitiveAdvantages": "Captive power and ore, plants near ore mines or ports, and long supply ties with steel mills.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Global alloy and manganese ore prices set realisations and raw material costs." },
+        { "factor": "Power cost", "impact": "Electricity tariffs and coal prices decide the cost of every tonne smelted." },
+        { "factor": "Steel production", "impact": "Domestic steel output sets the volume of alloys needed." },
+        { "factor": "Exports & global demand", "impact": "Overseas steel output drives export orders and prices." },
+        { "factor": "Currency (INR)", "impact": "Moves export realisations and the cost of imported ore." }
+      ],
+      "risks": [
+        { "risk": "Power tariff hikes", "detail": "Costlier electricity can wipe out thin smelting margins." },
+        { "risk": "Alloy price crash", "detail": "Global oversupply can push prices below cost." },
+        { "risk": "Ore supply disruption", "detail": "Mining curbs or shipping problems can starve furnaces." },
+        { "risk": "Trade policy changes", "detail": "New duties at home or abroad can shift margins quickly." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Fortunes swing with steel production and global alloy prices.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-iron-and-steel", "b-industrial-minerals", "b-electrodes-and-refractories", "b-sponge-iron", "b-coal"],
+      "aliases": ["ferro alloys", "ferroalloys", "silico manganese", "silicomanganese", "ferro manganese", "ferro chrome", "ferro silicon", "manganese alloys"],
+      "themes": []
+    },
+    {
+      "id": "b-pig-iron",
+      "simplifiedExplanation": "Companies that melt iron ore with coke in small blast furnaces to make pig iron, a high-carbon iron sold in blocks to foundries and steelmakers.",
+      "productsAndServices": [
+        "Foundry-grade pig iron",
+        "Steel-grade (basic) pig iron",
+        "Ductile iron pipes (some)",
+        "Metallurgical coke (some)",
+        "Iron castings (some)",
+        "Slag and other by-products"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: buys iron ore, coking coal or coke and limestone, and supplies foundries, castings makers and secondary steel plants.",
+      "howTheyMakeMoney": "They earn the spread between the pig iron price and the cost of ore, coke and fluxes. Several convert hot metal straight into ductile iron pipes or castings, which earns more than selling plain pig iron.",
+      "revenueSources": [
+        "Merchant pig iron sales",
+        "Ductile iron pipes and castings (some)",
+        "Coke and by-product sales",
+        "Power from waste heat (some)"
+      ],
+      "operatingCosts": [
+        "Coking coal and coke",
+        "Iron ore",
+        "Limestone and fluxes",
+        "Power",
+        "Freight"
+      ],
+      "customersAndEndMarkets": "Foundries making castings for autos, tractors, pumps and machinery, secondary steel plants, and water and gas pipeline projects for pipe makers.",
+      "demandSupplyDrivers": "Demand follows foundry output, which tracks autos, tractors, pumps and capital goods, while water-supply schemes drive pipe demand. Integrated steel plants selling surplus pig iron add to supply.",
+      "domesticInternationalExposure": "Sales are mostly domestic, but coking coal is largely imported and pig iron prices follow global trade, so imports and the rupee matter.",
+      "capexIntensity": "Medium",
+      "capexNote": "Mini blast furnaces and coke ovens need sizeable investment, though far less than an integrated steel plant.",
+      "workingCapital": "Moderate: raw material stocks and foundry receivables, with pipe orders from government agencies sometimes paid late.",
+      "regulation": "Pollution control norms for blast furnaces and coke ovens, BIS standards for pipes and state mining rules that govern ore supply.",
+      "competitiveAdvantages": "Secure ore and coke supply, plants close to foundry clusters, and forward integration into pipes or castings.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Coking coal and iron ore prices drive the cost per tonne." },
+        { "factor": "Foundry and engineering output", "impact": "Casting demand from autos, tractors and machinery sets volumes." },
+        { "factor": "Infrastructure spending", "impact": "Water and gas pipeline schemes lift demand for ductile iron pipes." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported pig iron or castings can cap local prices." }
+      ],
+      "risks": [
+        { "risk": "Coke price spikes", "detail": "A jump in coking coal costs squeezes the spread." },
+        { "risk": "Surplus from big mills", "detail": "Large steel plants selling extra pig iron can depress prices." },
+        { "risk": "Delayed government payments", "detail": "Pipe orders from public agencies can stretch receivables." },
+        { "risk": "Emission rules", "detail": "Stricter norms can force costly upgrades or shutdowns." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes and spreads follow the foundry and engineering cycle.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-iron-and-steel", "b-sponge-iron", "b-castings-and-forgings", "b-iron-and-steel-products", "b-coal"],
+      "aliases": ["pig iron", "foundry grade pig iron", "hot metal", "mini blast furnace", "ductile iron pipes", "di pipes", "met coke"],
+      "themes": []
+    },
+    {
+      "id": "b-sponge-iron",
+      "simplifiedExplanation": "Companies that turn iron ore into sponge iron, also called direct reduced iron (DRI), by removing oxygen with coal or gas without melting it. Sponge iron is the main feed for induction and electric arc furnaces.",
+      "productsAndServices": [
+        "Sponge iron / DRI",
+        "Iron ore pellets (some)",
+        "Billets and TMT bars (integrated players)",
+        "Power from waste heat and coal fines",
+        "Char and iron fines"
+      ],
+      "valueChainPosition": "Midstream: buys iron ore or pellets and non-coking coal, and supplies secondary steelmakers that melt it with scrap in induction or electric furnaces.",
+      "howTheyMakeMoney": "They earn the spread between sponge iron prices and the cost of ore and coal. Many add pellet plants upstream, billets or TMT bars downstream and waste-heat power to capture more margin.",
+      "revenueSources": [
+        "Merchant sponge iron sales",
+        "Pellets, billets and TMT bars (some)",
+        "Sale of surplus power",
+        "By-product sales"
+      ],
+      "operatingCosts": [
+        "Iron ore and pellets",
+        "Non-coking coal (often imported)",
+        "Power",
+        "Freight",
+        "Kiln refractories and maintenance"
+      ],
+      "customersAndEndMarkets": "Induction furnace and electric arc furnace steelmakers, mostly producing long products such as bars and rods for construction.",
+      "demandSupplyDrivers": "Demand follows long-steel output and construction in India, and scrap prices decide how much DRI melters use. Margins hinge on iron ore supply from mining states and on coal prices.",
+      "domesticInternationalExposure": "Sales are mostly domestic; coal is often imported, and global scrap and steel prices influence realisations.",
+      "capexIntensity": "Medium",
+      "capexNote": "Rotary kilns are modest in cost, but pellet, power and steel melting units raise the investment.",
+      "workingCapital": "Moderate: ore and coal stocks are sizeable, buyers expect short credit and prices can change within weeks.",
+      "regulation": "Iron ore supply depends on state lease auctions under the MMDR Act; coal-based kilns face strict pollution control board norms and growing scrutiny on carbon emissions.",
+      "competitiveAdvantages": "Location near iron ore mines, captive ore or pellets, waste-heat power and integration into finished steel.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Iron ore and coal prices set costs, while steel scrap prices set what buyers will pay." },
+        { "factor": "Infrastructure spending", "impact": "Construction demand for TMT bars pulls sponge iron volumes." },
+        { "factor": "Raw material availability", "impact": "Mining disruptions or lease auctions can choke ore supply." },
+        { "factor": "Regulation", "impact": "Emission and carbon rules raise compliance costs for coal-based kilns." }
+      ],
+      "risks": [
+        { "risk": "Ore shortages", "detail": "Mining stoppages in key states can idle kilns." },
+        { "risk": "Spread squeeze", "detail": "Rising ore costs with flat steel prices narrow margins." },
+        { "risk": "Pollution action", "detail": "Closure orders or tighter norms can halt production." },
+        { "risk": "Decarbonisation", "detail": "Coal-based DRI may face pressure as steelmaking moves to cleaner routes." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Spreads swing with long-steel prices and iron ore costs.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-iron-and-steel", "b-pig-iron", "b-iron-and-steel-products", "b-coal", "b-industrial-minerals"],
+      "aliases": ["sponge iron", "dri", "direct reduced iron", "hbi", "iron ore pellets", "pellets", "rotary kiln"],
+      "themes": []
+    },
+    {
+      "id": "b-iron-and-steel",
+      "simplifiedExplanation": "Companies that make steel from iron ore, coal, scrap or sponge iron and sell it as flat sheets and coils or long products such as bars, rods and rails. Steel is a core material for construction, vehicles and machinery.",
+      "productsAndServices": [
+        "Hot-rolled and cold-rolled coils",
+        "Galvanised and coated sheets",
+        "TMT bars and wire rods",
+        "Structural sections and rails",
+        "Billets, blooms and slabs",
+        "Special and alloy steels",
+        "Stainless steel (some)"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: mines or buys iron ore, coking coal and scrap, and sells to auto, appliance, construction, pipe and engineering companies directly or through distributors.",
+      "howTheyMakeMoney": "They earn the gap between steel prices and the cost of ore, coking coal, power and conversion per tonne. Captive ore, efficient furnaces and more value-added grades protect margins through the cycle.",
+      "revenueSources": [
+        "Flat products for autos, appliances and pipes",
+        "Long products for construction and infrastructure",
+        "Value-added coated and alloy steels",
+        "Exports",
+        "By-products such as slag and power"
+      ],
+      "operatingCosts": [
+        "Coking coal (largely imported)",
+        "Iron ore and pellets",
+        "Steel scrap",
+        "Power and fuel",
+        "Ferro alloys and refractories",
+        "Freight and logistics"
+      ],
+      "customersAndEndMarkets": "Construction and infrastructure, automobiles, consumer durables, capital goods, pipe makers, railways and defence.",
+      "demandSupplyDrivers": "Demand follows construction, infrastructure and manufacturing activity. Prices depend on domestic capacity additions versus demand, with import parity acting as a ceiling.",
+      "domesticInternationalExposure": "Sales are mainly domestic, but prices track global steel markets; coking coal imports, cheap steel imports and trade duties strongly affect margins.",
+      "capexIntensity": "High",
+      "capexNote": "Blast furnaces, rolling mills and captive mines need very large investment and long build periods.",
+      "workingCapital": "Moderate: large raw material and finished steel stocks, partly funded by supplier credit, with dealers buying on short credit.",
+      "regulation": "Iron ore and coal block auctions under the MMDR Act, BIS quality control orders on steel, safeguard and anti-dumping duties on imports, and emission and carbon rules.",
+      "competitiveAdvantages": "Scale, captive iron ore, low conversion cost, a value-added product mix and wide distribution reach.",
+      "drivers": [
+        { "factor": "Infrastructure spending", "impact": "Roads, railways, metros and housing lift long and flat steel demand." },
+        { "factor": "Commodity prices", "impact": "Coking coal and iron ore costs move margins sharply." },
+        { "factor": "Imports & dumping", "impact": "Cheap imports from surplus countries can drag domestic prices down." },
+        { "factor": "Government policy", "impact": "Safeguard duties, export duties and quality orders change price parity." },
+        { "factor": "Capacity utilisation", "impact": "High fixed costs make plant loading a key profit lever." }
+      ],
+      "risks": [
+        { "risk": "Import surge", "detail": "Global oversupply can flood India with cheap steel." },
+        { "risk": "Coking coal spikes", "detail": "Sudden coal price jumps are hard to pass on." },
+        { "risk": "Debt-funded expansion", "detail": "Large projects add leverage just before downturns." },
+        { "risk": "Carbon costs", "detail": "Carbon border taxes abroad and decarbonisation targets at home add cost." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Steel prices and margins rise and fall sharply with the economic and capacity cycle.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-iron-and-steel-products", "b-sponge-iron", "b-ferro-and-silica-manganese", "b-trading-metals", "b-civil-construction"],
+      "aliases": ["steel", "steel companies", "iron and steel", "tmt bars", "hr coil", "hot rolled coil", "galvanised steel", "stainless steel", "flat steel", "long steel"],
+      "themes": ["Infrastructure"]
+    },
+    {
+      "id": "b-aluminium",
+      "simplifiedExplanation": "Companies that refine bauxite into alumina and smelt it into aluminium, a light metal used in power lines, vehicles, packaging and buildings. Some recycle scrap or roll bought metal instead.",
+      "productsAndServices": [
+        "Primary aluminium ingots and billets",
+        "Alumina and hydrate",
+        "Wire rods for conductors",
+        "Rolled sheets, foils and extrusions",
+        "Recycled aluminium alloys",
+        "Bauxite (some)"
+      ],
+      "valueChainPosition": "Upstream: mines bauxite, refines alumina and smelts metal using coal-based captive or grid power, and supplies cable, auto, packaging and construction-product makers.",
+      "howTheyMakeMoney": "Primary producers earn the global aluminium price plus a local premium, minus a cost per tonne dominated by power and alumina. Recyclers earn the spread between scrap and alloy prices.",
+      "revenueSources": [
+        "Primary metal sales",
+        "Value-added rods, billets and rolled products",
+        "Alumina sales",
+        "Exports",
+        "Surplus power (some)"
+      ],
+      "operatingCosts": [
+        "Power and coal",
+        "Alumina or bauxite",
+        "Carbon anodes, pitch and coke",
+        "Caustic soda",
+        "Freight",
+        "Aluminium scrap (recyclers)"
+      ],
+      "customersAndEndMarkets": "Power transmission and cable makers, automobiles, packaging, building and construction, consumer durables and overseas buyers.",
+      "demandSupplyDrivers": "Demand grows with power grids, lighter vehicles including EVs, packaging and construction. Global supply, especially policy-led output changes in large producing countries, sets the price.",
+      "domesticInternationalExposure": "Prices are set on the London Metal Exchange, so the global price and the rupee drive realisations; part of output is exported, and imported scrap competes in India.",
+      "capexIntensity": "High",
+      "capexNote": "Refineries, smelters and captive power plants are among the most capital-heavy assets in industry.",
+      "workingCapital": "Moderate: stocks of alumina, coal and metal plus export receivables, with selling prices linked to global benchmarks.",
+      "regulation": "Bauxite and coal leases under the MMDR Act, environmental clearances for mines and red mud disposal, import duties on scrap and primary metal, and power and emission rules.",
+      "competitiveAdvantages": "Captive bauxite, coal and power, large scale and a high share of value-added products put integrated players low on the cost curve.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "The global aluminium price is the biggest swing factor for profits." },
+        { "factor": "Power cost", "impact": "Coal and power costs decide where a smelter sits on the global cost curve." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises realisations on dollar-linked prices." },
+        { "factor": "Infrastructure spending", "impact": "Transmission lines and construction lift domestic demand." },
+        { "factor": "Technology change", "impact": "Vehicle lightweighting and EVs increase aluminium use." }
+      ],
+      "risks": [
+        { "risk": "Price crash", "detail": "A global slowdown or oversupply can cut prices sharply." },
+        { "risk": "Coal and power shocks", "detail": "Coal shortages or costlier power raise smelting costs." },
+        { "risk": "Carbon cost", "detail": "Smelting is emission-heavy, so carbon taxes could add cost." },
+        { "risk": "Cheap imports", "detail": "Imported metal and scrap can erode domestic premiums." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Earnings track global aluminium prices, which move with world growth and supply policy.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-aluminium-copper-and-zinc-products", "b-diversified-metals", "b-industrial-minerals", "b-coal", "b-cables-electricals"],
+      "aliases": ["aluminium", "aluminum", "alumina", "bauxite", "aluminium smelter", "primary aluminium", "aluminium ingots", "aluminium recycling"],
+      "themes": ["EV", "Infrastructure"]
+    },
+    {
+      "id": "b-copper",
+      "simplifiedExplanation": "Companies that mine copper ore or smelt and refine imported concentrate into pure copper cathodes and rods, the metal at the heart of wires, motors and power equipment.",
+      "productsAndServices": [
+        "Copper cathodes",
+        "Continuous cast copper rods",
+        "Copper concentrate (miners)",
+        "Sulphuric and phosphoric acid (by-products)",
+        "Gold and silver recovered from anode slime",
+        "Copper tubes and strips (some)"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: mines ore or imports concentrate, smelts and refines it, and supplies cable, wire, transformer, motor and electronics makers.",
+      "howTheyMakeMoney": "Custom smelters earn treatment and refining charges paid by miners, plus by-product income and a premium on rods, so they are less exposed to the copper price itself. Miners keep the copper price minus mining cost, so their profits swing with global prices.",
+      "revenueSources": [
+        "Treatment and refining charges",
+        "Cathode and rod sales",
+        "By-product acids",
+        "Precious metals recovered from slime",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Copper concentrate (mostly imported)",
+        "Power and fuel",
+        "Port handling and logistics",
+        "Mining and royalty costs (miners)",
+        "Effluent and emission control"
+      ],
+      "customersAndEndMarkets": "Cable and wire makers, power transmission and distribution equipment, motors, appliances, construction, autos and electronics.",
+      "demandSupplyDrivers": "Demand rises with electrification, power grids, renewable energy, EVs and construction. Smelter earnings depend on global concentrate supply: when mines produce less, treatment charges fall.",
+      "domesticInternationalExposure": "Highly global: concentrate is largely imported, prices follow the London Metal Exchange and the rupee, and refined copper competes with imports.",
+      "capexIntensity": "High",
+      "capexNote": "Smelters, refineries and mines need large investment and long approval periods.",
+      "workingCapital": "High: concentrate and metal in process are costly to hold and are usually financed with buyer's credit and hedged on exchanges.",
+      "regulation": "Pollution control and environmental clearances for smelters, mining leases under the MMDR Act, and import duties and trade agreements that affect refined copper imports.",
+      "competitiveAdvantages": "Efficient large smelters, secure concentrate contracts, port proximity, strong by-product recovery and captive mines.",
+      "drivers": [
+        { "factor": "Treatment charges", "impact": "Global concentrate supply sets how much smelters earn per tonne processed." },
+        { "factor": "Electricity demand", "impact": "Grid and renewable power build-out lifts copper use." },
+        { "factor": "Technology change", "impact": "EVs, data centres and electronics use more copper per unit." },
+        { "factor": "Imports & dumping", "impact": "Low-duty imports under trade agreements can pressure domestic premiums." },
+        { "factor": "Currency (INR)", "impact": "Moves the rupee value of dollar-priced metal and concentrate." }
+      ],
+      "risks": [
+        { "risk": "Concentrate shortage", "detail": "Tight mine supply cuts treatment charges and smelter margins." },
+        { "risk": "Environmental shutdown", "detail": "Pollution concerns can lead to smelter closures." },
+        { "risk": "Price volatility", "detail": "Unhedged inventory can cause losses when copper prices fall." },
+        { "risk": "Import competition", "detail": "Duty-free refined copper can undercut local producers." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Demand follows industrial and power investment cycles, while smelter margins follow global concentrate supply.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-aluminium-copper-and-zinc-products", "b-cables-electricals", "b-diversified-metals", "b-precious-metals", "b-commodity-chemicals"],
+      "aliases": ["copper", "copper smelter", "copper cathode", "copper rods", "cc rods", "copper mining", "tc rc", "treatment charges"],
+      "themes": ["EV", "Renewable energy"]
+    },
+    {
+      "id": "b-zinc",
+      "simplifiedExplanation": "Companies that mine zinc-lead ore and smelt it into zinc, lead and silver, or recycle used batteries and residues into these metals. Zinc's biggest use is galvanising steel to stop rust.",
+      "productsAndServices": [
+        "Zinc ingots",
+        "Lead ingots and alloys",
+        "Silver (by-product)",
+        "Zinc oxide and zinc dust",
+        "Recycled lead from used batteries",
+        "Sulphuric acid (by-product)"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: mines ore or collects scrap and battery waste, smelts and refines it, and supplies galvanisers, battery makers, die-casters and chemical users.",
+      "howTheyMakeMoney": "Miners and smelters earn the global metal price minus mining and smelting cost, with silver adding meaningful income. Recyclers earn the spread between scrap or battery waste prices and refined metal prices.",
+      "revenueSources": [
+        "Zinc metal sales",
+        "Lead metal sales",
+        "Silver sales",
+        "Recycled lead and alloys",
+        "By-product acid and power"
+      ],
+      "operatingCosts": [
+        "Mining and ore extraction",
+        "Power and coal",
+        "Scrap and used batteries (recyclers)",
+        "Royalty and statutory payments",
+        "Freight"
+      ],
+      "customersAndEndMarkets": "Steel galvanisers, battery makers for vehicles and inverters, die-casting and brass makers, tyre and paint makers using zinc oxide, and silver buyers.",
+      "demandSupplyDrivers": "Zinc demand follows galvanised steel for towers, roofing, highways and autos, while lead follows vehicle and backup-power batteries. Global mine and smelter output decide prices.",
+      "domesticInternationalExposure": "Prices are set on the London Metal Exchange, so global prices and the rupee drive earnings; recyclers rely partly on imported scrap and also export.",
+      "capexIntensity": "High",
+      "capexNote": "Underground mines and smelters are very capital-heavy, though recycling plants need far less.",
+      "workingCapital": "Moderate: ore and metal in process for miners, while recyclers need cash to buy battery scrap ahead of sales.",
+      "regulation": "Mining leases and royalties under the MMDR Act, Battery Waste Management Rules for recyclers, pollution control norms and hazardous waste rules on scrap imports.",
+      "competitiveAdvantages": "High-grade captive mines with long reserve life, low-cost smelting and silver by-products; for recyclers, licences and collection networks.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Zinc, lead and silver prices move profits directly." },
+        { "factor": "Infrastructure spending", "impact": "Galvanised steel for towers, roofs and highways lifts zinc demand." },
+        { "factor": "Regulation", "impact": "Battery recycling rules push volumes towards formal recyclers." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises realisations on dollar-linked metal prices." },
+        { "factor": "Exports & global demand", "impact": "World industrial activity sets global zinc and lead prices." }
+      ],
+      "risks": [
+        { "risk": "Metal price falls", "detail": "Lower global prices hit miners and recyclers alike." },
+        { "risk": "Ore grade decline", "detail": "Lower grades over time raise mining cost per tonne." },
+        { "risk": "Hazardous handling", "detail": "Lead emissions and waste bring strict scrutiny and penalties." },
+        { "risk": "Royalty changes", "detail": "Higher levies on mined metal reduce margins." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Earnings follow global zinc, lead and silver prices and construction activity.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-diversified-metals", "b-aluminium-copper-and-zinc-products", "b-iron-and-steel-products", "b-precious-metals", "b-auto-components-and-equipments"],
+      "aliases": ["zinc", "lead", "zinc smelter", "lead recycling", "battery recycling", "galvanizing", "zinc oxide", "silver"],
+      "themes": []
+    },
+    {
+      "id": "b-precious-metals",
+      "simplifiedExplanation": "Companies that refine, process or trade gold, silver and platinum-group metals, turning imported dore, bullion or old jewellery into standard bars, coins and industrial forms.",
+      "productsAndServices": [
+        "Refined gold and silver bars",
+        "Coins and medallions",
+        "Gold and silver grains",
+        "Recycled gold from old jewellery",
+        "Silver for industrial use",
+        "Bullion trading"
+      ],
+      "valueChainPosition": "Midstream: imports dore or bullion or collects scrap, refines it, and sells to jewellers, banks, investors and industrial users.",
+      "howTheyMakeMoney": "They earn small refining and processing margins per gram plus trading spreads. The metal price itself is usually passed on or hedged, so volumes and hedging discipline decide profits.",
+      "revenueSources": [
+        "Refining charges",
+        "Bullion and bar sales",
+        "Coin sales",
+        "Scrap gold recycling",
+        "Industrial silver sales"
+      ],
+      "operatingCosts": [
+        "Gold and silver purchases (largely passed on)",
+        "Hedging and financing costs",
+        "Refining chemicals and power",
+        "Security, insurance and vaulting",
+        "Assaying and logistics"
+      ],
+      "customersAndEndMarkets": "Jewellery makers and retailers, banks and bullion dealers, retail investors, and electronics, solar and other industrial silver users.",
+      "demandSupplyDrivers": "Demand follows jewellery buying around weddings and festivals, investment flows into gold and silver, and industrial silver use. Supply comes from imports and from old gold recycled when prices are high.",
+      "domesticInternationalExposure": "India imports almost all its gold and silver, so global prices, the rupee and import duties shape volumes and margins.",
+      "capexIntensity": "Low",
+      "capexNote": "Refineries and assaying units need modest capital; most money is tied up in metal inventory.",
+      "workingCapital": "Very high: metal inventory is costly, is financed through metal loans or bank lines, and must be hedged against price moves.",
+      "regulation": "RBI and DGFT rules on bullion imports, customs duty on gold and silver, BIS hallmarking and refinery standards, GST, and anti-money-laundering checks on bullion dealing.",
+      "competitiveAdvantages": "Accreditation and trust with banks and jewellers, certified refining, sourcing access and efficient hedging.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "High gold prices lift scrap recycling but can slow jewellery buying." },
+        { "factor": "Government policy", "impact": "Import duty changes shift volumes between official and grey channels." },
+        { "factor": "Consumer demand", "impact": "Weddings and festivals drive jewellery and coin demand." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises local gold and silver prices." },
+        { "factor": "Interest rates", "impact": "Rates affect investment demand for gold and the cost of funding inventory." }
+      ],
+      "risks": [
+        { "risk": "Hedging losses", "detail": "Unhedged or badly hedged positions can cause large losses." },
+        { "risk": "Duty changes", "detail": "Sudden import duty moves can disrupt volumes and inventory values." },
+        { "risk": "Smuggling", "detail": "Grey-market gold undercuts legitimate refiners when duties are high." },
+        { "risk": "Thin margins", "detail": "Small per-gram margins leave little room for error." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Gold demand often rises in uncertain times, but volumes swing with prices and duties.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-gems-jewellery-and-watches", "b-copper", "b-zinc", "b-trading-metals"],
+      "aliases": ["gold", "silver", "bullion", "gold refinery", "precious metals", "platinum", "gold bars", "silver bars"],
+      "themes": []
+    },
+    {
+      "id": "b-diversified-metals",
+      "simplifiedExplanation": "Companies that produce, refine or recycle several metals at once, such as zinc, lead, silver, aluminium, copper or iron ore, instead of depending on a single metal.",
+      "productsAndServices": [
+        "Zinc, lead and silver",
+        "Aluminium and alumina",
+        "Copper",
+        "Iron ore",
+        "Metals recovered from scrap and residues",
+        "Power and oil (some groups)"
+      ],
+      "valueChainPosition": "Upstream-to-midstream: owns mines, smelters or recycling plants across metals and sells to steel, cable, battery, auto and construction-product makers worldwide.",
+      "howTheyMakeMoney": "Each business earns its metal price minus its own cost, so group profit is the sum of several metal cycles. Holding structures also collect dividends from listed subsidiaries, while recyclers earn the spread between scrap and refined metal.",
+      "revenueSources": [
+        "Sales of several base metals",
+        "Precious metal by-products",
+        "Iron ore and other minerals",
+        "Recycled metal sales",
+        "Dividends from subsidiaries (holding structures)"
+      ],
+      "operatingCosts": [
+        "Power and coal",
+        "Mining and royalty costs",
+        "Purchased ore, concentrate or scrap",
+        "Logistics",
+        "Interest on group debt"
+      ],
+      "customersAndEndMarkets": "Steel mills, galvanisers, cable and conductor makers, battery makers, auto and packaging industries, and global commodity buyers.",
+      "demandSupplyDrivers": "Demand follows global industrial activity, construction and electrification. Each metal has its own supply cycle, so the mix of prices at any time decides group profit.",
+      "domesticInternationalExposure": "Prices are set on global exchanges and many products are exported, so world prices and the rupee matter for every segment.",
+      "capexIntensity": "High",
+      "capexNote": "Mines, smelters and power plants across several metals need continuous heavy investment.",
+      "workingCapital": "Moderate: metal and ore inventories plus export receivables, with cash often moving between group companies.",
+      "regulation": "Mining leases and royalties under the MMDR Act, environmental clearances, SEBI rules on related-party transactions, and trade duties on metals and scrap.",
+      "competitiveAdvantages": "Low-cost captive mines across several metals, scale, integration with power and the cushion a spread of metals provides.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Moves across several metal prices together drive group earnings." },
+        { "factor": "Exports & global demand", "impact": "Global growth sets demand for most of the metals in the mix." },
+        { "factor": "Currency (INR)", "impact": "Dollar-linked prices make the rupee a direct profit lever." },
+        { "factor": "Interest rates", "impact": "Large group borrowings make funding costs matter." },
+        { "factor": "Technology change", "impact": "Electrification and batteries favour certain metals in the portfolio." }
+      ],
+      "risks": [
+        { "risk": "Group debt", "detail": "High holding-company debt can drain cash from operating units." },
+        { "risk": "Governance", "detail": "Related-party dealings and dividend policies need close watching." },
+        { "risk": "Regulatory disputes", "detail": "Mining, tax or environmental cases can stall operations." },
+        { "risk": "Synchronised downturn", "detail": "A global slowdown can hit all metals at once." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Diversification softens swings, but most metals still fall together in a global slowdown.",
+      "metricSet": "metals",
+      "relatedBasicIndustries": ["b-zinc", "b-aluminium", "b-copper", "b-industrial-minerals", "b-precious-metals"],
+      "aliases": ["diversified metals", "base metals", "metals and mining", "non-ferrous metals", "metal recycling", "mining conglomerate", "natural resources"],
+      "themes": []
+    },
+    {
+      "id": "b-industrial-minerals",
+      "simplifiedExplanation": "Companies that mine or process minerals such as iron ore, manganese ore, bentonite, kaolin, barytes or calcium carbonate, selling them raw or upgraded into fine powders for industry.",
+      "productsAndServices": [
+        "Iron ore lumps and fines",
+        "Manganese ore",
+        "Bentonite and barytes",
+        "Kaolin and china clay",
+        "Ground and precipitated calcium carbonate",
+        "Quartz, silica and feldspar",
+        "Beneficiation and mineral processing services"
+      ],
+      "valueChainPosition": "Upstream: extracts minerals from leased mines or buys them from miners, then crushes, washes, grinds or beneficiates them for steel, foundry, paint, plastics, paper, ceramics and drilling customers.",
+      "howTheyMakeMoney": "Ore miners earn the realised price per tonne minus mining cost, royalty and auction premiums paid to the state. Mineral processors earn more per tonne by grinding, coating or purifying minerals to tight customer specifications.",
+      "revenueSources": [
+        "Ore sales to steel and alloy plants",
+        "Processed mineral powders",
+        "Exports of ore or processed minerals",
+        "Mining contract services (some)"
+      ],
+      "operatingCosts": [
+        "Mining and excavation",
+        "Royalty, district mineral fund and auction premiums",
+        "Diesel and power",
+        "Freight to customers or ports",
+        "Grinding and processing"
+      ],
+      "customersAndEndMarkets": "Steel, sponge iron and ferro alloy plants, foundries, paint, plastics, paper and ceramic makers, oil drilling firms and overseas buyers.",
+      "demandSupplyDrivers": "Iron and manganese ore demand follows steel output, while processed minerals follow paints, plastics, paper, ceramics and drilling. Supply is controlled by lease auctions, production caps and clearances.",
+      "domesticInternationalExposure": "Ore prices take cues from global markets and export duties; processed minerals face import competition but also find overseas buyers.",
+      "capexIntensity": "Medium",
+      "capexNote": "Opencast mining equipment and processing plants need moderate capital, and winning leases at auction adds upfront cost.",
+      "workingCapital": "Moderate: stockpiles at mines and ports, mining pauses in the monsoon and credit to industrial buyers.",
+      "regulation": "State governments auction leases under the MMDR Act and collect royalty and district mineral fund payments; environmental and forest clearances and court-ordered output limits also apply.",
+      "competitiveAdvantages": "Long-life leases with good-grade reserves, proximity to customers or ports, and processing know-how for specialty grades.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Lease auctions, royalty rates and export duties shape costs and access." },
+        { "factor": "Commodity prices", "impact": "Global iron ore prices set domestic ore realisations." },
+        { "factor": "Infrastructure spending", "impact": "Construction-led steel demand lifts iron and manganese ore offtake." },
+        { "factor": "Monsoon & agriculture", "impact": "Heavy rains slow mining and dispatches." },
+        { "factor": "Exports & global demand", "impact": "Overseas demand absorbs ore and processed minerals." }
+      ],
+      "risks": [
+        { "risk": "Lease expiry", "detail": "Losing a lease at renewal or auction can end production." },
+        { "risk": "Mining bans", "detail": "Court or environmental orders can halt mining suddenly." },
+        { "risk": "Price swings", "detail": "Global ore price falls cut realisations quickly." },
+        { "risk": "Logistics bottlenecks", "detail": "Rail and port constraints can strand output." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Ore volumes and prices follow the steel cycle, while specialty minerals are steadier.",
+      "metricSet": "mining",
+      "relatedBasicIndustries": ["b-iron-and-steel", "b-sponge-iron", "b-ferro-and-silica-manganese", "b-trading-minerals", "b-ceramics"],
+      "aliases": ["mining", "iron ore", "manganese ore", "minerals", "bentonite", "kaolin", "china clay", "calcium carbonate", "barytes", "mineral processing"],
+      "themes": []
+    },
+    {
+      "id": "b-trading-metals",
+      "simplifiedExplanation": "These are traders and stockists rather than producers: they buy steel, non-ferrous metals or scrap from mills and overseas suppliers and resell them in smaller lots to fabricators, manufacturers and builders.",
+      "productsAndServices": [
+        "Steel sheets, coils, bars and pipes",
+        "Aluminium, copper and brass stock",
+        "Ferrous and non-ferrous scrap",
+        "Stainless steel",
+        "Cutting, slitting and processing services",
+        "Import sourcing"
+      ],
+      "valueChainPosition": "Downstream: sits between steel mills, smelters or overseas suppliers and fragmented buyers such as fabricators, small manufacturers, contractors and recyclers.",
+      "howTheyMakeMoney": "They earn a margin per tonne plus service income from cutting to size, credit and delivery. Margins are thin, so turning inventory quickly and buying at the right time matter more than price levels.",
+      "revenueSources": [
+        "Resale of steel and metal products",
+        "Scrap trading",
+        "Processing and service charges",
+        "Import indent commissions (some)"
+      ],
+      "operatingCosts": [
+        "Purchase cost of metal",
+        "Freight and warehousing",
+        "Interest on inventory and receivables",
+        "Processing labour and power",
+        "Customs duty on imports"
+      ],
+      "customersAndEndMarkets": "Small and mid-sized manufacturers, fabricators, construction contractors, auto and engineering ancillaries, and scrap-consuming mills.",
+      "demandSupplyDrivers": "Volumes follow construction and small-industry activity and the needs of buyers too small to deal directly with mills. Mill pricing policies and import availability shape margins.",
+      "domesticInternationalExposure": "Mostly domestic, though many import metals or scrap, so global prices, freight and the rupee affect landed cost.",
+      "capexIntensity": "Low",
+      "capexNote": "Warehouses and service-centre equipment need little fixed capital.",
+      "workingCapital": "High: inventory and customer credit are the core of the business and are funded with bank lines.",
+      "regulation": "Light, general business regulation, plus GST compliance, customs and import duties, and quality control orders on imported steel.",
+      "competitiveAdvantages": "Distributorships or supply tie-ups with mills, credit judgement, well-located warehouses and a wide range of grades in stock.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Falling metal prices cause inventory losses, while rising prices create gains." },
+        { "factor": "Infrastructure spending", "impact": "Construction and fabrication activity sets trading volumes." },
+        { "factor": "Credit growth", "impact": "Bank funding for stock and customer credit limits how much they can trade." },
+        { "factor": "Imports & dumping", "impact": "Import duties and quality rules change sourcing options and margins." }
+      ],
+      "risks": [
+        { "risk": "Inventory losses", "detail": "Sharp price drops hit traders holding large stocks." },
+        { "risk": "Bad debts", "detail": "Small buyers may delay or default on payments." },
+        { "risk": "Tax scrutiny", "detail": "Scrap and metal trading draws close checks on GST input credits." },
+        { "risk": "Disintermediation", "detail": "Mills selling directly to buyers can squeeze traders." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes and margins swing with metal prices and construction activity.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": ["b-iron-and-steel", "b-iron-and-steel-products", "b-aluminium-copper-and-zinc-products", "b-trading-minerals", "b-trading-and-distributors"],
+      "aliases": ["metal trading", "steel trading", "steel trader", "steel stockist", "scrap trading", "metal scrap", "non-ferrous trading", "steel service centre"],
+      "themes": []
+    },
+    {
+      "id": "b-trading-minerals",
+      "simplifiedExplanation": "These companies trade minerals rather than mine them: they buy ores, industrial minerals or imported raw materials and supply them to plants, often arranging transport and blending.",
+      "productsAndServices": [
+        "Iron ore and manganese ore",
+        "Bauxite and other ores",
+        "Gypsum, limestone, quartz and other industrial minerals",
+        "Imported minerals for fertiliser and chemical plants",
+        "Sourcing, blending and logistics services"
+      ],
+      "valueChainPosition": "Midstream: connects miners at home and abroad with steel, cement, ceramic, alloy and chemical plants, handling shipping, port and rail logistics.",
+      "howTheyMakeMoney": "They earn a margin between purchase cost and delivered sale price, plus fees for sourcing, blending and logistics. Some run mining contracts and sell output on behalf of lease holders.",
+      "revenueSources": [
+        "Mineral resale margins",
+        "Sourcing and logistics fees",
+        "Import trading",
+        "Export sales (some)"
+      ],
+      "operatingCosts": [
+        "Mineral purchase cost",
+        "Ocean freight and port charges",
+        "Rail and road transport",
+        "Financing costs",
+        "Customs duties"
+      ],
+      "customersAndEndMarkets": "Steel, sponge iron and ferro alloy plants, cement, ceramic, glass and fertiliser makers, and overseas buyers.",
+      "demandSupplyDrivers": "Demand follows output at steel, cement and ceramic plants; gaps left by domestic mining restrictions create room for imports and trading.",
+      "domesticInternationalExposure": "Highly exposed to global mineral prices, freight rates and the rupee, since many minerals are imported or exported.",
+      "capexIntensity": "Low",
+      "capexNote": "The business is asset-light, though some players own stockyards or handling equipment.",
+      "workingCapital": "High: cargoes and stockpiles are paid for before resale, with heavy use of letters of credit and buyer's credit.",
+      "regulation": "Mineral transit permits and state mining rules, export and import duties, and customs and foreign trade policy administered by DGFT.",
+      "competitiveAdvantages": "Long relationships with mines and buyers, logistics capability and access to trade finance.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Mineral price moves change margins on cargoes in transit." },
+        { "factor": "Government policy", "impact": "Mining bans, export duties and import rules decide trade flows." },
+        { "factor": "Raw material availability", "impact": "Domestic mining disruptions raise reliance on traders and imports." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the landed cost of imported minerals." }
+      ],
+      "risks": [
+        { "risk": "Price and freight swings", "detail": "Sudden moves can turn a cargo loss-making." },
+        { "risk": "Counterparty default", "detail": "Buyers or suppliers failing to honour contracts cause losses." },
+        { "risk": "Policy changes", "detail": "New duties or mining curbs can stop a trade route." },
+        { "risk": "Customer concentration", "detail": "Dependence on a few buyers can hit volumes." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Trade volumes rise and fall with the steel and construction cycle and mineral prices.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": ["b-industrial-minerals", "b-trading-metals", "b-trading-coal", "b-shipping", "b-iron-and-steel"],
+      "aliases": ["mineral trading", "ore trading", "iron ore trading", "minerals trader", "mineral imports", "ore exports"],
+      "themes": []
+    },
+    {
+      "id": "b-paper-and-paper-products",
+      "simplifiedExplanation": "Companies that turn wood, bamboo, farm residue or waste paper into pulp and then into writing paper, packaging board, newsprint and specialty papers.",
+      "productsAndServices": [
+        "Writing and printing paper",
+        "Copier paper",
+        "Virgin and recycled packaging board",
+        "Kraft paper for corrugated boxes",
+        "Newsprint",
+        "Tissue and specialty papers",
+        "Paper cups and plates (some)"
+      ],
+      "valueChainPosition": "Midstream: buys wood from farm forestry, agro residue or recovered paper, and supplies printers, publishers, carton and box makers, and FMCG, pharma and e-commerce packagers.",
+      "howTheyMakeMoney": "They earn the price per tonne of paper or board minus fibre, chemicals, energy and freight. Integrated mills with their own pulp and power and a premium grade mix earn steadier margins than waste-paper-based kraft mills.",
+      "revenueSources": [
+        "Writing and printing paper",
+        "Packaging board and kraft paper",
+        "Specialty and tissue papers",
+        "Exports",
+        "Surplus power (some)"
+      ],
+      "operatingCosts": [
+        "Wood, bamboo and agro residue",
+        "Imported and domestic waste paper",
+        "Coal and power",
+        "Chemicals such as caustic soda",
+        "Freight",
+        "Water and effluent treatment"
+      ],
+      "customersAndEndMarkets": "Notebook and textbook makers, offices and printers, publishers, FMCG and pharma packaging, corrugated box makers and e-commerce.",
+      "demandSupplyDrivers": "Packaging board grows with consumption, e-commerce and the move away from plastics, while writing paper depends on education and office use. New mill capacity and imports decide price discipline.",
+      "domesticInternationalExposure": "Mainly domestic, but imported pulp and waste paper and cheap paper or board imports from Asian producers affect costs and prices.",
+      "capexIntensity": "High",
+      "capexNote": "Pulp mills, paper machines and chemical recovery and power plants need large investment.",
+      "workingCapital": "Moderate: wood and waste-paper stocks, seasonal notebook demand before the school year, and dealer credit.",
+      "regulation": "Pollution control board effluent norms, forest and plantation rules for wood, plastic-ban rules that favour paper, and import duties.",
+      "competitiveAdvantages": "Integrated pulp and captive power, plantation-backed wood supply, value-added board grades and strong dealer networks.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "FMCG and e-commerce growth lifts packaging board demand." },
+        { "factor": "Raw material availability", "impact": "Wood and waste paper supply sets fibre costs." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported paper and board can cap domestic prices." },
+        { "factor": "Regulation", "impact": "Single-use plastic bans shift packaging towards paper." },
+        { "factor": "Commodity prices", "impact": "Coal, pulp and chemical prices move cost per tonne." }
+      ],
+      "risks": [
+        { "risk": "Cheap imports", "detail": "Imports from low-cost producers can force price cuts." },
+        { "risk": "Fibre shortages", "detail": "Scarce wood or waste paper raises costs sharply." },
+        { "risk": "Capacity glut", "detail": "New board capacity can flood the market." },
+        { "risk": "Effluent compliance", "detail": "Water use and discharge norms can force upgrades or closures." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Packaging demand is steady, but paper prices swing with capacity additions and imports.",
+      "metricSet": "paper-forest",
+      "relatedBasicIndustries": ["b-packaging", "b-forest-products", "b-stationary", "b-printing-and-publication", "b-commodity-chemicals"],
+      "aliases": ["paper", "paper mills", "paperboard", "kraft paper", "writing paper", "packaging board", "duplex board", "newsprint", "tissue paper", "pulp"],
+      "themes": []
+    },
+    {
+      "id": "b-forest-products",
+      "simplifiedExplanation": "Companies that grow, harvest, process or trade timber and other forest and plantation produce, such as logs, sawn wood and veneers.",
+      "productsAndServices": [
+        "Logs and sawn timber",
+        "Veneers",
+        "Plantation wood such as eucalyptus and teak",
+        "Wood pallets and packaging",
+        "Treated and seasoned timber",
+        "Minor forest produce (some)"
+      ],
+      "valueChainPosition": "Upstream: sources logs from plantations, farm forestry or imports, and supplies sawmills, plywood and furniture makers, builders and paper mills.",
+      "howTheyMakeMoney": "They earn the margin between log costs and the price of processed timber, plus income from plantations or timber trading. The usable yield from each log and how fast stock turns decide profit.",
+      "revenueSources": [
+        "Timber and log sales",
+        "Processed wood and veneers",
+        "Plantation produce",
+        "Wood packaging"
+      ],
+      "operatingCosts": [
+        "Log and timber purchases",
+        "Import freight and duties",
+        "Sawmill labour and power",
+        "Seasoning and treatment",
+        "Warehousing and transport"
+      ],
+      "customersAndEndMarkets": "Plywood and furniture makers, builders and carpenters, packaging and pallet users, and paper mills.",
+      "demandSupplyDrivers": "Demand follows housing, furniture and packaging activity. Supply depends on plantation harvests, felling rules and timber imports from producing countries.",
+      "domesticInternationalExposure": "India relies on imported logs and sawn timber, so log export bans abroad, ocean freight and the rupee affect costs.",
+      "capexIntensity": "Low",
+      "capexNote": "Sawmills and depots need little capital, though plantations tie up land and take years to mature.",
+      "workingCapital": "High: timber is held for months to season and is sold on credit to traders and carpenters.",
+      "regulation": "Felling and transit permits under state forest rules, the Forest Conservation Act, and plant quarantine rules for imported logs.",
+      "competitiveAdvantages": "Secure log sourcing, plantation tie-ups, depots near furniture and plywood hubs, and good processing yields.",
+      "drivers": [
+        { "factor": "Real estate cycle", "impact": "New homes and offices drive demand for doors, frames and furniture wood." },
+        { "factor": "Raw material availability", "impact": "Felling permits and overseas log policies decide supply." },
+        { "factor": "Consumer demand", "impact": "Furniture and interiors spending lifts timber use." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the cost of imported logs." }
+      ],
+      "risks": [
+        { "risk": "Export bans abroad", "detail": "Supplier countries restricting log exports can cut supply." },
+        { "risk": "Inventory losses", "detail": "Price falls hurt traders holding seasoned stock." },
+        { "risk": "Permit problems", "detail": "Delays in felling or transit permits stall business." },
+        { "risk": "Substitutes", "detail": "Engineered panels, steel and plastics can replace solid timber." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Timber demand moves with construction and furniture spending.",
+      "metricSet": "paper-forest",
+      "relatedBasicIndustries": ["b-plywood-boards-laminates", "b-paper-and-paper-products", "b-furniture-home-furnishing", "b-packaging"],
+      "aliases": ["timber", "wood", "forest products", "logs", "sawn timber", "teak", "plantation", "veneer"],
+      "themes": []
+    },
+    {
+      "id": "b-jute-and-jute-products",
+      "simplifiedExplanation": "Companies that spin raw jute fibre into yarn and weave it into sacks, hessian cloth and other goods. Much of the output is bought by government agencies to pack food grains.",
+      "productsAndServices": [
+        "B-twill sacks for food grains",
+        "Hessian cloth and bags",
+        "Jute yarn and twine",
+        "Jute geotextiles",
+        "Shopping bags and lifestyle products",
+        "Carpet backing cloth"
+      ],
+      "valueChainPosition": "Midstream: buys raw jute from farmers and traders, mostly in eastern India, and supplies government procurement agencies, sugar packers, carpet makers and exporters.",
+      "howTheyMakeMoney": "They earn the gap between the price of jute goods and the cost of raw jute and wages. Government sack orders follow a cost-based pricing formula, while private and export sales depend on market prices and product mix.",
+      "revenueSources": [
+        "Food-grain sack orders from government agencies",
+        "Hessian and yarn sales",
+        "Exports of diversified jute goods",
+        "Geotextiles and specialty products"
+      ],
+      "operatingCosts": [
+        "Raw jute",
+        "Wages in labour-intensive mills",
+        "Power",
+        "Batching oil and stores",
+        "Freight"
+      ],
+      "customersAndEndMarkets": "State food procurement agencies and the Food Corporation of India, sugar mills, carpet makers, and overseas buyers of eco-friendly bags.",
+      "demandSupplyDrivers": "Demand rests largely on government food-grain procurement under the jute packaging mandate. Costs depend on the raw jute crop, which swings with rains and floods in eastern India.",
+      "domesticInternationalExposure": "Mostly domestic; exports of yarn and diversified goods compete with neighbouring producers, and some imports attract anti-dumping duties.",
+      "capexIntensity": "Low",
+      "capexNote": "Old mills run with limited investment; modernising looms and spindles is the main spend.",
+      "workingCapital": "High and seasonal: raw jute is bought after harvest and held for months, and government payments can lag.",
+      "regulation": "The Jute Packaging Materials Act mandates jute packing for food grains and part of sugar, the Jute Commissioner allots sack orders and prices, and MSP applies to raw jute.",
+      "competitiveAdvantages": "Steady government orders, modernised efficient mills, stable labour relations and diversified product lines.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Packaging mandates and sack orders set most of the demand." },
+        { "factor": "Monsoon & agriculture", "impact": "Raw jute crop size and food-grain procurement drive costs and volumes." },
+        { "factor": "Exports & global demand", "impact": "Demand for eco-friendly bags opens export markets." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported jute goods pressure yarn and hessian prices." }
+      ],
+      "risks": [
+        { "risk": "Mandate dilution", "detail": "Lower jute reservation would shift orders to plastic bags." },
+        { "risk": "Raw jute price spikes", "detail": "A poor crop can raise fibre costs faster than selling prices." },
+        { "risk": "Labour unrest", "detail": "Labour-intensive mills face strikes and suspensions of work." },
+        { "risk": "Payment delays", "detail": "Late dues from procurement agencies strain cash." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Government orders give a steady base, but raw jute prices make margins volatile.",
+      "metricSet": "textiles",
+      "relatedBasicIndustries": ["b-other-textile-products", "b-packaging", "b-paper-and-paper-products", "b-sugar", "b-trading-textile-products"],
+      "aliases": ["jute", "jute mills", "gunny bags", "gunny", "hessian", "jute sacks", "b twill", "jute yarn"],
+      "themes": []
+    }
+  ]
+}

@@ -1,0 +1,1385 @@
+{
+  "schema": "stock-blueprint/industry-classification@1",
+  "title": "NSE Indices Industry Classification Structure",
+  "version": "2023-07",
+  "levels": [
+    "Macro-Economic Sector",
+    "Sector",
+    "Industry",
+    "Basic Industry"
+  ],
+  "source": {
+    "document": "NSE Indices Industry Classification Structure, July 2023",
+    "transcribedIn": "Code.gs AB_NSE_TAXONOMY (used by the sheet menu \"Audit Industry Classification vs NSE list\")",
+    "officialPages": [
+      "https://www.nseindia.com/static/products-services/industry-classification",
+      "https://www.niftyindices.com/resources/industry-classification"
+    ],
+    "macroCodes": "IN01-IN12 as labelled in the Code.gs transcription"
+  },
+  "verification": {
+    "checkedAgainstCodeGs": "2026-10-22",
+    "lastVerifiedOnline": null,
+    "note": "The official pages could not be opened from the build environment on 2026-10-22 (network policy). The structure is the July 2023 version transcribed in Code.gs; NSE may have published changes since. Re-verify against the official PDF and update this file (see docs/INDUSTRIES.md)."
+  },
+  "macroSectors": [
+    {
+      "id": "m-commodities",
+      "code": "IN01",
+      "name": "Commodities",
+      "sectors": [
+        {
+          "id": "s-chemicals",
+          "name": "Chemicals",
+          "industries": [
+            {
+              "id": "i-chemicals-and-petrochemicals",
+              "name": "Chemicals & Petrochemicals",
+              "basicIndustries": [
+                {
+                  "id": "b-commodity-chemicals",
+                  "name": "Commodity Chemicals"
+                },
+                {
+                  "id": "b-specialty-chemicals",
+                  "name": "Specialty Chemicals"
+                },
+                {
+                  "id": "b-carbon-black",
+                  "name": "Carbon Black"
+                },
+                {
+                  "id": "b-dyes-and-pigments",
+                  "name": "Dyes And Pigments"
+                },
+                {
+                  "id": "b-explosives",
+                  "name": "Explosives"
+                },
+                {
+                  "id": "b-petrochemicals",
+                  "name": "Petrochemicals"
+                },
+                {
+                  "id": "b-printing-inks",
+                  "name": "Printing Inks"
+                },
+                {
+                  "id": "b-trading-chemicals",
+                  "name": "Trading - Chemicals"
+                },
+                {
+                  "id": "b-industrial-gases",
+                  "name": "Industrial Gases"
+                }
+              ]
+            },
+            {
+              "id": "i-fertilizers-and-agrochemicals",
+              "name": "Fertilizers & Agrochemicals",
+              "basicIndustries": [
+                {
+                  "id": "b-fertilizers",
+                  "name": "Fertilizers"
+                },
+                {
+                  "id": "b-pesticides-and-agrochemicals",
+                  "name": "Pesticides & Agrochemicals"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-construction-materials",
+          "name": "Construction Materials",
+          "industries": [
+            {
+              "id": "i-cement-and-cement-products",
+              "name": "Cement & Cement Products",
+              "basicIndustries": [
+                {
+                  "id": "b-cement-and-cement-products",
+                  "name": "Cement & Cement Products"
+                }
+              ]
+            },
+            {
+              "id": "i-other-construction-materials",
+              "name": "Other Construction Materials",
+              "basicIndustries": [
+                {
+                  "id": "b-other-construction-materials",
+                  "name": "Other Construction Materials"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-metals-and-mining",
+          "name": "Metals & Mining",
+          "industries": [
+            {
+              "id": "i-ferrous-metals",
+              "name": "Ferrous Metals",
+              "basicIndustries": [
+                {
+                  "id": "b-ferro-and-silica-manganese",
+                  "name": "Ferro & Silica Manganese"
+                },
+                {
+                  "id": "b-pig-iron",
+                  "name": "Pig Iron"
+                },
+                {
+                  "id": "b-sponge-iron",
+                  "name": "Sponge Iron"
+                },
+                {
+                  "id": "b-iron-and-steel",
+                  "name": "Iron & Steel"
+                }
+              ]
+            },
+            {
+              "id": "i-non-ferrous-metals",
+              "name": "Non - Ferrous Metals",
+              "basicIndustries": [
+                {
+                  "id": "b-aluminium",
+                  "name": "Aluminium"
+                },
+                {
+                  "id": "b-copper",
+                  "name": "Copper"
+                },
+                {
+                  "id": "b-zinc",
+                  "name": "Zinc"
+                },
+                {
+                  "id": "b-precious-metals",
+                  "name": "Precious Metals"
+                }
+              ]
+            },
+            {
+              "id": "i-diversified-metals",
+              "name": "Diversified Metals",
+              "basicIndustries": [
+                {
+                  "id": "b-diversified-metals",
+                  "name": "Diversified Metals"
+                }
+              ]
+            },
+            {
+              "id": "i-minerals-and-mining",
+              "name": "Minerals & Mining",
+              "basicIndustries": [
+                {
+                  "id": "b-industrial-minerals",
+                  "name": "Industrial Minerals"
+                }
+              ]
+            },
+            {
+              "id": "i-metals-and-minerals-trading",
+              "name": "Metals & Minerals Trading",
+              "basicIndustries": [
+                {
+                  "id": "b-trading-metals",
+                  "name": "Trading - Metals"
+                },
+                {
+                  "id": "b-trading-minerals",
+                  "name": "Trading - Minerals"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-forest-materials",
+          "name": "Forest Materials",
+          "industries": [
+            {
+              "id": "i-paper-forest-and-jute-products",
+              "name": "Paper, Forest & Jute Products",
+              "basicIndustries": [
+                {
+                  "id": "b-paper-and-paper-products",
+                  "name": "Paper & Paper Products"
+                },
+                {
+                  "id": "b-forest-products",
+                  "name": "Forest Products"
+                },
+                {
+                  "id": "b-jute-and-jute-products",
+                  "name": "Jute & Jute Products"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-consumer-discretionary",
+      "code": "IN02",
+      "name": "Consumer Discretionary",
+      "sectors": [
+        {
+          "id": "s-automobile-and-auto-components",
+          "name": "Automobile and Auto Components",
+          "industries": [
+            {
+              "id": "i-automobiles",
+              "name": "Automobiles",
+              "basicIndustries": [
+                {
+                  "id": "b-passenger-cars-and-utility-vehicles",
+                  "name": "Passenger Cars & Utility Vehicles"
+                },
+                {
+                  "id": "b-2-3-wheelers",
+                  "name": "2/3 Wheelers"
+                },
+                {
+                  "id": "b-auto-dealer",
+                  "name": "Auto Dealer"
+                }
+              ]
+            },
+            {
+              "id": "i-auto-components",
+              "name": "Auto Components",
+              "basicIndustries": [
+                {
+                  "id": "b-auto-components-and-equipments",
+                  "name": "Auto Components & Equipments"
+                },
+                {
+                  "id": "b-tyres-and-rubber-products",
+                  "name": "Tyres & Rubber Products"
+                },
+                {
+                  "id": "b-trading-auto-components",
+                  "name": "Trading - Auto Components"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-consumer-durables",
+          "name": "Consumer Durables",
+          "industries": [
+            {
+              "id": "i-consumer-durables",
+              "name": "Consumer Durables",
+              "basicIndustries": [
+                {
+                  "id": "b-cycles",
+                  "name": "Cycles"
+                },
+                {
+                  "id": "b-consumer-electronics",
+                  "name": "Consumer Electronics"
+                },
+                {
+                  "id": "b-furniture-home-furnishing",
+                  "name": "Furniture, Home Furnishing"
+                },
+                {
+                  "id": "b-ceramics",
+                  "name": "Ceramics"
+                },
+                {
+                  "id": "b-granites-and-marbles",
+                  "name": "Granites & Marbles"
+                },
+                {
+                  "id": "b-gems-jewellery-and-watches",
+                  "name": "Gems, Jewellery And Watches"
+                },
+                {
+                  "id": "b-glass-consumer",
+                  "name": "Glass - Consumer"
+                },
+                {
+                  "id": "b-household-appliances",
+                  "name": "Household Appliances"
+                },
+                {
+                  "id": "b-houseware",
+                  "name": "Houseware"
+                },
+                {
+                  "id": "b-leather-and-leather-products",
+                  "name": "Leather And Leather Products"
+                },
+                {
+                  "id": "b-leisure-products",
+                  "name": "Leisure Products"
+                },
+                {
+                  "id": "b-plastic-products-consumer",
+                  "name": "Plastic Products - Consumer"
+                },
+                {
+                  "id": "b-plywood-boards-laminates",
+                  "name": "Plywood Boards/ Laminates"
+                },
+                {
+                  "id": "b-sanitary-ware",
+                  "name": "Sanitary Ware"
+                },
+                {
+                  "id": "b-paints",
+                  "name": "Paints"
+                },
+                {
+                  "id": "b-diversified-consumer-products",
+                  "name": "Diversified consumer products"
+                },
+                {
+                  "id": "b-footwear",
+                  "name": "Footwear"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-textiles",
+          "name": "Textiles",
+          "industries": [
+            {
+              "id": "i-textiles-and-apparels",
+              "name": "Textiles & Apparels",
+              "basicIndustries": [
+                {
+                  "id": "b-garments-and-apparels",
+                  "name": "Garments & Apparels"
+                },
+                {
+                  "id": "b-other-textile-products",
+                  "name": "Other Textile Products"
+                },
+                {
+                  "id": "b-trading-textile-products",
+                  "name": "Trading - Textile Products"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-media-entertainment-and-publication",
+          "name": "Media, Entertainment & Publication",
+          "industries": [
+            {
+              "id": "i-media",
+              "name": "Media",
+              "basicIndustries": [
+                {
+                  "id": "b-advertising-and-media-agencies",
+                  "name": "Advertising & Media Agencies"
+                },
+                {
+                  "id": "b-electronic-media",
+                  "name": "Electronic Media"
+                },
+                {
+                  "id": "b-web-based-media-and-service",
+                  "name": "Web based media and service"
+                },
+                {
+                  "id": "b-print-media",
+                  "name": "Print Media"
+                }
+              ]
+            },
+            {
+              "id": "i-entertainment",
+              "name": "Entertainment",
+              "basicIndustries": [
+                {
+                  "id": "b-film-production-distribution-and-exhibition",
+                  "name": "Film Production, Distribution & Exhibition"
+                },
+                {
+                  "id": "b-digital-entertainment",
+                  "name": "Digital Entertainment"
+                },
+                {
+                  "id": "b-media-and-entertainment",
+                  "name": "Media & Entertainment"
+                },
+                {
+                  "id": "b-tv-broadcasting-and-software-production",
+                  "name": "TV Broadcasting & Software Production"
+                }
+              ]
+            },
+            {
+              "id": "i-printing-and-publication",
+              "name": "Printing & Publication",
+              "basicIndustries": [
+                {
+                  "id": "b-printing-and-publication",
+                  "name": "Printing & Publication"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-realty",
+          "name": "Realty",
+          "industries": [
+            {
+              "id": "i-realty",
+              "name": "Realty",
+              "basicIndustries": [
+                {
+                  "id": "b-residential-commercial-projects",
+                  "name": "Residential, Commercial Projects"
+                },
+                {
+                  "id": "b-real-estate-related-services",
+                  "name": "Real Estate related services"
+                },
+                {
+                  "id": "b-real-estate-investment-trusts-reits",
+                  "name": "Real Estate Investment Trusts (REITs)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-consumer-services",
+          "name": "Consumer Services",
+          "industries": [
+            {
+              "id": "i-leisure-services",
+              "name": "Leisure Services",
+              "basicIndustries": [
+                {
+                  "id": "b-hotels-and-resorts",
+                  "name": "Hotels & Resorts"
+                },
+                {
+                  "id": "b-restaurants",
+                  "name": "Restaurants"
+                },
+                {
+                  "id": "b-amusement-parks-other-recreation",
+                  "name": "Amusement Parks/ Other Recreation"
+                },
+                {
+                  "id": "b-wellness",
+                  "name": "Wellness"
+                },
+                {
+                  "id": "b-tour-travel-related-services",
+                  "name": "Tour, Travel Related Services"
+                }
+              ]
+            },
+            {
+              "id": "i-other-consumer-services",
+              "name": "Other Consumer Services",
+              "basicIndustries": [
+                {
+                  "id": "b-education",
+                  "name": "Education"
+                },
+                {
+                  "id": "b-e-learning",
+                  "name": "E-Learning"
+                },
+                {
+                  "id": "b-food-storage-facilities",
+                  "name": "Food Storage Facilities"
+                },
+                {
+                  "id": "b-other-consumer-services",
+                  "name": "Other Consumer Services"
+                }
+              ]
+            },
+            {
+              "id": "i-retailing",
+              "name": "Retailing",
+              "basicIndustries": [
+                {
+                  "id": "b-speciality-retail",
+                  "name": "Speciality Retail"
+                },
+                {
+                  "id": "b-pharmacy-retail",
+                  "name": "Pharmacy Retail"
+                },
+                {
+                  "id": "b-diversified-retail",
+                  "name": "Diversified Retail"
+                },
+                {
+                  "id": "b-e-retail-e-commerce",
+                  "name": "E-Retail/ E-Commerce"
+                },
+                {
+                  "id": "b-internet-and-catalogue-retail",
+                  "name": "Internet & Catalogue Retail"
+                },
+                {
+                  "id": "b-distributors",
+                  "name": "Distributors"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-energy",
+      "code": "IN03",
+      "name": "Energy",
+      "sectors": [
+        {
+          "id": "s-oil-gas-and-consumable-fuels",
+          "name": "Oil, Gas & Consumable Fuels",
+          "industries": [
+            {
+              "id": "i-gas",
+              "name": "Gas",
+              "basicIndustries": [
+                {
+                  "id": "b-gas-transmission-marketing",
+                  "name": "Gas Transmission/Marketing"
+                },
+                {
+                  "id": "b-lpg-cng-png-lng-supplier",
+                  "name": "LPG/CNG/PNG/LNG Supplier"
+                },
+                {
+                  "id": "b-trading-gas",
+                  "name": "Trading - Gas"
+                }
+              ]
+            },
+            {
+              "id": "i-oil",
+              "name": "Oil",
+              "basicIndustries": [
+                {
+                  "id": "b-oil-exploration-and-production",
+                  "name": "Oil Exploration & Production"
+                },
+                {
+                  "id": "b-offshore-support-solution-drilling",
+                  "name": "Offshore Support Solution Drilling"
+                },
+                {
+                  "id": "b-oil-storage-and-transportation",
+                  "name": "Oil Storage & Transportation"
+                },
+                {
+                  "id": "b-oil-equipment-and-services",
+                  "name": "Oil Equipment & Services"
+                }
+              ]
+            },
+            {
+              "id": "i-petroleum-products",
+              "name": "Petroleum Products",
+              "basicIndustries": [
+                {
+                  "id": "b-refineries-and-marketing",
+                  "name": "Refineries & Marketing"
+                },
+                {
+                  "id": "b-lubricants",
+                  "name": "Lubricants"
+                }
+              ]
+            },
+            {
+              "id": "i-consumable-fuels",
+              "name": "Consumable Fuels",
+              "basicIndustries": [
+                {
+                  "id": "b-coal",
+                  "name": "Coal"
+                },
+                {
+                  "id": "b-trading-coal",
+                  "name": "Trading - Coal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-fast-moving-consumer-goods",
+      "code": "IN04",
+      "name": "Fast Moving Consumer Goods",
+      "sectors": [
+        {
+          "id": "s-fast-moving-consumer-goods",
+          "name": "Fast Moving Consumer Goods",
+          "industries": [
+            {
+              "id": "i-agricultural-food-and-other-products",
+              "name": "Agricultural Food & other Products",
+              "basicIndustries": [
+                {
+                  "id": "b-edible-oil",
+                  "name": "Edible Oil"
+                },
+                {
+                  "id": "b-sugar",
+                  "name": "Sugar"
+                },
+                {
+                  "id": "b-tea-and-coffee",
+                  "name": "Tea & Coffee"
+                },
+                {
+                  "id": "b-other-agricultural-products",
+                  "name": "Other Agricultural Products"
+                }
+              ]
+            },
+            {
+              "id": "i-beverages",
+              "name": "Beverages",
+              "basicIndustries": [
+                {
+                  "id": "b-breweries-and-distilleries",
+                  "name": "Breweries & Distilleries"
+                },
+                {
+                  "id": "b-other-beverages",
+                  "name": "Other Beverages"
+                }
+              ]
+            },
+            {
+              "id": "i-cigarettes-and-tobacco-products",
+              "name": "Cigarettes & Tobacco Products",
+              "basicIndustries": [
+                {
+                  "id": "b-cigarettes-and-tobacco-products",
+                  "name": "Cigarettes & Tobacco Products"
+                }
+              ]
+            },
+            {
+              "id": "i-food-products",
+              "name": "Food Products",
+              "basicIndustries": [
+                {
+                  "id": "b-animal-feed",
+                  "name": "Animal Feed"
+                },
+                {
+                  "id": "b-dairy-products",
+                  "name": "Dairy Products"
+                },
+                {
+                  "id": "b-other-food-products",
+                  "name": "Other Food Products"
+                },
+                {
+                  "id": "b-packaged-foods",
+                  "name": "Packaged Foods"
+                },
+                {
+                  "id": "b-seafood",
+                  "name": "Seafood"
+                },
+                {
+                  "id": "b-meat-products-including-poultry",
+                  "name": "Meat Products including Poultry"
+                }
+              ]
+            },
+            {
+              "id": "i-personal-products",
+              "name": "Personal Products",
+              "basicIndustries": [
+                {
+                  "id": "b-personal-care",
+                  "name": "Personal Care"
+                }
+              ]
+            },
+            {
+              "id": "i-household-products",
+              "name": "Household Products",
+              "basicIndustries": [
+                {
+                  "id": "b-household-products",
+                  "name": "Household Products"
+                },
+                {
+                  "id": "b-stationary",
+                  "name": "Stationary"
+                }
+              ]
+            },
+            {
+              "id": "i-diversified-fmcg",
+              "name": "Diversified FMCG",
+              "basicIndustries": [
+                {
+                  "id": "b-diversified-fmcg",
+                  "name": "Diversified FMCG"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-financial-services",
+      "code": "IN05",
+      "name": "Financial Services",
+      "sectors": [
+        {
+          "id": "s-financial-services",
+          "name": "Financial Services",
+          "industries": [
+            {
+              "id": "i-finance",
+              "name": "Finance",
+              "basicIndustries": [
+                {
+                  "id": "b-financial-institution",
+                  "name": "Financial Institution"
+                },
+                {
+                  "id": "b-housing-finance-company",
+                  "name": "Housing Finance Company"
+                },
+                {
+                  "id": "b-investment-company",
+                  "name": "Investment Company"
+                },
+                {
+                  "id": "b-non-banking-financial-company-nbfc",
+                  "name": "Non Banking Financial Company (NBFC)"
+                },
+                {
+                  "id": "b-other-financial-services",
+                  "name": "Other Financial Services"
+                },
+                {
+                  "id": "b-holding-company",
+                  "name": "Holding Company"
+                },
+                {
+                  "id": "b-microfinance-institutions",
+                  "name": "Microfinance Institutions"
+                },
+                {
+                  "id": "b-securitisation",
+                  "name": "Securitisation"
+                }
+              ]
+            },
+            {
+              "id": "i-banks",
+              "name": "Banks",
+              "basicIndustries": [
+                {
+                  "id": "b-public-sector-bank",
+                  "name": "Public Sector Bank"
+                },
+                {
+                  "id": "b-private-sector-bank",
+                  "name": "Private Sector Bank"
+                },
+                {
+                  "id": "b-other-bank",
+                  "name": "Other Bank"
+                }
+              ]
+            },
+            {
+              "id": "i-capital-markets",
+              "name": "Capital Markets",
+              "basicIndustries": [
+                {
+                  "id": "b-asset-management-company",
+                  "name": "Asset Management Company"
+                },
+                {
+                  "id": "b-depositories-clearing-houses-and-other-intermediaries",
+                  "name": "Depositories, Clearing Houses and Other Intermediaries"
+                },
+                {
+                  "id": "b-financial-products-distributor",
+                  "name": "Financial Products Distributor"
+                },
+                {
+                  "id": "b-ratings",
+                  "name": "Ratings"
+                },
+                {
+                  "id": "b-exchange-and-data-platform",
+                  "name": "Exchange and Data Platform"
+                },
+                {
+                  "id": "b-stockbroking-and-allied",
+                  "name": "Stockbroking & Allied"
+                },
+                {
+                  "id": "b-other-capital-market-related-services",
+                  "name": "Other Capital Market related Services"
+                }
+              ]
+            },
+            {
+              "id": "i-insurance",
+              "name": "Insurance",
+              "basicIndustries": [
+                {
+                  "id": "b-general-insurance",
+                  "name": "General Insurance"
+                },
+                {
+                  "id": "b-life-insurance",
+                  "name": "Life Insurance"
+                },
+                {
+                  "id": "b-other-insurance-companies",
+                  "name": "Other Insurance Companies"
+                },
+                {
+                  "id": "b-insurance-distributors",
+                  "name": "Insurance Distributors"
+                }
+              ]
+            },
+            {
+              "id": "i-financial-technology-fintech",
+              "name": "Financial Technology (Fintech)",
+              "basicIndustries": [
+                {
+                  "id": "b-financial-technology-fintech",
+                  "name": "Financial Technology (Fintech)"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-healthcare",
+      "code": "IN06",
+      "name": "Healthcare",
+      "sectors": [
+        {
+          "id": "s-healthcare",
+          "name": "Healthcare",
+          "industries": [
+            {
+              "id": "i-pharmaceuticals-and-biotechnology",
+              "name": "Pharmaceuticals & Biotechnology",
+              "basicIndustries": [
+                {
+                  "id": "b-pharmaceuticals",
+                  "name": "Pharmaceuticals"
+                },
+                {
+                  "id": "b-biotechnology",
+                  "name": "Biotechnology"
+                }
+              ]
+            },
+            {
+              "id": "i-healthcare-equipment-and-supplies",
+              "name": "Healthcare Equipment & Supplies",
+              "basicIndustries": [
+                {
+                  "id": "b-medical-equipment-and-supplies",
+                  "name": "Medical Equipment & Supplies"
+                }
+              ]
+            },
+            {
+              "id": "i-healthcare-services",
+              "name": "Healthcare Services",
+              "basicIndustries": [
+                {
+                  "id": "b-hospital",
+                  "name": "Hospital"
+                },
+                {
+                  "id": "b-healthcare-service-provider",
+                  "name": "Healthcare Service Provider"
+                },
+                {
+                  "id": "b-healthcare-research-analytics-and-technology",
+                  "name": "Healthcare Research, Analytics & Technology"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-industrials",
+      "code": "IN07",
+      "name": "Industrials",
+      "sectors": [
+        {
+          "id": "s-construction",
+          "name": "Construction",
+          "industries": [
+            {
+              "id": "i-construction",
+              "name": "Construction",
+              "basicIndustries": [
+                {
+                  "id": "b-civil-construction",
+                  "name": "Civil Construction"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-capital-goods",
+          "name": "Capital Goods",
+          "industries": [
+            {
+              "id": "i-aerospace-and-defense",
+              "name": "Aerospace & Defense",
+              "basicIndustries": [
+                {
+                  "id": "b-aerospace-and-defense",
+                  "name": "Aerospace & Defense"
+                }
+              ]
+            },
+            {
+              "id": "i-agricultural-commercial-and-construction-vehicles",
+              "name": "Agricultural, Commercial & Construction Vehicles",
+              "basicIndustries": [
+                {
+                  "id": "b-tractors",
+                  "name": "Tractors"
+                },
+                {
+                  "id": "b-commercial-vehicles",
+                  "name": "Commercial Vehicles"
+                },
+                {
+                  "id": "b-construction-vehicles",
+                  "name": "Construction Vehicles"
+                },
+                {
+                  "id": "b-dealers-commercial-vehicles-tractors-construction-vehicles",
+                  "name": "Dealers-Commercial Vehicles, Tractors, Construction Vehicles"
+                }
+              ]
+            },
+            {
+              "id": "i-electrical-equipment",
+              "name": "Electrical Equipment",
+              "basicIndustries": [
+                {
+                  "id": "b-heavy-electrical-equipment",
+                  "name": "Heavy Electrical Equipment"
+                },
+                {
+                  "id": "b-other-electrical-equipment",
+                  "name": "Other Electrical Equipment"
+                }
+              ]
+            },
+            {
+              "id": "i-industrial-manufacturing",
+              "name": "Industrial Manufacturing",
+              "basicIndustries": [
+                {
+                  "id": "b-railway-wagons",
+                  "name": "Railway Wagons"
+                },
+                {
+                  "id": "b-ship-building-and-allied-services",
+                  "name": "Ship Building & Allied Services"
+                },
+                {
+                  "id": "b-industrial-products",
+                  "name": "Industrial Products"
+                }
+              ]
+            },
+            {
+              "id": "i-industrial-products",
+              "name": "Industrial Products",
+              "basicIndustries": [
+                {
+                  "id": "b-cables-electricals",
+                  "name": "Cables - Electricals"
+                },
+                {
+                  "id": "b-castings-and-forgings",
+                  "name": "Castings & Forgings"
+                },
+                {
+                  "id": "b-packaging",
+                  "name": "Packaging"
+                },
+                {
+                  "id": "b-plastic-products-industrial",
+                  "name": "Plastic Products - Industrial"
+                },
+                {
+                  "id": "b-rubber",
+                  "name": "Rubber"
+                },
+                {
+                  "id": "b-other-industrial-products",
+                  "name": "Other Industrial Products"
+                },
+                {
+                  "id": "b-glass-industrial",
+                  "name": "Glass - Industrial"
+                },
+                {
+                  "id": "b-aluminium-copper-and-zinc-products",
+                  "name": "Aluminium, Copper & Zinc Products"
+                },
+                {
+                  "id": "b-iron-and-steel-products",
+                  "name": "Iron & Steel Products"
+                },
+                {
+                  "id": "b-abrasives-and-bearings",
+                  "name": "Abrasives & Bearings"
+                },
+                {
+                  "id": "b-compressors-pumps-and-diesel-engines",
+                  "name": "Compressors, Pumps & Diesel Engines"
+                },
+                {
+                  "id": "b-electrodes-and-refractories",
+                  "name": "Electrodes & Refractories"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-information-technology",
+      "code": "IN08",
+      "name": "Information Technology",
+      "sectors": [
+        {
+          "id": "s-information-technology",
+          "name": "Information Technology",
+          "industries": [
+            {
+              "id": "i-it-software",
+              "name": "IT - Software",
+              "basicIndustries": [
+                {
+                  "id": "b-computers-software-and-consulting",
+                  "name": "Computers - Software & Consulting"
+                },
+                {
+                  "id": "b-software-products",
+                  "name": "Software Products"
+                }
+              ]
+            },
+            {
+              "id": "i-it-services",
+              "name": "IT - Services",
+              "basicIndustries": [
+                {
+                  "id": "b-it-enabled-services",
+                  "name": "IT Enabled Services"
+                }
+              ]
+            },
+            {
+              "id": "i-it-hardware",
+              "name": "IT - Hardware",
+              "basicIndustries": [
+                {
+                  "id": "b-computers-hardware-and-equipments",
+                  "name": "Computers Hardware & Equipments"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-services",
+      "code": "IN09",
+      "name": "Services",
+      "sectors": [
+        {
+          "id": "s-services",
+          "name": "Services",
+          "industries": [
+            {
+              "id": "i-engineering-services",
+              "name": "Engineering Services",
+              "basicIndustries": [
+                {
+                  "id": "b-dredging",
+                  "name": "Dredging"
+                }
+              ]
+            },
+            {
+              "id": "i-transport-services",
+              "name": "Transport Services",
+              "basicIndustries": [
+                {
+                  "id": "b-airline",
+                  "name": "Airline"
+                },
+                {
+                  "id": "b-logistics-solution-provider",
+                  "name": "Logistics Solution Provider"
+                },
+                {
+                  "id": "b-railways",
+                  "name": "Railways"
+                },
+                {
+                  "id": "b-road-transport",
+                  "name": "Road Transport"
+                },
+                {
+                  "id": "b-shipping",
+                  "name": "Shipping"
+                },
+                {
+                  "id": "b-transport-related-services",
+                  "name": "Transport Related Services"
+                }
+              ]
+            },
+            {
+              "id": "i-transport-infrastructure",
+              "name": "Transport Infrastructure",
+              "basicIndustries": [
+                {
+                  "id": "b-airport-and-airport-services",
+                  "name": "Airport & Airport services"
+                },
+                {
+                  "id": "b-port-and-port-services",
+                  "name": "Port & Port services"
+                },
+                {
+                  "id": "b-road-assets-toll-annuity-hybrid-annuity",
+                  "name": "Road Assets-Toll, Annuity, Hybrid-Annuity"
+                }
+              ]
+            },
+            {
+              "id": "i-commercial-services-and-supplies",
+              "name": "Commercial Services & Supplies",
+              "basicIndustries": [
+                {
+                  "id": "b-trading-and-distributors",
+                  "name": "Trading & Distributors"
+                },
+                {
+                  "id": "b-consulting-services",
+                  "name": "Consulting Services"
+                },
+                {
+                  "id": "b-data-processing-services",
+                  "name": "Data Processing Services"
+                },
+                {
+                  "id": "b-diversified-commercial-services",
+                  "name": "Diversified Commercial Services"
+                },
+                {
+                  "id": "b-business-process-outsourcing-bpo-knowledge-process-outsourcing-kpo",
+                  "name": "Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO)"
+                }
+              ]
+            },
+            {
+              "id": "i-public-services",
+              "name": "Public Services",
+              "basicIndustries": [
+                {
+                  "id": "b-urban-local-bodies",
+                  "name": "Urban Local Bodies"
+                },
+                {
+                  "id": "b-development-authority",
+                  "name": "Development Authority"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-telecommunication",
+      "code": "IN10",
+      "name": "Telecommunication",
+      "sectors": [
+        {
+          "id": "s-telecommunication",
+          "name": "Telecommunication",
+          "industries": [
+            {
+              "id": "i-telecom-services",
+              "name": "Telecom - Services",
+              "basicIndustries": [
+                {
+                  "id": "b-telecom-cellular-and-fixed-line-services",
+                  "name": "Telecom - Cellular & Fixed line services"
+                },
+                {
+                  "id": "b-telecom-infrastructure",
+                  "name": "Telecom - Infrastructure"
+                },
+                {
+                  "id": "b-other-telecom-services",
+                  "name": "Other Telecom Services"
+                }
+              ]
+            },
+            {
+              "id": "i-telecom-equipment-and-accessories",
+              "name": "Telecom - Equipment & Accessories",
+              "basicIndustries": [
+                {
+                  "id": "b-telecom-equipment-and-accessories",
+                  "name": "Telecom - Equipment & Accessories"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-utilities",
+      "code": "IN11",
+      "name": "Utilities",
+      "sectors": [
+        {
+          "id": "s-power",
+          "name": "Power",
+          "industries": [
+            {
+              "id": "i-power",
+              "name": "Power",
+              "basicIndustries": [
+                {
+                  "id": "b-power-generation",
+                  "name": "Power Generation"
+                },
+                {
+                  "id": "b-integrated-power-utilities",
+                  "name": "Integrated Power Utilities"
+                },
+                {
+                  "id": "b-power-trading",
+                  "name": "Power Trading"
+                },
+                {
+                  "id": "b-power-transmission",
+                  "name": "Power - Transmission"
+                },
+                {
+                  "id": "b-power-distribution",
+                  "name": "Power Distribution"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "s-utilities",
+          "name": "Utilities",
+          "industries": [
+            {
+              "id": "i-other-utilities",
+              "name": "Other Utilities",
+              "basicIndustries": [
+                {
+                  "id": "b-water-supply-and-management",
+                  "name": "Water Supply & Management"
+                },
+                {
+                  "id": "b-waste-management",
+                  "name": "Waste Management"
+                },
+                {
+                  "id": "b-emergency-services",
+                  "name": "Emergency Services"
+                },
+                {
+                  "id": "b-multi-utilities",
+                  "name": "Multi Utilities"
+                },
+                {
+                  "id": "b-other-utilities",
+                  "name": "Other Utilities"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m-diversified",
+      "code": "IN12",
+      "name": "Diversified",
+      "sectors": [
+        {
+          "id": "s-diversified",
+          "name": "Diversified",
+          "industries": [
+            {
+              "id": "i-diversified",
+              "name": "Diversified",
+              "basicIndustries": [
+                {
+                  "id": "b-diversified",
+                  "name": "Diversified"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

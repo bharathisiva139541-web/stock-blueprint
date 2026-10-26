@@ -108,7 +108,9 @@ async function pageState(page) {
   });
 }
 
-const PAGES = ['overview', 'watchlist', 'suggestions', 'industries', 'industries/it', 'industries/review', 'strategy', 'signals', 'excel', 'results', 'alerts', 'backtest', 'markets'];
+const PAGES = ['overview', 'watchlist', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
+  'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
+  'strategy', 'signals', 'excel', 'results', 'alerts', 'backtest', 'markets'];
 let failures = 0;
 function check(name, fn) {
   return Promise.resolve().then(fn).then(() => console.log('  ✓ ' + name), (e) => { failures++; console.log('  ✗ ' + name + '\n    ' + e.message); });
@@ -131,7 +133,7 @@ function check(name, fn) {
         await check('#' + p + ' renders', async () => {
           errors.length = 0;
           await page.goto(base + '#' + p, { waitUntil: 'load' });
-          await page.waitForTimeout(p === 'suggestions' || p === 'signals' || p === 'industries' ? 2500 : 800);
+          await page.waitForTimeout(p === 'suggestions' || p === 'signals' || p.indexOf('industries') === 0 ? 2500 : 800);
           const info = await page.evaluate(() => ({
             overflow: document.documentElement.scrollWidth - window.innerWidth,
             text: document.querySelector('#app').innerText.length,
@@ -155,6 +157,71 @@ function check(name, fn) {
           assert.ok(syms.length > 0, 'IT page lists stocks');
           const cats = await page.evaluate((s) => s.map((x) => window.SB.ctx.bySym[x] && window.SB.ctx.bySym[x].cat), syms);
           assert.ok(cats.every((c) => c === 'it'), 'all listed stocks are IT: ' + cats.filter((c) => c !== 'it').length + ' are not');
+        });
+        await check('industry explorer: counts, tree, search, basic page, filters, strategy', async () => {
+          errors.length = 0;
+          await page.goto(base + '#industries', { waitUntil: 'load' });
+          await page.waitForSelector('#ix-tiles [data-count="basic"]', { timeout: 15000 });
+          const counts = await page.$$eval('#ix-tiles [data-count]', (x) => x.map((e) => e.getAttribute('data-count') + '=' + e.textContent));
+          assert.deepStrictEqual(counts, ['macro=12', 'sector=22', 'industry=59', 'basic=197'], 'landing tiles');
+          // tree: expanding a macro sector shows its sectors
+          await page.evaluate(() => { const d = document.querySelector('#ix-tree-box'); d.open = true; });
+          await page.click('[data-tog="m-financial-services"]');
+          const kids = await page.$$eval('[data-tog="m-financial-services"]', (b) => [b[0].getAttribute('aria-expanded'), [...b[0].closest('li').querySelectorAll(':scope > ul > li .ix-name')].map((a) => a.textContent)]);
+          assert.strictEqual(kids[0], 'true');
+          assert.deepStrictEqual(kids[1], ['Financial Services'], 'sectors of the Financial Services macro sector');
+          // search: symbol -> breadcrumb -> its basic industry + the stock drawer
+          await page.fill('#ix-q', 'sbin');
+          await page.waitForSelector('#ix-q-list .ix-opt', { timeout: 5000 });
+          const first = await page.$eval('#ix-q-list .ix-opt', (o) => o.innerText);
+          assert.ok(/SBIN/.test(first) && /Financial Services › Financial Services › Banks › Public Sector Bank/.test(first), 'first suggestion: ' + first);
+          assert.strictEqual(await page.getAttribute('#ix-q', 'aria-activedescendant'), 'ix-opt-0');
+          await page.keyboard.press('Enter');
+          await page.waitForFunction(() => location.hash === '#industries/basic/public-sector-bank' && document.querySelector('#ix-bstocks tbody'), null, { timeout: 15000 });
+          await page.waitForFunction(() => !document.querySelector('#drawer').hidden, null, { timeout: 5000 });
+          assert.strictEqual(await page.$eval('#drawer-title', (h) => h.textContent), 'SBIN');
+          await page.keyboard.press('Escape');
+          // basic page: 4 hierarchy links, only its own stocks, strategy statuses from the engine run
+          const lv = await page.$$eval('.ix-crumbs a[data-lv]', (a) => a.map((x) => x.getAttribute('data-lv')));
+          assert.deepStrictEqual(lv, ['macro', 'sector', 'industry', 'basic']);
+          await page.waitForFunction(() => window.SB.strategies.lastRun() && document.querySelector('[data-chip="ixsg"]'), null, { timeout: 15000 });
+          const b = await page.evaluate(() => {
+            const IND = window.SB.industry, I = IND.createIndex(window.SB_INDUSTRIES);
+            const syms = [...document.querySelectorAll('#ix-bstocks tbody button[data-sym]')].map((x) => x.getAttribute('data-sym'));
+            const basics = syms.map((x) => IND.classifyStock(I, window.SB.ctx.bySym[x]).basicId);
+            const all = window.SB.ctx.stocks.filter((x) => IND.classifyStock(I, x).basicId === 'b-public-sector-bank').map((x) => x.sym);
+            const run = window.SB.strategies.lastRun();
+            const ev = all.filter((x) => run.bySym[x]);
+            const q = ev.filter((x) => run.bySym[x].status === 'qualified').length;
+            const chips = [...document.querySelectorAll('[data-chip="ixsg"]')].map((c) => c.textContent);
+            return { syms, basics, all: all.length, ev: ev.length, q, chips, items: document.querySelectorAll('.ix-sg-item').length };
+          });
+          assert.ok(b.syms.length > 0 && b.basics.every((x) => x === 'b-public-sector-bank'), 'only Public Sector Bank stocks: ' + b.basics.join(','));
+          assert.strictEqual(b.syms.length, Math.min(25, b.all), 'every mapped stock is listed (first page)');
+          assert.strictEqual(b.chips[0], 'All (' + b.ev + ')');
+          assert.ok(b.chips.indexOf('Qualified (' + b.q + ')') >= 0, 'qualified chip: ' + b.chips.join(' | '));
+          assert.strictEqual(b.items, Math.min(10, b.ev), 'strategy cards');
+          // companies: combined filters give the count computed with SB.industry
+          await page.goto(base + '#industries/companies', { waitUntil: 'load' });
+          await page.waitForSelector('#co-macroId option[value="m-financial-services"]', { state: 'attached', timeout: 15000 });
+          await page.selectOption('#co-macroId', 'm-financial-services');
+          await page.selectOption('#co-cap', 'large');
+          const co = await page.evaluate(() => {
+            const IND = window.SB.industry, I = IND.createIndex(window.SB_INDUSTRIES);
+            const n = window.SB.ctx.stocks.filter((x) => IND.classifyStock(I, x).macroId === 'm-financial-services' && IND.capBucket(x).key === 'large').length;
+            const sectorOpts = [...document.querySelectorAll('#co-sectorId option')].map((o) => o.value).filter(Boolean);
+            return { n, text: document.querySelector('#co-count').textContent, sectorOpts };
+          });
+          assert.ok(co.n > 0 && co.text.indexOf(co.n + ' of ') === 0, co.n + ' vs ' + co.text);
+          assert.deepStrictEqual(co.sectorOpts, ['s-financial-services'], 'sector options follow the macro sector');
+          await page.click('#co-clear');
+          const cleared = await page.evaluate(() => [document.querySelector('#co-count').textContent, document.querySelector('#co-macroId').value, document.querySelector('#co-cap').value]);
+          assert.ok(/^1,?800 of /.test(cleared[0]) || cleared[0].split(' of ')[0] === cleared[0].split(' of ')[1].split(' ')[0], 'clear all: ' + cleared[0]);
+          assert.deepStrictEqual(cleared.slice(1), ['', '']);
+          // unknown slug: friendly not-found
+          await page.goto(base + '#industries/basic/no-such-industry', { waitUntil: 'load' });
+          await page.waitForFunction(() => /Not found/.test(document.querySelector('#app').innerText), null, { timeout: 15000 });
+          assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         await check('daily suggestions match the engine run', async () => {
           await page.goto(base + '#suggestions', { waitUntil: 'load' });
