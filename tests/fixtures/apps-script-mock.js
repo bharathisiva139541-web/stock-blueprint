@@ -261,6 +261,7 @@ function createEnv(workbook, opts) {
         grid.forEach(function (r) { r.splice(from - 1, n); });
         return sheet;
       },
+      clear: function () { grid.length = 0; env.writes.push({ sheet: spec.name, kind: 'clear', row: 1, col: 1 }); return sheet; },
       hideSheet: function () { hidden = true; return sheet; },
       showSheet: function () { hidden = false; return sheet; },
       activate: function () { active = sheet; return sheet; },

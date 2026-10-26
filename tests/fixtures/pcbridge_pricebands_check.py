@@ -92,63 +92,67 @@ assert alt == [{'symbol': 'INFY', 'series': 'EQ', 'name': 'Infosys', 'from': '5'
 assert sb.pb_parse(b'<!DOCTYPE html><html><body>Access denied</body></html>') is None
 assert sb.pb_parse(b'a,b,c\n1,2,3\n') is None
 
-# --- which days are checked
-TUE = date(2026, 10, 27)
-assert sb.pb_days_to_check(TUE, None) == [date(2026, 10, 26), TUE], 'first run: last few weekdays only'
-assert sb.pb_days_to_check(TUE, TUE) == []
-assert sb.pb_days_to_check(TUE, date(2026, 10, 23)) == [date(2026, 10, 26), TUE], 'weekend skipped'
-assert sb.pb_days_to_check(TUE, date(2026, 9, 1))[0] == date(2026, 10, 20), 'at most a week back'
+# --- which files are checked (NSE names a file after the day its bands apply: the next trading day)
+MON, TUE, WED, THU, FRI = (date(2026, 10, d) for d in (26, 27, 28, 29, 30))
+assert sb.prev_weekday(MON) == date(2026, 10, 23) and sb.next_weekday(FRI) == date(2026, 11, 2)
+assert sb.pb_days_to_check(MON, None) == [date(2026, 10, d) for d in (19, 20, 21, 22, 23, 26, 27, 28)], 'a week back, two trading days ahead'
+assert sb.pb_days_to_check(MON, TUE) == [WED]
+assert sb.pb_days_to_check(FRI, FRI) == [date(2026, 11, 2), date(2026, 11, 3)], 'Friday evening: Monday\'s file'
 
-# --- 1) first evening run: Monday's and Tuesday's files are sent, oldest first
-put(date(2026, 10, 26))
-put(TUE)
-sb.price_bands_step(CFG, today=TUE)
-assert [p['reportDate'] for p in SENT] == ['2026-10-26', '2026-10-27'], SENT
-assert SENT[1]['rows'][0]['symbol'] == 'SBIN'
-assert state()['last'] == '2026-10-27'
-assert 'Price bands 27-10-2026: 3 change(s) from NSE, 3 new on the sheet, 1 in Main, email sent.' in logtail(), logtail()
+# --- 1) Monday evening, state left by the first version ({"last": file date, no "v"}): the last week is
+#        re-sent once with the right report dates (the sheet skips / clears what it already has)
+with open(sb.PB_STATE_PATH, 'w') as f:
+    json.dump({'last': '2026-10-26'}, f)
+put(date(2026, 10, 23))     # published Thu 22 evening
+put(MON)                    # published Fri 23 evening
+put(TUE)                    # published this (Mon 26) evening
+sb.price_bands_step(CFG, today=MON)
+assert [p['reportDate'] for p in SENT] == ['2026-10-22', '2026-10-23', '2026-10-26'], SENT
+assert SENT[2]['rows'][0]['symbol'] == 'SBIN'
+assert state()['last'] == '2026-10-27' and state()['v'] == 2, state()
+assert 'Price bands from 27-10-2026: 3 change(s) from NSE, 3 new on the sheet, 1 in Main, email sent.' in logtail(), logtail()
 
-# --- 2) the second run an hour later: nothing to do, NSE is not asked
+# --- 2) the second run an hour later: only Wednesday's file (not out) is asked for, nothing sent
 del SENT[:]
 del HITS[:]
-sb.price_bands_step(CFG, today=TUE)
-assert SENT == [] and HITS == [], (SENT, HITS)
-assert 'Price bands: up to date (last file 27-10-2026).' in logtail()
+sb.price_bands_step(CFG, today=MON)
+assert SENT == [], SENT
+assert all('28102026' in h for h in HITS), HITS
+assert 'Price bands: up to date (latest file: bands from 27-10-2026).' in logtail(), logtail()
 
-# --- 3) Wednesday: not published yet (404 everywhere, NSE's list does not have it) -> retried next run
-WED = date(2026, 10, 28)
-sb.price_bands_step(CFG, today=WED)
+# --- 3) Tuesday evening: Wednesday's file not out yet -> retried next run
+sb.price_bands_step(CFG, today=TUE)
 assert SENT == [] and state()['last'] == '2026-10-27'
-assert "today's file is not on NSE yet" in logtail()
+assert 'the file for 28-10-2026 (NSE publishes it in the evening) is not out yet' in logtail(), logtail()
 # ... NSE moved the file: found through the All Reports list (escaped JSON slashes)
 FILES['/api/merged-daily-reports'] = (200, json.dumps([{'link': BASE + '/new/eq_band_changes_28102026.csv'}]).replace('/', '\\/').encode(), 'application/json')
 put(WED, path='/new/eq_band_changes_28102026.csv')
-sb.price_bands_step(CFG, today=WED)
-assert [p['reportDate'] for p in SENT] == ['2026-10-28'], SENT
+sb.price_bands_step(CFG, today=TUE)
+assert [p['reportDate'] for p in SENT] == ['2026-10-27'], SENT
 assert state()['last'] == '2026-10-28'
 
-# --- 4) Thursday: NSE answers with a web page instead of the file -> reported, nothing sent
+# --- 4) Wednesday evening: NSE answers with a web page instead of Thursday's file -> reported, nothing sent
 del SENT[:]
-THU = date(2026, 10, 29)
 put(THU, body=b'<html><body>Resource not available</body></html>', ct='text/html')
-sb.price_bands_step(CFG, today=THU)
+sb.price_bands_step(CFG, today=WED)
 assert SENT == [] and state()['last'] == '2026-10-28'
-assert 'could not download from NSE' in logtail()
+assert 'could not download from NSE - 29-10-2026' in logtail(), logtail()
 
 # --- 5) the deployed web app is older (no 'pricebands' action): state stays, the fix is named
 put(THU)
 SHEET['reply'] = {'ok': False, 'error': 'unknown action'}
-sb.price_bands_step(CFG, today=THU)
+sb.price_bands_step(CFG, today=WED)
 assert state()['last'] == '2026-10-28'
 assert 'New version' in logtail()
 SHEET['reply'] = None
-sb.price_bands_step(CFG, today=THU)
+sb.price_bands_step(CFG, today=WED)
 assert state()['last'] == '2026-10-29'
+assert SENT[-1]['reportDate'] == '2026-10-28'
 
 # --- 6) switched off in config.json
 del SENT[:]
-put(date(2026, 10, 30))
-sb.price_bands_step(dict(CFG, price_bands=False), today=date(2026, 10, 30))
+put(FRI)
+sb.price_bands_step(dict(CFG, price_bands=False), today=THU)
 assert SENT == []
 
 srv.shutdown()

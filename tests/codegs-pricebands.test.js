@@ -78,3 +78,33 @@ test('pricebands: bad token, bad date, empty file', () => {
   const e2 = mock.loadCodeGs({ sheets: [MAIN] }, { props: { AB_BRIDGE_TOKEN: TOKEN, AB_FEED_TOKEN: 'feed' }, now: NOW });
   assert.strictEqual(e2.post({ token: 'feed', action: 'pricebands', reportDate: '2026-10-27', rows: ROWS }).ok, false);
 });
+
+test('pricebands: the same NSE file filed under two dates is cleared, and never filed twice', () => {
+  const HDR = ['Report Date', 'Effective (next weekday)', 'Symbol', 'Company', 'Series', 'From %', 'To %', 'Impact', 'In Main', 'Chart'];
+  const row = (d, sym, from, to) => [d, '', sym, sym + ' Ltd', 'EQ', from, to, '', '', ''];
+  // Friday's file pasted on Sunday 25/10, then filed again as 26/10 (the first bridge version);
+  // Thursday's file pasted as 22/10, then filed again as 23/10; FLIP really went 5 -> 10 -> 5 -> 10.
+  const LOG = { name: 'Price Band Changes', rows: [HDR,
+    row('26/10/2026', 'EMAMIPAP', 5, 20), row('26/10/2026', 'ELPROINTL', 20, 10),
+    row('25/10/2026', 'EMAMIPAP', 5, 20), row('25/10/2026', 'ELPROINTL', 20, 10),
+    row('23/10/2026', 'MICEL', 5, 10), row('22/10/2026', 'MICEL', 5, 10),
+    row('21/10/2026', 'FLIP', 5, 10), row('20/10/2026', 'FLIP', 10, 5), row('19/10/2026', 'FLIP', 5, 10)] };
+  const e = mock.loadCodeGs({ sheets: [MAIN, LOG] }, { props: { AB_BRIDGE_TOKEN: TOKEN }, now: Date.UTC(2026, 9, 26, 16, 0) });
+  const fri = [{ symbol: 'EMAMIPAP', series: 'EQ', from: '5', to: '20' }, { symbol: 'ELPROINTL', series: 'EQ', from: '20', to: '10' }];
+  // the fixed bridge re-sends Friday's file under its real report date (Fri 23/10): nothing new, repeats cleared
+  const r1 = e.post({ token: TOKEN, action: 'pricebands', reportDate: '2026-10-23', rows: fri });
+  assert.strictEqual(r1.added, 0, JSON.stringify(r1));
+  assert.strictEqual(r1.removed, 3, 'the 26/10 copies and the 23/10 MICEL copy');
+  assert.strictEqual(r1.emailed, false);
+  const keys = logRows(e).map((r) => r[2] + '@' + e.call('ab_pbDayKey_', r[0])).sort();
+  assert.deepStrictEqual(keys, ['ELPROINTL@2026-10-25', 'EMAMIPAP@2026-10-25', 'FLIP@2026-10-19', 'FLIP@2026-10-20', 'FLIP@2026-10-21', 'MICEL@2026-10-22']);
+  // Monday evening's file (effective Tuesday): new, emailed
+  const r2 = e.post({ token: TOKEN, action: 'pricebands', reportDate: '2026-10-26', rows: [{ symbol: 'KHADIM', series: 'EQ', from: '5', to: '20' }] });
+  assert.strictEqual(r2.added, 1);
+  assert.strictEqual(r2.removed, 0);
+  assert.strictEqual(r2.emailed, true);
+  assert.strictEqual(e.mails.length, 1);
+  // pasting Monday's file again by hand on Tuesday adds nothing (no second email)
+  assert.deepStrictEqual(Array.from(e.call('ab_pbImport_', e.call('ab_pbToDate_', '27/10/2026'),
+    [{ symbol: 'KHADIM', series: 'EQ', name: '', from: 5, to: 20 }])), []);
+});

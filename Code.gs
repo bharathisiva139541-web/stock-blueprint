@@ -12778,32 +12778,73 @@ function ab_pbWriteLog_(recs) {
   return { total: keep.length, mainSyms: mainSyms };
 }
 
+// The same band change for the same stock filed again within this many days is one NSE
+// file imported twice under two report dates (e.g. pasted on a Sunday and also downloaded
+// by the PC bridge) - a real repeat that soon is not possible (the band already moved).
+const AB_PB_ECHO_DAYS = 4;
+
+function ab_pbChangeKey_(rec) { return rec.symbol + '|' + rec.series + '|' + rec.from + '|' + rec.to; }
+function ab_pbDaysApart_(a, b) { return Math.round((ab_pbDayStart_(b) - ab_pbDayStart_(a)) / 864e5); }
+
 /**
- * Adds one report date's rows to the log (skipping any already there).
- * Returns the records that were genuinely new.
+ * Drops repeats from the log: a record with the same stock, series and band change as the
+ * previous record of that stock, filed 1..AB_PB_ECHO_DAYS days later. Keeps the earliest.
  */
-function ab_pbImport_(reportDate, rows) {
+function ab_pbDropEchoes_(recs) {
+  const byStock = {};
+  recs.forEach(function (x) { const k = x.symbol + '|' + x.series; (byStock[k] = byStock[k] || []).push(x); });
+  const drop = new Set();
+  Object.keys(byStock).forEach(function (k) {
+    const list = byStock[k].slice().sort(function (a, b) { return a.date - b.date; });
+    let keep = list[0];
+    for (let i = 1; i < list.length; i++) {
+      const x = list[i], gap = ab_pbDaysApart_(keep.date, x.date);
+      if (gap >= 0 && gap <= AB_PB_ECHO_DAYS && ab_pbChangeKey_(x) === ab_pbChangeKey_(keep)) drop.add(x);
+      else keep = x;
+    }
+  });
+  return recs.filter(function (x) { return !drop.has(x); });
+}
+
+/**
+ * Adds one report date's rows to the log, skipping any already there - also when the same
+ * file was filed under a nearby date - and clearing such repeats from the log.
+ * Returns { added: records that were genuinely new, removed: repeats cleared }.
+ */
+function ab_pbImportEx_(reportDate, rows) {
   const day = ab_pbDayStart_(reportDate);
-  const log = ab_pbReadLog_();
-  const seen = {};
-  log.forEach(function (x) { seen[ab_pbKey_(x)] = true; });
+  const read = ab_pbReadLog_();
+  const log = ab_pbDropEchoes_(read);
+  const removed = read.length - log.length;
+  const seen = {}, near = {};
+  log.forEach(function (x) {
+    seen[ab_pbKey_(x)] = true;
+    (near[ab_pbChangeKey_(x)] = near[ab_pbChangeKey_(x)] || []).push(x.date);
+  });
   const added = [];
   rows.forEach(function (r) {
     const rec = { date: day, symbol: r.symbol, name: r.name, series: r.series, from: r.from, to: r.to };
-    const k = ab_pbKey_(rec);
+    const k = ab_pbKey_(rec), ck = ab_pbChangeKey_(rec);
     if (seen[k]) return;
+    if ((near[ck] || []).some(function (d) { return Math.abs(ab_pbDaysApart_(d, day)) <= AB_PB_ECHO_DAYS; })) return;
     seen[k] = true;
+    (near[ck] = near[ck] || []).push(day);
     added.push(rec);
     log.push(rec);
   });
-  if (added.length || !SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_PB_SHEET)) ab_pbWriteLog_(log);
-  return added;
+  if (added.length || removed || !SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_PB_SHEET)) ab_pbWriteLog_(log);
+  return { added: added, removed: removed };
 }
+
+/** ab_pbImportEx_ for callers that only need the new records. */
+function ab_pbImport_(reportDate, rows) { return ab_pbImportEx_(reportDate, rows).added; }
 
 
 /**
  * PC bridge: one day's NSE price band file, downloaded on the owner's PC.
- * req = { reportDate: 'yyyy-mm-dd' (the date in the file name), rows: [{ symbol, series, name, from, to }] }.
+ * req = { reportDate: 'yyyy-mm-dd', rows: [{ symbol, series, name, from, to }] }. NSE names the file
+ * after the NEXT trading day (eq_band_changes_27102026.csv is published on the evening of the 26th);
+ * the PC sends the weekday before that date as reportDate, like a paste made that evening.
  * Same import as the paste tab (duplicates ignored). The day's email goes out only while
  * its changes are current (effective today or later); older catch-up days are filed quietly.
  */
@@ -12818,13 +12859,14 @@ function ab_pbFromBridge_(req) {
     if (!sym || /\s/.test(sym) || sym === 'SYMBOL' || (isNaN(from) && isNaN(to))) return;
     rows.push({ symbol: sym, series: String(r.series || '').trim(), name: String(r.name || '').trim(), from: from, to: to });
   });
-  if (!rows.length) return { ok: true, rows: 0, added: 0, inMain: 0, emailed: false, quiet: false };
-  const added = ab_pbImport_(day, rows);
+  if (!rows.length) return { ok: true, rows: 0, added: 0, removed: 0, inMain: 0, emailed: false, quiet: false };
+  const res = ab_pbImportEx_(day, rows), added = res.added;
   const mainSyms = ab_pbMainSymbols_();
   const inMain = added.filter(function (x) { return mainSyms[x.symbol]; }).length;
   const current = ab_pbNextWeekday_(day) >= ab_pbDayStart_(new Date());
   const emailed = !!(added.length && current && AB_PB_EMAIL && ab_pbSendEmail_(added, mainSyms));
-  return { ok: true, rows: rows.length, added: added.length, inMain: inMain, emailed: emailed, quiet: !!(added.length && !current) };
+  return { ok: true, rows: rows.length, added: added.length, removed: res.removed, inMain: inMain, emailed: emailed,
+           quiet: !!(added.length && !current) };
 }
 
 
