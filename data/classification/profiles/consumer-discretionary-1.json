@@ -1,0 +1,1643 @@
+{
+  "macroSectors": [
+    {
+      "id": "m-consumer-discretionary",
+      "description": "Consumer Discretionary covers what Indian households buy by choice rather than necessity: vehicles, durables, apparel and footwear, jewellery, media and entertainment, real estate, retail, hotels, restaurants and other consumer services. Spending rises and falls with incomes, credit availability, festive and wedding seasons and consumer confidence, so the macro sector is usually more cyclical than everyday staples."
+    }
+  ],
+  "sectors": [
+    {
+      "id": "s-automobile-and-auto-components",
+      "description": "Makers of passenger cars, utility vehicles and two- and three-wheelers, their dealers, and the suppliers of components, tyres and spare parts (commercial vehicles and tractors sit under Industrials). Demand follows household incomes, fuel costs, vehicle-loan rates, rural incomes and emission or safety rules, while the shift to electric and alternative-fuel vehicles is reshaping both vehicle makers and suppliers."
+    },
+    {
+      "id": "s-consumer-durables",
+      "description": "Companies making long-lasting goods for homes and people: electronics, appliances, kitchenware, furniture, tiles, sanitaryware, paints, wood panels, jewellery, footwear, luggage and leisure items. Demand is tied to housing activity, urbanisation, festive and wedding seasons, summer heat for cooling products and consumer credit, and brands compete hard on distribution and after-sales service."
+    },
+    {
+      "id": "s-textiles",
+      "description": "India's textile chain from fibre, yarn and fabric to processed, home and technical textiles and finished garments, plus textile traders and sourcing firms. It is a large employer with heavy export exposure, so cotton and polyester prices, global retailer orders, the rupee and trade agreements matter as much as domestic clothing demand."
+    }
+  ],
+  "industries": [
+    {
+      "id": "i-automobiles",
+      "description": "Vehicle makers for passenger cars, utility vehicles and two- and three-wheelers, plus the dealerships that sell and service them.",
+      "businessOverview": "Vehicle makers design, assemble and market vehicles, buying most parts from component suppliers and selling through franchised dealer networks. Earnings depend on volumes, product mix between entry and premium models, pricing power and costs such as steel, aluminium and precious metals. New launches, exports and spare parts add to revenue. Dealers earn trade margins plus service income and commissions on loans and insurance.",
+      "keyDemandDrivers": [
+        "Household incomes and consumer sentiment",
+        "Vehicle-loan availability and interest rates",
+        "Rural incomes and monsoon (two-wheelers)",
+        "New launches, SUVs and premiumisation",
+        "Exports to emerging markets"
+      ],
+      "keyRisks": [
+        "Demand slowdown and dealer stock build-up",
+        "Commodity cost spikes",
+        "Stricter emission and safety norms raising costs",
+        "EV disruption and new competitors",
+        "Changes in GST or EV incentives"
+      ]
+    },
+    {
+      "id": "i-auto-components",
+      "description": "Suppliers of parts, systems, tyres and spare parts to vehicle makers, the replacement aftermarket and global buyers.",
+      "businessOverview": "Component makers supply engine, drivetrain, braking, electrical, electronic, interior and body parts, as well as tyres, to vehicle makers under multi-year programmes won through quoting and validation. The replacement aftermarket, served by distributors and retailers, sells parts and tyres to the large base of vehicles already on the road. Many firms export to global vehicle makers and large suppliers. Margins depend on raw-material pass-through clauses, plant utilisation and content supplied per vehicle.",
+      "keyDemandDrivers": [
+        "Domestic vehicle production",
+        "Replacement demand from vehicles on the road",
+        "Exports and global sourcing shifts",
+        "Rising content per vehicle (electronics, safety, comfort)",
+        "EV and new-technology programmes"
+      ],
+      "keyRisks": [
+        "Customer concentration and OEM price-down demands",
+        "Lag in passing on raw-material costs",
+        "Engine-specific parts losing relevance with EVs",
+        "Tariffs and slowdowns in export markets",
+        "Rubber and crude-linked input swings (tyres)"
+      ]
+    },
+    {
+      "id": "i-consumer-durables",
+      "description": "Makers and brands of long-lasting household and personal goods, from appliances and electronics to paints, tiles, furniture, jewellery and footwear.",
+      "businessOverview": "Companies here manufacture in-house, outsource to contract makers or do both, and sell through dealers, distributors, modern retail, own stores and e-commerce. Brand strength, distribution reach and after-sales service let leaders charge more than unbranded rivals. Many categories track the housing cycle and festive or wedding seasons, while cooling products swing with the weather. Inputs such as metals, polymers, gold, chemicals and gas drive gross margins.",
+      "keyDemandDrivers": [
+        "Urbanisation and rising household incomes",
+        "Housing construction and renovation",
+        "Festive, wedding and summer seasons",
+        "Shift from unorganised to branded products",
+        "Consumer finance and easy EMIs"
+      ],
+      "keyRisks": [
+        "Raw-material and commodity price swings",
+        "Cheap imports and unorganised competition",
+        "Weak discretionary spending",
+        "Aggressive new entrants and price wars",
+        "Dealer inventory and credit stress"
+      ]
+    },
+    {
+      "id": "i-textiles-and-apparels",
+      "description": "Companies across the textile chain: fibres and yarn, fabrics, processing, home and technical textiles, garments and textile trading.",
+      "businessOverview": "The upstream end spins cotton, polyester and other fibres into yarn and weaves or knits it into fabric, which processors dye, print and finish. Downstream firms make garments, home textiles and technical textiles for domestic brands and global retailers, or run their own apparel brands. Spinners earn a spread between fibre and yarn prices, garment exporters earn on factory efficiency and buyer relationships, and branded players depend on design, brand pull and retail reach.",
+      "keyDemandDrivers": [
+        "Global retailer orders and sourcing shifts",
+        "Domestic clothing and home-textile demand",
+        "Cotton and polyester price trends",
+        "Trade agreements and export incentives",
+        "Government schemes such as PLI and textile parks"
+      ],
+      "keyRisks": [
+        "Volatile cotton and fibre prices",
+        "Competition from other low-cost exporting countries",
+        "Weak demand in major export markets",
+        "Currency swings",
+        "High working capital and debt in commodity segments"
+      ]
+    }
+  ],
+  "basicIndustries": [
+    {
+      "id": "b-passenger-cars-and-utility-vehicles",
+      "simplifiedExplanation": "These companies make cars, SUVs and vans for families and individuals, and sell them through dealer showrooms in India and abroad.",
+      "productsAndServices": [
+        "Hatchbacks and sedans",
+        "SUVs and utility vehicles",
+        "MPVs and vans",
+        "Electric, hybrid and CNG models",
+        "Genuine spare parts and accessories",
+        "Vehicle exports"
+      ],
+      "valueChainPosition": "Midstream assembler: buys steel, components, electronics and batteries from suppliers and sells finished vehicles to franchised dealers who retail them.",
+      "howTheyMakeMoney": "They earn the difference between the price of each vehicle sold to dealers and the cost of parts, labour and overheads. Bigger, feature-rich models carry higher margins, while spare parts, accessories and exports add steady income.",
+      "revenueSources": [
+        "Domestic vehicle sales to dealers",
+        "Exports",
+        "Spare parts and accessories",
+        "Extended warranty and other income"
+      ],
+      "operatingCosts": [
+        "Bought-out components",
+        "Steel, aluminium and precious metals",
+        "Battery cells for EVs",
+        "Employee and plant costs",
+        "Advertising and dealer incentives",
+        "Royalty or technology fees (for some)"
+      ],
+      "customersAndEndMarkets": "Individual buyers, families, taxi and fleet operators and government users, reached through dealers; exports go mainly to emerging markets.",
+      "demandSupplyDrivers": "Demand follows incomes, fuel prices, loan rates and new launches, with festive months usually strongest. Supply depends on chip and component availability and plant capacity.",
+      "domesticInternationalExposure": "Mainly domestic, with exports to emerging markets adding volume. Imported electronics and battery cells mean a weaker rupee can raise costs.",
+      "capexIntensity": "High",
+      "capexNote": "Plants, tooling, new platforms, EV development and testing need heavy, ongoing investment.",
+      "workingCapital": "Often light or negative, since dealers usually pay at dispatch while suppliers are paid on credit. Inventory builds up if retail sales slow.",
+      "regulation": "Bharat Stage emission norms, fuel-efficiency (CAFE) rules, safety mandates and Bharat NCAP ratings shape product costs; GST rates vary by vehicle size and fuel, and PLI and EV schemes add incentives.",
+      "competitiveAdvantages": "Wide dealer and service networks, brand trust, sourcing scale and a broad, regularly refreshed model line-up are hard for newcomers to match.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Rising incomes and aspiration lift demand, especially for SUVs and premium variants." },
+        { "factor": "Interest rates", "impact": "Most cars are bought on loans, so cheaper EMIs support volumes." },
+        { "factor": "Commodity prices", "impact": "Steel, aluminium and precious-metal costs squeeze margins until price hikes catch up." },
+        { "factor": "Regulation", "impact": "New emission and safety rules add cost per vehicle and can trigger pre-buying before deadlines." },
+        { "factor": "Technology change", "impact": "The move to EVs, hybrids and connected features changes investment needs and competitive positions." },
+        { "factor": "Crude oil prices", "impact": "High fuel prices can dampen demand and push buyers toward CNG or electric options." }
+      ],
+      "risks": [
+        { "risk": "Demand slowdown", "detail": "Weak sentiment or costly loans can leave dealers with excess stock and force discounts." },
+        { "risk": "EV transition", "detail": "Late EV moves can cost market position, while early bets may take long to pay off." },
+        { "risk": "Supply disruption", "detail": "Shortages of chips or key parts can halt production lines." },
+        { "risk": "Tax changes", "detail": "Changes to GST on vehicles can shift demand between segments." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Car purchases can be postponed, so volumes swing with the economy and credit conditions.",
+      "metricSet": "auto-oem",
+      "relatedBasicIndustries": [
+        "b-auto-components-and-equipments",
+        "b-tyres-and-rubber-products",
+        "b-auto-dealer",
+        "b-commercial-vehicles",
+        "b-iron-and-steel"
+      ],
+      "aliases": ["passenger vehicles", "PV", "cars", "car makers", "SUV", "utility vehicles", "four wheelers", "automobile", "electric cars", "auto OEM"],
+      "themes": ["EV", "Exports"]
+    },
+    {
+      "id": "b-2-3-wheelers",
+      "simplifiedExplanation": "These companies make motorcycles, scooters, mopeds and three-wheelers such as auto-rickshaws and e-rickshaws, the most common personal and last-mile vehicles in India.",
+      "productsAndServices": [
+        "Commuter and premium motorcycles",
+        "Scooters and mopeds",
+        "Electric two-wheelers",
+        "Passenger and cargo three-wheelers",
+        "E-rickshaws",
+        "Spare parts, accessories and merchandise"
+      ],
+      "valueChainPosition": "Midstream assembler that buys engine parts, frames, tyres, batteries and electronics from suppliers and sells through dealers spread across towns and villages.",
+      "howTheyMakeMoney": "They earn a margin on each vehicle sold, helped by premium models, spare parts and exports. Very high volumes spread plant and R&D costs thinly.",
+      "revenueSources": [
+        "Domestic vehicle sales",
+        "Exports",
+        "Spare parts and accessories",
+        "Merchandise and other income"
+      ],
+      "operatingCosts": [
+        "Components and raw materials",
+        "Steel, aluminium and rubber",
+        "Battery cells for EVs",
+        "Employee costs",
+        "Marketing and dealer support",
+        "R&D"
+      ],
+      "customersAndEndMarkets": "Commuters, students, rural households, delivery riders and three-wheeler operators; exports go mainly to Africa, Latin America and Asia.",
+      "demandSupplyDrivers": "Rural incomes, harvests, weddings and loan availability drive commuter demand, while premium bikes and electric scooters follow urban aspiration and running-cost savings.",
+      "domesticInternationalExposure": "The domestic market dominates, but exports matter for several makers, so currencies and import curbs in buyer countries affect results.",
+      "capexIntensity": "Medium",
+      "capexNote": "Assembly plants are moderately capital-intensive, but EV platforms, battery packs and R&D raise spending.",
+      "workingCapital": "Usually light because dealers pay upfront; export receivables and EV battery stocks can stretch it.",
+      "regulation": "Bharat Stage emission and on-board diagnostics norms, safety rules, central EV incentive schemes and PLI for advanced automotive technology; state permits limit three-wheeler numbers in many cities.",
+      "competitiveAdvantages": "Deep rural dealer reach, trusted brands, low-cost manufacturing and strong resale value protect incumbents, while EV start-ups compete on technology and design.",
+      "drivers": [
+        { "factor": "Rural demand", "impact": "Good harvests and farm incomes lift commuter motorcycle sales." },
+        { "factor": "Credit growth", "impact": "Easy two-wheeler loans from NBFCs and banks widen the buyer base." },
+        { "factor": "Crude oil prices", "impact": "Higher petrol prices raise running costs and can speed the switch to electric scooters." },
+        { "factor": "Government policy", "impact": "EV subsidies and PLI support electric models, and cuts to them can dent demand." },
+        { "factor": "Exports & global demand", "impact": "Currency and economic swings in African and Latin American markets move export volumes." }
+      ],
+      "risks": [
+        { "risk": "EV disruption", "detail": "New electric players and fast battery progress can erode the position of petrol models." },
+        { "risk": "Rural slowdown", "detail": "A weak monsoon or farm stress can hurt entry-level demand." },
+        { "risk": "Export market shocks", "detail": "Currency crises or import curbs abroad can cut export orders suddenly." },
+        { "risk": "Battery safety and cost", "detail": "EV fires or battery cost spikes can hurt trust and margins." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes follow rural incomes, credit and fuel costs, though a two-wheeler is basic mobility for many families.",
+      "metricSet": "auto-oem",
+      "relatedBasicIndustries": [
+        "b-auto-components-and-equipments",
+        "b-tyres-and-rubber-products",
+        "b-passenger-cars-and-utility-vehicles",
+        "b-non-banking-financial-company-nbfc",
+        "b-auto-dealer"
+      ],
+      "aliases": ["two wheelers", "2W", "2 wheeler", "motorcycles", "bikes", "scooters", "electric scooter", "three wheelers", "3W", "auto rickshaw", "e-rickshaw"],
+      "themes": ["EV", "Rural demand", "Exports"]
+    },
+    {
+      "id": "b-auto-dealer",
+      "simplifiedExplanation": "Auto dealers run showrooms and workshops that sell new vehicles made by manufacturers, service them and sell spare parts, used cars and add-ons.",
+      "productsAndServices": [
+        "New car and two-wheeler sales",
+        "Service and repair workshops",
+        "Spare parts and accessories",
+        "Pre-owned vehicles",
+        "Vehicle loan and insurance tie-ups",
+        "Extended warranties"
+      ],
+      "valueChainPosition": "Downstream retailer between vehicle makers and buyers: buys vehicles from the manufacturer, sells them to customers and earns commissions from lenders and insurers.",
+      "howTheyMakeMoney": "New-vehicle sales give thin trade margins plus manufacturer incentives. Service, spares, accessories and finance or insurance commissions earn much higher margins and are steadier.",
+      "revenueSources": [
+        "New vehicle sales",
+        "After-sales service and spares",
+        "Accessories and extended warranties",
+        "Finance and insurance commissions",
+        "Pre-owned vehicle sales"
+      ],
+      "operatingCosts": [
+        "Vehicle purchase cost",
+        "Showroom and workshop rent",
+        "Sales staff and technicians",
+        "Interest on inventory funding",
+        "Local marketing"
+      ],
+      "customersAndEndMarkets": "Individual and corporate vehicle buyers in the dealer's territory, and existing owners who return for service and repairs.",
+      "demandSupplyDrivers": "New-vehicle sales follow the auto cycle and the manufacturer's model line-up; service income grows with the number of vehicles the dealer has sold in its region.",
+      "domesticInternationalExposure": "Purely domestic with no direct export exposure; luxury-brand dealers feel import duty and currency changes through vehicle prices.",
+      "capexIntensity": "Medium",
+      "capexNote": "Showrooms and workshops need fit-outs and equipment to the brand's standards, often on leased premises.",
+      "workingCapital": "Vehicle inventory is the largest item, funded by bank inventory lines; slow sales or stock pushed by the manufacturer tie up cash and raise interest costs.",
+      "regulation": "Light, general business regulation plus dealer agreements with manufacturers; insurance selling follows IRDAI rules and vehicle registration runs through state transport departments.",
+      "competitiveAdvantages": "Exclusive rights to a brand in a territory, prime locations and a large base of serviced vehicles give a steady after-sales stream.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Showroom footfall and retail sales track buyer sentiment and new launches." },
+        { "factor": "Interest rates", "impact": "Customer loan rates and the dealer's own inventory funding cost both affect profits." },
+        { "factor": "Credit growth", "impact": "Easy retail finance helps convert enquiries and earns dealers commissions." },
+        { "factor": "Manufacturer strategy", "impact": "Model launches, incentive schemes and stock pushed by the brand drive dealer margins." }
+      ],
+      "risks": [
+        { "risk": "Brand dependence", "detail": "Results hinge on one or a few brands, so a weak line-up or loss of a dealership hurts sharply." },
+        { "risk": "Inventory pile-up", "detail": "Unsold stock raises interest costs and forces discounts." },
+        { "risk": "Thin margins", "detail": "Small vehicle-sale margins leave little cushion when volumes fall." },
+        { "risk": "Changing sales models", "detail": "Direct online sales and low-maintenance EVs can shrink the dealer's role over time." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Vehicle sales are cyclical, though service and spares income cushions downturns.",
+      "metricSet": "auto-dealer",
+      "relatedBasicIndustries": [
+        "b-passenger-cars-and-utility-vehicles",
+        "b-2-3-wheelers",
+        "b-dealers-commercial-vehicles-tractors-construction-vehicles",
+        "b-insurance-distributors",
+        "b-non-banking-financial-company-nbfc"
+      ],
+      "aliases": ["car dealer", "dealership", "automobile dealer", "car showroom", "auto retail", "vehicle dealer", "used cars", "pre-owned cars"],
+      "themes": []
+    },
+    {
+      "id": "b-auto-components-and-equipments",
+      "simplifiedExplanation": "These companies make the many parts that go into vehicles, from engine and brake parts to wiring, lights, seats and batteries, and sell them to vehicle makers and as spare parts.",
+      "productsAndServices": [
+        "Engine and transmission parts",
+        "Brakes, steering and suspension",
+        "Wiring harnesses and electronics",
+        "Lighting, seating and interiors",
+        "Forged and cast components",
+        "Batteries",
+        "EV motors, controllers and chargers"
+      ],
+      "valueChainPosition": "Upstream of vehicle makers: buys steel, aluminium, copper, plastics and electronics, and supplies vehicle makers, larger first-tier suppliers and the replacement aftermarket.",
+      "howTheyMakeMoney": "They win multi-year supply contracts for specific vehicle models and earn a manufacturing margin per part. Aftermarket and export sales usually earn better margins than domestic supply to vehicle makers.",
+      "revenueSources": [
+        "Supply to domestic vehicle makers",
+        "Replacement aftermarket",
+        "Exports to global vehicle makers and suppliers",
+        "Tooling and engineering fees"
+      ],
+      "operatingCosts": [
+        "Steel, aluminium, copper and plastics",
+        "Electronic parts and chips",
+        "Power and fuel",
+        "Employee costs",
+        "Tooling and maintenance"
+      ],
+      "customersAndEndMarkets": "Car, two-wheeler, commercial-vehicle and tractor makers, global automotive and industrial customers, and mechanics and parts retailers in the aftermarket.",
+      "demandSupplyDrivers": "Demand follows vehicle production at home and abroad and rising content per vehicle from safety, comfort and electronics; replacement demand follows the vehicles already on the road.",
+      "domesticInternationalExposure": "Many firms export to North America, Europe and Asia, so global auto cycles, tariffs and the rupee matter; some electronics are imported.",
+      "capexIntensity": "Medium",
+      "capexNote": "Machining, forging, casting and testing lines need steady investment, with new capacity usually tied to won programmes.",
+      "workingCapital": "Receivables from vehicle makers and export customers plus raw-material stocks tie up cash; aftermarket distribution needs more inventory.",
+      "regulation": "Vehicle safety and emission rules set through Automotive Industry Standards (AIS) and BIS shape products; PLI supports advanced automotive components, and export markets apply tariffs and local-content rules.",
+      "competitiveAdvantages": "Approved-supplier status, long validation cycles, engineering skills and cost leadership make customers reluctant to switch suppliers mid-programme.",
+      "drivers": [
+        { "factor": "Domestic vehicle production", "impact": "Vehicle makers' output schedules directly set volumes for their suppliers." },
+        { "factor": "Exports & global demand", "impact": "Global vehicle makers diversifying sourcing to India can lift export orders." },
+        { "factor": "Commodity prices", "impact": "Metal cost changes are passed to customers only with a lag, squeezing or helping margins." },
+        { "factor": "Technology change", "impact": "EVs need new parts such as motors and power electronics while reducing engine and exhaust parts." },
+        { "factor": "Capacity utilisation", "impact": "High fixed costs mean margins expand when plants run fuller." }
+      ],
+      "risks": [
+        { "risk": "Customer concentration", "detail": "Losing or slowing one large vehicle-maker customer can hit revenue hard." },
+        { "risk": "Engine-part obsolescence", "detail": "Parts used only in petrol and diesel engines face shrinking demand as EVs spread." },
+        { "risk": "Export tariffs", "detail": "Trade duties in key markets can cut orders or margins." },
+        { "risk": "Price-down pressure", "detail": "Vehicle makers often negotiate regular price reductions from suppliers." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Tied to vehicle production cycles, softened somewhat by replacement and export sales.",
+      "metricSet": "auto-components",
+      "relatedBasicIndustries": [
+        "b-passenger-cars-and-utility-vehicles",
+        "b-2-3-wheelers",
+        "b-commercial-vehicles",
+        "b-castings-and-forgings",
+        "b-abrasives-and-bearings"
+      ],
+      "aliases": ["auto parts", "auto ancillary", "auto ancillaries", "automotive components", "car parts", "spare parts", "tier 1 supplier", "OEM supplier", "EV components"],
+      "themes": ["EV", "Exports", "China+1"]
+    },
+    {
+      "id": "b-tyres-and-rubber-products",
+      "simplifiedExplanation": "Tyre companies make tyres and tubes for cars, bikes, trucks, tractors and mining vehicles; most sales go to owners replacing worn-out tyres.",
+      "productsAndServices": [
+        "Truck and bus radial tyres",
+        "Passenger car tyres",
+        "Two-wheeler tyres and tubes",
+        "Farm and tractor tyres",
+        "Off-highway and mining tyres",
+        "Tread rubber and other rubber products"
+      ],
+      "valueChainPosition": "Midstream converter: buys natural and synthetic rubber, carbon black, tyre cord and chemicals, and sells to vehicle makers, replacement dealers and overseas buyers.",
+      "howTheyMakeMoney": "They earn the gap between tyre prices and raw-material costs. Replacement tyres sold through dealers under strong brands usually earn more than tyres supplied to vehicle makers.",
+      "revenueSources": [
+        "Replacement market",
+        "Original equipment supply to vehicle makers",
+        "Exports",
+        "Other rubber products"
+      ],
+      "operatingCosts": [
+        "Natural rubber",
+        "Synthetic rubber and carbon black (crude-linked)",
+        "Tyre cord and steel bead wire",
+        "Power and fuel",
+        "Employee costs",
+        "Advertising and dealer schemes"
+      ],
+      "customersAndEndMarkets": "Vehicle owners, fleet operators and farmers through dealers; car, two-wheeler, truck and tractor makers; and global farm and off-highway equipment users.",
+      "demandSupplyDrivers": "Replacement demand follows kilometres driven and freight activity, while supply to vehicle makers tracks production. Input costs swing with crude oil and rubber harvests.",
+      "domesticInternationalExposure": "Natural rubber is partly imported and crude-linked inputs follow global prices; some makers export a large share of specialty farm and off-highway tyres.",
+      "capexIntensity": "High",
+      "capexNote": "Tyre plants, especially radial lines, need large investment and take time to ramp up.",
+      "workingCapital": "Raw-material stocks and dealer credit are significant, and rubber price swings change the value of inventory.",
+      "regulation": "Mandatory BIS standards for tyres, import licensing and trade-remedy duties on some tyre types, and Rubber Board oversight of natural rubber.",
+      "competitiveAdvantages": "Strong brands, wide dealer networks, approvals from vehicle makers and radial and specialty-tyre technology create high entry barriers.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Natural rubber prices are the largest swing factor in tyre margins." },
+        { "factor": "Crude oil prices", "impact": "Synthetic rubber, carbon black and other inputs move with crude." },
+        { "factor": "Infrastructure spending", "impact": "Road building, mining and freight movement lift truck and off-highway tyre demand." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported truck and car tyres pressure prices when import curbs ease." },
+        { "factor": "Exports & global demand", "impact": "Global farm and construction equipment cycles drive specialty tyre exports." }
+      ],
+      "risks": [
+        { "risk": "Raw-material spike", "detail": "Sharp rubber or crude moves hurt margins before price hikes catch up." },
+        { "risk": "Price competition", "detail": "Discounting among large players in replacement tyres can erode margins." },
+        { "risk": "Export slowdown", "detail": "Weak farm or mining demand abroad hits specialty tyre makers." },
+        { "risk": "Overcapacity", "detail": "Simultaneous capacity additions can depress utilisation and pricing." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Replacement demand is steady, but supply to vehicle makers and raw-material swings make margins cyclical.",
+      "metricSet": "auto-components",
+      "relatedBasicIndustries": [
+        "b-carbon-black",
+        "b-rubber",
+        "b-passenger-cars-and-utility-vehicles",
+        "b-commercial-vehicles",
+        "b-tractors"
+      ],
+      "aliases": ["tyres", "tires", "tyre makers", "tyre companies", "rubber products", "radial tyres", "OTR tyres", "tubes"],
+      "themes": ["Exports"]
+    },
+    {
+      "id": "b-trading-auto-components",
+      "simplifiedExplanation": "These firms do not make parts; they buy spare parts and accessories from manufacturers and distribute them to shops, garages and fleet owners.",
+      "productsAndServices": [
+        "Distribution of branded spare parts",
+        "Filters, brakes, bearings and clutches",
+        "Lubricants and accessories",
+        "Batteries and tyres (some)",
+        "Warehousing and delivery to retailers"
+      ],
+      "valueChainPosition": "Downstream distributor between component makers and the aftermarket of parts retailers, workshops and fleets.",
+      "howTheyMakeMoney": "They earn a distribution margin and volume incentives from the brands they carry, and win business through range, stock availability and fast delivery.",
+      "revenueSources": [
+        "Sale of traded spare parts",
+        "Supplier incentives and discounts",
+        "Accessories and consumables"
+      ],
+      "operatingCosts": [
+        "Purchase cost of goods",
+        "Warehousing and logistics",
+        "Sales staff",
+        "Interest on working capital"
+      ],
+      "customersAndEndMarkets": "Spare-parts retailers, independent garages, fleet operators and institutional buyers such as state transport undertakings.",
+      "demandSupplyDrivers": "Demand follows the number and age of vehicles on the road and kilometres driven rather than new-vehicle sales. Supply terms depend on distribution agreements with principal brands.",
+      "domesticInternationalExposure": "Mostly domestic; some traded parts are imported, so the rupee and import duties affect costs.",
+      "capexIntensity": "Low",
+      "capexNote": "Assets are mainly warehouses, delivery vehicles and IT systems.",
+      "workingCapital": "Heavy: stocking thousands of part numbers and giving credit to retailers make working capital the main use of cash.",
+      "regulation": "Light, general business regulation; GST compliance and BIS rules for some safety-critical parts apply.",
+      "competitiveAdvantages": "Long-term distribution rights for strong brands, wide reach and efficient logistics, though brands can switch distributors or sell directly.",
+      "drivers": [
+        { "factor": "Vehicles on the road", "impact": "A larger and older vehicle base needs more replacement parts." },
+        { "factor": "Interest rates", "impact": "Inventory and receivables are often funded with borrowings, so rates affect profit." },
+        { "factor": "Technology change", "impact": "EVs have fewer wear-and-tear parts, which can slowly shrink the aftermarket mix." },
+        { "factor": "Imports & dumping", "impact": "Cheap or counterfeit parts compete with the branded products distributors carry." }
+      ],
+      "risks": [
+        { "risk": "Principal dependence", "detail": "Losing a key brand's distribution rights can cut revenue sharply." },
+        { "risk": "Counterfeit competition", "detail": "Fake and unbranded parts undercut prices." },
+        { "risk": "Inventory obsolescence", "detail": "Slow-moving part numbers for older models can become dead stock." },
+        { "risk": "Online disintermediation", "detail": "E-commerce platforms and brands selling direct can bypass distributors." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Replacement demand is steadier than new-vehicle sales, but credit stress among retailers can hurt collections.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": [
+        "b-auto-components-and-equipments",
+        "b-tyres-and-rubber-products",
+        "b-trading-and-distributors",
+        "b-distributors"
+      ],
+      "aliases": ["auto parts distributor", "spare parts distributor", "auto aftermarket", "automotive trading", "spares trading", "replacement parts"],
+      "themes": []
+    },
+    {
+      "id": "b-cycles",
+      "simplifiedExplanation": "Cycle companies make bicycles for everyday transport, children, fitness and sport, along with parts such as frames, rims and chains.",
+      "productsAndServices": [
+        "Standard roadster bicycles",
+        "Kids' bicycles",
+        "Premium geared and sports bicycles",
+        "Electric bicycles",
+        "Cycle parts and components",
+        "Fitness equipment (some)"
+      ],
+      "valueChainPosition": "Midstream maker and assembler: buys steel tubes, alloy parts, tyres and gears, and sells through dealers, retail stores, e-commerce and government tenders.",
+      "howTheyMakeMoney": "Standard cycles are a high-volume, thin-margin business. Premium, kids' and electric cycles and branded retail earn better margins.",
+      "revenueSources": [
+        "Dealer and retail sales",
+        "Government and institutional tenders",
+        "Exports",
+        "Parts and components"
+      ],
+      "operatingCosts": [
+        "Steel and alloy",
+        "Bought-out parts such as gears and tyres",
+        "Labour",
+        "Freight and distribution",
+        "Marketing"
+      ],
+      "customersAndEndMarkets": "Low-income commuters, rural users, students under state school schemes, children and urban fitness enthusiasts.",
+      "demandSupplyDrivers": "Mass demand depends on rural incomes and lumpy state bicycle-distribution tenders for students; premium demand follows fitness trends and urban lifestyles.",
+      "domesticInternationalExposure": "Mostly domestic with some exports; high-end parts and premium bikes are often imported, so the rupee and import duties matter.",
+      "capexIntensity": "Low",
+      "capexNote": "Frame-making, painting and assembly lines need modest investment.",
+      "workingCapital": "Government tenders can bring delayed payments, and stocking before school-year and festive demand raises inventory.",
+      "regulation": "BIS standards cover bicycles and parts; import duties and state school-scheme tender rules shape demand.",
+      "competitiveAdvantages": "Brand, dealer reach and low-cost manufacturing matter in mass cycles, while design and retail presence matter in premium segments.",
+      "drivers": [
+        { "factor": "Rural demand", "impact": "Farm incomes decide how many households buy basic cycles." },
+        { "factor": "Government policy", "impact": "State schemes that give bicycles to students create large but irregular orders." },
+        { "factor": "Commodity prices", "impact": "Steel cost moves hit margins in a price-sensitive market." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported cycles and parts compete with local makers." },
+        { "factor": "Consumer demand", "impact": "Fitness and leisure trends lift premium and electric cycles." }
+      ],
+      "risks": [
+        { "risk": "Tender dependence", "detail": "Delayed or cancelled state orders cause sharp revenue swings." },
+        { "risk": "Price competition", "detail": "Unorganised makers and imports keep pricing tight." },
+        { "risk": "Steel cost spikes", "detail": "Input inflation is hard to pass on to low-income buyers." },
+        { "risk": "Shift to motorised transport", "detail": "Rising incomes push buyers from cycles to two-wheelers." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Basic cycles are a low-cost necessity, but tenders and premium demand swing.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-2-3-wheelers",
+        "b-leisure-products",
+        "b-iron-and-steel-products",
+        "b-tyres-and-rubber-products"
+      ],
+      "aliases": ["bicycles", "bicycle", "cycle makers", "e-bikes", "electric cycles", "kids cycles", "geared cycles"],
+      "themes": ["Rural demand"]
+    },
+    {
+      "id": "b-consumer-electronics",
+      "simplifiedExplanation": "Companies that make or assemble TVs, smartphones, LED lights, audio products and other electronics, either under their own brand or as contract manufacturers for big brands.",
+      "productsAndServices": [
+        "Televisions and displays",
+        "Mobile phones and wearables",
+        "LED lighting and fixtures",
+        "Audio and smart devices",
+        "Set-top boxes and IoT devices",
+        "Electronics contract manufacturing (EMS)"
+      ],
+      "valueChainPosition": "Midstream: imports or buys chips, display panels and components, assembles finished products and supplies brands, distributors and retailers.",
+      "howTheyMakeMoney": "Contract manufacturers earn thin margins on very high volumes and gain from scale and making their own components. Brand owners earn higher gross margins but spend heavily on marketing and service.",
+      "revenueSources": [
+        "Contract manufacturing for brands",
+        "Own-brand product sales",
+        "Component and sub-assembly sales",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Imported chips, panels and components",
+        "Labour",
+        "Freight and logistics",
+        "Warranty and after-sales service",
+        "Marketing (brand owners)"
+      ],
+      "customersAndEndMarkets": "Global and Indian electronics brands, telecom and DTH operators, retailers, e-commerce platforms and end consumers.",
+      "demandSupplyDrivers": "Demand follows product upgrades, festive seasons and global brands moving production to India; supply depends on component availability and chip and panel price cycles.",
+      "domesticInternationalExposure": "Heavy reliance on imported components makes the rupee and global component prices important, and exports of phones and devices are a major driver.",
+      "capexIntensity": "Medium",
+      "capexNote": "Assembly is fairly capital-light, but component plants such as displays, circuit boards and camera modules need more investment.",
+      "workingCapital": "Component stocks and customer receivables are large; contract makers usually pass on component costs but must manage inventory tightly.",
+      "regulation": "MeitY PLI schemes for mobile phones and IT hardware, component-manufacturing incentives, compulsory BIS registration for many electronic products, and import duties on finished goods and parts.",
+      "competitiveAdvantages": "Scale, quality track record, approvals from global brands and in-house components create stickiness; brand owners rely on distribution and service reach.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "PLI and component incentives make local assembly competitive and attract global brands." },
+        { "factor": "Exports & global demand", "impact": "Brands diversifying away from China add large export volumes." },
+        { "factor": "Consumer demand", "impact": "Festive sales and upgrade cycles drive domestic TV, phone and audio demand." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the cost of imported components." },
+        { "factor": "Technology change", "impact": "Short product cycles demand constant retooling and new capabilities." }
+      ],
+      "risks": [
+        { "risk": "Customer concentration", "detail": "A few large brands often make up most of a contract maker's revenue." },
+        { "risk": "Thin margins", "detail": "Small cost overruns or price cuts can wipe out profit on high-volume contracts." },
+        { "risk": "Incentive changes", "detail": "Profitability can fall when PLI support ends or rules change." },
+        { "risk": "Component shortages", "detail": "Chip or panel supply problems can halt production." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "End demand is discretionary, but the structural shift of electronics manufacturing to India adds steadier growth drivers.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-household-appliances",
+        "b-computers-hardware-and-equipments",
+        "b-telecom-equipment-and-accessories",
+        "b-other-electrical-equipment"
+      ],
+      "aliases": ["electronics", "EMS", "electronics manufacturing services", "contract manufacturing", "TV makers", "mobile phone manufacturing", "LED lighting", "consumer electronics"],
+      "themes": ["China+1", "Exports", "PLI"]
+    },
+    {
+      "id": "b-furniture-home-furnishing",
+      "simplifiedExplanation": "These companies make mattresses, sofas, beds, modular furniture and home furnishings, and sell them through stores, dealers and online.",
+      "productsAndServices": [
+        "Mattresses and pillows",
+        "PU foam",
+        "Sofas, recliners and beds",
+        "Modular and office furniture",
+        "Home furnishings and decor",
+        "Vinyl and other flooring (some)"
+      ],
+      "valueChainPosition": "Downstream maker and brand: buys foam chemicals, wood panels, fabric and steel, and sells to households, offices and hotels through dealers, own stores and e-commerce.",
+      "howTheyMakeMoney": "Brands earn healthy gross margins on design and comfort but spend on marketing, showrooms and delivery. Foam and contract-furniture makers earn more on volume and efficiency.",
+      "revenueSources": [
+        "Retail and dealer sales",
+        "Online and direct-to-consumer sales",
+        "Institutional and hotel projects",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Foam chemicals (crude-linked)",
+        "Wood panels, fabric and steel",
+        "Showroom rent and staff",
+        "Freight and last-mile delivery",
+        "Advertising"
+      ],
+      "customersAndEndMarkets": "Households moving into new or renovated homes, offices, hotels, hospitals and export buyers.",
+      "demandSupplyDrivers": "Demand follows home completions, upgrades, weddings and online shopping, while a large unorganised market competes on price.",
+      "domesticInternationalExposure": "Mainly domestic; foam chemicals track global prices, imported furniture competes in some categories and a few firms export.",
+      "capexIntensity": "Medium",
+      "capexNote": "Foam and furniture plants plus company-owned showrooms need steady investment.",
+      "workingCapital": "Finished goods across many designs and stores tie up cash; online sales cut receivables but raise returns and delivery costs.",
+      "regulation": "Light, general business regulation; BIS standards exist for several furniture and foam products, and GST rates affect pricing.",
+      "competitiveAdvantages": "Trusted brands, wide distribution, in-house foam or panel production and reliable delivery separate leaders from unorganised makers.",
+      "drivers": [
+        { "factor": "Real estate cycle", "impact": "New home handovers trigger furniture and mattress purchases." },
+        { "factor": "Consumer demand", "impact": "Upgrading to branded mattresses and furniture lifts premium sales." },
+        { "factor": "Crude oil prices", "impact": "Foam chemicals follow crude, so oil moves drive gross margins." },
+        { "factor": "Online and direct sales", "impact": "E-commerce widens reach but adds discounting and logistics costs." }
+      ],
+      "risks": [
+        { "risk": "Raw-material swings", "detail": "Foam chemical and wood-panel price spikes squeeze margins." },
+        { "risk": "Unorganised competition", "detail": "Local carpenters and foam makers undercut on price." },
+        { "risk": "Imports", "detail": "Cheap imported furniture pressures pricing in some segments." },
+        { "risk": "Discretionary slowdown", "detail": "Big-ticket home purchases are easy to postpone." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Linked to housing and discretionary spending, so purchases can be delayed in downturns.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-plywood-boards-laminates",
+        "b-residential-commercial-projects",
+        "b-plastic-products-consumer",
+        "b-houseware",
+        "b-petrochemicals"
+      ],
+      "aliases": ["furniture", "mattress", "mattresses", "home furnishing", "home decor", "foam", "sofa", "modular furniture"],
+      "themes": ["Housing"]
+    },
+    {
+      "id": "b-ceramics",
+      "simplifiedExplanation": "Ceramics companies make floor and wall tiles, vitrified and glazed tiles and ceramic tableware used in homes, offices and shops.",
+      "productsAndServices": [
+        "Ceramic wall and floor tiles",
+        "Vitrified and porcelain tiles",
+        "Large-format slabs",
+        "Outdoor and industrial tiles",
+        "Ceramic tableware",
+        "Tile adhesives and care products"
+      ],
+      "valueChainPosition": "Midstream maker: uses clay, feldspar and glazes fired in gas kilns, and sells to dealers, builders, contractors and export buyers.",
+      "howTheyMakeMoney": "They earn a spread between tile prices and the cost of minerals, fuel and freight. Brands and premium designs earn more, and many also sell tiles sourced from partner plants.",
+      "revenueSources": [
+        "Retail sales through dealers",
+        "Project sales to builders",
+        "Exports",
+        "Outsourced and traded tiles"
+      ],
+      "operatingCosts": [
+        "Natural gas or propane fuel",
+        "Clay, feldspar and glazes",
+        "Power",
+        "Freight (tiles are heavy)",
+        "Dealer incentives and advertising"
+      ],
+      "customersAndEndMarkets": "Home builders and renovators, real-estate developers, commercial projects and importers abroad.",
+      "demandSupplyDrivers": "Demand follows housing, renovation and commercial construction; a large unorganised manufacturing cluster in Gujarat adds supply and keeps prices competitive.",
+      "domesticInternationalExposure": "Exports to the Middle East, Europe, the US and other markets are significant, and gas prices and global freight rates affect competitiveness.",
+      "capexIntensity": "Medium",
+      "capexNote": "Kilns and presses are capital-intensive, though many brands limit spending by sourcing from associate plants.",
+      "workingCapital": "Dealer credit and finished-goods stock across many designs and sizes keep working capital significant.",
+      "regulation": "BIS standards for tiles, pollution-control rules on kilns and fuel use, and trade remedies such as anti-dumping duties at home or in export markets.",
+      "competitiveAdvantages": "Brand, design range, dealer reach and low fuel cost matter; scale and exports help, but entry barriers in basic tiles are low.",
+      "drivers": [
+        { "factor": "Real estate cycle", "impact": "New construction and renovation drive most tile demand." },
+        { "factor": "Gas prices", "impact": "Fuel is a major cost, so gas price moves swing margins." },
+        { "factor": "Exports & global demand", "impact": "Export orders absorb surplus capacity when domestic demand is soft." },
+        { "factor": "Imports & dumping", "impact": "Trade duties at home and abroad shape pricing and export access." },
+        { "factor": "Consumer demand", "impact": "Preference for large-format and designer tiles supports branded players." }
+      ],
+      "risks": [
+        { "risk": "Fuel cost spike", "detail": "A jump in gas prices can erase margins quickly." },
+        { "risk": "Overcapacity", "detail": "Rapid additions in unorganised clusters cause price wars." },
+        { "risk": "Export barriers", "detail": "Anti-dumping actions or freight disruption can shut export markets." },
+        { "risk": "Housing slowdown", "detail": "Weak construction activity cuts volumes." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Tied closely to housing and construction activity.",
+      "metricSet": "building-materials",
+      "relatedBasicIndustries": [
+        "b-sanitary-ware",
+        "b-granites-and-marbles",
+        "b-residential-commercial-projects",
+        "b-lpg-cng-png-lng-supplier"
+      ],
+      "aliases": ["tiles", "ceramic tiles", "vitrified tiles", "floor tiles", "wall tiles", "porcelain tiles", "tile makers", "GVT tiles"],
+      "themes": ["Housing", "Exports"]
+    },
+    {
+      "id": "b-granites-and-marbles",
+      "simplifiedExplanation": "These companies quarry granite and marble, cut and polish it into slabs and tiles, and some make engineered quartz surfaces for kitchen tops and floors.",
+      "productsAndServices": [
+        "Granite blocks and slabs",
+        "Marble slabs and tiles",
+        "Engineered quartz surfaces",
+        "Kitchen countertops and vanity tops",
+        "Monuments and cut-to-size stone"
+      ],
+      "valueChainPosition": "Upstream to midstream: quarries stone under state leases or buys blocks, processes it, and sells to builders, fabricators, distributors and export buyers.",
+      "howTheyMakeMoney": "They earn the premium that colour, quality and finish command over quarrying and processing costs; engineered quartz and export orders can earn better margins.",
+      "revenueSources": [
+        "Export sales",
+        "Domestic slab and tile sales",
+        "Quarry block sales",
+        "Engineered surfaces"
+      ],
+      "operatingCosts": [
+        "Quarrying costs and royalties",
+        "Power and cutting consumables",
+        "Resins and quartz (engineered stone)",
+        "Labour",
+        "Freight and container costs"
+      ],
+      "customersAndEndMarkets": "Home builders, interior fabricators, real-estate projects and kitchen and bath distributors in the US, Europe and Asia.",
+      "demandSupplyDrivers": "Demand follows housing and renovation, especially in export markets; supply depends on quarry approvals and competition from tiles and other surfaces.",
+      "domesticInternationalExposure": "Many firms are export-heavy, so overseas housing, trade duties abroad and the rupee matter a great deal.",
+      "capexIntensity": "Medium",
+      "capexNote": "Quarry equipment, gang-saws and quartz lines need moderate investment.",
+      "workingCapital": "Large stocks of blocks and slabs in many colours plus export receivables make working capital heavy.",
+      "regulation": "Granite and marble are minor minerals, so quarry leases, royalties and environmental clearances follow state rules under the MMDR Act; trade duties abroad affect exports.",
+      "competitiveAdvantages": "Rare colour deposits, quarry rights, finishing quality and long buyer relationships are hard to replicate.",
+      "drivers": [
+        { "factor": "Exports & global demand", "impact": "Housing and remodelling in the US and Europe drive export orders." },
+        { "factor": "Real estate cycle", "impact": "Premium homes and offices at home use natural stone for floors and counters." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises export realisations." },
+        { "factor": "Regulation", "impact": "Lease renewals and mining clearances decide quarry output." },
+        { "factor": "Trade duties abroad", "impact": "Anti-dumping or other duties in buyer countries can shut out exports." }
+      ],
+      "risks": [
+        { "risk": "Export duties", "detail": "Trade actions in a key market can cut volumes sharply." },
+        { "risk": "Quarry lease issues", "detail": "Delays or disputes over leases can stop supply of key colours." },
+        { "risk": "Substitution", "detail": "Large tiles and other engineered surfaces compete with natural stone." },
+        { "risk": "Freight costs", "detail": "Heavy, bulky shipments are exposed to container rate spikes." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Follows housing cycles at home and in key export markets.",
+      "metricSet": "building-materials",
+      "relatedBasicIndustries": [
+        "b-ceramics",
+        "b-industrial-minerals",
+        "b-residential-commercial-projects",
+        "b-other-construction-materials"
+      ],
+      "aliases": ["granite", "marble", "natural stone", "quartz surfaces", "engineered stone", "stone slabs", "countertops"],
+      "themes": ["Exports", "Housing"]
+    },
+    {
+      "id": "b-gems-jewellery-and-watches",
+      "simplifiedExplanation": "These companies make and sell gold, diamond and silver jewellery, cut and polish diamonds, or make and retail watches.",
+      "productsAndServices": [
+        "Gold jewellery",
+        "Diamond and studded jewellery",
+        "Silver and platinum jewellery",
+        "Cut and polished diamonds, natural and lab-grown",
+        "Watches",
+        "Jewellery exports"
+      ],
+      "valueChainPosition": "Midstream to downstream: buys gold from banks and bullion dealers and diamonds from traders, then makes and sells jewellery through own stores, franchises, wholesalers or export buyers.",
+      "howTheyMakeMoney": "Retailers earn making charges and design margins, especially on studded jewellery, while manufacturers and diamond processors earn thinner margins on large revenue. Gold-price moves also create inventory gains or losses.",
+      "revenueSources": [
+        "Retail jewellery sales",
+        "Wholesale and B2B jewellery",
+        "Exports of jewellery and diamonds",
+        "Watches and accessories",
+        "Gold savings schemes"
+      ],
+      "operatingCosts": [
+        "Gold, silver and diamond purchases",
+        "Making and labour charges",
+        "Store rent and staff",
+        "Advertising",
+        "Interest on gold loans and inventory funding"
+      ],
+      "customersAndEndMarkets": "Indian households buying for weddings, festivals and savings, and global jewellery retailers and wholesalers for exporters.",
+      "demandSupplyDrivers": "Demand peaks in wedding and festive seasons and rises with incomes, but very high or volatile gold prices can delay buying. The shift from local jewellers to trusted chains supports organised players.",
+      "domesticInternationalExposure": "Gold and rough diamonds are mostly imported, so global prices, import duty and the rupee matter; diamond and jewellery exporters depend on demand in the US, Middle East and other markets.",
+      "capexIntensity": "Low",
+      "capexNote": "Stores and workshops need modest investment; most capital goes into inventory.",
+      "workingCapital": "Very heavy: large gold and diamond stocks are funded by equity, gold metal loans and bank credit, and exporters also carry receivables.",
+      "regulation": "Mandatory BIS hallmarking with HUID for gold jewellery, customs duty on gold, RBI rules on gold imports and gold loans, KYC and anti-money-laundering rules, and SEZ-based export schemes.",
+      "competitiveAdvantages": "Trust in purity, wide store networks, design range and access to low-cost gold funding protect established brands.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Gold prices drive revenue, buying behaviour and inventory gains or losses." },
+        { "factor": "Consumer demand", "impact": "Wedding and festive seasons create strong seasonal peaks." },
+        { "factor": "Government policy", "impact": "Changes in gold import duty shift demand and the appeal of smuggled gold." },
+        { "factor": "Exports & global demand", "impact": "Diamond and jewellery exporters follow consumer demand abroad." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises local gold prices and export realisations." }
+      ],
+      "risks": [
+        { "risk": "Gold price volatility", "detail": "Sharp falls cause inventory losses and sharp rises can stall buying." },
+        { "risk": "Duty and tax changes", "detail": "Import duty or GST changes alter pricing and demand overnight." },
+        { "risk": "Lab-grown diamonds", "detail": "Cheaper lab-grown stones disrupt pricing for natural diamonds." },
+        { "risk": "Governance and credit", "detail": "Past frauds and defaults in the trade make lenders cautious about funding." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Wedding and gifting demand is resilient, but gold prices and export demand make results swing.",
+      "metricSet": "jewellery",
+      "relatedBasicIndustries": [
+        "b-precious-metals",
+        "b-speciality-retail",
+        "b-diversified-retail"
+      ],
+      "aliases": ["jewellery", "jewelry", "gold jewellery", "diamonds", "jewellers", "watches", "lab grown diamonds", "gems"],
+      "themes": ["Exports"]
+    },
+    {
+      "id": "b-glass-consumer",
+      "simplifiedExplanation": "These companies make glass products for homes, such as dinner sets, tumblers, bowls, opal ware and heat-resistant kitchen glassware.",
+      "productsAndServices": [
+        "Opal glass dinnerware",
+        "Glass tumblers and stemware",
+        "Borosilicate kitchen and oven ware",
+        "Glass storage jars",
+        "Decorative glassware",
+        "Gift sets"
+      ],
+      "valueChainPosition": "Midstream maker: melts silica sand, soda ash and other minerals in furnaces and sells finished glassware through distributors, retail chains, e-commerce and corporate gifting.",
+      "howTheyMakeMoney": "They earn healthy margins when furnaces run near full and branded designs command a premium over imports and unorganised products.",
+      "revenueSources": [
+        "Retail and distributor sales",
+        "Corporate gifting and institutional sales",
+        "E-commerce",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Natural gas and power for furnaces",
+        "Silica sand, soda ash and minerals",
+        "Packaging",
+        "Labour",
+        "Marketing"
+      ],
+      "customersAndEndMarkets": "Households, hotels and restaurants, corporate gift buyers and retailers.",
+      "demandSupplyDrivers": "Demand follows household upgrades, gifting and wedding seasons; supply depends on furnace capacity, which cannot easily be switched off once lit.",
+      "domesticInternationalExposure": "Imports compete in some categories and gas and soda ash follow global prices; exports are modest for most makers.",
+      "capexIntensity": "High",
+      "capexNote": "Furnaces are costly and need periodic rebuilds, so new capacity comes in large steps.",
+      "workingCapital": "Finished goods across many designs and festive stocking raise inventory; dealer credit is moderate.",
+      "regulation": "Light, general business regulation plus pollution-control rules for furnaces and food-contact safety standards.",
+      "competitiveAdvantages": "Brand, design, furnace know-how and distribution reach; the high cost of furnaces deters small entrants.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Gifting, weddings and kitchen upgrades drive sales of premium glassware." },
+        { "factor": "Commodity prices", "impact": "Gas and soda ash costs move margins because furnaces burn fuel non-stop." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported tableware pressures prices." },
+        { "factor": "Capacity utilisation", "impact": "Full furnaces spread fixed costs; idle capacity hurts profits fast." }
+      ],
+      "risks": [
+        { "risk": "Fuel cost spikes", "detail": "Gas price jumps raise costs immediately." },
+        { "risk": "Cheap imports", "detail": "Low-priced imports can take share in mass segments." },
+        { "risk": "Furnace outages", "detail": "Breakdowns or rebuilds halt production for long periods." },
+        { "risk": "Material substitution", "detail": "Steel, plastic and ceramic products compete for the same shelf." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Gifting and upgrades are discretionary, but everyday replacement demand is steady.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-houseware",
+        "b-glass-industrial",
+        "b-ceramics",
+        "b-plastic-products-consumer"
+      ],
+      "aliases": ["glassware", "opal ware", "dinnerware", "crockery", "tableware", "borosilicate glass", "glass tumblers"],
+      "themes": []
+    },
+    {
+      "id": "b-household-appliances",
+      "simplifiedExplanation": "These companies make and sell home appliances such as fans, air conditioners, refrigerators, washing machines, kitchen appliances and water heaters, or build them for other brands.",
+      "productsAndServices": [
+        "Ceiling and table fans",
+        "Air conditioners and air coolers",
+        "Refrigerators and washing machines",
+        "Mixer-grinders and kitchen appliances",
+        "Water heaters and domestic pumps",
+        "Lighting",
+        "Contract manufacturing of appliances and parts"
+      ],
+      "valueChainPosition": "Midstream: buys compressors, motors, copper, steel, plastics and electronics, assembles appliances and sells through distributors, dealers, large retail and e-commerce, or supplies brands as a contract maker.",
+      "howTheyMakeMoney": "Brand owners earn gross margins on design, features and trust, minus advertising and service costs. Contract makers earn thinner margins on volume.",
+      "revenueSources": [
+        "Branded appliance sales",
+        "Contract manufacturing for brands",
+        "Components and sub-assemblies",
+        "After-sales service and spares",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Copper, aluminium, steel and plastics",
+        "Compressors, motors and electronics",
+        "Advertising and channel incentives",
+        "Warranty and service",
+        "Freight"
+      ],
+      "customersAndEndMarkets": "Households, offices and small businesses reached through dealers, retail chains and online; contract makers serve appliance brands.",
+      "demandSupplyDrivers": "Cooling products swing sharply with summer heat, while kitchen and laundry appliances follow housing, rising incomes and electrification. Low ownership levels support long-term demand.",
+      "domesticInternationalExposure": "Sales are mostly domestic, but compressors and electronics are often imported, so the rupee and import duties affect costs.",
+      "capexIntensity": "Medium",
+      "capexNote": "Assembly needs moderate investment; making motors, compressors and electronics in-house raises spending.",
+      "workingCapital": "Seasonal: stocks build before summer and the festive season, and a mild summer can leave excess inventory.",
+      "regulation": "BEE star-rating rules on energy efficiency, BIS quality-control orders for many appliances, PLI for air-conditioner and LED components, and import duties on finished goods.",
+      "competitiveAdvantages": "Strong brands, dealer reach, service networks and local manufacturing scale protect leaders.",
+      "drivers": [
+        { "factor": "Summer heat", "impact": "A hot, long summer lifts AC, cooler and fan sales; a mild one leaves stock unsold." },
+        { "factor": "Consumer demand", "impact": "Rising incomes and easy EMIs move households to bigger and better appliances." },
+        { "factor": "Commodity prices", "impact": "Copper, steel and aluminium costs drive gross margins." },
+        { "factor": "Real estate cycle", "impact": "New homes need a full set of appliances." },
+        { "factor": "Government policy", "impact": "PLI and quality-control orders favour local manufacturing over imports." }
+      ],
+      "risks": [
+        { "risk": "Weak season", "detail": "An unseasonal or short summer hurts the year's cooling sales." },
+        { "risk": "Commodity spikes", "detail": "Metal price jumps squeeze margins before price hikes stick." },
+        { "risk": "Price wars", "detail": "Many brands and online discounting limit pricing power." },
+        { "risk": "Energy-rule changes", "detail": "Tighter star-rating norms raise costs and can make old stock harder to sell." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Purchases are discretionary and strongly seasonal.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-consumer-electronics",
+        "b-houseware",
+        "b-other-electrical-equipment",
+        "b-cables-electricals"
+      ],
+      "aliases": ["home appliances", "white goods", "air conditioners", "AC", "fans", "refrigerators", "washing machines", "kitchen appliances", "consumer electricals"],
+      "themes": ["PLI", "China+1"]
+    },
+    {
+      "id": "b-houseware",
+      "simplifiedExplanation": "Houseware companies make everyday kitchen and home items such as pressure cookers, cookware, bottles, flasks, lunch boxes and storage containers.",
+      "productsAndServices": [
+        "Pressure cookers and cookware",
+        "Steel and insulated bottles and flasks",
+        "Plastic and glass storage containers",
+        "Lunch boxes",
+        "Kitchen tools",
+        "Cleaning and home-organisation products"
+      ],
+      "valueChainPosition": "Midstream maker or brand: buys aluminium, steel, plastics and glass, makes or outsources products, and sells through distributors, modern retail, e-commerce and exports.",
+      "howTheyMakeMoney": "Brands earn margins from trust, design and broad ranges; many outsource part of the range and focus on distribution and marketing.",
+      "revenueSources": [
+        "Distributor and retail sales",
+        "E-commerce",
+        "Corporate gifting and institutional sales",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Aluminium, steel and plastics",
+        "Outsourced products",
+        "Advertising",
+        "Freight and distribution",
+        "Labour"
+      ],
+      "customersAndEndMarkets": "Households across urban and rural India, gift buyers and overseas retailers.",
+      "demandSupplyDrivers": "Replacement, gifting, weddings and new households drive steady sales, while unorganised makers and imports keep prices competitive.",
+      "domesticInternationalExposure": "Mostly domestic; metal and polymer costs follow global prices and imports compete in some categories.",
+      "capexIntensity": "Low",
+      "capexNote": "Moulding and pressing plants need moderate investment, and outsourcing keeps it lower.",
+      "workingCapital": "Wide product ranges need inventory, and distributors usually get credit.",
+      "regulation": "BIS mandatory certification applies to items such as pressure cookers, and food-contact safety standards cover containers and cookware.",
+      "competitiveAdvantages": "Trust on safety and durability, wide distribution and a broad range give brands an edge over unorganised makers.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "New households, gifting and kitchen upgrades support volumes." },
+        { "factor": "Commodity prices", "impact": "Aluminium and steel costs drive margins on cookware and bottles." },
+        { "factor": "Crude oil prices", "impact": "Plastic resin costs for containers move with crude." },
+        { "factor": "Rural demand", "impact": "Rural households upgrading kitchenware add volume for mass brands." },
+        { "factor": "Imports & dumping", "impact": "Low-priced imports compete in steel and plastic items." }
+      ],
+      "risks": [
+        { "risk": "Input cost spikes", "detail": "Metal and polymer inflation can outpace price hikes." },
+        { "risk": "Unorganised and import competition", "detail": "Cheaper alternatives limit pricing power." },
+        { "risk": "Channel shift", "detail": "Growth of online sales changes margins and distributor relationships." },
+        { "risk": "Discretionary slowdown", "detail": "Premium and gifting items are cut first when budgets tighten." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Everyday replacement keeps demand steady, while gifting and premium products are discretionary.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-household-appliances",
+        "b-glass-consumer",
+        "b-plastic-products-consumer",
+        "b-aluminium-copper-and-zinc-products"
+      ],
+      "aliases": ["kitchenware", "cookware", "pressure cooker", "housewares", "bottles and flasks", "storage containers", "lunch box", "steel utensils"],
+      "themes": []
+    },
+    {
+      "id": "b-leather-and-leather-products",
+      "simplifiedExplanation": "These companies tan hides into finished leather, make leather goods such as bags and garments, or produce synthetic leather used in footwear, cars and furniture.",
+      "productsAndServices": [
+        "Finished leather",
+        "Leather bags, wallets and belts",
+        "Leather garments",
+        "Shoe uppers and components",
+        "Synthetic PU and PVC leather",
+        "Coated fabrics for vehicles and furniture"
+      ],
+      "valueChainPosition": "Midstream: buys raw hides and chemicals, or base fabrics and polymers, and supplies footwear, fashion, automotive and furniture makers and global brands.",
+      "howTheyMakeMoney": "Exporters earn on processing and making goods for global brands, while synthetic-leather makers earn on approved supply to vehicle and footwear makers.",
+      "revenueSources": [
+        "Export orders",
+        "Domestic sales to manufacturers",
+        "Supply to vehicle makers (synthetic leather)",
+        "Branded leather goods"
+      ],
+      "operatingCosts": [
+        "Raw hides and skins",
+        "Tanning chemicals and dyes",
+        "PVC and PU resins and fabrics",
+        "Labour",
+        "Effluent treatment and power"
+      ],
+      "customersAndEndMarkets": "Global fashion and footwear brands, domestic shoe and bag makers, and vehicle and furniture makers.",
+      "demandSupplyDrivers": "Export demand follows fashion and retail cycles in Europe and the US, while synthetic-leather demand follows vehicle and footwear production.",
+      "domesticInternationalExposure": "Leather goods are export-oriented, so the rupee, trade agreements and European demand matter; synthetic-leather inputs are crude-linked.",
+      "capexIntensity": "Medium",
+      "capexNote": "Tanneries need effluent treatment and coating lines need significant investment, while goods assembly is lighter.",
+      "workingCapital": "Seasonal export orders, raw-material stocks and receivables from overseas buyers need sizable working capital.",
+      "regulation": "State pollution control boards regulate tannery effluent, export incentives such as RoDTEP apply, and the Council for Leather Exports supports exporters.",
+      "competitiveAdvantages": "Meeting environmental and labour standards, long brand relationships and vehicle-maker approvals are hard to win.",
+      "drivers": [
+        { "factor": "Exports & global demand", "impact": "Orders from European and US brands drive volumes for leather-goods exporters." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee improves export competitiveness." },
+        { "factor": "Raw material availability", "impact": "Supply and quality of hides affect costs and output." },
+        { "factor": "Regulation", "impact": "Effluent rules can force tannery upgrades or shutdowns." },
+        { "factor": "Crude oil prices", "impact": "PVC and PU resin costs for synthetic leather move with crude." }
+      ],
+      "risks": [
+        { "risk": "Environmental closures", "detail": "Pollution-control action can shut tanneries or clusters." },
+        { "risk": "Export slowdown", "detail": "Weak fashion demand abroad cuts orders." },
+        { "risk": "Material substitution", "detail": "Synthetic and plant-based alternatives can replace natural leather." },
+        { "risk": "Buyer concentration", "detail": "Reliance on a few large brands or vehicle makers raises revenue risk." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Follows global fashion demand and vehicle production.",
+      "metricSet": "manufacturing-generic",
+      "relatedBasicIndustries": [
+        "b-footwear",
+        "b-garments-and-apparels",
+        "b-auto-components-and-equipments",
+        "b-other-textile-products"
+      ],
+      "aliases": ["leather", "leather goods", "tannery", "synthetic leather", "artificial leather", "PU leather", "leather exports", "coated fabrics"],
+      "themes": ["Exports"]
+    },
+    {
+      "id": "b-leisure-products",
+      "simplifiedExplanation": "These companies make products people use for fun, sport and hobbies, such as toys, sports goods, fitness equipment and musical or outdoor items.",
+      "productsAndServices": [
+        "Toys and games",
+        "Sports goods and equipment",
+        "Fitness equipment",
+        "Musical instruments",
+        "Outdoor and camping gear",
+        "Recreational boats and vehicles (few)"
+      ],
+      "valueChainPosition": "Midstream maker or brand: uses plastics, wood, metals, rubber and electronics, and sells through retailers, e-commerce, institutions and export buyers.",
+      "howTheyMakeMoney": "Brands earn margins on design, licensed characters and trust, while contract makers earn on volume orders from global brands.",
+      "revenueSources": [
+        "Domestic retail and online sales",
+        "Contract manufacturing for global brands",
+        "Sales to schools, clubs and gyms",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Plastics, rubber, wood and metals",
+        "Electronic parts",
+        "Labour",
+        "Licensing fees",
+        "Marketing and distribution"
+      ],
+      "customersAndEndMarkets": "Children and families, sports clubs, schools, gyms, hobbyists and global toy and sports brands.",
+      "demandSupplyDrivers": "Demand follows discretionary spending, festivals, school calendars and sports and fitness trends; local supply has expanded as import curbs tightened.",
+      "domesticInternationalExposure": "The market was historically import-heavy; tighter quality rules have helped local manufacturing, and some firms export to global brands.",
+      "capexIntensity": "Low",
+      "capexNote": "Moulding and assembly lines need modest investment.",
+      "workingCapital": "Stocks build before festivals and holidays, and export orders can bring long receivable cycles.",
+      "regulation": "BIS mandatory certification for toys, higher import duties on toys and child-safety standards.",
+      "competitiveAdvantages": "Safety certifications, licensed characters, design capability and relationships with global brands matter.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Festive gifting and spending on children and fitness drive sales." },
+        { "factor": "Government policy", "impact": "Quality-control orders and higher duties have shifted demand from imports to local makers." },
+        { "factor": "Imports & dumping", "impact": "Low-priced imports remain the main competition in many categories." },
+        { "factor": "Exports & global demand", "impact": "Global brands diversifying away from China can bring contract orders." }
+      ],
+      "risks": [
+        { "risk": "Fads and discretion", "detail": "Popular products can fall out of favour quickly." },
+        { "risk": "Import competition", "detail": "Easing of import curbs could bring back cheap supply." },
+        { "risk": "Buyer concentration", "detail": "Contract makers often depend on a few global brands." },
+        { "risk": "Compliance costs", "detail": "Safety testing and certification add cost for small makers." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Leisure spending is among the first to be cut when budgets tighten.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-cycles",
+        "b-plastic-products-consumer",
+        "b-amusement-parks-other-recreation",
+        "b-speciality-retail"
+      ],
+      "aliases": ["toys", "toy makers", "sports goods", "fitness equipment", "sporting goods", "musical instruments", "games", "leisure"],
+      "themes": ["China+1", "Exports"]
+    },
+    {
+      "id": "b-plastic-products-consumer",
+      "simplifiedExplanation": "These companies make plastic goods for consumers, such as moulded chairs and tables, luggage and travel bags, storage boxes and household items.",
+      "productsAndServices": [
+        "Moulded furniture",
+        "Hard and soft luggage",
+        "Backpacks and travel bags",
+        "Storage and organisation products",
+        "Mattresses and home items (some)",
+        "Precision plastic parts for consumer brands"
+      ],
+      "valueChainPosition": "Midstream converter: buys polymers such as polypropylene, polyethylene and polycarbonate, moulds products in-house or sources them, and sells through dealers, retail, e-commerce and global brands.",
+      "howTheyMakeMoney": "They earn the spread between product prices and polymer costs; branded luggage and designer products earn higher margins than commodity moulded goods.",
+      "revenueSources": [
+        "Branded retail and dealer sales",
+        "E-commerce",
+        "Institutional sales",
+        "Contract manufacturing and exports"
+      ],
+      "operatingCosts": [
+        "Polymer resins (crude-linked)",
+        "Outsourced products such as soft luggage",
+        "Power",
+        "Advertising and retail costs",
+        "Freight"
+      ],
+      "customersAndEndMarkets": "Households, travellers, offices, hotels and global home-goods brands.",
+      "demandSupplyDrivers": "Luggage demand follows travel, weddings and holiday seasons, and moulded goods follow household spending; cheap imports and unorganised makers add supply.",
+      "domesticInternationalExposure": "Polymer prices follow global crude and petrochemical markets; some soft luggage is sourced from other Asian countries, and a few firms export.",
+      "capexIntensity": "Medium",
+      "capexNote": "Moulding machines and dies need moderate investment, and sourcing reduces it.",
+      "workingCapital": "Inventory across sizes and designs plus channel credit is significant, and retail and online sales need careful stock planning.",
+      "regulation": "Light, general business regulation; Plastic Waste Management Rules with extended producer responsibility apply to packaging, and BIS standards cover some items.",
+      "competitiveAdvantages": "Brand, design, distribution and sourcing scale, plus approvals from global customers for precision parts.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Polymer costs follow crude and drive gross margins." },
+        { "factor": "Tourism & travel", "impact": "More domestic and overseas travel lifts luggage sales." },
+        { "factor": "Consumer demand", "impact": "Weddings and household spending support furniture and storage sales." },
+        { "factor": "Imports & dumping", "impact": "Low-cost imported luggage and plastics pressure prices." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the cost of imported resins and sourced products." }
+      ],
+      "risks": [
+        { "risk": "Polymer price swings", "detail": "Resin spikes squeeze margins before price increases." },
+        { "risk": "Import and unorganised competition", "detail": "Cheaper products limit pricing power." },
+        { "risk": "Design misses", "detail": "Unpopular styles leave unsold inventory." },
+        { "risk": "Discretionary slowdown", "detail": "Travel and home spending fall in weak economic periods." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Luggage and furniture purchases follow travel and discretionary spending.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-plastic-products-industrial",
+        "b-houseware",
+        "b-petrochemicals",
+        "b-furniture-home-furnishing"
+      ],
+      "aliases": ["luggage", "suitcases", "plastic furniture", "moulded furniture", "travel bags", "plastic products", "backpacks", "consumer plastics"],
+      "themes": []
+    },
+    {
+      "id": "b-plywood-boards-laminates",
+      "simplifiedExplanation": "These companies make the wood panels and decorative surfaces used in furniture and interiors: plywood, MDF, particle boards, laminates and veneers.",
+      "productsAndServices": [
+        "Plywood and block boards",
+        "MDF and particle boards",
+        "Decorative laminates and compact boards",
+        "Veneers",
+        "Doors and wooden flooring",
+        "Edge bands and adhesives"
+      ],
+      "valueChainPosition": "Midstream: buys plantation timber, resins and decor paper, makes panels and surfaces, and sells through distributors, dealers, carpenters and furniture makers, plus exports.",
+      "howTheyMakeMoney": "Plywood brands earn a premium over unorganised products through quality and dealer reach; MDF makers earn on plant utilisation and timber cost; laminate makers earn on design range and exports.",
+      "revenueSources": [
+        "Dealer and distributor sales",
+        "Sales to furniture and modular-kitchen makers",
+        "Exports of laminates and boards",
+        "Project and institutional sales"
+      ],
+      "operatingCosts": [
+        "Timber",
+        "Resins and chemicals (phenol, melamine, urea)",
+        "Decor paper",
+        "Power and fuel",
+        "Freight",
+        "Dealer and carpenter incentives"
+      ],
+      "customersAndEndMarkets": "Home owners and interior contractors, carpenters, modular-kitchen and furniture makers, offices and hotels.",
+      "demandSupplyDrivers": "Demand follows housing completions, interiors and furniture making; timber availability and new MDF capacity drive supply and pricing.",
+      "domesticInternationalExposure": "Laminates and some boards are exported widely; imported panels from South-East Asia compete, and chemical inputs track global prices.",
+      "capexIntensity": "Medium",
+      "capexNote": "MDF and particle-board plants are capital-heavy, while plywood and laminate plants are lighter.",
+      "workingCapital": "Dealer credit and stocks of many designs and thicknesses keep working capital significant.",
+      "regulation": "BIS quality-control orders cover several wood-panel products, forest and timber-transit rules affect sourcing, and trade-remedy duties can affect imports.",
+      "competitiveAdvantages": "Brand trust matters because panels are hidden inside furniture, along with dealer and carpenter networks and timber sourcing close to plants.",
+      "drivers": [
+        { "factor": "Real estate cycle", "impact": "Home completions and interior fit-outs drive panel demand." },
+        { "factor": "Raw material availability", "impact": "Plantation timber supply sets costs for plywood and MDF makers." },
+        { "factor": "Commodity prices", "impact": "Resin chemicals and decor paper costs move margins." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported boards pressure domestic prices." },
+        { "factor": "Exports & global demand", "impact": "Overseas demand for laminates adds volume beyond India." }
+      ],
+      "risks": [
+        { "risk": "Timber cost spike", "detail": "Shortages of plantation wood raise costs sharply." },
+        { "risk": "MDF overcapacity", "detail": "Many new plants at once can trigger price cuts." },
+        { "risk": "Unorganised competition", "detail": "Local plywood makers compete on price with uneven quality." },
+        { "risk": "Housing slowdown", "detail": "Weak home completions cut interior spending." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Moves with housing, interior and furniture demand.",
+      "metricSet": "building-materials",
+      "relatedBasicIndustries": [
+        "b-furniture-home-furnishing",
+        "b-forest-products",
+        "b-residential-commercial-projects",
+        "b-commodity-chemicals",
+        "b-paper-and-paper-products"
+      ],
+      "aliases": ["plywood", "MDF", "laminates", "particle board", "wood panels", "veneer", "decorative laminates", "boards"],
+      "themes": ["Housing", "Exports"]
+    },
+    {
+      "id": "b-sanitary-ware",
+      "simplifiedExplanation": "These companies make bathroom products such as toilets, wash basins, taps, showers and other bath fittings.",
+      "productsAndServices": [
+        "Toilets and urinals",
+        "Wash basins",
+        "Faucets, taps and showers",
+        "Bath fittings and accessories",
+        "Wellness products such as shower panels and tubs",
+        "Tiles and kitchen sinks (some)"
+      ],
+      "valueChainPosition": "Midstream maker: fires clay products in gas kilns, makes faucets from brass and sources some ranges, then sells through dealers, plumbers, retailers and real-estate projects.",
+      "howTheyMakeMoney": "They earn margins on brand, design and finish; premium bathware and faucets earn more than basic ceramic products.",
+      "revenueSources": [
+        "Dealer and retail sales",
+        "Project sales to developers",
+        "Faucets and fittings",
+        "Outsourced or traded bathware"
+      ],
+      "operatingCosts": [
+        "Clay and ceramic raw materials",
+        "Brass, copper and zinc",
+        "Gas and power",
+        "Freight",
+        "Advertising and dealer incentives"
+      ],
+      "customersAndEndMarkets": "Households building or renovating, real-estate developers, hotels, hospitals and offices.",
+      "demandSupplyDrivers": "Demand follows new homes, renovation and upgrades to better bathrooms; government sanitation drives have widened the basic market.",
+      "domesticInternationalExposure": "Mainly domestic; brass and gas prices follow global markets, and imports compete in some faucet and wellness ranges.",
+      "capexIntensity": "Medium",
+      "capexNote": "Kilns and faucet plants need investment, and sourcing part of the range reduces it.",
+      "workingCapital": "Dealer credit and stock of many designs are significant, and project sales carry longer receivables.",
+      "regulation": "BIS standards for sanitaryware and fittings, water-efficiency guidelines, and sanitation programmes such as Swachh Bharat that support basic demand.",
+      "competitiveAdvantages": "Brand, design range, dealer and plumber networks and after-sales service; once plumbers recommend a brand, switching is rare.",
+      "drivers": [
+        { "factor": "Real estate cycle", "impact": "New homes and commercial buildings drive most volumes." },
+        { "factor": "Commodity prices", "impact": "Brass and zinc costs move faucet margins." },
+        { "factor": "Consumer demand", "impact": "Bathroom upgrades and premium fittings lift realisations." },
+        { "factor": "Government policy", "impact": "Sanitation and housing schemes expand demand for basic products." }
+      ],
+      "risks": [
+        { "risk": "Housing slowdown", "detail": "Fewer new homes cut demand for full bathroom sets." },
+        { "risk": "Metal price spikes", "detail": "Brass inflation hurts faucet profits." },
+        { "risk": "Unorganised and imported products", "detail": "Cheaper alternatives compete in mass segments." },
+        { "risk": "Fuel cost", "detail": "Gas price jumps raise kiln costs." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Linked to construction and renovation activity.",
+      "metricSet": "building-materials",
+      "relatedBasicIndustries": [
+        "b-ceramics",
+        "b-residential-commercial-projects",
+        "b-plastic-products-industrial",
+        "b-aluminium-copper-and-zinc-products"
+      ],
+      "aliases": ["sanitaryware", "bathware", "bathroom fittings", "faucets", "taps", "toilets", "CP fittings", "plumbing fixtures"],
+      "themes": ["Housing"]
+    },
+    {
+      "id": "b-paints",
+      "simplifiedExplanation": "Paint companies make decorative paints for homes and industrial coatings for vehicles, machinery and infrastructure, plus related products such as putty and waterproofing.",
+      "productsAndServices": [
+        "Interior and exterior emulsions",
+        "Enamels and primers",
+        "Wall putty and waterproofing",
+        "Wood finishes",
+        "Automotive and industrial coatings",
+        "Powder coatings and adhesives"
+      ],
+      "valueChainPosition": "Midstream formulator: buys titanium dioxide, monomers, solvents and pigments, makes paints and sells through large dealer networks with tinting machines or directly to industrial customers.",
+      "howTheyMakeMoney": "Decorative paints earn strong gross margins from brand, colour range and dealer reach. Industrial coatings earn on technical approvals and long contracts, usually at lower margins.",
+      "revenueSources": [
+        "Decorative paints via dealers",
+        "Industrial and automotive coatings",
+        "Waterproofing and construction chemicals",
+        "Painting services and home decor (some)",
+        "Overseas operations and exports"
+      ],
+      "operatingCosts": [
+        "Titanium dioxide and pigments",
+        "Crude-linked monomers and solvents",
+        "Packaging",
+        "Freight and distribution",
+        "Advertising and dealer incentives"
+      ],
+      "customersAndEndMarkets": "Home owners and painters through dealers, real-estate developers, vehicle makers, and industrial and infrastructure users.",
+      "demandSupplyDrivers": "Repainting of existing homes gives steady demand, while new construction, festive seasons and weather add swings; large new entrants have increased supply and competition.",
+      "domesticInternationalExposure": "Sales are largely domestic, but many raw materials are imported or crude-linked, so the rupee and crude prices drive costs.",
+      "capexIntensity": "Medium",
+      "capexNote": "Plants, depots and tinting machines need investment, though the business turns its capital over quickly.",
+      "workingCapital": "Usually efficient because dealers pay quickly; stocks of raw materials and finished goods rise before the festive season.",
+      "regulation": "Rules limiting lead in household and decorative paints, BIS standards, pollution-control norms on solvents and GST on paints.",
+      "competitiveAdvantages": "Deep dealer networks, tinting machines, brand recall, supply-chain efficiency and painter loyalty create strong barriers.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Many inputs are crude derivatives, so oil prices drive gross margins." },
+        { "factor": "Real estate cycle", "impact": "New homes and offices add first-time painting demand." },
+        { "factor": "Consumer demand", "impact": "Festive repainting and the move to premium emulsions lift sales." },
+        { "factor": "Weather", "impact": "Long or heavy monsoons delay painting work and shift sales between quarters." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the cost of imported raw materials." }
+      ],
+      "risks": [
+        { "risk": "Rising competition", "detail": "New large entrants spending on dealers and discounts can pressure margins." },
+        { "risk": "Raw-material spikes", "detail": "Crude and titanium dioxide price jumps hurt profitability." },
+        { "risk": "Housing slowdown", "detail": "Weak construction reduces new-paint demand." },
+        { "risk": "Dealer overstocking", "detail": "Pushing stock into the channel can mask weak end demand." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Repainting demand is resilient, while new construction and industrial coatings are cyclical.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-specialty-chemicals",
+        "b-dyes-and-pigments",
+        "b-residential-commercial-projects",
+        "b-plywood-boards-laminates",
+        "b-passenger-cars-and-utility-vehicles"
+      ],
+      "aliases": ["paint", "paints", "decorative paints", "coatings", "industrial coatings", "emulsion", "waterproofing", "paint companies"],
+      "themes": ["Housing"]
+    },
+    {
+      "id": "b-diversified-consumer-products",
+      "simplifiedExplanation": "Companies that make or sell several kinds of consumer goods, such as electronics, small appliances, lighting and home items, rather than focusing on one product category.",
+      "productsAndServices": [
+        "Consumer electronics and lighting",
+        "Small appliances",
+        "Home and personal-use products",
+        "Contract manufacturing for consumer brands",
+        "Components and sub-assemblies"
+      ],
+      "valueChainPosition": "Midstream: assembles or sources a mix of consumer products and supplies brands, distributors and retailers; the exact position varies by company.",
+      "howTheyMakeMoney": "They earn margins across a portfolio of categories, with contract work earning on volume and own brands earning on mark-ups and reach.",
+      "revenueSources": [
+        "Contract manufacturing",
+        "Own-brand sales",
+        "Component sales",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Components and raw materials",
+        "Labour",
+        "Freight",
+        "Marketing",
+        "Warranty"
+      ],
+      "customersAndEndMarkets": "Consumer brands, distributors, retail chains, e-commerce platforms and households.",
+      "demandSupplyDrivers": "Demand follows overall consumer spending and seasonal peaks; each category has its own cycle, which can either balance or add to swings.",
+      "domesticInternationalExposure": "Varies by company; imported components and the rupee often matter, and some firms export.",
+      "capexIntensity": "Medium",
+      "capexNote": "Spending depends on how much is made in-house versus sourced from others.",
+      "workingCapital": "Inventory across many categories and receivables from brands and distributors need careful management.",
+      "regulation": "Rules depend on the category, including BIS quality-control orders, BEE energy labels and PLI schemes for electronics and appliances.",
+      "competitiveAdvantages": "A broad range and customer relationships help, but each category faces focused specialist rivals.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Household spending on gadgets and home products sets overall volumes." },
+        { "factor": "Government policy", "impact": "Manufacturing incentives and quality rules favour local production." },
+        { "factor": "Commodity prices", "impact": "Metal, plastic and component costs affect margins across categories." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises imported component costs." }
+      ],
+      "risks": [
+        { "risk": "Lack of focus", "detail": "Spreading across many categories can leave each one sub-scale." },
+        { "risk": "Customer concentration", "detail": "Contract work often depends on a few brands." },
+        { "risk": "Input swings", "detail": "Component and material price moves are hard to pass on quickly." },
+        { "risk": "Specialist competition", "detail": "Focused rivals may out-invest in a single category." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "A spread of categories can smooth demand, but all depend on discretionary spending.",
+      "metricSet": "consumer-durables",
+      "relatedBasicIndustries": [
+        "b-consumer-electronics",
+        "b-household-appliances",
+        "b-houseware",
+        "b-diversified-fmcg"
+      ],
+      "aliases": ["diversified consumer", "consumer products", "multi-category consumer", "consumer goods", "diversified durables"],
+      "themes": []
+    },
+    {
+      "id": "b-footwear",
+      "simplifiedExplanation": "Footwear companies make and sell shoes, sandals, slippers and sports footwear through their own stores, dealers and online.",
+      "productsAndServices": [
+        "Casual and sports shoes",
+        "Slippers and flip-flops",
+        "Formal leather shoes",
+        "School shoes",
+        "Women's and kids' footwear",
+        "Bags and accessories"
+      ],
+      "valueChainPosition": "Downstream maker and retailer: buys EVA, PVC, rubber, PU and leather, makes or outsources footwear, and sells through exclusive stores, multi-brand outlets, distributors and e-commerce.",
+      "howTheyMakeMoney": "Mass brands earn on volume through distributors in towns and villages. Premium and store-led brands earn high gross margins but carry rent and staff costs.",
+      "revenueSources": [
+        "Own and franchise store sales",
+        "Distributor and multi-brand outlet sales",
+        "E-commerce",
+        "Institutional sales and exports"
+      ],
+      "operatingCosts": [
+        "EVA, PVC, rubber and leather",
+        "Outsourced production",
+        "Store rent and staff",
+        "Advertising",
+        "Freight and inventory carrying costs"
+      ],
+      "customersAndEndMarkets": "Consumers of all ages and income levels, from rural buyers of everyday slippers to urban buyers of branded sneakers.",
+      "demandSupplyDrivers": "Demand follows incomes, fashion, school and wedding seasons and the shift from unorganised to branded footwear; quality rules have curbed cheap imports.",
+      "domesticInternationalExposure": "Sales are mostly domestic; polymer inputs are crude-linked and some products are imported or exported.",
+      "capexIntensity": "Medium",
+      "capexNote": "Store fit-outs and factories need steady spending, and outsourcing reduces factory needs.",
+      "workingCapital": "Inventory across sizes, colours and seasons is high; store-led models carry more stock than distributor-led ones.",
+      "regulation": "BIS quality-control orders cover many types of footwear, GST rates differ by price point, and shop and labour laws apply to stores.",
+      "competitiveAdvantages": "Brand, design, wide store and distributor reach and efficient sourcing, though unorganised makers still compete on price.",
+      "drivers": [
+        { "factor": "Consumer demand", "impact": "Fashion, sports and casual trends lift branded and premium footwear." },
+        { "factor": "Rural demand", "impact": "Mass slippers and sandals depend on rural and small-town spending." },
+        { "factor": "Crude oil prices", "impact": "EVA, PVC and rubber costs move with crude." },
+        { "factor": "Government policy", "impact": "Quality-control orders push demand toward compliant, organised makers." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported footwear competes when rules are loosely enforced." }
+      ],
+      "risks": [
+        { "risk": "Discretionary slowdown", "detail": "Premium and fashion footwear purchases are postponed in weak times." },
+        { "risk": "Inventory obsolescence", "detail": "Unsold seasonal styles need discounting." },
+        { "risk": "Global and online brands", "detail": "International sports brands and online-first labels compete for urban buyers." },
+        { "risk": "Input costs", "detail": "Polymer and leather price spikes squeeze margins." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Basic footwear is a need, while fashion and premium footwear are discretionary.",
+      "metricSet": "retail",
+      "relatedBasicIndustries": [
+        "b-leather-and-leather-products",
+        "b-speciality-retail",
+        "b-garments-and-apparels",
+        "b-rubber",
+        "b-petrochemicals"
+      ],
+      "aliases": ["shoes", "footwear", "slippers", "sneakers", "sandals", "chappals", "footwear retail", "sports shoes"],
+      "themes": ["Rural demand"]
+    },
+    {
+      "id": "b-garments-and-apparels",
+      "simplifiedExplanation": "These companies make clothing, from innerwear and t-shirts to shirts, denims and winterwear, either for their own brands or for global retailers.",
+      "productsAndServices": [
+        "Innerwear and athleisure",
+        "Shirts, trousers and denims",
+        "Knitwear and t-shirts",
+        "Women's and kids' wear",
+        "Winterwear",
+        "Export garments for global brands"
+      ],
+      "valueChainPosition": "Downstream: buys fabric and trims, cuts and stitches garments, and sells to global retailers, domestic brands, own stores, multi-brand outlets and e-commerce.",
+      "howTheyMakeMoney": "Exporters earn a manufacturing margin from efficient, compliant factories. Domestic brands earn higher gross margins from design and brand pull but spend on marketing and retail.",
+      "revenueSources": [
+        "Export orders from global retailers",
+        "Own-brand sales via stores, multi-brand outlets and online",
+        "Licensed brands",
+        "Private-label supply to retailers"
+      ],
+      "operatingCosts": [
+        "Fabric and trims",
+        "Labour",
+        "Store rent and marketing (brands)",
+        "Freight",
+        "Royalty for licensed brands"
+      ],
+      "customersAndEndMarkets": "Global apparel retailers and brands, Indian department stores and chains, online marketplaces and consumers.",
+      "demandSupplyDrivers": "Export orders follow US and European retail demand and sourcing shifts between countries; domestic demand follows incomes, seasons, weddings and fashion trends.",
+      "domesticInternationalExposure": "Exporters depend on overseas buyers, trade agreements, tariffs and the rupee, while domestic brands are mostly local.",
+      "capexIntensity": "Low",
+      "capexNote": "Garmenting is labour-intensive with modest machinery needs.",
+      "workingCapital": "Fabric stocks, season-based inventory and export or retail receivables need significant working capital.",
+      "regulation": "Export incentives such as RoSCTL and RoDTEP, PLI and PM MITRA parks for textiles, labour laws and buyer-driven compliance audits.",
+      "competitiveAdvantages": "Buyer relationships, compliance records and speed for exporters; brand, design and distribution for domestic players.",
+      "drivers": [
+        { "factor": "Exports & global demand", "impact": "Retail sales and stock levels at Western retailers decide export orders." },
+        { "factor": "Consumer demand", "impact": "Rising incomes and brand preference lift domestic branded apparel." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee helps exporters compete with other sourcing countries." },
+        { "factor": "Government policy", "impact": "Trade agreements, tariffs and export incentives change competitiveness." },
+        { "factor": "Commodity prices", "impact": "Cotton and fabric prices affect costs and pricing." }
+      ],
+      "risks": [
+        { "risk": "Export demand slump", "detail": "Retailer destocking can cut orders sharply." },
+        { "risk": "Rival exporting countries", "detail": "Lower-cost or duty-advantaged countries can win orders." },
+        { "risk": "Unsold inventory", "detail": "Brands face markdowns if seasonal collections do not sell." },
+        { "risk": "Labour availability", "detail": "Rising wages or shortages of skilled tailors raise costs." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Basic clothing and innerwear demand is steady, while fashion and export orders swing.",
+      "metricSet": "textiles",
+      "relatedBasicIndustries": [
+        "b-other-textile-products",
+        "b-trading-textile-products",
+        "b-speciality-retail",
+        "b-diversified-retail",
+        "b-footwear"
+      ],
+      "aliases": ["apparel", "garments", "clothing", "readymade garments", "innerwear", "fashion brands", "apparel exports", "RMG"],
+      "themes": ["Exports", "China+1"]
+    },
+    {
+      "id": "b-other-textile-products",
+      "simplifiedExplanation": "Companies that make the materials behind clothes and home textiles: yarn, fabric, polyester fibre, processed cloth, towels, bed linen and technical textiles.",
+      "productsAndServices": [
+        "Cotton and blended yarn",
+        "Polyester and viscose fibre and yarn",
+        "Woven and knitted fabrics",
+        "Dyeing, printing and processing",
+        "Home textiles such as towels and bed linen",
+        "Technical textiles"
+      ],
+      "valueChainPosition": "Upstream to midstream: buys cotton or polyester feedstock and supplies yarn and fabric to weavers, garment makers, home-textile buyers and exporters.",
+      "howTheyMakeMoney": "Spinners and fibre makers earn a spread between raw-material and yarn or fibre prices, which swings with the cycle. Home and technical textile makers earn on value-added products and buyer relationships.",
+      "revenueSources": [
+        "Yarn and fibre sales",
+        "Fabric sales",
+        "Home-textile exports",
+        "Job-work processing",
+        "Technical textiles"
+      ],
+      "operatingCosts": [
+        "Cotton or PTA and MEG feedstock",
+        "Power and fuel",
+        "Labour",
+        "Dyes and chemicals",
+        "Interest costs"
+      ],
+      "customersAndEndMarkets": "Weavers, garment makers, home-textile buyers and global retailers, plus automotive, healthcare and infrastructure users of technical textiles.",
+      "demandSupplyDrivers": "Demand follows global and domestic clothing and home-textile demand; supply and spreads depend on cotton crops, China's textile output and polyester capacity additions.",
+      "domesticInternationalExposure": "Cotton and yarn are traded globally and exports are significant; polyester feedstock follows crude prices, and imported fibre and fabric compete.",
+      "capexIntensity": "High",
+      "capexNote": "Spinning, weaving, processing and fibre plants need large investment in modern machinery.",
+      "workingCapital": "Heavy: cotton is bought and stored in season, and receivables from weavers and exporters can be long.",
+      "regulation": "Cotton MSP and Cotton Corporation of India buying, import duty on cotton, anti-dumping duties on some fibres and yarns, PLI for man-made fibre and technical textiles, and state power tariffs.",
+      "competitiveAdvantages": "Scale, integration from yarn to fabric, modern machines, low power cost and buyer certifications help good companies.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Cotton price swings decide spinners' spreads and inventory gains or losses." },
+        { "factor": "Crude oil prices", "impact": "Polyester feedstock costs follow crude." },
+        { "factor": "Exports & global demand", "impact": "Yarn, fabric and home-textile exports depend on global retail demand." },
+        { "factor": "Monsoon & agriculture", "impact": "Cotton crop size and quality set raw-material availability." },
+        { "factor": "Imports & dumping", "impact": "Cheap imported fibre and fabric can undercut local prices." }
+      ],
+      "risks": [
+        { "risk": "Spread squeeze", "detail": "Raw-material costs rising faster than yarn prices crush margins." },
+        { "risk": "High fixed costs and debt", "detail": "Capital-heavy mills suffer when utilisation falls." },
+        { "risk": "Export slowdown", "detail": "Weak overseas demand hits volumes and prices." },
+        { "risk": "Power costs", "detail": "Spinning and processing are power-hungry, so tariff increases hurt." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Spreads and volumes swing with cotton crops, global demand and capacity cycles.",
+      "metricSet": "textiles",
+      "relatedBasicIndustries": [
+        "b-garments-and-apparels",
+        "b-trading-textile-products",
+        "b-petrochemicals",
+        "b-dyes-and-pigments",
+        "b-jute-and-jute-products"
+      ],
+      "aliases": ["textiles", "yarn", "spinning", "fabric", "cotton yarn", "polyester", "home textiles", "technical textiles", "weaving"],
+      "themes": ["Exports", "China+1"]
+    },
+    {
+      "id": "b-trading-textile-products",
+      "simplifiedExplanation": "These firms mainly do not make textiles; they source, buy and sell yarn, fabrics and garments, often managing supply chains for global retailers.",
+      "productsAndServices": [
+        "Garment sourcing for global brands",
+        "Yarn and fabric trading",
+        "Design and product development",
+        "Supply-chain and quality management",
+        "Merchandising services"
+      ],
+      "valueChainPosition": "Middleman between manufacturers, often in several countries, and retailers or brands; organises design, sourcing, quality checks and logistics.",
+      "howTheyMakeMoney": "They earn a trading margin or sourcing commission on volumes handled, adding value through design, vendor networks and reliable delivery.",
+      "revenueSources": [
+        "Trading margin on goods sold",
+        "Sourcing and agency commissions",
+        "Design and product development fees"
+      ],
+      "operatingCosts": [
+        "Cost of goods bought",
+        "Merchandisers and staff",
+        "Logistics and freight",
+        "Interest on working capital",
+        "Offices and design centres"
+      ],
+      "customersAndEndMarkets": "Global and domestic apparel retailers and brands, garment makers and fabric buyers.",
+      "demandSupplyDrivers": "Volumes follow retailer orders and sourcing strategies; buyers spreading supply across countries can favour multi-country sourcers.",
+      "domesticInternationalExposure": "Often highly international, sourcing from Asian factories and selling to Western retailers, so currencies, tariffs and freight matter.",
+      "capexIntensity": "Low",
+      "capexNote": "Asset-light; spending goes on offices, design centres and systems.",
+      "workingCapital": "Receivables from retailers and advances to suppliers can be large, and thin margins make credit control important.",
+      "regulation": "Light, general business regulation; trade rules such as tariffs and rules of origin, and foreign-exchange rules under FEMA, matter.",
+      "competitiveAdvantages": "Long retailer relationships, broad vendor networks across countries and design skills; entry barriers are otherwise low.",
+      "drivers": [
+        { "factor": "Exports & global demand", "impact": "Order books follow sales and inventory levels at Western retailers." },
+        { "factor": "Currency (INR)", "impact": "Exchange-rate moves change margins on cross-border deals." },
+        { "factor": "Trade tariffs", "impact": "Tariff changes shift where retailers source and how much sourcers earn." },
+        { "factor": "Interest rates", "impact": "Funding receivables and supplier advances costs more when rates rise." }
+      ],
+      "risks": [
+        { "risk": "Customer concentration", "detail": "A few large retailers often account for most business." },
+        { "risk": "Thin margins", "detail": "Small cost overruns or chargebacks can wipe out profit." },
+        { "risk": "Retailer failures", "detail": "Bankruptcy of a big buyer can leave unpaid receivables." },
+        { "risk": "Tariff shocks", "detail": "Sudden duty changes can disrupt sourcing plans." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes follow global apparel retail cycles.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": [
+        "b-garments-and-apparels",
+        "b-other-textile-products",
+        "b-trading-and-distributors",
+        "b-diversified-retail"
+      ],
+      "aliases": ["textile trading", "garment sourcing", "apparel sourcing", "fabric trading", "yarn trading", "sourcing agent", "textile traders"],
+      "themes": ["Exports", "China+1"]
+    }
+  ]
+}

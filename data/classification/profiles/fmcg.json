@@ -1,0 +1,1771 @@
+{
+  "macroSectors": [
+    {
+      "id": "m-fast-moving-consumer-goods",
+      "description": "Covers the everyday goods Indian households buy again and again in small amounts: packaged foods, drinks, personal and home care, tobacco and stationery, plus the farm-based staples behind them such as sugar, edible oil, tea, dairy and poultry. Demand is spread across urban and rural India and usually holds up better than spending on discretionary items, while costs move with farm and commodity prices."
+    }
+  ],
+  "sectors": [
+    {
+      "id": "s-fast-moving-consumer-goods",
+      "description": "The single NSE sector inside this macro group, ranging from branded consumer companies at one end to agricultural processors at the other. Branded players compete on distribution reach, advertising and pricing power, while commodity-linked processors depend on harvests, government pricing and trade rules. Across the sector, margins depend on raw material inflation and how much of it can be passed on to buyers."
+    }
+  ],
+  "industries": [
+    {
+      "id": "i-agricultural-food-and-other-products",
+      "description": "Companies that turn farm produce such as sugarcane, oilseeds, tea, coffee, rice and seeds into staple foods and ingredients.",
+      "businessOverview": "These businesses sit close to the farm: they buy or grow crops, process them and sell staples such as sugar, cooking oil, tea, coffee, rice and seeds. Many products are close to commodities, so selling prices follow domestic and global markets more than brand strength. Government policy is heavy, covering cane prices, import duties, export permissions and stock limits. Some players add branded packs or by-products such as ethanol and power to smooth earnings.",
+      "keyDemandDrivers": [
+        "Population and food consumption",
+        "Monsoon and crop output",
+        "Import duty and export policy",
+        "Ethanol blending demand",
+        "Shift from loose to branded staples"
+      ],
+      "keyRisks": [
+        "Weather-driven crop swings",
+        "Sudden trade policy changes",
+        "Falls in global commodity prices",
+        "Large inventory and working capital",
+        "Thin processing margins"
+      ]
+    },
+    {
+      "id": "i-beverages",
+      "description": "Makers of alcoholic drinks such as beer and spirits, and of non-alcoholic drinks such as soft drinks, juices and packaged water.",
+      "businessOverview": "Beverage companies brew, distil, blend or bottle drinks and sell them through distributors, retailers and, for alcohol, state-controlled channels. Alcohol is regulated state by state, with excise duty, licences and price approvals deciding what can be sold and at what price. Soft drinks and water depend on cooler reach, bottling capacity and summer weather. Brand building, premium products and route-to-market are the main competitive levers.",
+      "keyDemandDrivers": [
+        "Rising incomes and premiumisation",
+        "Hot summers for soft drinks and beer",
+        "Urbanisation and eating out",
+        "Wider distribution in smaller towns",
+        "Fuel ethanol demand for distillers"
+      ],
+      "keyRisks": [
+        "State excise hikes or prohibition",
+        "Grain, molasses, sugar and packaging costs",
+        "Unseasonal rain in peak season",
+        "Advertising limits on alcohol",
+        "Health-related taxes on sugary drinks"
+      ]
+    },
+    {
+      "id": "i-cigarettes-and-tobacco-products",
+      "description": "Makers of cigarettes and other tobacco products, along with processors and exporters of leaf tobacco.",
+      "businessOverview": "Cigarette makers buy leaf tobacco, process it and sell branded cigarettes through a very wide network of small shops. Taxes make up a large part of the retail price, so tax changes directly shape volumes and profits. Strong brands and habitual demand give pricing power, but advertising is banned and packs carry large health warnings. Some companies also process and export leaf tobacco.",
+      "keyDemandDrivers": [
+        "Stable tax policy",
+        "Pricing power of established brands",
+        "Shift from other tobacco forms to cigarettes",
+        "Global demand for Indian leaf tobacco"
+      ],
+      "keyRisks": [
+        "Sharp tax increases",
+        "Illicit and smuggled cigarettes",
+        "Stricter health regulation",
+        "ESG-driven investor avoidance",
+        "Leaf crop price swings"
+      ]
+    },
+    {
+      "id": "i-food-products",
+      "description": "Companies making packaged and processed foods, dairy products, animal feed, seafood, meat and poultry.",
+      "businessOverview": "This industry ranges from branded packaged foods sold in every kirana store to commodity-like businesses such as animal feed, shrimp exports and poultry. Branded players earn through scale, distribution and brand loyalty, while protein and feed businesses live with volatile input and selling prices. Most depend on farm inputs such as wheat, milk, maize, soybean meal and edible oil. FSSAI food safety rules apply across the industry.",
+      "keyDemandDrivers": [
+        "Rising protein and packaged food consumption",
+        "Urban lifestyles and convenience",
+        "Modern trade, e-commerce and quick commerce",
+        "Export demand for seafood and meat",
+        "Rural income growth"
+      ],
+      "keyRisks": [
+        "Farm input cost inflation",
+        "Animal and shrimp disease outbreaks",
+        "Trade barriers in export markets",
+        "Food safety incidents",
+        "Competition from local and unbranded players"
+      ]
+    },
+    {
+      "id": "i-personal-products",
+      "description": "Companies selling products for personal grooming and hygiene, such as skin, hair and oral care.",
+      "businessOverview": "Personal care companies develop formulations, make products in own or contract plants, and spend heavily on brands and advertising. Products are bought often and in small packs, so reach into towns and villages matters. Gross margins are usually healthy, but a large share goes into marketing and trade schemes. Digital-first brands have lowered entry barriers in some categories.",
+      "keyDemandDrivers": [
+        "Premiumisation and new categories",
+        "Deeper rural reach",
+        "Online and D2C channels",
+        "Growing grooming habits among men and young buyers"
+      ],
+      "keyRisks": [
+        "Oil and crude-derivative input costs",
+        "Intense competition and discounting",
+        "Changing beauty trends",
+        "Regulatory action on product claims"
+      ]
+    },
+    {
+      "id": "i-household-products",
+      "description": "Makers of everyday home-care items and school and office stationery.",
+      "businessOverview": "This industry covers products used around the home such as detergents, dishwash, insect repellents, batteries and torches, plus stationery like pens, pencils and notebooks. Sales run through general trade, modern trade and online, with distribution and brand recall as key strengths. Many inputs come from crude oil derivatives, metals, paper and plastics, so input prices drive margins. Imports and unorganised players are a constant source of price competition.",
+      "keyDemandDrivers": [
+        "Hygiene awareness and household formation",
+        "School enrolment and the academic calendar",
+        "Rural demand for low-priced packs",
+        "Shift from unbranded to branded products"
+      ],
+      "keyRisks": [
+        "Crude-linked and paper input costs",
+        "Cheap imports",
+        "Technology substitution such as rechargeables and digital learning",
+        "Channel inventory build-ups"
+      ]
+    },
+    {
+      "id": "i-diversified-fmcg",
+      "description": "Large consumer companies selling across many FMCG categories, and contract manufacturers that make such products for brand owners.",
+      "businessOverview": "Diversified FMCG companies own portfolios that span foods, personal care, home care and, in some cases, cigarettes or unrelated businesses. Scale lets them run deep distribution networks, buy inputs cheaply and fund large advertising budgets. Some listed players are instead contract manufacturers that produce goods for brand owners. Earnings are usually steady but sensitive to rural demand, price competition and commodity costs.",
+      "keyDemandDrivers": [
+        "Broad consumption growth",
+        "Rural income recovery",
+        "Premiumisation",
+        "Outsourcing by brand owners",
+        "New channels such as quick commerce"
+      ],
+      "keyRisks": [
+        "Commodity inflation",
+        "Slow volume growth",
+        "Competition from regional and D2C brands",
+        "Tax and regulatory changes in key categories"
+      ]
+    }
+  ],
+  "basicIndustries": [
+    {
+      "id": "b-edible-oil",
+      "simplifiedExplanation": "These companies make cooking oil by crushing oilseeds or refining imported crude palm, soybean and sunflower oil, then selling it in packs or in bulk.",
+      "productsAndServices": [
+        "Refined palm oil and palmolein",
+        "Soybean and sunflower oil",
+        "Mustard and groundnut oil",
+        "Vanaspati and bakery fats",
+        "Oilmeal (de-oiled cake)"
+      ],
+      "valueChainPosition": "Midstream processor: buys oilseeds from farmers and crude oil from global suppliers, and supplies households, restaurants, bakeries and food makers through distributors and retailers.",
+      "howTheyMakeMoney": "They earn the gap between oilseed or crude oil cost and the refined oil price, plus oilmeal income; branded packs earn more than bulk sales.",
+      "revenueSources": [
+        "Branded consumer packs",
+        "Bulk oil to institutions and food makers",
+        "Oilmeal for animal feed",
+        "Specialty fats"
+      ],
+      "operatingCosts": [
+        "Crude oil and oilseed purchases",
+        "Packaging",
+        "Port handling and freight",
+        "Power and fuel for refining",
+        "Brand advertising",
+        "Interest on inventory financing"
+      ],
+      "customersAndEndMarkets": "Households, hotels and restaurants, bakeries, snack and vanaspati makers; oilmeal goes to animal feed producers.",
+      "demandSupplyDrivers": "Demand is steady and grows with population; supply and price follow domestic oilseed harvests and global palm and soybean oil output.",
+      "domesticInternationalExposure": "India relies heavily on imported edible oil, so global prices, freight and the rupee directly drive costs; oilmeal is exported when competitive.",
+      "capexIntensity": "Medium",
+      "capexNote": "Refineries, crushing units and port-side plants need steady investment, but working capital is the bigger need.",
+      "workingCapital": "Heavy: large stocks of crude oil and seeds are financed with short-term debt, and sudden price falls can cause inventory losses.",
+      "regulation": "The government changes edible oil import duties often and has used stock limits to control prices; FSSAI sets quality, fortification and labelling rules.",
+      "competitiveAdvantages": "Refining scale, port-based plants, sourcing skill, trusted consumer brands and wide distribution protect larger players.",
+      "drivers": [
+        {
+          "factor": "Commodity prices",
+          "impact": "Global palm and soybean oil prices set raw material cost and can create inventory gains or losses."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Import duty changes quickly shift the cost of imported oil against domestic oil."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "A weaker rupee raises the landed cost of imported crude oil."
+        },
+        {
+          "factor": "Monsoon & agriculture",
+          "impact": "Domestic mustard, soybean and groundnut crops depend on rainfall and set local supply."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Inventory losses",
+          "detail": "A sharp fall in oil prices hurts margins on stock bought at higher prices."
+        },
+        {
+          "risk": "Policy shocks",
+          "detail": "Sudden duty cuts or stock limits can squeeze refiners."
+        },
+        {
+          "risk": "Thin margins",
+          "detail": "Bulk refining earns small spreads, leaving little room for error."
+        },
+        {
+          "risk": "Supplier country actions",
+          "detail": "Export curbs or levies by producing countries can disrupt supply."
+        }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Volumes are defensive, but margins swing with global edible oil prices and duty changes.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-packaged-foods",
+        "b-animal-feed",
+        "b-other-agricultural-products",
+        "b-diversified-fmcg"
+      ],
+      "aliases": [
+        "edible oil",
+        "cooking oil",
+        "refined oil",
+        "palm oil",
+        "soybean oil",
+        "sunflower oil",
+        "mustard oil",
+        "vanaspati",
+        "oilseed crushing"
+      ],
+      "themes": [
+        "Import substitution"
+      ]
+    },
+    {
+      "id": "b-sugar",
+      "simplifiedExplanation": "Sugar mills crush sugarcane from nearby farmers to make sugar, and most also turn by-products into ethanol, electricity and molasses.",
+      "productsAndServices": [
+        "White and raw sugar",
+        "Fuel ethanol",
+        "Molasses",
+        "Power from bagasse co-generation",
+        "Rectified spirit and extra neutral alcohol"
+      ],
+      "valueChainPosition": "Midstream processor: buys cane from local farmers and sells sugar to traders and food makers, ethanol to oil marketing companies and power to state grids.",
+      "howTheyMakeMoney": "They earn the gap between the cane price paid to farmers and income from sugar, ethanol and power; integrated mills earn steadier income than sugar-only mills.",
+      "revenueSources": [
+        "Domestic sugar sales",
+        "Ethanol supplied to oil marketing companies",
+        "Power sold to the grid",
+        "Sugar exports when permitted",
+        "Molasses and alcohol sales"
+      ],
+      "operatingCosts": [
+        "Sugarcane purchase (largest cost)",
+        "Seasonal labour",
+        "Chemicals and stores",
+        "Off-season repairs",
+        "Interest on sugar inventory"
+      ],
+      "customersAndEndMarkets": "Bulk buyers such as drink, sweet and confectionery makers, households through traders, and fuel retailers for ethanol.",
+      "demandSupplyDrivers": "Supply depends on cane area, rainfall and yields, while sugar demand is steady. Diverting cane juice and molasses to ethanol reduces sugar supply.",
+      "domesticInternationalExposure": "Mostly domestic; exports happen only when government policy allows, so world sugar prices matter mainly in surplus years.",
+      "capexIntensity": "High",
+      "capexNote": "Mills run only during the crushing season, and adding distilleries or co-generation needs sizeable investment.",
+      "workingCapital": "Very heavy and seasonal: sugar made in a few months is sold through the year under release quotas, so stocks and debt peak after the crushing season.",
+      "regulation": "The Centre sets the Fair and Remunerative Price for cane (some states add a State Advised Price), a minimum sugar selling price, monthly sale quotas and export rules; ethanol prices follow the blending programme.",
+      "competitiveAdvantages": "Assured cane supply with good yields and sugar recovery, plus integration into ethanol and power, separate stronger mills from weaker ones.",
+      "drivers": [
+        {
+          "factor": "Monsoon & agriculture",
+          "impact": "Rainfall and irrigation decide cane output and the number of crushing days."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Cane prices, sugar selling price, quotas and export rules set most of the economics."
+        },
+        {
+          "factor": "Ethanol blending programme",
+          "impact": "Fuel ethanol demand gives a steadier outlet for cane juice and molasses."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Domestic and global sugar prices drive realisations and export viability."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Cane cost increases",
+          "detail": "Higher cane prices without matching sugar price changes squeeze margins."
+        },
+        {
+          "risk": "Drought",
+          "detail": "Poor rainfall cuts cane supply and leaves mill capacity idle."
+        },
+        {
+          "risk": "Policy reversals",
+          "detail": "Changes in export, ethanol or diversion rules can upset plans."
+        },
+        {
+          "risk": "Farmer dues",
+          "detail": "Late payments to cane farmers invite regulatory and political pressure."
+        }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Earnings follow the cane and sugar price cycle, partly cushioned by ethanol and power income.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-breweries-and-distilleries",
+        "b-refineries-and-marketing",
+        "b-power-generation",
+        "b-other-beverages",
+        "b-packaged-foods"
+      ],
+      "aliases": [
+        "sugar",
+        "sugar mill",
+        "sugarcane",
+        "ethanol",
+        "molasses",
+        "cogeneration",
+        "integrated sugar",
+        "chini mill"
+      ],
+      "themes": [
+        "Ethanol blending",
+        "Renewable energy"
+      ]
+    },
+    {
+      "id": "b-tea-and-coffee",
+      "simplifiedExplanation": "Tea and coffee estates that grow and process the crop, plus companies that blend and pack tea or make instant coffee for India and for export.",
+      "productsAndServices": [
+        "CTC and orthodox black tea",
+        "Green and specialty teas",
+        "Branded packaged tea",
+        "Instant and freeze-dried coffee",
+        "Private-label coffee for global brands"
+      ],
+      "valueChainPosition": "Upstream estates grow leaf and beans and sell at auctions or to blenders; downstream processors blend, pack and supply retailers and global brand owners.",
+      "howTheyMakeMoney": "Estates earn the made-tea or coffee price minus costs that are mostly wages; packers and instant coffee makers earn a processing or brand margin over bought leaf or beans.",
+      "revenueSources": [
+        "Auction and private sales of made tea",
+        "Branded tea packs",
+        "Instant coffee exports",
+        "Contract manufacturing for global brands",
+        "Domestic coffee retail"
+      ],
+      "operatingCosts": [
+        "Plantation wages",
+        "Bought green leaf or green coffee beans",
+        "Fertiliser and plant protection",
+        "Energy for drying and processing",
+        "Packaging and freight"
+      ],
+      "customersAndEndMarkets": "Households, tea stalls and offices for tea; instant coffee goes mostly to overseas brand owners and retailers.",
+      "demandSupplyDrivers": "Tea drinking in India is steady, while supply swings with weather and pests; coffee processors depend on global bean prices and export orders.",
+      "domesticInternationalExposure": "Tea is mainly domestic with some exports; instant coffee makers are export-heavy, so global coffee prices and the rupee matter a lot.",
+      "capexIntensity": "Medium",
+      "capexNote": "Estates need replanting and factory upkeep, and instant coffee plants need investment in drying capacity.",
+      "workingCapital": "Seasonal: tea is plucked mostly in certain months and sold through auctions over time, while coffee processors hold bean stocks and export receivables.",
+      "regulation": "The Tea Board and Coffee Board oversee the sectors; estate wages and welfare follow plantation labour laws and state wage decisions; FSSAI governs food safety.",
+      "competitiveAdvantages": "Brands and blending skill for packers, global buyer relationships for instant coffee makers, and location and leaf quality for estates.",
+      "drivers": [
+        {
+          "factor": "Commodity prices",
+          "impact": "Auction tea prices and global coffee bean prices drive revenue and input cost."
+        },
+        {
+          "factor": "Monsoon & agriculture",
+          "impact": "Rainfall, temperature and pests decide crop size and quality."
+        },
+        {
+          "factor": "Exports & global demand",
+          "impact": "Export orders matter most to instant coffee makers and orthodox tea sellers."
+        },
+        {
+          "factor": "Plantation wage revisions",
+          "impact": "State-set wage increases raise the largest cost for estates."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Labour costs",
+          "detail": "Wage hikes on estates are hard to pass on when auction prices are weak."
+        },
+        {
+          "risk": "Weather",
+          "detail": "Drought or excess rain cuts output and quality."
+        },
+        {
+          "risk": "Bean price spikes",
+          "detail": "Sharp rises in green coffee prices can squeeze processors."
+        },
+        {
+          "risk": "Residue norms",
+          "detail": "Pesticide residue limits in export markets can block shipments."
+        }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Consumption is steady, but estate profits swing with crop prices and weather.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-packaged-foods",
+        "b-other-beverages",
+        "b-diversified-fmcg",
+        "b-other-agricultural-products"
+      ],
+      "aliases": [
+        "tea",
+        "coffee",
+        "tea plantation",
+        "tea estate",
+        "instant coffee",
+        "chai",
+        "Assam tea",
+        "Darjeeling tea",
+        "coffee exporter"
+      ],
+      "themes": [
+        "Exports"
+      ]
+    },
+    {
+      "id": "b-other-agricultural-products",
+      "simplifiedExplanation": "A mixed group of companies that process and trade farm produce other than sugar, oil, tea and coffee, such as basmati rice, seeds, spices, pulses, cashews and grains.",
+      "productsAndServices": [
+        "Basmati and non-basmati rice",
+        "Hybrid and vegetable seeds",
+        "Spices",
+        "Pulses and grains",
+        "Cashew and dry fruits",
+        "Guar gum and other agri derivatives"
+      ],
+      "valueChainPosition": "Midstream: buys crops from farmers and mandis and grades, ages or packs them for traders, food makers and exporters; seed firms sit upstream, supplying farmers.",
+      "howTheyMakeMoney": "Most earn a trading and processing margin on crops, helped by grading, ageing and branding; seed firms earn from research-led hybrids sold each season.",
+      "revenueSources": [
+        "Export sales",
+        "Domestic branded packs",
+        "Bulk sales to traders and processors",
+        "Seed sales to farmers",
+        "By-products such as bran and husk"
+      ],
+      "operatingCosts": [
+        "Crop procurement",
+        "Milling and processing",
+        "Storage and fumigation",
+        "Freight and export logistics",
+        "Interest on inventory",
+        "Field trials and research (seed firms)"
+      ],
+      "customersAndEndMarkets": "Export buyers in many countries, domestic wholesalers and retailers, food processors, and farmers for seeds.",
+      "demandSupplyDrivers": "Supply depends on the harvest and minimum support prices; demand comes from food consumption at home and export orders abroad.",
+      "domesticInternationalExposure": "Many are export-led, so global prices, shipping routes and the rupee matter; seed companies are mostly domestic.",
+      "capexIntensity": "Low",
+      "capexNote": "Milling, sorting and storage need modest investment compared with the money tied up in stock.",
+      "workingCapital": "Heavy: crops are bought at harvest and held for months, often with bank funding; seed sales are seasonal and involve dealer credit.",
+      "regulation": "DGFT and APEDA export rules (bans or minimum export prices at times), MSP-linked procurement, the Seeds Act and seed certification, and FSSAI food safety norms.",
+      "competitiveAdvantages": "Procurement networks, consistent quality, export certifications, established brands and, for seeds, proprietary hybrids.",
+      "drivers": [
+        {
+          "factor": "Monsoon & agriculture",
+          "impact": "Crop size and quality depend on rainfall and growing conditions."
+        },
+        {
+          "factor": "Exports & global demand",
+          "impact": "Demand in buyer countries drives volumes and prices."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Export bans, minimum export prices and MSP changes can quickly change economics."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "Exporters earn more in rupees when the rupee weakens."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Export curbs",
+          "detail": "Sudden export restrictions can leave inventory stranded."
+        },
+        {
+          "risk": "Price falls",
+          "detail": "Lower crop prices reduce the value of stock on hand."
+        },
+        {
+          "risk": "Geopolitics and shipping",
+          "detail": "Conflicts or payment problems in buyer regions can delay exports."
+        },
+        {
+          "risk": "Residue norms",
+          "detail": "Strict pesticide limits abroad can lead to rejected consignments."
+        }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Food demand is steady, but profits move with harvests, crop prices and trade policy.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-edible-oil",
+        "b-pesticides-and-agrochemicals",
+        "b-food-storage-facilities",
+        "b-trading-and-distributors",
+        "b-packaged-foods"
+      ],
+      "aliases": [
+        "basmati rice",
+        "rice exporter",
+        "seeds",
+        "spices",
+        "agri products",
+        "pulses",
+        "cashew",
+        "agro processing",
+        "grains"
+      ],
+      "themes": [
+        "Exports",
+        "Rural demand"
+      ]
+    },
+    {
+      "id": "b-breweries-and-distilleries",
+      "simplifiedExplanation": "These companies make beer in breweries and spirits like whisky, rum and vodka in distilleries; many distilleries also make ethanol for fuel blending.",
+      "productsAndServices": [
+        "Beer",
+        "Indian-made foreign liquor (whisky, rum, brandy, vodka, gin)",
+        "Country liquor",
+        "Extra neutral alcohol (ENA)",
+        "Fuel ethanol"
+      ],
+      "valueChainPosition": "Midstream to downstream: buys grain, molasses and malt, brews or distils, and sells through state corporations, licensed wholesalers and retailers; ethanol goes to oil marketing companies.",
+      "howTheyMakeMoney": "Brand owners earn margins on bottled drinks after heavy state excise; bulk distillers earn the gap between grain or molasses cost and ENA or ethanol prices.",
+      "revenueSources": [
+        "Branded spirits and beer",
+        "Country liquor",
+        "Bulk ENA sales to bottlers",
+        "Fuel ethanol supplies",
+        "Contract bottling"
+      ],
+      "operatingCosts": [
+        "Grain, molasses and malt",
+        "Glass bottles and packaging",
+        "State excise (built into price)",
+        "Power and fuel",
+        "Brand promotion and trade spend"
+      ],
+      "customersAndEndMarkets": "Adult consumers through state-run or licensed liquor shops, bars and restaurants; oil marketing companies buy ethanol and other bottlers buy ENA.",
+      "demandSupplyDrivers": "Demand rises with incomes, urbanisation and preference for premium brands; supply is controlled by state licences, and ethanol demand follows the fuel blending programme.",
+      "domesticInternationalExposure": "Mainly domestic; imported Scotch and malt, global barley and glass costs, and some spirits exports add global links.",
+      "capexIntensity": "Medium",
+      "capexNote": "Plants and bottling lines need steady spending, and grain-based ethanol capacity has needed significant investment.",
+      "workingCapital": "Large: excise and fees are paid upfront in many states, state corporations can pay late, and maturing spirits tie up inventory.",
+      "regulation": "Alcohol is a state subject outside GST: each state sets excise, licences, price approvals and sales channels, and liquor advertising is restricted.",
+      "competitiveAdvantages": "Strong brands, licences and relationships across many states, distribution reach and procurement scale create high entry barriers.",
+      "drivers": [
+        {
+          "factor": "Regulation",
+          "impact": "State excise rates, price approvals and retail policies directly change sales and margins."
+        },
+        {
+          "factor": "Consumer demand",
+          "impact": "Rising incomes and premium preferences lift volumes and product mix."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Grain, molasses, barley and glass costs drive gross margins."
+        },
+        {
+          "factor": "Ethanol blending programme",
+          "impact": "Fuel ethanol gives distillers a large outlet with government-linked pricing."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "State policy changes",
+          "detail": "Prohibition, tax hikes or retail policy changes in one state can hit sales quickly."
+        },
+        {
+          "risk": "Input inflation",
+          "detail": "State price controls limit how fast cost increases can be passed on."
+        },
+        {
+          "risk": "Receivable delays",
+          "detail": "Payments from state corporations can be slow."
+        },
+        {
+          "risk": "Ethanol economics",
+          "detail": "Changes in ethanol prices or allowed feedstocks affect distillery returns."
+        }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Drinking demand is resilient, but state tax actions, grain prices and bulk alcohol prices make earnings uneven.",
+      "metricSet": "alcohol-beverages",
+      "relatedBasicIndustries": [
+        "b-sugar",
+        "b-other-beverages",
+        "b-glass-consumer",
+        "b-refineries-and-marketing",
+        "b-hotels-and-resorts"
+      ],
+      "aliases": [
+        "liquor",
+        "alcohol",
+        "beer",
+        "brewery",
+        "distillery",
+        "whisky",
+        "spirits",
+        "IMFL",
+        "ENA",
+        "grain ethanol"
+      ],
+      "themes": [
+        "Ethanol blending",
+        "Premiumisation"
+      ]
+    },
+    {
+      "id": "b-other-beverages",
+      "simplifiedExplanation": "Companies that make non-alcoholic drinks such as soft drinks, fruit juices, energy drinks and packaged drinking water, often bottling under their own or franchised brands.",
+      "productsAndServices": [
+        "Carbonated soft drinks",
+        "Fruit juices and nectars",
+        "Packaged drinking water",
+        "Energy and sports drinks",
+        "Dairy-based and ready-to-drink beverages",
+        "Franchise bottling and distribution"
+      ],
+      "valueChainPosition": "Downstream: buys concentrate, sugar, PET resin and cans, bottles drinks and sells through distributors, shops, restaurants and vending, often under franchise from a global brand owner.",
+      "howTheyMakeMoney": "They earn a margin on each case after concentrate, sugar, packaging and delivery costs; franchise bottlers depend on volumes and efficient delivery routes.",
+      "revenueSources": [
+        "Soft drink sales",
+        "Packaged water",
+        "Juices and value-added drinks",
+        "Energy drinks",
+        "Sales to restaurants and institutions"
+      ],
+      "operatingCosts": [
+        "Concentrate and flavours",
+        "Sugar and sweeteners",
+        "PET bottles, cans and glass",
+        "Distribution, coolers and freight",
+        "Advertising and promotions",
+        "Power and water"
+      ],
+      "customersAndEndMarkets": "Consumers through small shops, supermarkets, restaurants, cinemas and online; summer and festive periods matter most.",
+      "demandSupplyDrivers": "Demand peaks in hot summers and grows as coolers and cold chains reach smaller towns; low per-person consumption leaves room to grow.",
+      "domesticInternationalExposure": "Mostly domestic, but sugar, PET resin and aluminium cans follow global commodity prices; some bottlers also operate in nearby countries.",
+      "capexIntensity": "High",
+      "capexNote": "Bottling plants, production lines, visi-coolers and delivery fleets need large and continuous investment.",
+      "workingCapital": "Usually light because sales are largely cash or short credit, though inventory builds up ahead of summer.",
+      "regulation": "FSSAI labelling rules, mandatory BIS certification for packaged drinking water, plastic packaging EPR rules, and a higher GST rate on aerated and sugary drinks.",
+      "competitiveAdvantages": "Franchise rights, dense bottling and cooler networks, and delivery scale are hard for new entrants to copy.",
+      "drivers": [
+        {
+          "factor": "Summer weather",
+          "impact": "Hot, long summers lift volumes, while unseasonal rain hurts peak-season sales."
+        },
+        {
+          "factor": "Consumer demand",
+          "impact": "Rising incomes and new flavours raise consumption, especially in smaller towns."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Sugar, PET resin and aluminium costs shape gross margins."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Taxes on sugary drinks and plastic rules affect pricing and packaging choices."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Weather",
+          "detail": "A cool or rainy summer can reduce annual volumes."
+        },
+        {
+          "risk": "Health concerns",
+          "detail": "Shifts away from sugary drinks and new taxes can hurt demand."
+        },
+        {
+          "risk": "Franchise dependence",
+          "detail": "Bottlers rely on agreements with brand owners."
+        },
+        {
+          "risk": "Packaging rules",
+          "detail": "Plastic waste regulations raise compliance costs."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Everyday consumption keeps demand steady through the economic cycle, though weather causes big swings between quarters.",
+      "metricSet": "alcohol-beverages",
+      "relatedBasicIndustries": [
+        "b-breweries-and-distilleries",
+        "b-sugar",
+        "b-packaging",
+        "b-dairy-products",
+        "b-packaged-foods"
+      ],
+      "aliases": [
+        "soft drinks",
+        "cold drinks",
+        "aerated drinks",
+        "juice",
+        "packaged water",
+        "mineral water",
+        "bottler",
+        "energy drink",
+        "non-alcoholic beverages"
+      ],
+      "themes": [
+        "Rural demand"
+      ]
+    },
+    {
+      "id": "b-cigarettes-and-tobacco-products",
+      "simplifiedExplanation": "Companies that make and sell cigarettes and other tobacco products, and some that buy, process and export leaf tobacco.",
+      "productsAndServices": [
+        "Cigarettes",
+        "Cigars and cigarillos",
+        "Smoking mixtures and pipe tobacco",
+        "Chewing tobacco",
+        "Processed leaf tobacco for export"
+      ],
+      "valueChainPosition": "Midstream to downstream: buys leaf tobacco at regulated auctions or from growers, processes it, and sells branded cigarettes through distributors to a huge base of small retailers.",
+      "howTheyMakeMoney": "They earn a margin on branded packs after paying very high taxes, and regular price increases on strong brands drive profit. Leaf exporters earn a processing and trading margin.",
+      "revenueSources": [
+        "Domestic cigarette sales",
+        "Leaf tobacco exports",
+        "Other tobacco products",
+        "Contract manufacturing",
+        "Non-tobacco businesses in some companies"
+      ],
+      "operatingCosts": [
+        "Excise, GST and cess (part of price)",
+        "Leaf tobacco",
+        "Packaging and cigarette paper",
+        "Distribution and trade margins",
+        "Factory staff and power"
+      ],
+      "customersAndEndMarkets": "Adult smokers buying through paan shops, kirana stores and modern trade; processed leaf goes to cigarette makers abroad.",
+      "demandSupplyDrivers": "Volumes depend mainly on tax-driven price rises and the price gap to illicit cigarettes; habit-driven demand from regular smokers is stable.",
+      "domesticInternationalExposure": "Cigarettes are mainly domestic; leaf tobacco exports bring exposure to global crop prices and the rupee.",
+      "capexIntensity": "Low",
+      "capexNote": "Factories need fairly modest maintenance and modernisation spending.",
+      "workingCapital": "Light for finished goods, which sell quickly for cash, but leaf stock is held for months to age.",
+      "regulation": "COTPA bans tobacco advertising and mandates pictorial health warnings; tobacco taxes are high and revised often; the Tobacco Board regulates flue-cured tobacco auctions; e-cigarettes are banned.",
+      "competitiveAdvantages": "Established brands, licensed capacity, deep retail reach and the advertising ban make it very hard for new brands to enter.",
+      "drivers": [
+        {
+          "factor": "Government policy",
+          "impact": "Tax changes are the single biggest driver of volumes and margins."
+        },
+        {
+          "factor": "Regulation",
+          "impact": "Rules on packaging, sales points and promotion limit how companies compete."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Leaf tobacco prices affect costs and the leaf export business."
+        },
+        {
+          "factor": "Illicit trade",
+          "impact": "Smuggled and counterfeit cigarettes gain when legal prices rise sharply."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Tax shocks",
+          "detail": "Large tax hikes can cut legal volumes."
+        },
+        {
+          "risk": "Illicit cigarettes",
+          "detail": "A wide price gap pushes smokers to untaxed products."
+        },
+        {
+          "risk": "Health regulation",
+          "detail": "Stricter warnings, sales curbs or packaging rules can reduce demand."
+        },
+        {
+          "risk": "ESG exclusions",
+          "detail": "Some investors avoid tobacco stocks, limiting investor demand."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Habit-driven demand keeps volumes stable through economic cycles; tax policy is the main swing factor.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-diversified-fmcg",
+        "b-other-agricultural-products",
+        "b-packaging",
+        "b-paper-and-paper-products"
+      ],
+      "aliases": [
+        "cigarettes",
+        "tobacco",
+        "cigarette maker",
+        "leaf tobacco",
+        "cigar",
+        "smoking",
+        "tobacco stocks",
+        "bidi"
+      ],
+      "themes": []
+    },
+    {
+      "id": "b-animal-feed",
+      "simplifiedExplanation": "Companies that make ready feed for cattle, poultry, fish and shrimp from grains, oilmeals and other ingredients, helping farmers raise animals faster and healthier.",
+      "productsAndServices": [
+        "Cattle feed",
+        "Poultry feed",
+        "Shrimp and fish feed",
+        "Fishmeal and fish oil",
+        "Feed supplements and premixes",
+        "Pet food"
+      ],
+      "valueChainPosition": "Midstream: buys maize, soybean meal, rice bran, fishmeal and additives, and supplies dairy, poultry and aquaculture farmers, mostly through dealers.",
+      "howTheyMakeMoney": "They earn a margin between ingredient cost and feed price; brand trust, nutrition quality and on-farm technical support help hold pricing.",
+      "revenueSources": [
+        "Feed sold through dealers",
+        "Direct sales to large farms and integrators",
+        "Fishmeal and fish oil",
+        "Marine ingredient exports",
+        "Allied farm inputs"
+      ],
+      "operatingCosts": [
+        "Maize and soybean meal",
+        "Fishmeal and other proteins",
+        "Additives and premixes",
+        "Freight to rural markets",
+        "Plant power and labour",
+        "Cost of dealer credit"
+      ],
+      "customersAndEndMarkets": "Dairy farmers, poultry integrators and farmers, and shrimp and fish farmers, mostly in rural India; marine ingredients also go overseas.",
+      "demandSupplyDrivers": "Demand follows animal numbers and farmer profits in milk, poultry and shrimp; ingredient supply depends on crop harvests.",
+      "domesticInternationalExposure": "Mostly domestic, but shrimp feed depends on shrimp exports, and soybean meal and fishmeal prices track global markets.",
+      "capexIntensity": "Medium",
+      "capexNote": "Feed mills are moderately capital intensive and need to sit close to farming clusters.",
+      "workingCapital": "Significant: ingredients are stocked at harvest and dealers and farmers need credit; aqua feed sales are seasonal around pond stocking.",
+      "regulation": "Light, general business regulation; BIS standards cover some feeds, and trade rules on imported inputs such as soybean meal and maize affect costs.",
+      "competitiveAdvantages": "Formulation know-how, sourcing scale, dealer networks and farm advisory services help leading feed makers keep customers.",
+      "drivers": [
+        {
+          "factor": "Commodity prices",
+          "impact": "Maize and soybean meal prices are the biggest swing factor in margins."
+        },
+        {
+          "factor": "Monsoon & agriculture",
+          "impact": "Harvests set ingredient supply and the incomes of livestock farmers."
+        },
+        {
+          "factor": "Rural demand",
+          "impact": "Dairy and poultry farmer profits decide how much ready feed is used."
+        },
+        {
+          "factor": "Exports & global demand",
+          "impact": "Shrimp export demand drives aqua feed volumes."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Input spikes",
+          "detail": "Rapid rises in maize or soybean meal prices are hard to pass on quickly."
+        },
+        {
+          "risk": "Disease outbreaks",
+          "detail": "Bird flu or shrimp disease shrinks animal populations."
+        },
+        {
+          "risk": "Credit risk",
+          "detail": "Dealer and farmer dues can turn bad in weak seasons."
+        },
+        {
+          "risk": "Export dependence",
+          "detail": "Aqua feed suffers when importing countries raise tariffs on shrimp."
+        }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Margins move with grain and oilmeal prices and with the profitability of livestock and shrimp farming.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-seafood",
+        "b-meat-products-including-poultry",
+        "b-dairy-products",
+        "b-edible-oil",
+        "b-other-agricultural-products"
+      ],
+      "aliases": [
+        "animal feed",
+        "cattle feed",
+        "poultry feed",
+        "shrimp feed",
+        "aqua feed",
+        "fish feed",
+        "fishmeal",
+        "livestock feed"
+      ],
+      "themes": [
+        "Rural demand"
+      ]
+    },
+    {
+      "id": "b-dairy-products",
+      "simplifiedExplanation": "Dairy companies collect milk from farmers, process it and sell packed milk and products like curd, butter, ghee, paneer, cheese and ice cream.",
+      "productsAndServices": [
+        "Packed liquid milk",
+        "Curd, buttermilk and lassi",
+        "Ghee and butter",
+        "Paneer and cheese",
+        "Ice cream and frozen desserts",
+        "Milk powder and whey"
+      ],
+      "valueChainPosition": "Midstream to downstream: buys milk from farmers through village collection points and chilling centres, processes it and sells through distributors, retailers and own parlours.",
+      "howTheyMakeMoney": "They earn the spread between the price paid to farmers and the selling price; value-added products such as cheese, curd and ice cream earn far more than liquid milk.",
+      "revenueSources": [
+        "Liquid milk",
+        "Value-added dairy products",
+        "Ice cream",
+        "Bulk milk powder and butter",
+        "Institutional and B2B sales"
+      ],
+      "operatingCosts": [
+        "Raw milk procurement",
+        "Chilling, processing and cold chain",
+        "Packaging",
+        "Distribution and freight",
+        "Brand advertising"
+      ],
+      "customersAndEndMarkets": "Urban and semi-urban households, hotels, restaurants, sweet shops and food makers; ice cream sales peak in summer.",
+      "demandSupplyDrivers": "Demand is daily and steady, while milk supply has seasonal flush and lean periods that depend on fodder and weather.",
+      "domesticInternationalExposure": "Largely domestic; global milk powder and butter prices matter when surplus stock must be sold or exported.",
+      "capexIntensity": "Medium",
+      "capexNote": "Chilling centres, plants and cold chain need steady investment, more so for cheese and ice cream.",
+      "workingCapital": "Mixed: farmers are paid quickly and milk sells fast, but surplus milk turned into powder and butter in the flush season builds inventory.",
+      "regulation": "FSSAI sets dairy quality and adulteration standards; state milk cooperatives are strong competitors and price setters; fresh milk is exempt from GST while processed products are taxed.",
+      "competitiveAdvantages": "Secure milk procurement networks, cold chain reach, trusted brands and a larger share of value-added products protect strong players.",
+      "drivers": [
+        {
+          "factor": "Monsoon & agriculture",
+          "impact": "Fodder availability and weather decide milk supply and procurement prices."
+        },
+        {
+          "factor": "Consumer demand",
+          "impact": "Rising protein intake and convenience lift demand for packed and value-added products."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Farm milk prices and global dairy commodity prices drive margins."
+        },
+        {
+          "factor": "Summer weather",
+          "impact": "Hot summers boost ice cream, curd and buttermilk sales."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Procurement inflation",
+          "detail": "Farm milk prices can rise faster than consumer prices."
+        },
+        {
+          "risk": "Cattle disease",
+          "detail": "Outbreaks among cattle reduce milk supply."
+        },
+        {
+          "risk": "Quality incidents",
+          "detail": "Adulteration or contamination can damage a brand."
+        },
+        {
+          "risk": "Inventory losses",
+          "detail": "Stored milk powder and butter lose value when prices fall."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Milk is a daily necessity, though margins move with the farm milk price cycle.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-packaged-foods",
+        "b-animal-feed",
+        "b-food-storage-facilities",
+        "b-other-beverages",
+        "b-restaurants"
+      ],
+      "aliases": [
+        "dairy",
+        "milk",
+        "ghee",
+        "paneer",
+        "ice cream",
+        "cheese",
+        "curd",
+        "butter",
+        "milk products"
+      ],
+      "themes": [
+        "Rural demand"
+      ]
+    },
+    {
+      "id": "b-other-food-products",
+      "simplifiedExplanation": "A catch-all group for food makers that do not fit one category, such as spice blends, food ingredients, specialty fats, nutraceuticals, flour, honey and ethnic foods.",
+      "productsAndServices": [
+        "Spices and masala blends",
+        "Specialty fats and butters for chocolate and cosmetics",
+        "Nutraceuticals and natural ingredients",
+        "Flour and semolina",
+        "Honey, makhana and health foods",
+        "Ready mixes and condiments"
+      ],
+      "valueChainPosition": "Mostly midstream: buys agricultural or forest raw materials, processes them into ingredients or consumer packs, and supplies food and cosmetic makers, retailers and export buyers.",
+      "howTheyMakeMoney": "They earn processing margins on ingredients sold to other businesses or brand margins on consumer packs; rare or specialised ingredients can earn premium prices.",
+      "revenueSources": [
+        "B2B ingredient sales",
+        "Branded consumer packs",
+        "Exports to global food and cosmetic makers",
+        "Private-label manufacturing",
+        "Institutional supplies"
+      ],
+      "operatingCosts": [
+        "Agricultural and forest raw materials",
+        "Processing and quality testing",
+        "Packaging",
+        "Freight and export logistics",
+        "Selling and marketing"
+      ],
+      "customersAndEndMarkets": "Packaged food, confectionery, cosmetic and supplement makers, plus households through shops and online channels.",
+      "demandSupplyDrivers": "Demand follows growth in processed food and global interest in natural ingredients; supply depends on harvests or seasonal collection of raw produce.",
+      "domesticInternationalExposure": "Varies by company: ingredient and specialty-fat makers are often export-heavy, while spice and flour brands are mainly domestic.",
+      "capexIntensity": "Medium",
+      "capexNote": "Processing plants and testing labs need moderate investment, and specialty ingredients may need dedicated equipment.",
+      "workingCapital": "Often heavy because seasonal raw materials are bought once a year and stored, and export receivables add to it.",
+      "regulation": "FSSAI governs food safety, labelling and nutraceutical health claims; exporters must also meet the food standards of importing countries.",
+      "competitiveAdvantages": "Hard-to-copy sourcing networks, quality certifications with global customers, specialised processing know-how and regional brands.",
+      "drivers": [
+        {
+          "factor": "Consumer demand",
+          "impact": "Growth in packaged and convenience foods raises demand for ingredients and spice blends."
+        },
+        {
+          "factor": "Exports & global demand",
+          "impact": "Orders from global food and cosmetic makers drive specialty ingredient makers."
+        },
+        {
+          "factor": "Raw material availability",
+          "impact": "Harvests and seasonal collection decide supply and cost."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Prices of grains, spices and substitutes such as cocoa butter affect margins."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Supply shortfalls",
+          "detail": "Poor harvests or collection seasons can limit raw material."
+        },
+        {
+          "risk": "Customer concentration",
+          "detail": "Ingredient makers may depend on a few large buyers."
+        },
+        {
+          "risk": "Quality rejections",
+          "detail": "Failed tests can lead to recalls or rejected export lots."
+        },
+        {
+          "risk": "Low entry barriers",
+          "detail": "Some categories attract many small unorganised rivals."
+        }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Food demand is steady, but ingredient prices and export orders make earnings vary.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-packaged-foods",
+        "b-other-agricultural-products",
+        "b-specialty-chemicals",
+        "b-personal-care",
+        "b-edible-oil"
+      ],
+      "aliases": [
+        "food products",
+        "food processing",
+        "spices",
+        "masala",
+        "food ingredients",
+        "nutraceuticals",
+        "specialty fats",
+        "flour mill",
+        "health foods"
+      ],
+      "themes": [
+        "Exports"
+      ]
+    },
+    {
+      "id": "b-packaged-foods",
+      "simplifiedExplanation": "Companies that sell branded ready-to-eat or easy-to-cook foods such as biscuits, noodles, chocolates, snacks, breakfast cereals and baby food.",
+      "productsAndServices": [
+        "Biscuits, cakes and rusks",
+        "Instant noodles and pasta",
+        "Chocolates and confectionery",
+        "Namkeen and snacks",
+        "Infant nutrition and health drinks",
+        "Ready-to-eat meals and sauces"
+      ],
+      "valueChainPosition": "Downstream: buys flour, sugar, edible oil, milk, cocoa and packaging, makes products in own or contract plants and sells through distributors, kirana stores, modern trade and quick commerce.",
+      "howTheyMakeMoney": "They earn healthy gross margins from brand strength, spend a good part on advertising and trade schemes, and profit from scale in buying and distribution.",
+      "revenueSources": [
+        "Domestic branded sales",
+        "E-commerce and quick commerce sales",
+        "Exports to overseas Indian communities",
+        "Food-service and institutional sales",
+        "Contract manufacturing in some cases"
+      ],
+      "operatingCosts": [
+        "Wheat, sugar, milk, palm oil and cocoa",
+        "Packaging laminates and cartons",
+        "Advertising and promotions",
+        "Distribution and trade margins",
+        "Plant and contract manufacturing costs"
+      ],
+      "customersAndEndMarkets": "Households across urban and rural India, reached through small retailers, supermarkets and online platforms.",
+      "demandSupplyDrivers": "Demand grows with incomes, busy urban lifestyles and deeper rural reach; companies manage input inflation through price increases and smaller pack weights.",
+      "domesticInternationalExposure": "Mainly domestic; palm oil, cocoa and wheat costs follow global prices, and a few players export.",
+      "capexIntensity": "Medium",
+      "capexNote": "Plants need steady investment, though many companies use contract manufacturers to stay asset-light.",
+      "workingCapital": "Usually light or negative, since distributors pay quickly and suppliers give credit; stock builds up before festivals.",
+      "regulation": "FSSAI rules on ingredients, labelling and health claims; plastic packaging EPR rules; GST rates that differ across food categories.",
+      "competitiveAdvantages": "Trusted brands, deep distribution, scale in buying and advertising, and shelf space make it hard for new brands to scale up.",
+      "drivers": [
+        {
+          "factor": "Consumer demand",
+          "impact": "Convenience and snacking habits lift volumes and premium products."
+        },
+        {
+          "factor": "Rural demand",
+          "impact": "Rural incomes decide how fast low-priced packs grow in villages."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Wheat, sugar, palm oil, milk and cocoa costs drive gross margins."
+        },
+        {
+          "factor": "New sales channels",
+          "impact": "Quick commerce and e-commerce change pack sizes, assortment and distributor economics."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Input inflation",
+          "detail": "Sharp cost increases may not be fully passed on to price-sensitive buyers."
+        },
+        {
+          "risk": "Competition",
+          "detail": "Regional brands, private labels and D2C start-ups pressure share and pricing."
+        },
+        {
+          "risk": "Health perception",
+          "detail": "Scrutiny of sugar, salt and fat content can hurt some categories."
+        },
+        {
+          "risk": "Food safety",
+          "detail": "Contamination or regulatory action can damage a brand quickly."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Everyday food purchases hold up in slowdowns, though volume growth slows when rural incomes are weak.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-diversified-fmcg",
+        "b-dairy-products",
+        "b-other-food-products",
+        "b-edible-oil",
+        "b-packaging"
+      ],
+      "aliases": [
+        "packaged food",
+        "biscuits",
+        "noodles",
+        "chocolate",
+        "snacks",
+        "namkeen",
+        "processed food",
+        "ready to eat",
+        "confectionery",
+        "FMCG food"
+      ],
+      "themes": [
+        "Rural demand",
+        "Premiumisation"
+      ]
+    },
+    {
+      "id": "b-seafood",
+      "simplifiedExplanation": "Companies that process and export seafood, mainly farmed shrimp, which they buy from fish farmers, clean, freeze and ship to buyers abroad.",
+      "productsAndServices": [
+        "Frozen raw and cooked shrimp",
+        "Peeled, breaded and marinated shrimp",
+        "Frozen fish and squid",
+        "Ready-to-cook seafood",
+        "Shrimp hatchery seed",
+        "Seafood for domestic retail"
+      ],
+      "valueChainPosition": "Midstream: buys shrimp from aquaculture farmers (some also run hatcheries and farms), processes and freezes it, and sells to importers, supermarkets and food-service firms overseas.",
+      "howTheyMakeMoney": "They earn the gap between the farm-gate shrimp price and the export price, with better margins on value-added and ready-to-cook products than on plain frozen shrimp.",
+      "revenueSources": [
+        "Exports to North America",
+        "Exports to Europe and Asia",
+        "Value-added retail packs",
+        "Domestic seafood sales",
+        "Export incentives"
+      ],
+      "operatingCosts": [
+        "Raw shrimp procurement",
+        "Processing labour",
+        "Freezing and cold storage power",
+        "Packaging",
+        "Ocean freight and testing",
+        "Import duties paid in buyer countries"
+      ],
+      "customersAndEndMarkets": "Importers, grocery chains and restaurant suppliers in North America, Europe and Asia.",
+      "demandSupplyDrivers": "Demand depends on consumer spending and seafood prices in buyer countries; supply depends on farm stocking, disease and coastal weather.",
+      "domesticInternationalExposure": "Highly export-dependent, so the rupee, buyer-country tariffs and competition from other shrimp-producing countries drive results.",
+      "capexIntensity": "Medium",
+      "capexNote": "Processing plants, freezers and cold storage need moderate investment.",
+      "workingCapital": "Heavy: farmers are paid quickly while exports take time to ship and collect, and stocks build up in harvest seasons.",
+      "regulation": "MPEDA and the Export Inspection Council govern exports and quality; buyer countries test for antibiotic residues and may levy anti-dumping or countervailing duties.",
+      "competitiveAdvantages": "Approved export plants, long buyer relationships, traceability and value-added processing set leaders apart in a crowded field.",
+      "drivers": [
+        {
+          "factor": "Exports & global demand",
+          "impact": "Demand and prices in buyer countries decide volumes and realisations."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "A weaker rupee raises rupee earnings from dollar sales."
+        },
+        {
+          "factor": "Trade tariffs and duties",
+          "impact": "Tariffs and anti-dumping duties in buyer countries can quickly change competitiveness."
+        },
+        {
+          "factor": "Raw material availability",
+          "impact": "Harvests, disease and weather affect shrimp supply and buying prices."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Trade barriers",
+          "detail": "New tariffs or duties in a key market can hit margins and orders."
+        },
+        {
+          "risk": "Disease",
+          "detail": "Shrimp disease outbreaks can sharply cut supply."
+        },
+        {
+          "risk": "Quality rejections",
+          "detail": "Antibiotic residue findings can lead to rejected shipments."
+        },
+        {
+          "risk": "Global competition",
+          "detail": "Other shrimp-exporting countries compete hard on price."
+        }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Earnings swing with global shrimp prices, trade policy and farm output.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-animal-feed",
+        "b-meat-products-including-poultry",
+        "b-food-storage-facilities",
+        "b-packaged-foods"
+      ],
+      "aliases": [
+        "seafood",
+        "shrimp",
+        "prawns",
+        "aquaculture",
+        "frozen seafood",
+        "marine products",
+        "shrimp exporter",
+        "fish processing"
+      ],
+      "themes": [
+        "Exports"
+      ]
+    },
+    {
+      "id": "b-meat-products-including-poultry",
+      "simplifiedExplanation": "Companies that breed, raise or process chickens, eggs and meat, including integrated poultry firms, egg-powder makers and buffalo meat exporters.",
+      "productsAndServices": [
+        "Live broilers and dressed chicken",
+        "Day-old chicks and hatching eggs",
+        "Table eggs and egg powder",
+        "Processed and frozen meat",
+        "Buffalo meat for export",
+        "Ready-to-cook meat products"
+      ],
+      "valueChainPosition": "Runs from breeding and hatcheries to processing: integrators give chicks and feed to contract farmers, then sell birds or meat to traders, retailers, restaurants and exporters.",
+      "howTheyMakeMoney": "Poultry integrators earn the spread between live bird prices and the cost of chicks and feed; egg-powder and meat exporters earn processing margins on overseas sales.",
+      "revenueSources": [
+        "Live bird sales",
+        "Processed chicken and meat",
+        "Day-old chicks and breeding stock",
+        "Buffalo meat and egg-product exports",
+        "Feed sales to farmers"
+      ],
+      "operatingCosts": [
+        "Feed (maize and soybean meal)",
+        "Contract farmer payments",
+        "Vaccines and veterinary care",
+        "Processing and cold chain",
+        "Freight and export logistics"
+      ],
+      "customersAndEndMarkets": "Meat traders, retailers, restaurants and quick-service chains in India, plus overseas buyers of buffalo meat and egg products.",
+      "demandSupplyDrivers": "Demand rises with protein consumption and eating out but dips during religious fasting periods; bird supply reacts quickly to prices, causing short boom-bust cycles.",
+      "domesticInternationalExposure": "Poultry is mostly domestic; buffalo meat and egg-product makers are export-led and exposed to global prices, the rupee and import rules abroad.",
+      "capexIntensity": "Medium",
+      "capexNote": "Hatcheries, feed mills, processing plants and abattoirs need moderate investment, while contract farming keeps bird rearing asset-light.",
+      "workingCapital": "Moderate: feed stocks and contract-farmer advances are needed, and export businesses carry receivables.",
+      "regulation": "FSSAI and state slaughter and hygiene rules, APEDA registration for meat export plants, state cattle-slaughter laws, and culling orders during bird flu outbreaks.",
+      "competitiveAdvantages": "Integration from breeding to feed, contract-farmer networks, approved export plants and biosecurity standards give scale players an edge.",
+      "drivers": [
+        {
+          "factor": "Commodity prices",
+          "impact": "Maize and soybean meal prices set feed cost, the largest expense."
+        },
+        {
+          "factor": "Consumer demand",
+          "impact": "Rising protein consumption supports volumes, while fasting periods reduce them."
+        },
+        {
+          "factor": "Exports & global demand",
+          "impact": "Global demand and market access drive meat and egg-product exporters."
+        },
+        {
+          "factor": "Animal disease",
+          "impact": "Bird flu and other outbreaks can crash demand and prices."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Price cycles",
+          "detail": "An oversupply of birds can push live prices below cost."
+        },
+        {
+          "risk": "Disease outbreaks",
+          "detail": "Bird flu scares cut consumption and can force culling."
+        },
+        {
+          "risk": "Feed cost spikes",
+          "detail": "Grain and oilmeal inflation squeezes margins."
+        },
+        {
+          "risk": "Market access",
+          "detail": "Bans or import restrictions abroad can halt shipments."
+        }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Poultry and meat profits follow short, sharp cycles of bird supply, feed costs and disease.",
+      "metricSet": "agri-commodities",
+      "relatedBasicIndustries": [
+        "b-animal-feed",
+        "b-seafood",
+        "b-restaurants",
+        "b-food-storage-facilities",
+        "b-packaged-foods"
+      ],
+      "aliases": [
+        "poultry",
+        "chicken",
+        "broiler",
+        "eggs",
+        "egg powder",
+        "meat",
+        "buffalo meat",
+        "meat exporter",
+        "hatchery"
+      ],
+      "themes": [
+        "Exports",
+        "Rural demand"
+      ]
+    },
+    {
+      "id": "b-personal-care",
+      "simplifiedExplanation": "Companies that sell products people use on their body every day, such as hair oil, shampoo, skin creams, deodorants, cosmetics and hygiene items.",
+      "productsAndServices": [
+        "Hair oils and shampoos",
+        "Skin creams, face washes and cosmetics",
+        "Deodorants and fragrances",
+        "Ayurvedic and herbal products",
+        "Sexual wellness and hygiene products",
+        "Men's grooming"
+      ],
+      "valueChainPosition": "Downstream: buys oils, chemicals, fragrances and packaging, makes products in own or contract plants and sells through distributors, chemists, beauty stores, modern trade and online.",
+      "howTheyMakeMoney": "Brand-led prices give high gross margins, but a large share is spent on advertising, influencers and trade schemes; profit comes from scale and repeat buying.",
+      "revenueSources": [
+        "Domestic branded sales",
+        "E-commerce and D2C sales",
+        "Exports to nearby regions",
+        "Tender sales of hygiene products",
+        "Contract manufacturing"
+      ],
+      "operatingCosts": [
+        "Vegetable oils and crude-based ingredients such as liquid paraffin",
+        "Fragrances, actives and packaging",
+        "Advertising and digital marketing",
+        "Distribution and trade margins",
+        "Contract manufacturing fees"
+      ],
+      "customersAndEndMarkets": "Consumers across urban and rural India through kirana stores, chemists, supermarkets, salons and online marketplaces.",
+      "demandSupplyDrivers": "Demand grows as incomes rise and people add more grooming steps; small low-priced packs widen reach, while premium products grow in cities.",
+      "domesticInternationalExposure": "Mostly domestic with some exports; oils, crude derivatives and fragrances follow global prices.",
+      "capexIntensity": "Low",
+      "capexNote": "Manufacturing is simple and often outsourced; the main investment goes into brands rather than factories.",
+      "workingCapital": "Light: distributors get short credit and stock turns quickly, though online and modern trade can stretch receivables.",
+      "regulation": "Cosmetics fall under the Drugs and Cosmetics Act through CDSCO, ayurvedic products need AYUSH licences, and advertising claims are watched by ASCI and consumer protection rules.",
+      "competitiveAdvantages": "Brand trust, marketing scale and distribution reach protect leaders, though digital-first brands have lowered barriers in some niches.",
+      "drivers": [
+        {
+          "factor": "Consumer demand",
+          "impact": "Premiumisation and new categories raise the value of each purchase."
+        },
+        {
+          "factor": "Rural demand",
+          "impact": "Rural income growth drives small-pack volumes in hair oil and creams."
+        },
+        {
+          "factor": "Crude oil prices",
+          "impact": "Liquid paraffin, plastic packaging and some chemicals track crude prices."
+        },
+        {
+          "factor": "Advertising spend",
+          "impact": "Media and influencer costs decide how much margin reaches profit."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Competition",
+          "detail": "D2C and global brands compete hard with heavy discounting."
+        },
+        {
+          "risk": "Input inflation",
+          "detail": "Oil and packaging cost spikes squeeze margins."
+        },
+        {
+          "risk": "Changing trends",
+          "detail": "Shifts in consumer taste can make a brand look dated."
+        },
+        {
+          "risk": "Claim scrutiny",
+          "detail": "Rulings on misleading advertising can force product or message changes."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Daily-use products keep demand steady, though premium items slow in downturns.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-household-products",
+        "b-diversified-fmcg",
+        "b-pharmaceuticals",
+        "b-specialty-chemicals",
+        "b-e-retail-e-commerce"
+      ],
+      "aliases": [
+        "personal care",
+        "cosmetics",
+        "beauty",
+        "skin care",
+        "hair oil",
+        "shampoo",
+        "grooming",
+        "toiletries",
+        "D2C beauty"
+      ],
+      "themes": [
+        "Rural demand",
+        "Premiumisation",
+        "Digital"
+      ]
+    },
+    {
+      "id": "b-household-products",
+      "simplifiedExplanation": "Companies that make everyday items for cleaning and running a home, such as detergents, dishwash bars, mosquito repellents, batteries, torches and air fresheners.",
+      "productsAndServices": [
+        "Detergents and fabric whiteners",
+        "Dishwash bars and liquids",
+        "Mosquito repellents and household insecticides",
+        "Dry-cell batteries",
+        "Torches and small lighting",
+        "Toilet and floor cleaners"
+      ],
+      "valueChainPosition": "Downstream: buys chemicals, metals, plastics and packaging, makes products in own or outsourced plants, and sells through distributors to kirana stores, modern trade and online.",
+      "howTheyMakeMoney": "They earn brand-led margins on low-priced, often-bought items, relying on high volumes, wide distribution and tight cost control.",
+      "revenueSources": [
+        "Fabric and dish care",
+        "Household insecticides",
+        "Batteries and torches",
+        "Other home care products",
+        "Exports to nearby countries"
+      ],
+      "operatingCosts": [
+        "Crude-linked chemicals such as surfactants",
+        "Soda ash, zinc and other metals",
+        "Packaging",
+        "Advertising and promotions",
+        "Distribution and trade margins"
+      ],
+      "customersAndEndMarkets": "Households in cities and villages, buying mostly from local stores; repellent and battery sales have seasonal peaks.",
+      "demandSupplyDrivers": "Demand rises with hygiene awareness, new households and the move to branded products; the monsoon and mosquito season lift repellent sales.",
+      "domesticInternationalExposure": "Mostly domestic, but key inputs track global crude and metal prices, and cheap imported batteries and torches compete on price.",
+      "capexIntensity": "Low",
+      "capexNote": "Production lines cost little compared with brand and distribution spending, and some products are outsourced.",
+      "workingCapital": "Light to moderate: stock moves fast, but seasonal products build inventory before peak months.",
+      "regulation": "Household insecticides need registration under the Insecticides Act (CIB&RC); batteries and plastic packaging fall under waste management and EPR rules; BIS standards apply to some products.",
+      "competitiveAdvantages": "Trusted brands, wide rural and urban reach and efficient sourcing protect leaders against unorganised rivals.",
+      "drivers": [
+        {
+          "factor": "Consumer demand",
+          "impact": "Hygiene awareness and premium formats such as liquids lift value growth."
+        },
+        {
+          "factor": "Rural demand",
+          "impact": "Rural spending drives low-priced packs and battery sales."
+        },
+        {
+          "factor": "Crude oil prices",
+          "impact": "Detergent chemicals and plastic packaging follow crude prices."
+        },
+        {
+          "factor": "Imports & dumping",
+          "impact": "Cheap imported batteries and lights pressure prices."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Input cost spikes",
+          "detail": "Crude, zinc and soda ash inflation squeezes margins."
+        },
+        {
+          "risk": "Technology shifts",
+          "detail": "Rechargeable devices and LED lights reduce demand for dry-cell batteries."
+        },
+        {
+          "risk": "Unorganised competition",
+          "detail": "Local brands undercut prices in price-sensitive markets."
+        },
+        {
+          "risk": "Ingredient bans",
+          "detail": "Restrictions on certain insecticide molecules can force reformulation."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Essential household items sell through economic cycles, while margins vary with input costs.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-personal-care",
+        "b-diversified-fmcg",
+        "b-specialty-chemicals",
+        "b-household-appliances",
+        "b-pesticides-and-agrochemicals"
+      ],
+      "aliases": [
+        "household products",
+        "home care",
+        "detergent",
+        "dishwash",
+        "mosquito repellent",
+        "batteries",
+        "torch",
+        "cleaning products"
+      ],
+      "themes": [
+        "Rural demand"
+      ]
+    },
+    {
+      "id": "b-stationary",
+      "simplifiedExplanation": "Companies that make writing and school supplies such as pens, pencils, notebooks, art materials and office stationery; some also publish educational books. NSE spells this industry 'Stationary'.",
+      "productsAndServices": [
+        "Pens and refills",
+        "Pencils, erasers and sharpeners",
+        "Notebooks and exercise books",
+        "Art, craft and colouring materials",
+        "Office supplies",
+        "Supplementary and educational books"
+      ],
+      "valueChainPosition": "Downstream: buys paper, plastic resins, wood, graphite and inks, makes the products and sells through distributors, stationery shops, schools, modern trade and online; some products are exported.",
+      "howTheyMakeMoney": "They earn margins on high-volume, low-price items, with better margins on branded, premium and art products; publishers earn from book sales each academic year.",
+      "revenueSources": [
+        "Domestic branded sales",
+        "Exports of pens and stationery",
+        "Private-label supply to other brands",
+        "Educational book sales",
+        "Institutional and corporate orders"
+      ],
+      "operatingCosts": [
+        "Paper and board",
+        "Plastic resins and inks",
+        "Wood and graphite",
+        "Assembly labour",
+        "Distribution and dealer margins",
+        "Advertising"
+      ],
+      "customersAndEndMarkets": "School students and parents, offices and institutions, and overseas buyers; sales peak at the start of the school year.",
+      "demandSupplyDrivers": "Demand follows school enrolment, the academic calendar and exam cycles, while paper and resin prices drive costs.",
+      "domesticInternationalExposure": "Mostly domestic; some makers export pens and stationery, cheap imports compete, and paper and resin prices follow global markets.",
+      "capexIntensity": "Medium",
+      "capexNote": "Moulding, printing and assembly capacity needs periodic expansion, especially for makers who produce most parts in-house.",
+      "workingCapital": "Seasonal: inventory and dealer credit build up before the school season, and publishers carry large book stocks.",
+      "regulation": "Light, general business regulation; GST rates on stationery and paper, and changes in school curriculum or textbook policy, affect demand.",
+      "competitiveAdvantages": "Brand recall among students and parents, wide dealer networks, in-house manufacturing scale and product range help leaders.",
+      "drivers": [
+        {
+          "factor": "Consumer demand",
+          "impact": "School enrolment and household spending on education drive volumes."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Paper, plastic resin and wood prices shape margins."
+        },
+        {
+          "factor": "Imports & dumping",
+          "impact": "Low-cost imported stationery competes on price."
+        },
+        {
+          "factor": "Technology change",
+          "impact": "Digital learning can reduce some paper-based demand."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Paper price spikes",
+          "detail": "Higher paper costs hurt notebook and book margins."
+        },
+        {
+          "risk": "Curriculum changes",
+          "detail": "Syllabus changes can make printed book stocks obsolete."
+        },
+        {
+          "risk": "Seasonality",
+          "detail": "A weak school season affects the whole year's sales."
+        },
+        {
+          "risk": "Price competition",
+          "detail": "Local and imported products compete aggressively on price."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "School supplies are essential and bought every year, though input costs make margins vary.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-paper-and-paper-products",
+        "b-printing-and-publication",
+        "b-plastic-products-consumer",
+        "b-education",
+        "b-household-products"
+      ],
+      "aliases": [
+        "stationery",
+        "stationary",
+        "pens",
+        "pencils",
+        "notebooks",
+        "school supplies",
+        "art materials",
+        "writing instruments",
+        "office supplies"
+      ],
+      "themes": []
+    },
+    {
+      "id": "b-diversified-fmcg",
+      "simplifiedExplanation": "Large consumer companies that sell many kinds of everyday products, such as foods, soaps, detergents, personal care and sometimes cigarettes; contract manufacturers making such goods for brand owners also sit here.",
+      "productsAndServices": [
+        "Soaps, detergents and home care",
+        "Personal care products",
+        "Packaged foods and beverages",
+        "Cigarettes (in some groups)",
+        "Contract manufacturing for FMCG brands"
+      ],
+      "valueChainPosition": "Downstream: sources agricultural, chemical and packaging inputs at scale and sells through vast distributor and retailer networks; contract makers sit one step earlier, supplying brand owners.",
+      "howTheyMakeMoney": "Brand owners earn from pricing power across many categories that share one distribution system; contract manufacturers earn a fee or margin on volumes made.",
+      "revenueSources": [
+        "Home and personal care",
+        "Foods and beverages",
+        "Cigarettes (where present)",
+        "Contract manufacturing fees",
+        "Other segments such as paper, agri or hotels"
+      ],
+      "operatingCosts": [
+        "Agricultural commodities and palm oil",
+        "Crude-linked chemicals and packaging",
+        "Advertising and promotions",
+        "Distribution and trade spend",
+        "Employee costs and brand royalties"
+      ],
+      "customersAndEndMarkets": "Households across India through general trade, modern trade, e-commerce and quick commerce; contract makers serve FMCG brand owners.",
+      "demandSupplyDrivers": "Demand tracks overall consumption, rural incomes and premiumisation; a wide portfolio lets weak categories be offset by strong ones.",
+      "domesticInternationalExposure": "Mainly domestic; palm oil, crude derivatives and wheat follow global prices, and some players export to neighbouring countries.",
+      "capexIntensity": "Medium",
+      "capexNote": "Brand owners need moderate plant investment, while contract makers invest more in dedicated plants for clients.",
+      "workingCapital": "Usually light or negative for brand owners thanks to fast stock turns and supplier credit; contract makers carry more inventory.",
+      "regulation": "FSSAI for foods, CDSCO rules for cosmetics, COTPA and tobacco taxes for cigarettes, GST rate changes across categories, and plastic packaging EPR rules.",
+      "competitiveAdvantages": "A portfolio of trusted brands, very deep distribution, buying scale and large marketing budgets create high barriers to entry.",
+      "drivers": [
+        {
+          "factor": "Consumer demand",
+          "impact": "Urban premiumisation lifts mix and margins across categories."
+        },
+        {
+          "factor": "Rural demand",
+          "impact": "Rural income growth drives volumes of mass-market packs."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Palm oil, crude derivatives, wheat and tea costs move gross margins."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "GST and tobacco tax changes shift pricing and demand."
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Volume slowdown",
+          "detail": "Weak consumption makes growth hard without price cuts."
+        },
+        {
+          "risk": "Commodity inflation",
+          "detail": "Fast cost rises can squeeze margins before price hikes take effect."
+        },
+        {
+          "risk": "New-age competition",
+          "detail": "D2C and regional brands chip away at specific categories."
+        },
+        {
+          "risk": "Client dependence",
+          "detail": "Contract manufacturers rely on a few brand-owner customers."
+        }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "A broad basket of essential products keeps earnings steady through economic cycles.",
+      "metricSet": "fmcg",
+      "relatedBasicIndustries": [
+        "b-personal-care",
+        "b-household-products",
+        "b-packaged-foods",
+        "b-cigarettes-and-tobacco-products",
+        "b-diversified"
+      ],
+      "aliases": [
+        "FMCG",
+        "diversified FMCG",
+        "consumer staples",
+        "consumer goods",
+        "fast moving consumer goods",
+        "FMCG conglomerate",
+        "contract manufacturing"
+      ],
+      "themes": [
+        "Rural demand",
+        "Premiumisation"
+      ]
+    }
+  ]
+}

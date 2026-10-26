@@ -128,57 +128,80 @@
   "basicIndustries": [
     {
       "id": "b-pharmaceuticals",
-      "simplifiedExplanation": "Companies that make medicines: either the active ingredient (API, also called bulk drug) or finished tablets, capsules, injections and syrups. Most Indian firms make generics, i.e. copies of drugs whose patents have expired.",
+      "simplifiedExplanation": "Companies that make medicines: the active ingredient (API or bulk drug) or finished tablets, capsules and injections. Most Indian firms make generics, copies of off-patent drugs.",
       "productsAndServices": [
-        "Branded generic medicines for India",
-        "Generic medicines for the US, Europe and emerging markets",
-        "Active pharmaceutical ingredients (APIs) and intermediates",
+        "Branded generics for India",
+        "Generics for regulated and emerging markets",
+        "APIs and intermediates",
         "Injectables and complex generics",
-        "Over-the-counter (OTC) products",
-        "Contract manufacturing for other drug companies"
+        "Over-the-counter (OTC) products"
       ],
-      "valueChainPosition": "Midstream to downstream: buys chemical intermediates and key starting materials (often imported), turns them into APIs and finished doses, and sells through distributors, chemists, hospitals and overseas wholesalers.",
-      "howTheyMakeMoney": "In India they build doctor-prescribed brands sold through medical representatives. Abroad they win product approvals and supply generics at low cost, earning more on first-to-market or hard-to-make products.",
+      "valueChainPosition": "Midstream to downstream: turns chemical intermediates (often imported) into APIs and finished doses for distributors, chemists, hospitals and overseas buyers.",
+      "howTheyMakeMoney": "At home they build doctor-prescribed brands via medical representatives; abroad they win approvals and supply low-cost generics, earning more on first-to-market or hard-to-make products.",
       "revenueSources": [
         "Domestic branded formulations",
-        "US and Europe generic sales",
+        "US and Europe generics",
         "Emerging-market exports",
         "API sales to other drug makers",
-        "Contract development and manufacturing (CDMO)"
+        "Contract manufacturing (CDMO)"
       ],
       "operatingCosts": [
         "APIs, intermediates and solvents",
         "Field-force salaries and marketing",
         "R&D and regulatory filings",
         "Quality compliance and remediation",
-        "Plant staff, power and utilities",
-        "Patent litigation"
+        "Plant staff, power and utilities"
       ],
-      "customersAndEndMarkets": "Patients reached through doctors, chemists and hospitals in India; wholesalers, pharmacy chains and government tenders abroad; other formulators for APIs.",
-      "demandSupplyDrivers": "Medicine use is steady and rises with ageing, chronic disease and insurance cover. In export markets, the number of rivals approved for the same molecule decides how fast prices fall.",
-      "domesticInternationalExposure": "Strongly export-linked: regulated markets such as the US and Europe are big buyers, so the rupee and US pricing matter. Many raw materials are imported, notably from China.",
+      "customersAndEndMarkets": "Patients via doctors, chemists and hospitals in India; wholesalers, pharmacy chains and tenders abroad; other drug makers for APIs.",
+      "demandSupplyDrivers": "Medicine use is steady and rises with ageing, chronic disease and insurance; in exports, the number of approved rivals per molecule sets how fast prices fall.",
+      "domesticInternationalExposure": "Strongly export-linked, so the rupee and US pricing matter; many raw materials are imported, notably from China.",
       "capexIntensity": "Medium",
-      "capexNote": "Plants must meet strict GMP standards and R&D needs steady spending, but asset needs are moderate compared with heavy industry.",
-      "workingCapital": "Inventory is significant because of many products and long supply chains; receivables from overseas distributors and domestic stockists add to it.",
-      "regulation": "CDSCO and state drug controllers license plants and products; NPPA caps prices of essential medicines under the DPCO; export sales need USFDA, EU or WHO-GMP approval and repeated plant inspections.",
-      "competitiveAdvantages": "Strong doctor-facing brands, a clean regulatory record, cost-efficient backward-integrated plants and a pipeline of complex products are hard to copy.",
+      "capexNote": "GMP-grade plants and R&D labs need steady spending, though less than heavy industry.",
+      "workingCapital": "Large inventories across many products and long supply chains, plus receivables from overseas distributors and stockists.",
+      "regulation": "CDSCO and state drug controllers license plants and products; NPPA caps essential-medicine prices under the DPCO; exports need USFDA, EU or WHO-GMP approval.",
+      "competitiveAdvantages": "Strong doctor-facing brands, a clean regulatory record, low-cost integrated plants and complex products are hard to copy.",
       "drivers": [
-        { "factor": "US generic drug pricing", "impact": "Price erosion or shortages in US generics swing export margins." },
-        { "factor": "Regulation", "impact": "USFDA inspection outcomes decide whether a plant can keep shipping to regulated markets." },
-        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the rupee value of dollar sales but also lifts imported input costs." },
-        { "factor": "Healthcare spending", "impact": "Better access to doctors and insurance lifts domestic prescription volumes." },
-        { "factor": "Raw material availability", "impact": "Disruptions or price spikes in imported intermediates hit costs and supply." },
-        { "factor": "Government policy", "impact": "Price controls limit pricing on essential drugs, while PLI incentives support local API making." }
+        {
+          "factor": "US generic drug pricing",
+          "impact": "US price erosion or shortages swing export margins."
+        },
+        {
+          "factor": "Regulation",
+          "impact": "USFDA inspections decide whether plants can ship to regulated markets."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "A weaker rupee lifts export value but raises imported input costs."
+        },
+        {
+          "factor": "Healthcare spending",
+          "impact": "Wider access to doctors and insurance lifts domestic prescriptions."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Price controls cap essential-drug prices; PLI aids local APIs."
+        }
       ],
       "risks": [
-        { "risk": "Regulatory action", "detail": "A warning letter or import alert can stop shipments from a plant for a long time." },
-        { "risk": "Price erosion", "detail": "More competitors on a molecule push generic prices down quickly." },
-        { "risk": "Price controls", "detail": "Adding a drug to the essential-medicines list can cut its allowed price." },
-        { "risk": "Input dependence", "detail": "Concentrated sourcing of key starting materials leaves cost and supply exposed." },
-        { "risk": "Patent disputes", "detail": "Patent challenges bring legal costs, damages or delayed launches." }
+        {
+          "risk": "Regulatory action",
+          "detail": "A warning letter or import alert can halt a plant's exports."
+        },
+        {
+          "risk": "Price erosion",
+          "detail": "More rivals on a molecule push prices down fast."
+        },
+        {
+          "risk": "Input dependence",
+          "detail": "Concentrated sourcing of starting materials exposes cost and supply."
+        },
+        {
+          "risk": "Patent disputes",
+          "detail": "Litigation brings legal costs or delayed launches."
+        }
       ],
       "cyclicality": "Defensive",
-      "cyclicalityNote": "People keep taking medicines in downturns, though export pricing and regulatory events make profits lumpy.",
+      "cyclicalityNote": "Medicine demand holds up in downturns, though export pricing and regulatory events make profits lumpy.",
       "metricSet": "pharma",
       "relatedBasicIndustries": [
         "b-biotechnology",
@@ -198,60 +221,83 @@
         "medicines",
         "pharma stocks"
       ],
-      "themes": ["Exports", "China+1"]
+      "themes": [
+        "Exports",
+        "China+1"
+      ]
     },
     {
       "id": "b-biotechnology",
-      "simplifiedExplanation": "Companies that use living cells, microbes or enzymes to make products, such as biologic medicines, biosimilars, vaccines, industrial enzymes and probiotics. It is science-heavy and slower to scale than chemical drug making.",
+      "simplifiedExplanation": "Companies that use living cells, microbes or enzymes to make biologic medicines, biosimilars, vaccines, enzymes and probiotics. It is science-heavy and slower to scale than chemical drug making.",
       "productsAndServices": [
         "Biosimilars and biologic drugs",
         "Vaccines",
         "Insulin and peptides",
         "Food, feed and industrial enzymes",
         "Probiotics and nutraceutical ingredients",
-        "Fermentation-based ingredients",
         "Biologics contract development and manufacturing"
       ],
       "valueChainPosition": "Midstream: buys cell lines, culture media, reagents and bioprocess equipment, and supplies drug makers, food and feed processors, hospitals and governments.",
-      "howTheyMakeMoney": "They sell hard-to-make biological products that command better prices than simple chemicals, or charge global clients to develop and manufacture biologics. Long development cycles mean a few successful products often drive most of the profit.",
+      "howTheyMakeMoney": "They sell hard-to-make biological products at premium prices, or charge global clients to develop and make biologics; a few products often drive most profit.",
       "revenueSources": [
         "Biosimilar and biologic sales",
-        "Vaccine supplies to governments and agencies",
-        "Enzyme and probiotic sales to industry",
-        "Biologics CDMO fees and milestones",
-        "Licensing and partnership income"
+        "Vaccine supplies to governments",
+        "Enzyme and probiotic sales",
+        "Biologics CDMO fees and milestones"
       ],
       "operatingCosts": [
         "Scientist salaries and R&D",
         "Clinical trials",
-        "Culture media, reagents and single-use consumables",
+        "Culture media and consumables",
         "Cleanroom utilities and quality control",
-        "Depreciation of bioreactor plants"
+        "Bioreactor plant depreciation"
       ],
-      "customersAndEndMarkets": "Pharma partners, hospitals and governments for biologics and vaccines; food, animal feed, textile and detergent makers for enzymes; global biotech firms for contract work.",
-      "demandSupplyDrivers": "Demand grows as big biologics lose patent protection and as industries replace chemical processes with enzymes. Supply is held back by scarce skilled talent, long plant qualification and slow approvals.",
-      "domesticInternationalExposure": "Closely linked to regulated export markets and global partners; key inputs and equipment are largely imported, so the rupee and global biotech funding matter.",
+      "customersAndEndMarkets": "Pharma partners, hospitals and governments for biologics and vaccines; food, feed, textile and detergent makers for enzymes.",
+      "demandSupplyDrivers": "Demand grows as big biologics lose patents and industries swap chemical processes for enzymes; scarce talent, long plant qualification and slow approvals limit supply.",
+      "domesticInternationalExposure": "Tied to regulated export markets and global partners; key inputs and equipment are mostly imported, so the rupee matters.",
       "capexIntensity": "High",
       "capexNote": "Bioreactors, cleanrooms and long validation make plants costly and slow to bring online.",
-      "workingCapital": "Development programmes absorb cash long before revenue arrives; biologics need cold-chain storage, and partner milestone payments are lumpy.",
+      "workingCapital": "Development absorbs cash long before revenue; biologics need cold-chain storage and partner milestones are lumpy.",
       "regulation": "CDSCO approves biologics and vaccines; genetically engineered organisms and products need clearance from RCGM and GEAC; export products need USFDA or European approval and inspections.",
-      "competitiveAdvantages": "Proprietary strains or cell lines, process know-how, approved plants and a regulatory track record take many years to build, which keeps new entrants out.",
+      "competitiveAdvantages": "Proprietary strains or cell lines, process know-how, approved plants and a regulatory record take years to build.",
       "drivers": [
-        { "factor": "Biologic patent expiries", "impact": "Large biologics losing patent protection open markets for biosimilar makers." },
-        { "factor": "Regulation", "impact": "Approval timelines and plant inspections decide when products can start earning." },
-        { "factor": "Global biotech funding", "impact": "Funding for overseas biotech clients drives demand for contract development work." },
-        { "factor": "Technology change", "impact": "New modalities such as cell, gene and mRNA therapies can raise or reduce the value of existing platforms." },
-        { "factor": "Currency (INR)", "impact": "Export earnings and imported inputs both move with the rupee." }
+        {
+          "factor": "Biologic patent expiries",
+          "impact": "Big biologics going off-patent open markets for biosimilars."
+        },
+        {
+          "factor": "Regulation",
+          "impact": "Approval timelines and inspections decide when products start earning."
+        },
+        {
+          "factor": "Global biotech funding",
+          "impact": "Overseas biotech funding drives contract development demand."
+        },
+        {
+          "factor": "Technology change",
+          "impact": "Cell, gene and mRNA therapies can raise or reduce the value of existing platforms."
+        }
       ],
       "risks": [
-        { "risk": "Clinical failure", "detail": "A product can fail in trials after years of spending." },
-        { "risk": "Approval delays", "detail": "Slow or rejected approvals push revenue further out." },
-        { "risk": "Biosimilar price competition", "detail": "Prices fall sharply as more makers launch the same biosimilar." },
-        { "risk": "Partner concentration", "detail": "Contract revenue may rest on a few partners or products." },
-        { "risk": "Batch failures", "detail": "Biological processes are sensitive and failed batches are costly." }
+        {
+          "risk": "Clinical failure",
+          "detail": "A product can fail in trials after years of spending."
+        },
+        {
+          "risk": "Approval delays",
+          "detail": "Slow or rejected approvals push revenue out."
+        },
+        {
+          "risk": "Biosimilar price competition",
+          "detail": "Prices fall as more makers launch the same molecule."
+        },
+        {
+          "risk": "Batch failures",
+          "detail": "Failed biological batches are costly."
+        }
       ],
       "cyclicality": "Mixed",
-      "cyclicalityNote": "End demand for medicines and enzymes is steady, but funding cycles, partner decisions and approvals make earnings uneven.",
+      "cyclicalityNote": "End demand is steady, but funding cycles, partner decisions and approvals make earnings uneven.",
       "metricSet": "biotech-research",
       "relatedBasicIndustries": [
         "b-pharmaceuticals",
@@ -270,22 +316,24 @@
         "probiotics",
         "biopharma"
       ],
-      "themes": ["Exports", "China+1"]
+      "themes": [
+        "Exports",
+        "China+1"
+      ]
     },
     {
       "id": "b-medical-equipment-and-supplies",
       "simplifiedExplanation": "Companies that make the physical tools of healthcare, from syringes, catheters and gloves to implants, dental products, diagnostic machines and lab plasticware.",
       "productsAndServices": [
-        "Disposables such as syringes, IV cannulas and catheters",
+        "Syringes, cannulas, catheters and other disposables",
         "Orthopaedic, cardiac and dental implants",
         "Diagnostic and imaging equipment",
-        "Patient monitors and hospital furniture",
-        "Laboratory plasticware and consumables",
-        "Dental aligners and dental products",
+        "Lab plasticware and consumables",
+        "Dental aligners and products",
         "Surgical instruments and wound care"
       ],
       "valueChainPosition": "Midstream: converts medical-grade plastics, steel, electronics and chemicals into devices, and sells to hospitals, labs, clinics, distributors and overseas device brands.",
-      "howTheyMakeMoney": "Most earn steady repeat revenue from consumables used on every patient. Equipment makers earn from machine sales plus servicing and the consumables those machines need.",
+      "howTheyMakeMoney": "Most earn repeat revenue from consumables used on every patient; equipment makers add machine sales, servicing and the consumables machines need.",
       "revenueSources": [
         "Consumables and disposables",
         "Equipment sales",
@@ -301,25 +349,48 @@
         "R&D and product certification"
       ],
       "customersAndEndMarkets": "Hospitals, clinics, diagnostic labs, dentists, research labs and public health programmes in India and overseas.",
-      "demandSupplyDrivers": "Volumes rise with hospital beds, surgeries, testing and infection-control norms. India imports much of its high-end equipment, so local makers compete with global brands on cost and service.",
-      "domesticInternationalExposure": "Many firms export disposables to regulated markets, while advanced equipment and electronic parts are largely imported, so the rupee and import duties matter.",
+      "demandSupplyDrivers": "Volumes rise with hospital beds, surgeries, testing and infection-control norms; local makers compete with imported global brands on cost and service.",
+      "domesticInternationalExposure": "Many firms export disposables to regulated markets, while advanced equipment and electronic parts are largely imported.",
       "capexIntensity": "Medium",
       "capexNote": "Cleanroom moulding, sterilisation and automated lines need investment, though less than drug or biotech plants.",
       "workingCapital": "Many products and sizes push up inventory, and payments from hospitals and government tenders can be slow.",
-      "regulation": "CDSCO licenses devices by risk class under the Medical Devices Rules; NPPA has capped prices of some items such as coronary stents and knee implants; exports need CE marking or USFDA clearance; a PLI scheme supports local manufacture.",
+      "regulation": "CDSCO licenses devices by risk class under the Medical Devices Rules; NPPA caps some prices such as stents and knee implants; exports need CE or USFDA clearance; PLI aids local makers.",
       "competitiveAdvantages": "Regulatory approvals, doctor familiarity with a product, wide distribution and low-cost precision manufacturing protect established firms.",
       "drivers": [
-        { "factor": "Healthcare spending", "impact": "More hospitals, surgeries and diagnostic tests raise device and consumable use." },
-        { "factor": "Government policy", "impact": "PLI support, local-preference procurement and import duties favour domestic makers." },
-        { "factor": "Exports & global demand", "impact": "Global buyers diversifying suppliers support export orders for disposables." },
-        { "factor": "Regulation", "impact": "Licensing rules and price caps shape compliance costs and pricing power." },
-        { "factor": "Commodity prices", "impact": "Polymer and metal costs move margins on low-priced disposables." }
+        {
+          "factor": "Healthcare spending",
+          "impact": "More hospitals, surgeries and tests raise device and consumable use."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "PLI, local-preference procurement and import duties favour domestic makers."
+        },
+        {
+          "factor": "Exports & global demand",
+          "impact": "Global buyers diversifying suppliers support disposable exports."
+        },
+        {
+          "factor": "Commodity prices",
+          "impact": "Polymer and metal costs move margins on low-priced disposables."
+        }
       ],
       "risks": [
-        { "risk": "Price caps", "detail": "Government price controls can cut realisations on key products." },
-        { "risk": "Import competition", "detail": "Global brands compete on technology and cheap imports compete on price." },
-        { "risk": "Product recalls", "detail": "Quality failures can trigger recalls and loss of hospital trust." },
-        { "risk": "Tender dependence", "detail": "Government tenders bring price pressure and payment delays." }
+        {
+          "risk": "Price caps",
+          "detail": "Government price controls can cut realisations."
+        },
+        {
+          "risk": "Import competition",
+          "detail": "Global brands win on technology, cheap imports on price."
+        },
+        {
+          "risk": "Product recalls",
+          "detail": "Quality failures trigger recalls and lost hospital trust."
+        },
+        {
+          "risk": "Tender dependence",
+          "detail": "Government tenders bring price pressure and payment delays."
+        }
       ],
       "cyclicality": "Mixed",
       "cyclicalityNote": "Daily-use consumables are defensive, while equipment purchases follow hospital budgets and expansion plans.",
@@ -341,21 +412,23 @@
         "dental products",
         "lab consumables"
       ],
-      "themes": ["Make in India", "Exports"]
+      "themes": [
+        "Make in India",
+        "Exports"
+      ]
     },
     {
       "id": "b-hospital",
-      "simplifiedExplanation": "Companies that run hospitals: multi-speciality chains and single-speciality centres such as eye, heart, cancer, fertility or mother-and-child hospitals. They earn from treating admitted patients and outpatients.",
+      "simplifiedExplanation": "Companies that run hospitals: multi-speciality chains and single-speciality centres such as eye, heart, cancer, fertility or mother-and-child hospitals, treating admitted patients and outpatients.",
       "productsAndServices": [
         "Inpatient treatment and surgeries",
         "Outpatient consultations",
         "ICU and emergency care",
         "In-house pharmacy and diagnostics",
-        "Speciality care such as cardiac, cancer, eye and IVF",
-        "Treatment of international patients"
+        "Speciality care such as cardiac, cancer, eye and IVF"
       ],
       "valueChainPosition": "Downstream: buys medicines, devices, consumables and doctors' time, and serves patients directly; bills are paid by patients, insurers and government schemes.",
-      "howTheyMakeMoney": "They fill beds with complex, higher-paying treatments. Profit depends on occupancy, revenue per occupied bed and control of doctor and staff costs; mature hospitals earn far better margins than new ones.",
+      "howTheyMakeMoney": "They fill beds with complex, higher-paying treatments; profit depends on occupancy, revenue per occupied bed and staff costs, and mature hospitals earn far more than new ones.",
       "revenueSources": [
         "Inpatient bills (rooms, procedures, surgeries)",
         "Outpatient consultations",
@@ -367,31 +440,57 @@
         "Doctor fees and retainers",
         "Nursing and support staff",
         "Medicines and consumables",
-        "Rent or lease of buildings",
+        "Building rent or lease",
         "Power, housekeeping and maintenance",
-        "Medical equipment depreciation"
+        "Equipment depreciation"
       ],
-      "customersAndEndMarkets": "Patients paying out of pocket, private health insurers and TPAs, government schemes such as PM-JAY and CGHS, corporates and foreign patients.",
-      "demandSupplyDrivers": "Demand grows with chronic disease, ageing, insurance cover and willingness to pay for private care. Supply is limited by shortages of quality beds, doctors and nurses, and by long build times.",
-      "domesticInternationalExposure": "Mostly domestic; medical tourism from neighbouring, Gulf and African countries adds foreign revenue. Imported equipment ties some costs to the rupee.",
+      "customersAndEndMarkets": "Self-paying patients, health insurers and TPAs, government schemes such as PM-JAY and CGHS, corporates and foreign patients.",
+      "demandSupplyDrivers": "Demand grows with chronic disease, ageing, insurance and preference for private care; scarce doctors, nurses and quality beds, plus long build times, limit supply.",
+      "domesticInternationalExposure": "Mostly domestic; medical tourism adds foreign revenue, and imported equipment ties some costs to the rupee.",
       "capexIntensity": "High",
       "capexNote": "Land, buildings and medical equipment are expensive, and new beds take years to fill.",
       "workingCapital": "Cash patients pay quickly, but insurers and government schemes pay with a delay; drug and consumable inventory is modest.",
       "regulation": "State clinical-establishment, fire and pollution approvals; NABH accreditation; package rates fixed by PM-JAY and CGHS; IRDAI rules on cashless claims; NPPA price caps on some implants.",
-      "competitiveAdvantages": "Reputation, well-known doctors, prime locations, accreditation and the long time needed to build a trusted hospital make established brands hard to challenge in their cities.",
+      "competitiveAdvantages": "Reputation, well-known doctors, prime locations, accreditation and the years needed to build trust make established brands hard to challenge locally.",
       "drivers": [
-        { "factor": "Healthcare spending", "impact": "Rising private health spending lifts footfall and complex procedures." },
-        { "factor": "Health insurance penetration", "impact": "More insured patients can afford costlier treatment." },
-        { "factor": "Government policy", "impact": "Scheme package rates and implant price caps affect revenue per patient." },
-        { "factor": "Tourism & travel", "impact": "Visa ease and flight links drive medical-tourism volumes." },
-        { "factor": "Capacity utilisation", "impact": "Higher occupancy spreads fixed staff and building costs, lifting margins." }
+        {
+          "factor": "Healthcare spending",
+          "impact": "Rising private health spending lifts footfall and complex procedures."
+        },
+        {
+          "factor": "Health insurance penetration",
+          "impact": "More insured patients can afford costlier treatment."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Scheme rates and implant price caps affect revenue per patient."
+        },
+        {
+          "factor": "Tourism & travel",
+          "impact": "Visa ease and flight links drive medical tourism."
+        },
+        {
+          "factor": "Capacity utilisation",
+          "impact": "Higher occupancy spreads fixed costs."
+        }
       ],
       "risks": [
-        { "risk": "Doctor exits", "detail": "Losing key doctors can take patients away." },
-        { "risk": "Pricing intervention", "detail": "Caps on rates, implants or drugs can reduce revenue per patient." },
-        { "risk": "New-hospital ramp-up", "detail": "New hospitals can lose money until occupancy builds." },
-        { "risk": "Reputation incidents", "detail": "Negligence claims or billing disputes damage trust." },
-        { "risk": "Payer delays", "detail": "Slow insurer and scheme payments stretch cash flow." }
+        {
+          "risk": "Doctor exits",
+          "detail": "Losing key doctors can take patients away."
+        },
+        {
+          "risk": "Pricing intervention",
+          "detail": "Caps on rates, implants or drugs cut revenue per patient."
+        },
+        {
+          "risk": "New-hospital ramp-up",
+          "detail": "New hospitals lose money until occupancy builds."
+        },
+        {
+          "risk": "Reputation incidents",
+          "detail": "Negligence claims or billing disputes damage trust."
+        }
       ],
       "cyclicality": "Defensive",
       "cyclicalityNote": "Most treatment cannot be postponed, though elective procedures and medical tourism can dip in bad times.",
@@ -413,24 +512,26 @@
         "medical tourism",
         "hospital stocks"
       ],
-      "themes": ["Medical tourism"]
+      "themes": [
+        "Medical tourism"
+      ]
     },
     {
       "id": "b-healthcare-service-provider",
-      "simplifiedExplanation": "Healthcare businesses other than full hospitals, mainly diagnostic labs that test blood and other samples and centres that do scans. The group also includes dialysis and home-care providers and some makers of diagnostic test kits.",
+      "simplifiedExplanation": "Healthcare businesses other than full hospitals: mainly diagnostic labs that test samples and centres that do scans, plus dialysis and home-care providers and some test-kit makers.",
       "productsAndServices": [
         "Pathology tests (blood, urine, biopsy)",
         "Radiology: X-ray, ultrasound, CT and MRI",
-        "Preventive health check-up packages",
+        "Preventive health check-ups",
         "Home sample collection",
-        "Molecular and PCR test kits",
+        "Molecular (PCR) test kits",
         "Dialysis and home healthcare"
       ],
       "valueChainPosition": "Downstream: buys analysers, reagents and scanners from equipment makers and sells test results and care to patients, doctors, hospitals and public programmes.",
-      "howTheyMakeMoney": "They charge a fee per test or session. Collection centres feed central labs (hub-and-spoke), so profit rises as more tests run through the same machines and staff.",
+      "howTheyMakeMoney": "They charge per test or session; collection centres feed central labs (hub-and-spoke), so profit rises as more tests run through the same machines and staff.",
       "revenueSources": [
         "Walk-in and doctor-referred patients",
-        "Home collection and wellness packages",
+        "Wellness packages",
         "Testing for hospitals and smaller labs",
         "Government partnership contracts",
         "Corporate and insurer health checks"
@@ -439,9 +540,8 @@
         "Reagents and test kits",
         "Technician, pathologist and radiologist salaries",
         "Collection network and sample logistics",
-        "Rent for centres",
-        "Equipment leases or depreciation",
-        "Marketing and online customer acquisition"
+        "Centre rent and equipment leases",
+        "Marketing"
       ],
       "customersAndEndMarkets": "Individual patients, referring doctors, hospitals and smaller labs, employers, insurers and state health programmes.",
       "demandSupplyDrivers": "Demand grows with chronic-disease monitoring, preventive-health awareness and insurance. The market is crowded with small standalone labs, and online test aggregators sharpen price competition.",
@@ -450,19 +550,42 @@
       "capexNote": "Imaging machines and central labs need capital, but collection centres are light and often franchised.",
       "workingCapital": "Retail patients pay upfront; hospital and government contracts create receivables; reagent stocks are modest.",
       "regulation": "NABL and NABH accreditation signal quality; ultrasound centres follow the PCPNDT Act; X-ray and CT units need AERB licences; biomedical-waste rules apply.",
-      "competitiveAdvantages": "A brand doctors trust, a dense collection network, accreditation and high test volumes per lab give lower costs than small rivals.",
+      "competitiveAdvantages": "A brand doctors trust, a dense collection network, accreditation and high volumes per lab give lower costs than small rivals.",
       "drivers": [
-        { "factor": "Healthcare spending", "impact": "More spending on testing and chronic-disease care raises test volumes." },
-        { "factor": "Preventive health awareness", "impact": "Wellness packages and regular check-ups bring repeat customers." },
-        { "factor": "Online price competition", "impact": "Aggregators and new entrants push down prices of routine tests." },
-        { "factor": "Government policy", "impact": "Public-private partnership contracts add volume, usually at lower rates." },
-        { "factor": "Technology change", "impact": "Lab automation and digital reports cut costs; home testing changes how customers are reached." }
+        {
+          "factor": "Healthcare spending",
+          "impact": "More testing and chronic-disease care raises volumes."
+        },
+        {
+          "factor": "Preventive health awareness",
+          "impact": "Regular check-ups bring repeat customers."
+        },
+        {
+          "factor": "Online price competition",
+          "impact": "Aggregators and new entrants push down routine test prices."
+        },
+        {
+          "factor": "Technology change",
+          "impact": "Lab automation cuts costs; home testing changes how customers are reached."
+        }
       ],
       "risks": [
-        { "risk": "Price wars", "detail": "Discounting by aggregators and new labs squeezes margins." },
-        { "risk": "Report errors", "detail": "Wrong results damage the brand and can draw penalties." },
-        { "risk": "Expansion costs", "detail": "Entering new cities loses money until volumes build." },
-        { "risk": "One-off demand fading", "detail": "Volumes can drop after temporary spikes such as epidemics." }
+        {
+          "risk": "Price wars",
+          "detail": "Discounting by aggregators and new labs squeezes margins."
+        },
+        {
+          "risk": "Report errors",
+          "detail": "Wrong results damage the brand and can draw penalties."
+        },
+        {
+          "risk": "Expansion costs",
+          "detail": "New cities lose money until volumes build."
+        },
+        {
+          "risk": "One-off demand fading",
+          "detail": "Volumes drop after temporary spikes such as epidemics."
+        }
       ],
       "cyclicality": "Defensive",
       "cyclicalityNote": "Most tests are medically needed, though wellness and discretionary tests slow in weaker times.",
@@ -484,27 +607,30 @@
         "dialysis",
         "health check-up"
       ],
-      "themes": ["Preventive health", "Digital"]
+      "themes": [
+        "Preventive health",
+        "Digital"
+      ]
     },
     {
       "id": "b-healthcare-research-analytics-and-technology",
-      "simplifiedExplanation": "Companies that do research, testing and technology work for drug and biotech makers instead of selling their own medicines, for example contract research (CRO), contract development and manufacturing (CDMO), testing labs and data or marketing services for pharma.",
+      "simplifiedExplanation": "Companies that do research, testing and technology work for drug and biotech makers rather than selling medicines: contract research (CRO), contract manufacturing (CDMO), testing labs and pharma data services.",
       "productsAndServices": [
-        "Drug-discovery chemistry and biology services",
+        "Drug-discovery chemistry and biology",
         "Contract development and manufacturing",
         "Pre-clinical and clinical trial services",
-        "Analytical, drug and food testing labs",
-        "Medical writing, regulatory and drug-safety services",
-        "Commercial analytics and digital marketing for pharma"
+        "Analytical, drug and food testing",
+        "Regulatory and drug-safety services",
+        "Pharma analytics and digital marketing"
       ],
       "valueChainPosition": "Upstream service partner to the drug industry: supplies scientists, labs and data to drug developers, and buys reagents, lab instruments and software.",
       "howTheyMakeMoney": "They charge per project, per dedicated scientist (FTE model) or per milestone, and earn supply revenue when a client's molecule reaches the market.",
       "revenueSources": [
         "Discovery and dedicated-team contracts",
         "Development and manufacturing contracts",
-        "Testing and analysis fees",
+        "Testing fees",
         "Clinical trial services",
-        "Digital, analytics and content services to pharma"
+        "Analytics and digital services to pharma"
       ],
       "operatingCosts": [
         "Scientist and analyst salaries",
@@ -513,8 +639,8 @@
         "Quality and compliance systems",
         "Technology and data infrastructure"
       ],
-      "customersAndEndMarkets": "Global pharma and biotech companies, Indian drug makers, food and consumer firms that need testing, and sponsors of clinical trials.",
-      "demandSupplyDrivers": "Demand depends on global R&D budgets, biotech funding and big pharma's push to outsource and diversify suppliers. Supply depends on scientific talent and audit-ready lab capacity.",
+      "customersAndEndMarkets": "Global pharma and biotech companies, Indian drug makers, food and consumer firms needing tests, and clinical-trial sponsors.",
+      "demandSupplyDrivers": "Demand depends on global R&D budgets, biotech funding and big pharma's push to outsource and diversify suppliers; supply depends on scientists and audit-ready labs.",
       "domesticInternationalExposure": "Mainly exports services to US, European and Japanese clients, so the rupee, global R&D spending and supplier-diversification policies matter.",
       "capexIntensity": "Medium",
       "capexNote": "Lab- and plant-based research firms invest heavily, while analytics and technology service firms are asset-light.",
@@ -522,17 +648,40 @@
       "regulation": "Trials follow CDSCO's clinical-trial rules; labs follow GLP and GMP norms and face client and USFDA audits; data work must meet privacy and pharmacovigilance requirements.",
       "competitiveAdvantages": "Long client relationships, a clean audit record, scientific depth and trusted data confidentiality make clients slow to switch.",
       "drivers": [
-        { "factor": "Global pharma R&D spending", "impact": "Bigger research budgets and more outsourcing lift project demand." },
-        { "factor": "Biotech funding", "impact": "Funding booms and busts for small overseas biotechs move discovery orders." },
-        { "factor": "China+1 sourcing", "impact": "Clients diversifying away from China can shift work to Indian providers." },
-        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the rupee value of dollar contracts." },
-        { "factor": "Technology change", "impact": "AI and data tools change how drug discovery and pharma marketing are done." }
+        {
+          "factor": "Global pharma R&D spending",
+          "impact": "Bigger research budgets and more outsourcing lift project demand."
+        },
+        {
+          "factor": "Biotech funding",
+          "impact": "Booms and busts in overseas biotech funding move discovery orders."
+        },
+        {
+          "factor": "China+1 sourcing",
+          "impact": "Clients diversifying from China can shift work to India."
+        },
+        {
+          "factor": "Technology change",
+          "impact": "AI and data tools change drug discovery and pharma marketing."
+        }
       ],
       "risks": [
-        { "risk": "Client concentration", "detail": "Losing a large client or molecule hits revenue." },
-        { "risk": "Project cancellations", "detail": "Failed trials or budget cuts end contracts early." },
-        { "risk": "Talent costs", "detail": "Competition for scientists pushes up wages." },
-        { "risk": "Audit failures", "detail": "A failed regulator or client audit can halt work." }
+        {
+          "risk": "Client concentration",
+          "detail": "Losing a large client or molecule hits revenue."
+        },
+        {
+          "risk": "Project cancellations",
+          "detail": "Failed trials or budget cuts end contracts early."
+        },
+        {
+          "risk": "Talent costs",
+          "detail": "Competition for scientists pushes up wages."
+        },
+        {
+          "risk": "Audit failures",
+          "detail": "A failed regulator or client audit can halt work."
+        }
       ],
       "cyclicality": "Mixed",
       "cyclicalityNote": "Outsourcing is a long-term trend, but global biotech funding and pharma budgets move in cycles.",
@@ -554,7 +703,10 @@
         "pharma analytics",
         "life sciences services"
       ],
-      "themes": ["Exports", "China+1"]
+      "themes": [
+        "Exports",
+        "China+1"
+      ]
     },
     {
       "id": "b-computers-software-and-consulting",
@@ -565,10 +717,9 @@
         "Digital transformation consulting",
         "ERP and CRM implementation",
         "Data, analytics and AI services",
-        "Cybersecurity services",
-        "Software testing"
+        "Cybersecurity and testing services"
       ],
-      "valueChainPosition": "Midstream services layer: works on platforms from global software and cloud vendors and delivers solutions to banks, insurers, retailers, manufacturers, telecom firms and governments.",
+      "valueChainPosition": "Midstream services layer: works on global software and cloud platforms to deliver solutions for banks, insurers, retailers, manufacturers, telecom firms and governments.",
       "howTheyMakeMoney": "They bill for people-time (time-and-material), fixed-price projects or multi-year managed-services deals. Margins depend on billing rates, staff utilisation and how much work is done offshore.",
       "revenueSources": [
         "Multi-year managed-services contracts",
@@ -580,32 +731,53 @@
       "operatingCosts": [
         "Employee salaries and benefits",
         "Subcontractors and onsite staff",
-        "Travel and visa costs",
-        "Offices and technology infrastructure",
-        "Sales and pre-sales teams",
-        "Third-party software licences"
+        "Travel and visas",
+        "Offices and IT infrastructure",
+        "Sales and pre-sales teams"
       ],
-      "customersAndEndMarkets": "Large and mid-sized companies in the US, Europe and other regions, especially in banking, insurance, retail, manufacturing, healthcare and telecom, plus Indian enterprises and government.",
-      "demandSupplyDrivers": "Demand follows global corporate technology budgets: run-the-business spending is sticky, while discretionary projects get cut when client economies slow. Supply depends on hiring and keeping engineers.",
-      "domesticInternationalExposure": "Highly export-oriented with revenue mostly in dollars, euros and pounds and costs mostly in rupees, so currency moves flow straight into margins.",
+      "customersAndEndMarkets": "Large and mid-sized firms in the US, Europe and elsewhere, mainly banking, insurance, retail, manufacturing, healthcare and telecom, plus Indian enterprises and government.",
+      "demandSupplyDrivers": "Demand follows global corporate technology budgets: run-the-business spending is sticky, discretionary projects get cut when client economies slow. Supply depends on hiring engineers.",
+      "domesticInternationalExposure": "Highly export-oriented: revenue mostly in dollars, euros and pounds, costs mostly in rupees, so currency moves flow into margins.",
       "capexIntensity": "Low",
       "capexNote": "Spending goes mainly on offices, laptops and some data centres; people are the main asset.",
-      "workingCapital": "Client receivables and unbilled revenue make up most of the working capital; there is no physical inventory.",
-      "regulation": "Light in India (SEZ and STPI rules, labour laws, DPDP Act on data protection); overseas, work-visa rules such as H-1B and privacy laws such as GDPR affect delivery.",
-      "competitiveAdvantages": "Deep client relationships, industry know-how, delivery scale, an execution track record and the cost of switching vendors protect leading firms.",
+      "workingCapital": "Mostly client receivables and unbilled revenue; there is no physical inventory.",
+      "regulation": "Light in India (SEZ and STPI rules, labour laws, DPDP Act); overseas, work-visa rules such as H-1B and privacy laws such as GDPR affect delivery.",
+      "competitiveAdvantages": "Deep client relationships, industry know-how, delivery scale and high vendor-switching costs protect leading firms.",
       "drivers": [
-        { "factor": "Exports & global demand", "impact": "Client technology budgets in the US and Europe set the pace of new deals." },
-        { "factor": "Currency (INR)", "impact": "A weaker rupee lifts rupee revenue against India-based costs." },
-        { "factor": "Technology change", "impact": "Cloud and AI create new work but also cut the effort needed on older services." },
-        { "factor": "Talent and wage costs", "impact": "Attrition and salary hikes move margins." },
-        { "factor": "Visa and immigration rules", "impact": "Tighter work-visa rules raise the cost of onsite staff." }
+        {
+          "factor": "Exports & global demand",
+          "impact": "US and European client budgets set the pace of new deals."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "A weaker rupee lifts revenue against India-based costs."
+        },
+        {
+          "factor": "Technology change",
+          "impact": "Cloud and AI create new work but shrink effort on older services."
+        },
+        {
+          "factor": "Talent and wage costs",
+          "impact": "Attrition and salary hikes move margins."
+        }
       ],
       "risks": [
-        { "risk": "Client budget cuts", "detail": "Slowdowns in key client industries delay projects and squeeze pricing." },
-        { "risk": "AI-led deflation", "detail": "Automation can shrink billable hours on traditional services." },
-        { "risk": "Attrition", "detail": "High staff turnover raises hiring and training costs." },
-        { "risk": "Protectionism", "detail": "Visa curbs or local-hiring rules raise delivery costs." },
-        { "risk": "Client concentration", "detail": "Smaller firms may depend on a handful of clients." }
+        {
+          "risk": "Client budget cuts",
+          "detail": "Slowdowns in key client industries delay projects and squeeze pricing."
+        },
+        {
+          "risk": "AI-led deflation",
+          "detail": "Automation can shrink billable hours."
+        },
+        {
+          "risk": "Attrition",
+          "detail": "High staff turnover raises hiring and training costs."
+        },
+        {
+          "risk": "Protectionism",
+          "detail": "Visa curbs or local-hiring rules raise delivery costs."
+        }
       ],
       "cyclicality": "Mixed",
       "cyclicalityNote": "Long maintenance contracts give stability, but new projects follow the global business cycle.",
@@ -628,21 +800,25 @@
         "software exporters",
         "IT stocks"
       ],
-      "themes": ["Digital", "Exports", "AI"]
+      "themes": [
+        "Digital",
+        "Exports",
+        "AI"
+      ]
     },
     {
       "id": "b-software-products",
-      "simplifiedExplanation": "Companies that own and sell their own software, such as banking, lending, insurance or compliance platforms, business messaging platforms, digital maps and business apps, rather than renting out engineers.",
+      "simplifiedExplanation": "Companies that own and sell their own software, such as banking, lending or compliance platforms, business messaging platforms, digital maps and business apps, instead of renting out engineers.",
       "productsAndServices": [
         "Core banking and lending software",
-        "Software-as-a-service (SaaS) subscriptions",
-        "Business messaging and communication platforms (CPaaS)",
-        "Regulatory reporting and compliance software",
+        "SaaS subscriptions",
+        "Business messaging platforms (CPaaS)",
+        "Regulatory and compliance software",
         "Digital maps and location data",
-        "ERP and accounting apps for smaller firms"
+        "Business apps for smaller firms"
       ],
       "valueChainPosition": "Upstream in software: builds intellectual property and sells licences or subscriptions to banks, enterprises, telecom operators and governments, directly or through partners.",
-      "howTheyMakeMoney": "They earn licence fees, recurring subscriptions, usage-based charges and annual maintenance. Once a product is built, each extra customer costs little to serve, so margins can widen with scale.",
+      "howTheyMakeMoney": "They earn licence fees, subscriptions, usage charges and annual maintenance; once built, each extra customer costs little to serve, so margins can widen with scale.",
       "revenueSources": [
         "Subscriptions and SaaS fees",
         "Licence sales",
@@ -662,21 +838,44 @@
       "domesticInternationalExposure": "A mix of domestic and export customers; overseas sales earn foreign currency, and competition is global even at home.",
       "capexIntensity": "Low",
       "capexNote": "Most investment is product development spending rather than plants or machinery.",
-      "workingCapital": "Subscription billing helps cash flow, but licence and implementation deals with banks and government can leave long receivables.",
+      "workingCapital": "Subscriptions help cash flow, but licence and implementation deals with banks and government can leave long receivables.",
       "regulation": "Mostly light, but client-sector rules matter: RBI, SEBI and IRDAI norms shape financial software, TRAI rules govern commercial messaging, and the DPDP Act covers personal data.",
       "competitiveAdvantages": "Products embedded in client workflows, high switching costs, proprietary data and regulatory know-how protect leading firms.",
       "drivers": [
-        { "factor": "Technology change", "impact": "Cloud, AI and new platforms can open markets or make older products obsolete." },
-        { "factor": "Credit growth", "impact": "Expansion and modernisation at banks and lenders lifts demand for banking and lending software." },
-        { "factor": "Regulation", "impact": "New compliance and reporting rules create demand for regtech tools." },
-        { "factor": "Digital adoption", "impact": "More online transactions and business messages raise usage-based revenue." },
-        { "factor": "Exports & global demand", "impact": "Overseas client budgets affect licence deal flow." }
+        {
+          "factor": "Technology change",
+          "impact": "Cloud, AI and new platforms can open markets or make products obsolete."
+        },
+        {
+          "factor": "Credit growth",
+          "impact": "Expanding lenders need more banking and lending software."
+        },
+        {
+          "factor": "Regulation",
+          "impact": "New compliance and reporting rules create regtech demand."
+        },
+        {
+          "factor": "Digital adoption",
+          "impact": "More online transactions and business messages raise usage revenue."
+        }
       ],
       "risks": [
-        { "risk": "Product obsolescence", "detail": "A better rival product can erode the customer base." },
-        { "risk": "Lumpy deals", "detail": "Large licence wins are irregular, so quarters can be uneven." },
-        { "risk": "Global competition", "detail": "Global vendors with deeper pockets chase the same clients." },
-        { "risk": "Platform dependence", "detail": "Reliance on telecom carriers, app stores or cloud providers can squeeze margins." }
+        {
+          "risk": "Product obsolescence",
+          "detail": "A better rival product can erode the customer base."
+        },
+        {
+          "risk": "Lumpy deals",
+          "detail": "Large licence wins are irregular, so quarters can be uneven."
+        },
+        {
+          "risk": "Global competition",
+          "detail": "Bigger global vendors chase the same clients."
+        },
+        {
+          "risk": "Platform dependence",
+          "detail": "Reliance on telecom carriers or cloud providers can squeeze margins."
+        }
       ],
       "cyclicality": "Mixed",
       "cyclicalityNote": "Recurring subscriptions are steady, but new licence sales slow when clients cut budgets.",
@@ -697,11 +896,14 @@
         "product companies",
         "regtech"
       ],
-      "themes": ["Digital", "AI"]
+      "themes": [
+        "Digital",
+        "AI"
+      ]
     },
     {
       "id": "b-it-enabled-services",
-      "simplifiedExplanation": "Companies that deliver services using IT systems and skilled staff, such as engineering design and R&D services, data-centre and cloud hosting, managed IT operations and digital back-office work, rather than building business software.",
+      "simplifiedExplanation": "Companies that deliver services using IT systems and skilled staff, such as engineering R&D services, data-centre and cloud hosting, managed IT operations and digital back-office work.",
       "productsAndServices": [
         "Engineering and product design (ER&D) services",
         "Data-centre, cloud and managed hosting",
@@ -727,7 +929,7 @@
         "Training and recruitment"
       ],
       "customersAndEndMarkets": "Automotive, aerospace, industrial and technology companies for engineering work; enterprises, banks and government departments for hosting and processing.",
-      "demandSupplyDrivers": "Demand rises as companies outsource product engineering and move workloads to cloud and local data centres. Supply depends on engineering talent and on power and space for data centres.",
+      "demandSupplyDrivers": "Demand rises as companies outsource product engineering and move workloads to cloud and local data centres; supply depends on engineers and data-centre power.",
       "domesticInternationalExposure": "Engineering services are largely exported and billed in foreign currency; hosting demand is mainly domestic, helped by data-localisation needs.",
       "capexIntensity": "Low",
       "capexNote": "People-based services are asset-light, but data-centre and cloud operators are capital-heavy exceptions.",
@@ -735,17 +937,44 @@
       "regulation": "Light general regulation plus the DPDP Act; hosting for government and financial clients follows MeitY cloud empanelment and RBI data-localisation norms.",
       "competitiveAdvantages": "Deep know-how in specific client industries, long relationships, certified facilities and reliable delivery create switching costs.",
       "drivers": [
-        { "factor": "Exports & global demand", "impact": "R&D budgets of global auto, aerospace and industrial clients drive engineering orders." },
-        { "factor": "Technology change", "impact": "Electric vehicles, software-defined products and AI add engineering and data work." },
-        { "factor": "Government policy", "impact": "Data localisation and digital-government programmes create domestic hosting demand." },
-        { "factor": "Electricity demand", "impact": "Data centres need reliable, affordable power, which shapes where and how fast they expand." },
-        { "factor": "Currency (INR)", "impact": "Export billing gains when the rupee weakens." }
+        {
+          "factor": "Exports & global demand",
+          "impact": "Global auto, aerospace and industrial R&D budgets drive engineering orders."
+        },
+        {
+          "factor": "Technology change",
+          "impact": "Electric vehicles, software-defined products and AI add engineering and data work."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "Data localisation and digital government create local hosting demand."
+        },
+        {
+          "factor": "Electricity demand",
+          "impact": "Reliable, affordable power shapes data-centre expansion."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "Export billing gains when the rupee weakens."
+        }
       ],
       "risks": [
-        { "risk": "Client concentration", "detail": "Many firms depend on a few large clients." },
-        { "risk": "Client-industry slowdown", "detail": "Downturns in auto or aerospace cut engineering budgets." },
-        { "risk": "Automation", "detail": "AI tools reduce the need for manual processing and content work." },
-        { "risk": "Funding needs", "detail": "Data-centre expansion needs heavy capital and power." }
+        {
+          "risk": "Client concentration",
+          "detail": "Many firms depend on a few large clients."
+        },
+        {
+          "risk": "Client-industry slowdown",
+          "detail": "Downturns in auto or aerospace cut engineering budgets."
+        },
+        {
+          "risk": "Automation",
+          "detail": "AI tools reduce the need for manual processing and content work."
+        },
+        {
+          "risk": "Funding needs",
+          "detail": "Data-centre expansion needs heavy capital and power."
+        }
       ],
       "cyclicality": "Mixed",
       "cyclicalityNote": "Hosting and managed services recur steadily, while engineering projects follow client investment cycles.",
@@ -767,7 +996,11 @@
         "managed services",
         "outsourcing"
       ],
-      "themes": ["Digital", "Exports", "AI"]
+      "themes": [
+        "Digital",
+        "Exports",
+        "AI"
+      ]
     },
     {
       "id": "b-computers-hardware-and-equipments",
@@ -778,16 +1011,16 @@
         "Printers, peripherals and consumables",
         "Industrial coding and marking printers",
         "Satellite (VSAT) communication equipment",
-        "Distribution of IT hardware and enterprise solutions",
-        "Point-of-sale and self-service terminals"
+        "IT hardware distribution",
+        "Point-of-sale terminals"
       ],
-      "valueChainPosition": "Midstream to downstream: imports chips, displays and parts or finished devices from global brands, assembles or distributes them, and sells to resellers, system integrators, enterprises and government.",
+      "valueChainPosition": "Midstream to downstream: imports chips, parts or finished devices from global brands, assembles or distributes them, and sells to resellers, integrators, enterprises and government.",
       "howTheyMakeMoney": "Distributors earn thin margins on high volumes plus vendor incentives and credit services. Manufacturers earn on equipment sales, consumables and service contracts.",
       "revenueSources": [
         "Hardware sales",
         "Distribution margins and vendor incentives",
-        "Consumables such as ink, ribbons and toner",
-        "Service and maintenance contracts",
+        "Consumables such as ink and ribbons",
+        "Service contracts",
         "Government and enterprise projects"
       ],
       "operatingCosts": [
@@ -797,26 +1030,53 @@
         "Channel incentives and sales staff",
         "Service engineers"
       ],
-      "customersAndEndMarkets": "Households and small businesses through resellers, enterprises, data centres, banks, government and education departments, and packaging and FMCG plants for coding printers.",
+      "customersAndEndMarkets": "Households and small businesses via resellers, enterprises, data centres, banks, government and schools, and factories using coding printers.",
       "demandSupplyDrivers": "Demand follows PC refresh cycles, enterprise and government IT budgets and digitisation. Supply depends on global chip and component availability.",
-      "domesticInternationalExposure": "Heavily import-dependent for chips and components, so global component prices, shipping and the rupee matter; PLI incentives encourage local assembly, including for export.",
+      "domesticInternationalExposure": "Heavily import-dependent for chips and components, so global component prices and the rupee matter; PLI encourages local assembly, including for export.",
       "capexIntensity": "Low",
       "capexNote": "Assembly and distribution need modest fixed assets; the main capital need is working capital.",
-      "workingCapital": "Heavy: large inventory, credit to channel partners and slow government payments make working-capital control central; festive and year-end seasons swing stock levels.",
+      "workingCapital": "Heavy: large inventory, channel credit and slow government payments make working-capital control central.",
       "regulation": "BIS compulsory registration for many electronics, the PLI scheme for IT hardware, import-authorisation rules for laptops and PCs, local-preference public procurement, and e-waste rules.",
       "competitiveAdvantages": "Distribution reach, vendor tie-ups, disciplined credit control, service networks and local manufacturing scale protect established players.",
       "drivers": [
-        { "factor": "Technology change", "impact": "New operating systems, AI-ready PCs and end-of-support dates drive replacement demand." },
-        { "factor": "Government policy", "impact": "PLI, import rules and local-preference procurement favour domestic assembly." },
-        { "factor": "Currency (INR)", "impact": "A weaker rupee raises import costs that may not be passed on quickly." },
-        { "factor": "Raw material availability", "impact": "Chip and component shortages limit supply and raise prices." },
-        { "factor": "Consumer demand", "impact": "Household and small-business purchases follow incomes and festive seasons." }
+        {
+          "factor": "Technology change",
+          "impact": "New operating systems and AI-ready PCs drive replacements."
+        },
+        {
+          "factor": "Government policy",
+          "impact": "PLI, import rules and local-preference buying favour local assembly."
+        },
+        {
+          "factor": "Currency (INR)",
+          "impact": "A weaker rupee raises import costs that may not pass through quickly."
+        },
+        {
+          "factor": "Raw material availability",
+          "impact": "Chip shortages limit supply and raise prices."
+        },
+        {
+          "factor": "Consumer demand",
+          "impact": "Household and small-business buying follows incomes and festive seasons."
+        }
       ],
       "risks": [
-        { "risk": "Thin margins", "detail": "Small price moves or inventory losses can wipe out profit." },
-        { "risk": "Inventory obsolescence", "detail": "Fast product cycles leave older stock to be discounted." },
-        { "risk": "Receivable delays", "detail": "Slow-paying channel partners or government buyers tie up cash." },
-        { "risk": "Vendor dependence", "detail": "Losing a key brand's distribution rights cuts revenue." }
+        {
+          "risk": "Thin margins",
+          "detail": "Small price moves or stock losses can wipe out profit."
+        },
+        {
+          "risk": "Inventory obsolescence",
+          "detail": "Fast product cycles force discounting of old stock."
+        },
+        {
+          "risk": "Receivable delays",
+          "detail": "Slow-paying partners or government buyers tie up cash."
+        },
+        {
+          "risk": "Vendor dependence",
+          "detail": "Losing a key brand's distribution rights cuts revenue."
+        }
       ],
       "cyclicality": "Cyclical",
       "cyclicalityNote": "Buyers can postpone computer and equipment purchases when budgets tighten.",
@@ -838,7 +1098,10 @@
         "it distribution",
         "computers hardware and equipment"
       ],
-      "themes": ["Digital", "Make in India"]
+      "themes": [
+        "Digital",
+        "Make in India"
+      ]
     }
   ]
 }

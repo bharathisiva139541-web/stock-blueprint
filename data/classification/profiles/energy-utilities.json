@@ -1,0 +1,1555 @@
+{
+  "macroSectors": [
+    {
+      "id": "m-energy",
+      "description": "Covers businesses that find, produce, process, move and sell oil, natural gas and coal in India, from upstream exploration to fuel pumps and city gas networks. India imports most of its crude oil and a large part of its gas, so global energy prices, the rupee and government pricing decisions shape profits across the chain. Coal remains the main domestic fuel for power plants and heavy industry."
+    },
+    {
+      "id": "m-utilities",
+      "description": "Covers companies that generate, transmit, distribute and trade electricity, plus water, waste, emergency and other essential public services. Many earn regulated or long-contracted income set by electricity regulators (CERC and state commissions) or by municipal and state contracts, so returns depend on tariffs, timely payment by public clients and government programmes. Demand is linked to economic growth, urbanisation and the shift to renewable power."
+    }
+  ],
+  "sectors": [
+    {
+      "id": "s-oil-gas-and-consumable-fuels",
+      "description": "Groups oil, gas, refined-product and coal businesses: explorers and producers, drilling and oilfield service providers, pipelines and storage terminals, refiners and fuel retailers, lubricant makers, city gas distributors, and coal miners and traders. Profits swing with crude, gas and coal prices, but each segment feels them differently - producers gain from high prices while many fuel buyers and marketers are squeezed."
+    },
+    {
+      "id": "s-power",
+      "description": "Covers electricity generation, transmission, distribution and trading. Parts of the chain earn regulated, fixed returns (transmission, distribution, cost-plus generation) while others are exposed to fuel costs, merchant power prices and the payment health of state distribution companies."
+    },
+    {
+      "id": "s-utilities",
+      "description": "Covers non-power utility services: water supply and treatment, wastewater, solid and hazardous waste, emergency response and multi-service utilities. Most work is done for municipal bodies, state governments and industry under contracts, so order flow follows public spending programmes and environmental rules."
+    }
+  ],
+  "industries": [
+    {
+      "id": "i-gas",
+      "description": "Companies that transport, distribute, market and trade natural gas, LNG and LPG.",
+      "businessOverview": "The gas chain runs from domestic fields and imported LNG through trunk pipelines to city gas networks that sell CNG to vehicles and piped gas to homes, shops and factories. Pipeline owners earn regulated tariffs on the gas they carry, while marketers and city gas distributors earn a margin between purchase cost and selling price. Government policy steers cheaper domestic gas to priority users such as households and CNG, while industry often pays prices linked to imported LNG. LPG importers, traders and bottlers sit alongside, serving cooking-gas, auto-LPG and industrial demand.",
+      "keyDemandDrivers": [
+        "Expansion of city gas networks into new areas",
+        "Domestic gas pricing and allocation policy",
+        "Price gap between gas and petrol, diesel, LPG or fuel oil",
+        "Fertilizer, power and industrial gas use",
+        "New pipelines and LNG import terminals"
+      ],
+      "keyRisks": [
+        "Volatile imported LNG prices and supply",
+        "Cuts in cheaper domestic gas allocation",
+        "Regulatory changes to tariffs and exclusivity",
+        "Electric vehicles reducing CNG demand",
+        "Delays in pipeline build-out"
+      ]
+    },
+    {
+      "id": "i-oil",
+      "description": "Companies that explore for and produce crude oil and gas, and those that drill, service, store and transport it.",
+      "businessOverview": "Upstream producers hold blocks awarded by the government and sell crude and gas, with earnings closely tied to global crude prices and government-set domestic gas prices. Around them sit service providers that hire out drilling rigs and offshore vessels, run gas compression and well services or carry out seismic surveys. Storage and transport companies rent out tank terminals and pipelines at ports. Service and storage firms earn contract or rental income, so they depend more on producers' spending and terminal utilisation than on oil prices directly.",
+      "keyDemandDrivers": [
+        "Global crude oil and gas prices",
+        "Exploration and production spending by oil companies",
+        "Government licensing rounds and fiscal terms",
+        "Liquid cargo volumes moving through Indian ports"
+      ],
+      "keyRisks": [
+        "Sharp fall in crude prices",
+        "Windfall-style taxes and price caps",
+        "Ageing fields and declining output",
+        "Dependence on a few large state-owned clients",
+        "Safety and environmental incidents"
+      ]
+    },
+    {
+      "id": "i-petroleum-products",
+      "description": "Companies that refine crude into fuels and those that make lubricants and other petroleum-based products.",
+      "businessOverview": "Refiners buy crude, mostly imported, process it into petrol, diesel, jet fuel, LPG, naphtha and other products, and sell them through their own fuel stations, to industry or as exports. Their earnings depend on refining margins and on retail fuel marketing margins, which are shaped by government decisions on pump prices and duties. Lubricant makers buy base oil and additives and blend branded oils for vehicles and machinery, where brand strength and distribution reach matter as much as input costs.",
+      "keyDemandDrivers": [
+        "Crude oil prices and global product spreads",
+        "Domestic fuel and lubricant consumption",
+        "Vehicle population and industrial activity",
+        "Export demand for refined products"
+      ],
+      "keyRisks": [
+        "Pump prices held down while crude rises",
+        "Inventory losses when crude falls quickly",
+        "Shift to electric vehicles",
+        "Weaker rupee raising crude import cost",
+        "Changes in excise and export duties"
+      ]
+    },
+    {
+      "id": "i-consumable-fuels",
+      "description": "Companies that mine coal and those that import or trade it.",
+      "businessOverview": "Coal is the main fuel for India's thermal power plants and is also used by steel, sponge iron, cement and other industries. Miners sell most coal under long-term fuel supply agreements and the rest through auctions, while private players run commercial blocks or work as mine developers and operators for block owners. Traders import coal for users who need grades or quantities not available locally and deliver it within India. Profits depend on volumes, realised prices, wage and diesel costs, and rail logistics.",
+      "keyDemandDrivers": [
+        "Electricity demand and thermal power generation",
+        "Steel, sponge iron and cement output",
+        "Government auctions of coal blocks",
+        "Rail and port evacuation capacity",
+        "International coal prices"
+      ],
+      "keyRisks": [
+        "Long-term shift to renewable power",
+        "Environmental and land clearance delays",
+        "Wage revisions and rising mining costs",
+        "Volatile international coal prices",
+        "Policy push to cut coal imports"
+      ]
+    },
+    {
+      "id": "i-power",
+      "description": "Companies that generate, transmit, distribute and trade electricity.",
+      "businessOverview": "Generators produce power from coal, gas, water, sun and wind and sell it mainly to state distribution companies under long-term power purchase agreements, with some sold short-term on power exchanges. Transmission companies build and run high-voltage networks and earn regulated or bid-based charges, while distributors deliver power to homes and businesses at tariffs set by state regulators. Traders match buyers and sellers for a small margin. Payment discipline of state distribution companies, fuel availability and tariff orders are the common threads across the chain.",
+      "keyDemandDrivers": [
+        "Growth in electricity demand",
+        "Renewable capacity additions and transmission build-out",
+        "Tariff orders by CERC and SERCs",
+        "Coal and gas availability",
+        "Government schemes to fix distribution company finances"
+      ],
+      "keyRisks": [
+        "Delayed payments by state distribution companies",
+        "Fuel shortages or cost spikes",
+        "Cuts to allowed regulatory returns",
+        "Project execution, land and approval delays",
+        "Higher interest rates on debt-heavy balance sheets"
+      ]
+    },
+    {
+      "id": "i-other-utilities",
+      "description": "Water, wastewater, waste, emergency response and other essential public services.",
+      "businessOverview": "These companies design, build and operate treatment plants, pipelines, waste collection and processing systems, ambulance fleets and similar services, mostly for municipal bodies, state governments and industrial clients. Income comes from engineering contracts, long operation-and-maintenance contracts and service fees, sometimes under hybrid annuity or public-private partnership models. Government missions on water, sanitation and cleanliness and stricter pollution rules create work, but payments from public clients can be slow.",
+      "keyDemandDrivers": [
+        "Central and state water and sanitation programmes",
+        "Urbanisation and municipal budgets",
+        "Pollution control and zero-discharge norms for industry",
+        "Extended producer responsibility rules for waste"
+      ],
+      "keyRisks": [
+        "Delayed government payments",
+        "Loss of contracts at retendering",
+        "Cost overruns on fixed-price projects",
+        "Cuts in public funding"
+      ]
+    }
+  ],
+  "basicIndustries": [
+    {
+      "id": "b-gas-transmission-marketing",
+      "simplifiedExplanation": "These companies own the long-distance pipelines that carry natural gas across India, and buy gas (domestic or imported LNG) to resell to factories, power plants, fertilizer units and city gas companies.",
+      "productsAndServices": [
+        "Gas transmission through trunk pipelines",
+        "Natural gas marketing and trading",
+        "LNG sourcing and regasification capacity bookings",
+        "LPG and liquid hydrocarbons extracted from gas",
+        "Gas-based petrochemicals (in some companies)",
+        "City gas distribution through subsidiaries or joint ventures"
+      ],
+      "valueChainPosition": "Midstream: they take gas from domestic producers and LNG terminals and deliver it to city gas distributors, fertilizer plants, power stations, refineries and industrial users.",
+      "howTheyMakeMoney": "Pipeline businesses earn a regulated tariff for each unit of gas carried. Marketing businesses earn the spread between the price paid under supply contracts and the price charged to customers.",
+      "revenueSources": [
+        "Pipeline transmission tariffs",
+        "Gas marketing margins",
+        "LPG and petrochemical sales",
+        "Income and dividends from city gas ventures"
+      ],
+      "operatingCosts": [
+        "Cost of purchased gas and LNG",
+        "Pipeline operation and maintenance",
+        "Fuel and power for compressor stations",
+        "Employee costs",
+        "Depreciation on pipelines"
+      ],
+      "customersAndEndMarkets": "Fertilizer, power, refinery, petrochemical and city gas companies, plus large industrial users such as steel, glass and ceramics plants.",
+      "demandSupplyDrivers": "Demand rises when gas is cheap compared with naphtha, fuel oil or coal, and as new pipelines link more cities and industrial clusters. Supply depends on domestic field output and the availability of imported LNG cargoes.",
+      "domesticInternationalExposure": "Operations are domestic, but much of the gas sold is imported LNG priced against global gas or crude benchmarks, so international prices and the rupee affect marketing margins and customer demand.",
+      "capexIntensity": "High",
+      "capexNote": "Cross-country pipelines and compressor stations need large upfront spending that is recovered over decades.",
+      "workingCapital": "Moderate: gas is billed on short credit cycles, but long-term LNG purchase commitments and occasional dues from government-linked buyers can tie up cash.",
+      "regulation": "PNGRB authorises pipelines and fixes transmission tariffs; the Ministry of Petroleum and Natural Gas sets domestic gas pricing and decides which sectors get priority allocation.",
+      "competitiveAdvantages": "An existing pipeline network with rights of way is very hard to replicate, and large long-term supply contracts give scale advantages in sourcing gas.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Domestic gas pricing, priority allocation and tariff reforms directly shape volumes carried and marketing margins." },
+        { "factor": "Commodity prices", "impact": "Global LNG prices decide how competitive gas is against other fuels and how much marketing margin can be earned." },
+        { "factor": "Infrastructure spending", "impact": "New trunk lines and LNG terminals open up fresh demand centres along the route." },
+        { "factor": "Capacity utilisation", "impact": "Pipeline profits rise as more gas flows through a network whose costs are largely fixed." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the rupee cost of imported LNG and can dampen demand." }
+      ],
+      "risks": [
+        { "risk": "Tariff regulation", "detail": "Lower-than-expected tariff orders can cut returns on pipeline investments." },
+        { "risk": "LNG price spikes", "detail": "Costly imported gas can push customers to cheaper fuels and squeeze marketing spreads." },
+        { "risk": "Under-used pipelines", "detail": "New lines may carry little gas for years if supply or customers lag." },
+        { "risk": "Take-or-pay commitments", "detail": "Long-term LNG contracts can become a burden when demand or prices weaken." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Pipeline tariffs give steady income, while gas marketing and petrochemical profits swing with energy prices.",
+      "metricSet": "gas-utilities",
+      "relatedBasicIndustries": [
+        "b-lpg-cng-png-lng-supplier",
+        "b-oil-exploration-and-production",
+        "b-fertilizers",
+        "b-petrochemicals",
+        "b-power-generation"
+      ],
+      "aliases": [
+        "gas pipeline",
+        "natural gas transmission",
+        "gas marketing",
+        "trunk pipeline",
+        "LNG",
+        "gas utility",
+        "midstream gas"
+      ],
+      "themes": ["Energy transition", "Infrastructure"]
+    },
+    {
+      "id": "b-lpg-cng-png-lng-supplier",
+      "simplifiedExplanation": "These companies sell gas straight to end users: CNG at fuel stations for vehicles, piped natural gas (PNG) to kitchens, hotels and factories, and in some cases LPG cylinders, auto-LPG or LNG for trucks.",
+      "productsAndServices": [
+        "CNG for cars, autos, buses and trucks",
+        "Domestic PNG for cooking",
+        "Commercial and industrial PNG",
+        "LPG cylinders and auto-LPG dispensing",
+        "LNG for trucks and off-pipeline users",
+        "New gas connections and network services"
+      ],
+      "valueChainPosition": "Downstream: they buy gas from producers, marketers and LNG importers, move it through city pipe networks or cylinders, and sell it to households, vehicle owners and businesses.",
+      "howTheyMakeMoney": "They earn the spread between gas purchase cost and the retail price on every unit sold, plus connection charges. LPG players earn bottling and distribution margins.",
+      "revenueSources": [
+        "CNG sales at fuel stations",
+        "PNG sales to homes, commercial and industrial users",
+        "LPG cylinder and auto-LPG sales",
+        "Connection and service charges"
+      ],
+      "operatingCosts": [
+        "Cost of gas (domestic allocation and imported LNG)",
+        "Pipeline transport charges",
+        "Network operation and maintenance",
+        "Power for CNG compression",
+        "Staff costs and dealer commissions"
+      ],
+      "customersAndEndMarkets": "Households, auto-rickshaw, taxi, bus and truck operators, hotels and restaurants, and small and large factories within each licensed city or district.",
+      "demandSupplyDrivers": "Volumes grow as networks reach new homes and stations open, and when CNG stays cheaper than petrol and diesel. Margins depend on the mix of cheaper domestic gas and costlier imported LNG in the supply.",
+      "domesticInternationalExposure": "Sales are entirely domestic, but a rising share of input gas is imported LNG, so global gas prices and the rupee affect costs and pricing power.",
+      "capexIntensity": "High",
+      "capexNote": "Steel and polyethylene pipe networks, compressor stations and CNG outlets need steady investment in every licence area.",
+      "workingCapital": "Light: CNG sales are cash or near-cash and household PNG is billed in short cycles, though industrial customers get some credit.",
+      "regulation": "PNGRB awards city gas areas with a period of exclusivity and sets network and safety rules; the government decides domestic gas allocation for CNG and household PNG. LPG bottling needs PESO safety licences.",
+      "competitiveAdvantages": "Exclusive licence areas, an installed pipe network and connected customers create a local near-monopoly while exclusivity lasts.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Allocation of cheaper domestic gas to CNG and household PNG keeps costs low; any cut forces use of pricier gas." },
+        { "factor": "Crude oil prices", "impact": "Higher petrol and diesel prices widen CNG's cost advantage and encourage vehicle conversions." },
+        { "factor": "Commodity prices", "impact": "Imported LNG prices set the cost of gas for industrial PNG and for any shortfall in domestic supply." },
+        { "factor": "Infrastructure spending", "impact": "New licence areas and pipeline connectivity let networks expand into more cities." },
+        { "factor": "Technology change", "impact": "Electric buses, cars and three-wheelers compete directly with CNG vehicles." }
+      ],
+      "risks": [
+        { "risk": "Gas allocation cuts", "detail": "Lower domestic gas allocation raises costs and squeezes margins if prices cannot be raised fast enough." },
+        { "risk": "Electric vehicle adoption", "detail": "Faster EV uptake among taxis, autos and buses can slow CNG volume growth." },
+        { "risk": "End of exclusivity", "detail": "Once marketing exclusivity ends, other suppliers may sell gas through the same network." },
+        { "risk": "Loss of price edge", "detail": "Costly LNG can push industrial users back to alternative fuels." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Household and transport gas use is steady, though margins move with gas costs and industrial demand.",
+      "metricSet": "gas-utilities",
+      "relatedBasicIndustries": [
+        "b-gas-transmission-marketing",
+        "b-trading-gas",
+        "b-passenger-cars-and-utility-vehicles",
+        "b-commercial-vehicles",
+        "b-ceramics"
+      ],
+      "aliases": [
+        "city gas distribution",
+        "CGD",
+        "CNG",
+        "PNG",
+        "piped gas",
+        "LPG",
+        "auto LPG",
+        "LNG supplier",
+        "city gas"
+      ],
+      "themes": ["Energy transition", "Infrastructure"]
+    },
+    {
+      "id": "b-trading-gas",
+      "simplifiedExplanation": "These are traders and distributors: they buy gas products such as LPG, propane, butane or LNG from suppliers and resell them, often using import terminals and logistics, instead of producing the gas themselves.",
+      "productsAndServices": [
+        "Import and resale of LPG, propane and butane",
+        "Sourcing and trading of LNG cargoes",
+        "Bulk and packed LPG distribution",
+        "Industrial fuel gas supply to factories",
+        "Supply to cylinder and auto-LPG dealers"
+      ],
+      "valueChainPosition": "Intermediaries in the middle of the chain: they source from international suppliers or domestic producers and sell to oil marketing companies, bottlers, factories and dealers.",
+      "howTheyMakeMoney": "They earn a trading margin per tonne between purchase and selling price, plus sourcing, handling or logistics fees when they arrange supplies for others.",
+      "revenueSources": [
+        "Margins on gas product trading",
+        "Sourcing and handling fees",
+        "Distribution and logistics charges"
+      ],
+      "operatingCosts": [
+        "Cost of gas products bought",
+        "Ocean freight and terminal charges",
+        "Storage and handling",
+        "Hedging and trade finance costs",
+        "Employee costs"
+      ],
+      "customersAndEndMarkets": "Oil marketing companies, LPG bottlers, ceramic, glass, steel and chemical factories, and auto-LPG and commercial users.",
+      "demandSupplyDrivers": "Demand follows household LPG and industrial fuel use, which domestic refineries cannot fully meet. Volumes and margins depend on global cargo availability and price gaps between regions.",
+      "domesticInternationalExposure": "Highly import-linked: purchases are priced off international benchmarks and paid in dollars, so global prices, freight rates and the rupee matter a lot.",
+      "capexIntensity": "Low",
+      "capexNote": "Pure trading needs little fixed capital, though players that also own terminals or storage carry more assets.",
+      "workingCapital": "Can be heavy: cargoes are paid for upfront or through letters of credit, and price swings during shipping change the value of stock held.",
+      "regulation": "Light, general business regulation for trading itself; storage and handling of LPG need PESO safety licences, and import rules are set by the Ministry of Petroleum and Natural Gas.",
+      "competitiveAdvantages": "Access to import terminals, long-standing supplier ties and strong bank credit lines let established traders source cargoes on better terms.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "International LPG and LNG prices change both the value of inventory and buyers' appetite." },
+        { "factor": "Currency (INR)", "impact": "Dollar-priced purchases cost more in rupees when the rupee weakens." },
+        { "factor": "Consumer demand", "impact": "Household cooking-gas and auto-LPG use drives baseline volumes." },
+        { "factor": "Import dependence", "impact": "India's shortfall in domestic LPG and gas creates steady demand for imported supplies that traders handle." }
+      ],
+      "risks": [
+        { "risk": "Price volatility", "detail": "Sharp moves between buying and selling a cargo can wipe out a thin margin." },
+        { "risk": "Thin spreads", "detail": "Small drops in volume or rises in cost hit profits hard." },
+        { "risk": "Credit risk", "detail": "Large dues from industrial buyers can turn bad in a downturn." },
+        { "risk": "Policy changes", "detail": "Changes to import rules or duties on LPG can alter the trade." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Cooking-gas volumes are steady, but industrial demand and trading margins rise and fall with energy prices.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": [
+        "b-lpg-cng-png-lng-supplier",
+        "b-gas-transmission-marketing",
+        "b-oil-storage-and-transportation",
+        "b-port-and-port-services"
+      ],
+      "aliases": [
+        "gas trading",
+        "LPG trading",
+        "LPG import",
+        "propane",
+        "butane",
+        "gas distributor",
+        "LNG trading"
+      ],
+      "themes": []
+    },
+    {
+      "id": "b-oil-exploration-and-production",
+      "simplifiedExplanation": "These companies search for oil and gas under land and sea, drill wells and produce crude oil and natural gas, which they sell to refineries and gas buyers.",
+      "productsAndServices": [
+        "Crude oil",
+        "Natural gas",
+        "Condensate",
+        "LPG and other products extracted from gas",
+        "Stakes in domestic and overseas oil and gas blocks"
+      ],
+      "valueChainPosition": "Upstream: they hold exploration blocks and supply crude to refineries and gas to pipeline and marketing companies, hiring drilling contractors and oilfield service firms to do much of the field work.",
+      "howTheyMakeMoney": "They sell oil and gas at prices linked to global crude benchmarks or government-set gas formulas. Profit is the realised price minus lifting cost, royalties, taxes and the write-down of exploration spending.",
+      "revenueSources": [
+        "Crude oil sales",
+        "Natural gas sales",
+        "Condensate and value-added product sales",
+        "Share of profits from joint-venture or overseas blocks"
+      ],
+      "operatingCosts": [
+        "Royalties and cess paid to government",
+        "Field operating (lifting) costs",
+        "Drilling and oilfield service contracts",
+        "Write-offs of dry wells",
+        "Depreciation and depletion",
+        "Employee costs"
+      ],
+      "customersAndEndMarkets": "Domestic refineries buy the crude; gas goes to fertilizer, power, city gas and industrial users through marketers and pipelines.",
+      "demandSupplyDrivers": "India imports most of its oil, so domestic output is easily absorbed; earnings move mainly with crude and gas prices and with production from ageing and newly developed fields.",
+      "domesticInternationalExposure": "Production is largely domestic, but crude is priced off international benchmarks in dollars, and some companies also own fields abroad.",
+      "capexIntensity": "High",
+      "capexNote": "Seismic surveys, exploration wells and offshore platforms need heavy, risky spending long before any oil flows.",
+      "workingCapital": "Usually light, as refiners pay on short cycles, though government-directed subsidy sharing or dues can occasionally tie up cash.",
+      "regulation": "Blocks are awarded under government licensing policies (HELP / OALP) overseen by the Directorate General of Hydrocarbons; the government sets domestic gas price formulas and ceilings and has used windfall-style levies on crude.",
+      "competitiveAdvantages": "Proven reserves, existing infrastructure in producing basins and technical expertise in difficult fields are hard for newcomers to match.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Global crude prices feed almost directly into realisations, so rises lift profits and falls cut them quickly." },
+        { "factor": "Government policy", "impact": "Gas price formulas, price caps, royalties, cess and windfall levies decide how much of a price rise producers keep." },
+        { "factor": "Currency (INR)", "impact": "Dollar-linked prices mean a weaker rupee raises rupee revenue." },
+        { "factor": "Reserve replacement", "impact": "New discoveries and field development are needed to offset the natural decline of old fields." },
+        { "factor": "Technology change", "impact": "Enhanced recovery methods can slow output decline in mature fields." }
+      ],
+      "risks": [
+        { "risk": "Crude price crash", "detail": "A sharp fall in global oil prices lowers revenue with little offset in costs." },
+        { "risk": "Fiscal changes", "detail": "Windfall levies, higher cess or price caps can take away gains from high prices." },
+        { "risk": "Declining fields", "detail": "Ageing fields produce less each year unless new wells are drilled." },
+        { "risk": "Dry wells", "detail": "Spending on unsuccessful exploration wells has to be written off." },
+        { "risk": "Operational accidents", "detail": "Blowouts, fires or spills can halt output and bring penalties." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Profits rise and fall closely with global crude and gas prices.",
+      "metricSet": "oil-upstream",
+      "relatedBasicIndustries": [
+        "b-refineries-and-marketing",
+        "b-gas-transmission-marketing",
+        "b-offshore-support-solution-drilling",
+        "b-oil-equipment-and-services"
+      ],
+      "aliases": [
+        "upstream oil",
+        "E&P",
+        "oil and gas producer",
+        "crude oil production",
+        "oil exploration",
+        "natural gas production",
+        "oilfield"
+      ],
+      "themes": ["Energy security"]
+    },
+    {
+      "id": "b-offshore-support-solution-drilling",
+      "simplifiedExplanation": "These companies own or run drilling rigs, offshore vessels and marine support services that oil and gas producers hire to drill wells and keep operations at sea running.",
+      "productsAndServices": [
+        "Offshore jack-up drilling rigs on charter",
+        "Onshore drilling services",
+        "Offshore support and supply vessels",
+        "Diving and underwater services",
+        "Marine construction and repair support",
+        "Rig management services"
+      ],
+      "valueChainPosition": "Upstream service providers: they supply rigs, vessels and crews to oil and gas explorers, and buy vessels, equipment and spares from shipyards and manufacturers.",
+      "howTheyMakeMoney": "They charge day rates or fixed contract fees for rigs, vessels and crews over multi-year charters, so income depends on how many days assets are on hire and at what rate.",
+      "revenueSources": [
+        "Rig charter day rates",
+        "Vessel charter hire",
+        "Drilling and well service fees",
+        "Diving, repair and project contracts"
+      ],
+      "operatingCosts": [
+        "Crew salaries and offshore allowances",
+        "Repairs, dry-docking and maintenance",
+        "Fuel and consumables",
+        "Insurance",
+        "Depreciation and interest on rigs and vessels"
+      ],
+      "customersAndEndMarkets": "Mainly state-owned and private oil and gas producers, contracted through competitive tenders, with a handful of large clients.",
+      "demandSupplyDrivers": "Demand follows offshore exploration and production budgets, which grow when crude prices are firm. The worldwide supply of rigs and vessels sets the day rates that can be charged.",
+      "domesticInternationalExposure": "Work is mostly in Indian waters, but rigs and vessels are global assets whose rates and resale values follow the worldwide offshore cycle; equipment is often imported and priced in dollars.",
+      "capexIntensity": "High",
+      "capexNote": "Rigs and vessels are costly assets that also need periodic dry-docking and upgrades.",
+      "workingCapital": "Moderate: dues from oil companies can be large, and idle periods between contracts still carry fixed crew and maintenance costs.",
+      "regulation": "Contracts follow oil company tender rules; offshore operations follow safety standards of the Oil Industry Safety Directorate and DGH, and vessels follow Directorate General of Shipping norms.",
+      "competitiveAdvantages": "A long track record and safety record with major oil companies, and owning rigs or vessels that meet tender specifications, are key to winning work.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Firm crude prices encourage producers to drill more offshore wells, lifting demand for rigs and vessels." },
+        { "factor": "Capacity utilisation", "impact": "Profit depends on keeping each rig or vessel on hire with little idle time." },
+        { "factor": "Government policy", "impact": "The push for higher domestic oil and gas output and new block awards supports drilling demand." },
+        { "factor": "Global offshore cycle", "impact": "Worldwide rig and vessel supply shapes the day rates Indian contracts can command." },
+        { "factor": "Currency (INR)", "impact": "Dollar-linked charter rates and imported equipment make earnings sensitive to the rupee." }
+      ],
+      "risks": [
+        { "risk": "Contract roll-off", "detail": "A rig or vessel coming off contract may sit idle or be re-hired at lower rates." },
+        { "risk": "Client concentration", "detail": "A few producers give most of the work and hold strong bargaining power." },
+        { "risk": "Operational hazards", "detail": "Accidents, bad weather and breakdowns cause downtime and penalties." },
+        { "risk": "High debt", "detail": "Borrowings taken to buy assets weigh heavily in weak cycles." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Demand and day rates follow oil companies' spending, which tracks the crude price cycle.",
+      "metricSet": "oilfield-services",
+      "relatedBasicIndustries": [
+        "b-oil-exploration-and-production",
+        "b-oil-equipment-and-services",
+        "b-shipping",
+        "b-ship-building-and-allied-services"
+      ],
+      "aliases": [
+        "offshore drilling",
+        "drilling rigs",
+        "jack-up rig",
+        "offshore support vessel",
+        "OSV",
+        "drilling contractor",
+        "oil rig"
+      ],
+      "themes": ["Energy security"]
+    },
+    {
+      "id": "b-oil-storage-and-transportation",
+      "simplifiedExplanation": "These companies run tank farms, port terminals and pipelines that store and move crude oil, fuels, chemicals, LPG and other liquids for a fee, without owning the products.",
+      "productsAndServices": [
+        "Liquid storage tanks at ports",
+        "Crude and product pipelines",
+        "Chemical and LPG storage terminals",
+        "Jetty and pipeline handling services",
+        "Road and rail tanker logistics",
+        "Blending, heating and throughput services"
+      ],
+      "valueChainPosition": "Midstream logistics: they sit between importers, refiners and chemical makers on one side and buyers of fuels and chemicals on the other, renting out capacity rather than trading the cargo.",
+      "howTheyMakeMoney": "They charge storage rent for tank space and throughput or handling fees for every tonne moved, often under contracts with minimum guaranteed charges.",
+      "revenueSources": [
+        "Tank storage rentals",
+        "Throughput and handling fees",
+        "Pipeline transport charges",
+        "Ancillary services such as blending and heating"
+      ],
+      "operatingCosts": [
+        "Port land lease and waterfront charges",
+        "Power and utilities",
+        "Maintenance and fire-safety systems",
+        "Employee costs",
+        "Depreciation and interest on terminals"
+      ],
+      "customersAndEndMarkets": "Refiners, oil marketing companies, chemical and petrochemical makers and traders, edible oil importers and LPG distributors.",
+      "demandSupplyDrivers": "Demand grows with imports and exports of liquids through ports and with fuel and chemical consumption. New supply is limited by scarce port land and waterfront at each location.",
+      "domesticInternationalExposure": "Income is in rupees, but volumes depend on India's trade in crude, products, chemicals and LPG, which follows global trade flows.",
+      "capexIntensity": "High",
+      "capexNote": "Tanks, jetties and pipelines at ports need large upfront investment that earns rent for many years.",
+      "workingCapital": "Light: customers pay storage fees regularly and the company does not carry the stored product as inventory.",
+      "regulation": "Storage of petroleum and chemicals needs PESO licences and OISD safety standards; port terminals depend on port authority land leases, and pipelines may need PNGRB authorisation.",
+      "competitiveAdvantages": "Scarce port land and waterfront, pipeline links to jetties and long customer contracts make established terminals hard to copy.",
+      "drivers": [
+        { "factor": "Capacity utilisation", "impact": "The share of tankage rented out drives profit because most costs are fixed." },
+        { "factor": "Exports & global demand", "impact": "Trade in crude, chemicals and LPG through Indian ports sets the volumes handled." },
+        { "factor": "Infrastructure spending", "impact": "Port expansions and new pipelines create room for more terminals." },
+        { "factor": "Interest rates", "impact": "Long-life terminals are usually debt-funded, so borrowing costs affect returns." }
+      ],
+      "risks": [
+        { "risk": "Lease renewal", "detail": "Port land leases may be renewed on tougher terms or not at all." },
+        { "risk": "Safety incidents", "detail": "Fires or leaks can force shutdowns and create liabilities." },
+        { "risk": "Customer shifts", "detail": "Big clients may build their own storage or move to another port." },
+        { "risk": "Local overcapacity", "detail": "New terminals at the same port can push rental rates down." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Contracted rentals are steady, while utilisation and throughput move with trade flows.",
+      "metricSet": "transport-assets",
+      "relatedBasicIndustries": [
+        "b-port-and-port-services",
+        "b-trading-gas",
+        "b-refineries-and-marketing",
+        "b-commodity-chemicals",
+        "b-edible-oil"
+      ],
+      "aliases": [
+        "tank farm",
+        "liquid storage",
+        "oil terminal",
+        "tankage",
+        "oil pipeline",
+        "liquid logistics",
+        "LPG terminal"
+      ],
+      "themes": ["Infrastructure"]
+    },
+    {
+      "id": "b-oil-equipment-and-services",
+      "simplifiedExplanation": "These companies supply the equipment and on-site services oil and gas producers need on land, such as gas compression, workover rigs, seismic surveys and well services.",
+      "productsAndServices": [
+        "Gas compression and dehydration services",
+        "Workover and onshore drilling rigs",
+        "Seismic data acquisition and processing",
+        "Well testing and stimulation services",
+        "Oilfield equipment such as wellheads, valves and pumps",
+        "Operation and maintenance of oil and gas facilities"
+      ],
+      "valueChainPosition": "Upstream service providers: they work for oil and gas producers and buy equipment and spares from manufacturers, many of them overseas.",
+      "howTheyMakeMoney": "They earn contract revenue for services over multi-year deals, hire charges for equipment, or margins on manufactured equipment sold.",
+      "revenueSources": [
+        "Service contracts with oil producers",
+        "Equipment hire charges",
+        "Equipment sales",
+        "Survey and project fees"
+      ],
+      "operatingCosts": [
+        "Technical staff and field crews",
+        "Equipment maintenance and spares",
+        "Fuel and logistics",
+        "Depreciation on rigs and compressors",
+        "Subcontracting costs"
+      ],
+      "customersAndEndMarkets": "State-owned and private oil and gas producers in India, and sometimes overseas, mostly through tenders.",
+      "demandSupplyDrivers": "Work depends on how much producers spend on exploration, new wells and keeping mature fields running; the government's push for more domestic output supports this spending.",
+      "domesticInternationalExposure": "Mostly domestic contracts with some overseas projects; much equipment is imported and some contracts are linked to the dollar.",
+      "capexIntensity": "Medium",
+      "capexNote": "Firms must own rigs, compressors and survey gear, though usually less capital is tied up than for offshore drillers.",
+      "workingCapital": "Moderate to heavy: payments from oil companies and project milestones can stretch receivables.",
+      "regulation": "Contracts follow the tender norms of oil companies; field operations follow OISD safety standards and DGH rules for upstream activity.",
+      "competitiveAdvantages": "Technical qualifications, a proven record and pre-qualification in oil company tenders keep inexperienced players out.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Higher oil prices lift producers' spending on wells and field services." },
+        { "factor": "Government policy", "impact": "Policies to raise domestic oil and gas output and new block awards create service demand." },
+        { "factor": "Capacity utilisation", "impact": "Keeping rigs and compressors deployed on contracts drives profitability." },
+        { "factor": "Technology change", "impact": "Newer methods such as enhanced recovery and digital surveys open new service lines." }
+      ],
+      "risks": [
+        { "risk": "Tender pricing", "detail": "Aggressive bidding can lock in thin margins for years." },
+        { "risk": "Client concentration", "detail": "Reliance on a few state-owned producers creates payment and renewal risk." },
+        { "risk": "Spending cuts", "detail": "Low crude prices can make producers defer projects." },
+        { "risk": "Execution risk", "detail": "Delays or breakdowns can trigger contract penalties." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Order flow follows producers' capital spending, which moves with oil prices.",
+      "metricSet": "oilfield-services",
+      "relatedBasicIndustries": [
+        "b-oil-exploration-and-production",
+        "b-offshore-support-solution-drilling",
+        "b-compressors-pumps-and-diesel-engines",
+        "b-gas-transmission-marketing"
+      ],
+      "aliases": [
+        "oilfield services",
+        "gas compression",
+        "workover rig",
+        "seismic survey",
+        "oilfield equipment",
+        "OFS",
+        "well services"
+      ],
+      "themes": ["Energy security"]
+    },
+    {
+      "id": "b-refineries-and-marketing",
+      "simplifiedExplanation": "These companies buy crude oil, refine it into fuels such as petrol, diesel, jet fuel and LPG, and sell them through petrol pumps, to industry or to buyers abroad.",
+      "productsAndServices": [
+        "Petrol and diesel",
+        "Aviation turbine fuel",
+        "LPG for cooking",
+        "Naphtha, fuel oil and bitumen",
+        "Petrochemicals such as polymers (in integrated refiners)",
+        "Retail fuel stations"
+      ],
+      "valueChainPosition": "Midstream to downstream: they process crude from producers and importers and supply fuels to motorists, airlines, industry, petrochemical plants and export markets.",
+      "howTheyMakeMoney": "Refiners earn the gross refining margin, the gap between the value of products made and the cost of crude. Marketers add a margin on each litre sold, which depends on how pump prices are set against costs.",
+      "revenueSources": [
+        "Domestic sales of refined fuels",
+        "Exports of refined products",
+        "Retail fuel marketing margins",
+        "Petrochemical sales",
+        "LPG sales, at times with government compensation"
+      ],
+      "operatingCosts": [
+        "Crude oil purchases (the largest cost)",
+        "Fuel and power used in refining",
+        "Crude shipping and freight",
+        "Maintenance and employee costs",
+        "Interest and depreciation"
+      ],
+      "customersAndEndMarkets": "Motorists and households, transport fleets, airlines, factories, petrochemical makers and overseas fuel buyers.",
+      "demandSupplyDrivers": "Demand follows vehicle use, freight, flying and industrial activity. Margins depend on global product spreads (cracks), the crude discounts a refiner can secure and how retail prices are adjusted.",
+      "domesticInternationalExposure": "Highly exposed to global markets: most crude is imported in dollars and product prices track international benchmarks; some refiners export a large part of their output.",
+      "capexIntensity": "High",
+      "capexNote": "Building, expanding and upgrading refineries for cleaner fuel standards needs very large investment.",
+      "workingCapital": "Big crude and product stocks mean fast price swings create inventory gains or losses, and pending government compensation on LPG can add to receivables.",
+      "regulation": "The Ministry of Petroleum and Natural Gas influences retail fuel and LPG pricing; excise and export duty changes affect margins; fuel quality must meet Bharat Stage norms and outlets need PESO licences.",
+      "competitiveAdvantages": "Scale, complex refineries that can run cheaper crude grades, petrochemical integration and an established retail network give lasting cost advantages.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Crude cost and its swings drive margins and create inventory gains or losses." },
+        { "factor": "Government policy", "impact": "Decisions on pump prices, LPG pricing, excise and export duties decide marketing margins." },
+        { "factor": "Exports & global demand", "impact": "Global product spreads set refining margins for both domestic and export sales." },
+        { "factor": "Currency (INR)", "impact": "A weaker rupee raises the rupee cost of imported crude." },
+        { "factor": "Consumer demand", "impact": "Fuel use by vehicles, freight and aviation sets volumes sold." }
+      ],
+      "risks": [
+        { "risk": "Retail price freezes", "detail": "When pump prices are held while crude rises, marketing margins can turn negative." },
+        { "risk": "Inventory losses", "detail": "A quick fall in crude cuts the value of stock bought earlier." },
+        { "risk": "Energy transition", "detail": "Electric vehicles and alternative fuels may slow long-term fuel demand." },
+        { "risk": "Refinery outages", "detail": "Planned shutdowns or accidents reduce throughput." },
+        { "risk": "Special levies", "detail": "Extra duties on exports or high margins can cap profits." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Refining and marketing margins swing widely with crude prices, global cracks and pricing policy.",
+      "metricSet": "refining-marketing",
+      "relatedBasicIndustries": [
+        "b-oil-exploration-and-production",
+        "b-petrochemicals",
+        "b-lubricants",
+        "b-oil-storage-and-transportation"
+      ],
+      "aliases": [
+        "refinery",
+        "oil marketing company",
+        "OMC",
+        "petrol pump",
+        "fuel retail",
+        "oil refining",
+        "downstream oil",
+        "GRM"
+      ],
+      "themes": ["Energy security"]
+    },
+    {
+      "id": "b-lubricants",
+      "simplifiedExplanation": "These companies blend base oil with additives to make engine oils, gear oils, greases and industrial oils; some also make specialty petroleum products such as white oils and transformer oils.",
+      "productsAndServices": [
+        "Engine oils for two-wheelers, cars and trucks",
+        "Industrial and hydraulic oils",
+        "Greases and gear oils",
+        "Transformer oils",
+        "White oils and petroleum jelly",
+        "Coolants and specialty fluids"
+      ],
+      "valueChainPosition": "Downstream processors: they buy base oil from refiners or imports and additives from chemical companies, and sell through mechanics and dealers, to vehicle makers and to industry.",
+      "howTheyMakeMoney": "They earn a margin per litre between the selling price and the cost of base oil, additives and packaging. Branded retail packs earn more than bulk industrial supply.",
+      "revenueSources": [
+        "Branded automotive lubricants through retail",
+        "Factory-fill supply to vehicle makers",
+        "Industrial and institutional lubricants",
+        "Specialty oils such as transformer and white oils",
+        "Exports"
+      ],
+      "operatingCosts": [
+        "Base oil and additives",
+        "Packaging",
+        "Advertising and mechanic or dealer incentives",
+        "Freight and distribution",
+        "Employee costs"
+      ],
+      "customersAndEndMarkets": "Vehicle owners through workshops and retail shops, vehicle and equipment makers, power transformer makers, cosmetic and pharma makers (for white oils) and industrial plants.",
+      "demandSupplyDrivers": "Demand follows the number of vehicles on the road, distance driven and factory activity; margins depend on how quickly companies pass on changes in base oil prices.",
+      "domesticInternationalExposure": "Base oil and additives are often imported and priced in dollars, so crude prices and the rupee move costs; some makers export specialty oils.",
+      "capexIntensity": "Low",
+      "capexNote": "Blending plants are relatively cheap; most spending goes into brands and distribution.",
+      "workingCapital": "Moderate: companies hold base oil and finished stock and give credit to distributors and industrial buyers.",
+      "regulation": "Light, general business regulation; products follow BIS and industry performance specifications, and used-oil handling falls under hazardous waste rules.",
+      "competitiveAdvantages": "Trusted brands, mechanic loyalty, wide distribution and approvals from vehicle makers make shelf space hard for newcomers to win.",
+      "drivers": [
+        { "factor": "Crude oil prices", "impact": "Base oil prices follow crude, so sharp rises squeeze margins until price hikes stick." },
+        { "factor": "Consumer demand", "impact": "Vehicle sales and usage drive the replacement lubricant market." },
+        { "factor": "Rural demand", "impact": "Two-wheeler, tractor and pump-set use in villages supports volumes." },
+        { "factor": "Currency (INR)", "impact": "Imported base oil and additives cost more when the rupee weakens." },
+        { "factor": "Technology change", "impact": "Electric vehicles need far less engine oil, and longer drain intervals reduce volumes." }
+      ],
+      "risks": [
+        { "risk": "EV shift", "detail": "Growth of electric two-wheelers and cars reduces engine-oil demand over time." },
+        { "risk": "Base oil spikes", "detail": "Sudden input cost jumps can hurt margins before prices are raised." },
+        { "risk": "Intense competition", "detail": "State-owned oil companies and global brands compete hard on price and promotion." },
+        { "risk": "Counterfeits", "detail": "Fake products in the market can damage brand trust." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Replacement demand is steady, but margins swing with base oil prices.",
+      "metricSet": "chemicals",
+      "relatedBasicIndustries": [
+        "b-refineries-and-marketing",
+        "b-specialty-chemicals",
+        "b-2-3-wheelers",
+        "b-commercial-vehicles"
+      ],
+      "aliases": [
+        "lube oil",
+        "lubes",
+        "engine oil",
+        "grease",
+        "base oil",
+        "white oil",
+        "transformer oil",
+        "automotive lubricants"
+      ],
+      "themes": ["EV"]
+    },
+    {
+      "id": "b-coal",
+      "simplifiedExplanation": "These companies dig coal out of the ground and sell it to power stations, steel, cement and other industries. The group also includes contractors that develop and run mines or move coal for mine owners.",
+      "productsAndServices": [
+        "Non-coking (thermal) coal for power plants",
+        "Coking coal for steel making",
+        "Washed and sized coal",
+        "Mine development and operation services",
+        "Coal transport and handling",
+        "Coal bed methane (in some companies)"
+      ],
+      "valueChainPosition": "Upstream: they extract coal and supply power utilities, steel, sponge iron, cement, aluminium and other industries, relying on railways and roads for delivery.",
+      "howTheyMakeMoney": "Most coal is sold under long-term fuel supply agreements at notified or contracted prices, and the rest through e-auctions at market-linked premiums. Contractors earn per-tonne fees for mining or handling.",
+      "revenueSources": [
+        "Coal sold under fuel supply agreements",
+        "E-auction sales",
+        "Premiums on washed coal",
+        "Mining and logistics contract fees"
+      ],
+      "operatingCosts": [
+        "Wages and employee benefits",
+        "Contractor payments for overburden removal",
+        "Diesel and explosives",
+        "Royalties and other levies",
+        "Land, rehabilitation and mine closure costs",
+        "Transport to rail sidings"
+      ],
+      "customersAndEndMarkets": "Thermal power plants are the biggest buyers, followed by steel, sponge iron, cement, aluminium, fertilizer and brick industries.",
+      "demandSupplyDrivers": "Demand follows electricity use, the share of it met by thermal plants and industrial output. Supply depends on mine approvals, land acquisition and rail capacity to move coal out.",
+      "domesticInternationalExposure": "Sales are domestic, but imported coal prices influence auction premiums and how much power and industrial buyers source locally.",
+      "capexIntensity": "Medium",
+      "capexNote": "New mines, machinery, washeries and rail links need steady investment, though much mining work is outsourced to contractors.",
+      "workingCapital": "Usually manageable, but dues from state power utilities can build up, and coal stocks swing with seasonal demand and monsoon disruptions.",
+      "regulation": "The Ministry of Coal allocates and auctions blocks under the Coal Mines (Special Provisions) Act and the MMDR Act; mines need environment and forest clearances from MoEFCC, and royalties are set by government.",
+      "competitiveAdvantages": "Large, low-cost reserves close to rail lines and existing supply agreements with power plants are hard for others to replicate.",
+      "drivers": [
+        { "factor": "Electricity demand", "impact": "Higher power demand raises coal offtake by thermal plants." },
+        { "factor": "Government policy", "impact": "Block auctions, pricing decisions and import-substitution goals shape volumes and prices." },
+        { "factor": "Commodity prices", "impact": "International coal prices affect e-auction premiums and competition from imports." },
+        { "factor": "Infrastructure spending", "impact": "Rail lines and conveyor links decide how much coal can leave the mines." },
+        { "factor": "Monsoon disruption", "impact": "Heavy rains slow mining and dispatches during the monsoon months." }
+      ],
+      "risks": [
+        { "risk": "Energy transition", "detail": "More solar and wind power may slow long-term growth in coal demand." },
+        { "risk": "Cost inflation", "detail": "Wage revisions and diesel prices can raise costs faster than selling prices." },
+        { "risk": "Clearance delays", "detail": "Land acquisition and environmental approvals can hold up new mines." },
+        { "risk": "Price control", "detail": "Notified prices may not keep pace with rising costs." },
+        { "risk": "Safety and pollution", "detail": "Accidents, mine fires and pollution issues can disrupt operations." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Power-sector demand keeps volumes steady, while auction premiums swing with global coal prices.",
+      "metricSet": "coal",
+      "relatedBasicIndustries": [
+        "b-trading-coal",
+        "b-power-generation",
+        "b-iron-and-steel",
+        "b-cement-and-cement-products",
+        "b-sponge-iron"
+      ],
+      "aliases": [
+        "coal mining",
+        "thermal coal",
+        "coking coal",
+        "coal miner",
+        "MDO",
+        "mine developer and operator",
+        "commercial coal mining"
+      ],
+      "themes": ["Energy security"]
+    },
+    {
+      "id": "b-trading-coal",
+      "simplifiedExplanation": "These are traders, not miners: they buy coal, mostly imported, and resell it to power plants, factories and smaller users, handling shipping, port clearance and delivery.",
+      "productsAndServices": [
+        "Imported thermal coal",
+        "Imported coking coal and coke",
+        "Domestic coal bought through auctions",
+        "Coal blending and sizing",
+        "Port-to-plant logistics"
+      ],
+      "valueChainPosition": "Intermediaries between overseas mines or domestic auctions and end users such as power, cement, sponge iron and textile units.",
+      "howTheyMakeMoney": "They earn a margin per tonne over the landed cost of coal, plus fees for logistics, blending and handling.",
+      "revenueSources": [
+        "Coal trading margins",
+        "Logistics and handling charges",
+        "Blending services"
+      ],
+      "operatingCosts": [
+        "Cost of coal bought",
+        "Ocean freight and port charges",
+        "Rail and road freight inside India",
+        "Finance costs on cargoes",
+        "Stockyard storage and handling"
+      ],
+      "customersAndEndMarkets": "Coastal power plants, cement, sponge iron, steel, paper, textile and brick units, and small and medium factories.",
+      "demandSupplyDrivers": "Demand rises when domestic coal falls short or buyers need particular grades, and falls when local supply improves or import prices climb.",
+      "domesticInternationalExposure": "Strongly tied to international coal prices, ocean freight and the rupee, since most of the coal handled is imported.",
+      "capexIntensity": "Low",
+      "capexNote": "Trading needs little fixed investment beyond stockyards and handling equipment.",
+      "workingCapital": "Heavy: cargoes are financed through letters of credit and buyers often take credit, so borrowing lines matter.",
+      "regulation": "Light, general business regulation; imports follow customs and import policy, and stockyards need pollution control consents.",
+      "competitiveAdvantages": "Supplier relationships, access to trade finance and efficient port logistics set established traders apart.",
+      "drivers": [
+        { "factor": "Commodity prices", "impact": "Global coal prices change landed cost, buyer demand and the value of stock in hand." },
+        { "factor": "Currency (INR)", "impact": "Coal is bought in dollars, so a weaker rupee raises landed cost." },
+        { "factor": "Government policy", "impact": "The push to replace imports with domestic coal can shrink import volumes." },
+        { "factor": "Electricity demand", "impact": "Peak power demand lifts imported coal use by coastal plants." }
+      ],
+      "risks": [
+        { "risk": "Price swings", "detail": "Prices falling while a cargo is at sea can cause inventory losses." },
+        { "risk": "Thin margins", "detail": "Small spreads leave little room for cost overruns." },
+        { "risk": "Counterparty credit", "detail": "Late payments by buyers can strain bank lines." },
+        { "risk": "Policy shifts", "detail": "Import restrictions or blending mandates can change demand quickly." }
+      ],
+      "cyclicality": "Cyclical",
+      "cyclicalityNote": "Volumes and margins follow global coal prices and the domestic supply gap.",
+      "metricSet": "trading-distribution",
+      "relatedBasicIndustries": [
+        "b-coal",
+        "b-shipping",
+        "b-port-and-port-services",
+        "b-power-generation",
+        "b-sponge-iron"
+      ],
+      "aliases": [
+        "coal trading",
+        "coal import",
+        "imported coal",
+        "coal trader",
+        "coal supplier"
+      ],
+      "themes": []
+    },
+    {
+      "id": "b-power-generation",
+      "simplifiedExplanation": "These companies own power plants that make electricity from coal, gas, water, sun or wind and sell it to state electricity distributors, industries or power exchanges.",
+      "productsAndServices": [
+        "Thermal power from coal or gas",
+        "Hydroelectric power",
+        "Solar power",
+        "Wind power",
+        "Hybrid and round-the-clock renewable supply",
+        "Captive and group-captive power for industries",
+        "Battery and pumped-storage capacity"
+      ],
+      "valueChainPosition": "Upstream in the electricity chain: they buy fuel and equipment and sell power to distribution companies, industries and traders, using transmission networks to deliver it.",
+      "howTheyMakeMoney": "Most power is sold under long-term power purchase agreements, either cost-plus with a regulated return or at a fixed tariff won in bidding. Some is sold short-term on exchanges at market prices.",
+      "revenueSources": [
+        "Capacity (fixed) charges under PPAs",
+        "Energy charges per unit generated",
+        "Fixed-tariff renewable PPAs",
+        "Merchant and exchange sales",
+        "Renewable energy certificates and carbon credits"
+      ],
+      "operatingCosts": [
+        "Coal or gas (thermal plants)",
+        "Operation and maintenance",
+        "Employee costs",
+        "Interest on project debt",
+        "Depreciation",
+        "Transmission and scheduling charges"
+      ],
+      "customersAndEndMarkets": "State distribution companies are the main buyers, followed by industries buying open-access or captive power, power traders and exchanges.",
+      "demandSupplyDrivers": "Demand follows economic activity, summer cooling and farm pumping. Supply depends on new capacity, fuel availability and how much sun, wind and water is available.",
+      "domesticInternationalExposure": "Power is sold within India, but imported coal, gas and solar equipment tie costs to global prices and the rupee.",
+      "capexIntensity": "High",
+      "capexNote": "Each plant needs large upfront investment, usually funded with long-term debt.",
+      "workingCapital": "Can be stretched by slow payments from state distributors, though late-payment surcharge rules have improved collections; thermal plants also hold fuel stocks.",
+      "regulation": "CERC and SERCs set or approve tariffs under the Electricity Act; renewables follow central bidding guidelines, renewable purchase obligations and the ALMM list for solar modules; thermal plants must meet MoEFCC emission norms.",
+      "competitiveAdvantages": "Secure low-cost fuel, long-term PPAs, good sites with grid access and a strong execution record protect established generators.",
+      "drivers": [
+        { "factor": "Electricity demand", "impact": "Rising demand lifts plant load factors and short-term power prices." },
+        { "factor": "Government policy", "impact": "Renewable targets, bidding rules and payment security measures shape growth and returns." },
+        { "factor": "Commodity prices", "impact": "Coal, gas and solar module prices decide fuel cost and project cost." },
+        { "factor": "Interest rates", "impact": "Debt-heavy projects become more or less profitable as borrowing costs move." },
+        { "factor": "Regulation", "impact": "Tariff orders and return norms from CERC and SERCs set earnings on regulated plants." }
+      ],
+      "risks": [
+        { "risk": "Payment delays", "detail": "Late payments from state distributors tie up cash and raise borrowing." },
+        { "risk": "Fuel shortages", "detail": "Coal or gas supply gaps can cut output or force costly imports." },
+        { "risk": "Merchant price swings", "detail": "Uncontracted capacity earns less when exchange prices fall." },
+        { "risk": "Weather variability", "detail": "Weak wind, cloudy spells or poor rainfall reduce renewable and hydro output." },
+        { "risk": "Project delays", "detail": "Land, grid connection or approval delays push back new capacity." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Long-term PPAs give stable income, while merchant sales, fuel costs and new-project returns move with the power cycle.",
+      "metricSet": "power-generation",
+      "relatedBasicIndustries": [
+        "b-integrated-power-utilities",
+        "b-power-transmission",
+        "b-power-trading",
+        "b-coal",
+        "b-heavy-electrical-equipment"
+      ],
+      "aliases": [
+        "power producer",
+        "IPP",
+        "independent power producer",
+        "thermal power",
+        "renewable energy",
+        "solar power",
+        "wind power",
+        "hydro power",
+        "electricity generation",
+        "genco"
+      ],
+      "themes": ["Renewable energy", "Energy transition", "Infrastructure"]
+    },
+    {
+      "id": "b-integrated-power-utilities",
+      "simplifiedExplanation": "These companies run more than one part of the electricity business - typically making power and also supplying it to homes and businesses in licensed cities or areas, sometimes with transmission and trading as well.",
+      "productsAndServices": [
+        "Electricity supply to consumers in licensed areas",
+        "Power generation from thermal and renewable plants",
+        "Transmission lines",
+        "Distribution franchise services",
+        "Power trading",
+        "EPC and smart metering services (in some)"
+      ],
+      "valueChainPosition": "Span the chain from the power plant to the consumer's meter, buying fuel and extra power from others and selling directly to end users.",
+      "howTheyMakeMoney": "Regulated distribution and transmission earn an allowed return on equity through tariffs approved by regulators, while generation earns PPA or merchant income. Beating the regulator's efficiency and loss norms adds to profit.",
+      "revenueSources": [
+        "Retail electricity bills from consumers",
+        "Sale of power from own plants",
+        "Transmission charges",
+        "Franchise and trading income"
+      ],
+      "operatingCosts": [
+        "Power bought from other generators",
+        "Fuel for own plants",
+        "Network operation and maintenance",
+        "Employee costs",
+        "Interest and depreciation"
+      ],
+      "customersAndEndMarkets": "Households, shops, offices and factories inside licensed areas, plus state distributors and industries buying surplus generation.",
+      "demandSupplyDrivers": "Demand grows with urban consumption, commercial activity and hot weather; supply cost depends on own generation, fuel prices and power purchase contracts.",
+      "domesticInternationalExposure": "Mostly domestic; imported fuel and equipment link some costs to global coal prices and the rupee.",
+      "capexIntensity": "High",
+      "capexNote": "Generation, network upgrades and new connections all need continuous investment.",
+      "workingCapital": "Retail billing brings steady cash, but regulatory assets (approved costs not yet recovered through tariffs) can build up and need funding.",
+      "regulation": "SERCs approve retail tariffs and allowed returns, and CERC covers inter-state matters, under the Electricity Act; open access and cross-subsidy rules affect large customers.",
+      "competitiveAdvantages": "Distribution licences in dense cities, low-cost own generation and efficient networks with low losses are durable advantages.",
+      "drivers": [
+        { "factor": "Regulation", "impact": "Tariff orders and allowed returns from state regulators set core earnings." },
+        { "factor": "Electricity demand", "impact": "Growth in urban consumption increases units sold and network use." },
+        { "factor": "Commodity prices", "impact": "Fuel and purchased power costs hurt profits when tariff pass-through lags." },
+        { "factor": "Government policy", "impact": "Open access, licensing reforms and renewable mandates can reshape the customer base." },
+        { "factor": "Interest rates", "impact": "Large debt-funded capital spending makes borrowing costs important." }
+      ],
+      "risks": [
+        { "risk": "Regulatory assets", "detail": "Slow recovery of approved costs can strain cash flow." },
+        { "risk": "Open access losses", "detail": "Large industrial users may buy cheaper power directly from others." },
+        { "risk": "Fuel cost spikes", "detail": "Cost rises passed on with a delay hit near-term profit." },
+        { "risk": "Licence competition", "detail": "Reforms allowing several suppliers in one area could reduce exclusivity." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Regulated returns and essential demand keep earnings relatively stable.",
+      "metricSet": "power-networks",
+      "relatedBasicIndustries": [
+        "b-power-generation",
+        "b-power-distribution",
+        "b-power-transmission",
+        "b-power-trading"
+      ],
+      "aliases": [
+        "integrated utility",
+        "power utility",
+        "electricity company",
+        "distribution licensee",
+        "generation and distribution",
+        "private discom"
+      ],
+      "themes": ["Infrastructure", "Energy transition"]
+    },
+    {
+      "id": "b-power-trading",
+      "simplifiedExplanation": "These companies buy electricity from generators and sell it on to distribution companies, industries or neighbouring countries, acting as a middleman for a small fee on every unit.",
+      "productsAndServices": [
+        "Short-term bilateral power trading",
+        "Back-to-back long-term power sale arrangements",
+        "Cross-border electricity trade",
+        "Trading on power exchanges for clients",
+        "Green power and renewable certificate trading",
+        "Advisory on power procurement"
+      ],
+      "valueChainPosition": "Midstream intermediaries between generators (sellers) and distribution companies, industries and exchanges (buyers); they own little or no generation.",
+      "howTheyMakeMoney": "They earn a trading margin per unit traded, which CERC caps, plus late-payment surcharges and advisory fees.",
+      "revenueSources": [
+        "Trading margin on units sold",
+        "Late-payment surcharges",
+        "Cross-border trade income",
+        "Advisory and consulting fees"
+      ],
+      "operatingCosts": [
+        "Cost of power bought (largely passed through)",
+        "Employee costs",
+        "Interest on working capital",
+        "Provisions for bad debts"
+      ],
+      "customersAndEndMarkets": "State distribution companies, industrial and commercial open-access buyers, and utilities in neighbouring countries.",
+      "demandSupplyDrivers": "Volumes rise when demand outruns contracted supply or renewable output fluctuates, creating need for short-term balancing; growth of exchanges can take share from bilateral deals.",
+      "domesticInternationalExposure": "Mostly domestic, with some cross-border trade with neighbouring countries.",
+      "capexIntensity": "Low",
+      "capexNote": "Trading is asset-light and needs mainly working capital and trading systems.",
+      "workingCapital": "Heavy: traders often pay generators before collecting from state distributors, so receivables and borrowings can pile up.",
+      "regulation": "CERC grants trading licences, sets net-worth norms and caps trading margins under the Electricity Act; cross-border trade follows Ministry of Power guidelines.",
+      "competitiveAdvantages": "Long relationships with state utilities, a higher licence category and a balance sheet able to carry receivables protect larger traders.",
+      "drivers": [
+        { "factor": "Electricity demand", "impact": "Peak demand and supply gaps raise short-term traded volumes." },
+        { "factor": "Regulation", "impact": "CERC margin caps and market rules limit what can be earned per unit." },
+        { "factor": "Government policy", "impact": "Market coupling, exchange reforms and cross-border policies change how power is traded." },
+        { "factor": "Discom finances", "impact": "Weak state distributor finances raise the risk of delayed payments." }
+      ],
+      "risks": [
+        { "risk": "Receivable risk", "detail": "Slow payments by distributors can strain working capital." },
+        { "risk": "Margin caps", "detail": "Low regulated margins leave little cushion for losses." },
+        { "risk": "Exchange competition", "detail": "More trade moving to power exchanges can shrink bilateral volumes." },
+        { "risk": "Counterparty default", "detail": "A generator or buyer failing to perform leaves the trader exposed." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Volumes rise in tight power markets, but per-unit margins are small and regulated.",
+      "metricSet": "power-trading",
+      "relatedBasicIndustries": [
+        "b-exchange-and-data-platform",
+        "b-power-generation",
+        "b-power-distribution",
+        "b-integrated-power-utilities"
+      ],
+      "aliases": [
+        "electricity trading",
+        "power trader",
+        "short-term power",
+        "bilateral power trading",
+        "cross-border power",
+        "energy trading"
+      ],
+      "themes": []
+    },
+    {
+      "id": "b-power-transmission",
+      "simplifiedExplanation": "These companies build and run the high-voltage lines and substations that carry electricity from power plants across states to local distribution networks.",
+      "productsAndServices": [
+        "Inter-state transmission lines",
+        "Intra-state transmission lines",
+        "Substations",
+        "Green energy corridors for renewable power",
+        "Fibre leasing on transmission towers",
+        "Transmission consulting and project services"
+      ],
+      "valueChainPosition": "Midstream in the electricity chain: they connect generators to distributors, buying towers, conductors, transformers and cables from equipment makers.",
+      "howTheyMakeMoney": "Older assets earn a regulated return on equity under cost-plus tariffs set by CERC; projects won through competitive bidding earn a fixed yearly charge over a long concession, mainly for keeping lines available.",
+      "revenueSources": [
+        "Regulated or bid-based transmission charges",
+        "Incentives for high line availability",
+        "Consultancy and project fees",
+        "Telecom fibre leasing"
+      ],
+      "operatingCosts": [
+        "Operation and maintenance of lines and substations",
+        "Employee costs",
+        "Interest on project debt",
+        "Depreciation",
+        "Right-of-way and crop compensation during construction"
+      ],
+      "customersAndEndMarkets": "Grid users such as state distribution companies pay through a central pooling and billing mechanism, so state utilities are the ultimate payers.",
+      "demandSupplyDrivers": "New work comes from capacity additions, especially solar and wind in remote areas that need new corridors; earnings depend on line availability, not on how much power flows.",
+      "domesticInternationalExposure": "Operations are domestic; costs of conductors, towers and transformers follow global metal prices.",
+      "capexIntensity": "High",
+      "capexNote": "Each project needs heavy upfront spending on towers, lines and substations, recovered over decades.",
+      "workingCapital": "Light: pooled billing and payment security mechanisms support collections, though weaker states can still pay late.",
+      "regulation": "CERC sets inter-state tariffs and return norms and SERCs handle intra-state lines; new projects are awarded through tariff-based competitive bidding under Ministry of Power guidelines.",
+      "competitiveAdvantages": "Large operating networks, execution skill, low cost of capital and a strong availability record help win bids and earn incentives.",
+      "drivers": [
+        { "factor": "Infrastructure spending", "impact": "National transmission plans create a steady pipeline of projects to bid for." },
+        { "factor": "Government policy", "impact": "Renewable energy targets require large new corridors to connect solar and wind zones." },
+        { "factor": "Interest rates", "impact": "Lower borrowing costs improve returns on long-life, fixed-charge projects." },
+        { "factor": "Regulation", "impact": "Return norms and bidding rules decide project profitability." },
+        { "factor": "Electricity demand", "impact": "Higher demand and inter-regional power flows justify new lines and upgrades." }
+      ],
+      "risks": [
+        { "risk": "Right-of-way delays", "detail": "Land and forest issues can delay projects and raise costs." },
+        { "risk": "Aggressive bidding", "detail": "Winning bids at low tariffs can leave thin returns." },
+        { "risk": "Return resets", "detail": "Lower allowed returns at a tariff review cut earnings on regulated assets." },
+        { "risk": "Equipment costs", "detail": "Price rises for conductors and transformers can squeeze project margins." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Availability-based charges keep income stable whatever the power flow.",
+      "metricSet": "power-networks",
+      "relatedBasicIndustries": [
+        "b-power-distribution",
+        "b-power-generation",
+        "b-heavy-electrical-equipment",
+        "b-cables-electricals",
+        "b-civil-construction"
+      ],
+      "aliases": [
+        "transmission lines",
+        "power grid",
+        "transco",
+        "substations",
+        "TBCB",
+        "green energy corridor",
+        "high voltage transmission"
+      ],
+      "themes": ["Infrastructure", "Renewable energy"]
+    },
+    {
+      "id": "b-power-distribution",
+      "simplifiedExplanation": "These companies run the local wires, transformers and meters that deliver electricity to homes, shops and factories and bill customers for it; some also install and run smart meters for state utilities.",
+      "productsAndServices": [
+        "Retail electricity supply",
+        "Local distribution network operation",
+        "New connections and meter services",
+        "Smart metering under long service contracts",
+        "Distribution franchises",
+        "Network upgrade works"
+      ],
+      "valueChainPosition": "Downstream: they buy power from generators and traders, pay transmission charges and sell to end consumers.",
+      "howTheyMakeMoney": "Licensees earn an allowed return on regulated equity through tariffs approved by the state regulator, plus gains from cutting losses below targets. Smart metering firms earn a fixed monthly fee per meter over the contract.",
+      "revenueSources": [
+        "Consumer electricity bills",
+        "Regulated return on network investment",
+        "Smart metering service fees",
+        "Connection and service charges"
+      ],
+      "operatingCosts": [
+        "Power purchase (the largest cost)",
+        "Transmission charges",
+        "Network repairs and maintenance",
+        "Employee costs",
+        "Interest and depreciation on networks and meters"
+      ],
+      "customersAndEndMarkets": "Households, farmers, shops, offices and industries in the licence area; for smart metering, state distribution companies are the clients.",
+      "demandSupplyDrivers": "Units billed grow with urban and industrial use, summer cooling and farm pumping; profits depend on cutting technical and commercial losses and on timely tariff revisions.",
+      "domesticInternationalExposure": "Almost wholly domestic; meters and electronic parts may be imported.",
+      "capexIntensity": "High",
+      "capexNote": "Network strengthening, new connections and meter roll-outs need continuous investment.",
+      "workingCapital": "Monthly billing gives regular cash, but delayed state subsidies and regulatory assets can stretch working capital.",
+      "regulation": "SERCs set retail tariffs, loss targets and allowed returns under the Electricity Act; central schemes such as the Revamped Distribution Sector Scheme fund smart meters and loss reduction.",
+      "competitiveAdvantages": "An exclusive licence area, low loss levels and efficient billing and collection make good operators hard to displace.",
+      "drivers": [
+        { "factor": "Regulation", "impact": "Tariff orders and loss targets from state regulators decide earnings." },
+        { "factor": "Electricity demand", "impact": "Higher consumption increases units billed." },
+        { "factor": "Government policy", "impact": "Smart meter programmes, privatisation and franchise models create new opportunities." },
+        { "factor": "Technology change", "impact": "Smart meters and digital billing cut theft and improve collections." }
+      ],
+      "risks": [
+        { "risk": "Tariff delays", "detail": "Late or inadequate tariff revisions leave costs unrecovered." },
+        { "risk": "Subsidy dues", "detail": "Slow state subsidy payments for farm or household supply strain cash." },
+        { "risk": "Rooftop solar and open access", "detail": "Large users making or buying their own power can cut high-paying sales." },
+        { "risk": "Political pressure", "detail": "Promises of free or cheap power complicate tariff setting and collections." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Electricity is essential and returns are regulated, so earnings are relatively stable.",
+      "metricSet": "power-networks",
+      "relatedBasicIndustries": [
+        "b-power-transmission",
+        "b-integrated-power-utilities",
+        "b-other-electrical-equipment",
+        "b-cables-electricals",
+        "b-power-trading"
+      ],
+      "aliases": [
+        "discom",
+        "power distribution",
+        "electricity distribution",
+        "distribution licensee",
+        "smart meters",
+        "electricity supply",
+        "AMISP"
+      ],
+      "themes": ["Infrastructure", "Smart metering"]
+    },
+    {
+      "id": "b-water-supply-and-management",
+      "simplifiedExplanation": "These companies design, build and run plants and pipelines that clean, supply and recycle water - drinking water, sewage treatment, desalination and factory effluent treatment. Some also make the equipment and chemicals used.",
+      "productsAndServices": [
+        "Drinking water treatment plants",
+        "Sewage and wastewater treatment plants",
+        "Desalination plants",
+        "Industrial effluent treatment and zero liquid discharge systems",
+        "Water supply pipelines and pumping stations",
+        "Water treatment chemicals, resins and membranes",
+        "Operation and maintenance contracts"
+      ],
+      "valueChainPosition": "Midstream engineering and service providers: they buy pumps, pipes, membranes and civil works and deliver plants and services to municipal bodies, state water boards and industries.",
+      "howTheyMakeMoney": "They earn construction revenue as project milestones are met, recurring income from multi-year operation and maintenance contracts, and product margins on chemicals and equipment.",
+      "revenueSources": [
+        "EPC contracts for water and wastewater plants",
+        "Operation and maintenance fees",
+        "Hybrid annuity payments on public projects",
+        "Sales of chemicals, resins and membranes",
+        "Industrial water services"
+      ],
+      "operatingCosts": [
+        "Equipment and materials",
+        "Civil and subcontracting work",
+        "Engineering and site staff",
+        "Power and chemicals for running plants",
+        "Interest on project funding"
+      ],
+      "customersAndEndMarkets": "Municipal corporations, state water boards and central missions, and industries such as power, refining, steel, chemicals, pharma and textiles.",
+      "demandSupplyDrivers": "Demand comes from government water and sanitation programmes, urban growth, water scarcity and stricter discharge rules for factories; competition for tenders sets pricing.",
+      "domesticInternationalExposure": "Mainly domestic, though some players win overseas projects, often backed by multilateral funding; some membranes and equipment are imported.",
+      "capexIntensity": "Low",
+      "capexNote": "Engineering and construction work is asset-light, though annuity or build-operate projects need some equity investment.",
+      "workingCapital": "Heavy: public projects tie up cash in receivables, retention money and unbilled work, and payments depend on government budgets.",
+      "regulation": "Projects are funded under central missions such as Jal Jeevan Mission, AMRUT and Namami Gange; industrial discharge is governed by CPCB and state pollution control board norms.",
+      "competitiveAdvantages": "Treatment technology know-how, references from completed plants and pre-qualification for large tenders keep smaller players out of big projects.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Central and state water and sanitation missions drive project tenders." },
+        { "factor": "Infrastructure spending", "impact": "Urban infrastructure budgets set the pace of new plants and pipelines." },
+        { "factor": "Regulation", "impact": "Stricter discharge and water-reuse norms push factories to invest in treatment." },
+        { "factor": "Water scarcity", "impact": "Shortages in cities and industrial zones raise demand for recycling and desalination." },
+        { "factor": "Interest rates", "impact": "Funding costs matter for annuity-based projects and for carrying large receivables." }
+      ],
+      "risks": [
+        { "risk": "Payment delays", "detail": "Slow payments by municipal and state clients can strain cash flow." },
+        { "risk": "Fixed-price execution", "detail": "Cost overruns on fixed-price contracts eat into margins." },
+        { "risk": "Funding cuts", "detail": "Lower allocations to water missions can slow new orders." },
+        { "risk": "Bid competition", "detail": "Aggressive bidding for public tenders can push margins down." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Water is an essential need, but new orders follow government budgets and industrial capital spending.",
+      "metricSet": "utilities-other",
+      "relatedBasicIndustries": [
+        "b-waste-management",
+        "b-civil-construction",
+        "b-compressors-pumps-and-diesel-engines",
+        "b-specialty-chemicals",
+        "b-urban-local-bodies"
+      ],
+      "aliases": [
+        "water treatment",
+        "wastewater",
+        "sewage treatment",
+        "STP",
+        "ETP",
+        "desalination",
+        "water infrastructure",
+        "zero liquid discharge",
+        "ZLD"
+      ],
+      "themes": ["Infrastructure", "ESG"]
+    },
+    {
+      "id": "b-waste-management",
+      "simplifiedExplanation": "These companies collect, transport, treat and dispose of waste - city garbage, industrial and hazardous waste, hospital waste - and some recycle it into compost, fuel, energy or reusable materials.",
+      "productsAndServices": [
+        "Door-to-door municipal waste collection and transport",
+        "Waste processing and composting",
+        "Refuse-derived fuel and waste-to-energy plants",
+        "Engineered landfills and old dumpsite clearing (bio-mining)",
+        "Hazardous and biomedical waste treatment",
+        "Recycling of plastics, e-waste and batteries",
+        "Sewerage and wastewater projects (in some companies)"
+      ],
+      "valueChainPosition": "Downstream service providers to municipal bodies and industries, who also supply recovered materials, fuel or power to recyclers, cement plants and the grid.",
+      "howTheyMakeMoney": "They earn per-tonne or per-household fees under long municipal contracts, treatment charges from factories and hospitals, and income from selling compost, recyclables, fuel, power or EPR certificates.",
+      "revenueSources": [
+        "Collection and transport fees from municipalities",
+        "Tipping and processing fees",
+        "Industrial and biomedical treatment charges",
+        "Sale of recyclables, compost, refuse-derived fuel or power",
+        "EPR credits sold to producers"
+      ],
+      "operatingCosts": [
+        "Fleet fuel and maintenance",
+        "Labour for collection and sorting",
+        "Plant operation and power",
+        "Landfill and site costs",
+        "Interest and depreciation on vehicles and plants"
+      ],
+      "customersAndEndMarkets": "Urban local bodies, factories generating hazardous waste, hospitals, brand owners needing EPR compliance, and cement and power buyers of waste-derived fuel.",
+      "demandSupplyDrivers": "Demand grows with city populations, consumption and tighter enforcement of waste rules; contract wins depend on municipal tenders and budgets.",
+      "domesticInternationalExposure": "Largely domestic; prices of recovered plastics, metals and fuels can follow global commodity markets.",
+      "capexIntensity": "Medium",
+      "capexNote": "Collection fleets, processing plants and landfills need regular investment, often tied to contract terms.",
+      "workingCapital": "Heavy where municipalities pay late; receivables are the main pressure point, while inventory is small.",
+      "regulation": "The Solid Waste, Hazardous Waste, Bio-Medical Waste, Plastic Waste and E-Waste rules are enforced by CPCB and state pollution control boards; Swachh Bharat Mission funds city projects and EPR rules create recycling demand.",
+      "competitiveAdvantages": "Long municipal contracts, permitted treatment sites and pollution consents are hard to obtain and protect incumbents.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Swachh Bharat Mission and municipal budgets drive collection and processing contracts." },
+        { "factor": "Regulation", "impact": "Waste rules and EPR obligations make industries and brand owners pay for proper treatment and recycling." },
+        { "factor": "Urbanisation", "impact": "More city residents and higher consumption create more waste to handle." },
+        { "factor": "Commodity prices", "impact": "Prices of recycled plastics, metals and fuels affect income from recovered materials." }
+      ],
+      "risks": [
+        { "risk": "Municipal payment delays", "detail": "Late payments from city bodies strain working capital." },
+        { "risk": "Contract loss", "detail": "Losing a large city contract can sharply cut revenue." },
+        { "risk": "Local opposition", "detail": "Residents may oppose landfills or plants near their homes." },
+        { "risk": "Environmental liability", "detail": "Leaks, fires or non-compliance can bring penalties or closure." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Waste is produced every day regardless of the economic cycle.",
+      "metricSet": "utilities-other",
+      "relatedBasicIndustries": [
+        "b-water-supply-and-management",
+        "b-urban-local-bodies",
+        "b-power-generation",
+        "b-civil-construction"
+      ],
+      "aliases": [
+        "solid waste",
+        "MSW",
+        "garbage collection",
+        "waste to energy",
+        "recycling",
+        "biomedical waste",
+        "hazardous waste",
+        "EPR",
+        "landfill"
+      ],
+      "themes": ["ESG", "Circular economy"]
+    },
+    {
+      "id": "b-emergency-services",
+      "simplifiedExplanation": "This group covers businesses that provide emergency response, such as ambulance networks, emergency call and dispatch centres, and fire and rescue services, usually under contracts with governments or large institutions.",
+      "productsAndServices": [
+        "Emergency ambulance services",
+        "Patient transport services",
+        "Emergency call and dispatch centres",
+        "Fire and rescue services",
+        "Disaster response support",
+        "Industrial emergency response teams"
+      ],
+      "valueChainPosition": "Downstream service providers to state governments, health departments, hospitals and industries; they buy vehicles, medical equipment and communication systems.",
+      "howTheyMakeMoney": "They are usually paid a fixed monthly fee per vehicle, or per trip or kilometre, under multi-year government or institutional contracts, with deductions for missing response-time targets.",
+      "revenueSources": [
+        "Government service contracts",
+        "Per-trip or per-kilometre fees",
+        "Private and corporate emergency contracts",
+        "Training and consulting"
+      ],
+      "operatingCosts": [
+        "Paramedics, drivers and call-centre staff",
+        "Fuel and vehicle maintenance",
+        "Medical supplies and equipment",
+        "Dispatch and tracking technology",
+        "Vehicle depreciation and finance costs"
+      ],
+      "customersAndEndMarkets": "State governments and health departments, hospitals, industrial parks and corporates.",
+      "demandSupplyDrivers": "Demand depends on public health budgets, coverage targets set by states and the growing need for road and industrial safety response; contract terms are set through tenders.",
+      "domesticInternationalExposure": "A domestic, contract-driven business with little direct link to global markets.",
+      "capexIntensity": "Medium",
+      "capexNote": "Vehicle fleets and equipment need regular replacement, though some government clients supply the vehicles.",
+      "workingCapital": "Can be heavy because payments come from government budgets and may be delayed.",
+      "regulation": "Governed mainly by state health department contract terms and national health programme funding; vehicles and equipment must meet transport and medical standards.",
+      "competitiveAdvantages": "Experience running large fleets, dispatch technology and a record of meeting service levels help win and renew contracts.",
+      "drivers": [
+        { "factor": "Healthcare spending", "impact": "Central and state health budgets fund ambulance and emergency coverage." },
+        { "factor": "Government policy", "impact": "Public-private partnership models and coverage targets decide how many contracts are tendered." },
+        { "factor": "Road safety needs", "impact": "More vehicles and highways increase the need for fast emergency response." },
+        { "factor": "Crude oil prices", "impact": "Fuel costs hit margins when contracts lack fuel-price escalation." }
+      ],
+      "risks": [
+        { "risk": "Payment delays", "detail": "Late payments from state governments can strain cash flow." },
+        { "risk": "Contract renewal", "detail": "Losing a state tender can remove a large share of revenue." },
+        { "risk": "Service penalties", "detail": "Missing response-time targets leads to deductions from payments." },
+        { "risk": "Reputation risk", "detail": "Incidents of poor service attract public and political scrutiny." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Emergency services are essential and funded from government budgets.",
+      "metricSet": "utilities-other",
+      "relatedBasicIndustries": [
+        "b-healthcare-service-provider",
+        "b-hospital",
+        "b-diversified-commercial-services"
+      ],
+      "aliases": [
+        "ambulance services",
+        "emergency response",
+        "EMS",
+        "emergency medical services",
+        "fire and rescue",
+        "disaster management",
+        "dispatch centre"
+      ],
+      "themes": []
+    },
+    {
+      "id": "b-multi-utilities",
+      "simplifiedExplanation": "These companies provide more than one essential utility service together - for example electricity along with gas, water or waste services - often to a city, township, industrial park or special economic zone.",
+      "productsAndServices": [
+        "Electricity supply within parks or zones",
+        "Water supply and treatment",
+        "Piped gas supply",
+        "Sewage and waste handling",
+        "Steam, cooling or compressed air for industry",
+        "Operation and maintenance of utility networks"
+      ],
+      "valueChainPosition": "Downstream: they buy power, gas and water inputs and deliver bundled services to residents, businesses and factories in their service area.",
+      "howTheyMakeMoney": "They charge tariffs or service fees for each utility supplied, often at regulated rates or under long-term agreements with park developers and occupants.",
+      "revenueSources": [
+        "Electricity charges",
+        "Water and sewerage charges",
+        "Gas supply charges",
+        "Facility and utility service fees"
+      ],
+      "operatingCosts": [
+        "Purchased power, gas and water",
+        "Network maintenance",
+        "Employee costs",
+        "Interest and depreciation on networks"
+      ],
+      "customersAndEndMarkets": "Residents, commercial units and factories inside industrial parks, SEZs, townships or cities.",
+      "demandSupplyDrivers": "Demand grows as parks and townships fill with occupants; costs follow the input prices of power, gas and water.",
+      "domesticInternationalExposure": "Domestic, with input costs indirectly influenced by global fuel prices.",
+      "capexIntensity": "High",
+      "capexNote": "Building several utility networks at once needs large upfront investment.",
+      "workingCapital": "Usually moderate, since users are billed regularly; strain appears when occupancy is slow or tariffs lag costs.",
+      "regulation": "Each service is regulated separately: electricity by SERCs, piped gas by PNGRB, and water and waste by state and municipal rules and pollution control boards.",
+      "competitiveAdvantages": "Exclusive rights to serve a park or township and shared infrastructure across services give cost and access advantages.",
+      "drivers": [
+        { "factor": "Government policy", "impact": "Industrial park, SEZ and urban development policies create new service areas." },
+        { "factor": "Electricity demand", "impact": "Occupants' power use is often the largest source of revenue." },
+        { "factor": "Real estate cycle", "impact": "How fast parks and townships fill up decides network utilisation." },
+        { "factor": "Commodity prices", "impact": "Fuel and gas costs feed into input prices and margins." }
+      ],
+      "risks": [
+        { "risk": "Low occupancy", "detail": "Under-used networks earn little against high fixed costs." },
+        { "risk": "Multiple regulators", "detail": "Separate rules for each service add compliance and tariff risk." },
+        { "risk": "Tariff lag", "detail": "Rates that trail cost increases squeeze margins." }
+      ],
+      "cyclicality": "Defensive",
+      "cyclicalityNote": "Essential services with regular billing give stable demand once areas are occupied.",
+      "metricSet": "utilities-other",
+      "relatedBasicIndustries": [
+        "b-integrated-power-utilities",
+        "b-water-supply-and-management",
+        "b-lpg-cng-png-lng-supplier",
+        "b-waste-management"
+      ],
+      "aliases": [
+        "multi utility",
+        "multi-utility",
+        "integrated utilities",
+        "industrial park utilities",
+        "SEZ utilities",
+        "township utilities"
+      ],
+      "themes": ["Infrastructure"]
+    },
+    {
+      "id": "b-other-utilities",
+      "simplifiedExplanation": "A catch-all group for utility businesses that do not fit power, gas, water, waste or emergency services, such as industrial steam or cooling supply, street lighting and outsourced utility operations.",
+      "productsAndServices": [
+        "Industrial steam and process heat supply",
+        "District cooling and chilled water",
+        "Compressed air and other plant utilities",
+        "Operation and maintenance of utility assets",
+        "Metering and billing services",
+        "Street lighting services"
+      ],
+      "valueChainPosition": "Downstream service providers that buy fuel, power or equipment and deliver a utility service to factories, campuses, municipalities or communities.",
+      "howTheyMakeMoney": "They earn fees under long-term supply or service agreements, often a fixed capacity charge plus a usage-based charge.",
+      "revenueSources": [
+        "Fixed capacity or service charges",
+        "Usage-based charges",
+        "Operation and maintenance contracts",
+        "Project or installation fees"
+      ],
+      "operatingCosts": [
+        "Fuel and power",
+        "Equipment maintenance",
+        "Staff costs",
+        "Interest and depreciation"
+      ],
+      "customersAndEndMarkets": "Industrial clusters, campuses, commercial buildings, municipal bodies and government agencies.",
+      "demandSupplyDrivers": "Demand depends on industrial activity, urban infrastructure projects and customers' willingness to outsource utility needs instead of running them in-house.",
+      "domesticInternationalExposure": "Domestic, with fuel and equipment costs linked to global prices.",
+      "capexIntensity": "Medium",
+      "capexNote": "Plants and networks are often built for specific clients and paid back through long contracts.",
+      "workingCapital": "Moderate: regular billing under contracts, though public-sector clients may pay slowly.",
+      "regulation": "Depends on the service; pollution control consents and state or municipal rules usually apply, otherwise light, general business regulation.",
+      "competitiveAdvantages": "Long contracts with anchor customers and site-specific infrastructure make switching costly for clients.",
+      "drivers": [
+        { "factor": "Infrastructure spending", "impact": "Urban and industrial infrastructure creates demand for outsourced utility services." },
+        { "factor": "Government policy", "impact": "Energy-efficiency and clean-energy policies can favour shared utility systems." },
+        { "factor": "Commodity prices", "impact": "Fuel and power prices affect costs and depend on pass-through terms in contracts." },
+        { "factor": "Capacity utilisation", "impact": "Returns depend on how fully clients use the contracted capacity." }
+      ],
+      "risks": [
+        { "risk": "Customer concentration", "detail": "Reliance on a few anchor clients leaves revenue exposed to their slowdowns or closures." },
+        { "risk": "Cost pass-through", "detail": "Contracts that do not adjust for fuel costs can squeeze margins." },
+        { "risk": "Small scale", "detail": "Niche operators may struggle to raise funds and win large contracts." }
+      ],
+      "cyclicality": "Mixed",
+      "cyclicalityNote": "Contracted fees are steady, but demand from industrial clients follows the business cycle.",
+      "metricSet": "utilities-other",
+      "relatedBasicIndustries": [
+        "b-multi-utilities",
+        "b-water-supply-and-management",
+        "b-waste-management",
+        "b-power-distribution"
+      ],
+      "aliases": [
+        "other utility",
+        "utility services",
+        "district cooling",
+        "industrial steam",
+        "utility O&M",
+        "street lighting"
+      ],
+      "themes": []
+    }
+  ]
+}
