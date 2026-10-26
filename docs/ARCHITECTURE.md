@@ -16,7 +16,8 @@ signals can be explained, re-run and backtested.
 | `web/data/*.js` | Saved copy (`window.SB_DATA`, `SB_HISTORY`, ...) made by `tools/` - the fallback |
 | `api/*.js` | Vercel serverless functions (Node 18+, CommonJS) |
 | `api/_lib/` | Server-only code: provider adapters, cache, validation |
-| `tools/` | Offline pipelines (xlsx export, bundling, checks) |
+| `data/classification/` | NSE industry classification master + research notes (built into `web/data/industries.js` / `industry-profiles.js` by `tools/build_industry_data.js`; see docs/INDUSTRIES.md) |
+| `tools/` | Offline pipelines (xlsx export, industry data, bundling, checks) |
 | `tests/*.test.js` | `node --test` unit/integration tests |
 
 ## Data flow

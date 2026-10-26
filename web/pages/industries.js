@@ -1,7 +1,8 @@
-/* Industries & Sectors.
-   Routes: #industries            overview of all dashboard categories
+/* Industries & Sectors - dashboard groups.
+   Routes: #industries/groups     overview of all dashboard categories
            #industries/<id>       one category's own page
            #industries/review     classification review
+           (#industries itself and the official NSE hierarchy: web/pages/industry-explorer.js)
    Classification comes only from the NSE Sector / Basic Industry stored in
    the sheet's Main tab (SB.classify, applied in app.js prepare()); nothing is
    ever classified from a company name. Each stock is in exactly one
@@ -62,7 +63,7 @@
     var d = ui.parseDate(rdate);
     return d ? ui.dayDiff(d, ref) : null;
   }
-  function backLink() { return '<a href="#industries" class="sub">← All industries &amp; sectors</a>'; }
+  function backLink() { return '<a href="#industries/groups" class="sub">← All dashboard groups</a> · <a href="#industries" class="sub">Industry explorer</a>'; }
   function countBy(list, fn) {
     var m = {};
     list.forEach(function (s) { var k = fn(s); m[k] = (m[k] || 0) + 1; });
@@ -140,7 +141,7 @@
     var info = strategyInfo();
     var run = null, runErr = null;
 
-    var h = '<div class="page-head"><div><h1>Industries &amp; sectors</h1>' +
+    var h = '<div class="page-head"><div><a href="#industries" class="sub">← Industry explorer (official NSE hierarchy)</a><h1>Dashboard groups</h1>' +
       '<p>Every stock carries the NSE industry classification stored in the sheet\'s Main tab - one <b>Sector</b> and one <b>Basic Industry</b> ' +
       '(NSE Sector → Industry → Basic Industry). The dashboard groups these NSE values into ' + F.int(groups.length) +
       ' categories: banks, insurance, logistics, agri-inputs and packaging are picked out by basic industry, everything else follows the NSE sector. ' +
@@ -322,7 +323,7 @@
     if (!list.length) {
       el.innerHTML = '<div class="page-head"><div>' + backLink() + '<h1>' + esc(cat.name) + '</h1></div></div>' +
         '<div class="note">None of the ' + F.int(ctx.stocks.length) + ' watchlist stocks is in this category right now. ' +
-        'A stock lands here when its NSE Sector / Basic Industry in the Main tab maps to “' + esc(cat.name) + '”. <a href="#industries">Back to all categories</a>.</div>';
+        'A stock lands here when its NSE Sector / Basic Industry in the Main tab maps to “' + esc(cat.name) + '”. <a href="#industries/groups">Back to all categories</a>.</div>';
       return;
     }
     if (CAT.id !== id) { CAT.id = id; CAT.f = 'all'; CAT.q = ''; CAT.bi = ''; }
@@ -612,11 +613,15 @@
     apply();
   }
 
+  // #industries and the official-classification routes belong to the Industry Explorer
+  // (web/pages/industry-explorer.js); the dashboard groups live on at #industries/groups.
   SB.page('industries', {
     render: function (el, params, ctx) {
-      var p = params && params[0];
-      if (!p) renderOverview(el, ctx);
+      var p = params && params[0], X = SB.industryExplorer;
+      if (!p) { if (X) X.render(el, [], ctx); else renderOverview(el, ctx); }
+      else if (p === 'groups') renderOverview(el, ctx);
       else if (p === 'review') renderReview(el, ctx);
+      else if (X && X.ROUTES[p]) X.render(el, params, ctx);
       else renderCategory(el, ctx, p);
     }
   });

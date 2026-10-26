@@ -8,7 +8,7 @@ dashboard website (`web/`) built on the same rules.
 |---|---|
 | `Code.gs` | All Apps Script code (V8) - the authoritative engine |
 | `pcbridge/ScreenerBridge/` | Python bridge + .bat helpers (runs on the Windows PC) |
-| `web/` | Static dashboard: Overview, Watchlist, Daily Suggestions, Industries, Strategy Settings, Patterns & FVG, Excel Analysis, Results, Alerts & Trades, Backtesting, IPOs & Markets. Reads the sheet live through `api/site` (saved copy in `web/data/` as fallback) |
+| `web/` | Static dashboard: Overview, Watchlist, Daily Suggestions, Industries (official NSE 4-level explorer, docs/INDUSTRIES.md), Strategy Settings, Patterns & FVG, Excel Analysis, Results, Alerts & Trades, Backtesting, IPOs & Markets. Reads the sheet live through `api/site` (saved copy in `web/data/` as fallback) |
 | `web/lib/` | Engine modules (patterns, FVG, indicators, strategy, risk, backtest, classification, xlsx reader) - shared with the Node tests |
 | `api/` | Vercel functions: live site feed (`api/site`, from the sheet's web app) and market-data providers (Dhan / your sheet / none) |
 | `tools/` | `export_xlsx.py` (sheet export → web/data), `analyze_workbook.js`, `build.js` |

@@ -31,13 +31,13 @@ An id never changes when a name is corrected. Routes use the slug:
 
 `tools/build_industry_data.js` turns the master and the research notes into two site files:
 
-* `web/data/industries.js` (`window.SB_INDUSTRIES`, ~50 KB). Loaded on the Industries pages only.
+* `web/data/industries.js` (`window.SB_INDUSTRIES`, ~160 KB). Loaded on the Industries pages only.
   * `meta`: title, version, source, verification, counts, research-note coverage.
   * `macros[]` with `id, code, name, order, description`.
   * `sectors[]` with `id, macroId, name, order, description`.
   * `industries[]` with `id, sectorId, macroId, name, order, description, businessOverview, keyDemandDrivers, keyRisks`.
   * `basics[]` with `id, industryId, sectorId, macroId, name, order, aliases, themes, metricSet, cyclicality, hasProfile`.
-* `web/data/industry-profiles.js` (`window.SB_INDUSTRY_PROFILES`). Loaded only when a basic-industry page opens.
+* `web/data/industry-profiles.js` (`window.SB_INDUSTRY_PROFILES`, ~700 KB). Loaded only when a basic-industry page opens.
   It holds one research note per basic industry: explanation, products, value chain, revenue / cost model,
   customers, demand / supply drivers, exposure, capex, working capital, regulation, advantages, drivers, risks,
   cyclicality, metric set, related industries, aliases and thematic tags.
@@ -75,6 +75,25 @@ never change a stock's classification.
 
   This is **not** the AMFI list.
 * **BSE codes** and **ISIN** are not in the data. They are shown as "Data unavailable".
+
+## Pages (web/pages/industry-explorer.js)
+
+| Route | What it shows |
+|---|---|
+| `#industries` | Counts computed from the data (12 / 22 / 59 / 197, classified companies, research notes), search, hierarchy tree, industry performance, your industry watchlist |
+| `#industries/companies` | Every stock with combined filters: macro sector, sector, industry, basic industry (each list follows its parent), exchange, status, cap category, text; "Clear all filters"; CSV |
+| `#industries/macro/<slug>`, `/sector/<slug>`, `/industry/<slug>` | Breadcrumb, research note, children with median and breadth, performance, stocks (All / Large / Mid / Small / Other / Not verified) |
+| `#industries/basic/<slug>` | Overview, fundamentals, drivers & risks, industry metrics (KPI definitions + the fields Stock Blueprint has), listed stocks, comparison, strategy results, performance, related basic industries |
+| `#industries/groups`, `#industries/<category>`, `#industries/review` | The earlier 24 dashboard categories and the classification review (unchanged) |
+
+* **Search** (landing): all four levels, aliases, company names and NSE symbols; partial words and one or two typos;
+  keyboard: Up / Down / Enter / Esc. A company opens its basic industry and the stock panel.
+* **Tree**: expand / collapse per row, "Expand all / Collapse all", a filter box that keeps matching nodes and their
+  parents. Expanded rows are remembered in this browser (`sb:industry:tree`).
+* **Watchlist**: the ☆ on industry and basic-industry rows and pages. Saved in this browser only (`sb:industry:watch`).
+* **Periods**: 1D always; 1W / 1M after the daily candles load; 3M / 6M / 1Y are disabled with the reason
+  (the candle history is about 30 sessions).
+* Missing values are shown as "–" or "Data unavailable", never estimated.
 
 ## Industry analytics: methodology
 

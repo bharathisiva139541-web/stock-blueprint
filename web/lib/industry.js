@@ -134,17 +134,17 @@
 
   // ---------- market-cap bucket (Nifty index membership recorded in the Main tab) ----------
   var CAP = [
-    ['large', 'Large cap', /^(nifty50|niftynext50|nifty100)$/],
-    ['mid', 'Mid cap', /^(niftymidcap50|midcapnext100|niftymidcap150|midcap150|niftymidcap100)$/],
-    ['small', 'Small cap', /^(smallcap50|smallcap51250|smallcap250|niftysmallcap250|niftysmallcap50)$/],
-    ['micro', 'Micro cap', /^(microcap250|niftymicrocap250)$/],
-    ['sme', 'SME', /^(niftysme|sme|niftyemerge)$/]
+    { key: 'large', label: 'Large cap', re: /^(nifty50|niftynext50|nifty100)$/ },
+    { key: 'mid', label: 'Mid cap', re: /^(niftymidcap50|midcapnext100|niftymidcap150|midcap150|niftymidcap100)$/ },
+    { key: 'small', label: 'Small cap', re: /^(smallcap50|smallcap51250|smallcap250|niftysmallcap250|niftysmallcap50)$/ },
+    { key: 'micro', label: 'Micro cap', re: /^(microcap250|niftymicrocap250)$/ },
+    { key: 'sme', label: 'SME', re: /^(niftysme|sme|niftyemerge)$/ }
   ];
   var CAP_LABEL = { large: 'Large cap', mid: 'Mid cap', small: 'Small cap', micro: 'Micro cap', sme: 'SME', other: 'Other listed' };
   function capBucket(stock) {
     var parts = String((stock && stock.idx) || '').split(/[,;|/]+/).map(key).filter(Boolean);
     for (var k = 0; k < CAP.length; k++) {
-      for (var j = 0; j < parts.length; j++) if (CAP[k][2].test(parts[j])) return { key: CAP[k][0], label: CAP[k][1] };
+      for (var j = 0; j < parts.length; j++) if (CAP[k].re.test(parts[j])) return { key: CAP[k].key, label: CAP[k].label };
     }
     return { key: 'other', label: CAP_LABEL.other };
   }
