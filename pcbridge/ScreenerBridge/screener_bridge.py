@@ -200,12 +200,15 @@ def polite_sleep(cfg):
 
 # ------------------------------------------------------------- NSE price bands
 # NSE > All Reports > Equities & SME > "Price Band changes from next trade date (csv)".
-# Published every trading evening as eq_band_changes_DDMMYYYY.csv (DDMMYYYY = that day).
+# Published every trading evening as eq_band_changes_DDMMYYYY.csv where DDMMYYYY is the
+# NEXT trading day - the day the new bands apply (Monday evening's file carries Tuesday's
+# date). Below, "file date" = that date; the sheet gets the weekday before it as the
+# report date, exactly like a paste made on the evening it was published.
 PB_URLS = ('https://nsearchives.nseindia.com/content/equities/eq_band_changes_{d}.csv',
            'https://archives.nseindia.com/content/equities/eq_band_changes_{d}.csv')
 PB_REPORTS_API = 'https://www.nseindia.com/api/merged-daily-reports?key=favCapital'   # the All Reports page's own list
-PB_LOOKBACK_DAYS = 7     # catch up on days missed while the computer was off (older ones are skipped)
-PB_FIRST_DAYS = 3        # the very first run looks back only this many days
+PB_LOOKBACK_DAYS = 7     # catch up on files missed while the computer was off (older ones are skipped)
+PB_STATE_VERSION = 2     # 1 read the file date as the report date; a v1 state re-checks the last week once
 
 
 def nse_session():
@@ -330,16 +333,31 @@ def pb_save_state(st):
         log('Price bands: could not save %s (%s)' % (PB_STATE_PATH, e))
 
 
+def next_weekday(d):
+    d += timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
+def prev_weekday(d):
+    d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
 def pb_days_to_check(today, last):
-    """Weekdays after the last file the sheet received, up to today (at most PB_LOOKBACK_DAYS back)."""
+    """File dates still to fetch: weekdays after the last file the sheet received, up to two
+    trading days ahead (this evening's file carries the next trading day's date; after a
+    holiday it carries the day after). At most PB_LOOKBACK_DAYS back."""
     start = today - timedelta(days=PB_LOOKBACK_DAYS)
     if last:
         start = max(start, last + timedelta(days=1))
-    else:
-        start = max(start, today - timedelta(days=PB_FIRST_DAYS))
+    end = next_weekday(next_weekday(today))
     days = []
     d = start
-    while d <= today:
+    while d <= end:
         if d.weekday() < 5:
             days.append(d)
         d += timedelta(days=1)
@@ -347,10 +365,10 @@ def pb_days_to_check(today, last):
 
 
 def pb_send(cfg, day, rows, st):
-    """Hands one day's file to the sheet. True when the sheet filed it."""
+    """Hands one file (day = its file date, the day the bands apply) to the sheet. True when the sheet filed it."""
     label = day.strftime('%d-%m-%Y')
     try:
-        res = api(cfg, 'pricebands', {'reportDate': day.isoformat(), 'rows': rows}, timeout=180)
+        res = api(cfg, 'pricebands', {'reportDate': prev_weekday(day).isoformat(), 'rows': rows}, timeout=180)
     except RuntimeError as e:
         log('Price bands %s: sending to the sheet failed (%s) - the next run tries again.' % (label, e))
         return False
@@ -362,8 +380,11 @@ def pb_send(cfg, day, rows, st):
         log('Price bands %s: the sheet refused - %s' % (label, err))
         return False
     note = ', email sent' if res.get('emailed') else (', filed quietly (an older day)' if res.get('quiet') else '')
-    log('Price bands %s: %d change(s) from NSE, %d new on the sheet, %d in Main%s.'
+    if res.get('removed'):
+        note += ', %d repeated row(s) cleared' % res.get('removed')
+    log('Price bands from %s: %d change(s) from NSE, %d new on the sheet, %d in Main%s.'
         % (label, res.get('rows', 0), res.get('added', 0), res.get('inMain', 0), note))
+    st['v'] = PB_STATE_VERSION
     st['last'] = day.isoformat()
     st['last_sent_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
     pb_save_state(st)
@@ -378,17 +399,15 @@ def price_bands_step(cfg, today=None):
         st = pb_load_state()
         today = today or date.today()
         last = None
-        if st.get('last'):
+        if st.get('last') and st.get('v') == PB_STATE_VERSION:
             try:
                 last = date.fromisoformat(st['last'])
             except ValueError:
                 last = None
         days = pb_days_to_check(today, last)
-        if not days:
-            log('Price bands: up to date (last file %s).' % last.strftime('%d-%m-%Y'))
-            return
+        upcoming = next_weekday(today)          # this evening's file (or already out, after market close)
         opener = nse_session()
-        sent, problems, today_missing = 0, [], False
+        sent, problems, upcoming_missing = 0, [], False
         for i, d in enumerate(days):
             kind, val = pb_fetch(opener, d)
             if kind == 'ok':
@@ -396,25 +415,29 @@ def price_bands_step(cfg, today=None):
                     return
                 sent += 1
             elif kind == 'missing':
-                today_missing = today_missing or d == today
-            else:
+                upcoming_missing = upcoming_missing or d == upcoming
+            elif d <= upcoming:                 # a day further ahead is simply not out yet
                 problems.append('%s: %s' % (d.strftime('%d-%m-%Y'), val))
             if i < len(days) - 1:
                 time.sleep(1.5)
-        if not sent and (problems or today_missing):
+        if not sent and (problems or upcoming_missing):
             # the file address may have changed: look it up on NSE's All Reports list
             newer = [(d, u) for d, u in pb_links_from_api(opener) if (last is None or d > last) and d in days]
             for d, u in newer:
                 kind, val = pb_fetch(opener, d, url=u)
                 if kind == 'ok' and pb_send(cfg, d, val, st):
                     sent += 1
-        if today_missing and not sent:
-            log('Price bands: today\'s file is not on NSE yet - the next run tries again.')
+                    upcoming_missing = upcoming_missing and d != upcoming
         if problems and not sent:
             log('Price bands: could not download from NSE - %s. If this keeps happening, use the Priceband paste tab.'
                 % '; '.join(problems[-2:]))
-        elif not sent and not today_missing:
-            log('Price bands: no new file on NSE (holiday?).')
+        elif upcoming_missing:
+            log('Price bands: the file for %s (NSE publishes it in the evening) is not out yet - the next run tries again.'
+                % upcoming.strftime('%d-%m-%Y'))
+        elif not sent:
+            cur = st.get('last')
+            log('Price bands: up to date (latest file: bands from %s).'
+                % (date.fromisoformat(cur).strftime('%d-%m-%Y') if cur else '-'))
     except Exception as e:   # never let price bands stop the screener work
         log('Price bands: unexpected problem - %s' % e)
 
@@ -580,8 +603,8 @@ def cmd_test(cfg):
     try:
         opener = nse_session()
         found = None
-        d = date.today()
-        for _ in range(8):
+        d = next_weekday(date.today())
+        for _ in range(9):
             if d.weekday() < 5:
                 kind, val = pb_fetch(opener, d)
                 if kind == 'ok':
@@ -591,7 +614,7 @@ def cmd_test(cfg):
                     print('   %s: %s' % (d.strftime('%d-%m-%Y'), val))
             d -= timedelta(days=1)
         if found:
-            print('   OK - downloaded the file of %s (%d price band changes). Nothing was sent.'
+            print('   OK - downloaded the file with the bands from %s (%d price band changes). Nothing was sent.'
                   % (found[0].strftime('%d-%m-%Y'), len(found[1])))
         else:
             print('   PROBLEM - could not download a price band file from NSE (the screener part still works;'
