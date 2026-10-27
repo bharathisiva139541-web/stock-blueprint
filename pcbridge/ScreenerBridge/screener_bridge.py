@@ -474,6 +474,7 @@ EOD_FILES = {
 EOD_LINK_RE = {'bhav': r'sec_bhavdata_full_', 'w52': r'CM_52_wk_High_low_', 'bands': r'sec_list_'}
 EOD_SERIES = ('EQ', 'BE', 'BZ')     # mainboard equities (SME and other series are left out)
 EOD_LOOKBACK_DAYS = 7
+EOD_STATE_VERSION = 2       # 1 counted new 52-week highs from the report's date alone: a v1 state re-sends the last week once
 EOD_STATE_PATH = os.path.join(HERE, 'eod_state.json')
 _MONTHS3 = ('JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC')
 
@@ -529,7 +530,7 @@ def eod_date(v):
 
 
 def bhav_parse(raw):
-    """Full bhavcopy -> [{sym, series, prev, close, last, qty, deliv}] (deliv = Delivery %, None when NSE gives '-')."""
+    """Full bhavcopy -> [{sym, series, prev, close, last, qty, high, deliv}] (deliv = Delivery %, None when NSE gives '-')."""
     rows = _csv_rows(raw)
     if rows is None:
         return None
@@ -540,6 +541,7 @@ def bhav_parse(raw):
         return None
     h = [_pb_norm(x) for x in rows[i]]
     last_j = h.index('LASTPRICE') if 'LASTPRICE' in h else -1
+    high_j = h.index('HIGHPRICE') if 'HIGHPRICE' in h else -1
     qty_j = h.index('TTLTRDQNTY') if 'TTLTRDQNTY' in h else -1
     out = []
     for r in rows[i + 1:]:
@@ -548,7 +550,7 @@ def bhav_parse(raw):
         g = lambda j: r[j] if 0 <= j < len(r) else ''
         out.append({'sym': r[c['sym']].upper(), 'series': r[c['series']].upper(), 'prev': _fnum(r[c['prev']]),
                     'close': _fnum(r[c['close']]), 'last': _fnum(g(last_j)), 'qty': _fnum(g(qty_j)),
-                    'deliv': _fnum(r[c['deliv']])})
+                    'high': _fnum(g(high_j)), 'deliv': _fnum(r[c['deliv']])})
     return out
 
 
@@ -609,14 +611,22 @@ def eod_summary(day, bhav, w52, bands):
         hits = [_at_band(r['last'] if r['last'] is not None else r['close'], r['prev'], bands.get((r['sym'], r['series']))) for r in mb]
         stats['upper'], stats['lower'] = hits.count('upper'), hits.count('lower')
     closes = {r['sym']: r['close'] for r in mb}
+    day_high = {(r['sym'], r['series']): r['high'] for r in mb if r['high'] is not None}
     highs = []
     if w52 is not None:
-        stats['high52'] = sum(1 for (sym, ser), (hi, d) in w52.items() if ser in EOD_SERIES and d == day)
-        seen = set()
+        # NSE's report "effective for" a day can still hold the highs up to the day before, so a new
+        # 52-week high is the day's own high (bhavcopy) reaching the report's 52-week high.
+        seen, new = set(), 0
         for (sym, ser), (hi, d) in sorted(w52.items()):
-            if ser in EOD_SERIES and sym not in seen:
-                seen.add(sym)
-                highs.append([sym, hi, d.isoformat() if d else None, closes.get(sym)])
+            if ser not in EOD_SERIES or sym in seen:
+                continue
+            seen.add(sym)
+            h = day_high.get((sym, ser))
+            if h is not None and h >= hi:
+                hi, d = h, day
+            new += d == day
+            highs.append([sym, hi, d.isoformat() if d else None, closes.get(sym)])
+        stats['high52'] = new
     deliv = {r['sym']: round(r['deliv'], 2) for r in bhav if r['series'] == 'EQ' and r['deliv'] is not None}
     return {'tradeDate': day.isoformat(), 'stats': stats, 'delivery': deliv, 'high52': highs,
             'files': {'bhav': True, 'w52': w52 is not None, 'bands': bands is not None}}
@@ -706,7 +716,7 @@ def eod_step(cfg, today=None):
         today = today or date.today()
         last = None
         try:
-            last = date.fromisoformat(st['last']) if st.get('last') else None
+            last = date.fromisoformat(st['last']) if st.get('last') and st.get('v') == EOD_STATE_VERSION else None
         except ValueError:
             last = None
         days = eod_days_to_check(today, last)
@@ -761,6 +771,7 @@ def eod_step(cfg, today=None):
                    '-' if s['high52'] is None else s['high52'], '-' if s['upper'] is None else s['upper'],
                    '-' if s['lower'] is None else s['lower'], res.get('deliveryInMain', 0),
                    ('; not downloaded: ' + ', '.join(missing)) if missing else ''))
+            st['v'] = EOD_STATE_VERSION
             st['last'] = d.isoformat()
             st['last_sent_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
             eod_save_state(st)
