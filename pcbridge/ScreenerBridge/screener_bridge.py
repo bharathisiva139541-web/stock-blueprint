@@ -474,8 +474,9 @@ EOD_FILES = {
 EOD_LINK_RE = {'bhav': r'sec_bhavdata_full_', 'w52': r'CM_52_wk_High_low_', 'bands': r'sec_list_'}
 EOD_SERIES = ('EQ', 'BE', 'BZ')     # mainboard equities (SME and other series are left out)
 EOD_LOOKBACK_DAYS = 7
-EOD_STATE_VERSION = 3       # 1: new 52-week highs from the report's date alone; 2: counts of all NSE stocks (now: the sheet counts
-                            # its own Main stocks from 'day'). An older state re-sends the last week once.
+EOD_STATE_VERSION = 4       # 1: new 52-week highs from the report's date alone; 2: counts of all NSE stocks (now: the sheet counts
+                            # its own Main stocks from 'day'); 3: a day answered by the web app's older version (just after a
+                            # New version deploy) was taken as done. An older state re-sends the last week once.
 EOD_STATE_PATH = os.path.join(HERE, 'eod_state.json')
 _MONTHS3 = ('JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC')
 
@@ -788,11 +789,17 @@ def eod_step(cfg, today=None):
                            'Manage deployments > pencil > Version: New version > Deploy')
                 log('NSE end-of-day %s: the sheet refused - %s' % (label, err))
                 return
-            s = res.get('stats') or payload['stats']
+            if not res.get('stats'):
+                # the web app's older version (the deploy is not done, or Google still serves the old one for a
+                # minute after it): it did not count the Main stocks - send this day again next time
+                log('NSE end-of-day %s: the sheet answered with its older version (no Main-stock counts) - after pasting the new '
+                    'Code.gs do the New version deploy, or wait a minute; this day is sent again next run.' % label)
+                return
+            s = res['stats']
             missing = [n for n, k in (('52-week report', 'w52'), ('price band list', 'bands')) if not payload['files'][k]]
-            log('NSE end-of-day %s: %s%d stocks traded, %d up / %d down / %d unchanged, %s at a 52-week high, '
+            log('NSE end-of-day %s: your Main stocks - %d traded, %d up / %d down / %d unchanged, %s at a 52-week high, '
                 'circuits %s up / %s down; Delivery %% for %d in Main%s.'
-                % (label, 'your Main stocks - ' if res.get('stats') else 'all NSE - ', s['traded'], s['advances'], s['declines'], s['unchanged'],
+                % (label, s['traded'], s['advances'], s['declines'], s['unchanged'],
                    '-' if s['high52'] is None else s['high52'], '-' if s['upper'] is None else s['upper'],
                    '-' if s['lower'] is None else s['lower'], res.get('deliveryInMain', 0),
                    ('; not downloaded: ' + ', '.join(missing)) if missing else ''))
