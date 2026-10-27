@@ -25,6 +25,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py test       check the connection to the sheet, screener.in and NSE
   python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
+  python screener_bridge.py moneycontrol SYMBOL   show moneycontrol's latest quarterly results (test, nothing sent)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -46,6 +47,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
+from html import unescape as html_unescape
+from html.parser import HTMLParser
 from http.cookiejar import CookieJar
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -634,6 +637,212 @@ def ipo_step(cfg, today=None):
         log('IPO lists: unexpected problem - %s' % e)
 
 
+# ------------------------------------------------------------------ moneycontrol (test only, step 1)
+# moneycontrol.com often shows a quarter's results before screener.in. Step 1 only CHECKS from this
+# computer that a stock can be found and its quarterly results read - nothing is sent to the sheet.
+# moneycontrol has its own company codes (e.g. acutaaschemicals / AO05), found once per stock through
+# its search box; the NSE symbol in the search answer confirms the match.
+MC_SUGGEST = 'https://www.moneycontrol.com/mccode/common/autosuggestion_solr.php?classic=true&query={q}&type=1&format=json'
+MC_RESULT_URLS = (('consolidated', 'https://www.moneycontrol.com/financials/{slug}/results/consolidated-quarterly-results/{code}'),
+                  ('standalone', 'https://www.moneycontrol.com/financials/{slug}/results/quarterly-results/{code}'),
+                  ('new page', 'https://www.moneycontrol.com/markets/financials/quarterly-results/{slug}-{code}/'))
+MC_HOME = 'https://www.moneycontrol.com/'
+_QTR_RE = re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s'\-’]*(\d{2}|\d{4})$", re.I)
+MC_ROWS = (('revenue', ('net sales/income from operations', 'total income from operations', 'net sales', 'revenue from operations', 'total revenue', 'revenue')),
+           ('profit', ('net profit/(loss) for the period', 'net profit/(loss) after mi & associates', 'net profit', 'profit after tax', 'pat')),
+           ('eps', ('basic eps', 'eps', 'basic & diluted eps')))
+
+
+def mc_session():
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    try:
+        mc_get(opener, MC_HOME, timeout=20)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        pass
+    return opener
+
+
+def mc_get(opener, url, timeout=30):
+    """Returns (status, text). Network problems raise OSError/URLError."""
+    req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': 'text/html,application/json;q=0.9,*/*;q=0.8',
+                                               'Accept-Language': 'en-US,en;q=0.9', 'Accept-Encoding': 'identity',
+                                               'Referer': MC_HOME})
+    try:
+        with opener.open(req, timeout=timeout) as r:
+            raw, status = r.read(), r.status
+    except urllib.error.HTTPError as e:
+        return e.code, ''
+    if raw[:2] == b'\x1f\x8b':
+        raw = gzip.decompress(raw)
+    return status, raw.decode('utf-8', errors='replace')
+
+
+def _strip_tags(t):
+    return html_unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', str(t or '')))).strip()
+
+
+def mc_lookup(opener, sym):
+    """NSE symbol -> {'code', 'slug', 'name', 'link'} or None, plus a note of what happened."""
+    sym = sym.strip().upper()
+    try:
+        status, text = mc_get(opener, MC_SUGGEST.format(q=urllib.parse.quote(sym)))
+    except (OSError, urllib.error.URLError, socket.timeout) as e:
+        return None, 'search did not answer (%s)' % e
+    if status != 200:
+        return None, 'search: HTTP %s' % status
+    m = re.search(r'\[.*\]', text, re.S)         # plain JSON or wrapped as suggest1([...])
+    try:
+        items = json.loads(m.group(0)) if m else []
+    except ValueError:
+        return None, 'search answer was not readable (starts: %s)' % _strip_tags(text)[:80]
+    found = []
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict):
+            continue
+        link = str(it.get('link_src') or it.get('link') or '')
+        lm = re.search(r'/stockpricequote/[^/]+/([^/]+)/([^/?#]+)', link)
+        info = _strip_tags(it.get('pdt_dis_nm', '')) + ' ' + _strip_tags(it.get('stock_name', ''))
+        codes = [c.strip().upper() for c in re.split(r'[,\s]+', info)]
+        if lm:
+            found.append((sym in codes, {'code': lm.group(2), 'slug': lm.group(1), 'name': _strip_tags(it.get('stock_name', '')) or lm.group(1), 'link': link, 'info': info}))
+    exact = [f[1] for f in found if f[0]]
+    if exact:
+        return exact[0], 'found by NSE symbol'
+    if found:
+        return None, '%d match(es), none listed with NSE symbol %s (first: %s)' % (len(found), sym, found[0][1]['info'][:80])
+    return None, 'no match on moneycontrol'
+
+
+class _Tables(HTMLParser):
+    """Every <table> as rows of cell texts."""
+    def __init__(self):
+        HTMLParser.__init__(self)
+        self.tables, self._row, self._cell, self._depth = [], None, None, 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'table':
+            self._depth += 1
+            self.tables.append([])
+        elif tag == 'tr' and self._depth:
+            self._row = []
+        elif tag in ('td', 'th') and self._row is not None:
+            self._cell = []
+
+    def handle_endtag(self, tag):
+        if tag in ('td', 'th') and self._cell is not None and self._row is not None:
+            self._row.append(re.sub(r'\s+', ' ', ''.join(self._cell)).strip())
+            self._cell = None
+        elif tag == 'tr' and self._row is not None:
+            if self._row and self.tables:
+                self.tables[-1].append(self._row)
+            self._row = None
+        elif tag == 'table' and self._depth:
+            self._depth -= 1
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data)
+
+
+def _qlabel(t):
+    m = _QTR_RE.match(t.strip())
+    if not m:
+        return None
+    y = int(m.group(2))
+    return '%s %d' % (m.group(1).title()[:3], y + 2000 if y < 100 else y)
+
+
+def _num(t):
+    t = str(t or '').replace(',', '').strip()
+    if t.startswith('(') and t.endswith(')'):
+        t = '-' + t[1:-1]
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def mc_parse(html):
+    """Quarterly results table -> {'quarters': ['Sep 2026', ...], 'revenue': [...], 'profit': [...], 'eps': [...], 'labels': [...]}
+    (newest first), or None plus the row labels seen."""
+    p = _Tables()
+    try:
+        p.feed(html)
+    except Exception:          # malformed page: use what was read
+        pass
+    labels_seen = []
+    for tb in p.tables:
+        hdr_i, quarters, cols = -1, [], []
+        for i, row in enumerate(tb[:6]):
+            qs = [(j, _qlabel(c)) for j, c in enumerate(row)]
+            qs = [x for x in qs if x[1]]
+            if len(qs) >= 2:
+                hdr_i, cols, quarters = i, [x[0] for x in qs], [x[1] for x in qs]
+                break
+        labels_seen += [r[0] for r in tb if r and r[0]][:15]
+        if hdr_i < 0:
+            continue
+        out = {'quarters': quarters, 'labels': [r[0] for r in tb[hdr_i + 1:] if r and r[0]]}
+        for key, names in MC_ROWS:
+            for name in names:
+                row = next((r for r in tb[hdr_i + 1:] if r and r[0].strip().lower().rstrip(':') == name), None)
+                if row is None:
+                    row = next((r for r in tb[hdr_i + 1:] if r and r[0].strip().lower().startswith(name)), None)
+                if row is not None:
+                    shift = len(row) - len(tb[hdr_i])        # rows may lack the header's first cell
+                    out[key] = [_num(row[j + shift]) if 0 <= j + shift < len(row) else None for j in cols]
+                    break
+        if out.get('revenue') or out.get('profit'):
+            return out, labels_seen
+    return None, labels_seen
+
+
+def _growth(vals, a, b):
+    if not vals or len(vals) <= b or vals[a] is None or vals[b] in (None, 0):
+        return None
+    return (vals[a] / vals[b] - 1) * 100 * (1 if vals[b] > 0 else -1)
+
+
+def mc_check(sym, out=print):
+    """Test only: find the stock on moneycontrol and read its latest quarters. Returns True when figures were read."""
+    opener = mc_session()
+    hit, note = mc_lookup(opener, sym)
+    if not hit:
+        out('   %s: PROBLEM - %s' % (sym, note))
+        return False
+    out('   %s: found %s (moneycontrol code %s / %s)' % (sym, hit['name'], hit['slug'], hit['code']))
+    for kind, tmpl in MC_RESULT_URLS:
+        url = tmpl.format(slug=hit['slug'], code=hit['code'])
+        try:
+            status, html = mc_get(opener, url)
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            out('   %s results: did not answer (%s)' % (kind, e))
+            continue
+        if status != 200:
+            out('   %s results: HTTP %s' % (kind, status))
+            continue
+        res, seen = mc_parse(html)
+        if not res:
+            title = re.search(r'<title[^>]*>(.*?)</title>', html, re.S | re.I)
+            qs = sorted(set(_qlabel(m.group(0)) for m in re.finditer(r"(Mar|Jun|Sep|Dec)[a-z]*[\s'\-’]*\d{2,4}\b", html)) - {None})
+            out('   %s results: page read (%d KB, title "%s") but no results table found; quarters mentioned: %s; rows seen: %s'
+                % (kind, len(html) // 1024, _strip_tags(title.group(1))[:60] if title else '-', ', '.join(qs[-6:]) or 'none',
+                   '; '.join(seen[:8]) or 'none'))
+            if '__NEXT_DATA__' in html:
+                out('      (the page carries its data as __NEXT_DATA__ - step 2 can read that)')
+            continue
+        q, rev, pr, eps = res['quarters'], res.get('revenue') or [], res.get('profit') or [], res.get('eps') or []
+        fmt = lambda v: '-' if v is None else '{:,.0f}'.format(v)
+        pct = lambda v: '-' if v is None else '%+.0f%%' % v
+        out('   %s results: OK - quarters %s' % (kind, ', '.join(q[:5])))
+        out('      latest %s: revenue %s Cr (QoQ %s, YoY %s) · net profit %s Cr (QoQ %s, YoY %s) · EPS %s'
+            % (q[0], fmt(rev[0] if rev else None), pct(_growth(rev, 0, 1)), pct(_growth(rev, 0, 4)),
+               fmt(pr[0] if pr else None), pct(_growth(pr, 0, 1)), pct(_growth(pr, 0, 4)), '-' if not eps or eps[0] is None else eps[0]))
+        out('      rows on the page: %s' % '; '.join(res['labels'][:10]))
+        return True
+    return False
+
+
 # ------------------------------------------------------------------- the run
 def acquire_lock():
     try:
@@ -837,6 +1046,12 @@ def cmd_test(cfg):
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
+    print('5) moneycontrol from this computer (test only) ...')
+    try:
+        mc_check('TCS', out=print)
+        print('   (nothing was sent)')
+    except Exception as e:
+        print('   PROBLEM - %s' % e)
     return 0 if ok else 1
 
 
@@ -967,6 +1182,12 @@ def main(argv):
         return run_once(cfg)
     if cmd == 'test':
         return cmd_test(cfg)
+    if cmd == 'moneycontrol':
+        syms = [a for a in argv[2:] if a.strip()] or ['TCS']
+        print('moneycontrol test (nothing is sent to the sheet)')
+        for sym in syms:
+            mc_check(sym, out=print)
+        return 0
     if cmd == 'ipos':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
