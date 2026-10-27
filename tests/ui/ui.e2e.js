@@ -108,7 +108,7 @@ async function pageState(page) {
   });
 }
 
-const PAGES = ['overview', 'watchlist', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
+const PAGES = ['overview', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
   'strategy', 'signals', 'excel', 'results', 'alerts', 'backtest', 'markets'];
 let failures = 0;
@@ -179,7 +179,7 @@ function check(name, fn) {
           await page.keyboard.press('Enter');
           await page.waitForFunction(() => location.hash === '#industries/basic/public-sector-bank' && document.querySelector('#ix-bstocks tbody'), null, { timeout: 15000 });
           await page.waitForFunction(() => !document.querySelector('#drawer').hidden, null, { timeout: 5000 });
-          assert.strictEqual(await page.$eval('#drawer-title', (h) => h.textContent), 'SBIN');
+          assert.strictEqual(await page.$eval('#drawer-title', (h) => h.firstChild.textContent), 'SBIN');
           await page.keyboard.press('Escape');
           // basic page: 4 hierarchy links, only its own stocks, strategy statuses from the engine run
           const lv = await page.$$eval('.ix-crumbs a[data-lv]', (a) => a.map((x) => x.getAttribute('data-lv')));
@@ -250,6 +250,66 @@ function check(name, fn) {
           await page.click('[data-chip="pbv"][data-v="all"]');
           const all = await page.$eval('#pb-count', (x) => x.textContent);
           assert.ok(/^([\d,]+) of \1$/.test(all), 'all days: ' + all);
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
+        await check('my watchlists: star, create, no duplicates, rename, search, delete, kept after reload', async () => {
+          errors.length = 0;
+          await page.goto(base + '#watchlist', { waitUntil: 'load' });
+          await page.waitForSelector('#app table.tbl .wl-star', { timeout: 15000 });
+          const sym = await page.$eval('#app table.tbl .wl-star', (x) => x.getAttribute('data-wl'));
+          const star = '#app table.tbl .wl-star[data-wl="' + sym + '"]';
+          await page.click(star);
+          await page.waitForSelector('.wl-pop');
+          await page.fill('#wl-pop-name', 'Swing trades');
+          await page.press('#wl-pop-name', 'Enter');
+          await page.waitForFunction((s) => document.querySelector(s).classList.contains('on'), star);
+          assert.strictEqual(await page.$eval(star, (x) => x.textContent), '★');
+          await page.keyboard.press('Escape');
+          assert.strictEqual(await page.$('.wl-pop'), null, 'Escape closes the popover');
+          // the drawer has the same star
+          await page.click('#app table.tbl button[data-sym="' + sym + '"]');
+          await page.waitForSelector('#drawer-title .wl-star.on');
+          await page.keyboard.press('Escape');
+          await page.goto(base + '#lists', { waitUntil: 'load' });
+          await page.waitForSelector('.wl-names');
+          await page.fill('#wl-add-in', 'TCS, infy, TCS, ' + sym);
+          await page.press('#wl-add-in', 'Enter');
+          await page.waitForFunction(() => /already in this watchlist/.test(document.querySelector('.wl-msg').textContent));
+          const syms = await page.$$eval('#wl-table tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym')).sort());
+          assert.deepStrictEqual(syms, [sym, 'INFY', 'TCS'].sort(), 'each stock once');
+          await page.fill('#wl-new', 'Long term');
+          await page.press('#wl-new', 'Enter');
+          await page.fill('#wl-new', 'swing  TRADES');
+          await page.press('#wl-new', 'Enter');
+          await page.waitForFunction(() => /already exists/.test(document.querySelector('.wl-msg').textContent));
+          assert.strictEqual(await page.$$eval('.wl-name', (x) => x.length), 2, 'no duplicate watchlist');
+          // rename the selected one (Long term)
+          await page.click('#wl-rename-btn');
+          await page.fill('#wl-rename-in', 'Long-term holds');
+          await page.press('#wl-rename-in', 'Enter');
+          await page.waitForFunction(() => [...document.querySelectorAll('.wl-name-t')].some((x) => x.textContent === 'Long-term holds'));
+          // search by name and by a symbol inside
+          await page.fill('#wl-q', 'hold');
+          await page.waitForFunction(() => document.querySelectorAll('.wl-name').length === 1);
+          await page.fill('#wl-q', 'TCS');
+          await page.waitForFunction(() => document.querySelectorAll('.wl-name').length === 1 && /Swing trades/.test(document.querySelector('.wl-name').textContent));
+          await page.fill('#wl-q', '');
+          await page.waitForFunction(() => document.querySelectorAll('.wl-name').length === 2);
+          // kept after a reload (localStorage)
+          await page.reload({ waitUntil: 'load' });
+          await page.waitForSelector('.wl-names');
+          const names = await page.$$eval('.wl-name', (x) => x.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
+          assert.deepStrictEqual(names, ['Long-term holds 0', 'Swing trades 3']);
+          // remove a stock, then delete a watchlist (with a confirm step)
+          await page.click('[data-wl-pick]:not(.on)');
+          await page.click('[data-wl-rm="TCS"]');
+          await page.waitForFunction(() => document.querySelectorAll('#wl-table tbody button[data-sym]').length === 2);
+          await page.click('#wl-del');
+          await page.click('#wl-del-yes');
+          await page.waitForFunction(() => document.querySelectorAll('.wl-name').length === 1);
+          const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('sb:watchlists')));
+          assert.deepStrictEqual(stored.lists.map((l) => [l.name, l.syms.length]), [['Long-term holds', 0]]);
+          await page.evaluate(() => localStorage.removeItem('sb:watchlists'));
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         await check('daily suggestions match the engine run', async () => {

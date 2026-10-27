@@ -14,7 +14,7 @@
   var PAGES = SB.pages;            // filled by web/pages/*.js via SB.page()
 
   var NAV = [
-    ['overview', 'Overview'], ['watchlist', 'Watchlist'], ['suggestions', 'Daily Suggestions'],
+    ['overview', 'Overview'], ['watchlist', 'Watchlist'], ['lists', 'My Watchlists'], ['suggestions', 'Daily Suggestions'],
     ['industries', 'Industries & Sectors'], ['strategy', 'Strategy Settings'], ['signals', 'Patterns & FVG'],
     ['excel', 'Excel Analysis'], ['results', 'Results & Events'], ['alerts', 'Alerts & Trades'],
     ['backtest', 'Backtesting'], ['markets', 'IPOs & Markets']
@@ -415,10 +415,10 @@
     var body = $('#drawer-body');
     var h;
     if (!s) {
-      h = '<h2 id="drawer-title">' + esc(sym) + '</h2><p class="sub">Not in the Main watchlist.</p>';
+      h = '<h2 id="drawer-title" class="sym-line">' + esc(sym) + (SB.wlStar ? SB.wlStar(sym) : '') + '</h2><p class="sub">Not in the Main watchlist.</p>';
     } else {
       var tags = [s.sig ? 'TTM Signal: ' + s.sig : '', s.pat, s.fvg, s.e10, s.e21, s.zone].filter(Boolean);
-      h = '<div class="stock" style="padding-right:44px">' + ui.logoHtml(s.sym, 'lg') + '<div><h2 id="drawer-title">' + esc(s.sym) + '</h2>' +
+      h = '<div class="stock" style="padding-right:44px">' + ui.logoHtml(s.sym, 'lg') + '<div><h2 id="drawer-title" class="sym-line">' + esc(s.sym) + (SB.wlStar ? SB.wlStar(s.sym) : '') + '</h2>' +
         '<p class="sub">' + esc(s.name || '') + ' · ' + esc(s.exchange) + '</p></div></div>' +
         '<div style="display:flex;align-items:baseline;gap:12px;margin-top:12px;flex-wrap:wrap"><span style="font-size:28px;font-weight:600">' + F.price(s.price) +
         '</span>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div>' +
