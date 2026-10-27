@@ -75,8 +75,15 @@ assert p['delivery'] == {'TCS': 61.23, 'UPCIR': 80.0, 'FLAT': 50.0, 'NOBAND': 50
 assert p['high52'] == [['FLAT', 51.0, '2026-10-27', 50.0], ['LOWCIR', 45.0, '2025-12-02', 19.0], ['NOBAND', 1200.0, '2026-10-27', 1199.0],
                        ['TCS', 4500.0, '2026-01-10', 3948.0], ['UPCIR', 105.0, '2026-10-27', 104.9]], p['high52']
 assert p['files'] == {'bhav': True, 'w52': True, 'bands': True}
+# every traded stock's day, for the sheet to count its own Main stocks: [close, % change, move, circuit, new 52W high, series]
+assert p['day'] == {'TCS': [3948.0, 1.23, 1, '', 0, 'EQ'], 'UPCIR': [104.9, 4.9, 1, 'U', 1, 'EQ'], 'LOWCIR': [19.0, -5.0, -1, 'L', 0, 'BE'],
+                    'FLAT': [50.0, 0.0, 0, '', 1, 'EQ'], 'NOBAND': [1199.0, 19.9, 1, '', 1, 'EQ'], 'SMEX': [10.5, 5.0, 1, '', 1, 'SM'],
+                    'GOLDBEES': [59.5, -0.83, -1, '', 0, 'EQ']}, p['day']
+two = sb.bhav_parse((BHAV + 'TCS, BL, 27-Oct-2026, 3900.00, 3900.00, 3900.00, 3900.00, 3900.00, 3800.00, 3900.00, 10, 0.39, 1, 10, 100.00\r\n').encode())
+assert sb.eod_day_rows(DAY, two, None, None)['TCS'] == [3948.0, 1.23, 1, '', 0, 'EQ'], 'the mainboard series wins'
 q = sb.eod_summary(DAY, bhav, None, None)
 assert (q['stats']['high52'], q['stats']['upper'], q['stats']['lower'], q['high52']) == (None, None, None, []), q
+assert q['day']['UPCIR'] == [104.9, 4.9, 1, '', 0, 'EQ'], 'no band list / 52-week report: no circuit, no new high'
 assert q['files'] == {'bhav': True, 'w52': False, 'bands': False}
 
 # ---------------------------------------------------------------- the step against a pretend NSE
@@ -121,7 +128,12 @@ SENT, REPLY = [], {}
 def fake_api(cfg, action, payload=None, timeout=120, tries=3):
     assert action == 'eod', action
     SENT.append(payload)
-    return REPLY.get('r') or {'ok': True, 'tradeDate': payload['tradeDate'], 'deliveryInMain': 3, 'newHighs': payload['stats']['high52']}
+    if REPLY.get('r'):
+        return REPLY['r']
+    out = {'ok': True, 'tradeDate': payload['tradeDate'], 'deliveryInMain': 3, 'newHighs': payload['stats']['high52']}
+    if payload['files']['w52']:        # the sheet answers with its own Main stocks' counts
+        out['stats'] = {'traded': 4, 'advances': 2, 'declines': 1, 'unchanged': 1, 'high52': 2, 'upper': 1, 'lower': 0}
+    return out
 
 
 sb.api = fake_api
@@ -137,9 +149,10 @@ sb.eod_step(CFG, today=DAY)
 assert [x['tradeDate'] for x in SENT] == ['2026-10-20', '2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
 assert SENT[3]['files'] == {'bhav': True, 'w52': False, 'bands': True} and SENT[3]['stats']['high52'] is None
 log = '\n'.join(LOGS)
-assert ('NSE end-of-day 27-10-2026: 6 stocks traded, 3 up / 2 down / 1 unchanged, 3 at a 52-week high, circuits 1 up / 1 down; '
+assert ('NSE end-of-day 27-10-2026: your Main stocks - 4 stocks traded, 2 up / 1 down / 1 unchanged, 2 at a 52-week high, circuits 1 up / 0 down; '
         'Delivery % for 3 in Main.') in log, log
-assert 'NSE end-of-day 26-10-2026: 6 stocks traded, 3 up / 2 down / 1 unchanged, - at a 52-week high, circuits 1 up / 1 down; Delivery % for 3 in Main; not downloaded: 52-week report.' in log, log
+assert ('NSE end-of-day 26-10-2026: all NSE - 6 stocks traded, 3 up / 2 down / 1 unchanged, - at a 52-week high, circuits 1 up / 1 down; '
+        'Delivery % for 3 in Main; not downloaded: 52-week report.') in log, log
 assert sb.eod_load_state()['last'] == '2026-10-27'
 
 # the next run: nothing new

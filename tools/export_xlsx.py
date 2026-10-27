@@ -350,6 +350,8 @@ def export(path):
     # NSE end-of-day (PC bridge): market statistics, 52-week highs, Delivery %
     if 'Market Statistics' in wb.sheetnames:
         data['marketStats'] = note_table(rows_of(wb['Market Statistics']), 'Date', stop_blank=False)
+    if 'Market Day' in wb.sheetnames:
+        data['marketDay'] = note_table(rows_of(wb['Market Day']), 'Symbol', stop_blank=False)
     if '52 Week High' in wb.sheetnames:
         data['high52'] = note_table(rows_of(wb['52 Week High']), 'Symbol', stop_blank=False)
     if 'Delivery %' in wb.sheetnames:

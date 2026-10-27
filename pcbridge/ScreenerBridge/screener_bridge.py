@@ -474,7 +474,8 @@ EOD_FILES = {
 EOD_LINK_RE = {'bhav': r'sec_bhavdata_full_', 'w52': r'CM_52_wk_High_low_', 'bands': r'sec_list_'}
 EOD_SERIES = ('EQ', 'BE', 'BZ')     # mainboard equities (SME and other series are left out)
 EOD_LOOKBACK_DAYS = 7
-EOD_STATE_VERSION = 2       # 1 counted new 52-week highs from the report's date alone: a v1 state re-sends the last week once
+EOD_STATE_VERSION = 3       # 1: new 52-week highs from the report's date alone; 2: counts of all NSE stocks (now: the sheet counts
+                            # its own Main stocks from 'day'). An older state re-sends the last week once.
 EOD_STATE_PATH = os.path.join(HERE, 'eod_state.json')
 _MONTHS3 = ('JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC')
 
@@ -628,8 +629,32 @@ def eod_summary(day, bhav, w52, bands):
             highs.append([sym, hi, d.isoformat() if d else None, closes.get(sym)])
         stats['high52'] = new
     deliv = {r['sym']: round(r['deliv'], 2) for r in bhav if r['series'] == 'EQ' and r['deliv'] is not None}
-    return {'tradeDate': day.isoformat(), 'stats': stats, 'delivery': deliv, 'high52': highs,
+    return {'tradeDate': day.isoformat(), 'stats': stats, 'delivery': deliv, 'high52': highs, 'day': eod_day_rows(day, bhav, w52, bands),
             'files': {'bhav': True, 'w52': w52 is not None, 'bands': bands is not None}}
+
+
+def eod_day_rows(day, bhav, w52, bands):
+    """Every traded stock's day, for the sheet to count its own Main stocks:
+    {SYM: [close, % change, move 1 / -1 / 0, circuit 'U' / 'L' / '', new 52-week high 1 / 0, series]}.
+    A symbol in several series is taken from the mainboard one (EQ, BE, BZ) first."""
+    rank = lambda ser: EOD_SERIES.index(ser) if ser in EOD_SERIES else len(EOD_SERIES)
+    out, taken = {}, {}
+    for r in bhav:
+        if not r['prev'] or r['close'] is None or (r['qty'] is not None and r['qty'] <= 0):
+            continue
+        if r['sym'] in taken and taken[r['sym']] <= rank(r['series']):
+            continue
+        key = (r['sym'], r['series'])
+        hit = _at_band(r['last'] if r['last'] is not None else r['close'], r['prev'], bands.get(key)) if bands is not None else None
+        new52 = 0
+        if w52 is not None and key in w52:
+            hi, d = w52[key]
+            new52 = int(d == day or (r['high'] is not None and r['high'] >= hi))
+        move = 1 if r['close'] > r['prev'] else -1 if r['close'] < r['prev'] else 0
+        out[r['sym']] = [r['close'], round((r['close'] / r['prev'] - 1) * 100, 2), move,
+                         'U' if hit == 'upper' else 'L' if hit == 'lower' else '', new52, r['series']]
+        taken[r['sym']] = rank(r['series'])
+    return out
 
 
 def eod_fetch(opener, kind, day, url=None):
@@ -763,11 +788,11 @@ def eod_step(cfg, today=None):
                            'Manage deployments > pencil > Version: New version > Deploy')
                 log('NSE end-of-day %s: the sheet refused - %s' % (label, err))
                 return
-            s = payload['stats']
+            s = res.get('stats') or payload['stats']
             missing = [n for n, k in (('52-week report', 'w52'), ('price band list', 'bands')) if not payload['files'][k]]
-            log('NSE end-of-day %s: %d stocks traded, %d up / %d down / %d unchanged, %s at a 52-week high, '
+            log('NSE end-of-day %s: %s%d stocks traded, %d up / %d down / %d unchanged, %s at a 52-week high, '
                 'circuits %s up / %s down; Delivery %% for %d in Main%s.'
-                % (label, s['traded'], s['advances'], s['declines'], s['unchanged'],
+                % (label, 'your Main stocks - ' if res.get('stats') else 'all NSE - ', s['traded'], s['advances'], s['declines'], s['unchanged'],
                    '-' if s['high52'] is None else s['high52'], '-' if s['upper'] is None else s['upper'],
                    '-' if s['lower'] is None else s['lower'], res.get('deliveryInMain', 0),
                    ('; not downloaded: ' + ', '.join(missing)) if missing else ''))
