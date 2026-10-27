@@ -56,6 +56,7 @@ CONFIG_PATH = os.path.join(HERE, 'config.json')
 LOG_PATH = os.path.join(HERE, 'bridge.log')
 LOCK_PATH = os.path.join(HERE, 'bridge.lock')
 PB_STATE_PATH = os.path.join(HERE, 'pricebands_state.json')
+MC_CODES_PATH = os.path.join(HERE, 'moneycontrol_codes.json')
 TASK_NAME = 'AutoBhavcopyScreenerBridge'
 STARTUP_FILE = 'AutoBhavcopyScreenerBridge.vbs'
 
@@ -70,6 +71,8 @@ DEFAULTS = {
     'abort_after_failures': 5, # stop the run after this many failures in a row
     'price_bands': True,       # download NSE's price band changes at every run
     'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
+    'moneycontrol': True,      # results not on screener.in yet: look on moneycontrol and send its figures first
+    'max_moneycontrol_per_run': 40,
 }
 
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -637,9 +640,10 @@ def ipo_step(cfg, today=None):
         log('IPO lists: unexpected problem - %s' % e)
 
 
-# ------------------------------------------------------------------ moneycontrol (test only, step 1)
-# moneycontrol.com often shows a quarter's results before screener.in. Step 1 only CHECKS from this
-# computer that a stock can be found and its quarterly results read - nothing is sent to the sheet.
+# ------------------------------------------------------------------ moneycontrol (reading)
+# moneycontrol.com often shows a quarter's results before screener.in. The run's moneycontrol step
+# (further down, mc_step) sends those figures for results screener.in does not show yet; TestConnection
+# and MoneycontrolCheck.bat only CHECK that a stock can be found and read - they send nothing.
 # moneycontrol has its own company codes (e.g. acutaaschemicals / AO05), found once per stock through
 # its search box; the NSE symbol in the search answer confirms the match. Its results pages moved to a
 # new design (the figures sit inside the page as __NEXT_DATA__ or come from its own data links), so
@@ -1239,6 +1243,160 @@ def mc_check(sym, out=print, detail=True):
     return shown
 
 
+# ----------------------------------------------- moneycontrol: first figures for the sheet
+# Results Tracker rows still Pending whose screener.in page does not show the quarter yet: read
+# moneycontrol's quarterly results and send them (action 'mcput'). The sheet writes them only
+# while screener.in is behind; screener.in's figures replace them later. Company codes found
+# through moneycontrol's search are remembered in moneycontrol_codes.json.
+def mc_codes_load():
+    try:
+        with open(MC_CODES_PATH, encoding='utf-8') as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def mc_codes_save(codes):
+    try:
+        with open(MC_CODES_PATH, 'w', encoding='utf-8') as f:
+            json.dump(codes, f, indent=1, sort_keys=True)
+    except OSError:
+        pass
+
+
+def mc_code_for(opener, sym, codes, now=None):
+    """(hit, note) - the remembered moneycontrol code, else a search (a 'not on moneycontrol' answer is kept a week)."""
+    now = time.time() if now is None else now
+    c = codes.get(sym)
+    if c and c.get('code'):
+        return c, 'remembered'
+    if c and c.get('none') and now - float(c.get('at', 0)) < 7 * 86400:
+        return None, c.get('why') or 'not found on moneycontrol'
+    hit, note = mc_lookup(opener, sym)
+    if hit:
+        codes[sym] = {'code': hit['code'], 'slug': hit['slug'], 'name': hit['name'], 'at': now}
+    elif not note.startswith(('search did not answer', 'search: HTTP', 'search answer')):
+        codes[sym] = {'none': True, 'why': note, 'at': now}
+    return hit, note
+
+
+def _close(a, b):
+    return a is not None and b is not None and abs(a - b) <= max(0.5, 0.005 * abs(b))
+
+
+def mc_payload(sym, res, basis, src, max_quarters=12):
+    """A parsed result -> the sheet's item: quarters oldest first, three months apart, figures or None."""
+    newest = res['quarters'][0]
+    qs = [_qshift(newest, 3 * i) for i in range(max_quarters - 1, -1, -1)]
+    while qs and res['revenue'].get(qs[0]) is None and res['profit'].get(qs[0]) is None:
+        qs.pop(0)
+    if len(qs) < 2:
+        return None
+    return {'sym': sym, 'basis': basis, 'quarters': qs, 'src': src,
+            'revenue': [res['revenue'].get(q) for q in qs], 'netProfit': [res['profit'].get(q) for q in qs],
+            'eps': [res['eps'].get(q) for q in qs]}
+
+
+def mc_figures(opener, hit, expected, sym, pause=None):
+    """(item for the sheet, note) when moneycontrol shows `expected` ('Sep 2026') or later; else (None, why)."""
+    pause = MC_PAUSE if pause is None else pause
+    want = _qkey(expected)
+    srcs = dict(MC_SOURCES)
+    chosen, seen = None, []
+    for kind, basis in (('consolidated widget', 'Consolidated'), ('standalone widget', 'Standalone')):
+        status, text, _ = mc_get(opener, srcs[kind].format(slug=hit['slug'], code=hit['code']), xhr=True)
+        res = mc_parse(text)[0] if status == 200 else None
+        if res and res['quarters']:
+            q = res['quarters'][0]
+            seen.append(q)
+            if _qkey(q) >= want and res['revenue'].get(q) is not None and res['profit'].get(q) is not None:
+                chosen = (res, basis, kind)
+                break
+        time.sleep(pause)
+    if not chosen:
+        return None, ('moneycontrol shows %s' % max(seen, key=_qkey)) if seen else 'no quarterly figures on moneycontrol'
+    res, basis, kind = chosen
+    q = res['quarters'][0]
+    # EPS and a longer history from the results page - only when it shows the same figures (same basis)
+    src = kind
+    try:
+        time.sleep(pause)
+        status, text, _ = mc_get(opener, srcs['results page'].format(slug=hit['slug'], code=hit['code']))
+        page = None
+        if status == 200:
+            page = mc_parse(text)[0]
+            nd = None if page else _next_data(text)
+            page = page or (mc_from_json(nd) if nd is not None else None)
+        if page and _close(page['revenue'].get(q), res['revenue'][q]) and _close(page['profit'].get(q), res['profit'][q]):
+            merged = {'quarters': [q], 'revenue': dict(page['revenue']), 'profit': dict(page['profit']), 'eps': dict(page['eps'])}
+            merged['revenue'].update(res['revenue'])
+            merged['profit'].update(res['profit'])
+            merged['eps'].update({k: v for k, v in res['eps'].items() if v is not None})
+            res, src = merged, kind + ' + results page'
+    except (OSError, urllib.error.URLError, socket.timeout):
+        pass
+    item = mc_payload(sym, res, basis, src)
+    return (item, '%s %s (%s)' % (basis, q, src)) if item else (None, 'too few quarters on moneycontrol')
+
+
+def mc_behind(want, screener_latest):
+    """The wanted symbols whose screener.in page did not show the expected quarter (or was not read)."""
+    out = set()
+    for s, q in want.items():
+        got, exp = _qlabel(screener_latest.get(s) or ''), _qlabel(q)
+        if not (got and exp and _qkey(got) >= _qkey(exp)):
+            out.add(s)
+    return out
+
+
+def mc_step(cfg, want, behind):
+    """want = {SYM: 'Sep 2026'} from the sheet; behind = the ones screener.in did not show yet. Returns how many were sent."""
+    if cfg.get('moneycontrol') is False or not want:
+        return 0
+    syms = [s for s in want if s in behind][:int(cfg.get('max_moneycontrol_per_run', 40))]
+    if not syms:
+        return 0
+    log('moneycontrol: looking up %d result(s) screener.in does not show yet ...' % len(syms))
+    opener, codes, items, fails = mc_session(), mc_codes_load(), [], 0
+    for i, sym in enumerate(syms):
+        try:
+            hit, note = mc_code_for(opener, sym, codes)
+            if not hit:
+                log('  moneycontrol %s: %s' % (sym, note))
+                continue
+            item, note = mc_figures(opener, hit, want[sym], sym)
+            fails = 0
+            if item:
+                items.append(item)
+                log('  moneycontrol %s: %s' % (sym, note))
+            else:
+                log('  moneycontrol %s: not yet - %s' % (sym, note))
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            fails += 1
+            log('  moneycontrol %s: did not answer (%s)' % (sym, e))
+            if fails >= 3:
+                log('moneycontrol is not answering - stopping (next run tries again).')
+                break
+        if i < len(syms) - 1:
+            time.sleep(random.uniform(MC_PAUSE, 2 * MC_PAUSE))
+    mc_codes_save(codes)
+    if not items:
+        return 0
+    try:
+        res = api(cfg, 'mcput', {'items': items})
+    except RuntimeError as e:
+        log('moneycontrol figures not sent: %s' % e)
+        return 0
+    if not res.get('ok'):
+        hint = ' - the sheet\'s web app is older: do the New version deploy (see README)' if res.get('error') == 'unknown action' else ''
+        log('Sheet refused the moneycontrol figures: %s%s' % (res.get('error'), hint))
+        return 0
+    bad = ['%s (%s)' % (d.get('sym'), d.get('error')) for d in res.get('details', []) if not d.get('ok')]
+    log('moneycontrol: sent %d to the sheet%s' % (res.get('stored', 0), ('; refused: ' + ', '.join(bad)) if bad else ''))
+    return res.get('stored', 0)
+
+
 # ------------------------------------------------------------------- the run
 def acquire_lock():
     try:
@@ -1301,6 +1459,7 @@ def run_once(cfg):
 
         pending_items, posted, fails_in_row, aborted = [], 0, 0, False
         batch = int(cfg['batch_size'])
+        screener_latest = {}       # what screener.in showed, per symbol (from the sheet's answer)
 
         def flush(items):
             nonlocal posted
@@ -1310,6 +1469,9 @@ def run_once(cfg):
             if not res.get('ok'):
                 raise RuntimeError('sheet said: %s' % res.get('error'))
             posted += res.get('stored', 0)
+            for d in res.get('details', []):
+                if d.get('latest'):
+                    screener_latest[d['sym']] = d['latest']
             # Companies whose consolidated page was thin: also send the standalone page.
             extra = []
             for d in res.get('details', []):
@@ -1322,7 +1484,10 @@ def run_once(cfg):
                     except Blocked as e:
                         log('  %s standalone page skipped (%s)' % (d['sym'], e))
             if extra:
-                api(cfg, 'put', {'items': extra})
+                res2 = api(cfg, 'put', {'items': extra})
+                for d in res2.get('details', []):
+                    if d.get('latest'):
+                        screener_latest[d['sym']] = d['latest']
 
         for i, sym in enumerate(todo):
             try:
@@ -1356,8 +1521,20 @@ def run_once(cfg):
             if i < len(todo) - 1:
                 polite_sleep(cfg)
 
-        if posted:
-            log('Sent %d page(s). Asking the sheet to process them...' % posted)
+        # Results screener.in does not show yet: moneycontrol's figures first (the sheet decides).
+        mc_sent = 0
+        try:
+            want = ans.get('mc') or {}
+            if 'mc' not in ans and priority and cfg.get('moneycontrol') is not False:
+                log('moneycontrol: the sheet\'s web app does not ask for it yet - after pasting the new Code.gs, '
+                    'do the New version deploy (see README).')
+            mc_sent = mc_step(cfg, want, mc_behind(want, screener_latest))
+        except Exception as e:   # never let moneycontrol stop the run
+            log('moneycontrol: unexpected problem - %s' % e)
+
+        if posted or mc_sent:
+            log('Sent %d page(s)%s. Asking the sheet to process them...'
+                % (posted, (' and %d moneycontrol result(s)' % mc_sent) if mc_sent else ''))
             try:
                 res = api(cfg, 'process', timeout=420, tries=2)
                 if res.get('ok'):
@@ -1442,7 +1619,7 @@ def cmd_test(cfg):
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
-    print('5) moneycontrol from this computer (test only) ...')
+    print('5) moneycontrol from this computer (check only) ...')
     try:
         mc_check('TCS', out=print, detail=False)
         print('   (nothing was sent)')
