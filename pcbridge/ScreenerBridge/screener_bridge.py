@@ -71,6 +71,7 @@ DEFAULTS = {
     'abort_after_failures': 5, # stop the run after this many failures in a row
     'price_bands': True,       # download NSE's price band changes at every run
     'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
+    'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
     'moneycontrol': True,      # results not on screener.in yet: look on moneycontrol and send its figures first
     'max_moneycontrol_per_run': 40,
 }
@@ -452,6 +453,327 @@ def price_bands_step(cfg, today=None):
                 % (date.fromisoformat(cur).strftime('%d-%m-%Y') if cur else '-'))
     except Exception as e:   # never let price bands stop the screener work
         log('Price bands: unexpected problem - %s' % e)
+
+
+# ------------------------------------------------------ NSE end-of-day: delivery %, 52-week highs, market stats
+# Three NSE files of each trading day (NSE > All Reports > Equities, published in the evening):
+#   sec_bhavdata_full_DDMMYYYY.csv  - "Full Bhavcopy and Security Deliverable data": only the Delivery %
+#                                     (DELIV_PER) is kept per stock; prices are used just for the counts;
+#   CM_52_wk_High_low_DDMMYYYY.csv  - "52 Week High Low Report": the (adjusted) 52-week high and its date;
+#   sec_list_DDMMYYYY.csv           - "CM - Price Band complete list": each stock's band, to count circuits.
+# DDMMYYYY = the trading day. Counts cover mainboard equities only (series EQ / BE / BZ): stocks
+# traded, advances, declines, unchanged, at a new 52-week high, at the upper / lower price band.
+EOD_FILES = {
+    'bhav': ('https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{d}.csv',
+             'https://archives.nseindia.com/products/content/sec_bhavdata_full_{d}.csv'),
+    'w52': ('https://nsearchives.nseindia.com/content/CM_52_wk_High_low_{d}.csv',
+            'https://archives.nseindia.com/content/CM_52_wk_High_low_{d}.csv'),
+    'bands': ('https://nsearchives.nseindia.com/content/equities/sec_list_{d}.csv',
+              'https://archives.nseindia.com/content/equities/sec_list_{d}.csv'),
+}
+EOD_LINK_RE = {'bhav': r'sec_bhavdata_full_', 'w52': r'CM_52_wk_High_low_', 'bands': r'sec_list_'}
+EOD_SERIES = ('EQ', 'BE', 'BZ')     # mainboard equities (SME and other series are left out)
+EOD_LOOKBACK_DAYS = 7
+EOD_STATE_PATH = os.path.join(HERE, 'eod_state.json')
+_MONTHS3 = ('JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC')
+
+
+def _csv_rows(raw):
+    """CSV bytes -> rows of stripped cells, or None when NSE sent a web page instead."""
+    text = raw.decode('utf-8-sig', errors='replace')
+    if '<html' in text[:600].lower():
+        return None
+    return [[c.strip() for c in row] for row in csv.reader(io.StringIO(text))]
+
+
+def _header(rows, need, look=12):
+    """(row index, {name: column}) of the first row holding every normalised name in `need`
+    (a name maps to a test function on the normalised header cell)."""
+    for i, row in enumerate(rows[:look]):
+        h = [_pb_norm(c) for c in row]
+        cols = {}
+        for name, test in need.items():
+            j = next((k for k, c in enumerate(h) if test(c)), -1)
+            if j < 0:
+                break
+            cols[name] = j
+        else:
+            return i, cols
+    return -1, None
+
+
+def _fnum(v):
+    try:
+        return float(str(v).replace(',', '').strip())
+    except ValueError:
+        return None
+
+
+def eod_date(v):
+    """'06-JAN-2026' / '06-Jan-26' / '06-01-2026' / '2026-01-06' -> date, else None."""
+    s = str(v or '').strip().upper()
+    m = re.match(r'^(\d{1,2})[-/ ]([A-Z]{3})[A-Z]*[-/ ](\d{2}|\d{4})$', s)
+    try:
+        if m and m.group(2) in _MONTHS3:
+            y = int(m.group(3))
+            return date(y + 2000 if y < 100 else y, _MONTHS3.index(m.group(2)) + 1, int(m.group(1)))
+        m = re.match(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$', s)
+        if m:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', s)
+        if m:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+    return None
+
+
+def bhav_parse(raw):
+    """Full bhavcopy -> [{sym, series, prev, close, last, qty, deliv}] (deliv = Delivery %, None when NSE gives '-')."""
+    rows = _csv_rows(raw)
+    if rows is None:
+        return None
+    i, c = _header(rows, {'sym': lambda h: h == 'SYMBOL', 'series': lambda h: h == 'SERIES',
+                          'prev': lambda h: h == 'PREVCLOSE', 'close': lambda h: h == 'CLOSEPRICE',
+                          'deliv': lambda h: h == 'DELIVPER'})
+    if i < 0:
+        return None
+    h = [_pb_norm(x) for x in rows[i]]
+    last_j = h.index('LASTPRICE') if 'LASTPRICE' in h else -1
+    qty_j = h.index('TTLTRDQNTY') if 'TTLTRDQNTY' in h else -1
+    out = []
+    for r in rows[i + 1:]:
+        if len(r) <= max(c.values()) or not r[c['sym']]:
+            continue
+        g = lambda j: r[j] if 0 <= j < len(r) else ''
+        out.append({'sym': r[c['sym']].upper(), 'series': r[c['series']].upper(), 'prev': _fnum(r[c['prev']]),
+                    'close': _fnum(r[c['close']]), 'last': _fnum(g(last_j)), 'qty': _fnum(g(qty_j)),
+                    'deliv': _fnum(r[c['deliv']])})
+    return out
+
+
+def w52_parse(raw):
+    """52 Week High Low report -> {(sym, series): (adjusted 52-week high, its date)} (the lows are not kept)."""
+    rows = _csv_rows(raw)
+    if rows is None:
+        return None
+    i, c = _header(rows, {'sym': lambda h: h == 'SYMBOL', 'series': lambda h: h == 'SERIES',
+                          'high': lambda h: '52WEEKHIGH' in h and not h.endswith('DT') and 'DATE' not in h,
+                          'date': lambda h: '52WEEKHIGH' in h and (h.endswith('DT') or 'DATE' in h)})
+    if i < 0:
+        return None
+    out = {}
+    for r in rows[i + 1:]:
+        if len(r) <= max(c.values()) or not r[c['sym']]:
+            continue
+        hi, d = _fnum(r[c['high']]), eod_date(r[c['date']])
+        if hi is not None:
+            out[(r[c['sym']].upper(), r[c['series']].upper())] = (hi, d)
+    return out
+
+
+def bands_parse(raw):
+    """Price band complete list -> {(sym, series): band % (None = no band, e.g. F&O stocks)}."""
+    rows = _csv_rows(raw)
+    if rows is None:
+        return None
+    i, c = _header(rows, {'sym': lambda h: h == 'SYMBOL', 'series': lambda h: h == 'SERIES', 'band': lambda h: h == 'BAND'})
+    if i < 0:
+        return None
+    return {(r[c['sym']].upper(), r[c['series']].upper()): _fnum(r[c['band']])
+            for r in rows[i + 1:] if len(r) > max(c.values()) and r[c['sym']]}
+
+
+def _at_band(price, prev, band):
+    """'upper' / 'lower' when the last price sits on the band (one tick of rounding allowed), else None."""
+    if not band or not prev or price is None:
+        return None
+    pct = (price / prev - 1) * 100
+    tick = 0.01 if prev < 250 else 0.05
+    tol = max(0.1, 100 * tick / prev)
+    if pct >= band - tol:
+        return 'upper'
+    if pct <= -(band - tol):
+        return 'lower'
+    return None
+
+
+def eod_summary(day, bhav, w52, bands):
+    """The day's payload for the sheet: counts, Delivery % (EQ series) and each stock's 52-week high."""
+    mb = [r for r in bhav if r['series'] in EOD_SERIES and r['prev'] and r['close'] is not None and (r['qty'] is None or r['qty'] > 0)]
+    adv = sum(1 for r in mb if r['close'] > r['prev'])
+    dec = sum(1 for r in mb if r['close'] < r['prev'])
+    stats = {'traded': len(mb), 'advances': adv, 'declines': dec, 'unchanged': len(mb) - adv - dec,
+             'high52': None, 'upper': None, 'lower': None}
+    if bands is not None:
+        hits = [_at_band(r['last'] if r['last'] is not None else r['close'], r['prev'], bands.get((r['sym'], r['series']))) for r in mb]
+        stats['upper'], stats['lower'] = hits.count('upper'), hits.count('lower')
+    closes = {r['sym']: r['close'] for r in mb}
+    highs = []
+    if w52 is not None:
+        stats['high52'] = sum(1 for (sym, ser), (hi, d) in w52.items() if ser in EOD_SERIES and d == day)
+        seen = set()
+        for (sym, ser), (hi, d) in sorted(w52.items()):
+            if ser in EOD_SERIES and sym not in seen:
+                seen.add(sym)
+                highs.append([sym, hi, d.isoformat() if d else None, closes.get(sym)])
+    deliv = {r['sym']: round(r['deliv'], 2) for r in bhav if r['series'] == 'EQ' and r['deliv'] is not None}
+    return {'tradeDate': day.isoformat(), 'stats': stats, 'delivery': deliv, 'high52': highs,
+            'files': {'bhav': True, 'w52': w52 is not None, 'bands': bands is not None}}
+
+
+def eod_fetch(opener, kind, day, url=None):
+    """('ok', parsed) | ('missing', None) | ('error', reason) - like pb_fetch, for one of EOD_FILES."""
+    parse = {'bhav': bhav_parse, 'w52': w52_parse, 'bands': bands_parse}[kind]
+    tag = day.strftime('%d%m%Y')
+    outcomes = []
+    for u in ([url] if url else [t.format(d=tag) for t in EOD_FILES[kind]]):
+        try:
+            status, raw = nse_get(opener, u, timeout=60)
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            outcomes.append('NSE did not answer (%s)' % e)
+            continue
+        if status == 404:
+            outcomes.append('missing')
+            continue
+        if status != 200:
+            outcomes.append('HTTP %s from NSE' % status)
+            continue
+        val = parse(raw)
+        if val is None:
+            outcomes.append('NSE did not send the CSV file (a web page came back instead)')
+            continue
+        return 'ok', val
+    if outcomes and (outcomes[0] == 'missing' or all(o == 'missing' for o in outcomes)):
+        return 'missing', None
+    return 'error', next((o for o in outcomes if o != 'missing'), 'nothing tried')
+
+
+def eod_links_from_api(opener, kind):
+    """{date: url} of one kind of file listed on NSE's All Reports page - in case the address changes."""
+    try:
+        status, raw = nse_get(opener, PB_REPORTS_API, timeout=30)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        return {}
+    if status != 200:
+        return {}
+    out = {}
+    rx = r'(https?:\\?/\\?/[^"\s]+?' + EOD_LINK_RE[kind] + r'(\d{2})(\d{2})(\d{4})\.csv)'
+    for m in re.finditer(rx, raw.decode('utf-8', errors='replace')):
+        try:
+            out[date(int(m.group(4)), int(m.group(3)), int(m.group(2)))] = m.group(1).replace('\\/', '/')
+        except ValueError:
+            pass
+    return out
+
+
+def eod_load_state():
+    try:
+        with open(EOD_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def eod_save_state(st):
+    try:
+        with open(EOD_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f, indent=2)
+    except OSError as e:
+        log('NSE end-of-day: could not save %s (%s)' % (EOD_STATE_PATH, e))
+
+
+def eod_days_to_check(today, last):
+    """Trading days (weekdays) after the last one the sheet received, up to today, at most a week back."""
+    start = today - timedelta(days=EOD_LOOKBACK_DAYS)
+    if last:
+        start = max(start, last + timedelta(days=1))
+    days, d = [], start
+    while d <= today:
+        if d.weekday() < 5:
+            days.append(d)
+        d += timedelta(days=1)
+    return days
+
+
+def eod_step(cfg, today=None):
+    """Downloads each trading day's files the sheet has not had yet and hands them over (action 'eod'). Never raises."""
+    if not cfg.get('eod', True):
+        return
+    try:
+        st = eod_load_state()
+        today = today or date.today()
+        last = None
+        try:
+            last = date.fromisoformat(st['last']) if st.get('last') else None
+        except ValueError:
+            last = None
+        days = eod_days_to_check(today, last)
+        if not days:
+            log('NSE end-of-day: up to date (latest day sent: %s).' % (last.strftime('%d-%m-%Y') if last else '-'))
+            return
+        opener = nse_session()
+        api_links = None
+        sent, problems, today_missing = 0, [], False
+        for d in days:
+            kind, bhav = eod_fetch(opener, 'bhav', d)
+            if kind != 'ok':
+                if api_links is None:
+                    api_links = {k: eod_links_from_api(opener, k) for k in EOD_FILES}
+                if d in api_links['bhav']:
+                    kind, bhav = eod_fetch(opener, 'bhav', d, url=api_links['bhav'][d])
+            if kind == 'missing':
+                today_missing = today_missing or d == today
+                continue                     # a holiday, or not published yet
+            if kind == 'error':
+                problems.append('%s: %s' % (d.strftime('%d-%m-%Y'), bhav))
+                continue
+            extra = {}
+            for k in ('w52', 'bands'):
+                time.sleep(1.0)
+                kk, val = eod_fetch(opener, k, d)
+                if kk != 'ok':
+                    if api_links is None:
+                        api_links = {x: eod_links_from_api(opener, x) for x in EOD_FILES}
+                    if d in api_links[k]:
+                        kk, val = eod_fetch(opener, k, d, url=api_links[k][d])
+                extra[k] = val if kk == 'ok' else None
+            payload = eod_summary(d, bhav, extra['w52'], extra['bands'])
+            label = d.strftime('%d-%m-%Y')
+            try:
+                res = api(cfg, 'eod', payload, timeout=180)
+            except RuntimeError as e:
+                log('NSE end-of-day %s: sending to the sheet failed (%s) - the next run tries again.' % (label, e))
+                return
+            if not res.get('ok'):
+                err = res.get('error') or 'unknown error'
+                if err == 'unknown action':
+                    err = ('the sheet\'s web app does not know this yet - after pasting the new Code.gs: Deploy > '
+                           'Manage deployments > pencil > Version: New version > Deploy')
+                log('NSE end-of-day %s: the sheet refused - %s' % (label, err))
+                return
+            s = payload['stats']
+            missing = [n for n, k in (('52-week report', 'w52'), ('price band list', 'bands')) if not payload['files'][k]]
+            log('NSE end-of-day %s: %d stocks traded, %d up / %d down / %d unchanged, %s at a 52-week high, '
+                'circuits %s up / %s down; Delivery %% for %d in Main%s.'
+                % (label, s['traded'], s['advances'], s['declines'], s['unchanged'],
+                   '-' if s['high52'] is None else s['high52'], '-' if s['upper'] is None else s['upper'],
+                   '-' if s['lower'] is None else s['lower'], res.get('deliveryInMain', 0),
+                   ('; not downloaded: ' + ', '.join(missing)) if missing else ''))
+            st['last'] = d.isoformat()
+            st['last_sent_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+            eod_save_state(st)
+            sent += 1
+            time.sleep(1.0)
+        if problems and not sent:
+            log('NSE end-of-day: could not download the bhavcopy - %s.' % '; '.join(problems[-2:]))
+        elif today_missing and not sent:
+            log('NSE end-of-day: today\'s files (NSE publishes them in the evening) are not out yet - the next run tries again.')
+        elif not sent:
+            log('NSE end-of-day: up to date (latest day sent: %s).' % (date.fromisoformat(st['last']).strftime('%d-%m-%Y') if st.get('last') else '-'))
+    except Exception as e:   # never let these reports stop the screener work
+        log('NSE end-of-day: unexpected problem - %s' % e)
 
 
 # ------------------------------------------------------------------ NSE IPO lists
@@ -1496,6 +1818,7 @@ def run_once(cfg):
             return 1
         price_bands_step(cfg)
         ipo_step(cfg)
+        eod_step(cfg)
         priority = [s for s in ans.get('priority', [])]
         missing = [s for s in ans.get('missing', [])][:int(cfg['max_missing_per_run'])]
         todo = priority + [s for s in missing if s not in priority]
@@ -1666,7 +1989,30 @@ def cmd_test(cfg):
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
-    print('5) moneycontrol from this computer (check only) ...')
+    print('5) NSE end-of-day files (Delivery %, 52-week highs) from this computer ...')
+    try:
+        opener = nse_session()
+        d, found = date.today(), None
+        for _ in range(8):
+            if d.weekday() < 5:
+                kind, val = eod_fetch(opener, 'bhav', d)
+                if kind == 'ok':
+                    found = (d, val)
+                    break
+                if kind == 'error':
+                    print('   %s: %s' % (d.strftime('%d-%m-%Y'), val))
+            d -= timedelta(days=1)
+        if found:
+            k52, w = eod_fetch(opener, 'w52', found[0])
+            kb, b = eod_fetch(opener, 'bands', found[0])
+            print('   OK - bhavcopy of %s: %d rows, Delivery %% for %d stocks; 52-week report: %s; price band list: %s. Nothing was sent.'
+                  % (found[0].strftime('%d-%m-%Y'), len(found[1]), sum(1 for r in found[1] if r['deliv'] is not None),
+                     ('%d stocks' % len(w)) if k52 == 'ok' else k52, ('%d stocks' % len(b)) if kb == 'ok' else kb))
+        else:
+            print('   PROBLEM - could not download the bhavcopy from NSE.')
+    except Exception as e:
+        print('   PROBLEM - %s' % e)
+    print('6) moneycontrol from this computer (check only) ...')
     try:
         mc_check('TCS', out=print, detail=False)
         print('   (nothing was sent)')
@@ -1814,6 +2160,12 @@ def main(argv):
             log('Not set up yet - run Setup.bat first.')
             return 1
         ipo_step(dict(cfg, ipos=True))
+        return 0
+    if cmd == 'eod':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        eod_step(dict(cfg, eod=True))
         return 0
     if cmd == 'pricebands':
         if not cfg.get('url') or not cfg.get('token'):

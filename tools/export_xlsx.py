@@ -186,6 +186,13 @@ def table(rows, first_header, start=0, stop_blank=True, kinds=None, max_rows=Non
     return {'cols': [], 'rows': []}
 
 
+def note_table(rows, first_header, **kw):
+    """table() plus the tab's first cell as its note. Code.gs ab_site_noteTable_ does the same."""
+    t = table(rows, first_header, **kw)
+    first = rows[0][0] if rows and rows[0] and rows[0][0] is not None else ''
+    return {'note': str(first).strip() if first != '' else '', 'cols': t['cols'], 'rows': t['rows']}
+
+
 IPO_SECTIONS = {'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming'}
 
 
@@ -340,6 +347,13 @@ def export(path):
     data['priceBands'] = table(rows_of(wb['Price Band Changes']), 'Report Date', stop_blank=False)
     if 'IPO Tracker' in wb.sheetnames:
         data['ipoTracker'] = ipo_tracker(rows_of(wb['IPO Tracker']))
+    # NSE end-of-day (PC bridge): market statistics, 52-week highs, Delivery %
+    if 'Market Statistics' in wb.sheetnames:
+        data['marketStats'] = note_table(rows_of(wb['Market Statistics']), 'Date', stop_blank=False)
+    if '52 Week High' in wb.sheetnames:
+        data['high52'] = note_table(rows_of(wb['52 Week High']), 'Symbol', stop_blank=False)
+    if 'Delivery %' in wb.sheetnames:
+        data['delivery'] = table(rows_of(wb['Delivery %']), 'Symbol', stop_blank=False)
 
     export_history(wb, data.get('asOf'))
 

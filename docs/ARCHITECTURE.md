@@ -34,6 +34,11 @@ fallback on any failure: web/data/dashboard.js + history.js (saved copy), clearl
 - `api/site` returns `{ok, part, readAt, fetchedAt, stale, staleReason?, session, priceState, data}`.
   `data` is exactly what `tools/export_xlsx.py` writes (`SB_DATA` / `SB_HISTORY`), built by
   Code.gs with the same allow-list (no personal tabs, columns, e-mails or tokens).
+- NSE data the sheet cannot fetch itself (NSE blocks Google) arrives from the user's PC
+  bridge (`pcbridge/ScreenerBridge/screener_bridge.py`, doPost with the bridge token) and is
+  filed on sheet tabs that the feed then carries: price band changes (`priceBands`), IPO
+  Tracker (`ipoTracker`), and the NSE end-of-day tabs Market Statistics / 52 Week High /
+  Delivery % (`marketStats`, `high52`, `delivery`; read by `web/lib/eod.js`).
 - API base (`SB.apiBase()` in `web/app.js`): `''` on Vercel (same origin); `remoteApi` on
   `*.web.app` / `*.firebaseapp.com`; `null` (saved copy only) on localhost, `file://`
   and the single-file preview, unless `localStorage['sb:api'] = true` (then same origin,

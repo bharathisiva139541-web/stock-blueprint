@@ -8546,6 +8546,9 @@ function doPost(e) {
     if (req.action === 'mcput') {
       return ab_bridgeJson_(ab_mcFromBridge_(req));
     }
+    if (req.action === 'eod') {
+      return ab_bridgeJson_(ab_eodFromBridge_(req));
+    }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return ab_bridgeJson_({ ok: false, error: err.message });
@@ -8802,7 +8805,21 @@ function ab_site_main_(cx, readAt) {
   data.priceBands = ab_site_table_(cx, ab_site_tab_(cx, 'Price Band Changes'), 'Report Date', { stopBlank: false });
   const ipot = ab_site_tab_(cx, 'IPO Tracker');
   if (ipot) data.ipoTracker = ab_site_ipoTracker_(cx, ipot);
+  // NSE end-of-day (PC bridge): market statistics, 52-week highs, Delivery %
+  const ms = ab_site_tab_(cx, 'Market Statistics');
+  if (ms) data.marketStats = ab_site_noteTable_(cx, ms, 'Date', { stopBlank: false });
+  const hi = ab_site_tab_(cx, '52 Week High');
+  if (hi) data.high52 = ab_site_noteTable_(cx, hi, 'Symbol', { stopBlank: false });
+  const dl = ab_site_tab_(cx, 'Delivery %');
+  if (dl) data.delivery = ab_site_table_(cx, dl, 'Symbol', { stopBlank: false });
   return data;
+}
+
+/** export_xlsx.py note_table(): a table plus the tab's first cell as its note. */
+function ab_site_noteTable_(cx, tab, firstHeader, opt) {
+  const t = ab_site_table_(cx, tab, firstHeader, opt);
+  const first = tab.values[0] && tab.values[0].length ? tab.values[0][0] : '';
+  return { note: ab_site_isBlank_(first) ? '' : ab_site_pyStr_(cx, first).trim(), cols: t.cols, rows: t.rows };
 }
 
 /**
@@ -9257,7 +9274,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 2;   // 2: + ipoTracker (IPO Tracker tab)
+const AB_SITE_FEED_FORMAT = 3;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history'];
 const AB_SITE_FEED_CHUNK = 45000;
@@ -13498,6 +13515,200 @@ function ab_ipotFromBridge_(req) {
     emailed = true;
   }
   return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, sme: c.sme, other: c.other, emailed: emailed };
+}
+
+/*****************************************************************
+ * NSE END-OF-DAY: DELIVERY %, 52-WEEK HIGHS, MARKET STATISTICS
+ * -----------------------------------------------------------------
+ * Each evening the PC bridge downloads three NSE files of the trading
+ * day (Full Bhavcopy with deliverable data, the 52 Week High Low report,
+ * the price band complete list - NSE blocks Google's servers) and posts
+ * a summary here (doPost action 'eod'):
+ *   - "Market Statistics" tab: one row per day - stocks traded,
+ *     advances, declines, unchanged, at a new 52-week high, at the
+ *     upper / lower price band (mainboard equities: EQ / BE / BZ);
+ *   - "Delivery %" tab: each Main stock's Delivery % for the last
+ *     AB_EOD_DELIV_DAYS trading days (newest first);
+ *   - "52 Week High" tab: every stock at a new 52-week high that day,
+ *     plus every Main stock with its 52-week high, date and distance.
+ * The website shows them (site feed parts marketStats / delivery / high52).
+ * Days arrive oldest first when the PC catches up; an older day never
+ * replaces the 52 Week High tab of a newer one.
+ *****************************************************************/
+const AB_EOD_STATS_SHEET = 'Market Statistics';
+const AB_EOD_DELIV_SHEET = 'Delivery %';
+const AB_EOD_HIGH_SHEET = '52 Week High';
+const AB_EOD_STATS_HEADERS = ['Date', 'Stocks Traded', 'Advances', 'Declines', 'Unchanged', 'At 52W High', 'Upper Circuit', 'Lower Circuit'];
+const AB_EOD_STATS_KEYS = ['traded', 'advances', 'declines', 'unchanged', 'high52', 'upper', 'lower'];
+const AB_EOD_HIGH_HEADERS = ['Symbol', 'Company', '52W High', '52W High Date', 'Close', '% Below 52W High', 'New High Today', 'In Watchlist'];
+const AB_EOD_STATS_KEEP = 250;      // days of market statistics kept
+const AB_EOD_DELIV_DAYS = 10;       // trading days of Delivery % kept
+const AB_EOD_HIGH_DATE_PROP = 'AB_EOD_HIGH_DATE';
+
+/** A cell that should hold a yyyy-MM-dd day (Sheets may have turned the text into a Date). */
+function ab_eodIso_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, AB_TZ, 'yyyy-MM-dd');
+  const s = String(v === null || v === undefined ? '' : v).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
+/** Main's stocks in sheet order: [{ sym, name }], one per symbol (blank rows inside the data are skipped). */
+function ab_eodMainStocks_() {
+  const layout = ab_getMainLayout_();
+  const out = [], seen = {};
+  for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
+    const sym = ab_cellText_(layout.data[r][layout.symbol]).toUpperCase();
+    if (!sym || seen[sym]) continue;
+    seen[sym] = true;
+    out.push({ sym: sym, name: ab_cellText_(layout.data[r][layout.name]) });
+  }
+  return out;
+}
+
+/** Rows below the tab's header row (first cell = firstHeader), and that header. */
+function ab_eodReadTable_(sh, firstHeader) {
+  if (!sh || sh.getLastRow() < 1) return { header: [], rows: [] };
+  const vals = sh.getDataRange().getValues();
+  for (let i = 0; i < Math.min(5, vals.length); i++) {
+    if (String(vals[i][0]).trim() === firstHeader) {
+      return { header: vals[i], rows: vals.slice(i + 1).filter(function (r) { return String(r[0]).trim() !== ''; }) };
+    }
+  }
+  return { header: [], rows: [] };
+}
+
+/**
+ * Note + header + rows, written in one go. The note / header rows and the
+ * columns given as fmt [[column, count, format]] get their formats first
+ * ('@' = plain text, so yyyy-MM-dd days are never turned into dates).
+ */
+function ab_eodWriteTab_(name, note, header, rows, fmt) {
+  const sh = ab_getOrCreateSheet_(name);
+  const W = header.length;
+  const pad = function (a) { a = a.slice(); while (a.length < W) a.push(''); return a; };
+  sh.clear();
+  sh.getRange(1, 1, 2, W).setNumberFormat('@');
+  if (rows.length) {
+    (fmt || []).forEach(function (f) {
+      if (f[0] < W && f[1] > 0) sh.getRange(3, f[0] + 1, rows.length, Math.min(f[1], W - f[0])).setNumberFormat(f[2]);
+    });
+  }
+  sh.getRange(1, 1, rows.length + 2, W).setValues([pad([note]), header].concat(rows.map(pad)));
+  sh.getRange(1, 1).setFontColor('#5f6368');
+  sh.getRange(2, 1, 1, W).setFontWeight('bold').setBackground('#f1f3f4');
+  sh.setFrozenRows(2);
+  return sh;
+}
+
+/** One posted day -> clean { day, stats, delivery, highs } or { error }. */
+function ab_eodClean_(req) {
+  const day = String(req.tradeDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: 'tradeDate missing' };
+  const st = req.stats || {};
+  const stats = {};
+  AB_EOD_STATS_KEYS.forEach(function (k) {
+    const v = st[k];
+    stats[k] = typeof v === 'number' && isFinite(v) && v >= 0 ? Math.round(v) : null;
+  });
+  if (stats.traded === null) return { error: 'stats missing' };
+  const delivery = {};
+  const dv = req.delivery && typeof req.delivery === 'object' ? req.delivery : {};
+  Object.keys(dv).slice(0, 10000).forEach(function (k) {
+    const v = dv[k];
+    if (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 100) delivery[String(k).trim().toUpperCase()] = Math.round(v * 100) / 100;
+  });
+  const highs = {};
+  (Array.isArray(req.high52) ? req.high52 : []).slice(0, 10000).forEach(function (r) {
+    if (!Array.isArray(r) || typeof r[1] !== 'number' || !isFinite(r[1]) || r[1] <= 0) return;
+    const sym = String(r[0] || '').trim().toUpperCase();
+    if (!sym || highs[sym]) return;
+    highs[sym] = { high: r[1], date: /^\d{4}-\d{2}-\d{2}$/.test(String(r[2] || '')) ? String(r[2]) : '',
+                   close: typeof r[3] === 'number' && isFinite(r[3]) && r[3] > 0 ? r[3] : null };
+  });
+  return { day: day, stats: stats, delivery: delivery, highs: highs };
+}
+
+function ab_eodWriteStats_(c) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_EOD_STATS_SHEET);
+  const byDay = {};
+  ab_eodReadTable_(sh, 'Date').rows.forEach(function (r) {
+    const d = ab_eodIso_(r[0]);
+    if (d) byDay[d] = r.slice(1, AB_EOD_STATS_HEADERS.length).map(function (v) { return typeof v === 'number' ? v : ''; });
+  });
+  byDay[c.day] = AB_EOD_STATS_KEYS.map(function (k) { return c.stats[k] === null ? '' : c.stats[k]; });
+  const days = Object.keys(byDay).sort().reverse().slice(0, AB_EOD_STATS_KEEP);
+  ab_eodWriteTab_(AB_EOD_STATS_SHEET,
+    'NSE market statistics - mainboard equities (series EQ / BE / BZ) counted from NSE\'s end-of-day files ' +
+    '(bhavcopy, 52-week high report, price band list) read by your PC. NSE\'s homepage counts every segment, so its own numbers are higher.',
+    AB_EOD_STATS_HEADERS.slice(), days.map(function (d) { return [d].concat(byDay[d]); }), [[0, 1, '@'], [1, AB_EOD_STATS_KEYS.length, '0']]);
+}
+
+function ab_eodWriteDelivery_(c, stocks) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_EOD_DELIV_SHEET);
+  const t = ab_eodReadTable_(sh, 'Symbol');
+  const byDay = {};                                   // day -> { SYM: % }
+  t.header.forEach(function (h, j) {
+    const d = j >= 2 ? ab_eodIso_(h) : '';
+    if (!d) return;
+    byDay[d] = {};
+    t.rows.forEach(function (r) {
+      if (typeof r[j] === 'number') byDay[d][String(r[0]).trim().toUpperCase()] = r[j];
+    });
+  });
+  byDay[c.day] = c.delivery;
+  const days = Object.keys(byDay).sort().reverse().slice(0, AB_EOD_DELIV_DAYS);
+  let inMain = 0;
+  const rows = stocks.map(function (s) {
+    if (typeof c.delivery[s.sym] === 'number') inMain++;
+    return [s.sym, s.name].concat(days.map(function (d) { const v = byDay[d][s.sym]; return typeof v === 'number' ? v : ''; }));
+  });
+  ab_eodWriteTab_(AB_EOD_DELIV_SHEET,
+    'Delivery % from NSE\'s bhavcopy (EQ series): delivered quantity / traded quantity. Newest trading day first, last ' +
+    AB_EOD_DELIV_DAYS + ' days. Read by your PC each evening.',
+    ['Symbol', 'Company'].concat(days), rows, [[0, 2, '@'], [2, days.length, '0.00']]);
+  return inMain;
+}
+
+function ab_eodWriteHighs_(c, stocks) {
+  const inMain = {};
+  stocks.forEach(function (s) { inMain[s.sym] = s.name || ''; });
+  const row = function (sym) {
+    const h = c.highs[sym];
+    const below = h.close ? Math.max(0, Math.round((h.high - h.close) / h.high * 1000) / 10) : '';
+    return [sym, Object.prototype.hasOwnProperty.call(inMain, sym) ? inMain[sym] : '', h.high, h.date, h.close === null ? '' : h.close,
+            below, h.date === c.day ? 'Yes' : '', Object.prototype.hasOwnProperty.call(inMain, sym) ? 'Yes' : ''];
+  };
+  const fresh = Object.keys(c.highs).filter(function (s) { return c.highs[s].date === c.day; }).sort();
+  const watch = stocks.map(function (s) { return s.sym; }).filter(function (s) { return c.highs[s] && c.highs[s].date !== c.day; });
+  const rows = fresh.map(row).concat(watch.map(row).sort(function (a, b) {
+    return (a[5] === '' ? 1e9 : a[5]) - (b[5] === '' ? 1e9 : b[5]) || (a[0] < b[0] ? -1 : 1);
+  }));
+  const freshMain = fresh.filter(function (s) { return Object.prototype.hasOwnProperty.call(inMain, s); }).length;
+  ab_eodWriteTab_(AB_EOD_HIGH_SHEET,
+    '52-week highs from NSE (adjusted for corporate actions) - as on ' + c.day + ': ' + fresh.length +
+    ' mainboard stock' + (fresh.length === 1 ? '' : 's') + ' made a new 52-week high (' + freshMain + ' in your watchlist). ' +
+    'Below them: every watchlist stock, nearest to its high first.',
+    AB_EOD_HIGH_HEADERS.slice(), rows, [[0, 2, '@'], [2, 1, '0.00'], [3, 1, '@'], [4, 1, '0.00'], [5, 1, '0.0'], [6, 2, '@']]);
+  return { newHighs: fresh.length, newHighsInMain: freshMain, rows: rows.length };
+}
+
+/** doPost action 'eod': { tradeDate, stats, delivery: {SYM: %}, high52: [[SYM, high, 'yyyy-MM-dd', close]] }. */
+function ab_eodFromBridge_(req) {
+  const c = ab_eodClean_(req);
+  if (c.error) return { ok: false, error: c.error };
+  const stocks = ab_eodMainStocks_();
+  ab_eodWriteStats_(c);
+  const deliveryInMain = ab_eodWriteDelivery_(c, stocks);
+  const props = PropertiesService.getScriptProperties();
+  let highs = null;
+  const last = props.getProperty(AB_EOD_HIGH_DATE_PROP) || '';
+  if (Object.keys(c.highs).length && c.day >= last) {
+    highs = ab_eodWriteHighs_(c, stocks);
+    props.setProperty(AB_EOD_HIGH_DATE_PROP, c.day);
+  }
+  return { ok: true, tradeDate: c.day, deliveryInMain: deliveryInMain,
+           newHighs: highs ? highs.newHighs : null, newHighsInMain: highs ? highs.newHighsInMain : null,
+           highTab: highs ? 'updated' : (Object.keys(c.highs).length ? 'kept (a newer day is already there)' : 'no 52-week report') };
 }
 
 

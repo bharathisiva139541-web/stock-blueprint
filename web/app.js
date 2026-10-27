@@ -76,6 +76,15 @@
     // the latest Results Performance row of each stock (post-results strategy rules read s.rp)
     var rp = SB.strategy.rpIndex((data.resultsPerf || {}).table);
     stocks.forEach(function (s) { s.rp = rp[s.sym] || null; });
+    // NSE end-of-day (PC bridge): Delivery % (latest day, 5-day average) and the 52-week high report
+    var dl = SB.eod.delivery(data.delivery), hi = SB.eod.highs(data.high52);
+    stocks.forEach(function (s) {
+      var d = dl.bySym[s.sym];
+      s.deliv = d ? d.latest : null;
+      s.delivAvg = d ? d.avg5 : null;
+      s.delivDate = d ? dl.date : null;
+      s.nse52 = hi.bySym[s.sym] || null;          // s.hi52 / s.down52 stay Main's own columns
+    });
     ctx.D = data;
     ctx.stocks = stocks;
     ctx.bySym = {};
@@ -436,6 +445,13 @@
         ['Revenue YoY', ui.deltaHtml(s.yrev, 0)], ['Profit YoY', ui.deltaHtml(s.ynp, 0)], ['Promoter holding', esc(s.promo || '–')],
         ['FII activity', esc(s.fii || '–')], ['OPM YoY', esc(s.opmy || '–')], ['OPM QoQ', esc(s.opmq || '–')], ['Volume change', ui.deltaHtml(s.volchg, 0)]
       ];
+      if (isNum(s.deliv)) {
+        kv.push(['Delivery %', '<b>' + F.num(s.deliv, 1) + '%</b> on ' + F.date(s.delivDate) + (isNum(s.delivAvg) ? ' <span class="sub">· 5-day avg ' + F.num(s.delivAvg, 1) + '%</span>' : '')]);
+      }
+      if (s.nse52) {
+        kv.push(['NSE 52W high', F.price(s.nse52.high) + ' <span class="sub">on ' + F.date(s.nse52.date) + '</span>' +
+          (s.nse52.isNew ? ' ' + ui.badge('New 52W high', 'new52') : isNum(s.nse52.below) ? ' <span class="sub">· ' + F.num(s.nse52.below, 1) + '% below</span>' : '')]);
+      }
       h += '<dl class="kv">' + kv.map(function (p) { return '<div><dt>' + p[0] + '</dt><dd>' + p[1] + '</dd></div>'; }).join('') + '</dl>' +
         '<div id="drawer-chart" style="margin-top:14px"></div>';
     }

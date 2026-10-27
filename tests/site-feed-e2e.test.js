@@ -26,6 +26,7 @@ const quotesApi = require('../api/quotes');
 const statusApi = require('../api/market-status');
 const classify = require('../web/lib/classify.js');
 const strategy = require('../web/lib/strategy.js');
+const eod = require('../web/lib/eod.js');
 
 globalThis.fetch = function () { return Promise.reject(new TypeError('network disabled in tests')); };
 
@@ -335,7 +336,7 @@ function browser(nowMs) {
     market: { state: 'CACHED', source: 'Sheet snapshot', asOf: null, provider: null, message: '' },
     site: { live: false, apiBase: '' }, history: null
   };
-  const SB = { classify: classify, strategy: strategy, ctx: ctx, ui: ui };
+  const SB = { classify: classify, strategy: strategy, eod: eod, ctx: ctx, ui: ui };
   const app = fromBrowser('web/app.js',
     ['var SITE_TIMEOUT_MS', 'var LIVE_SOURCE', 'var QUOTE_TTL', 'istMs', 'sheetState', 'prepare', 'applySignal', 'validMain', 'validHistory', 'apiBaseFor'],
     { SB: SB, ui: ui, F: { dateTime: String }, ctx: ctx, isNum: core.isNum, Date: FakeDate });

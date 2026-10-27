@@ -1,10 +1,11 @@
 /* IPOs & markets: IPO Tracker (mainboard IPOs open / closed - awaiting listing / upcoming,
-   from NSE via the PC bridge and the sheet's IPO Tracker tab), NSE price band changes,
-   indices, listed IPOs and their bases, new listings. */
+   from NSE via the PC bridge and the sheet's IPO Tracker tab), NSE 52-week highs (52 Week High
+   tab, #markets/high52), NSE price band changes, indices, listed IPOs and their bases, new listings. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, isNum = ui.isNum, $ = ui.$;
   var PB = { view: 'latest', f: 'all', q: '' };
+  var H52 = { f: 'new', q: '' };
 
   var SECTIONS = [['open', 'Open now', 'Open for subscription today'], ['closed', 'Closed - awaiting listing', 'Subscription closed, not listed yet'],
     ['upcoming', 'Upcoming', 'Opens on a later day']];
@@ -59,6 +60,55 @@
     });
   }
 
+  function high52Card(D) {
+    if (!D.high52) {
+      return '<section class="card" id="high52"><div class="card-head"><div><h2>52-week highs</h2><p>NSE 52 Week High report</p></div></div>' +
+        '<p class="empty">Not in this copy of the data yet. Your PC bridge reads NSE\'s 52 Week High report each evening and fills the sheet\'s ' +
+        '<b>52 Week High</b> tab; it shows here after that.</p></section>';
+    }
+    return '<section class="card" id="high52"><div class="card-head"><div><h2>52-week highs</h2><p id="h52-sum"></p></div></div>' +
+      '<div class="controls"><input class="search" id="h52-q" type="search" placeholder="Search symbol or company" aria-label="Search 52-week highs" value="' + esc(H52.q) + '">' +
+      ui.chips('h52', [['new', 'New 52-week high today'], ['near', 'Watchlist within 5% of high'], ['watch', 'All watchlist stocks']], H52.f) +
+      '<span class="count" id="h52-count"></span></div><div id="h52-t"></div>' +
+      '<p class="sub" style="margin-top:8px">From NSE\'s daily "52 Week High Low Report" (52-week highs adjusted for bonus, splits and rights), read by your PC each evening; ' +
+      'mainboard stocks only, 52-week lows are not tracked. Close = the day\'s closing price from NSE\'s bhavcopy.</p></section>';
+  }
+  function mountHigh52(el, D) {
+    if (!D.high52) return;
+    var X = SB.eod.highs(D.high52);
+    var newMain = X.newToday.filter(function (r) { return r.inMain; }).length;
+    $('#h52-sum', el).innerHTML = X.asOf ? 'As on <b>' + F.date(X.asOf) + '</b>: ' + F.int(X.newToday.length) + ' mainboard stock' + (X.newToday.length === 1 ? '' : 's') +
+      ' at a new 52-week high · ' + F.int(newMain) + ' in your watchlist ' + ui.stateBadge('EOD', X.asOf, '52 Week High tab (NSE via the PC bridge)') : esc(X.note);
+    var t = new ui.Table({
+      rows: [], pageSize: 25, sort: { key: 'below', dir: 1 }, empty: 'No stocks match',
+      columns: [
+        { key: 'sym', label: 'Stock', type: 'sym', name: 'name', csv: function (r) { return r.sym; } },
+        { key: 'name', label: 'Company', csvOnly: true },
+        { key: 'high', label: '52W high', type: 'price' },
+        { key: 'date', label: 'High on', type: 'date' },
+        { key: 'close', label: 'Close', type: 'price' },
+        { key: 'below', label: '% below high', type: 'num', digits: 1 },
+        { key: 'isNew', label: 'Today', get: function (r) { return r.isNew ? 'New high' : null; },
+          html: function (r) { return r.isNew ? ui.badge('New high', 'new52') : '<span class="sub">–</span>'; } },
+        { key: 'inMain', label: 'Watchlist', get: function (r) { return r.inMain ? 'Yes' : null; } }
+      ]
+    }).mount($('#h52-t', el));
+    function apply() {
+      var rows = X.rows.filter(function (r) {
+        if (H52.f === 'new' && !r.isNew) return false;
+        if (H52.f === 'near' && !(r.inMain && isNum(r.below) && r.below <= 5)) return false;
+        if (H52.f === 'watch' && !r.inMain) return false;
+        return ui.textMatch(H52.q, [r.sym, r.name]);
+      });
+      $('#h52-count', el).textContent = F.int(rows.length) + ' stock' + (rows.length === 1 ? '' : 's');
+      t.setRows(rows);
+    }
+    var timer;
+    $('#h52-q', el).addEventListener('input', function (e) { clearTimeout(timer); timer = setTimeout(function () { H52.q = e.target.value.trim(); apply(); }, 120); });
+    ui.bindChips(el, 'h52', function (v) { H52.f = v; apply(); });
+    apply();
+  }
+
   function priceBandCard() {
     return '<section class="card" id="pb"><div class="card-head"><div><h2>NSE price band changes</h2><p id="pb-sum"></p></div></div>' +
       '<div class="controls"><input class="search" id="pb-q" type="search" placeholder="Search symbol or company" aria-label="Search price band changes" value="' + esc(PB.q) + '">' +
@@ -110,9 +160,10 @@
   SB.page('markets', {
     render: function (el, params, ctx) {
       var D = ctx.D, ipos = ui.objRows(D.ipos);
-      var h = '<div class="page-head"><div><h1>IPOs &amp; markets</h1><p>Mainboard IPOs (open, closed - awaiting listing, upcoming), NSE price band changes, indices, ' +
+      var h = '<div class="page-head"><div><h1>IPOs &amp; markets</h1><p>Mainboard IPOs (open, closed - awaiting listing, upcoming), NSE 52-week highs, NSE price band changes, indices, ' +
         'listed IPOs and their bases, and the latest listings. ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Sheet snapshot') + '</p></div></div>';
       h += ipoTrackerCard(D);
+      h += high52Card(D);
       h += priceBandCard();
       h += ui.card('Indices', 'Day change and distance from all-time high (Indextracker tab)', '<div id="mk-idx"></div>');
       h += '<section class="card"><div class="card-head"><div><h2>Listed IPOs &amp; IPO bases</h2><p>' + ipos.length + ' IPOs · price vs listing price and IPO base</p></div></div>' +
@@ -122,7 +173,12 @@
       el.innerHTML = h;
 
       mountIpoTracker(el, D);
+      mountHigh52(el, D);
       mountPriceBands(el, D);
+      if (params && params[0] === 'high52') {             // #markets/high52 (the Overview's 52-week high tile)
+        var h52 = $('#high52', el);
+        if (h52 && h52.scrollIntoView) h52.scrollIntoView({ block: 'start' });
+      }
 
       new ui.Table({
         rows: ui.objRows(D.indices), pageSize: 40, sort: { key: 'Day change', dir: -1 },

@@ -26,7 +26,7 @@
         '</select></div>' +
         '<div class="controls">' + ui.chips('wl', [
           ['all', 'All'], ['qualified', 'Strategy: qualified'], ['buy', 'TTM Buy'], ['pattern', 'Has pattern'], ['fvg', 'Has FVG'],
-          ['ema', 'EMA support'], ['results', 'Result due ≤14 days'], ['done', 'Results ticked'], ['near', 'Within 10% of 52W high'], ['notes', 'With notes']
+          ['ema', 'EMA support'], ['results', 'Result due ≤14 days'], ['done', 'Results ticked'], ['near', 'Within 10% of 52W high'], ['new52', 'New 52W high (NSE)'], ['notes', 'With notes']
         ], ST.f) + '<span class="count" id="wl-count"></span></div>' +
         '<p class="sub" id="wl-strat">Strategy column: ' + esc(cfg.name) + ' v' + cfg.version + ' ' + ui.badge(dsc.tag, dsc.cls) + ' <span id="wl-strat-st">' + (strat ? '' : '· running…') + '</span></p>' +
         '<div id="wl-table"></div></section>';
@@ -41,6 +41,8 @@
           { key: 'ind', label: 'Basic industry', wrap: true },
           { key: 'price', label: 'Price', type: 'price' },
           { key: 'chg', label: 'Today', type: 'pct', digits: 2 },
+          { key: 'deliv', label: 'Deliv %', type: 'num', digits: 1,
+            title: 'Delivery % on the last trading day (NSE bhavcopy, EQ series): delivered quantity / traded quantity' },
           { key: 'd10', label: '10D', type: 'pct' },
           { key: 'd30', label: '30D', type: 'pct' },
           { key: 'down52', label: 'From 52W high', type: 'pct' },
@@ -68,6 +70,7 @@
             case 'ema': return !!(s.e10 || s.e21);
             case 'done': return s.done === true;
             case 'near': return isNum(s.down52) && s.down52 >= -10;
+            case 'new52': return !!(s.nse52 && s.nse52.isNew);
             case 'notes': return !!notes[s.sym];
             case 'results':
               var d = ui.parseDate(s.rdate);

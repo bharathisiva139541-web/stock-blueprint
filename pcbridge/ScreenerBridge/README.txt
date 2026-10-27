@@ -12,9 +12,10 @@ it does one more round 1 hour after that (again only with internet).
 Nothing runs continuously. If you stay logged in for days, use RunNow.bat when you want a fresh round.
  - RunNow.bat       do one round right now
  - Reschedule.bat   remove the old hourly schedule and use the log-in schedule (keeps your settings)
- - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists) + moneycontrol access
+ - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists, end-of-day files) + moneycontrol access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
  - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
+ - EodNow.bat           download NSE's end-of-day files (Delivery %, 52-week highs, market statistics) right now
  - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -39,6 +40,21 @@ email the first time each day. The website's IPOs & Markets page shows the same 
  - bridge.log shows "IPO lists: ..." for each round.
  - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)
 
+NSE END-OF-DAY: DELIVERY %, 52-WEEK HIGHS, MARKET STATISTICS
+Every round also downloads three NSE files of each trading day (NSE > All Reports > Equities, out in
+the evening) and sends a summary to the sheet:
+ - "Full Bhavcopy and Security Deliverable data": only the Delivery % of each stock is kept (no prices or
+   volumes); the prices are used just to count stocks traded, advances, declines and unchanged.
+ - "52 Week High Low Report": each stock's 52-week high and its date (52-week lows are not kept).
+ - "CM - Price Band complete list": used only to count the stocks that closed at the upper / lower band.
+The sheet fills three tabs: "Market Statistics" (one row per day), "Delivery %" (your Main stocks, last 10
+days) and "52 Week High" (new highs of the day + every Main stock). The website shows them: Overview
+(Market statistics), IPOs & Markets (52-week highs), Watchlist and the stock details (Delivery %).
+Counts cover mainboard equities only (EQ / BE / BZ), so NSE's homepage shows higher numbers.
+ - Days missed while the PC was off are caught up (up to a week back). eod_state.json remembers the last day.
+ - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
+ - To switch it off: in config.json add  "eod": false
+
 MONEYCONTROL (first figures while screener.in is late)
 moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies
 whose results are due and whose screener.in page does NOT show the new quarter yet, the program also
@@ -55,7 +71,7 @@ email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace the
  - EPS (for TTM EPS) comes from moneycontrol's results page; when it cannot be used, bridge.log says why
    ("no EPS: ...") and TTM EPS waits for screener.in.
 Checks (they send nothing):
- - TestConnection.bat line 5 looks up TCS on moneycontrol and prints its latest quarter.
+ - TestConnection.bat line 6 looks up TCS on moneycontrol and prints its latest quarter.
  - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and tries each of moneycontrol's
    sources (results widget, results page and its page data, old pages). For each one that works it
    prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS, then what a

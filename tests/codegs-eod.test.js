@@ -1,0 +1,101 @@
+'use strict';
+// Code.gs doPost action 'eod': the PC bridge posts one trading day of NSE end-of-day data
+// (market statistics, Delivery % per stock, each stock's 52-week high). The sheet keeps
+// "Market Statistics" (one row per day), "Delivery %" (Main stocks x last 10 days) and
+// "52 Week High" (new highs of the day + every Main stock); the site feed carries all three.
+const test = require('node:test');
+const assert = require('node:assert');
+const mock = require('./fixtures/apps-script-mock.js');
+
+const TOKEN = 'bridge-token-0123456789';
+const NOW = Date.UTC(2026, 9, 27, 16, 0);          // Tue 27-Oct-2026 21:30 IST
+const HEAD = ['Checkbox', 'StockName', 'SYMBOL', 'Result Date', 'Price Fall Alert Price', 'Breakout Alert Price', 'Triggered Y/N'];
+function workbook() {
+  return { sheets: [{ name: 'Main', rows: [['Main watchlist'], HEAD,
+    [false, 'Tata Consultancy', 'TCS', '', '', '', ''],
+    [false, 'Sona BLW', 'SONA', '', '', '', ''],
+    [false, '', '', '', '', '', ''],                       // a blank row inside the data
+    [false, 'Rallis India', 'RALLIS', '', '', '', ''],
+    [false, 'Sona BLW (again)', 'SONA', '', '', '', '']] }] };
+}
+function env() { return mock.loadCodeGs(workbook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW }); }
+const STATS = { traded: 2310, advances: 1520, declines: 700, unchanged: 90, high52: 28, upper: 41, lower: 12 };
+function day(iso, extra) {
+  return Object.assign({ token: TOKEN, action: 'eod', tradeDate: iso, stats: STATS,
+    delivery: { TCS: 61.234, SONA: 45.5, RALLIS: 30, OTHER: 80, BAD: 120 },
+    high52: [['TCS', 4500, '2026-01-10', 3900], ['SONA', 700, iso, 700], ['NEWCO', 50, iso, 50], ['RALLIS', 400, '2026-09-01', 380],
+      ['OLDCO', 90, '2025-12-01', 60], ['ZERO', 0, iso, 1]],
+    files: { bhav: true, w52: true, bands: true } }, extra || {});
+}
+const rows = (e, tab) => e.sheet(tab).rows;
+
+test('eod: three tabs - statistics row, Delivery % for Main stocks, 52-week highs', () => {
+  const e = env();
+  const r = e.post(day('2026-10-27'));
+  assert.deepStrictEqual(r, { ok: true, tradeDate: '2026-10-27', deliveryInMain: 3, newHighs: 2, newHighsInMain: 1, highTab: 'updated' });
+
+  const ms = rows(e, 'Market Statistics');
+  assert.match(ms[0][0], /^NSE market statistics - mainboard equities \(series EQ \/ BE \/ BZ\)/);
+  assert.deepStrictEqual(ms[1], ['Date', 'Stocks Traded', 'Advances', 'Declines', 'Unchanged', 'At 52W High', 'Upper Circuit', 'Lower Circuit']);
+  assert.deepStrictEqual(ms[2], ['2026-10-27', 2310, 1520, 700, 90, 28, 41, 12]);
+
+  const dl = rows(e, 'Delivery %');
+  assert.deepStrictEqual(dl[1], ['Symbol', 'Company', '2026-10-27']);
+  assert.deepStrictEqual(dl.slice(2), [['TCS', 'Tata Consultancy', 61.23], ['SONA', 'Sona BLW', 45.5], ['RALLIS', 'Rallis India', 30]],
+    'Main order, one row per symbol, blank rows skipped, other stocks left out');
+
+  const hi = rows(e, '52 Week High');
+  assert.strictEqual(hi[0][0], '52-week highs from NSE (adjusted for corporate actions) - as on 2026-10-27: 2 mainboard stocks made a new 52-week high ' +
+    '(1 in your watchlist). Below them: every watchlist stock, nearest to its high first.');
+  assert.deepStrictEqual(hi[1], ['Symbol', 'Company', '52W High', '52W High Date', 'Close', '% Below 52W High', 'New High Today', 'In Watchlist']);
+  assert.deepStrictEqual(hi.slice(2), [
+    ['NEWCO', '', 50, '2026-10-27', 50, 0, 'Yes', ''],
+    ['SONA', 'Sona BLW', 700, '2026-10-27', 700, 0, 'Yes', 'Yes'],
+    ['RALLIS', 'Rallis India', 400, '2026-09-01', 380, 5, '', 'Yes'],
+    ['TCS', 'Tata Consultancy', 4500, '2026-01-10', 3900, 13.3, '', 'Yes']]);
+});
+
+test('eod: days add up (newest first), the same day is replaced, an older catch-up day keeps the newer 52-week tab', () => {
+  const e = env();
+  e.post(day('2026-10-26', { stats: Object.assign({}, STATS, { traded: 2300 }), delivery: { TCS: 50, SONA: 40 } }));
+  e.post(day('2026-10-27'));
+  e.post(day('2026-10-27', { stats: Object.assign({}, STATS, { upper: null, lower: null }) }));     // re-sent without the band list
+  const ms = rows(e, 'Market Statistics');
+  assert.deepStrictEqual(ms.slice(2).map((x) => [x[0], x[1], x[6]]), [['2026-10-27', 2310, ''], ['2026-10-26', 2300, 41]]);
+  const dl = rows(e, 'Delivery %');
+  assert.deepStrictEqual(dl[1], ['Symbol', 'Company', '2026-10-27', '2026-10-26']);
+  assert.deepStrictEqual(dl[4], ['RALLIS', 'Rallis India', 30, ''], 'no value that day');
+  // a catch-up of an older day: statistics and delivery filed, the 52-week tab stays on the newest day
+  const r = e.post(day('2026-10-23', { high52: [['TCS', 4400, '2026-01-10', 3800]] }));
+  assert.strictEqual(r.highTab, 'kept (a newer day is already there)');
+  assert.match(rows(e, '52 Week High')[0][0], /as on 2026-10-27/);
+  assert.deepStrictEqual(rows(e, 'Market Statistics').slice(2).map((x) => x[0]), ['2026-10-27', '2026-10-26', '2026-10-23']);
+  assert.deepStrictEqual(rows(e, 'Delivery %')[1].slice(2), ['2026-10-27', '2026-10-26', '2026-10-23']);
+});
+
+test('eod: only the last 10 trading days of Delivery % are kept; bad posts are refused', () => {
+  const e = env();
+  for (let d = 1; d <= 12; d++) e.post(day('2026-10-' + String(d).padStart(2, '0')));
+  const h = rows(e, 'Delivery %')[1];
+  assert.strictEqual(h.length, 12);
+  assert.deepStrictEqual([h[2], h[11]], ['2026-10-12', '2026-10-03']);
+  assert.deepStrictEqual(e.post({ token: TOKEN, action: 'eod', tradeDate: '27-10-2026', stats: STATS }), { ok: false, error: 'tradeDate missing' });
+  assert.deepStrictEqual(e.post({ token: TOKEN, action: 'eod', tradeDate: '2026-10-27', stats: {} }), { ok: false, error: 'stats missing' });
+  assert.deepStrictEqual(e.post(Object.assign(day('2026-10-27'), { token: 'nope' })), { ok: false, error: 'bad token' });
+});
+
+test('site feed: marketStats, high52 (with notes) and delivery parts', () => {
+  const e = env();
+  e.post(day('2026-10-26', { delivery: { TCS: 50 } }));
+  e.post(day('2026-10-27'));
+  const data = e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
+    ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-10-27 21:30"); })()');
+  const j = JSON.parse(JSON.stringify(data));
+  assert.match(j.marketStats.note, /^NSE market statistics/);
+  assert.deepStrictEqual(j.marketStats.rows[0], ['2026-10-27', 2310, 1520, 700, 90, 28, 41, 12]);
+  assert.match(j.high52.note, /as on 2026-10-27: 2 mainboard stocks/);
+  assert.deepStrictEqual(j.high52.rows[1], ['SONA', 'Sona BLW', 700, '2026-10-27', 700, 0, 'Yes', 'Yes']);
+  assert.deepStrictEqual(j.delivery.cols, ['Symbol', 'Company', '2026-10-27', '2026-10-26']);
+  assert.deepStrictEqual(j.delivery.rows[0], ['TCS', 'Tata Consultancy', 61.23, 50]);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 3);
+});
