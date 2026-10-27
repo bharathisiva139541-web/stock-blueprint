@@ -29,7 +29,7 @@
     var setup = (r.setupTypes || []).filter(function (t) { return t !== 'screen'; }).map(function (t) { return t === 'pullback' ? 'Pullback / support' : t === 'reversal' ? 'Reversal pattern' : t === 'breakout' ? 'Breakout' : t; });
     var screen = run.config.mode === 'screen';
     var h = '<article class="sugg-item">';
-    h += '<div><div class="stock">' + ui.logoHtml(s.sym, 'lg') + '<div class="txt"><button type="button" class="linkish" data-sym="' + esc(s.sym) + '">' + esc(s.sym) + '</button>' +
+    h += '<div><div class="stock">' + ui.logoHtml(s.sym, 'lg') + '<div class="txt"><span class="sym-line"><button type="button" class="linkish" data-sym="' + esc(s.sym) + '">' + esc(s.sym) + '</button>' + SB.wlStar(s.sym) + '</span>' +
       '<span class="co">' + esc(s.name || '') + '</span><span class="sub">' + esc(s.exchange) + ' · ' + esc(s.catName) + (s.ind ? ' · ' + esc(s.ind) : '') + '</span></div></div>' +
       '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:8px"><b style="font-size:17px">' + F.price(s.price) + '</b>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div>' +
       (r.warnings && r.warnings.length ? '<div class="note warn" style="margin-top:8px">' + r.warnings.map(esc).join('<br>') + '</div>' : '') + '</div>';

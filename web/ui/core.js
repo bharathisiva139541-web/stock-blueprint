@@ -124,8 +124,10 @@
   function stockCell(sym, name, opts) {
     if (!sym) return '–';
     opts = opts || {};
-    return '<div class="stock">' + (opts.noLogo ? '' : logoHtml(sym)) + '<div class="txt"><button type="button" class="linkish" data-sym="' +
-      esc(sym) + '">' + esc(sym) + '</button>' + (name ? '<span class="co" title="' + esc(name) + '">' + esc(name) + '</span>' : '') + '</div></div>';
+    // the ☆ (add to one of the viewer's watchlists) comes from web/ui/watchlists.js
+    var star = !opts.noStar && SB.wlStar ? SB.wlStar(sym) : '';
+    return '<div class="stock">' + (opts.noLogo ? '' : logoHtml(sym)) + '<div class="txt"><span class="sym-line"><button type="button" class="linkish" data-sym="' +
+      esc(sym) + '">' + esc(sym) + '</button>' + star + '</span>' + (name ? '<span class="co" title="' + esc(name) + '">' + esc(name) + '</span>' : '') + '</div></div>';
   }
 
   // ---------- data state ----------
