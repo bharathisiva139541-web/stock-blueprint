@@ -50,11 +50,15 @@ email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace the
  - bridge.log shows "moneycontrol SYMBOL: ..." for each company it looked up.
  - moneycontrol_codes.json   remembers each company's moneycontrol code (found once by searching).
  - To switch it off: in config.json add  "moneycontrol": false   (or Control Panel > Results Season).
- - At most 40 companies a round; change with  "max_moneycontrol_per_run": 40
+ - At most 40 companies a round (the ones looked at longest ago first, the rest next round);
+   change with  "max_moneycontrol_per_run": 40
+ - EPS (for TTM EPS) comes from moneycontrol's results page; when it cannot be used, bridge.log says why
+   ("no EPS: ...") and TTM EPS waits for screener.in.
 Checks (they send nothing):
  - TestConnection.bat line 5 looks up TCS on moneycontrol and prints its latest quarter.
  - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and tries each of moneycontrol's
-   sources (results widget, results page and its page data, old pages). For the first one that works it
-   prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS.
+   sources (results widget, results page and its page data, old pages). For each one that works it
+   prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS, then what a
+   run would send to the sheet.
  - If none works it prints where the figures seem to be and saves the pages in the folder
    moneycontrol_check (next to this file) - Claude may ask you for those files.
