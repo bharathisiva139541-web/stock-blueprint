@@ -43,6 +43,9 @@ MONEYCONTROL (test only - nothing is sent to the sheet yet)
 moneycontrol.com often shows new quarterly results before screener.in. This is a first test to see
 whether this PC can read them:
  - TestConnection.bat line 5 looks up TCS on moneycontrol and prints its latest quarter.
- - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and prints, for each one, the
-   latest quarter, revenue and net profit (with QoQ / YoY change) and EPS, and which page it used.
+ - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and tries each of moneycontrol's
+   sources (results widget, results page and its page data, old pages). For the first one that works it
+   prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS.
+ - If none works it prints where the figures seem to be and saves the pages in the folder
+   moneycontrol_check (next to this file) - Claude may ask you for those files.
  - Send the output (screenshot) to Claude. Only after that test is fine will the sheet start using it.

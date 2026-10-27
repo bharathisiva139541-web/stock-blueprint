@@ -641,16 +641,35 @@ def ipo_step(cfg, today=None):
 # moneycontrol.com often shows a quarter's results before screener.in. Step 1 only CHECKS from this
 # computer that a stock can be found and its quarterly results read - nothing is sent to the sheet.
 # moneycontrol has its own company codes (e.g. acutaaschemicals / AO05), found once per stock through
-# its search box; the NSE symbol in the search answer confirms the match.
-MC_SUGGEST = 'https://www.moneycontrol.com/mccode/common/autosuggestion_solr.php?classic=true&query={q}&type=1&format=json'
-MC_RESULT_URLS = (('consolidated', 'https://www.moneycontrol.com/financials/{slug}/results/consolidated-quarterly-results/{code}'),
-                  ('standalone', 'https://www.moneycontrol.com/financials/{slug}/results/quarterly-results/{code}'),
-                  ('new page', 'https://www.moneycontrol.com/markets/financials/quarterly-results/{slug}-{code}/'))
+# its search box; the NSE symbol in the search answer confirms the match. Its results pages moved to a
+# new design (the figures sit inside the page as __NEXT_DATA__ or come from its own data links), so
+# several sources are tried; MoneycontrolCheck.bat shows which ones work and, when none does, prints
+# where the figures seem to be and saves the pages in moneycontrol_check\ .
 MC_HOME = 'https://www.moneycontrol.com/'
-_QTR_RE = re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s'\-’]*(\d{2}|\d{4})$", re.I)
-MC_ROWS = (('revenue', ('net sales/income from operations', 'total income from operations', 'net sales', 'revenue from operations', 'total revenue', 'revenue')),
-           ('profit', ('net profit/(loss) for the period', 'net profit/(loss) after mi & associates', 'net profit', 'profit after tax', 'pat')),
-           ('eps', ('basic eps', 'eps', 'basic & diluted eps')))
+MC_SUGGEST = 'https://www.moneycontrol.com/mccode/common/autosuggestion_solr.php?classic=true&query={q}&type=1&format=json'
+_MC_WIDGET = 'https://www.moneycontrol.com/mc/widget/mcfinancials/getFinancialData?classic=true&referenceId=income&requestType={t}&scId={code}&frequency=3'
+MC_SOURCES = (('consolidated widget', _MC_WIDGET.replace('{t}', 'C')),
+              ('standalone widget', _MC_WIDGET.replace('{t}', 'S')),
+              ('results page', 'https://www.moneycontrol.com/markets/financials/quarterly-results/{slug}-{code}/'),
+              ('old consolidated page', 'https://www.moneycontrol.com/financials/{slug}/results/consolidated-quarterly-results/{code}/1'),
+              ('old standalone page', 'https://www.moneycontrol.com/financials/{slug}/results/quarterly-results/{code}/1'))
+MC_CHECK_DIR = os.path.join(HERE, 'moneycontrol_check')
+MC_PAUSE = 0.8                     # seconds between two moneycontrol pages
+MC_ROWS = (('revenue', ('net sales/income from operations', 'total income from operations', 'revenue from operations', 'net sales',
+                        'total revenue', 'revenue', 'sales', 'income from operations', 'total income')),
+           ('profit', ('net profit/(loss) for the period', 'net profit/(loss) after mi & associates', 'net profit after tax', 'net profit',
+                       'profit after tax', 'pat', 'net income', 'profit/(loss) for the period')),
+           ('eps', ('basic eps', 'eps', 'basic & diluted eps', 'earnings per share')))
+_MON = ('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
+_MON_RE = r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?'
+_Q_MY = re.compile(r"^" + _MON_RE + r"[\s'\-’,/]*(\d{2}|\d{4})$", re.I)                  # Sep 2026, Sep '26, Sep-26
+_Q_DMY = re.compile(r"^(\d{1,2})[\s\-/]+" + _MON_RE + r"[\s\-/,'’]*(\d{2}|\d{4})$", re.I)   # 30-Sep-2026, 30 Sep 26
+_Q_MDY = re.compile(r"^" + _MON_RE + r"\s+(\d{1,2}),?\s+(\d{4})$", re.I)                    # Sep 30, 2026
+_Q_ISO = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ][\d:.]+Z?)?$")                    # 2026-09-30
+_Q_YM = re.compile(r"^(20\d{2})(\d{2})$")                                                # 202609
+_Q_FY = re.compile(r"^Q([1-4])\s*[-' ]?\s*FY\s*'?(\d{2}|\d{4})(?:\s*[-/]\s*(\d{2}|\d{4}))?$", re.I)   # Q2FY27, Q2 FY 2026-27
+_LABEL_KEYS = ('name', 'label', 'heading', 'title', 'particulars', 'lineitem', 'displayname', 'head', 'metric', 'item',
+               'rowname', 'field', 'key', 'text', 'description', 'desc')
 
 
 def mc_session():
@@ -662,19 +681,21 @@ def mc_session():
     return opener
 
 
-def mc_get(opener, url, timeout=30):
-    """Returns (status, text). Network problems raise OSError/URLError."""
-    req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': 'text/html,application/json;q=0.9,*/*;q=0.8',
-                                               'Accept-Language': 'en-US,en;q=0.9', 'Accept-Encoding': 'identity',
-                                               'Referer': MC_HOME})
+def mc_get(opener, url, timeout=30, xhr=False):
+    """Returns (status, text, final url after redirects). Network problems raise OSError/URLError."""
+    headers = {'User-Agent': UA, 'Accept': 'text/html,application/json;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9',
+               'Accept-Encoding': 'identity', 'Referer': MC_HOME}
+    if xhr:
+        headers['X-Requested-With'] = 'XMLHttpRequest'
+    req = urllib.request.Request(url, headers=headers)
     try:
         with opener.open(req, timeout=timeout) as r:
-            raw, status = r.read(), r.status
+            raw, status, final = r.read(), r.status, r.geturl()
     except urllib.error.HTTPError as e:
-        return e.code, ''
+        return e.code, '', url
     if raw[:2] == b'\x1f\x8b':
         raw = gzip.decompress(raw)
-    return status, raw.decode('utf-8', errors='replace')
+    return status, raw.decode('utf-8', errors='replace'), final
 
 
 def _strip_tags(t):
@@ -685,7 +706,7 @@ def mc_lookup(opener, sym):
     """NSE symbol -> {'code', 'slug', 'name', 'link'} or None, plus a note of what happened."""
     sym = sym.strip().upper()
     try:
-        status, text = mc_get(opener, MC_SUGGEST.format(q=urllib.parse.quote(sym)))
+        status, text, _ = mc_get(opener, MC_SUGGEST.format(q=urllib.parse.quote(sym)))
     except (OSError, urllib.error.URLError, socket.timeout) as e:
         return None, 'search did not answer (%s)' % e
     if status != 200:
@@ -744,27 +765,164 @@ class _Tables(HTMLParser):
             self._cell.append(data)
 
 
-def _qlabel(t):
-    m = _QTR_RE.match(t.strip())
-    if not m:
+def _yr(s):
+    y = int(s)
+    return y + 2000 if y < 100 else y
+
+
+def _qlabel(t, strict=False):
+    """A quarter written in any common way ('Sep '26', 'Q2FY27', '2026-09-30', ...) -> 'Sep 2026', else None.
+    strict = quarter-end months only (always so for full dates)."""
+    if not isinstance(t, str):
         return None
-    y = int(m.group(2))
-    return '%s %d' % (m.group(1).title()[:3], y + 2000 if y < 100 else y)
+    t = t.strip()
+    if not t or len(t) > 30:
+        return None
+    r = _Q_MY.match(t)
+    if r:
+        m, y = _MON.index(r.group(1)[:3].lower()) + 1, _yr(r.group(2))
+    elif _Q_FY.match(t):
+        r = _Q_FY.match(t)
+        q, end = int(r.group(1)), _yr(r.group(3) or r.group(2))
+        y, m = (end, 3) if q == 4 else (end - 1, 3 + 3 * q)
+    else:
+        strict = True
+        r = _Q_DMY.match(t)
+        if r:
+            m, y = _MON.index(r.group(2)[:3].lower()) + 1, _yr(r.group(3))
+        elif _Q_MDY.match(t):
+            r = _Q_MDY.match(t)
+            m, y = _MON.index(r.group(1)[:3].lower()) + 1, int(r.group(3))
+        elif _Q_ISO.match(t):
+            r = _Q_ISO.match(t)
+            y, m = int(r.group(1)), int(r.group(2))
+        elif _Q_YM.match(t):
+            r = _Q_YM.match(t)
+            y, m = int(r.group(1)), int(r.group(2))
+        else:
+            return None
+    if not (1 <= m <= 12 and 2000 <= y <= 2100) or (strict and m not in (3, 6, 9, 12)):
+        return None
+    return '%s %d' % (_MON[m - 1].title(), y)
+
+
+def _qkey(label):
+    mon, y = label.split()
+    return int(y), _MON.index(mon.lower()) + 1
+
+
+def _qshift(label, back):
+    """'Sep 2026' moved back by `back` months ('Jun 2026' for 3, 'Sep 2025' for 12)."""
+    y, m = _qkey(label)
+    n = y * 12 + m - 1 - back
+    return '%s %d' % (_MON[n % 12].title(), n // 12)
 
 
 def _num(t):
-    t = str(t or '').replace(',', '').strip()
-    if t.startswith('(') and t.endswith(')'):
-        t = '-' + t[1:-1]
-    try:
-        return float(t)
-    except ValueError:
+    if isinstance(t, bool) or t is None:
         return None
+    if isinstance(t, (int, float)):
+        return float(t)
+    t = re.sub(r'(?i)rs\.?|₹|crores?|cr\.?', '', str(t)).replace(',', '').strip()
+    neg = t.startswith('(') and t.endswith(')')
+    if neg:
+        t = t[1:-1].strip()
+    if not re.match(r'^[-+]?\d+(\.\d+)?$', t):
+        return None
+    return -float(t) if neg else float(t)
+
+
+def _rowkey(label):
+    """A row name ('Net Sales/Income from operations') -> ('revenue', rank) - lower rank = better name; else None."""
+    t = re.sub(r'\s+', ' ', str(label or '')).strip().lower().rstrip(':').strip()
+    if not t or len(t) > 80 or re.search(r'\bgrowth|margin|%|\byoy\b|\bqoq\b|\bchange|\bratio', t):
+        return None
+    best = None
+    for key, names in MC_ROWS:
+        for i, n in enumerate(names):
+            r = i if t == n else (100 + i if t.startswith(n) else None)
+            if r is not None and (best is None or r < best[1]):
+                best = (key, r)
+    return best
+
+
+def _fieldkey(k):
+    """A data field name ('netSales', 'net_profit', 'basicEps') -> ('revenue', rank), else None."""
+    nk = re.sub(r'[^a-z0-9]', '', str(k).lower())
+    if not nk or len(nk) > 40 or re.search(r'margin|growth|pct|percent|yoy|qoq|change|chg|ratio(?!n)|rank|count|date(?!d)|year|time', nk):
+        return None
+    if 'eps' in nk:
+        return ('eps', 0 if nk in ('eps', 'basiceps') else 1)
+    if not re.search(r'gross|operat|before|pbt|ebit|exceptional|minority|associat|expense|other', nk):
+        for i, n in enumerate(('netprofit', 'profitaftertax', 'pat', 'netincome', 'profit')):
+            if nk == n or (len(n) > 3 and n in nk):
+                return ('profit', i)
+    if not re.search(r'other|expense|cost|tax', nk):
+        for i, n in enumerate(('netsales', 'revenuefromoperations', 'revenue', 'totalrevenue', 'sales', 'incomefromoperations', 'totalincome', 'income')):
+            if nk == n or (len(n) > 4 and n in nk):
+                return ('revenue', i)
+    return None
+
+
+def _offer(best, rk, series, label, where=''):
+    """Keep, per figure, the series with the best row name (then the longest)."""
+    if not rk or not series:
+        return
+    key, rank = rk
+    cur = best.get(key)
+    if cur is None or (rank, -len(series)) < (cur[0], -len(cur[1])):
+        best[key] = (rank, series, label, where)
+
+
+def _mc_result(best, labels, how):
+    if 'revenue' not in best and 'profit' not in best:
+        return None
+    out = {'labels': labels, 'how': how, 'where': sorted(set(b[3] for b in best.values() if b[3]))}
+    qs = set()
+    for key in ('revenue', 'profit', 'eps'):
+        out[key] = best[key][1] if key in best else {}
+        qs |= set(out[key])
+    out['quarters'] = sorted(qs, key=_qkey, reverse=True)
+    return out
+
+
+def _table_result(tb):
+    """One table -> ({figure: (rank, {quarter: value}, row name, '')}, row names) for quarters across or down; else None."""
+    for i, row in enumerate(tb[:6]):                                  # quarters across (the usual layout)
+        qs = [(j, _qlabel(c)) for j, c in enumerate(row)]
+        qs = [x for x in qs if x[1]]
+        if len(qs) >= 2:
+            best = {}
+            for r in tb[i + 1:]:
+                if not r:
+                    continue
+                shift = len(r) - len(row)                            # rows may lack the header's first cell
+                series = {}
+                for j, q in qs:
+                    v = _num(r[j + shift]) if 0 <= j + shift < len(r) else None
+                    if v is not None:
+                        series[q] = v
+                _offer(best, _rowkey(r[0]), series, r[0])
+            return best, [r[0] for r in tb[i + 1:] if r and r[0]]
+    down = [(i, _qlabel(r[0])) for i, r in enumerate(tb) if r]          # quarters down the first column
+    down = [x for x in down if x[1]]
+    if len(down) >= 2 and down[0][0] > 0:
+        head, best = tb[down[0][0] - 1], {}
+        for j, name in enumerate(head):
+            series = {}
+            for i, q in down:
+                k = j + len(tb[i]) - len(head)
+                v = _num(tb[i][k]) if 0 < k < len(tb[i]) else None
+                if v is not None:
+                    series[q] = v
+            _offer(best, _rowkey(name), series, name)
+        return best, [h for h in head if h]
+    return None
 
 
 def mc_parse(html):
-    """Quarterly results table -> {'quarters': ['Sep 2026', ...], 'revenue': [...], 'profit': [...], 'eps': [...], 'labels': [...]}
-    (newest first), or None plus the row labels seen."""
+    """A results table in the page -> {'quarters': ['Sep 2026', ...] newest first, 'revenue' / 'profit' / 'eps': {quarter: value},
+    'labels': row names, 'how', 'where'}, or None; plus the row names seen (for the test printout)."""
     p = _Tables()
     try:
         p.feed(html)
@@ -772,75 +930,313 @@ def mc_parse(html):
         pass
     labels_seen = []
     for tb in p.tables:
-        hdr_i, quarters, cols = -1, [], []
-        for i, row in enumerate(tb[:6]):
-            qs = [(j, _qlabel(c)) for j, c in enumerate(row)]
-            qs = [x for x in qs if x[1]]
-            if len(qs) >= 2:
-                hdr_i, cols, quarters = i, [x[0] for x in qs], [x[1] for x in qs]
-                break
         labels_seen += [r[0] for r in tb if r and r[0]][:15]
-        if hdr_i < 0:
-            continue
-        out = {'quarters': quarters, 'labels': [r[0] for r in tb[hdr_i + 1:] if r and r[0]]}
-        for key, names in MC_ROWS:
-            for name in names:
-                row = next((r for r in tb[hdr_i + 1:] if r and r[0].strip().lower().rstrip(':') == name), None)
-                if row is None:
-                    row = next((r for r in tb[hdr_i + 1:] if r and r[0].strip().lower().startswith(name)), None)
-                if row is not None:
-                    shift = len(row) - len(tb[hdr_i])        # rows may lack the header's first cell
-                    out[key] = [_num(row[j + shift]) if 0 <= j + shift < len(row) else None for j in cols]
-                    break
-        if out.get('revenue') or out.get('profit'):
-            return out, labels_seen
+        got = _table_result(tb)
+        res = got and _mc_result(got[0], got[1], 'table')
+        if res:
+            return res, labels_seen
     return None, labels_seen
 
 
-def _growth(vals, a, b):
-    if not vals or len(vals) <= b or vals[a] is None or vals[b] in (None, 0):
+def _next_data(html):
+    m = re.search(r'<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>', html, re.S | re.I)
+    if not m:
         return None
-    return (vals[a] / vals[b] - 1) * 100 * (1 if vals[b] > 0 else -1)
+    try:
+        return json.loads(m.group(1))
+    except ValueError:
+        return None
 
 
-def mc_check(sym, out=print):
-    """Test only: find the stock on moneycontrol and read its latest quarters. Returns True when figures were read."""
+def _item_quarter(d):
+    """The quarter an item of figures is for: {'quarter': "Sep '26", ...} -> ('Sep 2026', 'quarter')."""
+    keys = sorted(d, key=lambda k: 0 if re.search(r'quarter|period|qtr', str(k), re.I) else 1)
+    for k in keys:
+        q = _qlabel(d[k], True)
+        if q:
+            return q, k
+    return None, None
+
+
+def _item_value(d, qkey):
+    for k in ('value', 'val', 'amount', 'v', 'y', 'data', 'figure'):
+        if k in d and _num(d[k]) is not None:
+            return _num(d[k])
+    nums = [_num(v) for k, v in d.items() if k != qkey and _num(v) is not None]
+    return nums[0] if len(nums) == 1 else None
+
+
+def _series_from(vals, heads):
+    """Figures of one row -> {quarter: value}: [{quarter, value}, ...] / {quarter: value} / numbers under quarter headings."""
+    out = {}
+    if isinstance(vals, dict):
+        for k, v in vals.items():
+            q, n = _qlabel(k, True), _num(v)
+            if q and n is not None:
+                out[q] = n
+    elif isinstance(vals, list) and vals:
+        if all(isinstance(x, dict) for x in vals):
+            for x in vals:
+                q, qk = _item_quarter(x)
+                n = _item_value(x, qk) if q else None
+                if q and n is not None:
+                    out[q] = n
+        elif heads:
+            qh = [h for h in heads if h]
+            pairs = zip(heads, vals) if len(vals) == len(heads) else zip(qh, vals) if len(vals) == len(qh) else ()
+            for q, v in pairs:
+                n = _num(v)
+                if q and n is not None:
+                    out[q] = n
+    return out
+
+
+def mc_from_json(data):
+    """Quarterly figures from the page's own data (__NEXT_DATA__), whatever its layout: lists of {quarter, netSales, ...},
+    named rows ({name: 'Net Sales', values: [...]}) under quarter headings, {'Sep 2026': {...}}, or HTML tables inside it.
+    -> same result as mc_parse (how = 'page data', where = the data path) or None."""
+    groups, count, tables = {}, [0], []
+
+    def offer(where, rk, series, label):
+        if rk and len(series) >= 2:
+            _offer(groups.setdefault(where, {}), rk, series, label, where)
+
+    def records(where, recs):
+        fields = {}
+        for q, d in recs:
+            flat = dict(d)
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    flat.update(v)
+            for k, v in flat.items():
+                n = _num(v)
+                if n is not None:
+                    fields.setdefault(k, {})[q] = n
+        for k, series in fields.items():
+            offer(where, _fieldkey(k), series, k)
+
+    def walk(node, path, heads, depth):
+        count[0] += 1
+        if depth > 40 or count[0] > 300000:
+            return
+        if isinstance(node, dict):
+            h = heads
+            for v in node.values():
+                if isinstance(v, list) and len(v) >= 2 and all(isinstance(x, str) for x in v):
+                    ql = [_qlabel(x, True) for x in v]
+                    if sum(1 for q in ql if q) >= max(2, len(v) - 1):
+                        h = ql
+            parent = re.sub(r'\[\d+\]$', '', path)
+            for k, v in node.items():
+                if isinstance(v, str) and str(k).lower() in _LABEL_KEYS and _rowkey(v):
+                    for v2 in node.values():
+                        if isinstance(v2, (list, dict)):
+                            offer(parent, _rowkey(v), _series_from(v2, h), v)
+                    break
+            qkeys = [k for k in node if _qlabel(k, True)]
+            if len(qkeys) >= 2:
+                records(path, [(_qlabel(k, True), node[k]) for k in qkeys if isinstance(node[k], dict)])
+            for k, v in node.items():
+                if isinstance(v, (list, dict)):
+                    rk = _fieldkey(k) or _rowkey(k)
+                    if rk:
+                        offer(path, rk, _series_from(v, h), k)
+                    walk(v, '%s.%s' % (path, k) if path else str(k), h, depth + 1)
+                elif isinstance(v, str) and '<table' in v and len(tables) < 20:
+                    tables.append(v)
+        elif isinstance(node, list):
+            recs = []
+            for x in node:
+                if isinstance(x, dict):
+                    q, _ = _item_quarter(x)
+                    if q:
+                        recs.append((q, x))
+            if len(recs) >= 2:
+                records(path, recs)
+            for i, x in enumerate(node):
+                if isinstance(x, list) and len(x) >= 3 and isinstance(x[0], str) and heads and _rowkey(x[0]):
+                    offer(path, _rowkey(x[0]), _series_from(x[1:], heads[1:] if len(heads) == len(x) else heads), x[0])
+                if isinstance(x, (dict, list)):
+                    walk(x, '%s[%d]' % (path, i), heads, depth + 1)
+                elif isinstance(x, str) and '<table' in x and len(tables) < 20:
+                    tables.append(x)
+
+    walk(data, '', None, 0)
+    best, score = None, -1
+    for where, g in groups.items():
+        s = (100 if 'revenue' in g else 0) + (100 if 'profit' in g else 0) + (30 if 'eps' in g else 0) + \
+            max(len(b[1]) for b in g.values()) + (5 if 'consol' in where.lower() else 0)
+        if s > score:
+            best, score = g, s
+    res = _mc_result(best, [b[2] for b in best.values()], 'page data') if best else None
+    if res:
+        return res
+    for t in tables:
+        res, _ = mc_parse(t)
+        if res:
+            res['how'] = 'table inside the page data'
+            return res
+    return None
+
+
+def mc_json_map(data, limit=8):
+    """Test printout when nothing could be read: where the page data mentions quarters or result row names."""
+    hits, names = [], []
+
+    def walk(node, path, depth):
+        if depth > 40 or len(hits) + len(names) > 400:
+            return
+        if isinstance(node, dict):
+            qk = sum(1 for k in node if _qlabel(k, True))
+            if qk >= 2:
+                hits.append((qk, path, 'keys: ' + ', '.join(str(k) for k in list(node)[:6])))
+            for k, v in node.items():
+                p = '%s.%s' % (path, k) if path else str(k)
+                if isinstance(v, str) and _rowkey(v):
+                    names.append('%s = %s' % (p, v[:40]))
+                elif isinstance(v, (dict, list)):
+                    walk(v, p, depth + 1)
+        elif isinstance(node, list):
+            n = sum(1 for x in node if (isinstance(x, str) and _qlabel(x, True)) or (isinstance(x, dict) and _item_quarter(x)[0]))
+            if n >= 2:
+                first = node[0]
+                sample = ('item keys: ' + ', '.join(str(k) for k in list(first)[:10])) if isinstance(first, dict) \
+                    else ('items: ' + ', '.join(str(x)[:14] for x in node[:4]))
+                hits.append((n, path, '%d items, %s' % (len(node), sample)))
+            if sum(1 for x in node if isinstance(x, str) and _rowkey(x)) >= 2:
+                names.append('%s = %s' % (path, ', '.join(str(x)[:20] for x in node[:5])))
+            for i, x in enumerate(node[:60]):
+                if isinstance(x, (dict, list)):
+                    walk(x, '%s[%d]' % (path, i), depth + 1)
+
+    walk(data, '', 0)
+    hits.sort(key=lambda h: -h[0])
+    out = ['quarters at %s  (%s)' % (p or '(top)', s) for _, p, s in hits[:limit]]
+    return [x[:170] for x in out + ['row name at ' + n for n in names[:4]]]
+
+
+def mc_api_hints(opener, html, page_url, data=None, limit=8):
+    """Test printout: links in the page's own scripts (and page data) that look like where its results come from."""
+    found = []
+
+    def scan(text):
+        quoted = r"""["'`]((?:https?:)?//[a-z0-9.-]*moneycontrol\.com/[^"'`\s<>]{3,200}|/[A-Za-z0-9_\-./]*(?:financ|quarter|result)[^"'`\s<>]{0,150})["'`]"""
+        bare = r"""((?:https?:)?//api[a-z0-9.-]*\.moneycontrol\.com[^"'`\s<>]{0,200}|/mcapi/[^"'`\s<>]{3,150})"""
+        for rx in (quoted, bare):
+            for m in re.finditer(rx, text, re.I):
+                u = m.group(1)
+                if (re.search(r'financ|quarter|result|mcapi', u, re.I) and not re.search(r'\.(png|jpe?g|svg|gif|webp|css|woff2?|js)(\?|$)', u, re.I)
+                        and not re.search(r'^/markets/|/news/', u) and u not in found):
+                    found.append(u)
+
+    srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html, re.I)
+    srcs = sorted(set(srcs), key=lambda s: 0 if re.search(r'financ|quarter|result', s, re.I) else 1 if re.search(r'pages/|_app', s) else 2)
+    for s in srcs[:6]:
+        try:
+            st, js, _ = mc_get(opener, urllib.parse.urljoin(page_url, s), timeout=20)
+        except (OSError, urllib.error.URLError, socket.timeout):
+            continue
+        if st == 200:
+            scan(js)
+        if len(found) >= limit:
+            break
+    if data is not None and len(found) < limit:
+        scan(json.dumps(data))
+    return found[:limit]
+
+
+def _mc_save(sym, name, text):
+    try:
+        os.makedirs(MC_CHECK_DIR, exist_ok=True)
+        path = os.path.join(MC_CHECK_DIR, '%s_%s' % (re.sub(r'[^A-Za-z0-9&_-]', '_', sym), name))
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        return path
+    except OSError:
+        return None
+
+
+def _growth(series, q, back):
+    a, b = series.get(q), series.get(_qshift(q, back))
+    if a is None or b in (None, 0):
+        return None
+    return (a / b - 1) * 100 * (1 if b > 0 else -1)
+
+
+def _mc_show(res, out):
+    q, rev, pr, eps = res['quarters'][0], res['revenue'], res['profit'], res['eps']
+    fmt = lambda v: '-' if v is None else '{:,.2f}'.format(v).rstrip('0').rstrip('.')
+    pct = lambda v: '-' if v is None else '%+.0f%%' % v
+    out('      latest %s: revenue %s (QoQ %s, YoY %s) | net profit %s (QoQ %s, YoY %s) | EPS %s'
+        % (q, fmt(rev.get(q)), pct(_growth(rev, q, 3)), pct(_growth(rev, q, 12)),
+           fmt(pr.get(q)), pct(_growth(pr, q, 3)), pct(_growth(pr, q, 12)), fmt(eps.get(q))))
+    out('      read from: %s%s' % ('; '.join(str(x) for x in res['labels'][:8]),
+                                   (' (at %s)' % ', '.join(res['where'])[:120]) if res.get('where') else ''))
+
+
+def mc_check(sym, out=print, detail=True):
+    """Test only: find the stock on moneycontrol and read its latest quarters from each source. Returns True when
+    figures were read. detail=False (TestConnection) stops at the first source that works and saves nothing."""
     opener = mc_session()
     hit, note = mc_lookup(opener, sym)
     if not hit:
         out('   %s: PROBLEM - %s' % (sym, note))
         return False
     out('   %s: found %s (moneycontrol code %s / %s)' % (sym, hit['name'], hit['slug'], hit['code']))
-    for kind, tmpl in MC_RESULT_URLS:
+    shown, seen_urls, pages = False, {}, []
+    for n, (kind, tmpl) in enumerate(MC_SOURCES):
         url = tmpl.format(slug=hit['slug'], code=hit['code'])
+        if n:
+            time.sleep(MC_PAUSE)
         try:
-            status, html = mc_get(opener, url)
+            status, text, final = mc_get(opener, url, xhr='widget' in kind)
         except (OSError, urllib.error.URLError, socket.timeout) as e:
-            out('   %s results: did not answer (%s)' % (kind, e))
+            out('   %s: did not answer (%s)' % (kind, e))
             continue
         if status != 200:
-            out('   %s results: HTTP %s' % (kind, status))
+            out('   %s: HTTP %s' % (kind, status))
             continue
-        res, seen = mc_parse(html)
-        if not res:
-            title = re.search(r'<title[^>]*>(.*?)</title>', html, re.S | re.I)
-            qs = sorted(set(_qlabel(m.group(0)) for m in re.finditer(r"(Mar|Jun|Sep|Dec)[a-z]*[\s'\-’]*\d{2,4}\b", html)) - {None})
-            out('   %s results: page read (%d KB, title "%s") but no results table found; quarters mentioned: %s; rows seen: %s'
-                % (kind, len(html) // 1024, _strip_tags(title.group(1))[:60] if title else '-', ', '.join(qs[-6:]) or 'none',
-                   '; '.join(seen[:8]) or 'none'))
-            if '__NEXT_DATA__' in html:
-                out('      (the page carries its data as __NEXT_DATA__ - step 2 can read that)')
+        final = final.split('#')[0].rstrip('/')
+        if final in seen_urls:
+            out('   %s: opens the same page as the %s' % (kind, seen_urls[final]))
             continue
-        q, rev, pr, eps = res['quarters'], res.get('revenue') or [], res.get('profit') or [], res.get('eps') or []
-        fmt = lambda v: '-' if v is None else '{:,.0f}'.format(v)
-        pct = lambda v: '-' if v is None else '%+.0f%%' % v
-        out('   %s results: OK - quarters %s' % (kind, ', '.join(q[:5])))
-        out('      latest %s: revenue %s Cr (QoQ %s, YoY %s) · net profit %s Cr (QoQ %s, YoY %s) · EPS %s'
-            % (q[0], fmt(rev[0] if rev else None), pct(_growth(rev, 0, 1)), pct(_growth(rev, 0, 4)),
-               fmt(pr[0] if pr else None), pct(_growth(pr, 0, 1)), pct(_growth(pr, 0, 4)), '-' if not eps or eps[0] is None else eps[0]))
-        out('      rows on the page: %s' % '; '.join(res['labels'][:10]))
-        return True
-    return False
+        seen_urls[final] = kind
+        res, seen = mc_parse(text)
+        nd = _next_data(text)
+        if not res and nd is not None:
+            res = mc_from_json(nd)
+        pages.append((kind, text, nd, final))
+        if res:
+            out('   %s: OK (%s) - %s' % (kind, res['how'], ', '.join(res['quarters'][:5])))
+            if not shown:
+                _mc_show(res, out)
+                shown = True
+            if not detail:
+                return True
+            continue
+        title = re.search(r'<title[^>]*>(.*?)</title>', text, re.S | re.I)
+        out('   %s: %d KB%s - no quarterly figures found%s%s'
+            % (kind, len(text) // 1024, (' "%s"' % _strip_tags(title.group(1))[:50]) if title else '',
+               ('; rows seen: ' + '; '.join(seen[:6])) if seen else '', ' (page data present)' if nd is not None else ''))
+    if detail and not shown and pages:
+        out('   nothing readable yet - where the figures may be (please send this to Claude):')
+        nd_page = next((p for p in pages if p[2] is not None), None)
+        if nd_page:
+            for line in mc_json_map(nd_page[2]) or ['page data has no quarter names in it']:
+                out('      ' + line)
+        page = nd_page or next((p for p in pages if 'page' in p[0]), pages[-1])
+        for u in mc_api_hints(opener, page[1], page[3], page[2]):
+            out('      data link in the page scripts: ' + u[:150])
+        saved = []
+        for kind, text, nd, _ in pages:
+            p = _mc_save(sym, kind.replace(' ', '_') + '.html', text)
+            if nd is not None:
+                p = _mc_save(sym, kind.replace(' ', '_') + '_data.json', json.dumps(nd, indent=1, ensure_ascii=False)) or p
+            if p:
+                saved.append(p)
+        if saved:
+            out('   pages saved in %s' % MC_CHECK_DIR)
+    return shown
 
 
 # ------------------------------------------------------------------- the run
@@ -1048,7 +1444,7 @@ def cmd_test(cfg):
         print('   PROBLEM - %s' % e)
     print('5) moneycontrol from this computer (test only) ...')
     try:
-        mc_check('TCS', out=print)
+        mc_check('TCS', out=print, detail=False)
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
@@ -1187,6 +1583,7 @@ def main(argv):
         print('moneycontrol test (nothing is sent to the sheet)')
         for sym in syms:
             mc_check(sym, out=print)
+        print('(nothing was sent to the sheet)')
         return 0
     if cmd == 'ipos':
         if not cfg.get('url') or not cfg.get('token'):
