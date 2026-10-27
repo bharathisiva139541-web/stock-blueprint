@@ -73,6 +73,9 @@
       applySignal(s);
       return s;
     });
+    // the latest Results Performance row of each stock (post-results strategy rules read s.rp)
+    var rp = SB.strategy.rpIndex((data.resultsPerf || {}).table);
+    stocks.forEach(function (s) { s.rp = rp[s.sym] || null; });
     ctx.D = data;
     ctx.stocks = stocks;
     ctx.bySym = {};

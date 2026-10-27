@@ -340,6 +340,7 @@
     if (c.source === 'demo') return ui.badge('DEMO', 's-warn');
     if (c.source === 'discovered') h = conf ? ui.badge('From your sheet', 's-info') : ui.badge('From your sheet (unconfirmed)', 's-warn');
     else if (c.source === 'discovered-edited') h = ui.badge('Edited from your sheet', 's-info');
+    else if (c.source === 'request') h = ui.badge('From your description', 's-info');
     else h = ui.badge('Custom', '');
     if (conf) h += ui.badge('Confirmed v' + c.version, 's-good');
     else if (c.source !== 'discovered') h += ui.badge('Not confirmed', 's-warn');
@@ -623,6 +624,10 @@
     var h = '<div class="note ' + (conf ? 'good' : 'warn') + '" id="st-assume" style="margin-top:12px">';
     h += '<strong>' + (demo ? 'DEMO strategy - assumptions' : conf ? 'Assumptions you confirmed (version ' + saved.version + ')' : 'Assumptions - please check before confirming') + '</strong>';
     h += items.length ? listHtml(items) : '<p style="margin-top:4px">No extra assumptions are listed for this strategy - check every rule in the editor below before confirming.</p>';
+    if (saved.source === 'request') {
+      h += '<p style="margin-top:8px">These rules were written from your own description. Where it said “substantially”, “approximately half” or “relatively stable”, the percentages above are my assumptions - ' +
+        'change them in the editor below if they are not what you meant. Until you confirm, Daily Suggestions marks this strategy “not confirmed”.</p>';
+    }
     if (saved.source === 'discovered' || saved.source === 'discovered-edited') {
       h += '<p style="margin-top:8px">These rules were found in your sheet (Code.gs and your dashboards), but how they combine into a suggestion is not written there. ' +
         'Until you confirm, Daily Suggestions marks this strategy “unconfirmed”.</p>';
@@ -945,7 +950,7 @@
     if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return { text: text };
     var sid = String(cfg.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
     var preset = sid && SB.strategy.PRESETS[sid], cur = sid ? STR.get(sid) : null;
-    if (preset) cfg.source = preset.source === 'demo' ? 'demo' : cur && cur.source === 'discovered-edited' ? 'discovered-edited' : 'discovered';
+    if (preset) cfg.source = preset.source === 'demo' ? 'demo' : preset.source === 'request' ? 'request' : cur && cur.source === 'discovered-edited' ? 'discovered-edited' : 'discovered';
     else cfg.source = 'custom';
     return { text: JSON.stringify(cfg), existed: !!cur, sid: sid };
   }
