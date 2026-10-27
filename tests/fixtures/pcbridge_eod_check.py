@@ -37,7 +37,8 @@ W52 = ('"Disclaimer - The Data provided in the adjusted 52 week high and adjuste
        '"Effective for 27-Oct-2026"\r\n'
        '"SYMBOL","SERIES","Adjusted 52_Week_High","52_Week_High_DT","Adjusted 52_Week_Low","52_Week_Low_DT"\r\n'
        '"TCS","EQ","4500","10-JAN-2026","3000","01-APR-2026"\r\n'
-       '"UPCIR","EQ","105","27-OCT-2026","60","01-FEB-2026"\r\n'
+       '"UPCIR","EQ","104","26-OCT-2026","60","01-FEB-2026"\r\n'   # the report can hold highs up to the day before
+       '"FLAT","EQ","50.5","01-OCT-2026","30","01-MAR-2026"\r\n'
        '"NOBAND","EQ","1200","27-Oct-2026","700","01-MAR-2026"\r\n'
        '"SMEX","SM","10.5","27-OCT-2026","5","01-JUN-2026"\r\n'
        '"LOWCIR","BE","45","02-DEC-2025","19","27-OCT-2026"\r\n')
@@ -53,7 +54,7 @@ bhav = sb.bhav_parse(BHAV.encode())
 assert [r['sym'] for r in bhav][:3] == ['TCS', 'UPCIR', 'LOWCIR'], bhav
 assert bhav[0]['deliv'] == 61.23 and bhav[2]['deliv'] is None and bhav[1]['last'] == 105.0 and bhav[1]['close'] == 104.9
 w52 = sb.w52_parse(W52.encode())
-assert w52[('TCS', 'EQ')] == (4500.0, date(2026, 1, 10)) and w52[('UPCIR', 'EQ')][1] == date(2026, 10, 27), w52
+assert w52[('TCS', 'EQ')] == (4500.0, date(2026, 1, 10)) and w52[('UPCIR', 'EQ')][1] == date(2026, 10, 26), w52
 bands = sb.bands_parse(BANDS.encode())
 assert bands[('UPCIR', 'EQ')] == 5.0 and bands[('TCS', 'EQ')] is None
 assert sb.bhav_parse(b'<html><body>Access denied</body></html>') is None and sb.w52_parse(b'a,b\r\n1,2') is None
@@ -68,10 +69,11 @@ DAY = date(2026, 10, 27)
 p = sb.eod_summary(DAY, bhav, w52, bands)
 assert p['tradeDate'] == '2026-10-27'
 # mainboard (EQ/BE/BZ), traded: TCS UPCIR LOWCIR FLAT NOBAND GOLDBEES (SMEX = SME, NOTRADE = no trades)
-assert p['stats'] == {'traded': 6, 'advances': 3, 'declines': 2, 'unchanged': 1, 'high52': 2, 'upper': 1, 'lower': 1}, p['stats']
+# new 52-week highs = the day's own high reaching the report's: UPCIR (105 > 104 of the day before), FLAT (51 > 50.5), NOBAND (= 1200)
+assert p['stats'] == {'traded': 6, 'advances': 3, 'declines': 2, 'unchanged': 1, 'high52': 3, 'upper': 1, 'lower': 1}, p['stats']
 assert p['delivery'] == {'TCS': 61.23, 'UPCIR': 80.0, 'FLAT': 50.0, 'NOBAND': 50.0, 'GOLDBEES': 25.0}, p['delivery']
-assert p['high52'] == [['LOWCIR', 45.0, '2025-12-02', 19.0], ['NOBAND', 1200.0, '2026-10-27', 1199.0], ['TCS', 4500.0, '2026-01-10', 3948.0],
-                       ['UPCIR', 105.0, '2026-10-27', 104.9]], p['high52']
+assert p['high52'] == [['FLAT', 51.0, '2026-10-27', 50.0], ['LOWCIR', 45.0, '2025-12-02', 19.0], ['NOBAND', 1200.0, '2026-10-27', 1199.0],
+                       ['TCS', 4500.0, '2026-01-10', 3948.0], ['UPCIR', 105.0, '2026-10-27', 104.9]], p['high52']
 assert p['files'] == {'bhav': True, 'w52': True, 'bands': True}
 q = sb.eod_summary(DAY, bhav, None, None)
 assert (q['stats']['high52'], q['stats']['upper'], q['stats']['lower'], q['high52']) == (None, None, None, []), q
@@ -135,7 +137,7 @@ sb.eod_step(CFG, today=DAY)
 assert [x['tradeDate'] for x in SENT] == ['2026-10-20', '2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
 assert SENT[3]['files'] == {'bhav': True, 'w52': False, 'bands': True} and SENT[3]['stats']['high52'] is None
 log = '\n'.join(LOGS)
-assert ('NSE end-of-day 27-10-2026: 6 stocks traded, 3 up / 2 down / 1 unchanged, 2 at a 52-week high, circuits 1 up / 1 down; '
+assert ('NSE end-of-day 27-10-2026: 6 stocks traded, 3 up / 2 down / 1 unchanged, 3 at a 52-week high, circuits 1 up / 1 down; '
         'Delivery % for 3 in Main.') in log, log
 assert 'NSE end-of-day 26-10-2026: 6 stocks traded, 3 up / 2 down / 1 unchanged, - at a 52-week high, circuits 1 up / 1 down; Delivery % for 3 in Main; not downloaded: 52-week report.' in log, log
 assert sb.eod_load_state()['last'] == '2026-10-27'
@@ -162,10 +164,22 @@ assert [x['tradeDate'] for x in SENT] == ['2026-10-28'] and SENT[0]['files'] == 
 
 # an older web app: the hint, and the day is not marked as sent
 REPLY['r'] = {'ok': False, 'error': 'unknown action'}
-sb.eod_save_state({'last': '2026-10-26'})
+sb.eod_save_state({'v': sb.EOD_STATE_VERSION, 'last': '2026-10-26'})
 del SENT[:], LOGS[:]
 sb.eod_step(CFG, today=DAY)
 assert len(SENT) == 1 and 'Version: New version > Deploy' in '\n'.join(LOGS) and sb.eod_load_state()['last'] == '2026-10-26', LOGS
+
+
+# a state from the first version (new highs counted from the report's date alone): the last week is sent again once
+REPLY.pop('r')
+sb.eod_save_state({'last': '2026-10-27'})
+del SENT[:]
+sb.eod_step(CFG, today=DAY)
+assert [x['tradeDate'] for x in SENT] == ['2026-10-20', '2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
+assert sb.eod_load_state()['v'] == sb.EOD_STATE_VERSION
+del SENT[:]
+sb.eod_step(CFG, today=DAY)
+assert SENT == []
 
 srv.shutdown()
 print('OK')
