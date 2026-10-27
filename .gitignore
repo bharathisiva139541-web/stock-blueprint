@@ -3,6 +3,7 @@ pcbridge/ScreenerBridge/config.json
 pcbridge/ScreenerBridge/bridge.log
 pcbridge/ScreenerBridge/bridge.lock
 pcbridge/ScreenerBridge/pricebands_state.json
+pcbridge/ScreenerBridge/moneycontrol_check/
 .clasprc.json
 *.token
 .env
