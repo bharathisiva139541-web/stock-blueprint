@@ -274,7 +274,9 @@ const AB_CP_SECTIONS_ = [
     { key: 'AB_IPO_SYNC_HOUR', label: 'Weekly IPO sync (Sunday): hour', def: 9, type: 'hour',
       after: 'Re-run menu: 9. IPOs > Install Weekly IPO Trigger', help: '0-23, IST.' },
     { key: 'AB_IPO_SYNC_EMAIL', label: 'Email me when the weekly sync finds new IPOs', def: true, type: 'bool',
-      help: 'Tick = on.' }
+      help: 'Tick = on.' },
+    { key: 'AB_IPOT_EMAIL', label: 'Daily IPO Tracker email (open / closed-not-listed / upcoming mainboard IPOs)', def: true, type: 'bool',
+      help: 'Tick = on. Sent once a day, the first time your PC bridge reads NSE\'s IPO lists that day.' }
   ] },
 
   { title: 'NSE Price Bands', note: 'Daily price band (circuit limit) changes - Price Band Changes tab and email', items: [
@@ -8370,6 +8372,9 @@ function doPost(e) {
     if (req.action === 'pricebands') {
       return ab_bridgeJson_(ab_pbFromBridge_(req));
     }
+    if (req.action === 'ipos') {
+      return ab_bridgeJson_(ab_ipotFromBridge_(req));
+    }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return ab_bridgeJson_({ ok: false, error: err.message });
@@ -13048,6 +13053,177 @@ function runImportPastedPriceBands() {
     ui.alert('Import failed: ' + e.message);
   }
 }
+
+/*****************************************************************
+ * IPO TRACKER  (NSE mainboard IPOs - filled by the PC bridge)
+ * -----------------------------------------------------------------
+ * NSE does not answer Google's servers, so the PC bridge
+ * (screener_bridge.py) reads NSE's IPO lists (Market Data > IPO:
+ * Current, Past Issues, Upcoming Issues) at every run and posts them
+ * to doPost action 'ipos' (ab_ipotFromBridge_). The "IPO Tracker" tab
+ * is rebuilt each time with three sections:
+ *   Open now                  - open for subscription today
+ *   Closed - awaiting listing - closed, not listed yet
+ *   Upcoming                  - opens on a later day
+ * SME issues are left out. The first update of each day (IST) also
+ * sends one short email (Control Panel: AB_IPOT_EMAIL). Subscription
+ * figures are not read. Dates come from the PC as yyyy-mm-dd.
+ *****************************************************************/
+const AB_IPOT_SHEET = 'IPO Tracker';
+const AB_IPOT_EMAIL = ab_setting_('AB_IPOT_EMAIL', true);
+const AB_IPOT_EMAIL_DAY_PROP = 'AB_IPOT_EMAIL_DAY';
+const AB_IPOT_CLOSED_MAX_DAYS = 30;   // closed longer ago than this and never listed = withdrawn / stale, not shown
+const AB_IPOT_HEADERS_ = ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'];
+const AB_IPOT_MON_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function ab_ipotIso_(v) { const m = String(v || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[0] : ''; }
+/** yyyy-mm-dd -> a Date at midnight (for sheet cells), '' when empty. */
+function ab_ipotCell_(iso) { if (!iso) return ''; const p = iso.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+/** yyyy-mm-dd -> "27-Oct". */
+function ab_ipotShort_(iso) { if (!iso) return '-'; const p = iso.split('-'); return p[2] + '-' + AB_IPOT_MON_[Number(p[1]) - 1]; }
+function ab_ipotDays_(fromIso, toIso) {
+  const a = fromIso.split('-'), b = toIso.split('-');
+  return Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 864e5);
+}
+function ab_ipotIsSme_(type) { const t = String(type || '').trim(); return /SME|EMERGE/i.test(t) || /^(SM|ST)$/i.test(t); }
+function ab_ipotPrice_(v) { return String(v || '').replace(/Rs\.?\s*/gi, '₹').replace(/\s+/g, ' ').trim(); }
+
+/**
+ * NSE records from the PC -> { open, closed, upcoming, sme } (mainboard only, one row per issue).
+ * records: [{ list: 'current'|'past'|'upcoming', company, symbol, type, start, end, listing, price, size }].
+ */
+function ab_ipotClassify_(records, todayIso) {
+  const best = {}, sme = {};
+  (Array.isArray(records) ? records : []).forEach(function (r) {
+    if (!r || typeof r !== 'object') return;
+    const rec = { list: String(r.list || ''), company: String(r.company || '').trim(), symbol: String(r.symbol || '').trim().toUpperCase(),
+      type: String(r.type || '').trim(), start: ab_ipotIso_(r.start), end: ab_ipotIso_(r.end), listing: ab_ipotIso_(r.listing),
+      price: ab_ipotPrice_(r.price), size: String(r.size || '').trim() };
+    if (!rec.company && !rec.symbol) return;
+    const k = rec.symbol || rec.company.toLowerCase();
+    if (ab_ipotIsSme_(rec.type)) { sme[k] = true; return; }
+    const cur = best[k];
+    if (!cur) { best[k] = rec; return; }
+    Object.keys(rec).forEach(function (f) { if (!cur[f] && rec[f]) cur[f] = rec[f]; });   // same issue in two lists
+  });
+  const out = { open: [], closed: [], upcoming: [], sme: Object.keys(sme).length };
+  Object.keys(best).forEach(function (k) {
+    const r = best[k];
+    if (r.listing && r.listing < todayIso) return;                      // listed already
+    if (r.start && r.start > todayIso) out.upcoming.push(r);
+    else if (r.end && r.end >= todayIso) (r.list === 'upcoming' && !r.start ? out.upcoming : out.open).push(r);
+    else if (r.end) { if (r.listing || ab_ipotDays_(r.end, todayIso) <= AB_IPOT_CLOSED_MAX_DAYS) out.closed.push(r); }
+    else if (r.list === 'upcoming') out.upcoming.push(r);             // dates not announced yet
+    else if (r.list === 'current') out.open.push(r);
+  });
+  const by = function (f, g) {
+    return function (a, b) { return (a[f] || '9999') < (b[f] || '9999') ? -1 : (a[f] || '9999') > (b[f] || '9999') ? 1 :
+      (a[g] || '9999') < (b[g] || '9999') ? -1 : (a[g] || '9999') > (b[g] || '9999') ? 1 : a.company < b.company ? -1 : 1; };
+  };
+  out.open.sort(by('end', 'start'));
+  out.closed.sort(by('listing', 'end'));
+  out.upcoming.sort(by('start', 'end'));
+  return out;
+}
+
+/** One line about where the issue stands, e.g. "Closes in 2 days", "Lists on 30-Oct". */
+function ab_ipotNote_(section, r, todayIso) {
+  const days = function (n, word) { return n === 0 ? word + ' today' : n === 1 ? word + ' tomorrow' : word + ' in ' + n + ' days'; };
+  if (section === 'open') return r.end ? days(ab_ipotDays_(todayIso, r.end), 'Closes') : 'Open';
+  if (section === 'closed') return !r.listing ? 'Listing date not announced' : r.listing === todayIso ? 'Lists today' : 'Lists on ' + ab_ipotShort_(r.listing);
+  return r.start ? days(ab_ipotDays_(todayIso, r.start), 'Opens') : 'Dates not announced';
+}
+
+function ab_ipotSections_(c) {
+  return [['open', 'Open now', c.open], ['closed', 'Closed - awaiting listing', c.closed], ['upcoming', 'Upcoming', c.upcoming]];
+}
+
+/** Rebuilds the IPO Tracker tab (a snapshot - nothing on it is kept between updates). */
+function ab_ipotWriteTab_(c, fetchedAt, failed, todayIso) {
+  const sh = ab_getOrCreateSheet_(AB_IPOT_SHEET);
+  const W = AB_IPOT_HEADERS_.length;
+  const pad = function (a) { while (a.length < W) a.push(''); return a; };
+  const rows = [], titles = [], heads = [], data = [];
+  rows.push(pad(['IPO Tracker - mainboard IPOs on NSE (SME issues left out)']));
+  rows.push(pad(['Updated ' + fetchedAt + ' IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.']));
+  if (failed.length) rows.push(pad(['Could not read from NSE this time: ' + failed.join(', ') + ' - those sections may be incomplete.']));
+  ab_ipotSections_(c).forEach(function (s) {
+    rows.push(pad([]));
+    titles.push(rows.length + 1); rows.push(pad([s[1] + ' (' + s[2].length + ')']));
+    heads.push(rows.length + 1); rows.push(AB_IPOT_HEADERS_.slice());
+    if (!s[2].length) { rows.push(pad(['None'])); return; }
+    data.push([rows.length + 1, s[2].length]);
+    s[2].forEach(function (r) {
+      rows.push([r.company || r.symbol, r.symbol, ab_ipotCell_(r.start), ab_ipotCell_(r.end), ab_ipotCell_(r.listing),
+                 r.price, r.size, ab_ipotNote_(s[0], r, todayIso)]);
+    });
+  });
+  sh.clear();
+  const f = sh.getFilter();
+  if (f) f.remove();
+  sh.getRange(1, 1, rows.length, W).setValues(rows);
+  sh.getRange(1, 1).setFontWeight('bold').setFontSize(13);
+  sh.getRange(2, 1).setFontColor('#5f6368');
+  titles.forEach(function (r) { sh.getRange(r, 1, 1, W).setFontWeight('bold').setBackground('#e8f0fe'); });
+  heads.forEach(function (r) { sh.getRange(r, 1, 1, W).setFontWeight('bold').setBackground('#f1f3f4'); });
+  data.forEach(function (d) { sh.getRange(d[0], 3, d[1], 3).setNumberFormat('dd/mm/yyyy'); });
+  sh.autoResizeColumns(1, W);
+}
+
+/** The day's short email: three small tables. */
+function ab_ipotSendEmail_(c, fetchedAt, failed, todayIso) {
+  const th = 'style="text-align:left;padding:5px 8px;background:#f1f3f4;border-bottom:2px solid #dadce0;font-size:12px;color:#5f6368"';
+  const td = 'style="padding:5px 8px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top"';
+  const esc = function (v) { return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  let html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;color:#202124">' +
+    '<h2 style="margin:0 0 4px;font-size:18px">IPO Tracker</h2>' +
+    '<p style="margin:0 0 4px;color:#5f6368;font-size:12px">Mainboard IPOs on NSE (SME left out). Read from NSE by your PC at ' + esc(fetchedAt) + ' IST.' +
+    (failed.length ? ' <b>Could not read: ' + esc(failed.join(', ')) + '.</b>' : '') + '</p>';
+  let text = 'IPO TRACKER - mainboard IPOs on NSE (SME left out), read ' + fetchedAt + ' IST\n';
+  ab_ipotSections_(c).forEach(function (s) {
+    html += '<h3 style="margin:16px 0 6px;font-size:15px">' + s[1] + ' (' + s[2].length + ')</h3>';
+    text += '\n' + s[1].toUpperCase() + ' (' + s[2].length + ')\n';
+    if (!s[2].length) { html += '<p style="margin:0;font-size:13px;color:#5f6368">None</p>'; text += '  none\n'; return; }
+    html += '<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr>' +
+      ['Company', 'Opens', 'Closes', s[0] === 'closed' ? 'Listing' : 'Price range', ''].map(function (t) { return '<th ' + th + '>' + t + '</th>'; }).join('') + '</tr>';
+    s[2].forEach(function (r) {
+      const note = ab_ipotNote_(s[0], r, todayIso);
+      html += '<tr><td ' + td + '><b>' + esc(r.company || r.symbol) + '</b>' + (r.symbol ? '<br><span style="color:#5f6368;font-size:11px">' + esc(r.symbol) + '</span>' : '') +
+        '</td><td ' + td + '>' + ab_ipotShort_(r.start) + '</td><td ' + td + '>' + ab_ipotShort_(r.end) + '</td><td ' + td + '>' +
+        (s[0] === 'closed' ? ab_ipotShort_(r.listing) : esc(r.price || '-')) + '</td><td ' + td + ' style="color:#5f6368">' + esc(note) + '</td></tr>';
+      text += '  ' + (r.company || r.symbol) + (r.symbol ? ' (' + r.symbol + ')' : '') + ': ' + ab_ipotShort_(r.start) + ' to ' + ab_ipotShort_(r.end) +
+        (s[0] === 'closed' ? ', listing ' + ab_ipotShort_(r.listing) : r.price ? ', ' + r.price : '') + ' - ' + note + '\n';
+    });
+    html += '</table>';
+  });
+  html += '<p style="margin:16px 0 0;color:#5f6368;font-size:11px">Details: the "' + AB_IPOT_SHEET + '" tab. Dates from NSE; not advice.</p></div>';
+  const subject = 'IPO Tracker (' + ab_ipotShort_(todayIso) + '): ' + c.open.length + ' open, ' + c.closed.length + ' awaiting listing, ' +
+    c.upcoming.length + ' upcoming';
+  return ab_sendMail_({ to: AB_EMAIL_TO, subject: subject, body: text, htmlBody: html });
+}
+
+/**
+ * PC bridge: NSE's IPO lists. req = { fetchedAt: 'yyyy-mm-dd HH:MM', failed: ['past', ...], records: [...] }.
+ * Rebuilds the tab; emails once per IST day (the first update of the day).
+ */
+function ab_ipotFromBridge_(req) {
+  const records = Array.isArray(req.records) ? req.records.slice(0, 1000) : null;
+  if (!records) return { ok: false, error: 'records missing' };
+  const failed = (Array.isArray(req.failed) ? req.failed : []).map(String).filter(function (x) { return /^(current|past|upcoming)$/.test(x); });
+  const now = new Date();
+  const todayIso = Utilities.formatDate(now, AB_TZ, 'yyyy-MM-dd');
+  const fetchedAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(req.fetchedAt || '')) ? String(req.fetchedAt) : Utilities.formatDate(now, AB_TZ, 'yyyy-MM-dd HH:mm');
+  const c = ab_ipotClassify_(records, todayIso);
+  ab_ipotWriteTab_(c, fetchedAt, failed, todayIso);
+  let emailed = false;
+  const props = PropertiesService.getScriptProperties();
+  if (AB_IPOT_EMAIL && props.getProperty(AB_IPOT_EMAIL_DAY_PROP) !== todayIso && ab_ipotSendEmail_(c, fetchedAt, failed, todayIso)) {
+    props.setProperty(AB_IPOT_EMAIL_DAY_PROP, todayIso);
+    emailed = true;
+  }
+  return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, sme: c.sme, emailed: emailed };
+}
+
 
 /*****************************************************************
  * RESULT DATE - LIVE FORMULA (not a script run)
