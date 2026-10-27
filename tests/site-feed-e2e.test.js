@@ -194,6 +194,22 @@ function workbook(o) {
     sheet('IPOs', [['NSE SYMBOL', 'Company', 'Listing Date'], ['NEWCO', 'New Co', '2026-09-30']], [null, null, 'dd/mm/yyyy'], 1),
     sheet('New IPOs', [['COMPANY NAME', 'Open', 'Close'], ['Alpha Ltd', '22-Oct-2026', '24-Oct-26']]),
     sheet('Price Band Changes', [['Report Date', 'Symbol', 'From', 'To'], ['2026-10-17', 'NEWCO', 0.2, 0.1]], ['yyyy-mm-dd', null, '0%', '0%'], 1),
+    sheet('IPO Tracker', [
+      ['IPO Tracker - mainboard equity IPOs on NSE (SME and debt issues left out)'],
+      ['Updated 2026-10-21 19:28 IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.'],
+      [''],
+      ['Open now (1)'],
+      ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
+      ['BLS Polymers Limited', 'BLSPOLY', '2026-10-20', '2026-10-22', '', '\u20B9142 to \u20B9150', 11900000, 'Closes tomorrow'],
+      [''],
+      ['Closed - awaiting listing (0)'],
+      ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
+      ['None'],
+      [''],
+      ['Upcoming (1)'],
+      ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
+      ['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', '', '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days']
+    ], [null, null, 'dd/mm/yyyy', 'dd/mm/yyyy', 'dd/mm/yyyy'], 4),
     o.history || history30(SYMS),
     patternData()
   ];
@@ -392,7 +408,7 @@ test('e2e main: Code.gs -> api/site -> the reply web/app.js boots from', async (
 
   // the export_xlsx.py keys (every tab present), and the same shape as the saved copy every page was written against
   assert.deepEqual(Object.keys(r.data), ['generated', 'source', 'main', 'resultsTracker', 'resultsPerf', 'asOf', 'patterns',
-    'fvg', 'gapup', 'watchLog', 'fvgBacktest', 'mitigatedLog', 'alerts', 'indices', 'ipos', 'newIpos', 'priceBands']);
+    'fvg', 'gapup', 'watchLog', 'fvgBacktest', 'mitigatedLog', 'alerts', 'indices', 'ipos', 'newIpos', 'priceBands', 'ipoTracker']);
   sameShape(r.data, SAVED, 'data');
   assert.deepEqual(r.data.main.cols, MAIN_COLS.map(function (x) { return x[0]; }), 'every Main column, in Code.gs order');
   assert.deepEqual(r.data.main.cols.filter(function (k) { return SAVED.main.cols.indexOf(k) >= 0; }), SAVED.main.cols,

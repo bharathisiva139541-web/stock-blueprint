@@ -223,6 +223,35 @@ function check(name, fn) {
           await page.waitForFunction(() => /Not found/.test(document.querySelector('#app').innerText), null, { timeout: 15000 });
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
+        await check('IPOs & markets: IPO tracker sections and price band filters', async () => {
+          errors.length = 0;
+          await page.goto(base + '#markets', { waitUntil: 'load' });
+          await page.waitForSelector('#pb-t table', { timeout: 15000 });
+          const r = await page.evaluate(() => {
+            const H = ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'];
+            window.SB.ctx.D.ipoTracker = {
+              note: 'Updated 2026-10-27 08:28 IST from NSE, read by your PC.', warning: '',
+              open: { cols: H, rows: [['BLS Polymers Limited', 'BLSPOLY', '2026-10-27', '2026-10-29', null, '₹142 to ₹150', 11900000, 'Closes in 2 days']] },
+              closed: { cols: H, rows: [] },
+              upcoming: { cols: H, rows: [['Bombay Coated and Special Steels Limited', 'BCSSL', '2026-10-29', '2026-11-02', null, '₹78 to ₹82', 23468846, 'Opens in 2 days']] }
+            };
+            window.SB.route();
+            const t = (id) => document.querySelector(id).innerText;
+            const pb = window.SB.ctx.D.priceBands;
+            const ei = pb.cols.indexOf('Effective (next weekday)');
+            const latest = pb.rows.reduce((m, x) => (x[ei] > m ? x[ei] : m), '');
+            return { open: t('#ipot-open'), closed: t('#ipot-closed'), upcoming: t('#ipot-upcoming'),
+              count: t('#pb-count'), latestN: pb.rows.filter((x) => x[ei] === latest).length };
+          });
+          assert.ok(/BLS Polymers Limited/.test(r.open) && /BLSPOLY/.test(r.open) && /1,19,00,000/.test(r.open) && /Closes in 2 days/.test(r.open), r.open);
+          assert.ok(/None/.test(r.closed), r.closed);
+          assert.ok(/BCSSL/.test(r.upcoming) && /2,34,68,846/.test(r.upcoming), r.upcoming);
+          assert.ok(r.count.indexOf(r.latestN + ' of ' + r.latestN) === 0, 'latest day only by default: ' + r.count);
+          await page.click('[data-chip="pbv"][data-v="all"]');
+          const all = await page.$eval('#pb-count', (x) => x.textContent);
+          assert.ok(/^([\d,]+) of \1$/.test(all), 'all days: ' + all);
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
         await check('daily suggestions match the engine run', async () => {
           await page.goto(base + '#suggestions', { waitUntil: 'load' });
           await page.waitForTimeout(3000);

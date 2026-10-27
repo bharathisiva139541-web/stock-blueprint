@@ -546,6 +546,16 @@ def ipo_is_sme(t):
     return 'SME' in t or 'EMERGE' in t or t in ('SM', 'ST')
 
 
+def ipo_kind(r):
+    """'main' (equity mainboard), 'sme' or 'other' (debt NCDs / bonds, units...) - the sheet's ab_ipotKind_ rule."""
+    t = str(r.get('type') or '').strip()
+    if ipo_is_sme(t):
+        return 'sme'
+    if t:
+        return 'main' if re.match(r'^(EQ|EQUITY|MAIN ?BOARD)$', t, re.I) else 'other'
+    return 'other' if re.search(r'\d{2}$', r.get('symbol') or '') and not re.search(r' to ', r.get('price') or '', re.I) else 'main'
+
+
 def ipo_fetch_list(opener, which, urls, today):
     """-> (records, None, field names) or (None, reason, [])."""
     f, t = (today - timedelta(days=IPO_PAST_DAYS)).strftime('%d-%m-%Y'), today.strftime('%d-%m-%Y')
@@ -615,8 +625,8 @@ def ipo_step(cfg, today=None):
                        'pencil > Version: New version > Deploy')
             log('IPO lists: the sheet refused - %s' % err)
             return
-        log('IPO lists: %d open, %d closed - awaiting listing, %d upcoming (mainboard; %d SME left out)%s.'
-            % (res.get('open', 0), res.get('closed', 0), res.get('upcoming', 0), res.get('sme', 0),
+        log('IPO lists: %d open, %d closed - awaiting listing, %d upcoming (mainboard equity; %d SME and %d debt/other left out)%s.'
+            % (res.get('open', 0), res.get('closed', 0), res.get('upcoming', 0), res.get('sme', 0), res.get('other', 0),
                ', email sent' if res.get('emailed') else ''))
         if failed:
             log('IPO lists: could not read %s this time - %s' % (', '.join(failed), '; '.join(notes)))
@@ -812,11 +822,16 @@ def cmd_test(cfg):
             if recs is None:
                 print('   %-8s PROBLEM - %s' % (which + ':', err))
                 continue
-            main = [r for r in recs if not ipo_is_sme(r['type'])]
+            main = [r for r in recs if ipo_kind(r) == 'main']
             eg = ''
             if main:
                 eg = '; e.g. %s %s to %s' % (main[0]['company'] or main[0]['symbol'], main[0]['start'] or '?', main[0]['end'] or '?')
-            print('   %-8s OK - %d issue(s), %d mainboard%s' % (which + ':', len(recs), len(main), eg))
+            types = {}
+            for r in recs:
+                types[r['type'] or '(none)'] = types.get(r['type'] or '(none)', 0) + 1
+            print('   %-8s OK - %d issue(s), %d mainboard equity%s' % (which + ':', len(recs), len(main), eg))
+            if recs:
+                print('            types: %s' % ', '.join('%s %d' % kv for kv in sorted(types.items())))
             if recs and not any(r['start'] or r['end'] for r in recs):
                 print('            dates not recognised - NSE fields: %s' % ', '.join(keys[:20]))
         print('   (nothing was sent)')

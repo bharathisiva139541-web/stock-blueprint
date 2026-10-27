@@ -33,6 +33,7 @@ The sheet files it on the "Price Band Changes" tab and sends the usual email onc
 NSE IPO LISTS (IPO Tracker tab + one email a day)
 Every round also reads NSE > Market Data > IPO (Current, Past Issues, Upcoming Issues) and sends it to
 the sheet. The sheet rebuilds the "IPO Tracker" tab: Open now / Closed - awaiting listing / Upcoming,
-with dates (mainboard only - SME issues are left out) and sends one email the first time each day.
+with dates (mainboard equity issues only - SME and debt issues such as NCDs are left out) and sends one
+email the first time each day. The website's IPOs & Markets page shows the same tab.
  - bridge.log shows "IPO lists: ..." for each round.
  - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)

@@ -72,7 +72,7 @@ SHEET = {'reply': None}
 def fake_api(cfg, action, payload=None, timeout=120, tries=3):
     assert action == 'ipos', action
     SENT.append(payload)
-    return SHEET['reply'] or {'ok': True, 'open': 1, 'closed': 1, 'upcoming': 1, 'sme': 1, 'emailed': True}
+    return SHEET['reply'] or {'ok': True, 'open': 1, 'closed': 1, 'upcoming': 1, 'sme': 1, 'other': 0, 'emailed': True}
 
 
 sb.api = fake_api
@@ -91,6 +91,10 @@ for raw, iso in (('27-Oct-2026', '2026-10-27'), ('27-OCT-2026', '2026-10-27'), (
     assert sb.ipo_date(raw) == iso, (raw, sb.ipo_date(raw))
 assert sb.ipo_records([]) == [] and sb.ipo_records({'data': []}) == [] and sb.ipo_records({'msg': 'x'}) is None
 assert sb.ipo_is_sme('SME') and sb.ipo_is_sme('sme') and not sb.ipo_is_sme('EQ') and not sb.ipo_is_sme('')
+assert sb.ipo_kind({'type': 'EQ', 'symbol': 'X'}) == 'main' and sb.ipo_kind({'type': 'SME'}) == 'sme'
+assert sb.ipo_kind({'type': 'DEBT', 'symbol': 'SMCG04'}) == 'other'
+assert sb.ipo_kind({'type': '', 'symbol': 'SMCG04', 'price': 'Rs.1,000'}) == 'other'
+assert sb.ipo_kind({'type': '', 'symbol': 'PARASHLTH', 'price': 'Rs.660 to Rs.693'}) == 'main'
 
 # --- a run: three lists read, listed issues dropped, everything else sent with yyyy-mm-dd dates
 TUE = date(2026, 10, 27)
@@ -107,7 +111,7 @@ assert by['PARASHLTH']['start'] == '2026-10-21' and by['PARASHLTH']['end'] == '2
 assert by['BCSSL']['size'] == '2,34,68,846' and by['BCSSL']['start'] == '2026-10-29'
 assert by['TINY']['type'] == 'SME', 'SME issues go to the sheet marked as SME (the sheet leaves them out)'
 assert any('/api/past-a?from_date=27-09-2026&to_date=27-10-2026' in h for h in HITS), HITS
-assert 'IPO lists: 1 open, 1 closed - awaiting listing, 1 upcoming (mainboard; 1 SME left out), email sent.' in logtail(), logtail()
+assert 'IPO lists: 1 open, 1 closed - awaiting listing, 1 upcoming (mainboard equity; 1 SME and 0 debt/other left out), email sent.' in logtail(), logtail()
 
 # --- one list fails: the rest is still sent, the failure is named
 del SENT[:]
