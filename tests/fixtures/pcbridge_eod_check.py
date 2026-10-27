@@ -130,10 +130,9 @@ def fake_api(cfg, action, payload=None, timeout=120, tries=3):
     SENT.append(payload)
     if REPLY.get('r'):
         return REPLY['r']
-    out = {'ok': True, 'tradeDate': payload['tradeDate'], 'deliveryInMain': 3, 'newHighs': payload['stats']['high52']}
-    if payload['files']['w52']:        # the sheet answers with its own Main stocks' counts
-        out['stats'] = {'traded': 4, 'advances': 2, 'declines': 1, 'unchanged': 1, 'high52': 2, 'upper': 1, 'lower': 0}
-    return out
+    # the sheet answers with its own Main stocks' counts
+    st = {'traded': 4, 'advances': 2, 'declines': 1, 'unchanged': 1, 'high52': 2 if payload['files']['w52'] else None, 'upper': 1, 'lower': 0}
+    return {'ok': True, 'tradeDate': payload['tradeDate'], 'stats': st, 'deliveryInMain': 3, 'newHighs': payload['stats']['high52']}
 
 
 sb.api = fake_api
@@ -149,9 +148,9 @@ sb.eod_step(CFG, today=DAY)
 assert [x['tradeDate'] for x in SENT] == ['2026-10-20', '2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
 assert SENT[3]['files'] == {'bhav': True, 'w52': False, 'bands': True} and SENT[3]['stats']['high52'] is None
 log = '\n'.join(LOGS)
-assert ('NSE end-of-day 27-10-2026: your Main stocks - 4 stocks traded, 2 up / 1 down / 1 unchanged, 2 at a 52-week high, circuits 1 up / 0 down; '
+assert ('NSE end-of-day 27-10-2026: your Main stocks - 4 traded, 2 up / 1 down / 1 unchanged, 2 at a 52-week high, circuits 1 up / 0 down; '
         'Delivery % for 3 in Main.') in log, log
-assert ('NSE end-of-day 26-10-2026: all NSE - 6 stocks traded, 3 up / 2 down / 1 unchanged, - at a 52-week high, circuits 1 up / 1 down; '
+assert ('NSE end-of-day 26-10-2026: your Main stocks - 4 traded, 2 up / 1 down / 1 unchanged, - at a 52-week high, circuits 1 up / 0 down; '
         'Delivery % for 3 in Main; not downloaded: 52-week report.') in log, log
 assert sb.eod_load_state()['last'] == '2026-10-27'
 
@@ -183,7 +182,15 @@ sb.eod_step(CFG, today=DAY)
 assert len(SENT) == 1 and 'Version: New version > Deploy' in '\n'.join(LOGS) and sb.eod_load_state()['last'] == '2026-10-26', LOGS
 
 
-# a state from the first version (new highs counted from the report's date alone): the last week is sent again once
+# just after a New version deploy Google may still answer with the older version (no Main-stock counts): stop, send that day again
+REPLY['r'] = {'ok': True, 'tradeDate': '2026-10-27', 'deliveryInMain': 3, 'newHighs': 2}
+sb.eod_save_state({'v': sb.EOD_STATE_VERSION, 'last': '2026-10-23'})
+del SENT[:], LOGS[:]
+sb.eod_step(CFG, today=DAY)
+assert [x['tradeDate'] for x in SENT] == ['2026-10-26'], 'stops at the first day the old version answered'
+assert 'answered with its older version' in '\n'.join(LOGS) and sb.eod_load_state()['last'] == '2026-10-23', LOGS
+
+# a state from an earlier version of this program: the last week is sent again once
 REPLY.pop('r')
 sb.eod_save_state({'last': '2026-10-27'})
 del SENT[:]
