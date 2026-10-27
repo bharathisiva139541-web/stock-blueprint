@@ -12,8 +12,9 @@ it does one more round 1 hour after that (again only with internet).
 Nothing runs continuously. If you stay logged in for days, use RunNow.bat when you want a fresh round.
  - RunNow.bat       do one round right now
  - Reschedule.bat   remove the old hourly schedule and use the log-in schedule (keeps your settings)
- - TestConnection.bat   check sheet + screener.in + NSE access
+ - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists) access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
+ - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
@@ -28,3 +29,10 @@ The sheet files it on the "Price Band Changes" tab and sends the usual email onc
  - If NSE ever refuses, the old way still works: paste into the "Priceband" tab and use
    Auto Bhavcopy > 10. NSE Price Bands > Import Pasted Rows.
  - To switch it off: in config.json add  "price_bands": false
+
+NSE IPO LISTS (IPO Tracker tab + one email a day)
+Every round also reads NSE > Market Data > IPO (Current, Past Issues, Upcoming Issues) and sends it to
+the sheet. The sheet rebuilds the "IPO Tracker" tab: Open now / Closed - awaiting listing / Upcoming,
+with dates (mainboard only - SME issues are left out) and sends one email the first time each day.
+ - bridge.log shows "IPO lists: ..." for each round.
+ - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)

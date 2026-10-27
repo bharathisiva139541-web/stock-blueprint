@@ -15,11 +15,16 @@ It also downloads NSE's daily "Price Band changes from next trade date" file
 and hands it to the sheet, which files it on the "Price Band Changes" tab and
 sends the day's email - no more copy/paste.
 
+And it reads NSE's IPO lists (current, past issues, upcoming) so the sheet can
+keep its "IPO Tracker" tab (mainboard IPOs: open now / closed - awaiting listing /
+upcoming, with dates) and send one IPO email a day.
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
   python screener_bridge.py test       check the connection to the sheet, screener.in and NSE
   python screener_bridge.py pricebands download NSE's price band changes and send them now
+  python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -61,6 +66,7 @@ DEFAULTS = {
     'batch_size': 5,           # pages sent to the sheet at a time
     'abort_after_failures': 5, # stop the run after this many failures in a row
     'price_bands': True,       # download NSE's price band changes at every run
+    'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
 }
 
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -442,6 +448,182 @@ def price_bands_step(cfg, today=None):
         log('Price bands: unexpected problem - %s' % e)
 
 
+# ------------------------------------------------------------------ NSE IPO lists
+# NSE > Market Data > IPO (the page below): Current, Past Issues and Upcoming Issues. The page
+# fills its tables from NSE's own data addresses; this reads the same data. The sheet (doPost
+# 'ipos') sorts the issues into Open now / Closed - awaiting listing / Upcoming, leaves SME
+# issues out, rebuilds the "IPO Tracker" tab and sends one email a day.
+IPO_PAGE = 'https://www.nseindia.com/market-data/all-upcoming-issues-ipo'
+IPO_SOURCES = (
+    ('current', ('https://www.nseindia.com/api/ipo-current-issue',)),
+    ('past', ('https://www.nseindia.com/api/public-past-issues?from_date={f}&to_date={t}&security_type=all',
+              'https://www.nseindia.com/api/public-past-issues?from_date={f}&to_date={t}',
+              'https://www.nseindia.com/api/public-past-issues')),
+    ('upcoming', ('https://www.nseindia.com/api/all-upcoming-issues?category=ipo',)),
+)
+IPO_PAST_DAYS = 30       # past issues closed in the last 30 days (older ones are listed long ago)
+IPO_FIELDS = (           # our name <- NSE field names (compared without case / punctuation)
+    ('company', ('companyname', 'company', 'name', 'issuername', 'securityname')),
+    ('symbol', ('symbol',)),
+    ('type', ('securitytype', 'series', 'issuetype', 'type', 'segment')),
+    ('start', ('issuestartdate', 'startdate', 'bidstartdate', 'issueopendate', 'opendate', 'ipostartdate')),
+    ('end', ('issueenddate', 'enddate', 'bidenddate', 'issueclosedate', 'closedate', 'ipoenddate')),
+    ('listing', ('listingdate', 'dateoflisting', 'listingon')),
+    ('price', ('pricerange', 'priceband', 'issueprice', 'price')),
+    ('size', ('issuesize', 'totalissuesize', 'size')),
+)
+_MONTHS = {m: i + 1 for i, m in enumerate(('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'))}
+
+
+def _norm_key(k):
+    return re.sub(r'[^a-z0-9]', '', str(k).lower())
+
+
+def ipo_date(v):
+    """NSE date text (27-Oct-2026, 27-OCT-2026, 2026-10-27, 27-10-2026, Oct 27, 2026 ...) -> 'yyyy-mm-dd' or ''."""
+    t = str(v or '').strip()
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', t)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    else:
+        m = re.match(r'^(\d{1,2})[-/ ]([A-Za-z]{3,})[-/ ,]+(\d{4})', t)
+        if m:
+            y, mo, d = int(m.group(3)), _MONTHS.get(m.group(2)[:3].lower(), 0), int(m.group(1))
+        else:
+            m = re.match(r'^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})', t)
+            if m:
+                y, mo, d = int(m.group(3)), _MONTHS.get(m.group(1)[:3].lower(), 0), int(m.group(2))
+            else:
+                m = re.match(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})', t)
+                if not m:
+                    return ''
+                y, mo, d = int(m.group(3)), int(m.group(2)), int(m.group(1))
+    try:
+        return date(y, mo, d).isoformat()
+    except ValueError:
+        return ''
+
+
+def ipo_records(obj):
+    """The list of issues in NSE's answer (the answer itself, or under a key such as 'data'), or None."""
+    if isinstance(obj, list):
+        if not obj or all(isinstance(x, dict) for x in obj[:5]):
+            return obj
+        return None
+    if isinstance(obj, dict):
+        keys = [k for k in ('data', 'rows', 'records', 'result') if k in obj] + [k for k in obj if k not in ('data', 'rows', 'records', 'result')]
+        for k in keys:
+            if isinstance(obj[k], (list, dict)):
+                r = ipo_records(obj[k])
+                if r is not None and (r or k in ('data', 'rows', 'records', 'result')):
+                    return r
+    return None
+
+
+def ipo_normalize(rec, which):
+    nk = {_norm_key(k): v for k, v in rec.items()}
+    out = {'list': which}
+    for field, names in IPO_FIELDS:
+        val = ''
+        for n in names:
+            v = nk.get(n)
+            if v is None or isinstance(v, (dict, list)):
+                continue
+            v = str(v).strip()
+            if v and v not in ('-', 'null', 'None', 'NA', 'N/A'):
+                val = v
+                break
+        out[field] = val
+    for f in ('start', 'end', 'listing'):
+        out[f] = ipo_date(out[f])
+    if not out['type'] and str(nk.get('issme', '')).strip().lower() in ('true', 'y', 'yes', '1'):
+        out['type'] = 'SME'
+    return out
+
+
+def ipo_is_sme(t):
+    t = str(t or '').strip().upper()
+    return 'SME' in t or 'EMERGE' in t or t in ('SM', 'ST')
+
+
+def ipo_fetch_list(opener, which, urls, today):
+    """-> (records, None, field names) or (None, reason, [])."""
+    f, t = (today - timedelta(days=IPO_PAST_DAYS)).strftime('%d-%m-%Y'), today.strftime('%d-%m-%Y')
+    last = 'nothing tried'
+    for u in urls:
+        try:
+            status, raw = nse_get(opener, u.format(f=f, t=t), referer=IPO_PAGE)
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            last = 'NSE did not answer (%s)' % e
+            continue
+        if status != 200:
+            last = 'HTTP %s from NSE' % status
+            continue
+        try:
+            obj = json.loads(raw.decode('utf-8', errors='replace'))
+        except ValueError:
+            last = 'NSE did not send data (a web page came back instead)'
+            continue
+        recs = ipo_records(obj)
+        if recs is None:
+            last = 'NSE\'s answer had no list of issues'
+            continue
+        return [ipo_normalize(r, which) for r in recs], None, (sorted(recs[0].keys()) if recs else [])
+    return None, last, []
+
+
+def ipo_session():
+    opener = nse_session()
+    try:
+        nse_get(opener, IPO_PAGE, referer='https://www.nseindia.com/', timeout=20)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        pass
+    return opener
+
+
+def ipo_step(cfg, today=None):
+    """Reads NSE's three IPO lists and hands them to the sheet. Never raises."""
+    if not cfg.get('ipos', True):
+        return
+    try:
+        today = today or date.today()
+        opener = ipo_session()
+        records, failed, notes = [], [], []
+        for i, (which, urls) in enumerate(IPO_SOURCES):
+            recs, err, _ = ipo_fetch_list(opener, which, urls, today)
+            if recs is None:
+                failed.append(which)
+                notes.append('%s: %s' % (which, err))
+            else:
+                # issues that listed before today are of no interest
+                records.extend(r for r in recs if not (r['listing'] and r['listing'] < today.isoformat()))
+            if i < len(IPO_SOURCES) - 1:
+                time.sleep(1.0)
+        if len(failed) == len(IPO_SOURCES):
+            log('IPO lists: could not read NSE - %s' % '; '.join(notes))
+            return
+        payload = {'fetchedAt': datetime.now().strftime('%Y-%m-%d %H:%M'), 'failed': failed, 'records': records}
+        try:
+            res = api(cfg, 'ipos', payload, timeout=180)
+        except RuntimeError as e:
+            log('IPO lists: sending to the sheet failed (%s) - the next run tries again.' % e)
+            return
+        if not res.get('ok'):
+            err = res.get('error') or 'unknown error'
+            if err == 'unknown action':
+                err = ('the sheet\'s web app does not know the IPO lists yet - in Apps Script: Deploy > Manage deployments > '
+                       'pencil > Version: New version > Deploy')
+            log('IPO lists: the sheet refused - %s' % err)
+            return
+        log('IPO lists: %d open, %d closed - awaiting listing, %d upcoming (mainboard; %d SME left out)%s.'
+            % (res.get('open', 0), res.get('closed', 0), res.get('upcoming', 0), res.get('sme', 0),
+               ', email sent' if res.get('emailed') else ''))
+        if failed:
+            log('IPO lists: could not read %s this time - %s' % (', '.join(failed), '; '.join(notes)))
+    except Exception as e:   # never let the IPO lists stop the screener work
+        log('IPO lists: unexpected problem - %s' % e)
+
+
 # ------------------------------------------------------------------- the run
 def acquire_lock():
     try:
@@ -493,6 +675,7 @@ def run_once(cfg):
             log('Sheet refused: %s' % ans.get('error'))
             return 1
         price_bands_step(cfg)
+        ipo_step(cfg)
         priority = [s for s in ans.get('priority', [])]
         missing = [s for s in ans.get('missing', [])][:int(cfg['max_missing_per_run'])]
         todo = priority + [s for s in missing if s not in priority]
@@ -619,6 +802,24 @@ def cmd_test(cfg):
         else:
             print('   PROBLEM - could not download a price band file from NSE (the screener part still works;'
                   ' paste the file by hand meanwhile).')
+    except Exception as e:
+        print('   PROBLEM - %s' % e)
+    print('4) NSE IPO lists from this computer ...')
+    try:
+        opener = ipo_session()
+        for which, urls in IPO_SOURCES:
+            recs, err, keys = ipo_fetch_list(opener, which, urls, date.today())
+            if recs is None:
+                print('   %-8s PROBLEM - %s' % (which + ':', err))
+                continue
+            main = [r for r in recs if not ipo_is_sme(r['type'])]
+            eg = ''
+            if main:
+                eg = '; e.g. %s %s to %s' % (main[0]['company'] or main[0]['symbol'], main[0]['start'] or '?', main[0]['end'] or '?')
+            print('   %-8s OK - %d issue(s), %d mainboard%s' % (which + ':', len(recs), len(main), eg))
+            if recs and not any(r['start'] or r['end'] for r in recs):
+                print('            dates not recognised - NSE fields: %s' % ', '.join(keys[:20]))
+        print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
     return 0 if ok else 1
@@ -751,6 +952,12 @@ def main(argv):
         return run_once(cfg)
     if cmd == 'test':
         return cmd_test(cfg)
+    if cmd == 'ipos':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        ipo_step(dict(cfg, ipos=True))
+        return 0
     if cmd == 'pricebands':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
