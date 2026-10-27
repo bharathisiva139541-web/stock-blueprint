@@ -995,6 +995,9 @@ def _series_from(vals, heads):
     return out
 
 
+_MC_RANKED = re.compile(r'best|worst|top_?\d|bottom', re.I)
+
+
 def mc_from_json(data):
     """Quarterly figures from the page's own data (__NEXT_DATA__), whatever its layout: lists of {quarter, netSales, ...},
     named rows ({name: 'Net Sales', values: [...]}) under quarter headings, {'Sep 2026': {...}}, or HTML tables inside it.
@@ -1024,6 +1027,8 @@ def mc_from_json(data):
         if depth > 40 or count[0] > 300000:
             return
         if isinstance(node, dict):
+            # "best / worst quarters" boxes rank quarters by profit - not a quarterly series
+            node = {k: v for k, v in node.items() if not _MC_RANKED.search(str(k))}
             h = heads
             for v in node.values():
                 if isinstance(v, list) and len(v) >= 2 and all(isinstance(x, str) for x in v):

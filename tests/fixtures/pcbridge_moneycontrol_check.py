@@ -81,6 +81,11 @@ check(sb.mc_from_json({'s': {'netSales': {'Sep 2026': 120.5, 'Sep 2025': 100}, '
 html_in = '<table><tr><th>Quarterly</th><th>Sep 2026</th><th>Sep 2025</th></tr><tr><td>Net Sales</td><td>120.50</td><td>100.00</td></tr><tr><td>Net Profit</td><td>22.00</td><td>18.00</td></tr></table>'
 check(sb.mc_from_json({'props': {'pageProps': {'widgetHtml': html_in}}}), how='table inside the page data')
 
+# the real results page (Oct 2026) only carries "best / worst quarter" boxes - ranked by profit, not a series
+ranked = {'props': {'pageProps': {'data': {'performance': {'list': {
+    'best_qtr': [{'quarter': 'Sep 2026', 'net_profit': 197}, {'quarter': 'Jun 2026', 'net_profit': 180}],
+    'worst_qtr': [{'quarter': 'Sep 2023', 'net_profit': -17}, {'quarter': 'Dec 2023', 'net_profit': 5}]}}}}}}
+assert sb.mc_from_json(ranked) is None
 # nothing usable
 assert sb.mc_from_json({'props': {'pageProps': {'news': [{'title': 'Sep 2026 results', 'url': '/news/x'}], 'price': 100}}}) is None
 assert sb.mc_from_json([]) is None and sb.mc_from_json(None) is None
