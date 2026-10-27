@@ -130,6 +130,22 @@ function workbook(opts) {
     sheet('IPOs', [['NSE SYMBOL', 'Company', 'Listing Date'], ['NEWCO', 'New Co', '2026-09-30']], [null, null, 'dd/mm/yyyy'], 1),
     sheet('New IPOs', [['COMPANY NAME', 'Open', 'Close'], ['Alpha Ltd', '22-Oct-2026', '24-Oct-26'], ['Beta Ltd', '31/02/2026', 'TBA']]),
     sheet('Price Band Changes', [['Report Date', 'Symbol', 'From', 'To'], ['2026-10-17', 'NEWCO', 0.2, 0.1]], ['yyyy-mm-dd', null, '0%', '0%'], 1),
+    sheet('IPO Tracker', [
+      ['IPO Tracker - mainboard equity IPOs on NSE (SME and debt issues left out)'],
+      ['Updated 2026-10-21 19:28 IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.'],
+      [''],
+      ['Open now (1)'],
+      ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
+      ['BLS Polymers Limited', 'BLSPOLY', '2026-10-20', '2026-10-22', '', '\u20B9142 to \u20B9150', 11900000, 'Closes tomorrow'],
+      [''],
+      ['Closed - awaiting listing (0)'],
+      ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
+      ['None'],
+      [''],
+      ['Upcoming (1)'],
+      ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
+      ['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', '', '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days']
+    ], [null, null, 'dd/mm/yyyy', 'dd/mm/yyyy', 'dd/mm/yyyy'], 4),
     opts.history || history30(['TCS', 'HDFCBANK', 'SBIN']),
     patternData()
   ];
@@ -175,7 +191,7 @@ test('site feed main: envelope and the export_xlsx.py keys', () => {
   assert.strictEqual(r.tz, 'Asia/Kolkata');
   const d = r.data;
   assert.deepStrictEqual(Object.keys(d), ['generated', 'source', 'main', 'resultsTracker', 'resultsPerf', 'asOf', 'patterns',
-    'fvg', 'gapup', 'watchLog', 'mitigatedLog', 'alerts', 'indices', 'ipos', 'newIpos', 'priceBands']);
+    'fvg', 'gapup', 'watchLog', 'mitigatedLog', 'alerts', 'indices', 'ipos', 'newIpos', 'priceBands', 'ipoTracker']);
   assert.strictEqual(d.generated, r.readAt);
   assert.strictEqual(d.source, 'Google Sheet (live feed)');
   assert.strictEqual(d.asOf, '2026-10-20 18:45');
@@ -247,6 +263,14 @@ test('site feed main: results, patterns and market tables', () => {
   // text dates: '22-Oct-2026' and '24-Oct-26' convert; an impossible '31/02/2026' stays text
   assert.deepStrictEqual(d.newIpos.rows, [['Alpha Ltd', '2026-10-22', '2026-10-24'], ['Beta Ltd', '31/02/2026', 'TBA']]);
   assert.deepStrictEqual(d.priceBands.rows, [['2026-10-17', 'NEWCO', 20, 10]]);
+  const HDR = ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'];
+  assert.deepStrictEqual(d.ipoTracker, {
+    note: 'Updated 2026-10-21 19:28 IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.',
+    warning: '',
+    open: { cols: HDR, rows: [['BLS Polymers Limited', 'BLSPOLY', '2026-10-20', '2026-10-22', null, '\u20B9142 to \u20B9150', 11900000, 'Closes tomorrow']] },
+    closed: { cols: HDR, rows: [] },
+    upcoming: { cols: HDR, rows: [['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', null, '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days']] }
+  }, 'IPO Tracker sections, "None" rows dropped');
 });
 
 test('site feed main: alerts are watch-level only and leave private symbols out', () => {

@@ -8629,6 +8629,8 @@ function ab_site_main_(cx, readAt) {
   data.ipos = ab_site_table_(cx, ab_site_tab_(cx, 'IPOs'), 'NSE SYMBOL', { stopBlank: false });
   data.newIpos = ab_site_table_(cx, ab_site_tab_(cx, 'New IPOs'), 'COMPANY NAME', { stopBlank: false, maxRows: 300 });
   data.priceBands = ab_site_table_(cx, ab_site_tab_(cx, 'Price Band Changes'), 'Report Date', { stopBlank: false });
+  const ipot = ab_site_tab_(cx, 'IPO Tracker');
+  if (ipot) data.ipoTracker = ab_site_ipoTracker_(cx, ipot);
   return data;
 }
 
@@ -8854,6 +8856,29 @@ function ab_site_mainSymbolCount_(cx) {
   return Object.keys(seen).length;
 }
 
+/**
+ * export_xlsx.py ipo_tracker(): the IPO Tracker tab (filled from NSE by the PC bridge) ->
+ * { note, warning, open, closed, upcoming } (each { cols, rows }; the "None" row dropped).
+ */
+function ab_site_ipoTracker_(cx, tab) {
+  const keyOf = { 'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming' };
+  const out = { note: '', warning: '' }, found = {};
+  tab.values.forEach(function (r, i) {
+    const t = !r.length || ab_site_isBlank_(r[0]) ? '' : ab_site_pyStr_(cx, r[0]).trim();
+    if (i === 1 && t.indexOf('Updated ') === 0) out.note = t;
+    if (i < 4 && t.indexOf('Could not read') === 0) out.warning = t;
+    const m = /^(.+) \(\d+\)$/.exec(t);
+    const k = m ? keyOf[m[1].toLowerCase()] : null;
+    if (k && !found[k]) {
+      const tb = ab_site_table_(cx, tab, 'Company', { start: i + 1 });
+      tb.rows = tb.rows.filter(function (x) { return !(x[0] === 'None' && x.slice(1).every(function (v) { return v === null; })); });
+      found[k] = tb;
+    }
+  });
+  ['open', 'closed', 'upcoming'].forEach(function (k) { out[k] = found[k] || { cols: [], rows: [] }; });
+  return out;
+}
+
 /** A whole tab, read once per call: { sheet, values } or null. */
 function ab_site_tab_(cx, name) {
   if (!Object.prototype.hasOwnProperty.call(cx.tabs, name)) {
@@ -8871,8 +8896,8 @@ function ab_site_column_(cx, name, col) {
 }
 
 /**
- * export_xlsx.py table(): find the row whose first cell is `firstHeader`,
- * read headers from it and data rows below until the first blank first cell
+ * export_xlsx.py table(): find the row whose first cell is `firstHeader`
+ * (at or after row index opt.start), read headers from it and data rows below until the first blank first cell
  * (opt.stopBlank false: skip blank rows instead). opt.kinds = {header: kind};
  * other columns get frac/auto from the number format of their first numeric
  * cell (formats are read for those rows only). opt.maxRows caps the rows.
@@ -8882,7 +8907,7 @@ function ab_site_table_(cx, tab, firstHeader, opt) {
   const stopBlank = opt.stopBlank !== false, kinds = opt.kinds || {};
   const rows = tab ? tab.values : [];
   const want = ab_site_norm_(cx, firstHeader);
-  for (let i = 0; i < rows.length; i++) {
+  for (let i = opt.start || 0; i < rows.length; i++) {
     if (!rows[i].length || ab_site_norm_(cx, rows[i][0]) !== want) continue;
     const hdr = rows[i].map(function (h) { return ab_site_isBlank_(h) ? '' : ab_site_pyStr_(cx, h).trim(); });
     while (hdr.length && !hdr[hdr.length - 1]) hdr.pop();
@@ -9061,7 +9086,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 1;
+const AB_SITE_FEED_FORMAT = 2;   // 2: + ipoTracker (IPO Tracker tab)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history'];
 const AB_SITE_FEED_CHUNK = 45000;
@@ -13065,9 +13090,11 @@ function runImportPastedPriceBands() {
  *   Open now                  - open for subscription today
  *   Closed - awaiting listing - closed, not listed yet
  *   Upcoming                  - opens on a later day
- * SME issues are left out. The first update of each day (IST) also
- * sends one short email (Control Panel: AB_IPOT_EMAIL). Subscription
- * figures are not read. Dates come from the PC as yyyy-mm-dd.
+ * Only equity mainboard issues are kept: SME issues and debt / other
+ * issues (NCDs, bonds, units - anything NSE does not type EQ) are left
+ * out. The first update of each day (IST) also sends one short email
+ * (Control Panel: AB_IPOT_EMAIL). Subscription figures are not read.
+ * Dates come from the PC as yyyy-mm-dd.
  *****************************************************************/
 const AB_IPOT_SHEET = 'IPO Tracker';
 const AB_IPOT_EMAIL = ab_setting_('AB_IPOT_EMAIL', true);
@@ -13086,6 +13113,17 @@ function ab_ipotDays_(fromIso, toIso) {
   return Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 864e5);
 }
 function ab_ipotIsSme_(type) { const t = String(type || '').trim(); return /SME|EMERGE/i.test(t) || /^(SM|ST)$/i.test(t); }
+/**
+ * 'main' (equity mainboard), 'sme', or 'other' (debt: NCDs / bonds, REIT / InvIT units...).
+ * NSE types an equity issue EQ. With no type, a symbol ending in digits and a single price
+ * (no "x to y" range) is a debt issue (e.g. SMCG04 at Rs.1,000).
+ */
+function ab_ipotKind_(rec) {
+  const t = String(rec.type || '').trim();
+  if (ab_ipotIsSme_(t)) return 'sme';
+  if (t) return /^(EQ|EQUITY|MAIN ?BOARD)$/i.test(t) ? 'main' : 'other';
+  return /\d{2}$/.test(rec.symbol || '') && !/ to /i.test(rec.price || '') ? 'other' : 'main';
+}
 function ab_ipotPrice_(v) { return String(v || '').replace(/Rs\.?\s*/gi, '₹').replace(/\s+/g, ' ').trim(); }
 
 /**
@@ -13093,7 +13131,7 @@ function ab_ipotPrice_(v) { return String(v || '').replace(/Rs\.?\s*/gi, '₹').
  * records: [{ list: 'current'|'past'|'upcoming', company, symbol, type, start, end, listing, price, size }].
  */
 function ab_ipotClassify_(records, todayIso) {
-  const best = {}, sme = {};
+  const best = {}, sme = {}, other = {};
   (Array.isArray(records) ? records : []).forEach(function (r) {
     if (!r || typeof r !== 'object') return;
     const rec = { list: String(r.list || ''), company: String(r.company || '').trim(), symbol: String(r.symbol || '').trim().toUpperCase(),
@@ -13101,12 +13139,14 @@ function ab_ipotClassify_(records, todayIso) {
       price: ab_ipotPrice_(r.price), size: String(r.size || '').trim() };
     if (!rec.company && !rec.symbol) return;
     const k = rec.symbol || rec.company.toLowerCase();
-    if (ab_ipotIsSme_(rec.type)) { sme[k] = true; return; }
+    const kind = ab_ipotKind_(rec);
+    if (kind === 'sme') { sme[k] = true; return; }
+    if (kind === 'other') { other[k] = true; return; }
     const cur = best[k];
     if (!cur) { best[k] = rec; return; }
     Object.keys(rec).forEach(function (f) { if (!cur[f] && rec[f]) cur[f] = rec[f]; });   // same issue in two lists
   });
-  const out = { open: [], closed: [], upcoming: [], sme: Object.keys(sme).length };
+  const out = { open: [], closed: [], upcoming: [], sme: Object.keys(sme).length, other: Object.keys(other).length };
   Object.keys(best).forEach(function (k) {
     const r = best[k];
     if (r.listing && r.listing < todayIso) return;                      // listed already
@@ -13144,7 +13184,7 @@ function ab_ipotWriteTab_(c, fetchedAt, failed, todayIso) {
   const W = AB_IPOT_HEADERS_.length;
   const pad = function (a) { while (a.length < W) a.push(''); return a; };
   const rows = [], titles = [], heads = [], data = [];
-  rows.push(pad(['IPO Tracker - mainboard IPOs on NSE (SME issues left out)']));
+  rows.push(pad(['IPO Tracker - mainboard equity IPOs on NSE (SME and debt issues left out)']));
   rows.push(pad(['Updated ' + fetchedAt + ' IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.']));
   if (failed.length) rows.push(pad(['Could not read from NSE this time: ' + failed.join(', ') + ' - those sections may be incomplete.']));
   ab_ipotSections_(c).forEach(function (s) {
@@ -13166,7 +13206,10 @@ function ab_ipotWriteTab_(c, fetchedAt, failed, todayIso) {
   sh.getRange(2, 1).setFontColor('#5f6368');
   titles.forEach(function (r) { sh.getRange(r, 1, 1, W).setFontWeight('bold').setBackground('#e8f0fe'); });
   heads.forEach(function (r) { sh.getRange(r, 1, 1, W).setFontWeight('bold').setBackground('#f1f3f4'); });
-  data.forEach(function (d) { sh.getRange(d[0], 3, d[1], 3).setNumberFormat('dd/mm/yyyy'); });
+  data.forEach(function (d) {
+    sh.getRange(d[0], 3, d[1], 3).setNumberFormat('dd/mm/yyyy');
+    sh.getRange(d[0], 7, d[1], 1).setNumberFormat('[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0');   // 2,34,68,846
+  });
   sh.autoResizeColumns(1, W);
 }
 
@@ -13177,9 +13220,9 @@ function ab_ipotSendEmail_(c, fetchedAt, failed, todayIso) {
   const esc = function (v) { return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
   let html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;color:#202124">' +
     '<h2 style="margin:0 0 4px;font-size:18px">IPO Tracker</h2>' +
-    '<p style="margin:0 0 4px;color:#5f6368;font-size:12px">Mainboard IPOs on NSE (SME left out). Read from NSE by your PC at ' + esc(fetchedAt) + ' IST.' +
+    '<p style="margin:0 0 4px;color:#5f6368;font-size:12px">Mainboard equity IPOs on NSE (SME and debt issues left out). Read from NSE by your PC at ' + esc(fetchedAt) + ' IST.' +
     (failed.length ? ' <b>Could not read: ' + esc(failed.join(', ')) + '.</b>' : '') + '</p>';
-  let text = 'IPO TRACKER - mainboard IPOs on NSE (SME left out), read ' + fetchedAt + ' IST\n';
+  let text = 'IPO TRACKER - mainboard equity IPOs on NSE (SME and debt issues left out), read ' + fetchedAt + ' IST\n';
   ab_ipotSections_(c).forEach(function (s) {
     html += '<h3 style="margin:16px 0 6px;font-size:15px">' + s[1] + ' (' + s[2].length + ')</h3>';
     text += '\n' + s[1].toUpperCase() + ' (' + s[2].length + ')\n';
@@ -13221,7 +13264,7 @@ function ab_ipotFromBridge_(req) {
     props.setProperty(AB_IPOT_EMAIL_DAY_PROP, todayIso);
     emailed = true;
   }
-  return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, sme: c.sme, emailed: emailed };
+  return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, sme: c.sme, other: c.other, emailed: emailed };
 }
 
 

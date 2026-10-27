@@ -186,6 +186,30 @@ def table(rows, first_header, start=0, stop_blank=True, kinds=None, max_rows=Non
     return {'cols': [], 'rows': []}
 
 
+IPO_SECTIONS = {'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming'}
+
+
+def ipo_tracker(rows):
+    """The IPO Tracker tab (filled from NSE by the PC bridge) -> {note, warning, open, closed, upcoming}
+    (each {cols, rows}; the "None" row dropped). Code.gs ab_site_ipoTracker_ does the same."""
+    out, found = {'note': '', 'warning': ''}, {}
+    for i, r in enumerate(rows):
+        t = str(r[0]).strip() if r and r[0] is not None else ''
+        if i == 1 and t.startswith('Updated '):
+            out['note'] = t
+        if i < 4 and t.startswith('Could not read'):
+            out['warning'] = t
+        m = re.match(r'^(.+) \((\d+)\)$', t)
+        k = IPO_SECTIONS.get(m.group(1).lower()) if m else None
+        if k and k not in found:
+            tb = table(rows, 'Company', start=i + 1)
+            tb['rows'] = [x for x in tb['rows'] if not (x[0] == 'None' and all(v is None for v in x[1:]))]
+            found[k] = tb
+    for k in ('open', 'closed', 'upcoming'):
+        out[k] = found.get(k, {'cols': [], 'rows': []})
+    return out
+
+
 def export(path):
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     data = {'generated': dt.datetime.now().strftime('%Y-%m-%d %H:%M'), 'source': os.path.basename(path)}
@@ -314,6 +338,8 @@ def export(path):
     data['ipos'] = table(rows_of(wb['IPOs']), 'NSE SYMBOL', stop_blank=False)
     data['newIpos'] = table(rows_of(wb['New IPOs']), 'COMPANY NAME', stop_blank=False, max_rows=300)
     data['priceBands'] = table(rows_of(wb['Price Band Changes']), 'Report Date', stop_blank=False)
+    if 'IPO Tracker' in wb.sheetnames:
+        data['ipoTracker'] = ipo_tracker(rows_of(wb['IPO Tracker']))
 
     export_history(wb, data.get('asOf'))
 

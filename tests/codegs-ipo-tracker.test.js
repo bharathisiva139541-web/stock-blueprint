@@ -18,6 +18,9 @@ const REC = [
   { list: 'past', company: 'Tonbo Imaging India Limited', symbol: 'TONBO', type: 'EQ', start: '2026-10-15', end: '2026-10-19', listing: '2026-10-23' },
   { list: 'past', company: 'Ravita Engineering', symbol: 'RAVITA', type: 'SME', start: '2026-10-14', end: '2026-10-16', listing: '' },
   { list: 'past', company: 'Old Withdrawn Limited', symbol: 'OLDW', type: 'EQ', start: '2026-08-01', end: '2026-08-05', listing: '' },
+  // debt issues (NCDs): typed DEBT, or untyped with a numbered symbol and one price
+  { list: 'past', company: 'SMC Global Securities Limited', symbol: 'SMCG04', type: '', start: '2026-10-05', end: '2026-10-09', listing: '', price: 'Rs.1,000' },
+  { list: 'current', company: 'Muthoot Bond Limited', symbol: 'MBL26', type: 'DEBT', start: '2026-10-26', end: '2026-11-06', price: '1000' },
   { list: 'upcoming', company: 'Bombay Coated and Special Steels Limited', symbol: 'BCSSL', type: 'EQ', start: '2026-10-29', end: '2026-11-02', price: 'Rs.78 to Rs.82', size: '2,34,68,846' },
   { list: 'upcoming', company: 'M. K. Sons Fine Jewels Limited', symbol: 'MKSONS', type: 'EQ', start: '2026-10-28', end: '2026-10-30' },
   { list: 'upcoming', company: 'Dates Pending Limited', symbol: 'DPL', type: 'EQ', start: '', end: '' },
@@ -37,9 +40,9 @@ function section(rows, title) {
 test('ipos: three sections, mainboard only, listed and stale issues left out', () => {
   const e = env();
   const r = e.post({ token: TOKEN, action: 'ipos', fetchedAt: '2026-10-27 19:28', failed: [], records: REC });
-  assert.deepStrictEqual(r, { ok: true, open: 2, closed: 2, upcoming: 3, sme: 2, emailed: true });
+  assert.deepStrictEqual(r, { ok: true, open: 2, closed: 2, upcoming: 3, sme: 2, other: 2, emailed: true });
   const rows = e.sheet('IPO Tracker').rows;
-  assert.ok(/SME issues left out/.test(rows[0][0]));
+  assert.ok(/SME and debt issues left out/.test(rows[0][0]));
   assert.ok(/Updated 2026-10-27 19:28 IST/.test(rows[1][0]));
   const open = section(rows, 'Open now');
   assert.strictEqual(open.title, 'Open now (2)');
@@ -51,7 +54,7 @@ test('ipos: three sections, mainboard only, listed and stale issues left out', (
   assert.deepStrictEqual(closed.rows.map((x) => [x[1], x[7]]), [['JPL', 'Lists on 28-Oct'], ['PARASHLTH', 'Listing date not announced']]);
   const up = section(rows, 'Upcoming');
   assert.deepStrictEqual(up.rows.map((x) => [x[1], x[7]]), [['MKSONS', 'Opens tomorrow'], ['BCSSL', 'Opens in 2 days'], ['DPL', 'Dates not announced']]);
-  assert.ok(!JSON.stringify(rows).match(/TINY|RAVITA|TONBO|OLDW/), 'SME, listed and stale issues are not shown');
+  assert.ok(!JSON.stringify(rows).match(/TINY|RAVITA|TONBO|OLDW|SMCG04|MBL26/), 'SME, debt, listed and stale issues are not shown');
   // the email: one, compact, with the three sections
   assert.strictEqual(e.mails.length, 1);
   const m = e.mails[0][0];
@@ -84,4 +87,16 @@ test('ipos: bad token or no records', () => {
   assert.strictEqual(r.ok, true);
   const rows = e.sheet('IPO Tracker').rows;
   assert.strictEqual(section(rows, 'Open now').rows[0][0], 'None');
+});
+
+test('ipos: equity / SME / debt kinds', () => {
+  const e = env();
+  const kind = (r) => e.call('ab_ipotKind_', r);
+  assert.strictEqual(kind({ type: 'EQ', symbol: 'ABC' }), 'main');
+  assert.strictEqual(kind({ type: 'SME', symbol: 'ABC' }), 'sme');
+  assert.strictEqual(kind({ type: 'DEBT', symbol: 'SMCG04' }), 'other');
+  assert.strictEqual(kind({ type: 'InvIT', symbol: 'XINVIT' }), 'other');
+  assert.strictEqual(kind({ type: '', symbol: 'SMCG04', price: '\u20B91,000' }), 'other', 'untyped NCD');
+  assert.strictEqual(kind({ type: '', symbol: 'PARASHLTH', price: '\u20B9660 to \u20B9693' }), 'main');
+  assert.strictEqual(kind({ type: '', symbol: 'NEW2026', price: '\u20B9100 to \u20B9110' }), 'main', 'a price range is an equity issue');
 });
