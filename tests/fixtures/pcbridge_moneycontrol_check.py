@@ -230,6 +230,8 @@ assert sb.mc_check('M&M', out=lines.append) is True
 text = '\n'.join(lines)
 assert 'consolidated widget: 0 KB - no quarterly figures found' in text and 'standalone widget: OK (table)' in text, text
 assert 'results page: HTTP 404' in text, text
+assert 'a run would send: Standalone Sep 2026 (standalone widget)\n' in text + '\n', 'the widget had EPS: no EPS note'
+assert not os.path.exists(sb.MC_CHECK_DIR), 'nothing saved when EPS was read'
 
 lines = []
 assert sb.mc_check('ACUTAAS', out=lines.append) is True
@@ -238,7 +240,10 @@ assert 'results page: OK (page data) - Sep 2026, Jun 2026, Mar 2026, Dec 2025, S
 assert 'latest Sep 2026: revenue 120.5 (QoQ +10%, YoY +21%) | net profit 22 (QoQ +10%, YoY +47%) | EPS 2.9' in text, text
 assert '(at props.pageProps.qr)' in text, text
 assert 'old consolidated page: opens the same page as the results page' in text, text
-assert not os.path.exists(sb.MC_CHECK_DIR), 'nothing saved when figures were read'
+# a run uses the widgets: none here, so it would send nothing - the page data is kept for Claude
+assert 'a run would send: nothing - no quarterly figures on moneycontrol' in text, text
+assert os.listdir(sb.MC_CHECK_DIR) == ['ACUTAAS_results_page_data.json'], os.listdir(sb.MC_CHECK_DIR)
+shutil.rmtree(sb.MC_CHECK_DIR)
 
 lines = []
 assert sb.mc_check('NODATA', out=lines.append) is False
@@ -285,6 +290,8 @@ log = '\n'.join(LOGS)
 assert 'moneycontrol: looking up 4 result(s) screener.in does not show yet' in log, log
 assert 'moneycontrol FIRSTCO: Consolidated Sep 2026 (consolidated widget + results page)' in log, log
 assert 'moneycontrol BEHINDCO: not yet - moneycontrol shows Jun 2026' in log, log
+assert ('moneycontrol STDONLY: Standalone Sep 2026 (standalone widget); no EPS: results page Sep 2026 shows revenue 486 / profit 123 '
+        '(newest Sep 2026) - the widget 436 / 123') in log, log
 assert 'moneycontrol NOTMC: ' in log and 'none listed with NSE symbol NOTMC' in log, log
 assert 'moneycontrol: sent 2 to the sheet' in log, log
 assert '/suggest' in HITS and not any('screenerhas' in h.lower() for h in HITS), 'SCREENERHAS is not looked up'
@@ -296,6 +303,16 @@ del HITS[:], SENT[:], LOGS[:]
 sb.mc_step({}, want, behind)
 assert '/suggest' not in HITS, HITS
 assert 'moneycontrol NOTMC: ' in '\n'.join(LOGS)
+# a long list: the ones looked at longest ago go first, the rest wait for the next round
+del SENT[:], LOGS[:]
+assert sb.mc_step({'max_moneycontrol_per_run': 2}, want, behind) >= 0
+first = [l.split(':')[0].split()[-1] for l in LOGS if l.startswith('  moneycontrol ')]
+assert 'moneycontrol: looking up 2 result(s) screener.in does not show yet (2 more next round)' in LOGS[0], LOGS
+del LOGS[:]
+sb.mc_step({'max_moneycontrol_per_run': 2}, want, behind)
+second = [l.split(':')[0].split()[-1] for l in LOGS if l.startswith('  moneycontrol ')]
+assert sorted(first + second) == sorted(behind), (first, second)
+assert '_checked' in json.load(open(sb.MC_CODES_PATH))
 # switched off in config.json; nothing wanted
 del HITS[:], SENT[:]
 assert sb.mc_step({'moneycontrol': False}, want, behind) == 0 and sb.mc_step({}, {}, set()) == 0 and not HITS and not SENT

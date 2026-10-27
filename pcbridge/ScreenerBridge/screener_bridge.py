@@ -1169,7 +1169,7 @@ def _growth(series, q, back):
 
 def _mc_show(res, out):
     q, rev, pr, eps = res['quarters'][0], res['revenue'], res['profit'], res['eps']
-    fmt = lambda v: '-' if v is None else '{:,.2f}'.format(v).rstrip('0').rstrip('.')
+    fmt = _fmt
     pct = lambda v: '-' if v is None else '%+.0f%%' % v
     out('      latest %s: revenue %s (QoQ %s, YoY %s) | net profit %s (QoQ %s, YoY %s) | EPS %s'
         % (q, fmt(rev.get(q)), pct(_growth(rev, q, 3)), pct(_growth(rev, q, 12)),
@@ -1187,7 +1187,7 @@ def mc_check(sym, out=print, detail=True):
         out('   %s: PROBLEM - %s' % (sym, note))
         return False
     out('   %s: found %s (moneycontrol code %s / %s)' % (sym, hit['name'], hit['slug'], hit['code']))
-    shown, seen_urls, pages = False, {}, []
+    shown, seen_urls, pages, newest = False, {}, [], None
     for n, (kind, tmpl) in enumerate(MC_SOURCES):
         url = tmpl.format(slug=hit['slug'], code=hit['code'])
         if n:
@@ -1212,9 +1212,11 @@ def mc_check(sym, out=print, detail=True):
         pages.append((kind, text, nd, final))
         if res:
             out('   %s: OK (%s) - %s' % (kind, res['how'], ', '.join(res['quarters'][:5])))
-            if not shown:
+            if detail or not shown:
                 _mc_show(res, out)
-                shown = True
+            shown = True
+            if not newest or _qkey(res['quarters'][0]) > _qkey(newest):
+                newest = res['quarters'][0]
             if not detail:
                 return True
             continue
@@ -1222,6 +1224,20 @@ def mc_check(sym, out=print, detail=True):
         out('   %s: %d KB%s - no quarterly figures found%s%s'
             % (kind, len(text) // 1024, (' "%s"' % _strip_tags(title.group(1))[:50]) if title else '',
                ('; rows seen: ' + '; '.join(seen[:6])) if seen else '', ' (page data present)' if nd is not None else ''))
+    no_eps = False
+    if detail and shown:
+        # exactly what a run's moneycontrol step would send for this quarter
+        try:
+            item, note = mc_figures(opener, hit, newest, sym)
+            out('   a run would send: %s' % (note if item else 'nothing - ' + note))
+            no_eps = not item or item['eps'][-1] is None
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            out('   a run would send: nothing - moneycontrol did not answer (%s)' % e)
+    if detail and no_eps and pages:
+        for kind, text, nd, _ in pages:
+            if nd is not None:
+                _mc_save(sym, kind.replace(' ', '_') + '_data.json', json.dumps(nd, indent=1, ensure_ascii=False))
+        out('   page data saved in %s (Claude may ask for it)' % MC_CHECK_DIR)
     if detail and not shown and pages:
         out('   nothing readable yet - where the figures may be (please send this to Claude):')
         nd_page = next((p for p in pages if p[2] is not None), None)
@@ -1298,6 +1314,10 @@ def mc_payload(sym, res, basis, src, max_quarters=12):
             'eps': [res['eps'].get(q) for q in qs]}
 
 
+def _fmt(v):
+    return '-' if v is None else '{:,.2f}'.format(v).rstrip('0').rstrip('.')
+
+
 def mc_figures(opener, hit, expected, sym, pause=None):
     """(item for the sheet, note) when moneycontrol shows `expected` ('Sep 2026') or later; else (None, why)."""
     pause = MC_PAUSE if pause is None else pause
@@ -1319,7 +1339,7 @@ def mc_figures(opener, hit, expected, sym, pause=None):
     res, basis, kind = chosen
     q = res['quarters'][0]
     # EPS and a longer history from the results page - only when it shows the same figures (same basis)
-    src = kind
+    src, eps_note = kind, ''
     try:
         time.sleep(pause)
         status, text, _ = mc_get(opener, srcs['results page'].format(slug=hit['slug'], code=hit['code']))
@@ -1334,10 +1354,24 @@ def mc_figures(opener, hit, expected, sym, pause=None):
             merged['profit'].update(res['profit'])
             merged['eps'].update({k: v for k, v in res['eps'].items() if v is not None})
             res, src = merged, kind + ' + results page'
-    except (OSError, urllib.error.URLError, socket.timeout):
-        pass
+            if merged['eps'].get(q) is None:
+                eps_note = 'no EPS on the results page'
+        elif status != 200:
+            eps_note = 'no EPS: results page HTTP %s' % status
+        elif not page:
+            eps_note = 'no EPS: no figures read on the results page'
+        else:
+            eps_note = 'no EPS: results page %s shows revenue %s / profit %s (newest %s) - the widget %s / %s' % (
+                q, _fmt(page['revenue'].get(q)), _fmt(page['profit'].get(q)), page['quarters'][0] if page['quarters'] else '-',
+                _fmt(res['revenue'][q]), _fmt(res['profit'][q]))
+    except (OSError, urllib.error.URLError, socket.timeout) as e:
+        eps_note = 'no EPS: results page did not answer (%s)' % e
+    if res['eps'].get(q) is not None:
+        eps_note = ''             # the widget itself had EPS
     item = mc_payload(sym, res, basis, src)
-    return (item, '%s %s (%s)' % (basis, q, src)) if item else (None, 'too few quarters on moneycontrol')
+    if not item:
+        return None, 'too few quarters on moneycontrol'
+    return item, '%s %s (%s)%s' % (basis, q, src, ('; ' + eps_note) if eps_note else '')
 
 
 def mc_behind(want, screener_latest):
@@ -1354,12 +1388,18 @@ def mc_step(cfg, want, behind):
     """want = {SYM: 'Sep 2026'} from the sheet; behind = the ones screener.in did not show yet. Returns how many were sent."""
     if cfg.get('moneycontrol') is False or not want:
         return 0
-    syms = [s for s in want if s in behind][:int(cfg.get('max_moneycontrol_per_run', 40))]
+    codes = mc_codes_load()
+    checked = codes.get('_checked') if isinstance(codes.get('_checked'), dict) else {}
+    # the ones looked at longest ago first, so a long list is covered over the next rounds
+    todo = sorted([s for s in want if s in behind], key=lambda s: float(checked.get(s, 0)))
+    syms = todo[:int(cfg.get('max_moneycontrol_per_run', 40))]
     if not syms:
         return 0
-    log('moneycontrol: looking up %d result(s) screener.in does not show yet ...' % len(syms))
-    opener, codes, items, fails = mc_session(), mc_codes_load(), [], 0
+    log('moneycontrol: looking up %d result(s) screener.in does not show yet%s ...'
+        % (len(syms), (' (%d more next round)' % (len(todo) - len(syms))) if len(todo) > len(syms) else ''))
+    opener, items, fails = mc_session(), [], 0
     for i, sym in enumerate(syms):
+        checked[sym] = time.time()
         try:
             hit, note = mc_code_for(opener, sym, codes)
             if not hit:
@@ -1380,6 +1420,8 @@ def mc_step(cfg, want, behind):
                 break
         if i < len(syms) - 1:
             time.sleep(random.uniform(MC_PAUSE, 2 * MC_PAUSE))
+    week = time.time() - 7 * 86400
+    codes['_checked'] = {k: v for k, v in checked.items() if float(v) > week}
     mc_codes_save(codes)
     if not items:
         return 0
