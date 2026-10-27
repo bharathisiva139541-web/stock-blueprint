@@ -39,3 +39,21 @@ test('delivery: newest day first whatever the column order, 5-day average of the
   assert.deepStrictEqual(d.bySym.NEW, { latest: 30, avg5: 30, hist: [30, null, null, null, null, null] });
   assert.deepStrictEqual(E.delivery(null), { date: null, dates: [], bySym: {} });
 });
+
+test('day: the Main stocks of the newest day, counts per list, missing files leave their counts empty', () => {
+  const T = { note: 'Your Main stocks on 2026-10-27 (NSE end-of-day files read by your PC): 4 traded - 2 advances, 1 declines, 1 unchanged, 1 at a new 52-week high, 1 in upper circuit, 0 in lower circuit.',
+    cols: ['Symbol', 'Company', 'Close', '% Change', 'Move', 'Circuit', 'New 52W High', 'Delivery %'],
+    rows: [['TCS', 'Tata', 3948, 1.23, 'Advance', null, null, 61.2], ['SONA', 'Sona', 700, 3.5, 'Advance', 'Upper', 'Yes', 45.5],
+      ['RALLIS', 'Rallis', 380, -2.1, 'Decline', null, null, null], ['FLAT', 'Flat', 50, 0, 'Unchanged', null, null, 50]] };
+  const d = E.day(T);
+  assert.strictEqual(d.date, '2026-10-27');
+  assert.deepStrictEqual(d.counts, { traded: 4, advances: 2, declines: 1, unchanged: 1, high52: 1, upper: 1, lower: 0 });
+  assert.deepStrictEqual(d.rows[1], { sym: 'SONA', name: 'Sona', close: 700, chg: 3.5, move: 'Advance', circuit: 'Upper', new52: true, deliv: 45.5 });
+  assert.deepStrictEqual(E.pick(d.rows, 'advances').map((r) => r.sym), ['TCS', 'SONA']);
+  assert.deepStrictEqual(E.pick(d.rows, 'lower'), []);
+  assert.deepStrictEqual(E.pick(d.rows, 'nope'), []);
+  assert.deepStrictEqual(E.KINDS.map((k) => k[0]), ['traded', 'advances', 'declines', 'unchanged', 'high52', 'upper', 'lower']);
+  const noFiles = E.day(Object.assign({}, T, { note: 'Your Main stocks on 2026-10-20 (NSE end-of-day files read by your PC): 4 traded - 2 advances, 1 declines, 1 unchanged.' }));
+  assert.deepStrictEqual([noFiles.counts.high52, noFiles.counts.upper, noFiles.counts.lower], [null, null, null]);
+  assert.strictEqual(E.day(null), null);
+});

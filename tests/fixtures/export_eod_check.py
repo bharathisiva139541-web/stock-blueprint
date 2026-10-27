@@ -39,4 +39,12 @@ dl = tab([['Delivery % from NSE...'], ['Symbol', 'Company', '2026-10-27', '2026-
          [['@'], ['@'] * 4, ['@', '@', '0.00', '0.00'], ['@', '@', '0.00', '0.00']])
 d = ex.table(dl, 'Symbol', stop_blank=False)
 assert d == {'cols': ['Symbol', 'Company', '2026-10-27', '2026-10-26'], 'rows': [['TCS', 'Tata Consultancy', 61.23, 50], ['RALLIS', 'Rallis', 30, None]]}, d
+md = tab([['Your Main stocks on 2026-10-27 (NSE end-of-day files read by your PC): 1 traded - 1 advances, 0 declines, 0 unchanged.'],
+          ['Symbol', 'Company', 'Close', '% Change', 'Move', 'Circuit', 'New 52W High', 'Delivery %'],
+          ['SONA', 'Sona BLW', 700, 3.5, 'Advance', 'Upper', 'Yes', 45.5]],
+         [['@'], ['@'] * 8, ['@', '@', '0.00', '0.00', '@', '@', '@', '0.00']])
+m = ex.note_table(md, 'Symbol', stop_blank=False)
+assert m == {'note': 'Your Main stocks on 2026-10-27 (NSE end-of-day files read by your PC): 1 traded - 1 advances, 0 declines, 0 unchanged.',
+             'cols': ['Symbol', 'Company', 'Close', '% Change', 'Move', 'Circuit', 'New 52W High', 'Delivery %'],
+             'rows': [['SONA', 'Sona BLW', 700, 3.5, 'Advance', 'Upper', 'Yes', 45.5]]}, m
 print('OK')

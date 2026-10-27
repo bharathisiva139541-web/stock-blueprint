@@ -47,10 +47,12 @@ the evening) and sends a summary to the sheet:
    volumes); the prices are used just to count stocks traded, advances, declines and unchanged.
  - "52 Week High Low Report": each stock's 52-week high and its date (52-week lows are not kept).
  - "CM - Price Band complete list": used only to count the stocks that closed at the upper / lower band.
-The sheet fills three tabs: "Market Statistics" (one row per day), "Delivery %" (your Main stocks, last 10
-days) and "52 Week High" (new highs of the day + every Main stock). The website shows them: Overview
-(Market statistics), IPOs & Markets (52-week highs), Watchlist and the stock details (Delivery %).
-Counts cover mainboard equities only (EQ / BE / BZ), so NSE's homepage shows higher numbers.
+The sheet counts YOUR Main stocks only (not the whole market) and fills four tabs: "Market Statistics"
+(one row per day: traded, advances, declines, unchanged, at a 52-week high, upper / lower circuit),
+"Market Day" (those stocks on the newest day - the lists behind the website's numbers), "Delivery %"
+(your Main stocks, last 10 days) and "52 Week High" (new highs of the day + every Main stock). The website
+shows them: Overview (Market statistics - click a number for its list), IPOs & Markets (52-week highs),
+Watchlist and the stock details (Delivery %).
  - Days missed while the PC was off are caught up (up to a week back). eod_state.json remembers the last day.
  - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
  - To switch it off: in config.json add  "eod": false

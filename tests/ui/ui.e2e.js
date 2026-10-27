@@ -108,7 +108,7 @@ async function pageState(page) {
   });
 }
 
-const PAGES = ['overview', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
+const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
   'strategy', 'signals', 'excel', 'results', 'alerts', 'backtest', 'markets'];
 let failures = 0;
@@ -252,32 +252,61 @@ function check(name, fn) {
           assert.ok(/^([\d,]+) of \1$/.test(all), 'all days: ' + all);
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
-        await check('NSE end-of-day: market statistics on Overview, 52-week highs on Markets, Delivery % in Watchlist', async () => {
+        await check('NSE end-of-day: market statistics of the Main stocks, every number opens its list, 52-week highs on Markets, Delivery %', async () => {
           errors.length = 0;
           await page.goto(base + '#overview', { waitUntil: 'load' });
           await page.waitForSelector('#ov-mstat', { timeout: 15000 });
           const st = await page.evaluate(() => {
             const D = window.SB.ctx.D;
-            D.marketStats = { note: 'NSE market statistics - mainboard equities', cols: ['Date', 'Stocks Traded', 'Advances', 'Declines', 'Unchanged', 'At 52W High', 'Upper Circuit', 'Lower Circuit'],
-              rows: [['2026-10-27', 2310, 1520, 700, 90, 28, 41, 12], ['2026-10-26', 2300, 1300, 900, 100, 20, 30, 10]] };
+            const S = window.SB.ctx.stocks;
+            D.marketStats = { note: 'Market statistics of YOUR Main stocks', cols: ['Date', 'Stocks Traded', 'Advances', 'Declines', 'Unchanged', 'At 52W High', 'Upper Circuit', 'Lower Circuit'],
+              rows: [['2026-10-27', 4, 2, 1, 1, 1, 1, 0], ['2026-10-26', 900, 300, 500, 100, 20, 30, 10]] };
+            D.marketDay = { note: 'Your Main stocks on 2026-10-27 (NSE end-of-day files read by your PC): 4 traded - 2 advances, 1 declines, 1 unchanged, ' +
+              '1 at a new 52-week high, 1 in upper circuit, 0 in lower circuit.',
+              cols: ['Symbol', 'Company', 'Close', '% Change', 'Move', 'Circuit', 'New 52W High', 'Delivery %'],
+              rows: [[S[0].sym, S[0].name, 101, 1.23, 'Advance', null, null, 61.2], [S[1].sym, S[1].name, 200, 4.99, 'Advance', 'Upper', 'Yes', 80],
+                [S[2].sym, S[2].name, 50, -2.5, 'Decline', null, null, 30], [S[3].sym, S[3].name, 10, 0, 'Unchanged', null, null, null]] };
             D.high52 = { note: '52-week highs from NSE (adjusted for corporate actions) - as on 2026-10-27: 2 mainboard stocks made a new 52-week high (1 in your watchlist).',
               cols: ['Symbol', 'Company', '52W High', '52W High Date', 'Close', '% Below 52W High', 'New High Today', 'In Watchlist'],
               rows: [['NEWCO', null, 50, '2026-10-27', 50, 0, 'Yes', null], ['TCS', 'Tata Consultancy', 4500, '2026-01-10', 4400, 2.2, null, 'Yes'],
                 ['INFY', 'Infosys', 2000, '2025-12-10', 1500, 25, null, 'Yes']] };
-            const s0 = window.SB.ctx.stocks[0];
+            const s0 = S[0];
             s0.deliv = 61.25; s0.delivAvg = 48.5; s0.delivDate = '2026-10-27';
             window.SB.route();
             const box = document.querySelector('#ov-mstat');
-            return { text: box.innerText, bar: !!box.querySelector('.mstat-bar .b-up'), sym: s0.sym };
+            return { text: box.innerText, bar: !!box.querySelector('.mstat-bar .b-up'), sym: s0.sym, syms: S.slice(0, 4).map((x) => x.sym),
+              links: [...box.querySelectorAll('a.mstat-t')].map((a) => a.getAttribute('href')) };
           });
-          for (const want of ['Stocks traded', '2,310', 'Advances', '1,520', 'Declines', '700', 'Unchanged', '90', 'Stocks at 52-week high', '28',
-            'Stocks in upper circuit', '41', 'Stocks in lower circuit', '12', '2.17']) {
-            assert.ok(st.text.indexOf(want) >= 0, want + ' in: ' + st.text);
+          for (const want of ['Your Main stocks on', 'Stocks traded\n4', 'Advances\n2', 'Declines\n1', 'Unchanged\n1', 'Stocks at 52-week high\n▲ 1',
+            'Stocks in upper circuit\n1', 'Stocks in lower circuit\n0', 'Advance / decline ratio 2.00']) {
+            assert.ok(st.text.indexOf(want) >= 0, JSON.stringify(want) + ' in: ' + st.text);
           }
+          assert.ok(!/prev|previous/i.test(st.text), 'no previous-day numbers');
           assert.ok(!/52.week low/i.test(st.text), 'no 52-week low');
           assert.ok(st.bar, 'advance / decline bar');
-          // the 52-week tile opens the Markets table
-          await page.click('#ov-mstat a.mstat-t[href="#markets/high52"]');
+          assert.deepStrictEqual(st.links, ['#daystats/traded', '#daystats/advances', '#daystats/declines', '#daystats/unchanged',
+            '#daystats/high52', '#daystats/upper', '#daystats/lower'], 'every number opens its list');
+          // a number opens the list of those stocks
+          await page.click('#ov-mstat a[data-kind="advances"]');
+          await page.waitForSelector('#ds-t table', { timeout: 15000 });
+          const listed = async () => (await page.$$eval('#ds-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym')))).sort();
+          assert.deepStrictEqual(await listed(), [st.syms[0], st.syms[1]].sort());
+          assert.ok(/Market statistics: Advances/.test(await page.$eval('h1', (x) => x.textContent)));
+          await page.click('.ds-kinds a[href="#daystats/declines"]');
+          await page.waitForFunction(() => /Declines/.test(document.querySelector('h1').textContent));
+          assert.deepStrictEqual(await listed(), [st.syms[2]]);
+          await page.click('.ds-kinds a[href="#daystats/upper"]');
+          await page.waitForFunction(() => /Upper circuit/.test(document.querySelector('h1').textContent));
+          assert.deepStrictEqual(await listed(), [st.syms[1]]);
+          await page.goto(base + '#daystats/traded', { waitUntil: 'load' });
+          await page.waitForSelector('#ds-t table');
+          assert.deepStrictEqual(await listed(), st.syms.slice().sort());
+          assert.ok(/4 of 4 stocks/.test(await page.$eval('#ds-count', (x) => x.textContent)));
+          await page.goto(base + '#daystats/high52', { waitUntil: 'load' });
+          await page.waitForSelector('#ds-t table');
+          assert.deepStrictEqual(await listed(), [st.syms[1]]);
+          // all NSE 52-week highs: the Markets table (linked from the 52-week list)
+          await page.click('a[href="#markets/high52"]');
           await page.waitForSelector('#h52-t table', { timeout: 15000 });
           const newOnly = await page.$$eval('#h52-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym')));
           assert.deepStrictEqual(newOnly, ['NEWCO'], 'new 52-week highs today by default');

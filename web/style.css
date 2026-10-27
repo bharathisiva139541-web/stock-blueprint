@@ -501,5 +501,8 @@ a.mstat-t:hover { background: var(--surface-3); }
 .mstat-bar i { display: block; height: 100%; }
 .mstat-bar .b-up { background: var(--up); } .mstat-bar .b-down { background: var(--down); } .mstat-bar .b-flat { background: var(--warn-mark); }
 .mstat-ad { margin-top: 6px; }
+a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ds-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ds-kinds a.chip { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
 .badge.new52 { background: var(--up-wash); border-color: var(--good-border); color: var(--good-text); }
 @media (max-width: 520px) { .mstat-t b { font-size: 20px; } }

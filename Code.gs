@@ -8808,6 +8808,8 @@ function ab_site_main_(cx, readAt) {
   // NSE end-of-day (PC bridge): market statistics, 52-week highs, Delivery %
   const ms = ab_site_tab_(cx, 'Market Statistics');
   if (ms) data.marketStats = ab_site_noteTable_(cx, ms, 'Date', { stopBlank: false });
+  const md = ab_site_tab_(cx, 'Market Day');
+  if (md) data.marketDay = ab_site_noteTable_(cx, md, 'Symbol', { stopBlank: false });
   const hi = ab_site_tab_(cx, '52 Week High');
   if (hi) data.high52 = ab_site_noteTable_(cx, hi, 'Symbol', { stopBlank: false });
   const dl = ab_site_tab_(cx, 'Delivery %');
@@ -9274,7 +9276,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 3;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs)
+const AB_SITE_FEED_FORMAT = 4;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history'];
 const AB_SITE_FEED_CHUNK = 45000;
@@ -13524,20 +13526,27 @@ function ab_ipotFromBridge_(req) {
  * day (Full Bhavcopy with deliverable data, the 52 Week High Low report,
  * the price band complete list - NSE blocks Google's servers) and posts
  * a summary here (doPost action 'eod'):
- *   - "Market Statistics" tab: one row per day - stocks traded,
- *     advances, declines, unchanged, at a new 52-week high, at the
- *     upper / lower price band (mainboard equities: EQ / BE / BZ);
+ *   - "Market Statistics" tab: one row per day - of YOUR Main stocks:
+ *     traded, advances, declines, unchanged, at a new 52-week high, at
+ *     the upper / lower price band (the user's choice: the dashboard
+ *     reflects the sheet only, not the whole market);
+ *   - "Market Day" tab: those Main stocks on the newest day (close,
+ *     % change, move, circuit, new 52-week high, Delivery %) - the
+ *     lists behind the website's dashboard tiles;
  *   - "Delivery %" tab: each Main stock's Delivery % for the last
  *     AB_EOD_DELIV_DAYS trading days (newest first);
  *   - "52 Week High" tab: every stock at a new 52-week high that day,
  *     plus every Main stock with its 52-week high, date and distance.
- * The website shows them (site feed parts marketStats / delivery / high52).
+ * The website shows them (site feed parts marketStats / marketDay / delivery / high52).
  * Days arrive oldest first when the PC catches up; an older day never
  * replaces the 52 Week High tab of a newer one.
  *****************************************************************/
 const AB_EOD_STATS_SHEET = 'Market Statistics';
 const AB_EOD_DELIV_SHEET = 'Delivery %';
 const AB_EOD_HIGH_SHEET = '52 Week High';
+const AB_EOD_DAY_SHEET = 'Market Day';
+const AB_EOD_DAY_HEADERS = ['Symbol', 'Company', 'Close', '% Change', 'Move', 'Circuit', 'New 52W High', 'Delivery %'];
+const AB_EOD_DAY_DATE_PROP = 'AB_EOD_DAY_DATE';
 const AB_EOD_STATS_HEADERS = ['Date', 'Stocks Traded', 'Advances', 'Declines', 'Unchanged', 'At 52W High', 'Upper Circuit', 'Lower Circuit'];
 const AB_EOD_STATS_KEYS = ['traded', 'advances', 'declines', 'unchanged', 'high52', 'upper', 'lower'];
 const AB_EOD_HIGH_HEADERS = ['Symbol', 'Company', '52W High', '52W High Date', 'Close', '% Below 52W High', 'New High Today', 'In Watchlist'];
@@ -13604,13 +13613,20 @@ function ab_eodWriteTab_(name, note, header, rows, fmt) {
 function ab_eodClean_(req) {
   const day = String(req.tradeDate || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: 'tradeDate missing' };
-  const st = req.stats || {};
-  const stats = {};
-  AB_EOD_STATS_KEYS.forEach(function (k) {
-    const v = st[k];
-    stats[k] = typeof v === 'number' && isFinite(v) && v >= 0 ? Math.round(v) : null;
+  // each traded stock's day: {SYM: [close, % change, move 1/-1/0, circuit 'U'/'L'/'', new 52W high 1/0, series]}
+  const rowsIn = req.day && typeof req.day === 'object' ? req.day : null;
+  if (!rowsIn) return { error: 'day missing - update screener_bridge.py on the PC' };
+  const isNum = function (v) { return typeof v === 'number' && isFinite(v); };
+  const days = {};
+  Object.keys(rowsIn).slice(0, 20000).forEach(function (k) {
+    const r = rowsIn[k];
+    const sym = String(k).trim().toUpperCase();
+    if (!sym || !Array.isArray(r) || !isNum(r[0]) || r[0] <= 0 || !isNum(r[1])) return;
+    days[sym] = { close: r[0], pct: Math.round(r[1] * 100) / 100, move: r[2] > 0 ? 1 : r[2] < 0 ? -1 : 0,
+                  circuit: r[3] === 'U' ? 'Upper' : r[3] === 'L' ? 'Lower' : '', new52: r[4] === 1 || r[4] === true };
   });
-  if (stats.traded === null) return { error: 'stats missing' };
+  if (!Object.keys(days).length) return { error: 'no stocks in the day\'s data' };
+  const files = req.files && typeof req.files === 'object' ? req.files : {};
   const delivery = {};
   const dv = req.delivery && typeof req.delivery === 'object' ? req.delivery : {};
   Object.keys(dv).slice(0, 10000).forEach(function (k) {
@@ -13625,21 +13641,52 @@ function ab_eodClean_(req) {
     highs[sym] = { high: r[1], date: /^\d{4}-\d{2}-\d{2}$/.test(String(r[2] || '')) ? String(r[2]) : '',
                    close: typeof r[3] === 'number' && isFinite(r[3]) && r[3] > 0 ? r[3] : null };
   });
-  return { day: day, stats: stats, delivery: delivery, highs: highs };
+  return { day: day, rows: days, w52: files.w52 !== false, bands: files.bands !== false, delivery: delivery, highs: highs };
 }
 
-function ab_eodWriteStats_(c) {
+/** The day's counts for the Main stocks only (null where NSE's file for it was not downloaded). */
+function ab_eodMainStats_(c, stocks) {
+  const st = { traded: 0, advances: 0, declines: 0, unchanged: 0, high52: 0, upper: 0, lower: 0 };
+  stocks.forEach(function (s) {
+    const r = c.rows[s.sym];
+    if (!r) return;
+    st.traded++;
+    if (r.move > 0) st.advances++; else if (r.move < 0) st.declines++; else st.unchanged++;
+    if (r.new52) st.high52++;
+    if (r.circuit === 'Upper') st.upper++;
+    if (r.circuit === 'Lower') st.lower++;
+  });
+  if (!c.w52) st.high52 = null;
+  if (!c.bands) { st.upper = null; st.lower = null; }
+  return st;
+}
+
+/** "Market Day" tab: the Main stocks traded on the day, in Main's order. */
+function ab_eodWriteDay_(c, stocks, st) {
+  const rows = stocks.filter(function (s) { return c.rows[s.sym]; }).map(function (s) {
+    const r = c.rows[s.sym];
+    return [s.sym, s.name, r.close, r.pct, r.move > 0 ? 'Advance' : r.move < 0 ? 'Decline' : 'Unchanged', r.circuit,
+            r.new52 ? 'Yes' : '', typeof c.delivery[s.sym] === 'number' ? c.delivery[s.sym] : ''];
+  });
+  ab_eodWriteTab_(AB_EOD_DAY_SHEET,
+    'Your Main stocks on ' + c.day + ' (NSE end-of-day files read by your PC): ' + st.traded + ' traded - ' + st.advances + ' advances, ' +
+    st.declines + ' declines, ' + st.unchanged + ' unchanged' + (st.high52 === null ? '' : ', ' + st.high52 + ' at a new 52-week high') +
+    (st.upper === null ? '' : ', ' + st.upper + ' in upper circuit, ' + st.lower + ' in lower circuit') + '.',
+    AB_EOD_DAY_HEADERS.slice(), rows, [[0, 2, '@'], [2, 1, '0.00'], [3, 1, '0.00'], [4, 3, '@'], [7, 1, '0.00']]);
+}
+
+function ab_eodWriteStats_(c, st) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_EOD_STATS_SHEET);
   const byDay = {};
   ab_eodReadTable_(sh, 'Date').rows.forEach(function (r) {
     const d = ab_eodIso_(r[0]);
     if (d) byDay[d] = r.slice(1, AB_EOD_STATS_HEADERS.length).map(function (v) { return typeof v === 'number' ? v : ''; });
   });
-  byDay[c.day] = AB_EOD_STATS_KEYS.map(function (k) { return c.stats[k] === null ? '' : c.stats[k]; });
+  byDay[c.day] = AB_EOD_STATS_KEYS.map(function (k) { return st[k] === null ? '' : st[k]; });
   const days = Object.keys(byDay).sort().reverse().slice(0, AB_EOD_STATS_KEEP);
   ab_eodWriteTab_(AB_EOD_STATS_SHEET,
-    'NSE market statistics - mainboard equities (series EQ / BE / BZ) counted from NSE\'s end-of-day files ' +
-    '(bhavcopy, 52-week high report, price band list) read by your PC. NSE\'s homepage counts every segment, so its own numbers are higher.',
+    'Market statistics of YOUR Main stocks, counted from NSE\'s end-of-day files (bhavcopy, 52-week high report, price band list) ' +
+    'read by your PC - not the whole market. One row per trading day; the newest day\'s stocks are listed on the Market Day tab.',
     AB_EOD_STATS_HEADERS.slice(), days.map(function (d) { return [d].concat(byDay[d]); }), [[0, 1, '@'], [1, AB_EOD_STATS_KEYS.length, '0']]);
 }
 
@@ -13692,21 +13739,28 @@ function ab_eodWriteHighs_(c, stocks) {
   return { newHighs: fresh.length, newHighsInMain: freshMain, rows: rows.length };
 }
 
-/** doPost action 'eod': { tradeDate, stats, delivery: {SYM: %}, high52: [[SYM, high, 'yyyy-MM-dd', close]] }. */
+/** doPost action 'eod': { tradeDate, day: {SYM: [...]}, files: {w52, bands}, delivery: {SYM: %}, high52: [[SYM, high, 'yyyy-MM-dd', close]] }. */
 function ab_eodFromBridge_(req) {
   const c = ab_eodClean_(req);
   if (c.error) return { ok: false, error: c.error };
   const stocks = ab_eodMainStocks_();
-  ab_eodWriteStats_(c);
+  const st = ab_eodMainStats_(c, stocks);
+  ab_eodWriteStats_(c, st);
   const deliveryInMain = ab_eodWriteDelivery_(c, stocks);
   const props = PropertiesService.getScriptProperties();
+  let dayTab = 'kept (a newer day is already there)';
+  if (c.day >= (props.getProperty(AB_EOD_DAY_DATE_PROP) || '')) {
+    ab_eodWriteDay_(c, stocks, st);
+    props.setProperty(AB_EOD_DAY_DATE_PROP, c.day);
+    dayTab = 'updated';
+  }
   let highs = null;
   const last = props.getProperty(AB_EOD_HIGH_DATE_PROP) || '';
   if (Object.keys(c.highs).length && c.day >= last) {
     highs = ab_eodWriteHighs_(c, stocks);
     props.setProperty(AB_EOD_HIGH_DATE_PROP, c.day);
   }
-  return { ok: true, tradeDate: c.day, deliveryInMain: deliveryInMain,
+  return { ok: true, tradeDate: c.day, stats: st, dayTab: dayTab, deliveryInMain: deliveryInMain,
            newHighs: highs ? highs.newHighs : null, newHighsInMain: highs ? highs.newHighsInMain : null,
            highTab: highs ? 'updated' : (Object.keys(c.highs).length ? 'kept (a newer day is already there)' : 'no 52-week report') };
 }

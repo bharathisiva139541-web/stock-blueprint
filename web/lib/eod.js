@@ -6,6 +6,10 @@
    SB.eod = {
      stats(marketStats)    -> null | { date, traded, advances, declines, unchanged, high52, upper, lower,
                                        adRatio, prev: {...same...} | null, note }
+     day(marketDay)        -> null | { date, note, rows: [{ sym, name, close, chg, move, circuit, new52, deliv }],
+                                       counts: { traded, advances, declines, unchanged, high52, upper, lower } }
+                              (the Main stocks of the newest day - the lists behind the Overview tiles)
+     KINDS                 -> [[kind, label]] of those lists; pick(rows, kind) -> the rows of one list
      highs(high52)         -> { asOf, note, rows: [{ sym, name, high, date, close, below, isNew, inMain }],
                                 bySym: {SYM: row}, newToday: [rows] }
      delivery(delivery)    -> { date, dates: [...newest first], bySym: {SYM: { latest, avg5, hist: [...] }} }
@@ -50,6 +54,33 @@
     return out;
   }
 
+  var KINDS = [['traded', 'Stocks traded'], ['advances', 'Advances'], ['declines', 'Declines'], ['unchanged', 'Unchanged'],
+    ['high52', 'At 52-week high'], ['upper', 'Upper circuit'], ['lower', 'Lower circuit']];
+  var TESTS = {
+    traded: function () { return true; },
+    advances: function (r) { return r.move === 'Advance'; },
+    declines: function (r) { return r.move === 'Decline'; },
+    unchanged: function (r) { return r.move === 'Unchanged'; },
+    high52: function (r) { return r.new52; },
+    upper: function (r) { return r.circuit === 'Upper'; },
+    lower: function (r) { return r.circuit === 'Lower'; }
+  };
+  function pick(rows, kind) { var f = TESTS[kind]; return f ? (rows || []).filter(f) : []; }
+  function day(t) {
+    var rows = objRows(t).map(function (o) {
+      return { sym: String(o.Symbol || '').trim().toUpperCase(), name: o.Company || '', close: num(o.Close), chg: num(o['% Change']),
+        move: o.Move || '', circuit: o.Circuit || '', new52: o['New 52W High'] === 'Yes', deliv: num(o['Delivery %']) };
+    }).filter(function (r) { return r.sym; });
+    if (!rows.length) return null;
+    var note = (t && t.note) || '';
+    var counts = {};
+    KINDS.forEach(function (k) { counts[k[0]] = pick(rows, k[0]).length; });
+    // the note says which files were missing that day: no circuit / 52-week counts then
+    if (note && !/in upper circuit/.test(note)) { counts.upper = null; counts.lower = null; }
+    if (note && !/52-week high/.test(note)) counts.high52 = null;
+    return { date: (/ on (\d{4}-\d{2}-\d{2})/.exec(note) || [])[1] || null, note: note, rows: rows, counts: counts };
+  }
+
   function highs(t) {
     var asOf = (/as on (\d{4}-\d{2}-\d{2})/.exec((t && t.note) || '') || [])[1] || null;
     var rows = objRows(t).map(function (o) {
@@ -79,5 +110,5 @@
     return { date: days.length ? days[0][1] : null, dates: days.map(function (d) { return d[1]; }), bySym: bySym };
   }
 
-  return { stats: stats, highs: highs, delivery: delivery, dayOf: dayOf };
+  return { stats: stats, day: day, KINDS: KINDS, pick: pick, highs: highs, delivery: delivery, dayOf: dayOf };
 });
