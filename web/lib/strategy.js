@@ -197,6 +197,75 @@
       return { pass: v >= lo && v <= hi, value: v, detail: FIELD_LABEL[p.field] + ' = ' + round(v, 2) };
     } });
 
+  // ---------- post-results opportunities (your rules, from the Results Performance tab) ----------
+  // stock.rp = the stock's latest Results Performance row (see rpIndex): since / maxGain / maxDD (%),
+  // verdict Strong|Mixed|Weak, reaction Rallied|Flat|Sold off (the sheet's reaction is measured on
+  // the CURRENT move since results, +/- 5%), and the quarter's growth figures / OPM trends.
+  var RP_TYPES = { rally: 'Immediate rally', delayed: 'Delayed reaction', second: 'Second opportunity after rally', eroded: 'Rally gains eroded' };
+  function upWord(v) { return /increas|improv|rising|up/i.test(String(v || '')) ? true : /decreas|declin|falling|down/i.test(String(v || '')) ? false : null; }
+  /** How many of the quarter's figures support the result: [label, true | false | null (no data), text]. */
+  function rpSupport(s) {
+    var rp = s.rp || {};
+    var num = function (label, v) { return [label, isNum(v) ? v > 0 : null, isNum(v) ? (v > 0 ? '+' : '') + Math.round(v) + '%' : 'no data']; };
+    var trend = function (label, v) { return [label, upWord(v), v ? String(v) : 'no data']; };
+    var items = [num('Rev YoY', rp.revYoY), num('Profit YoY', rp.npYoY), num('Rev QoQ', rp.revQoQ), num('Profit QoQ', rp.npQoQ),
+      trend('OPM QoQ', rp.opmQoQ), trend('OPM YoY', rp.opmYoY), num('EPS growth', s.epsg), trend('FII', s.fii)];
+    var known = items.filter(function (x) { return x[1] !== null; }), pos = known.filter(function (x) { return x[1]; }).length;
+    return { items: items, n: known.length, pos: pos, pct: known.length ? pos / known.length * 100 : null };
+  }
+  function supportText(sp) {
+    return sp.items.map(function (x) { return x[0] + ' ' + x[2] + (x[1] === true ? ' ✓' : x[1] === false ? ' ✗' : ''); }).join(' · ');
+  }
+  def('postResults', { label: 'Post-results opportunity (Immediate rally / Delayed reaction / Second opportunity / Rally gains eroded)', kind: 'std', setGroup: 'trigger', pit: false,
+    ref: 'Your post-results rules, on the Results Performance tab (Since results, Max gain, Max drawdown, Verdict, Reaction)',
+    params: [{ key: 'rallyMin', label: 'A rally = max gain since results at least (%)', def: 5 },
+      { key: 'keepRally', label: 'Immediate rally: still holds at least (% of max gain)', def: 80 },
+      { key: 'keepSecond', label: 'Second opportunity: still holds at least (% of max gain)', def: 60 },
+      { key: 'keepErased', label: 'Gains "nearly erased" below (% of max gain)', def: 25 },
+      { key: 'maxDrawdown', label: 'Delayed reaction: max drawdown no worse than (%)', def: 8 }],
+    eval: function (x, p) {
+      var s = x.stock || {}, rp = s.rp;
+      if (!rp) return { pass: false, detail: 'no Results Performance record (no result this season yet)' };
+      var S = rp.since, G = rp.maxGain, D = rp.maxDD, V = String(rp.verdict || ''), R = String(rp.reaction || '');
+      if (!isNum(S) || !isNum(G)) return { pass: false, detail: 'price record since results incomplete' };
+      var keep = G > 0 ? S / G * 100 : null, sp = rpSupport(s);
+      var rec = 'since results ' + (S > 0 ? '+' : '') + round(S, 1) + '%, max gain +' + round(G, 1) + '%' + (keep != null && G >= p.rallyMin ? ' (still holds ' + Math.round(Math.max(keep, -999)) + '% of it)' : '') +
+        ', max drawdown ' + (isNum(D) ? round(D, 1) + '%' : 'n/a') + ' · verdict ' + (V || 'n/a') + ', reaction ' + (R || 'n/a');
+      var out = function (type, sub, ok, why, rank) {
+        var name = RP_TYPES[type] + (sub ? ' (' + sub + ')' : '');
+        return { pass: ok === true, partial: ok === 'watch', value: keep, types: [name], rank: rank, rpType: type,
+          detail: name + ' - ' + rec + (why ? ' · ' + why : '') };
+      };
+      var strong = V === 'Strong', support = isNum(sp.pct) ? sp.pct : 0;
+      var rallied = G >= p.rallyMin;
+      if (rallied && R === 'Rallied' && keep >= p.keepRally) {
+        return out('rally', '', strong ? true : V === 'Mixed' ? 'watch' : false, strong ? 'gains held' : 'verdict ' + (V || 'missing') + ', not Strong', support);
+      }
+      if (rallied && R === 'Rallied' && keep >= p.keepSecond) {
+        return out('second', '', strong ? true : V === 'Mixed' ? 'watch' : false, strong ? 'pulled back ' + Math.round(100 - keep) + '% of the gain' : 'verdict ' + (V || 'missing') + ', not Strong', support);
+      }
+      if (rallied) {
+        var erased = keep < p.keepErased;
+        var gave = Math.min(100, 100 - keep);
+        return out('eroded', erased ? 'nearly erased' : 'about half given back', strong ? true : V === 'Mixed' ? 'watch' : false,
+          strong ? 'gave back ' + Math.round(gave) + '% of the gain' : V === 'Mixed' ? 'verdict Mixed - thesis only partly supported' : 'verdict ' + (V || 'missing') + ' - thesis not supported',
+          (support + gave) / 2);
+      }
+      if (R === 'Flat' && strong) {
+        var stable = !isNum(D) || D >= -p.maxDrawdown;
+        return out('delayed', stable ? '' : 'weak price record', stable ? true : 'watch',
+          stable ? 'stable so far despite strong results' : 'max drawdown ' + round(D, 1) + '% - weaker than ' + p.maxDrawdown + '%', support);
+      }
+      return { pass: false, detail: 'not one of the four post-results set-ups - ' + rec };
+    } });
+  def('resultsSupport', { label: 'Quarter\'s figures support the result: at least {min}% positive (Rev / Profit YoY & QoQ, OPM QoQ & YoY, EPS growth, FII)', kind: 'std', setGroup: 'confirm', pit: false,
+    params: [{ key: 'min', label: 'Min % of available figures positive', def: 60 }],
+    eval: function (x, p) {
+      var sp = rpSupport(x.stock || {});
+      if (!sp.n) return { pass: false, detail: 'no quarterly figures' };
+      return { pass: sp.pct >= p.min, value: sp.pct, detail: sp.pos + ' of ' + sp.n + ' positive (' + Math.round(sp.pct) + '%): ' + supportText(sp) };
+    } });
+
   // standard rules (not in the sheet)
   def('breakout', { label: 'Close above the prior {length}-bar high', kind: 'std', setGroup: 'trigger', type: 'breakout', pit: true,
     params: [{ key: 'length', label: 'Lookback bars', def: 20 }, { key: 'minRelVol', label: 'Min relative volume', def: 1.5 }],
@@ -284,6 +353,28 @@
       universe: { categories: [], minBars: 0 }, filters: [], triggers: [],
       confirms: [{ id: 'fieldIn', params: { field: 'opmq', values: UP3 } }, { id: 'fieldRange', params: { field: 'down52', min: '', max: -30 } }],
       qualify: { minTriggers: 0 }, exits: { stop: { method: 'atr', mult: 2 }, target: { method: 'pct', pct: 10 }, minRR: 0 }, events: { warnDays: 7 }, assumptions: []
+    },
+    postResults: {
+      id: 'postResults', name: 'Post-results opportunities (your rules)', version: 1, source: 'request', mode: 'setup', style: 'swing', timeframe: '1d',
+      description: 'Your rules for trading after quarterly results, on the Results Performance tab: Immediate rally, Delayed reaction, Second opportunity after a rally ' +
+        'and Rally gains eroded - judged on Since results, Max gain, Max drawdown, Verdict and Reaction, with the quarter\'s Rev / Profit YoY & QoQ, OPM QoQ & YoY, ' +
+        'EPS growth and FII as support. A research screen: a fall after a rally does not mean another rally will follow.',
+      universe: { categories: [], minBars: 15 }, filters: [],
+      triggers: [{ id: 'postResults', params: { rallyMin: 5, keepRally: 80, keepSecond: 60, keepErased: 25, maxDrawdown: 8 } }],
+      confirms: [{ id: 'resultsSupport', params: { min: 60 } }],
+      qualify: { minTriggers: 1 },
+      exits: { stop: { method: 'atr', mult: 2 }, target: { method: 'pct', pct: 10 }, minRR: 0 },
+      events: { warnDays: 7 },
+      assumptions: [
+        'A "rally" = Max gain since results of at least 5% (the sheet\'s Rallied / Sold off threshold, Control Panel AB_RP_MOVE_PCT). The sheet\'s Reaction is measured on the CURRENT move since results, so a stock that rallied and gave the gain back shows Flat or Sold off - type 4 therefore uses Max gain, not Reaction.',
+        'Immediate rally: Reaction Rallied, Verdict Strong, still holding at least 80% of its max gain.',
+        'Second opportunity after rally: Reaction Rallied, Verdict Strong, still holding 60-80% of its max gain (a pullback within the rally).',
+        'Rally gains eroded: rallied (max gain ≥ 5%) but holds less than 60% of the gain; "about half given back" = 25-60% kept, "nearly erased" = under 25% kept. Verdict Strong qualifies, Mixed is Watch, Weak is left out. Ranked by how much was given back and by the quarter\'s figures.',
+        'Delayed reaction: Reaction Flat, Verdict Strong, never rallied (max gain under 5%); max drawdown no worse than −8% = stable, worse = "weak price record" (Watch).',
+        'Supporting figures: at least 60% of the available figures positive - Rev YoY, Profit YoY, Rev QoQ, Profit QoQ > 0, OPM QoQ and OPM YoY increasing, TTM EPS growth > 0, FII increasing (FII only where available). Below 60% = Watch.',
+        'Stop / target are the same placeholders as your other presets (2 × ATR, +10%); they are not part of your rules.',
+        'All percentages are editable below. Nothing here predicts a move - it sorts stocks into the four set-ups you described.'
+      ]
     },
     demo: {
       id: 'demo', name: 'DEMO - EMA trend pullback (for testing only)', version: 1, source: 'demo', mode: 'setup', style: 'swing', timeframe: '1d',
@@ -425,6 +516,8 @@
     if (tPass.length && tPass[0].res.cells) res.confluence = tPass[0].res.value;
     else if (t.length && t[0].res.cells) res.confluence = t[0].res.value;
     if (cfg.mode === 'screen') res.setupTypes = ['screen'];
+    var rk = t.map(function (k) { return k.res.rank; }).filter(isNum);
+    if (rk.length) res.rank = Math.max.apply(null, rk);   // a rule's own ranking (post-results), after the score
     var need = cfg.qualify.minTriggers;
     var slots = f.length + c.filter(function (k) { return k.res.pass != null; }).length + need;
     var got = f.filter(function (k) { return k.res.pass !== false; }).length + c.filter(function (k) { return k.res.pass === true; }).length + Math.min(need, tPass.length);
@@ -504,8 +597,28 @@
     });
     out.lists.breakout = out.results.filter(function (r) { return (r.status === 'qualified' || r.status === 'watch') && r.setupTypes.indexOf('breakout') >= 0; });
     out.lists.pullback = out.results.filter(function (r) { return (r.status === 'qualified' || r.status === 'watch') && r.setupTypes.indexOf('pullback') >= 0; });
-    var rank = function (a, b) { return (b.score - a.score) || ((b.confluence || 0) - (a.confluence || 0)) || ((b.rr || 0) - (a.rr || 0)) || String(a.sym).localeCompare(String(b.sym)); };
+    var rank = function (a, b) { return (b.score - a.score) || ((b.rank || 0) - (a.rank || 0)) || ((b.confluence || 0) - (a.confluence || 0)) || ((b.rr || 0) - (a.rr || 0)) || String(a.sym).localeCompare(String(b.sym)); };
     Object.keys(out.lists).forEach(function (k) { out.lists[k].sort(rank); });
+    return out;
+  }
+
+  /** Results Performance table ({cols, rows}) -> { SYM: the latest row as stock.rp } (numbers in %). */
+  function rpIndex(table) {
+    var out = {};
+    if (!table || !Array.isArray(table.cols) || !Array.isArray(table.rows)) return out;
+    var ix = {};
+    table.cols.forEach(function (c, i) { ix[c] = i; });
+    var g = function (r, c) { return ix[c] == null ? null : r[ix[c]]; };
+    var n = function (r, c) { var v = g(r, c); return isNum(v) ? v : null; };
+    table.rows.forEach(function (r) {
+      var sym = String(g(r, 'Symbol') || '').trim().toUpperCase();
+      if (!sym) return;
+      var rd = String(g(r, 'Result Date') || '');
+      if (out[sym] && out[sym].resultDate >= rd) return;
+      out[sym] = { quarter: g(r, 'Quarter'), resultDate: rd, resultDay: n(r, 'Result Day %'), since: n(r, '% Since Results'), maxGain: n(r, 'Max Gain %'),
+        maxDD: n(r, 'Max Drawdown %'), verdict: g(r, 'Results Verdict'), reaction: g(r, 'Market Reaction'), revQoQ: n(r, 'Rev QoQ %'), revYoY: n(r, 'Rev YoY %'),
+        npQoQ: n(r, 'NP QoQ %'), npYoY: n(r, 'NP YoY %'), opmQoQ: g(r, 'OPM QoQ'), opmYoY: g(r, 'OPM YoY') };
+    });
     return out;
   }
 
@@ -534,6 +647,7 @@
 
   return {
     CONDITIONS: C, PRESETS: PRESETS, BULLISH_PATTERNS: BULLISH_PATTERNS, buildContext: buildContext, evaluate: evaluate, run: run,
-    validate: validate, diff: diff, label: label, ttmSignal: ttmSignal, positionWarnings: positionWarnings, clone: clone
+    validate: validate, diff: diff, label: label, ttmSignal: ttmSignal, positionWarnings: positionWarnings, clone: clone,
+    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES
   };
 });

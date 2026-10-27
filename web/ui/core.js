@@ -152,33 +152,89 @@
       (asOf ? ' · ' + F.dateTime(asOf) : '') + '</span>';
   }
 
-  // ---------- generic sortable / paged table ----------
+  // ---------- generic sortable / filterable / paged table ----------
   // columns: {key, label, type: text|num|pct|price|date|datetime|badge|sym, get(row), html(row), wrap, digits, name, title}
+  // Click a heading = sort by that column; Shift+click = add it as the next sort level.
+  // "Sort & filter" (above the table): several sort levels and several conditions
+  // ("Result day ≥ 10" AND "Verdict is Strong"...). Kept per table in this browser
+  // (ui.store 'tbl:<page>|<columns>'); opts.tools false hides the button.
   var tableSeq = 0;
+  var OPS = {
+    num: [['ge', '≥'], ['le', '≤'], ['between', 'between'], ['eq', '='], ['blank', 'is empty'], ['notblank', 'is not empty']],
+    date: [['onafter', 'on or after'], ['onbefore', 'on or before'], ['between', 'between'], ['blank', 'is empty'], ['notblank', 'is not empty']],
+    text: [['is', 'is'], ['isnot', 'is not'], ['contains', 'contains'], ['blank', 'is empty'], ['notblank', 'is not empty']]
+  };
+  function colKind(c) { return /^(num|pct|price)$/.test(c.type) ? 'num' : /^(date|datetime)$/.test(c.type) ? 'date' : 'text'; }
+  function strHash(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
   function Table(opts) {
     this.o = opts;
     this.rows = opts.rows || [];
     this.page = 0;
     this.size = opts.pageSize || 50;
-    this.sort = opts.sort || null;
+    this.sorts = opts.sort ? [{ key: opts.sort.key, dir: opts.sort.dir }] : [];
+    this.sort = this.sorts[0] || null;          // the first level (kept for older callers)
+    this.filters = [];                          // [{ key, op, a, b }]
     this.id = 't' + (++tableSeq);
+    this.open = false;
   }
   Table.prototype.val = function (c, r) { return c.get ? c.get(r) : r[c.key]; };
+  Table.prototype.col = function (k) { return this.o.columns.filter(function (x) { return x.key === k; })[0] || null; };
+  Table.prototype.shown = function () { return this.o.columns.filter(function (c) { return !c.csvOnly && c.label; }); };
   Table.prototype.setRows = function (rows) { this.rows = rows; this.page = 0; this.draw(); };
+  /** One condition: true when the row passes (a condition still being typed passes). */
+  Table.prototype.test = function (f, r) {
+    var c = this.col(f.key);
+    if (!c) return true;
+    var k = colKind(c), v = this.val(c, r);
+    var empty = v == null || v === '' || (k === 'num' && !isNum(v));
+    if (f.op === 'blank') return empty;
+    if (f.op === 'notblank') return !empty;
+    var a = f.a == null ? '' : String(f.a).trim(), b = f.b == null ? '' : String(f.b).trim();
+    if (a === '' && (f.op !== 'between' || b === '')) return true;
+    if (empty) return false;
+    if (k === 'num') {
+      var x = Number(a), y = Number(b);
+      if (f.op === 'ge') return v >= x;
+      if (f.op === 'le') return v <= x;
+      if (f.op === 'eq') return Math.abs(v - x) < 1e-9;
+      if (f.op === 'between') {
+        var lo = a === '' ? -Infinity : x, hi = b === '' ? Infinity : y;
+        return v >= Math.min(lo, hi) && v <= Math.max(lo, hi);
+      }
+      return true;
+    }
+    if (k === 'date') {
+      var d = String(v).slice(0, 10);
+      if (f.op === 'onafter') return d >= a;
+      if (f.op === 'onbefore') return d <= a;
+      if (f.op === 'between') return (a === '' || d >= (b === '' || a <= b ? a : b)) && (b === '' || d <= (a === '' || a <= b ? b : a));
+      return true;
+    }
+    var s = String(v).toLowerCase(), q = a.toLowerCase();
+    if (f.op === 'is') return s === q;
+    if (f.op === 'isnot') return s !== q;
+    return s.indexOf(q) >= 0;
+  };
+  Table.prototype.filtered = function () {
+    var self = this, fs = this.filters.filter(function (f) { return self.col(f.key); });
+    if (!fs.length) return this.rows;
+    return this.rows.filter(function (r) { for (var i = 0; i < fs.length; i++) if (!self.test(fs[i], r)) return false; return true; });
+  };
   Table.prototype.sorted = function () {
-    var s = this.sort, self = this;
-    if (!s) return this.rows;
-    var c = this.o.columns.filter(function (x) { return x.key === s.key; })[0];
-    if (!c) return this.rows;
-    var numeric = /^(num|pct|price)$/.test(c.type);
-    return this.rows.slice().sort(function (a, b) {
-      var x = self.val(c, a), y = self.val(c, b);
-      var xe = x == null || x === '' || (numeric && !isNum(x)), ye = y == null || y === '' || (numeric && !isNum(y));
-      if (xe && ye) return 0;
-      if (xe) return 1;                       // blanks always last
-      if (ye) return -1;
-      if (numeric) return (x - y) * s.dir;
-      return String(x).localeCompare(String(y), 'en', { numeric: true }) * s.dir;
+    var self = this, rows = this.filtered();
+    var lv = this.sorts.map(function (s) { var c = self.col(s.key); return c ? { c: c, dir: s.dir, num: /^(num|pct|price)$/.test(c.type) } : null; }).filter(Boolean);
+    if (!lv.length) return rows;
+    return rows.slice().sort(function (a, b) {
+      for (var i = 0; i < lv.length; i++) {
+        var L = lv[i], x = self.val(L.c, a), y = self.val(L.c, b);
+        var xe = x == null || x === '' || (L.num && !isNum(x)), ye = y == null || y === '' || (L.num && !isNum(y));
+        if (xe && ye) continue;
+        if (xe) return 1;                       // blanks always last
+        if (ye) return -1;
+        var r = L.num ? (x - y) * L.dir : String(x).localeCompare(String(y), 'en', { numeric: true }) * L.dir;
+        if (r) return r;
+      }
+      return 0;
     });
   };
   Table.prototype.cell = function (c, r) {
@@ -195,14 +251,44 @@
       default: return v == null || v === '' ? '<span class="sub">–</span>' : esc(v);
     }
   };
+  // ----- saved sort & filter (per table, this browser) -----
+  Table.prototype.storeKey = function () {
+    var page = String(location.hash || '#').replace(/^#/, '').split('/')[0] || 'overview';
+    return 'tbl:' + (this.o.id || page + '|' + strHash(this.o.columns.map(function (c) { return c.key; }).join(',')));
+  };
+  Table.prototype.load = function () {
+    if (this.o.tools === false) return;
+    var self = this, st = store.get(this.storeKey(), null);
+    if (!st || typeof st !== 'object') return;
+    var ok = function (k) { var c = self.col(k); return c && !c.csvOnly && c.label; };
+    if (Array.isArray(st.s) && st.s.length) {
+      var s = st.s.filter(function (x) { return x && ok(x.key); }).map(function (x) { return { key: x.key, dir: x.dir < 0 ? -1 : 1 }; });
+      if (s.length) this.sorts = s;
+    }
+    if (Array.isArray(st.f)) {
+      this.filters = st.f.filter(function (x) { return x && ok(x.key) && OPS[colKind(self.col(x.key))].some(function (o) { return o[0] === x.op; }); })
+        .map(function (x) { return { key: x.key, op: x.op, a: x.a == null ? '' : String(x.a), b: x.b == null ? '' : String(x.b) }; });
+    }
+    this.sort = this.sorts[0] || null;
+  };
+  Table.prototype.save = function () {
+    this.sort = this.sorts[0] || null;
+    if (this.o.tools === false) return;
+    store.set(this.storeKey(), { s: this.sorts, f: this.filters });
+  };
   Table.prototype.mount = function (host) {
     this.host = host;
     var self = this;
     host.__sbTable = this;                       // re-mounting on the same host: only the newest table reacts
+    host.innerHTML = '<div class="tbl-tools"></div><div class="tbl-panel" id="' + this.id + '-panel" hidden></div><div class="tbl-body"></div>';
+    this.toolsEl = host.querySelector('.tbl-tools');
+    this.panelEl = host.querySelector('.tbl-panel');
+    this.bodyEl = host.querySelector('.tbl-body');
+    this.load();
     host.addEventListener('click', function (e) {
       if (host.__sbTable !== self) return;
       var th = e.target.closest('th[data-k]');
-      if (th) { self.toggleSort(th.getAttribute('data-k')); return; }
+      if (th) { self.toggleSort(th.getAttribute('data-k'), e.shiftKey); return; }
       var pb = e.target.closest('[data-page]');
       if (pb) {
         var dir = pb.getAttribute('data-page');
@@ -210,25 +296,184 @@
         self.draw();
         var b = host.querySelector('[data-page="' + dir + '"]:not([disabled])') || host.querySelector('[data-page]:not([disabled])');
         if (b) b.focus();
+        return;
       }
+      var t = e.target.closest('[data-tt]');
+      if (t) self.tool(t.getAttribute('data-tt'));
     });
     host.addEventListener('keydown', function (e) {
       if (host.__sbTable !== self) return;
       var th = e.target.closest('th[data-k]');
-      if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); self.toggleSort(th.getAttribute('data-k')); }
+      if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); self.toggleSort(th.getAttribute('data-k'), e.shiftKey); }
+    });
+    host.addEventListener('change', function (e) {
+      if (host.__sbTable !== self) return;
+      var x = e.target.closest('[data-tp]');
+      if (!x) return;
+      var p = x.getAttribute('data-tp').split(':'), i = +p[1], f = p[2];   // s:<i>:key|dir  f:<i>:key|op|a|b
+      if (p[0] === 's') {
+        var lv = self.sorts[i];
+        if (!lv) return;
+        if (f === 'key') lv.key = x.value; else lv.dir = +x.value;
+      } else {
+        var fl = self.filters[i];
+        if (!fl) return;
+        if (f === 'key') {
+          fl.key = x.value;
+          var ops = OPS[colKind(self.col(fl.key))];
+          if (!ops.some(function (o) { return o[0] === fl.op; })) fl.op = ops[0][0];
+          fl.a = ''; fl.b = '';
+        } else if (f === 'op') fl.op = x.value;
+        else { fl[f] = x.value; self.page = 0; self.save(); self.draw(); return; }   // a value: the panel stays as it is
+      }
+      self.page = 0;
+      self.save();
+      self.drawPanel(x.getAttribute('data-tp'));
+      self.draw();
+    });
+    host.addEventListener('input', function (e) {
+      if (host.__sbTable !== self) return;
+      var x = e.target.closest('[data-tp]');
+      if (!x || x.tagName !== 'INPUT') return;
+      var p = x.getAttribute('data-tp').split(':'), fl = self.filters[+p[1]];
+      if (p[0] !== 'f' || !fl) return;
+      fl[p[2]] = x.value;
+      self.page = 0;
+      self.save();
+      self.draw();
     });
     this.draw();
     return this;
   };
-  Table.prototype.toggleSort = function (k) {
-    var c = this.o.columns.filter(function (x) { return x.key === k; })[0];
-    var numeric = c && /^(num|pct|price|date|datetime)$/.test(c.type);
-    if (this.sort && this.sort.key === k) this.sort.dir = -this.sort.dir;
-    else this.sort = { key: k, dir: numeric ? -1 : 1 };
+  /** Plain click: sort by this column only (click again = reverse). Shift: add / reverse it as a further level. */
+  Table.prototype.toggleSort = function (k, add) {
+    var c = this.col(k);
+    var first = c && /^(num|pct|price|date|datetime)$/.test(c.type) ? -1 : 1;
+    var at = -1;
+    this.sorts.forEach(function (s, i) { if (s.key === k) at = i; });
+    if (add) {
+      if (at >= 0) this.sorts[at].dir = -this.sorts[at].dir;
+      else this.sorts.push({ key: k, dir: first });
+    } else if (at === 0 && this.sorts.length === 1) this.sorts[0].dir = -this.sorts[0].dir;
+    else this.sorts = [{ key: k, dir: at >= 0 ? -this.sorts[at].dir : first }];
     this.page = 0;
+    this.save();
+    if (this.open) this.drawPanel();
     this.draw();
     var th = this.host.querySelector('th[data-k="' + k + '"]');
     if (th) th.focus();
+  };
+  Table.prototype.tool = function (what) {
+    var cols = this.shown();
+    if (what === 'toggle') {
+      this.open = !this.open;
+      this.drawPanel();
+      this.drawTools();
+      var f = this.open ? this.panelEl.querySelector('select, input, button') : this.toolsEl.querySelector('[data-tt="toggle"]');
+      if (f) f.focus();
+      return;
+    }
+    if (what === 'addsort') {
+      var used = this.sorts.map(function (s) { return s.key; });
+      var c = cols.filter(function (x) { return used.indexOf(x.key) < 0; })[0] || cols[0];
+      this.sorts.push({ key: c.key, dir: /^(num|pct|price|date|datetime)$/.test(c.type) ? -1 : 1 });
+    } else if (what === 'addfilter') {
+      var c2 = cols.filter(function (x) { return colKind(x) === 'num'; })[0] || cols[0];
+      this.filters.push({ key: c2.key, op: OPS[colKind(c2)][0][0], a: '', b: '' });
+    } else if (/^rm[sf]:/.test(what)) {
+      var i = +what.split(':')[1];
+      (what.charAt(2) === 's' ? this.sorts : this.filters).splice(i, 1);
+    } else if (what === 'clear') {
+      this.sorts = this.o.sort ? [{ key: this.o.sort.key, dir: this.o.sort.dir }] : [];
+      this.filters = [];
+    } else if (what === 'done') {
+      this.open = false;
+      this.drawPanel();
+      this.drawTools();
+      var t = this.toolsEl.querySelector('[data-tt="toggle"]');
+      if (t) t.focus();
+      return;
+    } else return;
+    this.page = 0;
+    this.save();
+    this.drawPanel();
+    this.draw();
+    var focus = what === 'addsort' ? '[data-tp="s:' + (this.sorts.length - 1) + ':key"]' : what === 'addfilter' ? '[data-tp="f:' + (this.filters.length - 1) + ':key"]' : null;
+    var el = focus ? this.panelEl.querySelector(focus) : this.toolsEl.querySelector('[data-tt="toggle"]');
+    if (el) el.focus();
+  };
+  Table.prototype.summary = function () {
+    var self = this, parts = [];
+    var name = function (k) { var c = self.col(k); return c ? c.label : k; };
+    if (this.sorts.length) {
+      parts.push('Sorted by ' + this.sorts.map(function (s) { return name(s.key) + (s.dir > 0 ? ' ↑' : ' ↓'); }).join(', then '));
+    }
+    var fs = this.filters.filter(function (f) { return f.op === 'blank' || f.op === 'notblank' || String(f.a || '') !== '' || String(f.b || '') !== ''; });
+    if (fs.length) {
+      parts.push(fs.map(function (f) {
+        var op = (OPS[colKind(self.col(f.key))].filter(function (o) { return o[0] === f.op; })[0] || ['', f.op])[1];
+        return name(f.key) + ' ' + op + (f.op === 'blank' || f.op === 'notblank' ? '' : ' ' + (f.a || '…') + (f.op === 'between' ? ' and ' + (f.b || '…') : ''));
+      }).join(' · '));
+    }
+    return { text: parts.join(' · '), filters: fs.length };
+  };
+  Table.prototype.drawTools = function () {
+    if (!this.toolsEl) return;
+    var sm = this.summary(), n = this.filtered().length;
+    var active = this.sorts.length > 1 || sm.filters > 0;
+    if (this.o.tools === false || (!active && !this.open && this.rows.length <= 5)) { this.toolsEl.innerHTML = ''; return; }
+    this.toolsEl.innerHTML = '<button type="button" class="chip tbl-tbtn" data-tt="toggle" aria-expanded="' + this.open + '" aria-controls="' + this.id + '-panel"' +
+      (active ? ' aria-pressed="true"' : '') + '>⇅ Sort &amp; filter' + (sm.filters ? ' (' + sm.filters + ')' : '') + '</button>' +
+      (active ? '<span class="tbl-sum">' + esc(sm.text) + (sm.filters ? ' · <b>' + n.toLocaleString('en-IN') + ' of ' + this.rows.length.toLocaleString('en-IN') + ' rows</b>' : '') +
+        ' <button type="button" class="linkish tbl-clear" data-tt="clear">Clear</button></span>' : '');
+  };
+  Table.prototype.drawPanel = function (focusTp) {
+    if (!this.panelEl) return;
+    if (!this.open) { this.panelEl.hidden = true; this.panelEl.innerHTML = ''; return; }
+    var self = this, cols = this.shown();
+    var colSel = function (tp, cur, kinds) {
+      return '<select class="sel" data-tp="' + tp + '" aria-label="Column">' + cols.filter(function (c) { return !kinds || kinds(c); }).map(function (c) {
+        return '<option value="' + esc(c.key) + '"' + (c.key === cur ? ' selected' : '') + '>' + esc(c.label) + '</option>';
+      }).join('') + '</select>';
+    };
+    var h = '<div class="tbl-sec"><div class="tbl-h">Sort by</div>';
+    this.sorts.forEach(function (s, i) {
+      h += '<div class="tbl-row"><span class="tbl-n">' + (i ? 'then' : '') + '</span>' + colSel('s:' + i + ':key', s.key) +
+        '<select class="sel" data-tp="s:' + i + ':dir" aria-label="Order"><option value="-1"' + (s.dir < 0 ? ' selected' : '') + '>High → low / Z → A / newest</option>' +
+        '<option value="1"' + (s.dir > 0 ? ' selected' : '') + '>Low → high / A → Z / oldest</option></select>' +
+        '<button type="button" class="icon-btn" data-tt="rms:' + i + '" aria-label="Remove this sort level">✕</button></div>';
+    });
+    h += '<button type="button" class="btn" data-tt="addsort">' + (this.sorts.length ? '+ Then by' : '+ Sort by a column') + '</button>' +
+      '<p class="sub">Tip: click a column heading to sort by it; Shift+click adds it as the next level.</p></div>';
+    h += '<div class="tbl-sec"><div class="tbl-h">Show only rows where <span class="sub">(all conditions must match)</span></div>';
+    this.filters.forEach(function (f, i) {
+      var c = self.col(f.key), k = colKind(c), ops = OPS[k];
+      var vals = [];                              // a text column's values, offered as a choice when there are few
+      if (k === 'text') {
+        var seen = {};
+        self.rows.forEach(function (r) { var v = self.val(c, r); if (v != null && v !== '' && !seen[v] && vals.length <= 50) { seen[v] = 1; vals.push(String(v)); } });
+        if (vals.length > 50) vals = [];
+      }
+      var inp = function (which, val) {
+        if (k === 'text' && vals.length && (f.op === 'is' || f.op === 'isnot')) {   // few values (Verdict, Reaction...): pick one
+          return '<select class="sel tbl-val" data-tp="f:' + i + ':' + which + '" aria-label="' + esc(c.label) + ' value"><option value="">choose…</option>' +
+            vals.slice().sort().map(function (v) { return '<option value="' + esc(v) + '"' + (v === val ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>';
+        }
+        var type = k === 'num' ? 'number' : k === 'date' ? 'date' : 'text';
+        return '<input class="search tbl-val" type="' + type + '"' + (type === 'number' ? ' step="any"' : '') + ' data-tp="f:' + i + ':' + which + '" value="' + esc(val) + '"' +
+          ' aria-label="' + esc(c.label) + (which === 'b' ? ' (to)' : ' value') + '" placeholder="' + (k === 'num' ? (c.type === 'pct' ? 'e.g. 10 (= 10%)' : 'number') : 'value') + '">';
+      };
+      h += '<div class="tbl-row"><span class="tbl-n">' + (i ? 'and' : '') + '</span>' + colSel('f:' + i + ':key', f.key) +
+        '<select class="sel" data-tp="f:' + i + ':op" aria-label="Condition">' + ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === f.op ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+        (f.op === 'blank' || f.op === 'notblank' ? '' : inp('a', f.a) + (f.op === 'between' ? '<span class="sub">and</span>' + inp('b', f.b) : '')) +
+        '<button type="button" class="icon-btn" data-tt="rmf:' + i + '" aria-label="Remove this condition">✕</button></div>';
+    });
+    h += '<button type="button" class="btn" data-tt="addfilter">+ Add condition</button></div>' +
+      '<div class="tbl-row tbl-end"><button type="button" class="btn" data-tt="clear">Clear all</button><button type="button" class="btn primary" data-tt="done">Done</button>' +
+      '<span class="sub">Saved for this table in this browser.</span></div>';
+    this.panelEl.innerHTML = h;
+    this.panelEl.hidden = false;
+    if (focusTp) { var el = this.panelEl.querySelector('[data-tp="' + focusTp + '"]'); if (el) el.focus(); }
   };
   Table.prototype.visibleRows = function () { return this.sorted(); };
   Table.prototype.toCsvRows = function () {
@@ -247,15 +492,20 @@
     if (this.page >= pages) this.page = pages - 1;
     if (this.page < 0) this.page = 0;
     var slice = rows.slice(this.page * this.size, (this.page + 1) * this.size);
+    var multi = this.sorts.length > 1;
     var h = '<div class="tbl-wrap"><table class="tbl"><thead><tr>';
     cols.forEach(function (c) {
-      var srt = self.sort && self.sort.key === c.key ? (self.sort.dir > 0 ? 'ascending' : 'descending') : 'none';
+      var at = -1;
+      self.sorts.forEach(function (s, i) { if (s.key === c.key) at = i; });
+      var srt = at === 0 ? (self.sorts[0].dir > 0 ? 'ascending' : 'descending') : 'none';
       var num = /^(num|pct|price)$/.test(c.type) ? ' class="num"' : '';
       h += '<th scope="col" tabindex="0" data-k="' + esc(c.key) + '" aria-sort="' + srt + '"' + num +
-        (c.title ? ' title="' + esc(c.title) + '"' : '') + '>' + esc(c.label) + '</th>';
+        (c.title ? ' title="' + esc(c.title) + '"' : '') + '>' + esc(c.label) +
+        (multi && at >= 0 ? '<span class="tbl-lvl" aria-label="sort level ' + (at + 1) + '">' + (at + 1) + (at > 0 ? (self.sorts[at].dir > 0 ? '↑' : '↓') : '') + '</span>' : '') + '</th>';
     });
     h += '</tr></thead><tbody>';
-    if (!slice.length) h += '<tr><td class="empty" colspan="' + cols.length + '">' + esc(this.o.empty || 'Nothing to show') + '</td></tr>';
+    var filtered = this.filters.length && rows.length < this.rows.length;
+    if (!slice.length) h += '<tr><td class="empty" colspan="' + cols.length + '">' + esc(filtered && !rows.length ? 'No rows match the Sort & filter conditions - change or clear them' : this.o.empty || 'Nothing to show') + '</td></tr>';
     slice.forEach(function (r) {
       h += '<tr>';
       cols.forEach(function (c) {
@@ -271,7 +521,8 @@
         '<button type="button" data-page="-1"' + (this.page === 0 ? ' disabled' : '') + '>‹ Prev</button>' +
         '<button type="button" data-page="1"' + (this.page >= pages - 1 ? ' disabled' : '') + '>Next ›</button></div>';
     }
-    this.host.innerHTML = h;
+    (this.bodyEl || this.host).innerHTML = h;
+    this.drawTools();
   };
 
   // ---------- horizontal bar chart (single series) ----------

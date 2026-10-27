@@ -312,6 +312,57 @@ function check(name, fn) {
           await page.evaluate(() => localStorage.removeItem('sb:watchlists'));
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
+        await check('tables: sort by several columns and filter on several conditions, kept after reload', async () => {
+          errors.length = 0;
+          await page.goto(base + '#results', { waitUntil: 'load' });
+          await page.waitForSelector('#rp-table .tbl-tbtn', { timeout: 15000 });
+          await page.click('#rp-table .tbl-tbtn');
+          await page.click('#rp-table [data-tt="addfilter"]');
+          await page.selectOption('#rp-table [data-tp="f:0:key"]', 'Result Day %');
+          await page.fill('#rp-table [data-tp="f:0:a"]', '5');
+          await page.click('#rp-table [data-tt="addfilter"]');
+          await page.selectOption('#rp-table [data-tp="f:1:key"]', 'Results Verdict');
+          await page.selectOption('#rp-table [data-tp="f:1:a"]', 'Strong');
+          await page.click('#rp-table th[data-k="Results Verdict"]');
+          await page.click('#rp-table th[data-k="NP YoY %"]', { modifiers: ['Shift'] });
+          const check1 = () => page.evaluate(() => {
+            const t = document.querySelector('#rp-table').__sbTable;
+            const rows = t.sorted();
+            const want = t.rows.filter((r) => r['Result Day %'] >= 5 && r['Results Verdict'] === 'Strong').length;
+            const ordered = rows.every((r, i) => i === 0 || (rows[i - 1]['NP YoY %'] == null ? r['NP YoY %'] == null : r['NP YoY %'] == null || rows[i - 1]['NP YoY %'] >= r['NP YoY %']));
+            return { n: rows.length, want, ordered, sorts: t.sorts.map((x) => x.key + x.dir).join(','), sum: document.querySelector('#rp-table .tbl-sum').textContent };
+          });
+          const a = await check1();
+          assert.ok(a.want > 0, 'the saved copy has strong results that rallied');
+          assert.strictEqual(a.n, a.want, 'both conditions apply');
+          assert.ok(a.ordered, 'second sort level orders rows with the same verdict');
+          assert.strictEqual(a.sorts, 'Results Verdict1,NP YoY %-1');
+          assert.match(a.sum, /Result day ≥ 5 · Verdict is Strong/);
+          await page.reload({ waitUntil: 'load' });
+          await page.waitForSelector('#rp-table .tbl-sum', { timeout: 15000 });
+          const b = await check1();
+          assert.deepStrictEqual([b.n, b.sorts], [a.n, a.sorts], 'kept after a reload');
+          await page.click('#rp-table .tbl-clear');
+          const c = await page.evaluate(() => { const t = document.querySelector('#rp-table').__sbTable; return [t.sorted().length, t.rows.length, t.filters.length]; });
+          assert.deepStrictEqual(c, [c[1], c[1], 0], 'Clear shows every row again');
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
+        await check('strategy: post-results opportunities preset runs and labels its four set-ups', async () => {
+          const r = await page.evaluate(async () => {
+            await window.SB.loadHistory();
+            const S = window.SB.strategies, list = S.list().map((c) => c.id);
+            const run = window.SB.strategy.run(S.get('postResults'), window.SB.ctx.stocks, S.candles() || {}, { usePrice: true });
+            const types = {};
+            run.results.forEach((x) => (x.setupTypes || []).forEach((t) => { types[t] = (types[t] || 0) + 1; }));
+            return { has: list.indexOf('postResults') >= 0, types: Object.keys(types), desc: S.describe(S.get('postResults')).tag };
+          });
+          assert.ok(r.has, 'listed in Strategy Settings');
+          assert.ok(r.types.some((t) => /^Rally gains eroded|^Immediate rally|^Delayed reaction|^Second opportunity/.test(t)), 'types: ' + r.types.join(', '));
+          assert.match(r.desc, /not confirmed/);
+          await page.goto(base + '#strategy', { waitUntil: 'load' });
+          await page.waitForTimeout(800);
+          assert.ok(/Post-results opportunities/.test(await page.$eval('#app', (x) => x.innerText)));
+        });
         await check('daily suggestions match the engine run', async () => {
           await page.goto(base + '#suggestions', { waitUntil: 'load' });
           await page.waitForTimeout(3000);

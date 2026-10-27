@@ -32,6 +32,23 @@ information and says intraday is not supported by the daily data.
 - **Smart Dashboard screens** - the five presets above, as fundamental
   screens (no entry timing, not backtestable because the historical
   fundamentals are not available).
+- **Post-results opportunities (your rules)** - written from your description
+  (source `request`, "From your description", not confirmed until you confirm it).
+  Reads each stock's latest Results Performance row (`stock.rp`, joined in
+  web/app.js with `SB.strategy.rpIndex`). Trigger `postResults` puts a stock in one
+  of four set-ups, judged on Since results (S), Max gain (G), Max drawdown (D),
+  Verdict and Reaction; "holds" = S / G:
+  | Set-up | Rule (defaults, all editable) |
+  |---|---|
+  | Immediate rally | Reaction Rallied, G ≥ 5%, holds ≥ 80% |
+  | Second opportunity after rally | Reaction Rallied, holds 60-80% |
+  | Rally gains eroded (about half given back / nearly erased) | G ≥ 5% and holds < 60% (or no longer Rallied); nearly erased = holds < 25%; ranked by gains given back + figures |
+  | Delayed reaction (weak price record) | Reaction Flat, G < 5%; D worse than −8% = weak price record (Watch) |
+  Verdict Strong qualifies; Mixed = Watch; Weak = left out. Confirm rule
+  `resultsSupport`: ≥ 60% of the available figures positive (Rev / Profit YoY & QoQ,
+  OPM QoQ & YoY increasing, TTM EPS growth, FII increasing). The sheet's Reaction is
+  measured on the CURRENT move since results (±5%), so "rallied" for gains-eroded uses
+  Max gain. Stop / target (2 × ATR, +10%) are the usual placeholders, not your rules.
 - **DEMO - EMA trend pullback** - a generic test strategy, always labelled DEMO.
 
 ## Assumptions that need your confirmation

@@ -91,7 +91,7 @@
     if (!cfg || typeof cfg !== 'object') return { ok: false, errors: ['not a strategy'] };
     cfg.id = String(cfg.id || 'custom-' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'custom';
     // a file cannot claim to be "from your sheet" or turn DEMO into something confirmable
-    if (S.PRESETS[cfg.id]) cfg.source = S.PRESETS[cfg.id].source === 'demo' ? 'demo' : 'discovered-edited';
+    if (S.PRESETS[cfg.id]) cfg.source = S.PRESETS[cfg.id].source === 'demo' ? 'demo' : S.PRESETS[cfg.id].source === 'request' ? 'request' : 'discovered-edited';
     else cfg.source = 'custom';
     return save(cfg, 'imported');
   }
@@ -143,6 +143,8 @@
     if (cfg.source === 'demo') return { tag: 'DEMO', cls: 's-warn', long: 'DEMO strategy - for testing the engine only, not your strategy and not recommendations.' };
     if (cfg.source === 'custom') return conf ? { tag: 'Your own rules · confirmed' + v, cls: 's-good', long: 'Your own rules (made or imported in this browser), confirmed by you.' }
       : { tag: 'Your own rules · not confirmed', cls: 's-warn', long: 'Your own rules (made or imported in this browser), not yet confirmed.' };
+    if (cfg.source === 'request') return conf ? { tag: 'Your post-results rules · confirmed' + v, cls: 's-good', long: 'Built from the rules you described, confirmed by you.' }
+      : { tag: 'From your description · not confirmed', cls: 's-warn', long: 'Built from the rules you described; the percentages that decide each type are assumptions until you confirm them in Strategy Settings.' };
     if (cfg.source === 'discovered-edited') return conf ? { tag: 'Edited from your sheet · confirmed' + v, cls: 's-good', long: 'Rules taken from your sheet and edited by you, confirmed by you.' }
       : { tag: 'Edited from your sheet · not confirmed', cls: 's-warn', long: 'Rules taken from your sheet and edited in this browser, not yet confirmed.' };
     return conf ? { tag: 'From your sheet · confirmed' + v, cls: 's-good', long: 'Rules taken from your sheet (Code.gs), confirmed by you.' }
