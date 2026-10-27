@@ -12,9 +12,10 @@ it does one more round 1 hour after that (again only with internet).
 Nothing runs continuously. If you stay logged in for days, use RunNow.bat when you want a fresh round.
  - RunNow.bat       do one round right now
  - Reschedule.bat   remove the old hourly schedule and use the log-in schedule (keeps your settings)
- - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists) access
+ - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists) + moneycontrol access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
  - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
+ - MoneycontrolCheck.bat   TEST ONLY: show the latest quarterly results moneycontrol has for the symbols you type
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
@@ -37,3 +38,11 @@ with dates (mainboard equity issues only - SME and debt issues such as NCDs are 
 email the first time each day. The website's IPOs & Markets page shows the same tab.
  - bridge.log shows "IPO lists: ..." for each round.
  - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)
+
+MONEYCONTROL (test only - nothing is sent to the sheet yet)
+moneycontrol.com often shows new quarterly results before screener.in. This is a first test to see
+whether this PC can read them:
+ - TestConnection.bat line 5 looks up TCS on moneycontrol and prints its latest quarter.
+ - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and prints, for each one, the
+   latest quarter, revenue and net profit (with QoQ / YoY change) and EPS, and which page it used.
+ - Send the output (screenshot) to Claude. Only after that test is fine will the sheet start using it.
