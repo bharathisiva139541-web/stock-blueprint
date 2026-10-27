@@ -62,6 +62,26 @@ function wallClock(ms, tz) {
   return w;
 }
 
+/** Utilities.parseDate for numeric patterns (yyyy MM dd HH mm ss and literal separators), in a fixed-offset zone. */
+function parseDate(text, tz, pattern) {
+  const off = Object.prototype.hasOwnProperty.call(FIXED_OFFSETS, tz) ? FIXED_OFFSETS[tz] : null;
+  if (off === null) throw new Error('parseDate mock: unsupported time zone ' + tz);
+  const f = { y: 1970, M: 1, d: 1, H: 0, m: 0, s: 0 };
+  let re = '^';
+  const order = [];
+  for (let i = 0; i < pattern.length;) {
+    const ch = pattern[i];
+    let n = 1;
+    while (pattern[i + n] === ch) n++;
+    if ('yMdHms'.indexOf(ch) !== -1) { re += '(\\d{1,' + Math.max(n, 2) + '})'; order.push(ch); } else re += pattern.slice(i, i + n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    i += n;
+  }
+  const m = new RegExp(re).exec(String(text).trim());
+  if (!m) throw new Error('Unparseable date: "' + text + '"');
+  order.forEach(function (k, i) { f[k] = Number(m[i + 1]); });
+  return new Date(Date.UTC(f.y, f.M - 1, f.d, f.H, f.m, f.s) - off * 60000);
+}
+
 /** Utilities.formatDate: the SimpleDateFormat letters Code.gs uses (y M d H h m s S E u a Z, 'quoted'). */
 function formatDate(date, tz, pattern) {
   const w = wallClock(date.getTime(), tz || 'Asia/Kolkata');
@@ -160,7 +180,8 @@ function createEnv(workbook, opts) {
     // inserted tabs have a fixed size like Sheets (1000 x 26); workbook tabs grow as needed
     const size = spec.size ? { rows: spec.size.rows, cols: spec.size.cols } : null;
     let hidden = !!spec.hidden;
-    tabs[spec.name] = { grid: grid, size: size, hidden: function () { return hidden; } };
+    const notes = {};   // 'r,c' (0-based) -> cell note
+    tabs[spec.name] = { grid: grid, size: size, notes: notes, hidden: function () { return hidden; } };
     function lastRow() {
       for (let r = grid.length - 1; r >= 0; r--) if (grid[r].some(function (v) { return v !== ''; })) return r + 1;
       return 0;
@@ -237,7 +258,18 @@ function createEnv(workbook, opts) {
         setNumberFormat: function () { write('format'); return proxyRange; },
         setNumberFormats: function () { write('format'); return proxyRange; },
         clear: function () { write('clear'); return proxyRange; },
-        clearContent: function () { write('clear'); return proxyRange; }
+        clearContent: function () { write('clear'); return proxyRange; },
+        setNote: function (v) {
+          env.writes.push({ sheet: spec.name, kind: 'note', row: row, col: col });
+          for (let r = 0; r < nr; r++) {
+            for (let c = 0; c < nc; c++) {
+              const k = (row - 1 + r) + ',' + (col - 1 + c);
+              if (v === '' || v === null || v === undefined) delete notes[k]; else notes[k] = String(v);
+            }
+          }
+          return proxyRange;
+        },
+        getNote: function () { return notes[(row - 1) + ',' + (col - 1)] || ''; }
       };
       const proxyRange = makeLenient('Range', range, env.calls);
       return proxyRange;
@@ -408,6 +440,7 @@ function createEnv(workbook, opts) {
     }, env.calls),
     Utilities: makeLenient('Utilities', {
       formatDate: function (d, zone, pattern) { return formatDate(d, zone, pattern); },
+      parseDate: function (text, zone, pattern) { return new RealmDate(parseDate(text, zone, pattern).getTime()); },
       getUuid: function () { return crypto.randomUUID(); },
       sleep: function () { /* no waiting in tests */ },
       base64Encode: function (s) { return Buffer.from(String(s)).toString('base64'); },
@@ -482,11 +515,12 @@ function createEnv(workbook, opts) {
   }
   env.Date = vm.runInContext('Date', ctx);
 
-  /** A tab's cells as Code.gs left them ([] rows of values; '' = empty), its size and hidden flag, or null. */
+  /** A tab's cells as Code.gs left them ([] rows of values; '' = empty), its size, hidden flag and
+   *  cell notes ({'r,c' 0-based: text}), or null. */
   env.sheet = function (name) {
     const t = tabs[name];
     if (!t || !sheets.some(function (x) { return x.getName() === name; })) return null;
-    return { rows: t.grid, size: t.size, hidden: t.hidden() };
+    return { rows: t.grid, size: t.size, hidden: t.hidden(), notes: t.notes };
   };
   return env;
 }

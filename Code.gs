@@ -191,6 +191,8 @@ const AB_CP_SECTIONS_ = [
       help: '24-hour time, e.g. 06:00. Google runs it within about 15 minutes after this time.' },
     { key: 'AB_RP_MOVE_PCT', label: 'Move since results that counts as Rallied / Sold off (%)', def: 5, type: 'number',
       help: 'Used by the Results Performance tab\'s Market Reaction and Signal columns.' },
+    { key: 'AB_RS_MONEYCONTROL', label: 'Use moneycontrol figures first when screener.in is late - 1 = on, 0 = off', def: 1, type: 'number',
+      help: 'The PC program reads moneycontrol for companies still waiting. If moneycontrol already shows the quarter, Main gets its figures and the tick (Results Tracker Source = moneycontrol); screener.in replaces them when it catches up.' },
     { key: 'AB_RS_TARGET_QUARTER', label: 'Force the quarter to verify (normally blank)', def: '', type: 'quarter',
       help: 'Leave blank - the quarter is worked out from each result date. Only fill in (e.g. Sep 2026) to override.' }
   ] },
@@ -8263,6 +8265,9 @@ function ab_bridgeWanted_() {
   const tooNew = ab_qt_getTooNew_();
   const data = layout.data;
   const priority = [], missing = [], seen = {};
+  // Pending companies the PC may also look up on moneycontrol: symbol -> quarter expected.
+  const mc = {};
+  const mcOn = ab_mcOn_();
 
   for (let r = layout.headerRowIdx + 1; r < data.length; r++) {
     const sym = ab_cellText_(data[r][layout.symbol]).toUpperCase();
@@ -8275,8 +8280,15 @@ function ab_bridgeWanted_() {
       if (rd) {
         const age = ab_rsDaysBetween_(ab_rsDayKey_(rd), todayKey);
         if (age >= 0 && age <= AB_RS_MAX_WAIT_DAYS) {
-          const t = tr.byKey[sym + '|' + ab_rsExpectedQuarter_(rd).toUpperCase()];
-          if (!t || t.status === 'Pending') { priority.push(sym); seen[sym] = true; continue; }
+          const q = ab_rsExpectedQuarter_(rd);
+          const t = tr.byKey[sym + '|' + q.toUpperCase()];
+          if (!t || t.status === 'Pending') {
+            priority.push(sym); seen[sym] = true;
+            if (mcOn) mc[sym] = q;
+            continue;
+          }
+          // moneycontrol figures in Main: screener.in is still wanted, to replace them
+          if (t.status === 'Updated' && t.source === AB_MC_SOURCE) { priority.push(sym); seen[sym] = true; continue; }
         }
       }
     }
@@ -8290,7 +8302,7 @@ function ab_bridgeWanted_() {
     if (ab_qt_isParkedTooNew_(tooNew, sym)) continue;
     missing.push(sym); seen[sym] = true;
   }
-  return { priority: priority, missing: missing };
+  return { priority: priority, missing: missing, mc: mc };
 }
 
 /** Runs the two normal engines on whatever the PC delivered - no live fetches. */
@@ -8312,6 +8324,162 @@ function ab_bridgeProcess_() {
     AB_BRIDGE_ONLY = false;
   }
   return out;
+}
+
+/*****************************************************************
+ * MONEYCONTROL - first figures while screener.in is late
+ * -----------------------------------------------------------------
+ * moneycontrol.com usually shows a new quarter before screener.in. For
+ * Results Tracker rows still Pending, the PC program also reads the
+ * quarterly results on moneycontrol and posts them here (action
+ * 'mcput', hidden tab Moneycontrol_Bridge). The Results Day check then:
+ *   - screener.in has the quarter      -> screener figures (as always);
+ *   - only moneycontrol has it         -> moneycontrol figures are written,
+ *     the Checkbox is ticked, the tracker says Source = moneycontrol and
+ *     the Main row's QoQ Revenue cell gets a note;
+ *   - screener.in catches up later     -> its figures replace them
+ *     (no second email), Source = screener.in.
+ * Only the six quarterly figures come from moneycontrol; the trend tags
+ * (OPM, promoter, FII) wait for screener.in. Control Panel switch:
+ * AB_RS_MONEYCONTROL (1 = on).
+ *****************************************************************/
+const AB_MC_SHEET = 'Moneycontrol_Bridge';
+const AB_MC_HEADER = ['Symbol', 'Fetched (ms)', 'Fetched at (IST)', 'Data (JSON)'];
+const AB_MC_STALE_OK_MS = 14 * 24 * 60 * 60 * 1000;
+const AB_MC_MAX_QUARTERS = 16;
+const AB_MC_SOURCE = 'moneycontrol';
+const AB_MC_NOTE_PREFIX = 'Provisional - moneycontrol figures';
+let AB_MC_CACHE_ = null;
+
+function ab_mcOn_() { return Number(ab_setting_('AB_RS_MONEYCONTROL', 1)) !== 0; }
+
+function ab_mcSheet_(create) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_MC_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(AB_MC_SHEET);
+    sh.getRange(1, 1, 1, AB_MC_HEADER.length).setValues([AB_MC_HEADER]).setFontWeight('bold');
+    sh.setColumnWidth(4, 300);
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** symbol -> { at: ms, data: {basis, quarters[], revenue[], netProfit[], eps[], src}, row }. Cached per run. */
+function ab_mcLoad_() {
+  if (AB_MC_CACHE_) return AB_MC_CACHE_;
+  const map = {};
+  const sh = ab_mcSheet_(false);
+  if (sh && sh.getLastRow() > 1) {
+    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const sym = String(vals[i][0] || '').trim().toUpperCase();
+      if (!sym) continue;
+      let data = null;
+      try { data = JSON.parse(String(vals[i][3] || '')); } catch (e) { data = null; }
+      if (data) map[sym] = { at: Number(vals[i][1]) || 0, data: data, row: i + 2 };
+    }
+  }
+  AB_MC_CACHE_ = map;
+  return map;
+}
+
+/** The PC's moneycontrol figures for a symbol, if recent enough. */
+function ab_mcGet_(sym) {
+  const e = ab_mcLoad_()[String(sym || '').trim().toUpperCase()] || null;
+  return e && Date.now() - e.at <= AB_MC_STALE_OK_MS ? e : null;
+}
+
+function ab_mcPutMany_(entries) {
+  if (!entries.length) return;
+  const sh = ab_mcSheet_(true);
+  const map = ab_mcLoad_();
+  const now = Date.now();
+  const stamp = Utilities.formatDate(new Date(now), AB_TZ, 'dd-MMM-yyyy HH:mm');
+  const adds = [];
+  entries.forEach(function (en) {
+    const row = [en.sym, now, stamp, JSON.stringify(en.data)];
+    const cur = map[en.sym];
+    if (cur) {
+      sh.getRange(cur.row, 1, 1, 4).setValues([row]);
+      cur.at = now; cur.data = en.data;
+    } else {
+      adds.push(row);
+      map[en.sym] = { at: now, data: en.data, row: -1 };
+    }
+  });
+  if (adds.length) {
+    const start = sh.getLastRow() + 1;
+    sh.getRange(start, 1, adds.length, 4).setValues(adds);
+    adds.forEach(function (row, i) { map[row[0]].row = start + i; });
+  }
+  SpreadsheetApp.flush();
+}
+
+/**
+ * One posted item -> the stored figures, or { error }. Quarters must be
+ * "Mon YYYY" labels, oldest first, three months apart with no gaps (the
+ * growth maths counts columns back); figures are numbers or null.
+ */
+function ab_mcClean_(it) {
+  const sym = String(it && it.sym || '').trim().toUpperCase();
+  if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym)) return { error: 'bad symbol' };
+  const qs = Array.isArray(it.quarters) ? it.quarters.map(function (q) { return String(q).trim(); }) : [];
+  if (qs.length < 2 || qs.length > AB_MC_MAX_QUARTERS) return { sym: sym, error: 'need 2 to ' + AB_MC_MAX_QUARTERS + ' quarters' };
+  for (let i = 0; i < qs.length; i++) {
+    const qi = ab_rsQuarterIndex_(qs[i]);
+    if (isNaN(qi)) return { sym: sym, error: 'bad quarter "' + qs[i] + '"' };
+    if (i && qi - ab_rsQuarterIndex_(qs[i - 1]) !== 3) return { sym: sym, error: 'quarters not in a row at ' + qs[i] };
+    qs[i] = ab_rsQuarterLabel_(qi);
+  }
+  const nums = function (a) {
+    if (!Array.isArray(a)) a = [];
+    return qs.map(function (q, i) {
+      const v = a[i];
+      return typeof v === 'number' && isFinite(v) ? v : null;
+    });
+  };
+  const data = { basis: /standalone/i.test(String(it.basis || '')) ? 'Standalone' : 'Consolidated',
+                 quarters: qs, revenue: nums(it.revenue), netProfit: nums(it.netProfit), eps: nums(it.eps),
+                 src: String(it.src || '').slice(0, 80) };
+  if (data.revenue[qs.length - 1] === null || data.netProfit[qs.length - 1] === null) {
+    return { sym: sym, error: 'no revenue / net profit for ' + qs[qs.length - 1] };
+  }
+  return { sym: sym, data: data };
+}
+
+/** doPost action 'mcput': { items: [{ sym, basis, quarters, revenue, netProfit, eps, src }] }. */
+function ab_mcFromBridge_(req) {
+  const entries = [], details = [];
+  (req.items || []).slice(0, 200).forEach(function (it) {
+    const c = ab_mcClean_(it);
+    if (c.error) { details.push({ sym: c.sym || String(it && it.sym || ''), ok: false, error: c.error }); return; }
+    entries.push(c);
+    details.push({ sym: c.sym, ok: true, latest: c.data.quarters[c.data.quarters.length - 1] });
+  });
+  ab_mcPutMany_(entries);
+  return { ok: true, stored: entries.length, details: details };
+}
+
+/** Stored moneycontrol figures as an ab_qt_parseBoth_-shaped result (quarterly figures only, no trend tags). */
+function ab_mcCombined_(entry) {
+  const d = entry.data;
+  const num = function (a) { return (a || []).map(function (v) { return typeof v === 'number' ? v : NaN; }); };
+  const parsed = { ok: true, basis: d.basis + ' (moneycontrol)', quarters: d.quarters.slice(),
+                   revenue: num(d.revenue), netProfit: num(d.netProfit), eps: num(d.eps), error: '' };
+  const why = 'trend tags come from screener.in';
+  return { quarterOk: true, growth: ab_computeQuarterGrowth_(parsed), quarterError: '', tagsOk: false, tags: null,
+           tagsError: why, quarterOpmCount: 0, score: 0, fromMoneycontrol: true };
+}
+
+/** Marks / clears the "provisional" note on a Main row's QoQ Revenue cell. */
+function ab_mcMarkRow_(layout, rowIdx, text) {
+  if (layout.qoqRev === -1) return;
+  const cell = layout.sheet.getRange(rowIdx + 1, layout.qoqRev + 1);
+  if (text) { cell.setNote(text); return; }
+  const cur = String(cell.getNote() || '');
+  if (cur.indexOf(AB_MC_NOTE_PREFIX) === 0) cell.setNote('');
 }
 
 function ab_bridgeJson_(obj) {
@@ -8338,7 +8506,7 @@ function doPost(e) {
   try {
     if (req.action === 'list') {
       const w = ab_bridgeWanted_();
-      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing });
+      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc });
     }
     if (req.action === 'put') {
       const entries = [], details = [];
@@ -8374,6 +8542,9 @@ function doPost(e) {
     }
     if (req.action === 'ipos') {
       return ab_bridgeJson_(ab_ipotFromBridge_(req));
+    }
+    if (req.action === 'mcput') {
+      return ab_bridgeJson_(ab_mcFromBridge_(req));
     }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
@@ -10134,7 +10305,7 @@ const AB_RS_UPCOMING_MAX_ROWS = 400;  // email size guard
 const AB_RS_MAX_HTML_CHARS = 150000;  // same MailApp body-size guard as Quality Watch
 const AB_RS_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const AB_RS_HEADERS = ['Symbol', 'Company', 'Result Date', 'Quarter Expected', 'Status',
-  'Screener Latest Quarter', 'Checks', 'First Checked', 'Last Checked', 'Updated At', 'Note'];
+  'Screener Latest Quarter', 'Checks', 'First Checked', 'Last Checked', 'Updated At', 'Note', 'Source'];
 const AB_RS_TS_FMT = 'dd/MM/yyyy HH:mm';
 // Which results season (quarter) the Checkbox column currently reflects.
 // When the season rolls over (e.g. Sep 2026 -> Dec 2026 on 1 Jan) every
@@ -10256,7 +10427,9 @@ function ab_rsReadTracker_() {
       quarter: String(v[3] || '').trim(), status: String(v[4] || '').trim() || 'Pending',
       latest: String(v[5] || ''), checks: Number(v[6]) || 0,
       first: String(v[7] || ''), last: String(v[8] || ''), updatedAt: String(v[9] || ''),
-      note: String(v[10] || '')
+      note: String(v[10] || ''),
+      // where Main's figures came from: 'screener.in', 'moneycontrol' (provisional), '' = before this column
+      source: String(v[11] || '').trim()
     };
     const key = sym + '|' + t.quarter.toUpperCase();
     if (byKey[key]) continue; // a hand-made duplicate - first one wins
@@ -10284,7 +10457,7 @@ function ab_rsWriteTracker_(tr) {
   const out = [AB_RS_HEADERS];
   rows.forEach(function (t) {
     out.push([t.symbol, t.company || '', ab_rsKeyToDmy_(t.rdKey), t.quarter, t.status, t.latest || '',
-              String(t.checks || 0), t.first || '', t.last || '', t.updatedAt || '', t.note || '']);
+              String(t.checks || 0), t.first || '', t.last || '', t.updatedAt || '', t.note || '', t.source || '']);
   });
 
   const w = AB_RS_HEADERS.length;
@@ -10299,7 +10472,7 @@ function ab_rsWriteTracker_(tr) {
   if (maxRows > 1) sh.getRange(2, 5, maxRows - 1, 1).setBackground(null);
   if (rows.length) {
     sh.getRange(2, 5, rows.length, 1).setBackgrounds(rows.map(function (t) {
-      return [t.status === 'Updated' ? '#d9f2e3' : t.status === 'Pending' ? '#fff4d6' : '#eeeeee'];
+      return [t.status === 'Updated' ? (t.source === AB_MC_SOURCE ? '#e3eefc' : '#d9f2e3') : t.status === 'Pending' ? '#fff4d6' : '#eeeeee'];
     }));
   }
 }
@@ -10491,7 +10664,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     const t = tr.byKey[key];
     if (!t) {
       const nt = { symbol: sym, company: infoBySym[sym].name, rdKey: rdKey, quarter: q, status: 'Pending',
-                   latest: '', checks: 0, first: '', last: '', updatedAt: '', note: '' };
+                   latest: '', checks: 0, first: '', last: '', updatedAt: '', note: '', source: '' };
       tr.byKey[key] = nt;
       tr.list.push(nt);
     } else if (t.status === 'Pending' && t.rdKey !== rdKey) {
@@ -10526,10 +10699,17 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   // 3. Who to check now: still Pending, in Main, not already checked
   //    earlier in this same run (matters for continuations). Oldest
   //    result date first - they've waited longest.
+  //    Rows filled from moneycontrol are checked too (within the wait
+  //    window), so screener.in's figures replace them once it catches up.
+  const mcOn = ab_mcOn_();
+  const isProvisional = function (t) { return t.status === 'Updated' && t.source === AB_MC_SOURCE; };
   const cands = tr.list.filter(function (t) {
-    if (t.status !== 'Pending') return false;
-    if (!rowsBySym[t.symbol]) { t.note = 'Symbol not found in Main'; return false; }
-    if (AB_BRIDGE_ONLY && !ab_bridgeGet_(t.symbol)) return false; // PC hasn't delivered it yet
+    const prov = isProvisional(t);
+    if (t.status !== 'Pending' && !prov) return false;
+    if (prov && (!t.rdKey || ab_rsDaysBetween_(t.rdKey, todayKey) > AB_RS_MAX_WAIT_DAYS)) return false;
+    if (!rowsBySym[t.symbol]) { if (!prov) t.note = 'Symbol not found in Main'; return false; }
+    // PC hasn't delivered it yet (screener.in page, or moneycontrol figures for a Pending row)
+    if (AB_BRIDGE_ONLY && !ab_bridgeGet_(t.symbol) && (prov || !mcOn || !ab_mcGet_(t.symbol))) return false;
     if (t.rdKey && ab_rsDaysBetween_(t.rdKey, todayKey) < 0) return false;
     if (ab_rsParseTs_(t.last) < runStartFloor) return true;
     // A continuation also gives anything screener refused earlier in this
@@ -10537,7 +10717,8 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     return !!isContinuation && /^Could not read screener/.test(t.note || '');
   }).sort(function (a, b) { return a.rdKey < b.rdKey ? -1 : a.rdKey > b.rdKey ? 1 : 0; });
 
-  const res = { checked: 0, failed: 0, retried: 0, recovered: 0, updatedNow: [], throttled: false, outOfTime: false };
+  const res = { checked: 0, failed: 0, retried: 0, recovered: 0, updatedNow: [], viaMc: [], replacedMc: [],
+                throttled: false, outOfTime: false };
   let transportFails = 0;
 
   // One fetch + verdict for one company. Returns 'ok' (got a readable
@@ -10545,44 +10726,89 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   // (screener/network refused the request - worth retrying shortly), or
   // 'error' (page came back but unusable).
   const processOne = function (t, label) {
+    const prov = isProvisional(t);
     const combined = ab_qt_fetchOne_(t.symbol);
     const stamp = nowStr();
     t.checks = (Number(t.checks) || 0) + 1;
     if (!t.first) t.first = stamp;
     t.last = stamp;
     let outcome = 'ok';
+    const ei = ab_rsQuarterIndex_(t.quarter);
+    // A straggler from the PREVIOUS season (e.g. a delayed Sep result
+    // landing after the Dec season has started) still gets its figures
+    // written, but no tick - ticks belong to the current season.
+    const tickIt = isNaN(seasonIdx) || ei >= seasonIdx;
+    let why = '';   // why screener.in could not be used (yet)
 
     if (!combined.quarterOk || !combined.growth) {
       const err = combined.quarterError || combined.tagsError || 'no data';
       outcome = (AB_QT_SKIP_RETRY_ON.test(err) || /HTTP 429|HTTP 5\d\d/.test(err)) ? 'transport' : 'error';
-      t.note = 'Could not read screener (' + err + ') - will retry';
+      why = 'Could not read screener (' + err + ')';
     } else {
       const latest = combined.growth.latestQuarter || '';
       t.latest = latest;
-      const li = ab_rsQuarterIndex_(latest), ei = ab_rsQuarterIndex_(t.quarter);
+      const li = ab_rsQuarterIndex_(latest);
       if (isNaN(li) || isNaN(ei)) {
-        t.note = 'Unrecognised quarter label "' + latest + '" - will retry';
+        why = 'Unrecognised quarter label "' + latest + '"';
       } else if (li < ei) {
-        t.note = 'Screener still shows ' + latest + ' - will retry';
+        why = 'Screener still shows ' + latest;
       } else {
         // Screener has the quarter we're waiting for - write it and tick.
-        // A straggler from the PREVIOUS season (e.g. a delayed Sep result
-        // landing after the Dec season has started) still gets its
-        // figures written, but no tick - ticks belong to the current season.
-        const tickIt = isNaN(seasonIdx) || ei >= seasonIdx;
         rowsBySym[t.symbol].forEach(function (rowIdx) {
           ab_qt_writeRow_(layout, cols, rowIdx, combined);
           if (tickIt) layout.sheet.getRange(rowIdx + 1, layout.qrCheckbox + 1).setValue(true);
+          if (prov) ab_mcMarkRow_(layout, rowIdx, '');
         });
-        t.status = 'Updated';
-        t.updatedAt = stamp;
         const notes = [];
         const basis = combined.growth.basis || '';
         if (basis && basis.indexOf('Consolidated') === -1) notes.push(basis + ' figures');
         if (!combined.tagsOk) notes.push('trend tags unavailable (' + combined.tagsError + ')');
         if (combined.growth.shortHistory) notes.push('under a year of history - no YoY');
+        if (prov) {
+          // Replaces the moneycontrol figures quietly - the company was already reported as updated.
+          notes.push('screener.in figures replaced the moneycontrol ones on ' + stamp);
+          res.replacedMc.push(t.symbol);
+        } else {
+          t.status = 'Updated';
+          t.updatedAt = stamp;
+          res.updatedNow.push(t.symbol);
+        }
+        t.source = 'screener.in';
+        t.note = notes.join('; ');
+      }
+    }
+
+    if (why && prov) {
+      // Still on the moneycontrol figures - nothing to retry until the next run.
+      outcome = 'ok';
+      t.note = 'moneycontrol figures - ' + why + '; screener.in replaces them when it shows ' + t.quarter;
+    } else if (why) {
+      t.note = why + ' - will retry';
+      // First figures from moneycontrol, when it already has the quarter.
+      const mcEntry = mcOn ? ab_mcGet_(t.symbol) : null;
+      const mcRes = mcEntry ? ab_mcCombined_(mcEntry) : null;
+      const mli = mcRes ? ab_rsQuarterIndex_(mcRes.growth.latestQuarter) : NaN;
+      if (mcRes && !isNaN(mli) && !isNaN(ei) && mli >= ei) {
+        const fetched = Utilities.formatDate(new Date(mcEntry.at), AB_TZ, AB_RS_TS_FMT);
+        const mark = AB_MC_NOTE_PREFIX + ' for ' + mcRes.growth.latestQuarter + ' (' + mcEntry.data.basis + ', read ' + fetched +
+          '). screener.in replaces them when it shows ' + t.quarter + '. Trend tags (OPM, promoter, FII) are still from the earlier screener.in update.';
+        rowsBySym[t.symbol].forEach(function (rowIdx) {
+          ab_qt_writeRow_(layout, cols, rowIdx, mcRes);
+          if (tickIt) layout.sheet.getRange(rowIdx + 1, layout.qrCheckbox + 1).setValue(true);
+          ab_mcMarkRow_(layout, rowIdx, mark);
+        });
+        t.status = 'Updated';
+        t.updatedAt = stamp;
+        t.source = AB_MC_SOURCE;
+        const notes = ['moneycontrol figures (' + mcEntry.data.basis + ') - ' + why +
+                       '; screener.in replaces them when it shows ' + t.quarter, 'trend tags wait for screener.in'];
+        if (mcRes.growth.shortHistory) notes.push('under a year of history - no YoY');
         t.note = notes.join('; ');
         res.updatedNow.push(t.symbol);
+        res.viaMc.push(t.symbol);
+        outcome = 'ok';
+      } else if (mcRes && mcRes.growth.latestQuarter) {
+        t.note += ' (moneycontrol shows ' + mcRes.growth.latestQuarter + ')';
       }
     }
     if (AB_QR_VERBOSE) Logger.log('Results Day ' + label + ' ' + t.symbol + ' expected ' + t.quarter + ' -> ' +
@@ -10646,6 +10872,8 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
 
   cont.checked += res.checked;
   cont.failed += res.failed;
+  cont.viaMc = (cont.viaMc || 0) + res.viaMc.length;
+  cont.replacedMc = (cont.replacedMc || 0) + res.replacedMc.length;
   const notChecked = cands.length - res.checked;
 
   if (res.outOfTime && notChecked > 0 && cont.count < AB_RS_MAX_CONTINUATIONS) {
@@ -10683,6 +10911,9 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     // An automatic retry only emails if it actually got something through.
     quietUnlessUpdated: /^Retry/.test(cont.slot || '')
   });
+  if (cont.viaMc || cont.replacedMc) {
+    summary.text += ' moneycontrol: ' + cont.viaMc + ' filled first from moneycontrol, ' + cont.replacedMc + ' replaced by screener.in.';
+  }
   logRun_(Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm'), '', summary.updatedToday,
           'OK (results day - ' + cont.slot + ')', summary.text);
   return { continued: false, checked: cont.checked, summary: summary, throttled: res.throttled, retryAt: retryAt };
@@ -11084,7 +11315,8 @@ function ab_rsSendEmail_(ctx) {
     return '<tr>' +
       '<td ' + td + '>' + '<a href="' + ab_chartUrl_(s) + '" style="color:' + INK + ';font-weight:700;font-size:14px;text-decoration:none">' + ab_rsEsc_(s) + '</a>' +
         (dayHtml || '<br>') + '<a href="' + ab_screenerUrl_(s) + '" style="color:' + FAINT + ';font-size:11px;text-decoration:none">screener &#8599;</a>' +
-        (isNew ? '<br>' + pill('NEW', '#ffffff', AB_C_POS) : '') + '</td>' +
+        (isNew ? '<br>' + pill('NEW', '#ffffff', AB_C_POS) : '') +
+        (t.source === AB_MC_SOURCE ? '<br>' + pill('VIA MONEYCONTROL', '#1d4ed8', '#e3eefc') : '') + '</td>' +
       '<td ' + td + '>' + ab_rsEsc_(t.company || cell(s, layout.name)) + (bi ? '<br><span ' + small + '>' + ab_rsEsc_(bi) + '</span>' : '') + '</td>' +
       '<td ' + td + ' nowrap><b>' + shortDay(t.rdKey) + '</b>' + sinceHtml + '</td>' +
       '<td ' + td + '>' + kv('QoQ', pct(cell(s, layout.qoqRev))) + kv('YoY', pct(cell(s, layout.yoyRev))) + '</td>' +
@@ -11153,7 +11385,8 @@ function ab_rsSendEmail_(ctx) {
       s += '</table>';
     }
     return s + '<div style="color:#888;font-size:12px;margin-top:4px">Nothing is written to Main and ' +
-      'the Checkbox stays unticked until screener shows the expected quarter. Re-checked every run for up to ' +
+      'the Checkbox stays unticked until screener' + (ab_mcOn_() ? ' (or, first, moneycontrol - read by the PC program)' : '') +
+      ' shows the expected quarter. Re-checked every run for up to ' +
       AB_RS_MAX_WAIT_DAYS + ' days after the result date.</div>';
   };
 

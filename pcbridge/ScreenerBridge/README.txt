@@ -15,7 +15,7 @@ Nothing runs continuously. If you stay logged in for days, use RunNow.bat when y
  - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists) + moneycontrol access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
  - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
- - MoneycontrolCheck.bat   TEST ONLY: show the latest quarterly results moneycontrol has for the symbols you type
+ - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
@@ -39,13 +39,22 @@ email the first time each day. The website's IPOs & Markets page shows the same 
  - bridge.log shows "IPO lists: ..." for each round.
  - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)
 
-MONEYCONTROL (test only - nothing is sent to the sheet yet)
-moneycontrol.com often shows new quarterly results before screener.in. This is a first test to see
-whether this PC can read them:
+MONEYCONTROL (first figures while screener.in is late)
+moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies
+whose results are due and whose screener.in page does NOT show the new quarter yet, the program also
+reads moneycontrol and sends its figures to the sheet. If moneycontrol already has the quarter, the
+sheet writes those figures in Main and ticks the Checkbox (Results Tracker: Source = moneycontrol,
+email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace them by themselves.
+ - Needs the latest Code.gs in the sheet AND its New version deploy (Deploy > Manage deployments >
+   pencil > Version: New version > Deploy). Until then bridge.log says "do the New version deploy".
+ - bridge.log shows "moneycontrol SYMBOL: ..." for each company it looked up.
+ - moneycontrol_codes.json   remembers each company's moneycontrol code (found once by searching).
+ - To switch it off: in config.json add  "moneycontrol": false   (or Control Panel > Results Season).
+ - At most 40 companies a round; change with  "max_moneycontrol_per_run": 40
+Checks (they send nothing):
  - TestConnection.bat line 5 looks up TCS on moneycontrol and prints its latest quarter.
  - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and tries each of moneycontrol's
    sources (results widget, results page and its page data, old pages). For the first one that works it
    prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS.
  - If none works it prints where the figures seem to be and saves the pages in the folder
    moneycontrol_check (next to this file) - Claude may ask you for those files.
- - Send the output (screenshot) to Claude. Only after that test is fine will the sheet start using it.
