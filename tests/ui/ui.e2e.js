@@ -252,6 +252,58 @@ function check(name, fn) {
           assert.ok(/^([\d,]+) of \1$/.test(all), 'all days: ' + all);
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
+        await check('NSE end-of-day: market statistics on Overview, 52-week highs on Markets, Delivery % in Watchlist', async () => {
+          errors.length = 0;
+          await page.goto(base + '#overview', { waitUntil: 'load' });
+          await page.waitForSelector('#ov-mstat', { timeout: 15000 });
+          const st = await page.evaluate(() => {
+            const D = window.SB.ctx.D;
+            D.marketStats = { note: 'NSE market statistics - mainboard equities', cols: ['Date', 'Stocks Traded', 'Advances', 'Declines', 'Unchanged', 'At 52W High', 'Upper Circuit', 'Lower Circuit'],
+              rows: [['2026-10-27', 2310, 1520, 700, 90, 28, 41, 12], ['2026-10-26', 2300, 1300, 900, 100, 20, 30, 10]] };
+            D.high52 = { note: '52-week highs from NSE (adjusted for corporate actions) - as on 2026-10-27: 2 mainboard stocks made a new 52-week high (1 in your watchlist).',
+              cols: ['Symbol', 'Company', '52W High', '52W High Date', 'Close', '% Below 52W High', 'New High Today', 'In Watchlist'],
+              rows: [['NEWCO', null, 50, '2026-10-27', 50, 0, 'Yes', null], ['TCS', 'Tata Consultancy', 4500, '2026-01-10', 4400, 2.2, null, 'Yes'],
+                ['INFY', 'Infosys', 2000, '2025-12-10', 1500, 25, null, 'Yes']] };
+            const s0 = window.SB.ctx.stocks[0];
+            s0.deliv = 61.25; s0.delivAvg = 48.5; s0.delivDate = '2026-10-27';
+            window.SB.route();
+            const box = document.querySelector('#ov-mstat');
+            return { text: box.innerText, bar: !!box.querySelector('.mstat-bar .b-up'), sym: s0.sym };
+          });
+          for (const want of ['Stocks traded', '2,310', 'Advances', '1,520', 'Declines', '700', 'Unchanged', '90', 'Stocks at 52-week high', '28',
+            'Stocks in upper circuit', '41', 'Stocks in lower circuit', '12', '2.17']) {
+            assert.ok(st.text.indexOf(want) >= 0, want + ' in: ' + st.text);
+          }
+          assert.ok(!/52.week low/i.test(st.text), 'no 52-week low');
+          assert.ok(st.bar, 'advance / decline bar');
+          // the 52-week tile opens the Markets table
+          await page.click('#ov-mstat a.mstat-t[href="#markets/high52"]');
+          await page.waitForSelector('#h52-t table', { timeout: 15000 });
+          const newOnly = await page.$$eval('#h52-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym')));
+          assert.deepStrictEqual(newOnly, ['NEWCO'], 'new 52-week highs today by default');
+          assert.ok(/1 mainboard stock at a new 52-week high · 0 in your watchlist/.test(await page.$eval('#h52-sum', (x) => x.innerText)), 'counted from the rows');
+          await page.click('[data-chip="h52"][data-v="near"]');
+          assert.deepStrictEqual(await page.$$eval('#h52-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym'))), ['TCS'], 'watchlist within 5%');
+          await page.click('[data-chip="h52"][data-v="watch"]');
+          assert.deepStrictEqual(await page.$$eval('#h52-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym'))), ['TCS', 'INFY']);
+          // Delivery % column in the Watchlist and the stock drawer
+          await page.goto(base + '#watchlist', { waitUntil: 'load' });
+          await page.waitForSelector('#wl-table table', { timeout: 15000 });
+          const heads = await page.$$eval('#wl-table thead th', (t) => t.map((x) => x.innerText.trim()));
+          assert.ok(heads.some((h) => /^Deliv %/.test(h)), heads.join(' | '));
+          await page.fill('#wl-q', st.sym);
+          await page.waitForFunction((s) => document.querySelectorAll('#wl-table tbody tr').length >= 1 && document.querySelector('#wl-table tbody').innerText.indexOf(s) >= 0, st.sym);
+          assert.ok(/61\.3/.test(await page.$eval('#wl-table tbody', (x) => x.innerText)), 'Delivery % shown');
+          await page.click('#wl-table tbody button[data-sym="' + st.sym + '"]');
+          await page.waitForSelector('#drawer-title');
+          const dr = await page.$eval('#drawer-body', (x) => x.innerText);
+          assert.ok(/Delivery %\s*61\.3% on/.test(dr) && /5-day avg 48\.5%/.test(dr), dr.slice(0, 600));
+          await page.keyboard.press('Escape');
+          await page.waitForFunction(() => document.querySelector('#drawer').hidden);
+          await page.fill('#wl-q', '');
+          await page.goto(base + '#overview', { waitUntil: 'load' });      // leave the Watchlist as the next check expects to find it
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
         await check('my watchlists: star, create, no duplicates, rename, search, delete, kept after reload', async () => {
           errors.length = 0;
           await page.goto(base + '#watchlist', { waitUntil: 'load' });

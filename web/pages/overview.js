@@ -6,6 +6,47 @@
 
   function avg(a) { var s = a.filter(isNum); return s.length ? s.reduce(function (x, y) { return x + y; }, 0) / s.length : null; }
 
+  /** NSE market statistics (Market Statistics tab, filled from NSE's end-of-day files by the PC bridge). */
+  function marketStats(D) {
+    var M = SB.eod.stats(D.marketStats);
+    var head = '<section class="card" id="ov-mstat"><div class="card-head"><div><h2>Market statistics</h2><p>';
+    if (!M) {
+      return head + 'NSE, mainboard equities</p></div></div><p class="empty">Not in this copy of the data yet. Your PC bridge reads NSE\'s ' +
+        'end-of-day files each evening and fills the sheet\'s <b>Market Statistics</b> tab; it shows here after that.</p></section>';
+    }
+    function cell(k, label, cls, v, sub) {
+      return '<div class="mstat-t ' + cls + '"><span class="label">' + label + '</span><b>' + (isNum(v) ? F.int(v) : '–') + '</b>' +
+        (sub ? '<span class="sub">' + sub + '</span>' : '') + '</div>';
+    }
+    function vsPrev(k) {
+      var p = M.prev && M.prev[k];
+      return isNum(p) && isNum(M[k]) ? 'prev. day ' + F.int(p) : '';
+    }
+    var tot = (M.advances || 0) + (M.declines || 0) + (M.unchanged || 0);
+    var w = function (v) { return tot ? Math.round((v || 0) / tot * 1000) / 10 : 0; };
+    var h = head + 'NSE, mainboard equities (EQ / BE / BZ) on <b>' + F.date(M.date) + '</b> ' +
+      ui.stateBadge('EOD', M.date, 'NSE end-of-day files read by your PC bridge (Market Statistics tab)') + '</p></div>' +
+      '<a class="btn" href="#markets/high52">52-week highs</a></div>';
+    h += '<div class="mstat">' +
+      cell('traded', 'Stocks traded', 'k-acc', M.traded, vsPrev('traded')) +
+      cell('advances', 'Advances', 'k-up', M.advances, vsPrev('advances')) +
+      cell('declines', 'Declines', 'k-down', M.declines, vsPrev('declines')) +
+      cell('unchanged', 'Unchanged', 'k-warn', M.unchanged, vsPrev('unchanged')) + '</div>';
+    if (tot) {
+      h += '<div class="mstat-bar" role="img" aria-label="' + esc(F.int(M.advances) + ' advances, ' + F.int(M.declines) + ' declines, ' + F.int(M.unchanged) + ' unchanged') + '">' +
+        '<i class="b-up" style="width:' + w(M.advances) + '%"></i><i class="b-flat" style="width:' + w(M.unchanged) + '%"></i><i class="b-down" style="width:' + w(M.declines) + '%"></i></div>' +
+        '<p class="sub mstat-ad">Advance / decline ratio <b>' + (isNum(M.adRatio) ? M.adRatio.toFixed(2) : '–') + '</b>' +
+        (M.prev && isNum(M.prev.adRatio) ? ' (previous day ' + M.prev.adRatio.toFixed(2) + ')' : '') + '</p>';
+    }
+    h += '<div class="mstat mstat-2">' +
+      '<a class="mstat-t k-up" href="#markets/high52"><span class="label">Stocks at 52-week high</span><b>▲ ' + (isNum(M.high52) ? F.int(M.high52) : '–') + '</b>' +
+        '<span class="sub">new 52-week high today</span></a>' +
+      cell('upper', 'Stocks in upper circuit', 'k-up', M.upper, 'closed at the upper price band') +
+      cell('lower', 'Stocks in lower circuit', 'k-down', M.lower, 'closed at the lower price band') + '</div>';
+    return h + '<p class="sub" style="margin-top:8px">Counted from NSE\'s end-of-day files (bhavcopy, 52-week high report, price band list) for mainboard ' +
+      'equities - NSE\'s homepage counts every segment (SME, ETFs ...), so its own numbers are higher. Stocks without a price band (F&amp;O stocks) are not counted as circuits.</p></section>';
+  }
+
   function tipBadge(text, cls, tip) {
     return '<span class="badge ' + cls + '" tabindex="0" data-tip="' + esc(tip) + '">' + esc(text) + '</span>';
   }
@@ -67,6 +108,7 @@
 
       var h = '<div class="page-head"><div><h1>Market overview</h1><p>Your ' + F.int(stocks.length) + '-stock NSE watchlist: benchmarks, breadth, sectors, strategy setups, results and alerts. ' +
         ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + '</p></div></div>';
+      h += marketStats(D);
       h += '<div class="tiles">' +
         ui.tile('NIFTY 50', n50 ? F.price(n50['Current Price']) : '–', n50 ? ui.deltaHtml(n50['Day change'], 2) + ' today · ' + F.pct(n50['Drop from all time high']) + ' from ATH · ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Indextracker tab of your sheet') : 'not in Indextracker', 'hero') +
         ui.tile('Breadth', adv + ' / ' + dec, 'advancing / declining · ' + flat + ' unchanged') +
