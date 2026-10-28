@@ -6,6 +6,7 @@ pcbridge/ScreenerBridge/pricebands_state.json
 pcbridge/ScreenerBridge/moneycontrol_check/
 pcbridge/ScreenerBridge/moneycontrol_codes.json
 pcbridge/ScreenerBridge/eod_state.json
+pcbridge/ScreenerBridge/history_state.json
 .clasprc.json
 *.token
 .env
