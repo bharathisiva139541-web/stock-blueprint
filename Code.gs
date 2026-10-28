@@ -1521,7 +1521,95 @@ function ab_skipWeekendTrigger_(e, label) {
   return false;
 }
 
-/** Phase 1 (~6:45 PM): symbol sync, IPO level, ONE OHLC + History30 fetch, Prev Day Vol, then the FVG watch-list scans if time allows. */
+/*****************************************************************
+ * PHASE 1 IN PARTS
+ * -----------------------------------------------------------------
+ * One GOOGLEFINANCE fetch of ~1,800 stocks took 324 s on 27-Oct-2026
+ * and ran into Apps Script's 6-minute limit on 28-Oct (Google's speed
+ * varies by the day): the run was simply stopped - no log, no email -
+ * and Phase 2 / 3 worked from the previous day's candles. Now the
+ * fetch runs in parts of AB_P1_PART_SIZE stocks, each part in its own
+ * execution: part 1 runs from the Phase 1 trigger (or the menu) and
+ * every next part from a one-off trigger a minute later
+ * (ab_dailyPhase1Continue_). Parts before the last keep their rows on
+ * the hidden P1_Work tab; the last part writes the 4-day tabs and
+ * History30 in one go, then does the rest of Phase 1 (Prev Day Vol,
+ * FVG scans if there is time, the Phase 3 handoff, the log line).
+ * State (Script Property AB_P1_STATE): { day, runStart, lastMs, next,
+ * total, parts, histN, ohlcN, failed, asOfKey, asOfDate, secs, queued, done }.
+ * Phase 2 / 3 wait while it is still going (ab_phaseShouldWait_) and a
+ * Phase 1 that stopped part-way is reported once (ab_p1CheckDied_).
+ *****************************************************************/
+const AB_P1_STATE_PROP_ = 'AB_P1_STATE';
+const AB_P1_PART_SIZE = 900;                 // stocks per execution (about half of Main)
+const AB_P1_WORK_SHEET = 'P1_Work';
+const AB_P1_STALE_MS = 8 * 60 * 1000;        // no progress this long = the run was stopped
+const AB_P1_QUEUED_STALE_MS = 20 * 60 * 1000; // ... or this long while the next part's trigger is pending (it can come late)
+const AB_P1_DIED_PROP_ = 'AB_P1_DIED_REPORTED';
+const AB_P2_WAITING_PROP_ = 'AB_P2_WAITING';
+const AB_PHASE_WAIT_MS = 3 * 60 * 1000;
+const AB_PHASE_MAX_WAITS = 6;                // then run anyway (after ~18 min)
+
+function ab_p1State_() {
+  try { return JSON.parse(ab_propGet_(AB_P1_STATE_PROP_) || 'null'); } catch (e) { return null; }
+}
+function ab_p1Save_(st) { ab_propSet_(AB_P1_STATE_PROP_, JSON.stringify(st)); }
+
+/** 'none' (no Phase 1 today) | 'running' | 'done' | 'died' (stopped part-way). */
+function ab_p1Status_(st) {
+  st = st === undefined ? ab_p1State_() : st;
+  if (!st || st.day !== ab_todayStr_()) return 'none';
+  if (st.done) return 'done';
+  return Date.now() - (Number(st.lastMs) || 0) < (st.queued ? AB_P1_QUEUED_STALE_MS : AB_P1_STALE_MS) ? 'running' : 'died';
+}
+
+function ab_p1WorkSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_P1_WORK_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AB_P1_WORK_SHEET);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** Keeps a part's rows for the last part: History30 rows in A:G, 4-day tab rows (tab first) in I:O. */
+function ab_p1StoreRows_(st, r) {
+  const sh = ab_p1WorkSheet_();
+  const ohlc = [];
+  AB_DAY_TABS.forEach(tab => (r.ohlc[tab] || []).forEach(row => ohlc.push([tab].concat(row))));
+  const need = Math.max(st.histN + r.hist.length, st.ohlcN + ohlc.length) + 1;
+  if (sh.getMaxRows() < need) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
+  if (r.hist.length) {
+    sh.getRange(st.histN + 1, 2, r.hist.length, 1).setNumberFormat('@');   // 'yyyy-MM-dd' stays text, as History30 gets it
+    sh.getRange(st.histN + 1, 1, r.hist.length, 7).setValues(r.hist);
+  }
+  if (ohlc.length) sh.getRange(st.ohlcN + 1, 9, ohlc.length, 7).setValues(ohlc);
+  st.histN += r.hist.length;
+  st.ohlcN += ohlc.length;
+}
+
+/** The earlier parts' rows back from P1_Work: { hist, ohlc: {tab: rows} }. */
+function ab_p1ReadRows_(st) {
+  const out = { hist: [], ohlc: { Day4: [], ThirdDay: [], Yesterday: [], Today: [] } };
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_P1_WORK_SHEET);
+  if (!sh) return out;
+  if (st.histN) out.hist = sh.getRange(1, 1, st.histN, 7).getValues();
+  if (st.ohlcN) {
+    sh.getRange(1, 9, st.ohlcN, 7).getValues().forEach(function (r) {
+      if (out.ohlc[r[0]]) out.ohlc[r[0]].push(r.slice(1));
+    });
+  }
+  return out;
+}
+
+/** Schedules the next part a minute from now (one pending continuation at most). */
+function ab_p1ScheduleNext_() {
+  ab_rsDeleteTriggers_(['ab_dailyPhase1Continue_']);
+  ScriptApp.newTrigger('ab_dailyPhase1Continue_').timeBased().after(60 * 1000).create();
+}
+
+/** Phase 1 (~6:45 PM): symbol sync, IPO level, then the OHLC + History30 fetch in parts (see above). */
 function ab_dailyPhase1Fetch_(e) {
   if (ab_skipWeekendTrigger_(e, 'Phase 1 (fetch)')) return;
   ab_ensureResultDateReal_();
@@ -1532,43 +1620,167 @@ function ab_dailyPhase1Fetch_(e) {
     syncSymbolsFromBlueprint_();
     fillIpoLevel_();
     lap('symbol sync + IPO level');
-
-    const result = ab_refreshOhlcAndHistory_();
-    ab_propSet_(AB_DATA_FETCHED_PROP_, ab_todayStr_());
-    ab_propSet_(AB_FVG_SCANS_PROP_, ''); // fresh data -> scans must run again
-    lap('OHLC + History30 (one fetch)');
-
-    try {
-      fillPrevDayVolume_();
-    } catch (vErr) {
-      Logger.log('Prev Day Vol fill failed: ' + vErr.message);
-    }
-    lap('Prev Day Vol');
-
-    // Only start the FVG scans if there is clearly time left (they have their own
-    // fallback in Phase 2 / Phase 3), so Phase 1 can always finish and log itself.
-    let scanNote = '';
-    if (Date.now() - t0 < 170000) {
-      ab_runFvgScansIfPending_('Phase 1');
-      lap('FVG watch-list scans');
-    } else {
-      scanNote = ' FVG watch-list scans moved to Phase 2 (Phase 1 used ' + Math.round((Date.now() - t0) / 1000) + 's).';
-    }
-
-    ab_saveDailyPhase1Result_(result);
-    logRun_(ts, result.asOfDate, result.symbolCount, 'OK (phase 1 - fetch)',
-            (result.failed.length ? ('No data for: ' + result.failed.join(', ') + '. ') : '') +
-            'OHLC, History30, Prev Day Vol refreshed in ' + Math.round((Date.now() - t0) / 1000) + 's.' + scanNote);
-  } catch (e) {
-    logRun_(ts, '', 0, 'ERROR (phase 1 - fetch)', e.message);
-    ab_sendDailyPhaseFailureEmail_('Phase 1 (fetch)', ts, e);
-    throw e;
+    ab_rsDeleteTriggers_(['ab_dailyPhase1Continue_']);     // a fresh run: forget an unfinished one
+    const st = { day: ab_todayStr_(), ts: ts, runStart: t0, lastMs: t0, next: 0, total: 0, parts: 1, histN: 0, ohlcN: 0,
+                 failed: [], asOfKey: '', asOfDate: '', secs: [], done: false };
+    ab_p1Save_(st);
+    ab_propSet_(AB_P1_DIED_PROP_, '');
+    return ab_p1RunPart_(st, t0, lap);
+  } catch (err) {
+    logRun_(ts, '', 0, 'ERROR (phase 1 - fetch)', err.message);
+    ab_sendDailyPhaseFailureEmail_('Phase 1 (fetch)', ts, err);
+    throw err;
   }
+}
+
+/** One-off trigger a minute after a part: the next part of today's Phase 1. */
+function ab_dailyPhase1Continue_(e) {
+  ab_rsDeleteTriggers_(['ab_dailyPhase1Continue_']);
+  const st = ab_p1State_();
+  if (ab_p1Status_(st) !== 'running' || ab_propGet_(AB_P1_DIED_PROP_) === st.day) {
+    Logger.log('Phase 1 continuation: nothing to continue.');
+    return;
+  }
+  const t0 = Date.now();
+  const lap = function (label) { Logger.log('Phase 1 - ' + label + ' done at +' + Math.round((Date.now() - t0) / 1000) + 's'); };
+  try {
+    return ab_p1RunPart_(st, t0, lap);
+  } catch (err) {
+    logRun_(st.ts || '', '', 0, 'ERROR (phase 1 - fetch)', err.message);
+    ab_sendDailyPhaseFailureEmail_('Phase 1 (fetch)', st.ts || '', err);
+    throw err;
+  }
+}
+
+/** Fetches the next part; schedules the one after, or finishes Phase 1. Returns { part, parts, done }. */
+function ab_p1RunPart_(st, t0, lap) {
+  const symbols = ab_p1Symbols_();
+  st.total = symbols.length;
+  st.parts = Math.max(1, Math.ceil(symbols.length / AB_P1_PART_SIZE));
+  const from = st.next, to = Math.min(symbols.length, from + AB_P1_PART_SIZE);
+  const part = Math.floor(from / AB_P1_PART_SIZE) + 1;
+  st.lastMs = Date.now();
+  st.queued = false;
+  ab_p1Save_(st);                                          // progress mark before the slow step
+  const tag = st.parts > 1 ? ' (part ' + part + ' of ' + st.parts + ')' : '';
+  const r = to > from ? ab_fetchOhlcBlocks_(symbols.slice(from, to), function (l) { lap(l + tag); })
+    : { hist: [], ohlc: { Day4: [], ThirdDay: [], Yesterday: [], Today: [] }, failed: [], asOfKey: '', asOfDate: '' };
+  st.next = to;
+  st.failed = st.failed.concat(r.failed).slice(0, 300);
+  if (r.asOfKey && r.asOfKey >= st.asOfKey) { st.asOfKey = r.asOfKey; st.asOfDate = r.asOfDate; }
+  st.secs.push(Math.round((Date.now() - t0) / 1000));
+
+  if (to < symbols.length) {
+    ab_p1StoreRows_(st, r);
+    st.lastMs = Date.now();
+    st.queued = true;
+    ab_p1Save_(st);
+    ab_p1ScheduleNext_();
+    lap('part ' + part + ' of ' + st.parts + ' stored - the next part starts in about a minute');
+    return { part: part, parts: st.parts, done: false };
+  }
+
+  // the last part: everything at once
+  const kept = ab_p1ReadRows_(st);
+  AB_DAY_TABS.forEach(function (tab) { kept.ohlc[tab] = kept.ohlc[tab].concat(r.ohlc[tab] || []); });
+  ab_writeOhlcAndHistory_(kept.ohlc, kept.hist.concat(r.hist));
+  if (st.histN || st.ohlcN) ab_p1WorkSheet_().clearContents();
+  st.done = true;
+  st.lastMs = Date.now();
+  ab_p1Save_(st);
+  ab_propSet_(AB_DATA_FETCHED_PROP_, ab_todayStr_());
+  ab_propSet_(AB_FVG_SCANS_PROP_, ''); // fresh data -> scans must run again
+  lap('OHLC + History30 written' + tag);
+
+  try {
+    fillPrevDayVolume_();
+  } catch (vErr) {
+    Logger.log('Prev Day Vol fill failed: ' + vErr.message);
+  }
+  lap('Prev Day Vol');
+
+  // Only start the FVG scans if there is clearly time left in THIS execution (they have their
+  // own fallback in Phase 2 / Phase 3), so Phase 1 can always finish and log itself.
+  let scanNote = '';
+  if (Date.now() - t0 < 170000) {
+    ab_runFvgScansIfPending_('Phase 1');
+    lap('FVG watch-list scans');
+  } else {
+    scanNote = ' FVG watch-list scans moved to Phase 2 (this part used ' + Math.round((Date.now() - t0) / 1000) + 's).';
+  }
+
+  const result = { asOfDate: st.asOfDate, symbolCount: st.total - st.failed.length, failed: st.failed };
+  ab_saveDailyPhase1Result_(result);
+  const total = Math.round((Date.now() - st.runStart) / 1000);
+  logRun_(st.ts, result.asOfDate, result.symbolCount, 'OK (phase 1 - fetch)',
+          (result.failed.length ? ('No data for: ' + result.failed.join(', ') + '. ') : '') +
+          'OHLC, History30, Prev Day Vol refreshed in ' + (st.parts > 1 ? st.parts + ' parts (' + st.secs.map(function (x, i) {
+            return 'part ' + (i + 1) + ': ' + x + 's';
+          }).join(', ') + '; ' + total + 's from start to end)' : Math.round((Date.now() - t0) / 1000) + 's') + '.' + scanNote);
+  return { part: part, parts: st.parts, done: true };
+}
+
+/** A Phase 1 that stopped part-way (Google's 6-minute limit): logged and emailed once a day. */
+function ab_p1CheckDied_() {
+  const st = ab_p1State_();
+  if (ab_p1Status_(st) !== 'died' || ab_propGet_(AB_P1_DIED_PROP_) === st.day) return false;
+  ab_propSet_(AB_P1_DIED_PROP_, st.day);
+  const at = Utilities.formatDate(new Date(Number(st.lastMs) || Date.now()), AB_TZ, 'HH:mm');
+  const part = Math.floor((Number(st.next) || 0) / AB_P1_PART_SIZE) + 1;
+  const msg = 'Phase 1 (fetch) did not finish: it stopped in part ' + part + ' of ' + (st.parts || 1) + ' (last step at ' + at +
+    ' IST) - most likely Google\'s 6-minute limit on a slow GOOGLEFINANCE evening. Patterns, alerts and the EOD email use the ' +
+    'previous day\'s candles. To retry: Auto Bhavcopy > 1. Daily Pipeline > Run Phase 1 Now, then Run Phase 2 Now and Run Phase 3 Now.';
+  Logger.log(msg);
+  try { logRun_(Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm'), '', 0, 'ERROR (phase 1 - fetch)', msg); } catch (lErr) { /* log tab missing */ }
+  ab_sendDailyPhaseFailureEmail_('Phase 1 (fetch)', st.ts || '', new Error(msg));
+  return true;
+}
+
+/**
+ * Timer runs of Phase 2 / 3 wait while today's Phase 1 is still fetching (and
+ * Phase 3 also while Phase 2 is waiting / running after a wait): a one-off retry
+ * trigger AB_PHASE_WAIT_MS later, at most AB_PHASE_MAX_WAITS times, then they run
+ * anyway. Menu runs never wait. Returns true when this run was put off.
+ */
+function ab_phaseShouldWait_(phase, e) {
+  if (!e || !e.triggerUid) return false;
+  const today = ab_todayStr_();
+  const st = ab_p1State_();
+  const p1 = ab_p1Status_(st);
+  let why = p1 === 'running' ? 'Phase 1 is still fetching (part ' + (Math.floor((Number(st.next) || 0) / AB_P1_PART_SIZE) + 1) + ' of ' + (st.parts || 1) + ')' : '';
+  if (!why && phase === 3 && ab_propGet_(AB_P2_WAITING_PROP_) === today) why = 'Phase 2 has not finished yet';
+  if (!why) return false;
+  const key = 'AB_PHASE' + phase + '_WAITS';
+  const v = ab_propGet_(key);
+  const n = v.indexOf(today + ':') === 0 ? Number(v.slice(today.length + 1)) || 0 : 0;
+  if (n >= AB_PHASE_MAX_WAITS) {
+    Logger.log('Phase ' + phase + ': ' + why + ' after ' + n + ' waits - running now anyway.');
+    return false;
+  }
+  ab_propSet_(key, today + ':' + (n + 1));
+  if (phase === 2) ab_propSet_(AB_P2_WAITING_PROP_, today);
+  const handler = phase === 2 ? 'ab_dailyPhase2Retry_' : 'ab_dailyPhase3Retry_';
+  ab_rsDeleteTriggers_([handler]);
+  ScriptApp.newTrigger(handler).timeBased().after(AB_PHASE_WAIT_MS).create();
+  Logger.log('Phase ' + phase + ' put off ' + Math.round(AB_PHASE_WAIT_MS / 60000) + ' min (' + (n + 1) + ' of ' + AB_PHASE_MAX_WAITS + '): ' + why + '.');
+  return true;
+}
+
+/** One-off triggers of a put-off Phase 2 / Phase 3. */
+function ab_dailyPhase2Retry_(e) {
+  ab_rsDeleteTriggers_(['ab_dailyPhase2Retry_']);
+  ab_dailyPhase2Patterns_(e || { triggerUid: 'retry' });
+}
+function ab_dailyPhase3Retry_(e) {
+  ab_rsDeleteTriggers_(['ab_dailyPhase3Retry_']);
+  ab_dailyPhase3AlertsEmail_(e || { triggerUid: 'retry' });
 }
 
 /** Phase 2 (~6:53 PM): patterns only, from the OHLC Phase 1 already wrote - no fetching. */
 function ab_dailyPhase2Patterns_(e) {
   if (ab_skipWeekendTrigger_(e, 'Phase 2 (patterns)')) return;
+  ab_p1CheckDied_();
+  if (ab_phaseShouldWait_(2, e)) return;
   const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
   try {
     updateAllCandlestickPatterns();
@@ -1595,12 +1807,16 @@ function ab_dailyPhase2Patterns_(e) {
     logRun_(ts, '', 0, 'ERROR (phase 2 - patterns)', e.message);
     ab_sendDailyPhaseFailureEmail_('Phase 2 (patterns)', ts, e);
     throw e;
+  } finally {
+    ab_propSet_(AB_P2_WAITING_PROP_, '');                  // Phase 3 need not wait for it any more
   }
 }
 
 /** Phase 3 (~7:01 PM): EOD zone sweep, ATR, price alerts, trade resolution, dashboards, EOD email, IPO base watch. */
 function ab_dailyPhase3AlertsEmail_(e) {
   if (ab_skipWeekendTrigger_(e, 'Phase 3 (alerts/EOD)')) return;
+  ab_p1CheckDied_();
+  if (ab_phaseShouldWait_(3, e)) return;
   const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
   const t0 = Date.now();
   const lap = function (label) { Logger.log('Phase 3 - ' + label + ' done at +' + Math.round((Date.now() - t0) / 1000) + 's'); };
@@ -1673,8 +1889,10 @@ function ab_dailyPhase3AlertsEmail_(e) {
 function runDailyPhase1Now() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   try {
-    ab_dailyPhase1Fetch_();
-    ss.toast('Phase 1 (fetch) complete.', 'Daily Pipeline', 10);
+    const r = ab_dailyPhase1Fetch_();
+    ss.toast(r && !r.done ? 'Phase 1 part ' + r.part + ' of ' + r.parts + ' done - the rest runs by itself, one part a minute later each ' +
+             '(about ' + (r.parts - r.part) * 4 + ' min). Run Phase 2 / 3 after the AutoFetch Log shows "OK (phase 1 - fetch)".'
+             : 'Phase 1 (fetch) complete.', 'Daily Pipeline', 20);
   } catch (e) {
     ss.toast('Phase 1 (fetch) failed: ' + e.message);
   }
@@ -1740,6 +1958,7 @@ function ab_dailyPhase4Work_() {
 /** Phase 4 (~7:20 PM): Quality Watch email + IPO Base Watch email, on their own 6-minute budget. */
 function ab_dailyPhase4Extras_(e) {
   if (ab_skipWeekendTrigger_(e, 'Phase 4 (Quality Watch / IPO base)')) return;
+  ab_p1CheckDied_();
   const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
   const t0 = Date.now();
   try {
@@ -1778,7 +1997,8 @@ function installDailyPhaseTriggers() {
 function removeDailyPhaseTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     const fn = t.getHandlerFunction();
-    if (fn === 'ab_dailyPhase1Fetch_' || fn === 'ab_dailyPhase2Patterns_' || fn === 'ab_dailyPhase3AlertsEmail_' || fn === 'ab_dailyPhase4Extras_') {
+    if (fn === 'ab_dailyPhase1Fetch_' || fn === 'ab_dailyPhase2Patterns_' || fn === 'ab_dailyPhase3AlertsEmail_' || fn === 'ab_dailyPhase4Extras_' ||
+        fn === 'ab_dailyPhase1Continue_' || fn === 'ab_dailyPhase2Retry_' || fn === 'ab_dailyPhase3Retry_') {
       ScriptApp.deleteTrigger(t);
     }
   });
@@ -4971,15 +5191,32 @@ function fetchHistory30_() {
  * Returns { symbolCount, failed, asOfDate } like refreshAllOHLC_.
  */
 function ab_refreshOhlcAndHistory_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet2 = ss.getSheetByName(AB_PATTERN_SHEET);
+  const symbols = ab_p1Symbols_();
+  if (!symbols.length) return { symbolCount: 0, failed: [], asOfDate: '' };
+  const r = ab_fetchOhlcBlocks_(symbols);
+  ab_writeOhlcAndHistory_(r.ohlc, r.hist);
+  return { symbolCount: symbols.length - r.failed.length, failed: r.failed, asOfDate: r.asOfDate };
+}
+
+/** PatternData's symbols (col D), in sheet order. */
+function ab_p1Symbols_() {
+  const sheet2 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_PATTERN_SHEET);
   const lastRow = sheet2.getLastRow();
-  const symbols = lastRow > 1
+  return lastRow > 1
     ? sheet2.getRange(2, 4, lastRow - 1, 1).getValues().flat()
         .map(v => String(v).trim().toUpperCase()).filter(Boolean)
     : [];
-  if (!symbols.length) return { symbolCount: 0, failed: [], asOfDate: '' };
+}
 
+/**
+ * The GOOGLEFINANCE part of the fetch for some symbols: one formula per
+ * symbol in the scratch tab (written in one go), ONE flush, one read.
+ * Returns { hist: History30 rows, ohlc: {Day4, ThirdDay, Yesterday, Today: rows},
+ * failed: [symbols], asOfKey, asOfDate } - nothing is written to the data tabs.
+ * lap(label) (optional) logs the time of each step.
+ */
+function ab_fetchOhlcBlocks_(symbols, lap) {
+  lap = lap || function () {};
   const scratch = ab_getScratchSheet_();
   const totalRows = symbols.length * AB_HISTORY_ROWS_PER_BLOCK;
   scratch.clearContents();
@@ -4990,14 +5227,18 @@ function ab_refreshOhlcAndHistory_() {
     scratch.insertColumnsAfter(scratch.getMaxColumns(), AB_BLOCK_COLS - scratch.getMaxColumns());
   }
 
-  symbols.forEach((symbol, i) => {
-    scratch.getRange(i * AB_HISTORY_ROWS_PER_BLOCK + 1, 1).setFormula(
-      '=IFERROR(GOOGLEFINANCE("NSE:' + symbol + '","all",TODAY()-' +
-      AB_HISTORY_LOOKBACK_DAYS + ',TODAY(),"DAILY"),"")'
-    );
+  // one formula at the top of each symbol's block, blanks below (one write call)
+  const formulas = [];
+  symbols.forEach(symbol => {
+    formulas.push(['=IFERROR(GOOGLEFINANCE("NSE:' + symbol + '","all",TODAY()-' +
+      AB_HISTORY_LOOKBACK_DAYS + ',TODAY(),"DAILY"),"")']);
+    for (let k = 1; k < AB_HISTORY_ROWS_PER_BLOCK; k++) formulas.push(['']);
   });
+  scratch.getRange(1, 1, totalRows, 1).setFormulas(formulas);
+  lap('formulas for ' + symbols.length + ' stocks written');
   SpreadsheetApp.flush(); // ONE flush for every symbol
   const allValues = scratch.getRange(1, 1, totalRows, AB_BLOCK_COLS).getValues();
+  lap('GOOGLEFINANCE values read');
 
   const cut = new Date(); cut.setDate(cut.getDate() - 15);
   const cutKey = Utilities.formatDate(cut, AB_TZ, 'yyyyMMdd');
@@ -5043,16 +5284,17 @@ function ab_refreshOhlcAndHistory_() {
       }
     });
   });
+  scratch.clearContents();
+  return { hist: outRows, ohlc: byTab, failed: failed, asOfKey: asOfKey, asOfDate: asOfDate };
+}
 
-  AB_DAY_TABS.forEach(tab => writeOHLCSheet_(tab, byTab[tab]));
-
+/** Day4 / ThirdDay / Yesterday / Today tabs and History30, all rewritten in one go. */
+function ab_writeOhlcAndHistory_(byTab, outRows) {
+  AB_DAY_TABS.forEach(tab => writeOHLCSheet_(tab, byTab[tab] || []));
   const historySheet = ab_getOrCreateSheet_(AB_HISTORY_SHEET);
   historySheet.clearContents();
   historySheet.getRange(1, 1, 1, 7).setValues([['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']]);
   if (outRows.length) historySheet.getRange(2, 1, outRows.length, 7).setValues(outRows);
-
-  scratch.clearContents();
-  return { symbolCount: symbols.length - failed.length, failed: failed, asOfDate: asOfDate };
 }
 
 /*****************************************************************
