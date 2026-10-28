@@ -294,6 +294,14 @@ function createEnv(workbook, opts) {
         return sheet;
       },
       clear: function () { grid.length = 0; env.writes.push({ sheet: spec.name, kind: 'clear', row: 1, col: 1 }); return sheet; },
+      clearContents: function () { grid.length = 0; env.writes.push({ sheet: spec.name, kind: 'clear', row: 1, col: 1 }); return sheet; },
+      appendRow: function (vals) {
+        const R = lastRow();
+        while (grid.length <= R) grid.push([]);
+        grid[R] = (vals || []).map(function (v) { return toCell(v, null); });
+        env.writes.push({ sheet: spec.name, kind: 'values', row: R + 1, col: 1 });
+        return sheet;
+      },
       hideSheet: function () { hidden = true; return sheet; },
       showSheet: function () { hidden = false; return sheet; },
       activate: function () { active = sheet; return sheet; },
