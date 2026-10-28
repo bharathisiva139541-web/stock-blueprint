@@ -142,8 +142,10 @@ files stay as the offline / failure fallback (the browser decides, see
 `docs/ARCHITECTURE.md`).
 
 ```
-GET /api/site?part=main      -> data = window.SB_DATA    (dashboard.js shape)
-GET /api/site?part=history   -> data = window.SB_HISTORY (history.js shape)
+GET /api/site?part=main      -> data = window.SB_DATA      (dashboard.js shape)
+GET /api/site?part=history   -> data = window.SB_HISTORY   (history.js shape)
+GET /api/site?part=history60 -> data = window.SB_HISTORY60 (history60.js shape: History60's
+                                candles History30 does not have; empty bars without that tab)
 ```
 
 - Needs only `SHEET_FEED_URL` + `SHEET_FEED_TOKEN` (independent of
@@ -268,7 +270,7 @@ failed refresh (`stale: true`).
 | history | `s-maxage` 6 h | 6 h |
 | market-status | `s-maxage` 30 s | Dhan profile 60 s, sheet snapshot 60 s |
 | site `part=main` | `s-maxage` 5 min, `stale-while-revalidate` 1 h | 5 min (last good copy kept for stale-on-error) |
-| site `part=history` | `s-maxage` 30 min, `stale-while-revalidate` 6 h | 30 min (same) |
+| site `part=history` / `part=history60` | `s-maxage` 30 min, `stale-while-revalidate` 6 h | 30 min (same) |
 | site served stale (`stale: true`) | `s-maxage` 60 s | - |
 | UNAVAILABLE / partial / site `ok:false` | `s-maxage` 15 s | not cached |
 | 4xx / 5xx | `no-store` | - |

@@ -1683,7 +1683,11 @@ function ab_p1RunPart_(st, t0, lap) {
   // the last part: everything at once
   const kept = ab_p1ReadRows_(st);
   AB_DAY_TABS.forEach(function (tab) { kept.ohlc[tab] = kept.ohlc[tab].concat(r.ohlc[tab] || []); });
-  ab_writeOhlcAndHistory_(kept.ohlc, kept.hist.concat(r.hist));
+  const histRows = kept.hist.concat(r.hist);
+  // stocks GOOGLEFINANCE gave nothing for: their candles from History60 (NSE via the PC), when it has them
+  const fill = st.failed.length ? ab_h60FillFailed_(st.failed, histRows, kept.ohlc) : { filled: [] };
+  if (fill.filled.length) st.failed = st.failed.filter(function (s) { return fill.filled.indexOf(s) === -1; });
+  ab_writeOhlcAndHistory_(kept.ohlc, histRows);
   if (st.histN || st.ohlcN) ab_p1WorkSheet_().clearContents();
   st.done = true;
   st.lastMs = Date.now();
@@ -1714,6 +1718,8 @@ function ab_p1RunPart_(st, t0, lap) {
   const total = Math.round((Date.now() - st.runStart) / 1000);
   logRun_(st.ts, result.asOfDate, result.symbolCount, 'OK (phase 1 - fetch)',
           (result.failed.length ? ('No data for: ' + result.failed.join(', ') + '. ') : '') +
+          (fill.filled.length ? ('From History60 (NSE via your PC, candles up to ' + fill.upTo + '): ' + fill.filled.join(', ') +
+            (fill.tabs < fill.filled.length ? ' (day tabs for ' + fill.tabs + ' - the others have no candle for the newest day yet)' : '') + '. ') : '') +
           'OHLC, History30, Prev Day Vol refreshed in ' + (st.parts > 1 ? st.parts + ' parts (' + st.secs.map(function (x, i) {
             return 'part ' + (i + 1) + ': ' + x + 's';
           }).join(', ') + '; ' + total + 's from start to end)' : Math.round((Date.now() - t0) / 1000) + 's') + '.' + scanNote);
@@ -5516,21 +5522,8 @@ function computeLongFVGTouchPatterns_() {
     return;
   }
 
-  const histData = historySheet.getDataRange().getValues();
-  histData.shift(); // header row
-
-  const bySymbol = {}; // symbol -> [{Opn,High,Low,Cls}, ...] oldest -> newest
-  histData.forEach(r => {
-    const sym = String(r[0]).trim().toUpperCase();
-    if (!sym) return;
-    if (!bySymbol[sym]) bySymbol[sym] = [];
-    bySymbol[sym].push({
-      Opn: ab_toNum_(r[2]),
-      High: ab_toNum_(r[3]),
-      Low: ab_toNum_(r[4]),
-      Cls: ab_toNum_(r[5])
-    });
-  });
+  // symbol -> [{date,Opn,High,Low,Cls,Volume}, ...] oldest -> newest: History30 + History60's older days
+  const bySymbol = ab_readHistoryMerged_(ab_historyFromValues_(historySheet.getDataRange().getValues()));
 
   const data = sheet2.getDataRange().getValues();
   sheet2.getRange(1, AB_COL_LONGFVG).setValue('Long FVG Touch'); // header, safe to re-set every run
@@ -5636,10 +5629,14 @@ const AB_FVG_MIN_AVG_TURNOVER = ab_setting_('AB_FVG_MIN_AVG_TURNOVER', 5000000);
 function ab_readHistoryCandles_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const historySheet = ss.getSheetByName(AB_HISTORY_SHEET);
+  return historySheet ? ab_historyFromValues_(historySheet.getDataRange().getValues()) : {};
+}
+
+/** ab_readHistoryCandles_ on History30's values (header row first). */
+function ab_historyFromValues_(values) {
   const bySymbol = {};
-  if (!historySheet) return bySymbol;
-  const histData = historySheet.getDataRange().getValues();
-  const histHeader = histData.shift() || [];
+  const histData = values.slice(1);
+  const histHeader = values[0] || [];
   const dateIdx = histHeader.indexOf('Date');
   histData.forEach(function (r) {
     const sym = String(r[0] || '').trim().toUpperCase();
@@ -5806,7 +5803,7 @@ function computeGapUpFvgs_() {
     });
   }
 
-  const bySymbol = ab_readHistoryCandles_();
+  const bySymbol = ab_readHistoryMerged_();   // History30 + History60's older days
   const scanSinceKey = ab_propGet_('AB_GAPUP_SCAN_KEY'); // data day of the previous scan ('' = unknown)
   const scanNowKey = ab_msLatestHistoryKey_(bySymbol);
 
@@ -5845,7 +5842,7 @@ function computeGapUpFvgs_() {
   // Catch what the delayed live price missed: a zone that was open
   // yesterday but is NOT in today's list has disappeared either because
   // it was genuinely touched, or (far more rarely) because its forming
-  // candles rolled out of the 30-day History30 window. The only way to
+  // candles rolled out of the History30 / History60 window. The only way to
   // tell the two apart is to check the real EOD data directly - if
   // today's actual Low on that symbol reached the zone top, it was
   // mitigated, full stop, regardless of what the 5-minute live price
@@ -6257,7 +6254,7 @@ function computeUnmitigatedFvgs_() {
     });
   }
 
-  const bySymbol = ab_readHistoryCandles_();
+  const bySymbol = ab_readHistoryMerged_();   // History30 + History60's older days
   const scanSinceKey = ab_propGet_('AB_UNMIT_SCAN_KEY'); // data day of the previous scan ('' = unknown)
   const scanNowKey = ab_msLatestHistoryKey_(bySymbol);
 
@@ -8748,7 +8745,9 @@ function doPost(e) {
   try {
     if (req.action === 'list') {
       const w = ab_bridgeWanted_();
-      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc });
+      let h60 = null;
+      try { h60 = ab_h60Info_(); } catch (hErr) { h60 = { days: [], want: AB_H60_DAYS, error: hErr.message }; }
+      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, h60: h60 });
     }
     if (req.action === 'put') {
       const entries = [], details = [];
@@ -8790,6 +8789,9 @@ function doPost(e) {
     }
     if (req.action === 'eod') {
       return ab_bridgeJson_(ab_eodFromBridge_(req));
+    }
+    if (req.action === 'hist') {
+      return ab_bridgeJson_(ab_h60FromBridge_(req));
     }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
@@ -8980,7 +8982,7 @@ function ab_feedSite_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
   const part = req.part;
-  if (part !== 'main' && part !== 'history') return ab_bridgeJson_({ ok: false, error: 'unknown part' });
+  if (AB_SITE_FEED_PARTS.indexOf(part) === -1) return ab_bridgeJson_({ ok: false, error: 'unknown part' });
   try { ab_siteFeedTriggerCheck_(); } catch (e) { /* never break the answer over the trigger */ }
   try {
     const stored = ab_siteFeedRead_(part);
@@ -9267,6 +9269,43 @@ function ab_site_history_(cx) {
            dates: dates, cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: bars, sheetTags: tags };
 }
 
+/**
+ * Part 'history60' = export_xlsx.py history60_data() (window.SB_HISTORY60): the History60 candles
+ * History30 does not have (ab_h60Older_ - the days before each stock's History30 window, and the
+ * PatternData stocks GOOGLEFINANCE gave nothing for). The website puts them in front of part
+ * 'history' (60-day charts, FVG zones like the sheet's). Empty bars without a History60 tab.
+ */
+function ab_site_history60_(cx) {
+  const out = { source: 'History60 tab (NSE bhavcopy via your PC)', timeframe: '1d', stored: null,
+                dates: [], cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: {} };
+  const t60 = ab_site_tab_(cx, AB_H60_SHEET);
+  const g = t60 ? ab_h60Grid_(t60.values) : null;
+  if (!g || !g.days.length) return out;
+  out.stored = { days: g.days.length, first: g.days[0], last: g.days[g.days.length - 1] };
+  const t30 = ab_site_tab_(cx, 'History30');
+  const gf = t30 ? ab_historyFromValues_(t30.values) : {};
+  const have = Object.keys(gf).length, want = ab_site_mainSymbolCount_(cx);
+  if (have * 2 < want) {
+    throw new Error('sheet is updating (History30 has ' + have + ' of ' + want + ' symbols) - try again shortly');
+  }
+  const allowed = {};
+  const pd = ab_site_tab_(cx, 'PatternData');
+  (pd ? pd.values.slice(1) : []).forEach(function (r) {
+    const sym = r.length > 3 && r[3] !== null && r[3] !== undefined ? String(r[3]).trim().toUpperCase() : '';
+    if (sym) allowed[sym] = true;
+  });
+  const older = ab_h60Older_(gf, g, allowed);
+  const all = {};
+  Object.keys(older).forEach(function (sym) { older[sym].forEach(function (c) { all[c.iso] = true; }); });
+  out.dates = Object.keys(all).sort();
+  const at = {};
+  out.dates.forEach(function (d, i) { at[d] = i; });
+  Object.keys(older).forEach(function (sym) {
+    out.bars[sym] = older[sym].map(function (c) { return [at[c.iso], c.Opn, c.High, c.Low, c.Cls, isNaN(c.Volume) ? null : c.Volume]; });
+  });
+  return out;
+}
+
 /** The Results Performance A2 note (holds 'last refreshed dd/MM/yyyy HH:mm'). */
 function ab_site_resultsNote_(cx) {
   const sh = cx.ss.getSheetByName('Results Performance');
@@ -9488,12 +9527,12 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // website's server waits (25 s). So the feed is built AHEAD of time and
 // stored, and doPost 'site' hands out the stored text at once.
 //   Hidden tab Site_Feed: col 1 / 2 = main slot 0 / 1, col 3 / 4 = history
-//   slot 0 / 1. A slot holds JSON.stringify(data) - exactly what
-//   ab_site_main_ / ab_site_history_ return - in chunks of <= 45,000
+//   slot 0 / 1, col 5 / 6 = history60 slot 0 / 1. A slot holds JSON.stringify(data) - exactly what
+//   ab_site_main_ / ab_site_history_ / ab_site_history60_ return - in chunks of <= 45,000
 //   characters (a cell holds 50,000), one per row from row 1. Every cell
 //   starts with '~<build id>~', so Sheets never takes a chunk for a
 //   number, date or formula and chunks of two builds can't be mixed up.
-//   Script Properties AB_SITE_FEED_META_MAIN / _HISTORY describe the copy:
+//   Script Properties AB_SITE_FEED_META_MAIN / _HISTORY / _HISTORY60 describe the copy:
 //   { slot, chunks, length, id, readAt, readMs, builtAt, buildMs, by, fmt }
 //   (readAt / builtAt 'yyyy-MM-dd HH:mm' IST; readAt = when the sheet was
 //   read, the time the website's DELAYED / EOD / CACHED label uses; fmt =
@@ -9518,12 +9557,12 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 4;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay
+const AB_SITE_FEED_FORMAT = 5;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60
 const AB_SITE_FEED_SHEET = 'Site_Feed';
-const AB_SITE_FEED_PARTS = ['main', 'history'];
+const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;
 const AB_SITE_FEED_MARK = '~';
-const AB_SITE_FEED_META_PROPS = { main: 'AB_SITE_FEED_META_MAIN', history: 'AB_SITE_FEED_META_HISTORY' };
+const AB_SITE_FEED_META_PROPS = { main: 'AB_SITE_FEED_META_MAIN', history: 'AB_SITE_FEED_META_HISTORY', history60: 'AB_SITE_FEED_META_HISTORY60' };
 const AB_SITE_BUILDING_PROP = 'AB_SITE_BUILDING_SINCE';
 const AB_SITE_BUILD_STALE_MS = 10 * 60 * 1000;          // a build "running" longer than this has died
 const AB_SITE_PREPARING = 'site feed is being prepared - try again in a minute';
@@ -9552,14 +9591,14 @@ function ab_siteFeedSheet_(create) {
     }
     // cosmetic, each on its own: fewer cells against the file's limit, back to
     // the tab the owner was on (insertSheet switched to the new one), hidden
-    try { if (sh.getMaxColumns() > 4) sh.deleteColumns(5, sh.getMaxColumns() - 4); } catch (e) { /* cosmetic */ }
+    try { if (sh.getMaxColumns() > 6) sh.deleteColumns(7, sh.getMaxColumns() - 6); } catch (e) { /* cosmetic */ }
     try { if (active) active.activate(); } catch (e) { /* no UI (web app / trigger) */ }
     try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
   }
   return sh;
 }
 
-function ab_siteFeedCol_(part, slot) { return (part === 'main' ? 1 : 3) + slot; }
+function ab_siteFeedCol_(part, slot) { return (part === 'main' ? 1 : part === 'history' ? 3 : 5) + slot; }
 
 /** The stored copy's description for `part`, or null when there is none. */
 function ab_siteFeedMeta_(part) {
@@ -9634,6 +9673,7 @@ function ab_siteFeedStore_(part, text, info, mark) {
   const id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
   const tag = AB_SITE_FEED_MARK + id + AB_SITE_FEED_MARK;
   const chunks = ab_siteFeedChunks_(text);
+  if (sh.getMaxColumns() < col) sh.insertColumnsAfter(sh.getMaxColumns(), col - sh.getMaxColumns());   // a tab made for 2 parts
   const rows = Math.max(chunks.length, sh.getLastRow());   // '' below the chunks clears an older, longer copy
   if (sh.getMaxRows() < rows) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
   const vals = [];
@@ -9658,7 +9698,7 @@ function ab_siteBuildRunning_() {
 }
 
 /**
- * Builds `parts` (['main'], ['history'] or both) with ab_site_main_ /
+ * Builds `parts` (any of AB_SITE_FEED_PARTS) with ab_site_main_ /
  * ab_site_history_ and stores them. Returns a short summary:
  *   { part: { ok:true, ms, bytes, readAt } | { ok:false, error, busy? } }
  * reason: who asked ('request' | 'auto' | 'menu'), kept in the meta / log.
@@ -9694,7 +9734,7 @@ function ab_siteBuild_(parts, reason, opt) {
       try {
         const readAt = Utilities.formatDate(new Date(t0), AB_TZ, 'yyyy-MM-dd HH:mm');
         const cx = { ss: ss, tz: ss.getSpreadsheetTimeZone() || AB_TZ, tabs: {}, dates: {} };
-        text = JSON.stringify(part === 'main' ? ab_site_main_(cx, readAt) : ab_site_history_(cx));
+        text = JSON.stringify(part === 'main' ? ab_site_main_(cx, readAt) : part === 'history' ? ab_site_history_(cx) : ab_site_history60_(cx));
         info = { readAt: readAt, readMs: t0, builtAt: Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm'),
                  buildMs: Date.now() - t0, by: String(reason || '') };
         if (opt.out) opt.out[part] = { text: text, readAt: info.readAt, builtAt: info.builtAt };
@@ -9736,7 +9776,7 @@ function ab_siteFeedReply_(part, meta, text, stored) {
  *             once from 16:00 when read before 16:00 today (a read in the
  *             first half hour after the 15:30 close may hold pre-close
  *             prices; the website calls it EOD).
- *   history - 6 h; and once from the evening cutoff (ab_siteEveningMin_,
+ *   history, history60 - 6 h; and once from the evening cutoff (ab_siteEveningMin_,
  *             ~19:26) when read before it today: by then Phase 1 has
  *             rewritten History30 and Phase 2 / 3 PatternData's tags.
  */
@@ -12159,7 +12199,7 @@ function ab_rpRefresh_(opts) {
   const tr = opts.tracker || ab_rsReadTracker_();
   const sh = ab_getOrCreateSheet_(AB_RP_SHEET);
   const rows = ab_rpReadExisting_(sh);
-  const hist = ab_readHistoryCandles_();
+  const hist = ab_readHistoryMerged_();   // History30 + History60's older days (results up to ~60 sessions back)
   const todayKey = ab_rsDayKey_(new Date());
   const nowDate = new Date();
 
@@ -14007,6 +14047,410 @@ function ab_eodFromBridge_(req) {
            highTab: highs ? 'updated' : (Object.keys(c.highs).length ? 'kept (a newer day is already there)' : 'no 52-week report') };
 }
 
+/*****************************************************************
+ * HISTORY60 - 60 trading days of daily candles (from NSE via the PC)
+ * -----------------------------------------------------------------
+ * History30 (GOOGLEFINANCE, Phase 1) stays exactly as it was and needs
+ * no PC. The PC bridge (screener_bridge.py hist_step) reads NSE's full
+ * bhavcopy (sec_bhavdata_full_DDMMYYYY.csv - the Delivery % file) and
+ * posts each trading day's open / high / low / close / volume / previous
+ * close (doPost action 'hist', ab_h60FromBridge_). Tab "History60" keeps
+ * the newest AB_H60_DAYS days of the PatternData stocks:
+ *   row 1 note; row 2 'Symbol' + one column per day, newest first (text
+ *   yyyy-MM-dd); row 3 '(linked)' + 'Y' where that day directly follows
+ *   the older day beside it (for most stocks NSE's previous close = the
+ *   stored close; '' = a gap - a day not received yet); rows 4+ one stock
+ *   each, a cell = 'open high low close volume prevclose' (NSE's prices).
+ * A new day is added as one column (cheap); older days (the first fill)
+ * rewrite the tab.
+ * NSE's prices are not adjusted for splits / bonus issues, but on the
+ * ex-date NSE's previous close is: a previous close that differs from the
+ * stored close of the day before = a corporate action, and every older
+ * candle is scaled by that ratio (ab_h60Adjust_). Where a stock's
+ * History30 window starts, the NSE candles are matched to GOOGLEFINANCE's
+ * close of that day (ab_h60Older_), so the series never jumps.
+ * ab_readHistoryMerged_ = History30 + the older History60 days (and all
+ * days of a PatternData stock GOOGLEFINANCE gave nothing for) - read by
+ * the FVG scans (PatternData col X, GapUpFVG, UnmitigatedFVG, the FVG
+ * explainer) and Results Performance only; EMA / ATR / patterns / alerts
+ * keep History30. Phase 1 fills History30 / the 4 day tabs of a stock
+ * GOOGLEFINANCE gave no data for from History60 (ab_h60FillFailed_).
+ * The website gets the older days as site feed part 'history60'.
+ * tools/export_xlsx.py history60_data() is the same reading in Python.
+ *****************************************************************/
+const AB_H60_SHEET = 'History60';
+const AB_H60_DAYS = 60;                 // trading days kept
+const AB_H60_MAX_POST_DAYS = 15;        // days in one post from the PC
+const AB_H60_LINK = '(linked)';
+const AB_H60_NOTE = 'NSE daily candles read by your PC (full bhavcopy), newest day first. Cell = Open High Low Close Volume ' +
+  'PrevClose, NSE\'s own prices (a split / bonus is adjusted when the candles are read). Used for the 60-day FVG scans and ' +
+  'Results Performance; the last 30 days there come from History30 (GOOGLEFINANCE). Row "(linked)": Y = the day directly ' +
+  'follows the day beside it.';
+let AB_H60_MEMO_ = null;                // this execution's parsed History60 (ab_h60Load_)
+
+/** A day cell (Date, 'yyyy-MM-dd...', 'dd/MM/yyyy', 'dd-MMM-yyyy') -> 'yyyy-MM-dd', else ''. */
+function ab_h60Iso_(v) {
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, AB_TZ, 'yyyy-MM-dd');
+  const s = String(v === null || v === undefined ? '' : v).trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  const k = ab_msDateKey_(s);
+  return k ? k.slice(0, 4) + '-' + k.slice(4, 6) + '-' + k.slice(6, 8) : '';
+}
+
+/** Price to 2 decimals / volume to a whole number - the same arithmetic as export_xlsx.py. */
+function ab_h60R2_(x) { return Math.floor(x * 100 + 0.5) / 100; }
+function ab_h60Vol_(v, f) { return isNaN(v) ? NaN : Math.floor(v / f + 0.5); }
+
+/** 'o h l c v p' -> [o, h, l, c, v, p] (v / p NaN when missing) or null. */
+function ab_h60ParseCell_(v) {
+  if (typeof v !== 'string' || !v.trim()) return null;
+  const a = v.trim().split(/\s+/).map(Number);
+  if (a.length < 4 || !(a[0] > 0 && a[1] > 0 && a[2] > 0 && a[3] > 0)) return null;
+  return [a[0], a[1], a[2], a[3], a.length > 4 && a[4] >= 0 ? a[4] : NaN, a.length > 5 && a[5] > 0 ? a[5] : NaN];
+}
+
+/** A posted [o, h, l, c, v, p] -> the stored cell text, or '' when it is not a usable candle. */
+function ab_h60Cell_(r) {
+  const ok = function (x) { return typeof x === 'number' && isFinite(x) && x > 0; };
+  if (!Array.isArray(r) || !ok(r[0]) || !ok(r[1]) || !ok(r[2]) || !ok(r[3])) return '';
+  const v = typeof r[4] === 'number' && isFinite(r[4]) && r[4] >= 0 ? Math.round(r[4]) : '';
+  const p = ok(r[5]) ? r[5] : '';
+  return [r[0], r[1], r[2], r[3], v === '' ? 'NaN' : v, p === '' ? 'NaN' : p].join(' ');
+}
+
+/**
+ * History60 values -> { days: [iso, oldest first], linked: [bool per day], syms: [in tab order],
+ * cells: { SYM: [[o, h, l, c, v, p] | null per day] } }.
+ */
+function ab_h60Grid_(vals) {
+  const out = { days: [], linked: [], syms: [], cells: {} };
+  let h = -1;
+  for (let i = 0; i < Math.min(5, vals.length); i++) if (String(vals[i][0]).trim() === 'Symbol') { h = i; break; }
+  if (h === -1) return out;
+  const cols = [], seen = {};
+  vals[h].forEach(function (v, j) {
+    const d = j ? ab_h60Iso_(v) : '';
+    if (d && !seen[d]) { seen[d] = true; cols.push([j, d]); }
+  });
+  cols.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0; });
+  const link = vals[h + 1] && String(vals[h + 1][0]).trim() === AB_H60_LINK ? vals[h + 1] : null;
+  out.days = cols.map(function (c) { return c[1]; });
+  out.linked = cols.map(function (c) { return !!link && String(link[c[0]]).trim() === 'Y'; });
+  for (let r = h + (link ? 2 : 1); r < vals.length; r++) {
+    const sym = String(vals[r][0] === null || vals[r][0] === undefined ? '' : vals[r][0]).trim().toUpperCase();
+    if (!sym || out.cells[sym]) continue;
+    out.syms.push(sym);
+    out.cells[sym] = cols.map(function (c) { return ab_h60ParseCell_(vals[r][c[0]]); });
+  }
+  return out;
+}
+
+/** True when `newer` directly follows `older`: at least half the stocks' previous close = the older day's close. */
+function ab_h60Linked_(newer, older) {
+  let n = 0, same = 0;
+  Object.keys(newer).forEach(function (s) {
+    const a = newer[s], b = older[s];
+    if (!a || !b || !(a[5] > 0)) return;
+    n++;
+    if (Math.abs(a[5] / b[3] - 1) <= 1e-4) same++;
+  });
+  return n > 0 && same * 2 >= n;
+}
+
+/**
+ * One stock's candles, oldest first: [{ iso, Opn, High, Low, Cls, Volume }], scaled for the splits /
+ * bonus issues seen in NSE's previous close (only across days with no gap between them).
+ */
+function ab_h60Adjust_(g, sym) {
+  const cells = g.cells[sym] || [];
+  const out = [];
+  let f = 1, newer = -1;
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const c = cells[i];
+    if (!c) continue;
+    if (newer !== -1) {
+      let gap = false;
+      for (let k = i + 1; k <= newer; k++) if (!g.linked[k]) { gap = true; break; }
+      const p = cells[newer][5];
+      if (!gap && p > 0 && Math.abs(p / c[3] - 1) > 1e-4) f = f * (p / c[3]);
+    }
+    out.push({ iso: g.days[i], Opn: ab_h60R2_(c[0] * f), High: ab_h60R2_(c[1] * f), Low: ab_h60R2_(c[2] * f),
+               Cls: ab_h60R2_(c[3] * f), Volume: ab_h60Vol_(c[4], f) });
+    newer = i;
+  }
+  return out.reverse();
+}
+
+/**
+ * The History60 candles that History30 does not have, per stock (oldest first, with iso): the days
+ * before the stock's first History30 day, back to the first gap in History60 (an unlinked day) so the
+ * series never skips a trading day - only when History60 has that first day too, and scaled to
+ * History30's close of it when the two differ by more than 0.5 % (prices adjusted differently). A
+ * stock of `allowed` (PatternData) that History30 has no candles for gets the unbroken run of days
+ * ending at History30's newest day (or the newest before it).
+ * gf = ab_readHistoryCandles_() / ab_historyFromValues_().
+ */
+function ab_h60Older_(gf, g, allowed) {
+  let newest = '';
+  const first = {};                       // SYM -> [iso, close] of its first History30 candle
+  Object.keys(gf).forEach(function (s) {
+    (gf[s] || []).forEach(function (c) {
+      const k = ab_h60Iso_(c.date);
+      if (!k) return;
+      if (k > newest) newest = k;
+      if (!first[s] || k < first[s][0]) first[s] = [k, c.Cls];
+    });
+  });
+  const at = {};
+  g.days.forEach(function (d, i) { at[d] = i; });
+  let last = -1;                          // the newest History60 day not after History30's newest
+  for (let i = g.days.length - 1; i >= 0; i--) if (!newest || g.days[i] <= newest) { last = i; break; }
+  const runFrom = function (e) { let k = e; while (k > 0 && g.linked[k]) k--; return g.days[k]; };
+  const out = {};
+  g.syms.forEach(function (sym) {
+    const own = first[sym];
+    if (!own && gf[sym] && gf[sym].length) return;          // History30 rows without readable days: leave alone
+    if (!own && !(allowed && allowed[sym])) return;
+    if (own ? at[own[0]] === undefined : last === -1) return;
+    const nse = ab_h60Adjust_(g, sym);
+    if (!own) {
+      const from = runFrom(last), to = g.days[last];
+      const list = nse.filter(function (c) { return c.iso >= from && c.iso <= to; });
+      if (list.length) out[sym] = list;
+      return;
+    }
+    const seam = nse.filter(function (c) { return c.iso === own[0]; })[0];
+    if (!seam) return;
+    const from = runFrom(at[own[0]]);
+    let older = nse.filter(function (c) { return c.iso >= from && c.iso < own[0]; });
+    if (!older.length) return;
+    if (own[1] > 0) {
+      const r = own[1] / seam.Cls;
+      if (!(r > 0.02 && r < 50)) return;                      // not the same prices at all
+      if (Math.abs(r - 1) > 0.005) {
+        older = older.map(function (c) {
+          return { iso: c.iso, Opn: ab_h60R2_(c.Opn * r), High: ab_h60R2_(c.High * r), Low: ab_h60R2_(c.Low * r),
+                   Cls: ab_h60R2_(c.Cls * r), Volume: ab_h60Vol_(c.Volume, r) };
+        });
+      }
+    }
+    out[sym] = older;
+  });
+  return out;
+}
+
+/** History60 parsed (only = [symbols]: just their rows), or an empty grid when there is no tab. */
+function ab_h60Load_(only) {
+  if (!only && AB_H60_MEMO_) return AB_H60_MEMO_;
+  const empty = { days: [], linked: [], syms: [], cells: {} };
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_H60_SHEET);
+  if (!sh || sh.getLastRow() < 2) return empty;
+  let vals;
+  if (only && only.length <= 20) {
+    const W = Math.max(1, sh.getLastColumn()), last = sh.getLastRow();
+    vals = sh.getRange(1, 1, Math.min(3, last), W).getValues();
+    if (last > 3) {
+      const want = {};
+      only.forEach(function (s) { want[String(s).toUpperCase()] = true; });
+      sh.getRange(4, 1, last - 3, 1).getValues().forEach(function (r, i) {
+        if (want[String(r[0]).trim().toUpperCase()]) vals.push(sh.getRange(4 + i, 1, 1, W).getValues()[0]);
+      });
+    }
+  } else {
+    vals = sh.getDataRange().getValues();
+  }
+  const g = ab_h60Grid_(vals);
+  if (!only) AB_H60_MEMO_ = g;
+  return g;
+}
+
+/** 'yyyy-MM-dd' -> Date (midnight IST, like History30's day cells). */
+function ab_h60Date_(iso) { return Utilities.parseDate(iso, AB_TZ, 'yyyy-MM-dd'); }
+
+/**
+ * History30 + History60's older days: { SYM: [{ date, Opn, High, Low, Cls, Volume }] } oldest first,
+ * the same shape as ab_readHistoryCandles_. Without a History60 tab it is just History30.
+ */
+function ab_readHistoryMerged_(gf) {
+  gf = gf || ab_readHistoryCandles_();
+  let g;
+  try { g = ab_h60Load_(); } catch (e) { Logger.log('History60 not read: ' + e.message); return gf; }
+  if (!g.days.length) return gf;
+  const allowed = {};
+  ab_p1Symbols_().forEach(function (s) { allowed[s] = true; });
+  const older = ab_h60Older_(gf, g, allowed);
+  const out = {};
+  Object.keys(gf).forEach(function (s) { out[s] = gf[s]; });
+  Object.keys(older).forEach(function (s) {
+    out[s] = older[s].map(function (c) {
+      return { date: ab_h60Date_(c.iso), Opn: c.Opn, High: c.High, Low: c.Low, Cls: c.Cls, Volume: c.Volume };
+    }).concat(gf[s] || []);
+  });
+  return out;
+}
+
+/**
+ * Phase 1: stocks GOOGLEFINANCE gave no candles for get them from History60 - History30 rows for
+ * the days of GOOGLEFINANCE's window, and the 4 day tabs when History60 has the newest day too.
+ * hist / byTab are Phase 1's rows (added to here). Returns { filled: [SYM], tabs: n, upTo: iso }.
+ */
+function ab_h60FillFailed_(failed, hist, byTab) {
+  const out = { filled: [], tabs: 0, upTo: '' };
+  try {
+    const have = {}, dates = {};
+    hist.forEach(function (r) {
+      have[String(r[0])] = true;
+      const d = ab_h60Iso_(r[1]);
+      if (d) dates[d] = true;
+    });
+    const want = failed.filter(function (s) { return !have[s]; });
+    const days = Object.keys(dates).sort();
+    if (!want.length || !days.length) return out;
+    const g = ab_h60Load_(want);
+    if (!g.days.length) return out;
+    const newest = days[days.length - 1], last4 = days.slice(-4)[0];
+    let e = -1;                                            // newest History60 day not after GOOGLEFINANCE's, and its unbroken run
+    for (let i = g.days.length - 1; i >= 0; i--) if (g.days[i] <= newest) { e = i; break; }
+    if (e === -1) return out;
+    let k = e;
+    while (k > 0 && g.linked[k]) k--;
+    const from = g.days[k] > days[0] ? g.days[k] : days[0];
+    want.forEach(function (sym) {
+      const c = ab_h60Adjust_(g, sym).filter(function (x) { return x.iso >= from && x.iso <= newest; }).slice(-30);
+      if (!c.length) return;
+      c.forEach(function (x) { hist.push([sym, x.iso, x.Opn, x.High, x.Low, x.Cls, isNaN(x.Volume) ? '' : x.Volume]); });
+      out.filled.push(sym);
+      if (c[c.length - 1].iso > out.upTo) out.upTo = c[c.length - 1].iso;
+      if (c[c.length - 1].iso !== newest) return;          // no candle for the newest day: the day tabs stay without it
+      const l4 = c.filter(function (x) { return x.iso >= last4; }).slice(-4);
+      const tabs = AB_DAY_TABS.slice(AB_DAY_TABS.length - l4.length);
+      l4.forEach(function (x, j) { byTab[tabs[j]].push([sym, x.Opn, x.High, x.Low, x.Cls, isNaN(x.Volume) ? '' : x.Volume]); });
+      out.tabs++;
+    });
+  } catch (e) {
+    Logger.log('History60 fill skipped: ' + e.message);
+  }
+  return out;
+}
+
+/** doPost 'list': which days History60 has (newest first), for the PC. */
+function ab_h60Info_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_H60_SHEET);
+  let days = [];
+  if (sh && sh.getLastRow() >= 2) {
+    days = ab_h60Grid_(sh.getRange(1, 1, Math.min(3, sh.getLastRow()), Math.max(1, sh.getLastColumn())).getValues()).days;
+  }
+  return { days: days.slice().reverse(), want: AB_H60_DAYS };
+}
+
+/** Number format + values of a block, growing the tab first when needed. */
+function ab_h60Put_(sh, row, col, vals) {
+  if (!vals.length || !vals[0].length) return;
+  const needR = row + vals.length - 1, needC = col + vals[0].length - 1;
+  if (sh.getMaxRows() < needR) sh.insertRowsAfter(sh.getMaxRows(), needR - sh.getMaxRows());
+  if (sh.getMaxColumns() < needC) sh.insertColumnsAfter(sh.getMaxColumns(), needC - sh.getMaxColumns());
+  const rg = sh.getRange(row, col, vals.length, vals[0].length);
+  rg.setNumberFormat('@');
+  rg.setValues(vals);
+}
+
+/** The whole tab from a grid (days oldest first in g; written newest first). */
+function ab_h60WriteAll_(sh, g) {
+  const days = g.days.slice().reverse();
+  const at = days.map(function (d) { return g.days.indexOf(d); });
+  const cellText = function (c) { return c ? ab_h60Cell_(c) : ''; };
+  const rows = [[AB_H60_NOTE].concat(days.map(function () { return ''; })), ['Symbol'].concat(days),
+    [AB_H60_LINK].concat(at.map(function (i) { return g.linked[i] ? 'Y' : ''; }))];
+  g.syms.forEach(function (s) { rows.push([s].concat(at.map(function (i) { return cellText(g.cells[s][i]); }))); });
+  sh.clear();
+  ab_h60Put_(sh, 1, 1, rows);
+  try { sh.setFrozenRows(3); sh.setFrozenColumns(1); } catch (e) { /* cosmetic */ }
+}
+
+/**
+ * doPost action 'hist': { days: { 'yyyy-MM-dd': { SYM: [open, high, low, close, volume, prev close] } } } -
+ * up to AB_H60_MAX_POST_DAYS trading days of NSE's bhavcopy from the PC. Only PatternData stocks are kept,
+ * the newest AB_H60_DAYS days. A day sent again replaces that day. Days newer than every stored one are
+ * added as columns; anything else rewrites the tab.
+ */
+function ab_h60FromBridge_(req) {
+  const daysIn = req.days && typeof req.days === 'object' && !Array.isArray(req.days) ? req.days : null;
+  if (!daysIn) return { ok: false, error: 'days missing - update screener_bridge.py on the PC' };
+  const isos = Object.keys(daysIn).filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d); }).sort();
+  if (!isos.length) return { ok: false, error: 'no trading day in the data' };
+  if (isos.length > AB_H60_MAX_POST_DAYS) return { ok: false, error: 'too many days in one post (at most ' + AB_H60_MAX_POST_DAYS + ')' };
+  const want = ab_p1Symbols_();
+  if (!want.length) return { ok: false, error: 'PatternData has no symbols' };
+  const wanted = {};
+  want.forEach(function (s) { wanted[s] = true; });
+  const fresh = {};                          // iso -> { SYM: [o, h, l, c, v, p] }
+  let candles = 0;
+  isos.forEach(function (d) {
+    const src = daysIn[d] && typeof daysIn[d] === 'object' ? daysIn[d] : {};
+    const day = {};
+    Object.keys(src).slice(0, 20000).forEach(function (k) {
+      const sym = String(k).trim().toUpperCase();
+      if (!wanted[sym]) return;
+      const t = ab_h60Cell_(src[k]);
+      if (t) { day[sym] = ab_h60ParseCell_(t); candles++; }
+    });
+    fresh[d] = day;
+  });
+  if (!candles) return { ok: false, error: 'none of the posted stocks is in PatternData' };
+
+  AB_H60_MEMO_ = null;
+  const sh = ab_getOrCreateSheet_(AB_H60_SHEET);
+  const last = sh.getLastRow();
+  // add new days as columns: only when every posted day is newer and no stored stock has left PatternData
+  if (last >= 4) {
+    const W = Math.max(1, sh.getLastColumn());
+    const head = ab_h60Grid_(sh.getRange(1, 1, Math.min(3, last), W).getValues());
+    const symCol = sh.getRange(4, 1, last - 3, 1).getValues().map(function (r) { return String(r[0]).trim().toUpperCase(); });
+    const gone = symCol.some(function (s) { return s && !wanted[s]; }) || symCol.indexOf('') !== -1;
+    const newestStored = head.days.length ? head.days[head.days.length - 1] : '';
+    if (newestStored && isos[0] > newestStored && !gone) {
+      const prevCol = sh.getRange(4, 2, last - 3, 1).getValues();    // the newest stored day, column 2
+      let older = {};
+      symCol.forEach(function (s, i) { const c = ab_h60ParseCell_(prevCol[i][0]); if (c) older[s] = c; });
+      const linked = {};
+      isos.forEach(function (d) { linked[d] = ab_h60Linked_(fresh[d], older); older = fresh[d]; });
+      const newSyms = want.filter(function (s) { return symCol.indexOf(s) === -1; });
+      const desc = isos.slice().reverse();
+      sh.insertColumnsBefore(2, desc.length);
+      const block = [desc.map(function () { return ''; }), desc, desc.map(function (d) { return linked[d] ? 'Y' : ''; })];
+      symCol.concat(newSyms).forEach(function (s) {
+        block.push(desc.map(function (d) { return fresh[d][s] ? ab_h60Cell_(fresh[d][s]) : ''; }));
+      });
+      ab_h60Put_(sh, 1, 2, block);
+      if (newSyms.length) ab_h60Put_(sh, 4 + symCol.length, 1, newSyms.map(function (s) { return [s]; }));
+      const total = head.days.length + desc.length;
+      if (total > AB_H60_DAYS) sh.deleteColumns(2 + AB_H60_DAYS, total - AB_H60_DAYS);
+      const days = head.days.concat(isos).slice(-AB_H60_DAYS);
+      return { ok: true, mode: 'added', added: isos.length, candles: candles, days: days.length, newest: days[days.length - 1],
+               oldest: days[0], symbols: symCol.length + newSyms.length, want: AB_H60_DAYS };
+    }
+  }
+  // rewrite: stored days + the posted ones (a posted day replaces the stored one), newest AB_H60_DAYS
+  const g = ab_h60Grid_(last >= 2 ? sh.getDataRange().getValues() : []);
+  const byDay = {};
+  g.days.forEach(function (d, i) {
+    const m = {};
+    g.syms.forEach(function (s) { if (g.cells[s][i]) m[s] = g.cells[s][i]; });
+    byDay[d] = m;
+  });
+  isos.forEach(function (d) { byDay[d] = fresh[d]; });
+  const days = Object.keys(byDay).sort().slice(-AB_H60_DAYS);
+  const out = { days: days, linked: days.map(function (d, i) { return i > 0 && ab_h60Linked_(byDay[d], byDay[days[i - 1]]); }),
+                syms: want.slice(), cells: {} };
+  want.forEach(function (s) { out.cells[s] = days.map(function (d) { return byDay[d][s] || null; }); });
+  ab_h60WriteAll_(sh, out);
+  return { ok: true, mode: 'rewritten', added: isos.length, candles: candles, days: days.length, newest: days[days.length - 1],
+           oldest: days[0], symbols: want.length, want: AB_H60_DAYS };
+}
+
 
 /*****************************************************************
  * RESULT DATE - LIVE FORMULA (not a script run)
@@ -15801,10 +16245,10 @@ function runExplainFvgSymbol() {
       return j ? Utilities.formatDate(j, AB_TZ, 'dd-MMM') : '?';
     };
     const zoneTxt = function (b, t) { return ab_num2_(b) + ' - ' + ab_num2_(t); };
-    const by = ab_readHistoryCandles_();
+    const by = ab_readHistoryMerged_();     // what the FVG scans read: History30 + History60's older days
     const c = by[sym];
     if (!c || !c.length) {
-      ui.alert('Why is this stock missing?', sym + ' has no rows in History30 at all - so no FVG scan can see it.\n\n' +
+      ui.alert('Why is this stock missing?', sym + ' has no rows in History30 / History60 at all - so no FVG scan can see it.\n\n' +
         'Check the symbol spelling, that it is in Main, and run Sync Symbols + the daily fetch.', ui.ButtonSet.OK);
       return;
     }

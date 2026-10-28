@@ -60,12 +60,16 @@
     var candleSrc = !H ? 'not loaded yet (loads with the strategy)'
       : H.live ? 'Live feed: ' + H.source + (H.stale ? ' - last good copy' : '')
         : H.source + ' - saved copy (data/history.js)' + (S.historyReason ? '; live candles could not be loaded: ' + S.historyReason : '');
+    if (H) {
+      candleSrc += H.older ? '. ' + F.int(H.dates.length) + ' sessions: the ' + F.int(H.older.days) + ' older ones from History60 (NSE bhavcopy read by your PC)'
+        : S.history60Reason ? '. Older days (History60) not loaded: ' + S.history60Reason : '';
+    }
     var tab = S.live ? ' (read live; shown with the tab\'s own refresh time)' : ' (saved copy)';
     var rows = [
       site,
       ['Prices (Main tab)', ui.leastFresh(ctx.stocks.map(function (s) { return s.priceState; })), m.asOf,
         (m.source || 'Sheet snapshot (GOOGLEFINANCE, ~20 min delayed when exported)') + (m.partial ? ' - partial: some prices are still the sheet data' : '')],
-      ['Daily candles (History30)', H ? SB.candleState(H) : 'CACHED', H ? H.dates[H.dates.length - 1] : null, candleSrc],
+      ['Daily candles (History30 + History60)', H ? SB.candleState(H) : 'CACHED', H ? H.dates[H.dates.length - 1] : null, candleSrc],
       ['Pattern Dashboard tab', 'CACHED', D.patterns && D.patterns.asOf, 'Sheet tab, refreshed by Code.gs' + tab],
       ['Results Performance', 'CACHED', D.asOf, 'Sheet tab, refreshed by Results Day runs' + tab]
     ];

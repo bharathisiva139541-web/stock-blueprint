@@ -62,10 +62,12 @@
       var c = (SB.strategies.candles() || {})[s.sym];
       if (!c) { chHost.innerHTML = '<p class="sub">No daily candles for this stock in the snapshot.</p>'; return; }
       var zones = SB.fvg.watchZones(c).zones;
-      chHost.innerHTML = '<h3 style="margin-bottom:6px">Daily candles · last ' + c.length + ' sessions</h3><div id="dc"></div><p class="sub">Source: ' + esc((SB.ctx.history && SB.ctx.history.source) || 'History30') + '. EMA and zones computed with the sheet\'s own rules.</p>';
+      chHost.innerHTML = '<h3 style="margin-bottom:6px">Daily candles · last ' + c.length + ' sessions</h3><div id="dc"></div><p class="sub">Source: ' + esc((SB.ctx.history && SB.ctx.history.source) || 'History30') + '. EMA and zones computed with the sheet\'s own rules (EMA on the last ' + SB.indicators.SHEET_BARS + ' sessions, like History30).</p>';
+      // the sheet's EMA: on History30's window only, so the line ends where its EMA columns are
+      var w = SB.indicators.sheetBars(c), pad = new Array(c.length - w.length).fill(NaN);
       candleChart(chHost.querySelector('#dc'), c, zones, [
-        { name: 'EMA 10', values: SB.indicators.ema(c, 10), color: 'var(--accent)' },
-        { name: 'EMA 21', values: SB.indicators.ema(c, 21), color: 'var(--warn-mark)', dash: '4 3' }
+        { name: 'EMA 10', values: pad.concat(SB.indicators.ema(w, 10)), color: 'var(--accent)' },
+        { name: 'EMA 21', values: pad.concat(SB.indicators.ema(w, 21)), color: 'var(--warn-mark)', dash: '4 3' }
       ]);
     }).catch(function (e) {
       if (chHost) chHost.innerHTML = '<p class="sub">Chart unavailable: ' + esc(e.message) + '</p>';

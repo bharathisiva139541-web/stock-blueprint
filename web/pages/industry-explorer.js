@@ -91,7 +91,7 @@
   }
   function periodWhy(ctx, p) {
     return p + ' needs more than ' + IND.PERIOD_BARS[p] + ' daily candles; the candle history has ' + F.int(histLen(ctx)) +
-      ' sessions (the sheet\'s History30 tab keeps about 30).';
+      ' sessions (History30 keeps about 30; History60 adds older days once your PC sends them).';
   }
   function candles(ctx) { return ctx.history && SB.strategies ? SB.strategies.candles() : null; }
   /** { sym: return % | null } for a period, or null while the candles are not loaded. */
@@ -199,7 +199,7 @@
         (ok ? '' : ' disabled title="' + esc(periodWhy(ctx, p)) + '"') + '>' + p + '</button>';
     }).join('') + '</div>' +
       (off.length ? '<p class="sub ix-why">' + esc(off.join(' / ')) + ' unavailable: they need more than ' + IND.PERIOD_BARS[off[0]] +
-        ' daily candles and the candle history has ' + F.int(histLen(ctx)) + ' sessions (the sheet\'s History30 keeps about 30).</p>' : '');
+        ' daily candles and the candle history has ' + F.int(histLen(ctx)) + ' sessions (History30 keeps about 30; History60 adds older days once your PC sends them).</p>' : '');
   }
   function freshHtml(ctx, p) {
     if (p === '1D') return 'Prices: ' + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source);

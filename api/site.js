@@ -1,8 +1,10 @@
-// GET /api/site?part=main|history
+// GET /api/site?part=main|history|history60
 // The website's data read live from the owner's Google Sheet through its
 // Apps Script web app (Code.gs doPost action 'site', read-only token):
-//   part=main    -> the same object tools/export_xlsx.py writes as window.SB_DATA
-//   part=history -> the same object it writes as window.SB_HISTORY
+//   part=main      -> the same object tools/export_xlsx.py writes as window.SB_DATA
+//   part=history   -> the same object it writes as window.SB_HISTORY
+//   part=history60 -> the same object it writes as window.SB_HISTORY60 (History60's older days;
+//                     empty bars when the sheet has no History60 tab yet)
 // Independent of MARKET_DATA_PROVIDER: needs only SHEET_FEED_URL + SHEET_FEED_TOKEN.
 // -> 200 { ok:true, configured:true, part, readAt, fetchedAt, stale, staleReason?,
 //          session:{state, lastCompletedSession}, priceState, data }
@@ -20,7 +22,7 @@
   const sheetFeed = require('./_lib/sheet-feed');
   const sheetProvider = require('./_lib/providers/sheet');
 
-  const PARTS = ['main', 'history'];
+  const PARTS = ['main', 'history', 'history60'];
   const TIMEOUT_MS = 25000;               // vercel.json maxDuration is 30 s
   const ERROR_MEMO_MS = 24 * 3600 * 1000; // how long the last failure reason is remembered
 
@@ -41,7 +43,7 @@
   // last good copy that stale-on-error depends on.
   const siteCache = cacheLib.createCache({ maxEntries: 10 });
 
-  /** 'main' | 'history' | null (a repeated or unknown part is rejected). */
+  /** 'main' | 'history' | 'history60' | null (a repeated or unknown part is rejected). */
   function parsePart(raw) {
     if (typeof raw !== 'string') return null;
     const p = raw.trim().toLowerCase();
@@ -73,7 +75,7 @@
     if (!isObject(data) || !Array.isArray(data.dates) || !Array.isArray(data.cols) || !isObject(data.bars)) {
       return 'malformed site feed (dates/cols/bars missing)';
     }
-    if (!Object.keys(data.bars).length) return 'the sheet feed returned no History30 bars';
+    if (part === 'history' && !Object.keys(data.bars).length) return 'the sheet feed returned no History30 bars';
     return null;
   }
 
@@ -108,7 +110,7 @@
     return http.endpoint('site', getEnv, async function (req, res, env) {
       const part = parsePart(http.getQuery(req).part);
       if (!part) {
-        http.sendJson(res, 400, { error: 'part must be "main" or "history", e.g. /api/site?part=main' },
+        http.sendJson(res, 400, { error: 'part must be "main", "history" or "history60", e.g. /api/site?part=main' },
           { env: env, cacheControl: cacheLib.noStore() });
         return;
       }

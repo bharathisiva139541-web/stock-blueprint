@@ -471,7 +471,7 @@ test('stored copy: a build stores chunks + meta in the free slot and flips slots
   const tab = env.sheet('Site_Feed');
   assert.ok(tab, 'Site_Feed tab created on first use');
   assert.strictEqual(tab.hidden, true);
-  assert.strictEqual(tab.size.cols, 4, 'only the 4 slot columns');
+  assert.strictEqual(tab.size.cols, 6, 'only the 6 slot columns (main, history, history60)');
   assert.strictEqual(env.run('SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName()'), 'Main', 'the active tab is kept');
 
   const hm = meta(env, 'history'), mm = meta(env, 'main');

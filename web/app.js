@@ -29,7 +29,7 @@
   var ctx = SB.ctx = {
     D: null, stocks: [], bySym: {}, refDate: new Date(),
     market: { state: 'CACHED', source: 'Sheet snapshot', asOf: null, provider: null, message: '' },
-    // where ctx.D came from: { live, apiBase, readAt, fetchedAt, stale, staleReason, generated, asOf, reason, historyReason }
+    // where ctx.D came from: { live, apiBase, readAt, fetchedAt, stale, staleReason, generated, asOf, reason, historyReason, history60Reason }
     site: { live: false, apiBase: null },
     history: null
   };
@@ -112,7 +112,7 @@
       live: live, apiBase: ctx.site.apiBase, generated: data.generated || null, asOf: data.asOf || null,
       readAt: live ? r.readAt || null : null, fetchedAt: live ? r.fetchedAt || null : null,
       stale: live && !!r.stale, staleReason: live ? r.staleReason || null : null,
-      reason: live ? null : (meta && meta.reason) || null, historyReason: null
+      reason: live ? null : (meta && meta.reason) || null, historyReason: null, history60Reason: null
     };
   }
 
@@ -130,17 +130,38 @@
   }
 
   // History candles are loaded on demand: from api/site?part=history when the
-  // boot used the live feed, else (or when that fails) data/history.js.
+  // boot used the live feed, else (or when that fails) data/history.js. The older
+  // days (History60, NSE via the owner's PC) come from part history60 / data/history60.js
+  // of the SAME source and are put in front (SB.history.merge); without them the site
+  // works on the 30 days as before (ctx.site.history60Reason says why).
   var historyLoad = null;
+  function withOlder(H, older) {
+    return older.then(function (O) { return SB.history.merge(H, O); }, function (e) {
+      ctx.site.history60Reason = e && e.message || String(e);
+      return H;
+    });
+  }
+  function staticOlder() {
+    if (window.SB_HISTORY60) return Promise.resolve(window.SB_HISTORY60);
+    return ui.loadScript('data/history60.js').then(function () { return window.SB_HISTORY60 || null; });
+  }
   function staticHistory() {
     return ui.loadScript('data/history.js').then(function () {
-      ctx.history = window.SB_HISTORY || null;
-      return ctx.history;
+      return withOlder(window.SB_HISTORY || null, staticOlder());
+    }).then(function (H) { ctx.history = H; return H; });
+  }
+  function liveOlder() {
+    return apiGet('api/site?part=history60', SITE_TIMEOUT_MS).then(function (r) {
+      if (!r || r.ok !== true || !r.data || !Array.isArray(r.data.dates)) throw new Error((r && r.message) || 'the live feed returned no History60 part');
+      return r.data;
     });
   }
   SB.loadHistory = function () {
     if (ctx.history) return Promise.resolve(ctx.history);
-    if (window.SB_HISTORY) { ctx.history = window.SB_HISTORY; return Promise.resolve(ctx.history); }   // inlined (preview file) or loaded
+    if (window.SB_HISTORY) {                                            // inlined (preview file) or loaded
+      ctx.history = window.SB_HISTORY60 ? SB.history.merge(window.SB_HISTORY, window.SB_HISTORY60) : window.SB_HISTORY;
+      return Promise.resolve(ctx.history);
+    }
     if (historyLoad) return historyLoad;                                // one request for every page asking at once
     var p = !ctx.site.live ? staticHistory() : apiGet('api/site?part=history', SITE_TIMEOUT_MS).then(function (r) {
       if (!r || r.ok !== true || !validHistory(r.data)) throw new Error((r && r.message) || 'the live feed returned no candle data');
@@ -148,8 +169,7 @@
       H.live = true;
       H.readAt = r.readAt || null;
       H.stale = !!r.stale;
-      ctx.history = H;
-      return H;
+      return withOlder(H, liveOlder()).then(function (M) { ctx.history = M; return M; });
     }).catch(function (e) {
       ctx.site.historyReason = e.message || String(e);
       return staticHistory();
