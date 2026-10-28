@@ -54,6 +54,11 @@ fallback on any failure: web/data/dashboard.js + history.js (saved copy), clearl
   is the server's last good copy (`stale:true`) gets a lighter banner.
 - Candles (`SB.loadHistory`): after a live boot `GET api/site?part=history`, else / on
   failure `data/history.js` (the reason shows in Overview → Data & provider status).
+  The older days (History60 - NSE bhavcopy sent by the owner's PC) come from the SAME
+  source (`api/site?part=history60` / `data/history60.js`) and `SB.history.merge`
+  (web/lib/history.js) puts them in front; without them the site keeps the 30 days.
+  FVG rules use every candle (up to 60 sessions, like the sheet); EMA / ATR values that
+  must equal a sheet column use `SB.indicators.sheetBars` (the last 30 = History30).
 - Quotes (`api/market-status` + `api/quotes` through the same base): polled every 60 s
   while LIVE, every 5 min while DELAYED and the NSE session is open, otherwise not.
   A provider failure is shown as a message (pill tooltip, Data & provider status)

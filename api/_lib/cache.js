@@ -103,8 +103,8 @@
   const UNAVAILABLE_TTL_S = 15;
   // Live site feed (api/site): the sheet changes a few times a day, and one
   // read costs the Apps Script web app several seconds.
-  const SITE_TTL_S = { main: 300, history: 1800 };
-  const SITE_SWR_S = { main: 3600, history: 21600 };
+  const SITE_TTL_S = { main: 300, history: 1800, history60: 1800 };
+  const SITE_SWR_S = { main: 3600, history: 21600, history60: 21600 };
   const SITE_STALE_TTL_S = 60;
 
   /** Seconds a quotes response may be cached for, by NSE session state. */

@@ -45,7 +45,7 @@ ok(refs.length + ' local references');
 
 console.log('3. data files');
 const PERSONAL = [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/, /script\.google\.com\/macros/, /AKfyc[A-Za-z0-9_-]{20,}/, /"tradeStats"/, /"trades"\s*:/];
-for (const f of ['dashboard.js', 'history.js', 'logos.js', 'industries.js', 'industry-profiles.js']) {
+for (const f of ['dashboard.js', 'history.js', 'history60.js', 'logos.js', 'industries.js', 'industry-profiles.js']) {
   const p = path.join(WEB, 'data', f);
   if (!fs.existsSync(p)) { fail('web/data/' + f + ' missing (run tools/export_xlsx.py)'); continue; }
   const s = fs.readFileSync(p, 'utf8');
@@ -67,7 +67,7 @@ try {
   }
   // data files (loaded on demand on the site) are inlined so the preview also works
   // offline from file:// - window.SB_DATA present means app.js uses it as the saved copy
-  for (const f of ['dashboard.js', 'history.js', 'workbook-analysis.js', 'industries.js', 'industry-profiles.js']) {
+  for (const f of ['dashboard.js', 'history.js', 'history60.js', 'workbook-analysis.js', 'industries.js', 'industry-profiles.js']) {
     const p = path.join(WEB, 'data', f);
     if (!fs.existsSync(p)) continue;
     const body = fs.readFileSync(p, 'utf8').replace(/<\/script/gi, '<\\/script');

@@ -54,7 +54,7 @@
   function patternsOf(ctx) { return memo(ctx, 'pat', function () { return ctx.n ? P.patternsAt(ctx.candles, ctx.n - 1, ctx.patternCfg) : []; }); }
   function fvgOf(ctx) { return memo(ctx, 'fvg', function () { return FVG.longFvgDetail(ctx.candles); }); }
   function emaOf(ctx, len) { return memo(ctx, 'ema' + len, function () { return I.ema(ctx.candles, len); }); }
-  function atrOf(ctx) { return memo(ctx, 'atr', function () { return I.atrEmaLast(ctx.candles, 14); }); }
+  function atrOf(ctx) { return memo(ctx, 'atr', function () { return I.atrEmaLast(I.sheetBars(ctx.candles), 14); }); }   // the sheet's ATR14 (History30)
   function ageOfTag(tag) {
     var m = /\((Today|today|formed today)\)|\((?:formed )?(\d+)d ago\)/.exec(tag || '');
     if (!m) return null;
@@ -141,7 +141,7 @@
   def('emaSupport', { label: '{length} EMA support (touch & hold)', kind: 'sheet', setGroup: 'trigger', type: 'pullback', pit: true,
     ref: 'Code.gs ab_computeEmaSupportTag_', params: [{ key: 'length', label: 'EMA length', def: 10 }, { key: 'maxAge', label: 'Max age (bars)', def: 1 }, { key: 'touchPct', label: 'Touch tolerance %', def: 0.5 }],
     eval: function (x, p) {
-      var t = I.emaSupportTag(x.candles, p.length, p.touchPct);
+      var t = I.emaSupportTag(I.sheetBars(x.candles), p.length, p.touchPct);   // on History30's window, like the sheet
       return { pass: !!t && ageOfTag(t) <= p.maxAge, value: t || null, detail: t || 'no support touch' };
     } });
   def('ttmBuy', { label: 'TTM Signal = Buy (target above price, growth ≥ 0, EPS > 0)', kind: 'sheet', setGroup: 'confirm', pit: false,
@@ -169,8 +169,8 @@
       var cells = {
         Pattern: patternsOf(x).join(', '),
         FVG: memo(x, 'fvgcol', function () { return FVG.columnTags(x.candles, x.fvgCfg); }),
-        '10 EMA': I.emaSupportTag(x.candles, 10, p.touchPct),
-        '21 EMA': I.emaSupportTag(x.candles, 21, p.touchPct)
+        '10 EMA': I.emaSupportTag(I.sheetBars(x.candles), 10, p.touchPct),
+        '21 EMA': I.emaSupportTag(I.sheetBars(x.candles), 21, p.touchPct)
       };
       var on = Object.keys(cells).filter(function (k) { return !!cells[k]; });
       var types = [];

@@ -116,5 +116,5 @@ test('site feed: marketStats, marketDay, high52 (with notes) and delivery parts'
   assert.deepStrictEqual(j.high52.rows[1], ['SONA', 'Sona BLW', 700, '2026-10-27', 700, 0, 'Yes', 'Yes']);
   assert.deepStrictEqual(j.delivery.cols, ['Symbol', 'Company', '2026-10-27', '2026-10-26']);
   assert.deepStrictEqual(j.delivery.rows[0], ['TCS', 'Tata Consultancy', 61.23, 50]);
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 4);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 5);
 });

@@ -210,7 +210,7 @@
     for (const p of [undefined, '', 'all', 'main,history', ['main', 'history'], 'History30']) {
       const res = await get(h, p);
       assert.equal(res.statusCode, 400, 'part=' + JSON.stringify(p));
-      assert.match(res.body.error, /part must be "main" or "history"/);
+      assert.match(res.body.error, /part must be "main", "history" or "history60"/);
       assert.equal(res.headers['cache-control'], 'no-store');
     }
     const node = await get(h, 'nope', 'node');
@@ -258,6 +258,23 @@
     assert.deepEqual(res.body.data, HISTORY_DATA);
     assert.equal(res.headers['cache-control'], HISTORY_CC);
     noSecrets(res.body);
+  });
+
+  test('GET /api/site?part=history60: History60\'s older days, empty bars allowed, 30-minute cache', async function () {
+    const older = { source: 'History60 tab (NSE bhavcopy via your PC)', timeframe: '1d', stored: { days: 60, first: '2026-07-20', last: '2026-10-14' },
+                    dates: ['2026-09-01'], cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: { SBIN: [[0, 700, 710, 690, 705, 900]] } };
+    const empty = { source: 'History60 tab (NSE bhavcopy via your PC)', timeframe: '1d', stored: null, dates: [], cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: {} };
+    for (const data of [older, empty]) {
+      const f = mockFetch(function (c) { return json(200, siteReply(c.body.part, data)); });
+      const res = await get(handlerFor(f), 'history60');
+      assert.deepEqual(f.calls[0].body, { action: 'site', part: 'history60', token: SHEET_TOKEN });
+      assert.equal(res.body.ok, true, res.body.message);
+      assert.equal(res.body.part, 'history60');
+      assert.deepEqual(res.body.data, data);
+      assert.equal(res.headers['cache-control'], HISTORY_CC);
+    }
+    const bad = mockFetch(function (c) { return json(200, siteReply(c.body.part, { dates: [] })); });
+    assert.match((await get(handlerFor(bad), 'history60')).body.message, /^malformed site feed/);
   });
 
   test('GET /api/site: priceState outside the session (EOD evening / weekend / holiday, CACHED without readAt)', async function () {

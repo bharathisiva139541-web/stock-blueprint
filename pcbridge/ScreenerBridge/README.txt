@@ -16,6 +16,7 @@ Nothing runs continuously. If you stay logged in for days, use RunNow.bat when y
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
  - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
  - EodNow.bat           download NSE's end-of-day files (Delivery %, 52-week highs, market statistics) right now
+ - History60Now.bat       send the daily candles the sheet's History60 tab is missing right now (the first fill)
  - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -56,6 +57,23 @@ Watchlist and the stock details (Delivery %).
  - Days missed while the PC was off are caught up (up to a week back). eod_state.json remembers the last day.
  - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
  - To switch it off: in config.json add  "eod": false
+
+HISTORY60: 60 DAYS OF DAILY CANDLES (FVG scans + Results Performance)
+The same bhavcopy also has each stock's Open / High / Low / Close / Volume. Every round the program sends
+the trading days the sheet's "History60" tab is missing (the sheet keeps 60 days of your PatternData
+stocks). The sheet's FVG scans (FVG column, GapUpFVG, UnmitigatedFVG) and Results Performance then look
+60 days back. History30 (GOOGLEFINANCE) still needs no PC: when the PC is off, those simply see 30 days.
+ - Needs the latest Code.gs in the sheet AND its New version deploy (Deploy > Manage deployments >
+   pencil > Version: New version > Deploy). Until then bridge.log says "do the New version deploy".
+ - The first round fills about 60 days (around 60 downloads - a few minutes). After that one day a round.
+   History60Now.bat does it at once.
+ - Splits / bonus issues: NSE's prices are not adjusted, so the sheet adjusts the older days itself
+   (from NSE's previous close on the ex-date) and matches them to GOOGLEFINANCE where History30 starts.
+ - A stock GOOGLEFINANCE gives no data for gets its candles from History60 in Phase 1 (AutoFetch Log:
+   "From History60 ...").
+ - history_state.json remembers exchange holidays (a past weekday with no bhavcopy, twice).
+ - bridge.log shows "History60: ..." lines.
+ - To switch it off: in config.json add  "history60": false
 
 MONEYCONTROL (first figures while screener.in is late)
 moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies

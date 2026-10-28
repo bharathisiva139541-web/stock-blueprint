@@ -27,6 +27,7 @@ const statusApi = require('../api/market-status');
 const classify = require('../web/lib/classify.js');
 const strategy = require('../web/lib/strategy.js');
 const eod = require('../web/lib/eod.js');
+const historyLib = require('../web/lib/history.js');
 
 globalThis.fetch = function () { return Promise.reject(new TypeError('network disabled in tests')); };
 
@@ -520,6 +521,15 @@ test('e2e history: Code.gs -> api/site -> SB.loadHistory / strategy candles', as
   assert.deepEqual(run.errors, []);
   assert.deepEqual(run.results.map(function (x) { return x.sym; }).sort(), SYMS.slice().sort());
   run.results.forEach(function (x) { assert.equal(x.asOf, '2026-10-19', x.sym); });
+
+  // part history60 (no History60 tab in this workbook): an empty part, the site keeps the 30 days
+  const o = await site(s, 'history60');
+  assert.equal(o.statusCode, 200);
+  assert.equal(o.headers['cache-control'], HISTORY_CC);
+  assert.equal(o.body.ok, true, o.body.message);
+  assert.deepEqual(o.body.data, { source: 'History60 tab (NSE bhavcopy via your PC)', timeframe: '1d', stored: null, dates: [], cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: {} });
+  assert.strictEqual(historyLib.merge(H, o.body.data), H);
+  assertPublic('api/site history60', o.text);
 });
 
 test('e2e quotes (option 2): Code.gs snapshot -> api/quotes + api/market-status, provider sheet', async () => {

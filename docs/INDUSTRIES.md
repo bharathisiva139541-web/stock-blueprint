@@ -101,7 +101,8 @@ never change a stock's classification.
 * A period return per stock:
   * **1D** is the price change shown, with its state (DELAYED / EOD / CACHED).
   * **1W / 1M** compare the last daily close with the close 5 / 21 sessions earlier.
-  * **3M / 6M / 1Y** are unavailable, because the sheet's History30 keeps about 30 sessions.
+  * **3M / 6M / 1Y** are unavailable, because the sheet keeps about 30 sessions (History30) - up to 60 once
+    the owner's PC fills History60.
 * Node figures use **equal weights**:
   * median (headline) and mean of member returns;
   * advancers / decliners and breadth = advancers / (advancers + decliners);

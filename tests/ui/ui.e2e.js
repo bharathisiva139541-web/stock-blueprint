@@ -33,6 +33,21 @@ const REMOTE = new URL(CFG.remoteApi);                    // the API the Firebas
 const FIREBASE = 'http://stock-blueprint.web.app/';      // served from web/ by a route: no DNS, no network
 const SAVED = windowVar(path.join(WEB, 'data', 'dashboard.js'), 'SB_DATA');
 const HIST = windowVar(path.join(WEB, 'data', 'history.js'), 'SB_HISTORY');
+// part history60: five older weekdays for the first three stocks (History60 via the PC)
+const HIST60 = (function () {
+  const first = new Date(HIST.dates[0] + 'T00:00:00Z'), dates = [];
+  for (let t = first.getTime() - 86400000; dates.length < 5; t -= 86400000) {
+    const d = new Date(t);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) dates.unshift(d.toISOString().slice(0, 10));
+  }
+  const bars = {};
+  Object.keys(HIST.bars).slice(0, 3).forEach((sym) => {
+    const b0 = HIST.bars[sym][0];
+    bars[sym] = dates.map((d, i) => [i].concat(b0.slice(1)));
+  });
+  return { source: 'History60 tab (NSE bhavcopy via your PC)', timeframe: '1d', stored: { days: 60, first: dates[0], last: HIST.dates[HIST.dates.length - 1] },
+    dates: dates, cols: ['d', 'o', 'h', 'l', 'c', 'v'], bars: bars };
+})();
 const SENTINEL = 43210.98;                                // a price only the mocked live feed has
 // IST 'YYYY-MM-DD HH:MM' a few minutes ago: web/app.js ages a DELAYED read from readAt
 const istAgo = (min) => new Date(Date.now() + (330 - min) * 60000).toISOString().slice(0, 16).replace('T', ' ');
@@ -51,7 +66,7 @@ function liveApi(o) {
       if (o.site === 'abort') return 'abort';
       if (o.site === 'fail') return { json: { ok: false, configured: true, part, message: 'mock failure: sheet is updating (History30 has 3 of 1800 symbols) - try again shortly' } };
       return { json: { ok: true, configured: true, part, readAt: READ_AT, fetchedAt: istAgo(1), stale: false,
-        session: { state: o.session, lastCompletedSession: '2026-10-20' }, priceState: o.priceState, data: part === 'history' ? HIST : LIVE_MAIN } };
+        session: { state: o.session, lastCompletedSession: '2026-10-20' }, priceState: o.priceState, data: part === 'history' ? HIST : part === 'history60' ? HIST60 : LIVE_MAIN } };
     }
     if (u.pathname === '/api/market-status') {
       return { json: o.provider === 'sheet'
@@ -516,7 +531,8 @@ function check(name, fn) {
     await p.keyboard.press('Escape');
     await p.goto(base + '#suggestions', { waitUntil: 'load' });
     await p.waitForFunction(() => window.SB.ctx.history, null, { timeout: 15000 });
-    const H = await p.evaluate(() => ({ live: window.SB.ctx.history.live, readAt: window.SB.ctx.history.readAt, reason: window.SB.ctx.site.historyReason }));
+    const H = await p.evaluate(() => ({ live: window.SB.ctx.history.live, readAt: window.SB.ctx.history.readAt, reason: window.SB.ctx.site.historyReason,
+      older: window.SB.ctx.history.older, days: window.SB.ctx.history.dates.length, reason60: window.SB.ctx.site.history60Reason }));
     await p.waitForTimeout(500);
     await c.close();
     assert.deepStrictEqual(errors, [], 'console/page errors');
@@ -530,6 +546,8 @@ function check(name, fn) {
     assert.ok(drawer.indexOf('43,210.98') >= 0, 'sentinel price from the live feed is shown');
     assert.ok(H.live === true && H.readAt === READ_AT && !H.reason, 'candles from the live feed: ' + JSON.stringify(H));
     assert.ok(calls.some((u) => /\/api\/site\?part=main$/.test(u)) && calls.some((u) => /\/api\/site\?part=history$/.test(u)), 'calls: ' + calls.join(' '));
+    assert.ok(calls.some((u) => /\/api\/site\?part=history60$/.test(u)), 'the older days are asked for too');
+    assert.ok(H.older && H.older.days === 5 && H.days === HIST.dates.length + 5 && !H.reason60, 'History60\'s older days in front: ' + JSON.stringify(H));
     assert.ok(calls.every((u) => u.indexOf(new URL(base).origin) === 0), 'same-origin API only');
   });
 

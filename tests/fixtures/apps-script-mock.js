@@ -287,6 +287,18 @@ function createEnv(workbook, opts) {
         grid.splice.apply(grid, [Math.min(after, grid.length), 0].concat(Array.from({ length: n }, function () { return []; })));
         return sheet;
       },
+      insertColumnsAfter: function (after, n) {
+        env.writes.push({ sheet: spec.name, kind: 'insertColumns', row: 1, col: after + 1 });
+        if (size) size.cols += n;
+        grid.forEach(function (r) { if (r.length > after) r.splice.apply(r, [after, 0].concat(Array.from({ length: n }, function () { return ''; }))); });
+        return sheet;
+      },
+      insertColumnsBefore: function (before, n) {
+        env.writes.push({ sheet: spec.name, kind: 'insertColumns', row: 1, col: before });
+        if (size) size.cols += n;
+        grid.forEach(function (r) { if (r.length >= before) r.splice.apply(r, [before - 1, 0].concat(Array.from({ length: n }, function () { return ''; }))); });
+        return sheet;
+      },
       deleteColumns: function (from, n) {
         env.writes.push({ sheet: spec.name, kind: 'deleteColumns', row: 1, col: from });
         if (size) size.cols -= n;

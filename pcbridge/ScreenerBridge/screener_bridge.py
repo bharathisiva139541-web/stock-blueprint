@@ -19,12 +19,18 @@ And it reads NSE's IPO lists (current, past issues, upcoming) so the sheet can
 keep its "IPO Tracker" tab (mainboard IPOs: open now / closed - awaiting listing /
 upcoming, with dates) and send one IPO email a day.
 
+And NSE's end-of-day files: Delivery %, 52-week highs, market statistics, and the
+daily candles of the sheet's "History60" tab (60 trading days for its FVG scans
+and Results Performance).
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
   python screener_bridge.py test       check the connection to the sheet, screener.in and NSE
   python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
+  python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
+  python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py moneycontrol SYMBOL   show moneycontrol's latest quarterly results (test, nothing sent)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
@@ -72,6 +78,7 @@ DEFAULTS = {
     'price_bands': True,       # download NSE's price band changes at every run
     'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
+    'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'moneycontrol': True,      # results not on screener.in yet: look on moneycontrol and send its figures first
     'max_moneycontrol_per_run': 40,
 }
@@ -478,6 +485,7 @@ EOD_STATE_VERSION = 4       # 1: new 52-week highs from the report's date alone;
                             # its own Main stocks from 'day'); 3: a day answered by the web app's older version (just after a
                             # New version deploy) was taken as done. An older state re-sends the last week once.
 EOD_STATE_PATH = os.path.join(HERE, 'eod_state.json')
+_BHAV_CACHE = {}            # date -> parsed bhavcopy, downloaded once per run (end-of-day + History60)
 _MONTHS3 = ('JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC')
 
 
@@ -532,7 +540,7 @@ def eod_date(v):
 
 
 def bhav_parse(raw):
-    """Full bhavcopy -> [{sym, series, prev, close, last, qty, high, deliv}] (deliv = Delivery %, None when NSE gives '-')."""
+    """Full bhavcopy -> [{sym, series, prev, open, high, low, close, last, qty, deliv}] (deliv = Delivery %, None when NSE gives '-')."""
     rows = _csv_rows(raw)
     if rows is None:
         return None
@@ -544,6 +552,8 @@ def bhav_parse(raw):
     h = [_pb_norm(x) for x in rows[i]]
     last_j = h.index('LASTPRICE') if 'LASTPRICE' in h else -1
     high_j = h.index('HIGHPRICE') if 'HIGHPRICE' in h else -1
+    open_j = h.index('OPENPRICE') if 'OPENPRICE' in h else -1
+    low_j = h.index('LOWPRICE') if 'LOWPRICE' in h else -1
     qty_j = h.index('TTLTRDQNTY') if 'TTLTRDQNTY' in h else -1
     out = []
     for r in rows[i + 1:]:
@@ -552,7 +562,8 @@ def bhav_parse(raw):
         g = lambda j: r[j] if 0 <= j < len(r) else ''
         out.append({'sym': r[c['sym']].upper(), 'series': r[c['series']].upper(), 'prev': _fnum(r[c['prev']]),
                     'close': _fnum(r[c['close']]), 'last': _fnum(g(last_j)), 'qty': _fnum(g(qty_j)),
-                    'high': _fnum(g(high_j)), 'deliv': _fnum(r[c['deliv']])})
+                    'high': _fnum(g(high_j)), 'open': _fnum(g(open_j)), 'low': _fnum(g(low_j)),
+                    'deliv': _fnum(r[c['deliv']])})
     return out
 
 
@@ -759,6 +770,8 @@ def eod_step(cfg, today=None):
                     api_links = {k: eod_links_from_api(opener, k) for k in EOD_FILES}
                 if d in api_links['bhav']:
                     kind, bhav = eod_fetch(opener, 'bhav', d, url=api_links['bhav'][d])
+            if kind == 'ok':
+                _BHAV_CACHE[d] = bhav
             if kind == 'missing':
                 today_missing = today_missing or d == today
                 continue                     # a holiday, or not published yet
@@ -817,6 +830,175 @@ def eod_step(cfg, today=None):
             log('NSE end-of-day: up to date (latest day sent: %s).' % (date.fromisoformat(st['last']).strftime('%d-%m-%Y') if st.get('last') else '-'))
     except Exception as e:   # never let these reports stop the screener work
         log('NSE end-of-day: unexpected problem - %s' % e)
+
+
+# ------------------------------------------------------------------ NSE daily candles for History60
+# The full bhavcopy above (sec_bhavdata_full_DDMMYYYY.csv) also has each stock's open / high / low /
+# close / volume and NSE's previous close. The sheet keeps 60 trading days of them in its "History60"
+# tab: its FVG scans and Results Performance look 60 days back (History30 from GOOGLEFINANCE still
+# needs no PC). The sheet's 'list' answer says which days it has (h60: {days, want}); this sends the
+# missing ones - newer days first, in date order, then older days going back until it has `want` -
+# at most HIST_PER_POST days a post (action 'hist'). The sheet keeps its PatternData stocks only.
+HIST_PER_POST = 10
+HIST_BACK_LIMIT_DAYS = 130          # never looks further back than this many calendar days
+HIST_STATE_PATH = os.path.join(HERE, 'history_state.json')
+
+
+def hist_rows(bhav):
+    """{SYM: [open, high, low, close, volume, prev close]} of the traded mainboard stocks (series EQ first, then BE, BZ)."""
+    out, taken = {}, {}
+    for r in bhav:
+        if r['series'] not in EOD_SERIES:
+            continue
+        rank = EOD_SERIES.index(r['series'])
+        px = (r.get('open'), r.get('high'), r.get('low'), r['close'])
+        if any(v is None or v <= 0 for v in px) or (r['qty'] is not None and r['qty'] <= 0):
+            continue
+        if r['sym'] in taken and taken[r['sym']] <= rank:
+            continue
+        out[r['sym']] = [px[0], px[1], px[2], px[3], int(r['qty']) if r['qty'] is not None else None,
+                         r['prev'] if r['prev'] and r['prev'] > 0 else None]
+        taken[r['sym']] = rank
+    return out
+
+
+def hist_load_state():
+    try:
+        with open(HIST_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def hist_save_state(st):
+    try:
+        with open(HIST_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f, indent=2)
+    except OSError as e:
+        log('History60: could not save %s (%s)' % (HIST_STATE_PATH, e))
+
+
+def hist_step(cfg, h60, today=None):
+    """Sends the trading days the sheet's History60 tab is missing (action 'hist'). Returns the days sent; never raises."""
+    if not cfg.get('history60', True):
+        return 0
+    if not isinstance(h60, dict):
+        log('History60: the sheet\'s web app does not ask for it yet - after pasting the new Code.gs, do the New version deploy '
+            '(Deploy > Manage deployments > pencil > Version: New version > Deploy).')
+        return 0
+    sent = 0
+    try:
+        today = today or date.today()
+        limit = today - timedelta(days=HIST_BACK_LIMIT_DAYS)
+        have = set()
+        for v in h60.get('days') or []:
+            try:
+                have.add(date.fromisoformat(str(v)[:10]))
+            except ValueError:
+                pass
+        want = int(h60.get('want') or 60)
+        st = hist_load_state()
+        # a past weekday without a bhavcopy twice (two runs) = an exchange holiday, not asked for again
+        misses = {k: v for k, v in (st.get('misses') or {}).items() if str(k) >= limit.isoformat()}
+        holiday = lambda d: misses.get(d.isoformat(), 0) >= 2
+        opener = [None]
+        queue, last = {}, {}
+        problem = [None]
+        refused = [False]
+        not_out = [False]
+
+        def fetch(d):
+            if d in _BHAV_CACHE:
+                return 'ok', hist_rows(_BHAV_CACHE[d])
+            if opener[0] is None:
+                opener[0] = nse_session()
+            kind, val = eod_fetch(opener[0], 'bhav', d)
+            time.sleep(1.0)
+            if kind == 'ok':
+                _BHAV_CACHE[d] = val
+                return 'ok', hist_rows(val)
+            return kind, val
+
+        def flush():
+            nonlocal sent
+            if refused[0]:
+                return False
+            if not queue:
+                return True
+            days = sorted(queue)
+            try:
+                res = api(cfg, 'hist', {'days': {d.isoformat(): queue[d] for d in days}}, timeout=300)
+            except RuntimeError as e:
+                log('History60: sending to the sheet failed (%s) - the next run tries again.' % e)
+                refused[0] = True
+                return False
+            if not res.get('ok'):
+                err = res.get('error') or 'unknown error'
+                if err == 'unknown action':
+                    err = ('the sheet\'s web app does not know this yet - after pasting the new Code.gs: Deploy > '
+                           'Manage deployments > pencil > Version: New version > Deploy')
+                log('History60: the sheet refused - %s' % err)
+                refused[0] = True
+                return False
+            sent += len(days)
+            last.update(res)
+            log('History60: sent %s%s (%d day%s) - the sheet has %s of %s days.'
+                % (days[0].strftime('%d-%m-%Y'), (' .. ' + days[-1].strftime('%d-%m-%Y')) if len(days) > 1 else '',
+                   len(days), '' if len(days) == 1 else 's', res.get('days', '?'), res.get('want', want)))
+            queue.clear()
+            return True
+
+        def take(d):
+            """False = stop (a download problem or the sheet refused)."""
+            kind, rows = fetch(d)
+            if kind == 'ok' and rows:
+                queue[d] = rows
+                have.add(d)
+                misses.pop(d.isoformat(), None)
+                return len(queue) < HIST_PER_POST or flush()
+            if kind == 'error':
+                problem[0] = '%s: %s' % (d.strftime('%d-%m-%Y'), rows)
+                return False
+            if d >= today:
+                not_out[0] = True                  # today's file is published in the evening
+            else:
+                misses[d.isoformat()] = misses.get(d.isoformat(), 0) + 1
+            return True
+
+        # 1) days newer than the sheet's newest, in date order
+        if have:
+            d = max(max(have) + timedelta(days=1), limit)
+            while d <= today:
+                if d.weekday() < 5 and not holiday(d) and not take(d):
+                    break
+                if not_out[0]:
+                    break
+                d += timedelta(days=1)
+        ok = flush() and problem[0] is None
+        # 2) older days, going back, until the sheet has `want`
+        d = (min(have) if have else today + timedelta(days=1)) - timedelta(days=1)
+        while ok and len(have) < want and d >= limit:
+            if d.weekday() < 5 and not holiday(d) and not take(d):
+                ok = False
+                break
+            d -= timedelta(days=1)
+        flush()                 # the days downloaded before a download problem still go (after a refusal: nothing)
+        st['misses'] = misses
+        st['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        hist_save_state(st)
+        if problem[0]:
+            log('History60: could not download the bhavcopy - %s (the next run tries again).' % problem[0])
+        if sent:
+            log('History60: %d day%s sent; the sheet keeps %s of %s trading days (%s to %s) for %s stocks.'
+                % (sent, '' if sent == 1 else 's', last.get('days', '?'), last.get('want', want), last.get('oldest', '?'),
+                   last.get('newest', '?'), last.get('symbols', '?')))
+        elif not problem[0] and not refused[0]:
+            log('History60: up to date (the sheet has %d of %d days%s).'
+                % (len(h60.get('days') or []), want, '; today\'s bhavcopy is not out yet' if not_out[0] else ''))
+    except Exception as e:   # never let this stop the screener work
+        log('History60: unexpected problem - %s' % e)
+    return sent
 
 
 # ------------------------------------------------------------------ NSE IPO lists
@@ -1862,6 +2044,7 @@ def run_once(cfg):
         price_bands_step(cfg)
         ipo_step(cfg)
         eod_step(cfg)
+        hist_step(cfg, ans.get('h60'))
         priority = [s for s in ans.get('priority', [])]
         missing = [s for s in ans.get('missing', [])][:int(cfg['max_missing_per_run'])]
         todo = priority + [s for s in missing if s not in priority]
@@ -2209,6 +2392,20 @@ def main(argv):
             log('Not set up yet - run Setup.bat first.')
             return 1
         eod_step(dict(cfg, eod=True))
+        return 0
+    if cmd == 'history':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        try:
+            ans = api(cfg, 'list', tries=2, timeout=120)
+        except RuntimeError as e:
+            log('History60: %s' % e)
+            return 1
+        if not ans.get('ok'):
+            log('History60: the sheet refused - %s' % ans.get('error'))
+            return 1
+        hist_step(dict(cfg, history60=True), ans.get('h60'))
         return 0
     if cmd == 'pricebands':
         if not cfg.get('url') or not cfg.get('token'):

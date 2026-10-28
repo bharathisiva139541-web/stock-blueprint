@@ -6,6 +6,9 @@
    - ema(): ab_computeEMA_ (SMA seed of the first `length` closes, k = 2/(n+1))
    - emaSupportTag(): ab_computeEmaSupportTag_ (10 / 21 EMA support, last 4 bars)
    - atrEma(): ab_computeATR14EMA_ (TR, SMA seed, EMA smoothing - not Wilder)
+   The sheet computes EMA / ATR on History30 only (the last 30 candles, also when the site has 60
+   days from History60): sheetBars(candles) is that window - use it wherever a value must equal a
+   sheet column (10 / 21 EMA support, ATR14).
    Standard formulas (not used by the sheet, offered for strategy rules):
    sma, rsi (Wilder), macd (12/26/9), relVolume, breakout, pullback, swing levels. */
 (function (root, factory) {
@@ -163,7 +166,12 @@
     return { support: sup, resistance: res, highs: highs, lows: lows };
   }
 
+  var SHEET_BARS = 30;   // History30: Code.gs keeps candles.slice(-30) per stock
+  /** The last SHEET_BARS candles - what the sheet's EMA / ATR columns are computed on. */
+  function sheetBars(candles) { return candles.length > SHEET_BARS ? candles.slice(-SHEET_BARS) : candles; }
+
   return {
+    SHEET_BARS: SHEET_BARS, sheetBars: sheetBars,
     sma: sma, emaValues: emaValues, ema: ema, emaSupportTag: emaSupportTag, trueRange: trueRange,
     atrEma: atrEma, atrEmaLast: atrEmaLast, rsi: rsi, macd: macd, relVolume: relVolume,
     priorHigh: priorHigh, priorLow: priorLow, swingLevels: swingLevels
