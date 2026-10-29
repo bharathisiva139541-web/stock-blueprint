@@ -540,7 +540,8 @@ def eod_date(v):
 
 
 def bhav_parse(raw):
-    """Full bhavcopy -> [{sym, series, prev, open, high, low, close, last, qty, deliv}] (deliv = Delivery %, None when NSE gives '-')."""
+    """Full bhavcopy -> [{sym, series, day, prev, open, high, low, close, last, qty, deliv}] (day = the file's DATE1 as a date,
+    deliv = Delivery %, None when NSE gives '-')."""
     rows = _csv_rows(raw)
     if rows is None:
         return None
@@ -553,6 +554,7 @@ def bhav_parse(raw):
     last_j = h.index('LASTPRICE') if 'LASTPRICE' in h else -1
     high_j = h.index('HIGHPRICE') if 'HIGHPRICE' in h else -1
     open_j = h.index('OPENPRICE') if 'OPENPRICE' in h else -1
+    date_j = h.index('DATE1') if 'DATE1' in h else -1
     low_j = h.index('LOWPRICE') if 'LOWPRICE' in h else -1
     qty_j = h.index('TTLTRDQNTY') if 'TTLTRDQNTY' in h else -1
     out = []
@@ -563,8 +565,18 @@ def bhav_parse(raw):
         out.append({'sym': r[c['sym']].upper(), 'series': r[c['series']].upper(), 'prev': _fnum(r[c['prev']]),
                     'close': _fnum(r[c['close']]), 'last': _fnum(g(last_j)), 'qty': _fnum(g(qty_j)),
                     'high': _fnum(g(high_j)), 'open': _fnum(g(open_j)), 'low': _fnum(g(low_j)),
-                    'deliv': _fnum(r[c['deliv']])})
+                    'deliv': _fnum(r[c['deliv']]), 'day': eod_date(g(date_j)) if date_j >= 0 else None})
     return out
+
+
+def bhav_day(bhav):
+    """The trading day the bhavcopy is for (its DATE1, the most common one), or None. NSE's archive answers for an
+    exchange holiday with an earlier day's file - this tells the two apart."""
+    count = {}
+    for r in bhav or []:
+        if r.get('day'):
+            count[r['day']] = count.get(r['day'], 0) + 1
+    return max(count, key=count.get) if count else None
 
 
 def w52_parse(raw):
@@ -772,6 +784,11 @@ def eod_step(cfg, today=None):
                     kind, bhav = eod_fetch(opener, 'bhav', d, url=api_links['bhav'][d])
             if kind == 'ok':
                 _BHAV_CACHE[d] = bhav
+                td = bhav_day(bhav)
+                if td and td != d:
+                    log('NSE end-of-day %s: NSE\'s file holds the trading day %s - an exchange holiday, skipped.'
+                        % (d.strftime('%d-%m-%Y'), td.strftime('%d-%m-%Y')))
+                    continue
             if kind == 'missing':
                 today_missing = today_missing or d == today
                 continue                     # a holiday, or not published yet
@@ -910,15 +927,19 @@ def hist_step(cfg, h60, today=None):
 
         def fetch(d):
             if d in _BHAV_CACHE:
-                return 'ok', hist_rows(_BHAV_CACHE[d])
-            if opener[0] is None:
-                opener[0] = nse_session()
-            kind, val = eod_fetch(opener[0], 'bhav', d)
-            time.sleep(1.0)
-            if kind == 'ok':
+                val = _BHAV_CACHE[d]
+            else:
+                if opener[0] is None:
+                    opener[0] = nse_session()
+                kind, val = eod_fetch(opener[0], 'bhav', d)
+                time.sleep(1.0)
+                if kind != 'ok':
+                    return kind, val
                 _BHAV_CACHE[d] = val
-                return 'ok', hist_rows(val)
-            return kind, val
+            td = bhav_day(val)
+            if td and td != d:
+                return 'copy', td                  # an exchange holiday: NSE sent an earlier day's file
+            return 'ok', hist_rows(val)
 
         def flush():
             nonlocal sent
@@ -960,6 +981,11 @@ def hist_step(cfg, h60, today=None):
             if kind == 'error':
                 problem[0] = '%s: %s' % (d.strftime('%d-%m-%Y'), rows)
                 return False
+            if kind == 'copy':
+                misses[d.isoformat()] = 2
+                log('History60: NSE\'s file for %s holds the trading day %s - an exchange holiday, skipped.'
+                    % (d.strftime('%d-%m-%Y'), rows.strftime('%d-%m-%Y')))
+                return True
             if d >= today:
                 not_out[0] = True                  # today's file is published in the evening
             else:

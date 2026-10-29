@@ -41,6 +41,7 @@ assert rows == {'TCS': [3910.0, 3960.0, 3900.0, 3948.0, 100000, 3900.0], 'LOWCIR
 
 # ---------------------------------------------------------------- the step against a pretend NSE and sheet
 HOLIDAYS = {date(2026, 10, 2), date(2026, 10, 20)}
+COPIES = {date(2026, 9, 14): date(2026, 9, 11)}   # a holiday NSE answers with the day before's file (as it did on 02-10-2026)
 TODAY = date(2026, 10, 28)                       # Wed: today's file is not out yet
 
 
@@ -56,7 +57,9 @@ FILES, HITS = {}, []
 def publish(until):
     d = date(2026, 5, 1)
     while d <= until:
-        if d.weekday() < 5 and d not in HOLIDAYS:
+        if d in COPIES:
+            FILES['/products/content/sec_bhavdata_full_%s.csv' % d.strftime('%d%m%Y')] = (200, day_csv(COPIES[d]))
+        elif d.weekday() < 5 and d not in HOLIDAYS:
             FILES['/products/content/sec_bhavdata_full_%s.csv' % d.strftime('%d%m%Y')] = (200, day_csv(d))
         d += timedelta(days=1)
 
@@ -110,11 +113,12 @@ CFG = {'url': 'x', 'token': 'y'}
 publish(date(2026, 10, 27))
 n = sb.hist_step(CFG, h60(), today=TODAY)
 assert n == 60 and len(SHEET) == 60, (n, len(SHEET))
-assert max(SHEET) == '2026-10-27' and not any(d.isoformat() in SHEET for d in HOLIDAYS), sorted(SHEET)
+assert max(SHEET) == '2026-10-27' and not any(d.isoformat() in SHEET for d in HOLIDAYS | set(COPIES)), sorted(SHEET)
 assert [len(p) for p in POSTS] == [10] * 6, POSTS
 assert POSTS[0][-1] == '2026-10-27' and POSTS[0][0] == '2026-10-13', 'newest first, going back (20-10 is a holiday)'
 st = sb.hist_load_state()
-assert st['misses'] == {'2026-10-02': 1, '2026-10-20': 1}, st      # today's missing file is not a miss
+assert st['misses'] == {'2026-10-02': 1, '2026-10-20': 1, '2026-09-14': 2}, st      # today's missing file is not a miss; a copy is a holiday at once
+assert "History60: NSE's file for 14-09-2026 holds the trading day 11-09-2026 - an exchange holiday, skipped." in LOGS, LOGS
 log = '\n'.join(LOGS)
 assert 'History60: sent 13-10-2026 .. 27-10-2026 (10 days) - the sheet has 10 of 60 days.' in log, log
 assert ('History60: 60 days sent; the sheet keeps 60 of 60 trading days (%s to 2026-10-27) for 1 stocks.' % min(SHEET)) in log, log

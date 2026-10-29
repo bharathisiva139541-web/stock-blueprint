@@ -3623,28 +3623,61 @@ function ab_h60Cell_(r) {
 
 /**
  * History60 values -> { days: [iso, oldest first], linked: [bool per day], syms: [in tab order],
- * cells: { SYM: [[o, h, l, c, v, p] | null per day] } }.
+ * cells: { SYM: [[o, h, l, c, v, p] | null per day] }, dropped: [iso] }.
+ * A day column that is an exact copy of another one is left out (dropped): NSE's archive answers for
+ * an exchange holiday with an earlier day's bhavcopy. Of the two, the one not linked to the day before
+ * it is the copy (else the later one). So is a day without a single candle.
  */
 function ab_h60Grid_(vals) {
-  const out = { days: [], linked: [], syms: [], cells: {} };
+  const out = { days: [], linked: [], syms: [], cells: {}, dropped: [] };
   let h = -1;
   for (let i = 0; i < Math.min(5, vals.length); i++) if (String(vals[i][0]).trim() === 'Symbol') { h = i; break; }
   if (h === -1) return out;
-  const cols = [], seen = {};
+  let cols = [];
+  const seen = {};
   vals[h].forEach(function (v, j) {
     const d = j ? ab_h60Iso_(v) : '';
     if (d && !seen[d]) { seen[d] = true; cols.push([j, d]); }
   });
   cols.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0; });
   const link = vals[h + 1] && String(vals[h + 1][0]).trim() === AB_H60_LINK ? vals[h + 1] : null;
-  out.days = cols.map(function (c) { return c[1]; });
-  out.linked = cols.map(function (c) { return !!link && String(link[c[0]]).trim() === 'Y'; });
+  const isLinked = function (c) { return !!link && String(link[c[0]]).trim() === 'Y'; };
+  const rows = [], symSeen = {};
   for (let r = h + (link ? 2 : 1); r < vals.length; r++) {
     const sym = String(vals[r][0] === null || vals[r][0] === undefined ? '' : vals[r][0]).trim().toUpperCase();
-    if (!sym || out.cells[sym]) continue;
-    out.syms.push(sym);
-    out.cells[sym] = cols.map(function (c) { return ab_h60ParseCell_(vals[r][c[0]]); });
+    if (!sym || symSeen[sym]) continue;
+    symSeen[sym] = true;
+    rows.push([sym, vals[r]]);
   }
+  // each day's cells as one text, to find copies
+  const text = cols.map(function (c) {
+    let t = '', any = false;
+    rows.forEach(function (x) {
+      const v = x[1][c[0]];
+      const cell = v === null || v === undefined ? '' : String(v);
+      if (cell) any = true;
+      t += '|' + cell;
+    });
+    return any ? t : '';
+  });
+  const drop = {}, firstOf = {};
+  cols.forEach(function (c, i) {
+    if (!rows.length) return;                                   // header rows only: nothing to compare
+    if (!text[i]) { drop[i] = true; return; }
+    const k = firstOf[text[i]];
+    if (k === undefined) { firstOf[text[i]] = i; return; }
+    const copy = isLinked(c) && !isLinked(cols[k]) ? k : i;
+    drop[copy] = true;
+    if (copy === k) firstOf[text[i]] = i;
+  });
+  out.dropped = cols.filter(function (c, i) { return drop[i]; }).map(function (c) { return c[1]; });
+  cols = cols.filter(function (c, i) { return !drop[i]; });
+  out.days = cols.map(function (c) { return c[1]; });
+  out.linked = cols.map(isLinked);
+  rows.forEach(function (x) {
+    out.syms.push(x[0]);
+    out.cells[x[0]] = cols.map(function (c) { return ab_h60ParseCell_(x[1][c[0]]); });
+  });
   return out;
 }
 
@@ -3742,29 +3775,12 @@ function ab_h60Older_(gf, g, allowed) {
   return out;
 }
 
-/** History60 parsed (only = [symbols]: just their rows), or an empty grid when there is no tab. */
-function ab_h60Load_(only) {
-  if (!only && AB_H60_MEMO_) return AB_H60_MEMO_;
-  const empty = { days: [], linked: [], syms: [], cells: {} };
+/** History60 parsed (the whole tab: copy days are only found with every stock), or an empty grid without the tab. */
+function ab_h60Load_() {
+  if (AB_H60_MEMO_) return AB_H60_MEMO_;
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_H60_SHEET);
-  if (!sh || sh.getLastRow() < 2) return empty;
-  let vals;
-  if (only && only.length <= 20) {
-    const W = Math.max(1, sh.getLastColumn()), last = sh.getLastRow();
-    vals = sh.getRange(1, 1, Math.min(3, last), W).getValues();
-    if (last > 3) {
-      const want = {};
-      only.forEach(function (s) { want[String(s).toUpperCase()] = true; });
-      sh.getRange(4, 1, last - 3, 1).getValues().forEach(function (r, i) {
-        if (want[String(r[0]).trim().toUpperCase()]) vals.push(sh.getRange(4 + i, 1, 1, W).getValues()[0]);
-      });
-    }
-  } else {
-    vals = sh.getDataRange().getValues();
-  }
-  const g = ab_h60Grid_(vals);
-  if (!only) AB_H60_MEMO_ = g;
-  return g;
+  AB_H60_MEMO_ = ab_h60Grid_(sh && sh.getLastRow() >= 2 ? sh.getDataRange().getValues() : []);
+  return AB_H60_MEMO_;
 }
 
 /** 'yyyy-MM-dd' -> Date (midnight IST, like History30's day cells). */
@@ -3809,7 +3825,7 @@ function ab_h60FillFailed_(failed, hist, byTab) {
     const want = failed.filter(function (s) { return !have[s]; });
     const days = Object.keys(dates).sort();
     if (!want.length || !days.length) return out;
-    const g = ab_h60Load_(want);
+    const g = ab_h60Load_();
     if (!g.days.length) return out;
     const newest = days[days.length - 1], last4 = days.slice(-4)[0];
     let e = -1;                                            // newest History60 day not after GOOGLEFINANCE's, and its unbroken run
@@ -3819,7 +3835,7 @@ function ab_h60FillFailed_(failed, hist, byTab) {
     while (k > 0 && g.linked[k]) k--;
     const from = g.days[k] > days[0] ? g.days[k] : days[0];
     want.forEach(function (sym) {
-      const c = ab_h60Adjust_(g, sym).filter(function (x) { return x.iso >= from && x.iso <= newest; }).slice(-30);
+      const c = ab_h60Adjust_(g, sym).filter(function (x) { return x.iso >= from && dates[x.iso]; }).slice(-30);   // GOOGLEFINANCE's days only
       if (!c.length) return;
       c.forEach(function (x) { hist.push([sym, x.iso, x.Opn, x.High, x.Low, x.Cls, isNaN(x.Volume) ? '' : x.Volume]); });
       out.filled.push(sym);
@@ -3836,14 +3852,9 @@ function ab_h60FillFailed_(failed, hist, byTab) {
   return out;
 }
 
-/** doPost 'list': which days History60 has (newest first), for the PC. */
+/** doPost 'list': which days History60 has (newest first, copy days left out - the PC fetches those again), for the PC. */
 function ab_h60Info_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_H60_SHEET);
-  let days = [];
-  if (sh && sh.getLastRow() >= 2) {
-    days = ab_h60Grid_(sh.getRange(1, 1, Math.min(3, sh.getLastRow()), Math.max(1, sh.getLastColumn())).getValues()).days;
-  }
-  return { days: days.slice().reverse(), want: AB_H60_DAYS };
+  return { days: ab_h60Load_().days.slice().reverse(), want: AB_H60_DAYS };
 }
 
 /** Number format + values of a block, growing the tab first when needed. */
@@ -3903,38 +3914,35 @@ function ab_h60FromBridge_(req) {
 
   AB_H60_MEMO_ = null;
   const sh = ab_getOrCreateSheet_(AB_H60_SHEET);
-  const last = sh.getLastRow();
-  // add new days as columns: only when every posted day is newer and no stored stock has left PatternData
-  if (last >= 4) {
-    const W = Math.max(1, sh.getLastColumn());
-    const head = ab_h60Grid_(sh.getRange(1, 1, Math.min(3, last), W).getValues());
-    const symCol = sh.getRange(4, 1, last - 3, 1).getValues().map(function (r) { return String(r[0]).trim().toUpperCase(); });
-    const gone = symCol.some(function (s) { return s && !wanted[s]; }) || symCol.indexOf('') !== -1;
-    const newestStored = head.days.length ? head.days[head.days.length - 1] : '';
-    if (newestStored && isos[0] > newestStored && !gone) {
-      const prevCol = sh.getRange(4, 2, last - 3, 1).getValues();    // the newest stored day, column 2
-      let older = {};
-      symCol.forEach(function (s, i) { const c = ab_h60ParseCell_(prevCol[i][0]); if (c) older[s] = c; });
-      const linked = {};
-      isos.forEach(function (d) { linked[d] = ab_h60Linked_(fresh[d], older); older = fresh[d]; });
-      const newSyms = want.filter(function (s) { return symCol.indexOf(s) === -1; });
-      const desc = isos.slice().reverse();
-      sh.insertColumnsBefore(2, desc.length);
-      const block = [desc.map(function () { return ''; }), desc, desc.map(function (d) { return linked[d] ? 'Y' : ''; })];
-      symCol.concat(newSyms).forEach(function (s) {
-        block.push(desc.map(function (d) { return fresh[d][s] ? ab_h60Cell_(fresh[d][s]) : ''; }));
-      });
-      ab_h60Put_(sh, 1, 2, block);
-      if (newSyms.length) ab_h60Put_(sh, 4 + symCol.length, 1, newSyms.map(function (s) { return [s]; }));
-      const total = head.days.length + desc.length;
-      if (total > AB_H60_DAYS) sh.deleteColumns(2 + AB_H60_DAYS, total - AB_H60_DAYS);
-      const days = head.days.concat(isos).slice(-AB_H60_DAYS);
-      return { ok: true, mode: 'added', added: isos.length, candles: candles, days: days.length, newest: days[days.length - 1],
-               oldest: days[0], symbols: symCol.length + newSyms.length, want: AB_H60_DAYS };
-    }
+  const vals = sh.getLastRow() >= 2 ? sh.getDataRange().getValues() : [];
+  const g = ab_h60Grid_(vals);
+  // add new days as columns - only when every posted day is newer than the stored ones and the tab is
+  // exactly what the grid shows (rows 4+ one stock each, no copy day to clean out, no stock that left PatternData)
+  const newestStored = g.days.length ? g.days[g.days.length - 1] : '';
+  const tidy = vals.length >= 4 && String(vals[2][0]).trim() === AB_H60_LINK && vals.length - 3 === g.syms.length &&
+    !g.dropped.length && vals[1].slice(1).filter(function (v) { return ab_h60Iso_(v); }).length === g.days.length &&
+    !g.syms.some(function (s) { return !wanted[s]; });
+  if (tidy && newestStored && isos[0] > newestStored) {
+    let older = {};
+    g.syms.forEach(function (s) { const c = g.cells[s][g.days.length - 1]; if (c) older[s] = c; });
+    const linked = {};
+    isos.forEach(function (d) { linked[d] = ab_h60Linked_(fresh[d], older); older = fresh[d]; });
+    const newSyms = want.filter(function (s) { return !g.cells[s]; });
+    const desc = isos.slice().reverse();
+    sh.insertColumnsBefore(2, desc.length);
+    const block = [desc.map(function () { return ''; }), desc, desc.map(function (d) { return linked[d] ? 'Y' : ''; })];
+    g.syms.concat(newSyms).forEach(function (s) {
+      block.push(desc.map(function (d) { return fresh[d][s] ? ab_h60Cell_(fresh[d][s]) : ''; }));
+    });
+    ab_h60Put_(sh, 1, 2, block);
+    if (newSyms.length) ab_h60Put_(sh, 4 + g.syms.length, 1, newSyms.map(function (s) { return [s]; }));
+    const total = g.days.length + desc.length;
+    if (total > AB_H60_DAYS) sh.deleteColumns(2 + AB_H60_DAYS, total - AB_H60_DAYS);
+    const days = g.days.concat(isos).slice(-AB_H60_DAYS);
+    return { ok: true, mode: 'added', added: isos.length, candles: candles, days: days.length, newest: days[days.length - 1],
+             oldest: days[0], symbols: g.syms.length + newSyms.length, want: AB_H60_DAYS };
   }
-  // rewrite: stored days + the posted ones (a posted day replaces the stored one), newest AB_H60_DAYS
-  const g = ab_h60Grid_(last >= 2 ? sh.getDataRange().getValues() : []);
+  // rewrite: stored days (copy days left out) + the posted ones (a posted day replaces the stored one), newest AB_H60_DAYS
   const byDay = {};
   g.days.forEach(function (d, i) {
     const m = {};

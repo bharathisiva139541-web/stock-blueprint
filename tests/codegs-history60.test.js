@@ -276,3 +276,31 @@ test('Phase 1: a stock GOOGLEFINANCE gave no data for gets History30 rows and th
     '\\): S0001, S0002 \\(day tabs for 1 - the others have no candle for the newest day yet\\)\\. OHLC, History30'));
   assert.strictEqual(e.sheet('History30').rows.filter((r) => r[0] === 'S0000').length, 30);
 });
+
+test('a holiday NSE answered with the day before\'s file: that copy day is left out, the series runs across it', () => {
+  // D[3] is an exchange holiday: its column is D[2]'s file again; D[4]'s previous close is D[2]'s close
+  const cells = {}, gf = {};
+  ['AAA', 'BBB'].forEach((s, k) => {
+    cells[s] = {};
+    let prev = 50 + k;
+    D.slice(0, 10).forEach((d, i) => {
+      if (i === 3) { cells[s][d] = cells[s][D[2]]; return; }
+      const c = 50 + k + i;
+      cells[s][d] = cell(c - 1, c + 1, c - 2, c, 100, prev);
+      prev = c;
+    });
+    gf[s] = D.slice(5, 10).map((d, i) => [d, 54 + k + i, 56 + k + i, 53 + k + i, 55 + k + i, 100]);
+  });
+  const e = env([patternData(['AAA', 'BBB']), mainTab(['AAA', 'BBB']), history30(gf), history60(D.slice(0, 10), cells, (d) => d !== D[0] && d !== D[3])]);
+  const g = e.call('ab_h60Load_');
+  assert.deepStrictEqual(plain(g.dropped), [D[3]]);
+  assert.deepStrictEqual(plain(g.days), D.slice(0, 10).filter((d) => d !== D[3]));
+  const m = e.call('ab_readHistoryMerged_');
+  assert.deepStrictEqual(plain(m.AAA.map((c) => iso(e, c))), D.slice(0, 10).filter((d) => d !== D[3]), 'all the older days, without the copy');
+  assert.ok(!plain(e.call('ab_h60Info_').days).includes(D[3]), 'the PC is not told the copy day is there');
+  assert.ok(!e.post({ action: 'site', part: 'history60', token: FEED }).data.dates.includes(D[3]));
+  // the next rewrite (older days from the PC) takes the copy out of the tab
+  e.post({ token: TOKEN, action: 'hist', days: { '2026-07-01': { AAA: flat(40) } } });   // older than D[0]
+  assert.ok(!e.sheet('History60').rows[1].includes(D[3]));
+  assert.deepStrictEqual(plain(e.call('ab_h60Load_').dropped), []);
+});
