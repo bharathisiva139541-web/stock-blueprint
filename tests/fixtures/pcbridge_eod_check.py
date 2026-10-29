@@ -113,9 +113,10 @@ sb.PB_REPORTS_API = BASE + '/api/merged-daily-reports'
 sb.nse_session = lambda: urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
 
 
-def put(day, bhav=BHAV, w52=W52, bands=BANDS):
+def put(day, bhav=BHAV, w52=W52, bands=BANDS, holds=None):
     tag = day.strftime('%d%m%Y')
-    FILES['/products/content/sec_bhavdata_full_%s.csv' % tag] = (200, bhav.encode())
+    # the file's DATE1 is its own trading day (holds = an exchange holiday answered with that day's file)
+    FILES['/products/content/sec_bhavdata_full_%s.csv' % tag] = (200, bhav.replace('27-Oct-2026', (holds or day).strftime('%d-%b-%Y')).encode())
     if w52:
         FILES['/content/CM_52_wk_High_low_%s.csv' % tag] = (200, w52.encode())
     if bands:
@@ -140,13 +141,15 @@ LOGS = []
 sb.log = LOGS.append
 CFG = {'url': 'x', 'token': 'y'}
 
-# first run on Tue 27-Oct: last week's Thu 22 (holiday, no file) is skipped; Mon 26 has no 52-week report
-put(date(2026, 10, 20)); put(date(2026, 10, 21)); put(date(2026, 10, 23))
+# first run on Tue 27-Oct: last week's Thu 22 (holiday, no file) is skipped, so is Tue 20 (holiday: NSE answers with
+# Mon 19's file); Mon 26 has no 52-week report
+put(date(2026, 10, 20), holds=date(2026, 10, 19)); put(date(2026, 10, 21)); put(date(2026, 10, 23))
 put(date(2026, 10, 26), w52=None)
 put(DAY)
 sb.eod_step(CFG, today=DAY)
-assert [x['tradeDate'] for x in SENT] == ['2026-10-20', '2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
-assert SENT[3]['files'] == {'bhav': True, 'w52': False, 'bands': True} and SENT[3]['stats']['high52'] is None
+assert [x['tradeDate'] for x in SENT] == ['2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
+assert 'NSE end-of-day 20-10-2026: NSE\'s file holds the trading day 19-10-2026 - an exchange holiday, skipped.' in LOGS, LOGS
+assert SENT[2]['files'] == {'bhav': True, 'w52': False, 'bands': True} and SENT[2]['stats']['high52'] is None
 log = '\n'.join(LOGS)
 assert ('NSE end-of-day 27-10-2026: your Main stocks - 4 traded, 2 up / 1 down / 1 unchanged, 2 at a 52-week high, circuits 1 up / 0 down; '
         'Delivery % for 3 in Main.') in log, log
@@ -169,7 +172,7 @@ assert not LOGS and not HITS
 # a moved address: found through NSE's All Reports list
 FILES['/api/merged-daily-reports'] = (200, ('[{"name":"Full Bhavcopy","link":"' + BASE.replace('/', '\\/') +
                                             '\\/new\\/sec_bhavdata_full_28102026.csv"}]').encode())
-FILES['/new/sec_bhavdata_full_28102026.csv'] = (200, BHAV.encode())
+FILES['/new/sec_bhavdata_full_28102026.csv'] = (200, BHAV.replace('27-Oct-2026', '28-Oct-2026').encode())
 del LOGS[:]
 sb.eod_step(CFG, today=date(2026, 10, 28))
 assert [x['tradeDate'] for x in SENT] == ['2026-10-28'] and SENT[0]['files'] == {'bhav': True, 'w52': False, 'bands': False}, SENT
@@ -195,7 +198,7 @@ REPLY.pop('r')
 sb.eod_save_state({'last': '2026-10-27'})
 del SENT[:]
 sb.eod_step(CFG, today=DAY)
-assert [x['tradeDate'] for x in SENT] == ['2026-10-20', '2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
+assert [x['tradeDate'] for x in SENT] == ['2026-10-21', '2026-10-23', '2026-10-26', '2026-10-27'], [x['tradeDate'] for x in SENT]
 assert sb.eod_load_state()['v'] == sb.EOD_STATE_VERSION
 del SENT[:]
 sb.eod_step(CFG, today=DAY)

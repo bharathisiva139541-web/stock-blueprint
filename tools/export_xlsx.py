@@ -465,7 +465,9 @@ def h60_cell(v):
 
 
 def h60_grid(rows):
-    out = {'days': [], 'linked': [], 'syms': [], 'cells': {}}
+    """Code.gs ab_h60Grid_: days oldest first, copy days (an exact copy of another day - NSE answers for an
+    exchange holiday with an earlier day's file) and days without a candle left out."""
+    out = {'days': [], 'linked': [], 'syms': [], 'cells': {}, 'dropped': []}
     h = next((i for i, r in enumerate(rows[:5]) if r and str(r[0]).strip() == 'Symbol'), -1)
     if h == -1:
         return out
@@ -478,12 +480,41 @@ def h60_grid(rows):
     cols.sort(key=lambda c: c[1])
     nxt = rows[h + 1] if h + 1 < len(rows) else None
     link = nxt if nxt and str(nxt[0]).strip() == H60_LINK else None
-    out['days'] = [c[1] for c in cols]
-    out['linked'] = [bool(link) and j < len(link) and str(link[j]).strip() == 'Y' for j, _ in cols]
+
+    def linked(c):
+        return bool(link) and c[0] < len(link) and str(link[c[0]]).strip() == 'Y'
+
+    data, sym_seen = [], set()
     for r in rows[h + (2 if link else 1):]:
         sym = ('' if not r or r[0] is None else str(r[0])).strip().upper()
-        if not sym or sym in out['cells']:
+        if not sym or sym in sym_seen:
             continue
+        sym_seen.add(sym)
+        data.append((sym, r))
+    text = []
+    for j, _ in cols:
+        cells = ['' if j >= len(r) or r[j] is None else str(r[j]) for _, r in data]
+        text.append(''.join('|' + c for c in cells) if any(cells) else '')
+    drop, first_of = set(), {}
+    for i, c in enumerate(cols):
+        if not data:
+            break
+        if not text[i]:
+            drop.add(i)
+            continue
+        k = first_of.get(text[i])
+        if k is None:
+            first_of[text[i]] = i
+            continue
+        copy = k if linked(c) and not linked(cols[k]) else i
+        drop.add(copy)
+        if copy == k:
+            first_of[text[i]] = i
+    out['dropped'] = [c[1] for i, c in enumerate(cols) if i in drop]
+    cols = [c for i, c in enumerate(cols) if i not in drop]
+    out['days'] = [c[1] for c in cols]
+    out['linked'] = [linked(c) for c in cols]
+    for sym, r in data:
         out['syms'].append(sym)
         out['cells'][sym] = [h60_cell(r[j] if j < len(r) else None) for j, _ in cols]
     return out

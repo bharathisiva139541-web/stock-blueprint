@@ -26,6 +26,7 @@ function workbook() {
   let seed = 7;
   const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
   const days = weekdays(45, '2026-10-28');
+  const HOL = [12, 33];                         // exchange holidays: NSE's archive answers with the day before's file
   const syms = Array.from({ length: 40 }, (_, i) => 'S' + String(i).padStart(3, '0'));
   const nse = {}, gf = {};
   syms.forEach((s, k) => {
@@ -34,6 +35,7 @@ function workbook() {
     const seam = k % 5 === 0 ? 1 + (rnd() - 0.5) / 5 : 1;                  // GOOGLEFINANCE priced differently for some
     nse[s] = {};
     days.forEach((d, i) => {
+      if (HOL.includes(i)) { if (nse[s][days[i - 1]]) nse[s][d] = nse[s][days[i - 1]]; return; }
       if (i === splitAt) { px = px / 2; prev = prev / 2; }
       const o = Math.round(px * (1 + (rnd() - 0.5) / 50) * 100) / 100, c = Math.round(px * (1 + (rnd() - 0.5) / 25) * 100) / 100;
       const h = Math.round(Math.max(o, c) * (1 + rnd() / 40) * 100) / 100, l = Math.round(Math.min(o, c) * (1 - rnd() / 40) * 100) / 100;
@@ -45,13 +47,13 @@ function workbook() {
     });
   });
   const desc = days.slice().reverse();
-  const h60 = [['note'], ['Symbol'].concat(desc), ['(linked)'].concat(desc.map((d, i) => (i === desc.length - 1 || d === days[30] ? '' : 'Y')))];
+  const h60 = [['note'], ['Symbol'].concat(desc), ['(linked)'].concat(desc.map((d, i) => (i === desc.length - 1 || d === days[30] || HOL.some((k) => days[k] === d) ? '' : 'Y')))];
   syms.concat(['XGONE']).forEach((s) => h60.push([s].concat(desc.map((d) => (nse[s] || {})[d] || ''))));
   const h30 = [['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']];
   Object.keys(gf).forEach((s) => gf[s].forEach((r) => h30.push([s].concat(r))));
   const pd = [['Name', '', '', 'Symbol']].concat(syms.map((s) => ['Co', '', '', s]));
   const main = [['Main'], ['Checkbox', 'StockName', 'SYMBOL']].concat(syms.map((s) => [false, 'Co', s]));
-  return { h60, h30, pd, main };
+  return { h60, h30, pd, main, days };
 }
 
 test('export_xlsx.py history60_data = Code.gs site feed part history60 (python)', { skip: !py && 'python3 not installed' }, () => {
@@ -62,7 +64,8 @@ test('export_xlsx.py history60_data = Code.gs site feed part history60 (python)'
   const r = env.post({ action: 'site', part: 'history60', token: FEED });
   assert.strictEqual(r.ok, true, r.error);
   const gs = r.data;
-  assert.ok(Object.keys(gs.bars).length >= 30 && gs.dates.length === 35 && gs.bars.S006.length === 15, Object.keys(gs.bars).length + ' / ' + gs.dates.length);
+  assert.ok(Object.keys(gs.bars).length >= 30 && gs.dates.length === 33 && gs.bars.S006.length === 14, Object.keys(gs.bars).length + ' / ' + gs.dates.length);
+  assert.ok(!gs.dates.includes(w.days[12]) && !gs.dates.includes(w.days[33]), 'the holiday copies are left out');
   assert.ok(!gs.bars.XGONE, 'not in PatternData');
 
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'h60-')), 'wb.json');
