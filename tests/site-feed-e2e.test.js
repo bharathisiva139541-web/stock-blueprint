@@ -219,7 +219,7 @@ function workbook(o) {
 }
 
 // ---------- Code.gs behind a mocked fetch ----------
-const CODE = fs.readFileSync(mock.CODE_GS, 'utf8');
+const CODE = mock.readCode();
 const SITE_LINE = "  if (req && req.action === 'site') return ab_feedSite_(req);\n";
 const SNAPSHOT_LINE = "  if (req && req.action === 'snapshot') return ab_feedSnapshot_(req);\n";
 

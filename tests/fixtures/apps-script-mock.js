@@ -38,6 +38,10 @@ const crypto = require('crypto');
 const xlsx = require('../../web/lib/xlsx-reader.js');
 
 const CODE_GS = path.join(__dirname, '..', '..', 'Code.gs');
+// the Apps Script project's files, in the order the editor lists (and Apps Script runs) them
+const GS_FILES = ['Code.gs', 'Code2.gs'].map(function (f) { return path.join(__dirname, '..', '..', f); });
+/** All of the project's code as one text (for tests that read or patch the source). */
+function readCode() { return GS_FILES.map(function (f) { return fs.readFileSync(f, 'utf8'); }).join('\n'); }
 const FIXED_OFFSETS = { 'Asia/Kolkata': 330, 'Asia/Calcutta': 330, UTC: 0, GMT: 0, 'Etc/UTC': 0, 'Etc/GMT': 0 };
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -548,8 +552,11 @@ function createEnv(workbook, opts) {
 /** createEnv + run Code.gs in it. Adds env.call / env.run / env.post. */
 function loadCodeGs(workbook, opts) {
   const env = createEnv(workbook, opts);
-  const code = (opts && opts.code) || fs.readFileSync(CODE_GS, 'utf8');
-  vm.runInContext(code, env.context, { filename: 'Code.gs' });
+  if (opts && opts.code) vm.runInContext(opts.code, env.context, { filename: 'Code.gs' });
+  else {
+    // one script per file, in order - like Apps Script, so a top-level call from Code.gs into Code2.gs fails here too
+    GS_FILES.forEach(function (f) { vm.runInContext(fs.readFileSync(f, 'utf8'), env.context, { filename: path.basename(f) }); });
+  }
   env.run = function (src) { return vm.runInContext(src, env.context); };
   env.call = function (name) {
     const fn = env.context[name];
@@ -565,4 +572,4 @@ function loadCodeGs(workbook, opts) {
   return env;
 }
 
-module.exports = { createEnv: createEnv, loadCodeGs: loadCodeGs, formatDate: formatDate, CODE_GS: CODE_GS };
+module.exports = { createEnv: createEnv, loadCodeGs: loadCodeGs, formatDate: formatDate, CODE_GS: CODE_GS, GS_FILES: GS_FILES, readCode: readCode };

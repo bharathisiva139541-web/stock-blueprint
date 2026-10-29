@@ -84,7 +84,7 @@ function validateMaster(master, flat) {
 
 /** AB_NSE_TAXONOMY rows [sector, industry, [basics]] read from Code.gs without running it. */
 function codeGsTaxonomy() {
-  const src = fs.readFileSync(path.join(ROOT, 'Code.gs'), 'utf8');
+  const src = ['Code.gs', 'Code2.gs'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
   const a = src.indexOf('const AB_NSE_TAXONOMY = [');
   if (a < 0) return null;
   const b = src.indexOf('\n];', a);
