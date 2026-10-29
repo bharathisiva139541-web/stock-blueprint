@@ -10316,3 +10316,209 @@ function ab_screenerHtml_() {
 'for(var i=0;i<c.length;i++)addRow(c[i].col,c[i].op,c[i].vals||c[i].val);}' +
 '<\/script></body></html>';
 }
+/*****************************************************************
+ * WEBSITE MY WATCHLISTS - the same lists on every device and site
+ * -----------------------------------------------------------------
+ * The website's "My Watchlists" (#lists) are kept here, so the phone,
+ * the Vercel site and the Firebase copy all show the same lists. The
+ * website's server (Vercel api/watchlists) posts {token (the website
+ * feed token), action: 'watchlists', op: 'get' | 'put', pin, base,
+ * state}. The owner's PIN (menu 3 > "My Watchlists sync: set / change
+ * PIN"; kept only as a salted SHA-256 in Script Properties) is checked
+ * HERE, so without it nobody can read or change the lists:
+ * AB_WL_LOCK_AFTER wrong PINs in a row lock them for 15 minutes (each
+ * further lock twice as long, at most 24 h; the right PIN is refused too
+ * while locked, and is not counted). A correct PIN or a new PIN clears
+ * the count. The check and the save run under one lock, so parallel
+ * guesses are counted one by one.
+ * 'put' is compare-and-swap: base = the revision the browser last read;
+ * anything else -> result 'conflict' with the current lists, the browser
+ * merges (web/lib/watchlists.js merge) and saves again.
+ * Hidden tab Site_Watchlists, column A only: row 1 note, row 2 'J' + JSON
+ * {rev, savedAt, parts, chars}, rows 3+ 'J' + the lists' JSON in parts
+ * of AB_WL_PART_CHARS characters (a cell holds at most 50,000; the 'J'
+ * keeps Sheets from reading a part as a number / date / formula).
+ * The lists are cleaned with the website's rules (web/lib/watchlists.js
+ * load - tests/codegs-watchlists.test.js compares the two): unique names
+ * of at most 60 characters, NSE symbols, at most AB_WL_MAX_LISTS lists
+ * of AB_WL_MAX_SYMS stocks. Nothing else of the sheet is read or changed.
+ *****************************************************************/
+const AB_WL_SHEET = 'Site_Watchlists';
+const AB_WL_PIN_PROP = 'AB_WL_PIN';            // 'salt:sha256 hex of salt:PIN'
+const AB_WL_FAILS_PROP = 'AB_WL_FAILS';        // {n: wrong PINs in a row, until: locked until (ms)}
+const AB_WL_PIN_RE = /^[A-Za-z0-9]{6,20}$/;
+const AB_WL_LOCK_AFTER = 5;
+const AB_WL_LOCK_MS = 15 * 60 * 1000;
+const AB_WL_LOCK_MAX_MS = 24 * 3600 * 1000;
+const AB_WL_MAX_LISTS = 200;
+const AB_WL_MAX_SYMS = 2000;
+const AB_WL_NAME_MAX = 60;
+const AB_WL_MAX_CHARS = 400000;
+const AB_WL_PART_CHARS = 45000;
+const AB_WL_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const AB_WL_SYM_RE = /^[A-Z0-9][A-Z0-9&_.-]{0,29}$/;
+const AB_WL_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+const AB_WL_NOTE = 'My Watchlists of the website (Vercel / Firebase / phone), kept in step by the site and protected by your PIN ' +
+  '(menu 3 > My Watchlists sync). Please do not edit this tab.';
+
+/** doPost action 'watchlists' (the website's server). */
+function ab_wlFromSite_(req) {
+  const real = ab_feedToken_(false);
+  if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
+  if (req.op !== 'get' && req.op !== 'put') return ab_bridgeJson_({ ok: false, error: 'unknown op' });
+  const lock = ab_wlLock_();
+  if (!lock.tryLock(20000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
+  try {
+    const refused = ab_wlCheckPin_(req.pin);
+    if (refused) return ab_bridgeJson_({ ok: false, error: refused });
+    const cur = ab_wlRead_();
+    const reply = function (result, rev, savedAt, lists) {
+      return ab_bridgeJson_({ ok: true, result: result, rev: rev, savedAt: savedAt, state: { v: 1, lists: lists } });
+    };
+    if (req.op === 'get') return reply('ok', cur.rev, cur.savedAt, cur.lists);
+    if (req.base !== cur.rev) return reply('conflict', cur.rev, cur.savedAt, cur.lists);
+    const lists = ab_wlClean_(req.state);
+    const text = JSON.stringify({ v: 1, lists: lists });
+    if (text.length > AB_WL_MAX_CHARS) return ab_bridgeJson_({ ok: false, error: 'watchlists too big to keep' });
+    if (text === JSON.stringify({ v: 1, lists: cur.lists })) return reply('ok', cur.rev, cur.savedAt, lists);
+    const savedAt = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm:ss');
+    ab_wlWrite_(cur.rev + 1, savedAt, text);
+    return reply('ok', cur.rev + 1, savedAt, lists);
+  } catch (err) {
+    return ab_bridgeJson_({ ok: false, error: err.message });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** The document's lock (the PC bridge and the alert job hold the script lock), else the script lock. */
+function ab_wlLock_() {
+  let l = null;
+  try { l = LockService.getDocumentLock(); } catch (e) { l = null; }
+  return l || LockService.getScriptLock();
+}
+
+function ab_wlHash_(salt, pin) {
+  const b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + pin, Utilities.Charset.UTF_8);
+  return b.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
+}
+
+/** null when `pin` is the owner's PIN, else why not (wrong / locked / none set). */
+function ab_wlCheckPin_(pin) {
+  const props = PropertiesService.getScriptProperties();
+  const stored = String(props.getProperty(AB_WL_PIN_PROP) || '').split(':');
+  if (stored.length !== 2 || !stored[1]) return 'no PIN set yet - sheet menu 3 > My Watchlists sync: set / change PIN';
+  const now = Date.now();
+  let f = null;
+  try { f = JSON.parse(props.getProperty(AB_WL_FAILS_PROP) || 'null'); } catch (e) { f = null; }
+  if (f && f.until > now) return 'PIN locked for ' + Math.ceil((f.until - now) / 60000) + ' min';
+  if (typeof pin === 'string' && pin.length <= 64 && ab_wlHash_(stored[0], pin) === stored[1]) {
+    if (f) props.deleteProperty(AB_WL_FAILS_PROP);
+    return null;
+  }
+  const n = ((f && f.n) || 0) + 1;
+  const lockMs = n % AB_WL_LOCK_AFTER ? 0 : Math.min(AB_WL_LOCK_MS * Math.pow(2, n / AB_WL_LOCK_AFTER - 1), AB_WL_LOCK_MAX_MS);
+  props.setProperty(AB_WL_FAILS_PROP, JSON.stringify({ n: n, until: lockMs ? now + lockMs : 0 }));
+  return lockMs ? 'wrong PIN - PIN locked for ' + Math.round(lockMs / 60000) + ' min' : 'wrong PIN';
+}
+
+/** The lists with the website's rules (web/lib/watchlists.js load), never more than the limits. */
+function ab_wlClean_(raw) {
+  const out = [];
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.lists)) return out;
+  const ids = {}, names = {};
+  const time = function (v) { const s = String(v == null ? '' : v); return AB_WL_TIME_RE.test(s) ? s : ''; };
+  raw.lists.forEach(function (l) {
+    if (out.length >= AB_WL_MAX_LISTS || !l || typeof l !== 'object') return;
+    const id = String(l.id == null ? '' : l.id);
+    const name = String(l.name == null ? '' : l.name).replace(/\s+/g, ' ').trim().slice(0, AB_WL_NAME_MAX);
+    const key = name.toLowerCase();
+    if (!AB_WL_ID_RE.test(id) || ids[id] || !name || names[key]) return;
+    const seen = {}, syms = [];
+    (Array.isArray(l.syms) ? l.syms : []).forEach(function (s) {
+      const x = String(s == null ? '' : s).trim().toUpperCase().replace(/^NSE:/, '');
+      if (syms.length < AB_WL_MAX_SYMS && AB_WL_SYM_RE.test(x) && /[A-Z]/.test(x) && !seen[x]) { seen[x] = true; syms.push(x); }
+    });
+    ids[id] = true;
+    names[key] = true;
+    out.push({ id: id, name: name, syms: syms, created: time(l.created), updated: time(l.updated) });
+  });
+  return out;
+}
+
+/** {rev, savedAt, lists} from the hidden tab (rev 0 and no lists before the first save). */
+function ab_wlRead_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_WL_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { rev: 0, savedAt: '', lists: [] };
+  const vals = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
+  const cell = function (r) { const s = String(vals[r] ? vals[r][0] : ''); return s.charAt(0) === 'J' ? s.slice(1) : null; };
+  let meta = null, text = '';
+  try {
+    meta = JSON.parse(cell(1));
+    for (let i = 0; i < meta.parts; i++) text += cell(2 + i);
+  } catch (e) { meta = null; }
+  if (!meta || !(meta.rev >= 0) || text.length !== meta.chars) {
+    throw new Error('the stored watchlists (tab ' + AB_WL_SHEET + ') could not be read - unreadable');
+  }
+  return { rev: meta.rev, savedAt: String(meta.savedAt || ''), lists: ab_wlClean_(JSON.parse(text)) };
+}
+
+function ab_wlWrite_(rev, savedAt, text) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_WL_SHEET);
+  if (!sh) {
+    let active = null;
+    try { active = ss.getActiveSheet(); } catch (e) { active = null; }
+    sh = ss.insertSheet(AB_WL_SHEET, ss.getNumSheets());
+    try { if (sh.getMaxColumns() > 2) sh.deleteColumns(3, sh.getMaxColumns() - 2); } catch (e) { /* cosmetic */ }
+    try { if (active) active.activate(); } catch (e) { /* no UI (web app) */ }
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  const parts = [];
+  for (let i = 0; i < text.length; i += AB_WL_PART_CHARS) parts.push(text.slice(i, i + AB_WL_PART_CHARS));
+  const rows = [[AB_WL_NOTE], ['J' + JSON.stringify({ rev: rev, savedAt: savedAt, parts: parts.length, chars: text.length })]]
+    .concat(parts.map(function (p) { return ['J' + p]; }));
+  while (rows.length < sh.getLastRow()) rows.push(['']);
+  const rg = sh.getRange(1, 1, rows.length, 1);
+  rg.setNumberFormat('@');
+  rg.setValues(rows);
+}
+
+/** Menu: choose (or change) the PIN the website asks for once per device. */
+function runWatchlistPinSetup() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  const had = !!props.getProperty(AB_WL_PIN_PROP);
+  let now = '';
+  try {
+    const cur = ab_wlRead_();
+    now = cur.lists.length ? 'Lists kept now: ' + cur.lists.length + ' (last saved ' + cur.savedAt + ' IST).\n\n' : 'No lists kept yet.\n\n';
+  } catch (e) { now = e.message + '\n\n'; }
+  const title = 'My Watchlists sync - ' + (had ? 'change' : 'set') + ' PIN';
+  const r1 = ui.prompt(title,
+    now + (had ? 'A PIN is already set. Type a NEW PIN to change it (every device then asks for the new one), or Cancel.\n\n' : '') +
+    'PIN: 6 to 20 letters or digits (capital and small letters are different).\n' +
+    'The website asks for it once on each device (My Watchlists > Sync).', ui.ButtonSet.OK_CANCEL);
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  const pin = String(r1.getResponseText() || '').trim();
+  if (!AB_WL_PIN_RE.test(pin)) {
+    ui.alert(title, 'Not saved: the PIN must be 6 to 20 letters or digits (no spaces or other signs).', ui.ButtonSet.OK);
+    return;
+  }
+  const r2 = ui.prompt(title, 'Type the same PIN again.', ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  if (String(r2.getResponseText() || '').trim() !== pin) {
+    ui.alert(title, 'Not saved: the two PINs were different. Nothing changed.', ui.ButtonSet.OK);
+    return;
+  }
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  props.setProperty(AB_WL_PIN_PROP, salt + ':' + ab_wlHash_(salt, pin));
+  props.deleteProperty(AB_WL_FAILS_PROP);
+  ui.alert(title,
+    'PIN saved.\n\n' +
+    'On the website: My Watchlists > type this PIN > Connect - once on each device (phone, computer, Vercel and Firebase).\n' +
+    'Your lists are then kept in this sheet (hidden tab ' + AB_WL_SHEET + '), so every device shows the same lists.\n\n' +
+    AB_WL_LOCK_AFTER + ' wrong PINs in a row lock the lists for 15 minutes. Setting a PIN here again clears that.\n' +
+    'The web app must run this code: Deploy > Manage deployments > pencil > Version: New version > Deploy.',
+    ui.ButtonSet.OK);
+}

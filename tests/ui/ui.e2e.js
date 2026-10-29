@@ -6,7 +6,9 @@
 // only lists its own category, and Daily Suggestions matches the engine.
 // Live site feed: api/site, api/market-status and api/quotes are MOCKED with
 // page routes (same-origin Vercel, the Firebase copy's remote API, failures);
-// every other request off the test server is blocked - no network is used.
+// api/watchlists runs the REAL handler against the real Code.gs (tests/fixtures/
+// apps-script-mock.js); every other request off the test server is blocked - no
+// network is used.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -88,10 +90,11 @@ async function routeAll(context, siteBase, api, calls) {
     const u = new URL(route.request().url());
     if ((u.origin === site.origin || u.origin === REMOTE.origin) && u.pathname.indexOf('/api/') === 0) {
       calls.push(u.origin + u.pathname + u.search);
-      const r = api(u);
+      const r = await api(u, route.request());
       if (r === 'abort') return route.abort('failed');
+      if (r.status === 204) return route.fulfill({ status: 204, headers: r.headers || {}, body: '' });
       return route.fulfill({ status: r.status || 200, contentType: 'application/json; charset=utf-8',
-        headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(r.json) });
+        headers: Object.assign({ 'Access-Control-Allow-Origin': '*' }, r.headers || {}), body: JSON.stringify(r.json) });
     }
     if (u.origin !== site.origin) return route.abort('blockedbyclient');   // nothing leaves the machine
     if (site.hostname !== '127.0.0.1') {                                   // the fake Firebase host: serve web/
@@ -101,6 +104,33 @@ async function routeAll(context, siteBase, api, calls) {
     }
     return route.continue();
   });
+}
+/** The owner's sheet (real Code.gs in the Apps Script mock, PIN Blue2026 set) behind the real api/watchlists. */
+function watchlistBackend() {
+  const gs = require('../fixtures/apps-script-mock').loadCodeGs({ sheets: [{ name: 'Main', rows: [[], ['SYMBOL']] }] },
+    { props: { AB_FEED_TOKEN: 'feed-token' }, prompts: ['Blue2026', 'Blue2026'] });
+  gs.call('runWatchlistPinSetup');
+  const bodies = [];
+  const handler = require('../../api/watchlists').createHandler({
+    env: { SHEET_FEED_URL: 'https://sheet.invalid/exec', SHEET_FEED_TOKEN: 'feed-token' },
+    fetch: async (url, init) => new Response(JSON.stringify(gs.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } })
+  });
+  return {
+    bodies,
+    lists: () => JSON.parse(JSON.stringify(gs.call('ab_wlRead_').lists)).map((l) => l.name + ': ' + l.syms.join(' ')),
+    answer: async (req) => {
+      if (req.method() === 'POST') bodies.push(JSON.parse(req.postData() || '{}'));
+      const res = { statusCode: 200, headers: {}, body: undefined };
+      res.setHeader = (k, v) => { res.headers[k] = v; };
+      res.status = (c) => { res.statusCode = c; return res; };
+      res.json = (o) => { res.body = o; };
+      res.end = () => {};
+      await handler({ method: req.method(), body: req.postData() || undefined }, res);
+      const headers = {};
+      Object.keys(res.headers).filter((k) => /^Access-Control|^Allow$/.test(k)).forEach((k) => { headers[k] = res.headers[k]; });
+      return { status: res.statusCode, json: res.body, headers };
+    }
+  };
 }
 function watchErrors(page) {
   const errors = [];
@@ -607,6 +637,83 @@ function check(name, fn) {
     assert.deepStrictEqual(errors, [], 'console/page errors');
     assert.ok(st.banner && /Live data could not be loaded: /.test(st.banner), 'banner: ' + st.banner);
     assert.ok(/st-CACHED/.test(st.pillCls), 'pill CACHED');
+  });
+
+  await check('my watchlists sync: a PC on Vercel and a phone on Firebase share the lists through api/watchlists + the sheet', async () => {
+    const sheet = watchlistBackend();
+    const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
+    const start = async (vp, host, local, opts) => {
+      const c = await browser.newContext({ viewport: vp });
+      await c.addInitScript((l) => {
+        try { if (!window.sessionStorage.getItem('seeded')) { window.sessionStorage.setItem('seeded', '1'); if (l) localStorage.setItem('sb:watchlists', JSON.stringify(l)); localStorage.setItem('sb:api', 'true'); } } catch (e) { /* ignore */ }
+      }, local);
+      const calls = [];
+      await routeAll(c, host, api(opts), calls);
+      const p = await c.newPage(), errors = watchErrors(p);
+      await p.goto(host + '#lists', { waitUntil: 'load' });
+      await p.waitForSelector('#wl-sync .wl-sync', { timeout: 15000 });
+      return { c, p, errors, calls };
+    };
+    const names = (p) => p.$$eval('.wl-name', (x) => x.map((e) => e.querySelector('.wl-name-t').textContent + ' ' + e.querySelector('.wl-n').textContent));
+    const synced = (p) => p.waitForFunction(() => window.SB.wlSync.status().phase === 'ok' && !document.querySelector('#wl-sync-now[disabled]'), null, { timeout: 15000 });
+    const T = '2026-10-27T10:00:00.000Z';
+    const pc = await start({ width: 1366, height: 900 }, base, { v: 1, last: 'wa', lists: [{ id: 'wa', name: 'Swing trades', syms: ['TCS', 'INFY'], created: T, updated: T }] }, { priceState: 'DELAYED', session: 'open' });
+    assert.ok(await pc.p.$('#wl-pin'), 'not connected yet: the PIN box');
+    await pc.p.fill('#wl-pin', 'Wrong123');
+    await pc.p.press('#wl-pin', 'Enter');
+    await pc.p.waitForFunction(() => /Wrong PIN/.test(document.querySelector('#wl-pin-msg').textContent), null, { timeout: 15000 });
+    await pc.p.fill('#wl-pin', 'Blue2026');
+    await pc.p.click('#wl-pin-form button[type=submit]');
+    await synced(pc.p);
+    assert.match(await pc.p.$eval('#wl-sync', (x) => x.textContent), /In step with your Google Sheet/);
+    assert.deepStrictEqual(sheet.lists(), ['Swing trades: TCS INFY'], 'the PC\'s list went to the sheet');
+
+    // the phone (Firebase copy, 360 px) has its own list: after the PIN both have both
+    const phone = await start({ width: 360, height: 780 }, FIREBASE, { v: 1, last: 'wb', lists: [{ id: 'wb', name: 'Banks', syms: ['SBIN'], created: T, updated: T }] }, { priceState: 'EOD', session: 'closed' });
+    await phone.p.fill('#wl-pin', 'Blue2026');
+    await phone.p.press('#wl-pin', 'Enter');
+    await synced(phone.p);
+    assert.deepStrictEqual(await names(phone.p), ['Banks 1', 'Swing trades 2']);
+    assert.deepStrictEqual(sheet.lists(), ['Swing trades: TCS INFY', 'Banks: SBIN']);
+    assert.ok(phone.calls.some((u) => u === REMOTE.origin + '/api/watchlists'), 'the Firebase copy uses the Vercel API');
+    // a stock added on the phone reaches the sheet by itself, the PC on Sync now
+    await phone.p.click('[data-wl-pick]:not(.on)');
+    await phone.p.fill('#wl-add-in', 'HDFCBANK');
+    await phone.p.press('#wl-add-in', 'Enter');
+    await phone.p.waitForFunction(() => true);
+    for (let i = 0; i < 50 && sheet.lists()[0] !== 'Swing trades: TCS INFY HDFCBANK'; i++) await phone.p.waitForTimeout(200);
+    assert.deepStrictEqual(sheet.lists(), ['Swing trades: TCS INFY HDFCBANK', 'Banks: SBIN']);
+    await pc.p.click('#wl-sync-now');
+    await pc.p.waitForFunction(() => document.querySelectorAll('.wl-name').length === 2, null, { timeout: 15000 });
+    await synced(pc.p);
+    assert.deepStrictEqual(await names(pc.p), ['Banks 1', 'Swing trades 3']);
+    // a list deleted on the PC goes on the phone too
+    await pc.p.click('[data-wl-pick]:not(.on)');
+    assert.match(await pc.p.$eval('.wl-title h2', (x) => x.textContent), /Banks/);
+    await pc.p.click('#wl-del');
+    await pc.p.click('#wl-del-yes');
+    for (let i = 0; i < 50 && sheet.lists().length !== 1; i++) await pc.p.waitForTimeout(200);
+    assert.deepStrictEqual(sheet.lists(), ['Swing trades: TCS INFY HDFCBANK']);
+    await phone.p.click('#wl-sync-now');
+    await phone.p.waitForFunction(() => document.querySelectorAll('.wl-name').length === 1, null, { timeout: 15000 });
+    // the phone stays connected after a reload; "Stop sync" keeps the lists
+    await phone.p.reload({ waitUntil: 'load' });
+    await phone.p.waitForSelector('#wl-sync-off', { timeout: 15000 });
+    await synced(phone.p);
+    assert.deepStrictEqual(await names(phone.p), ['Swing trades 3']);
+    const overflow = await phone.p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    await phone.p.click('#wl-sync-off');
+    await phone.p.waitForSelector('#wl-pin');
+    assert.deepStrictEqual(await names(phone.p), ['Swing trades 3'], 'the lists stay on the phone');
+    assert.strictEqual(await phone.p.evaluate(() => localStorage.getItem('sb:wlsync')), null, 'the PIN is gone from the phone');
+    await phone.p.waitForTimeout(300);
+    const allCalls = pc.calls.concat(phone.calls);
+    await pc.c.close();
+    await phone.c.close();
+    assert.deepStrictEqual(pc.errors.concat(phone.errors), [], 'console/page errors');
+    assert.ok(overflow <= 0, 'horizontal page overflow ' + overflow + 'px');
+    assert.ok(allCalls.every((u) => u.indexOf('Blue2026') < 0), 'the PIN never goes in a URL');
+    assert.ok(sheet.bodies.length >= 6 && sheet.bodies.every((b) => b.op === 'get' || b.op === 'put'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
   });
 
   const preview = path.join(__dirname, '..', '..', 'dist', 'stock-blueprint-preview.html');

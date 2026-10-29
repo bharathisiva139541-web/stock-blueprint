@@ -86,25 +86,30 @@
   }
 
   /**
-   * Handles OPTIONS and non-GET methods. Returns true when the request was answered.
+   * Handles OPTIONS (CORS preflight) and methods other than `allowed` (default ['GET'];
+   * GET allows HEAD too). Returns true when the request was answered.
    */
-  function rejectNonGet(req, res) {
+  function rejectMethod(req, res, allowed) {
+    const ok = allowed && allowed.length ? allowed : ['GET'];
     const method = String((req && req.method) || 'GET').toUpperCase();
-    if (method === 'GET' || method === 'HEAD') return false;
+    if (ok.indexOf(method) >= 0 || (method === 'HEAD' && ok.indexOf('GET') >= 0)) return false;
+    const allow = ok.concat(ok.indexOf('GET') >= 0 ? ['HEAD'] : [], ['OPTIONS']).join(', ');
     if (method === 'OPTIONS') {
       setHeader(res, 'Access-Control-Allow-Origin', '*');
-      setHeader(res, 'Access-Control-Allow-Methods', 'GET');
+      setHeader(res, 'Access-Control-Allow-Methods', ok.join(', '));
+      if (ok.indexOf('POST') >= 0) setHeader(res, 'Access-Control-Allow-Headers', 'Content-Type');
       setHeader(res, 'Access-Control-Max-Age', '86400');
-      setHeader(res, 'Allow', 'GET, HEAD, OPTIONS');
+      setHeader(res, 'Allow', allow);
       setHeader(res, 'Cache-Control', cacheLib.noStore());
       if (res && typeof res.status === 'function' && typeof res.end === 'function') res.status(204).end();
       else { res.statusCode = 204; res.end(); }
       return true;
     }
-    sendJson(res, 405, { error: 'method not allowed - use GET' },
-      { cors: false, headers: { Allow: 'GET, HEAD, OPTIONS' } });
+    sendJson(res, 405, { error: 'method not allowed - use ' + ok.join(' or ') },
+      { cors: false, headers: { Allow: allow } });
     return true;
   }
+  function rejectNonGet(req, res) { return rejectMethod(req, res, ['GET']); }
 
   /** Logs without secrets (never logs request headers, env or upstream bodies). */
   function logError(label, err, env) {
@@ -113,14 +118,14 @@
   }
 
   /**
-   * Wraps an endpoint: (req, res, env) => Promise. Method guard + crash guard
-   * (500 JSON with a generic message).
+   * Wraps an endpoint: (req, res, env) => Promise. Method guard (GET, or `methods`) +
+   * crash guard (500 JSON with a generic message).
    */
-  function endpoint(label, getEnv, fn) {
+  function endpoint(label, getEnv, fn, methods) {
     return async function (req, res) {
       const env = getEnv();
       try {
-        if (rejectNonGet(req, res)) return;
+        if (rejectMethod(req, res, methods)) return;
         await fn(req, res, env);
       } catch (err) {
         logError(label, err, env);
@@ -137,6 +142,7 @@
     getQuery: getQuery,
     sendJson: sendJson,
     rejectNonGet: rejectNonGet,
+    rejectMethod: rejectMethod,
     logError: logError,
     endpoint: endpoint
   };

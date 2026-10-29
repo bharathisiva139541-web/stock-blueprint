@@ -155,8 +155,9 @@ function createEnv(workbook, opts) {
   opts = opts || {};
   const ctx = vm.createContext({});
   const RealmDate = vm.runInContext('Date', ctx);
+  const RealmArray = vm.runInContext('Array', ctx);
   const tz = opts.tz || 'Asia/Kolkata';
-  const env = { context: ctx, writes: [], reads: [], ranges: [], mails: [], alerts: [], calls: [], logs: [], tz: tz,
+  const env = { context: ctx, writes: [], reads: [], ranges: [], mails: [], alerts: [], prompts: [], calls: [], logs: [], tz: tz,
                 triggers: [], onRead: null };
 
   const tabs = {};   // name -> { grid, size, hidden() } for env.sheet
@@ -389,6 +390,12 @@ function createEnv(workbook, opts) {
 
   const ui = makeLenient('Ui', {
     alert: function () { env.alerts.push(Array.prototype.slice.call(arguments).filter(function (a) { return typeof a === 'string'; })); return 'OK'; },
+    // opts.prompts: the answers typed into ui.prompt in order (null = Cancel); env.prompts = the prompts shown
+    prompt: function () {
+      env.prompts.push(Array.prototype.slice.call(arguments).filter(function (a) { return typeof a === 'string'; }));
+      const a = (opts.prompts || []).length ? opts.prompts.shift() : null;
+      return { getSelectedButton: function () { return a === null ? 'CANCEL' : 'OK'; }, getResponseText: function () { return a === null ? '' : String(a); } };
+    },
     ButtonSet: { OK: 'OK', OK_CANCEL: 'OK_CANCEL', YES_NO: 'YES_NO', YES_NO_CANCEL: 'YES_NO_CANCEL' },
     Button: { OK: 'OK', CANCEL: 'CANCEL', YES: 'YES', NO: 'NO', CLOSE: 'CLOSE' }
   }, env.calls);
@@ -466,6 +473,12 @@ function createEnv(workbook, opts) {
       formatDate: function (d, zone, pattern) { return formatDate(d, zone, pattern); },
       parseDate: function (text, zone, pattern) { return new RealmDate(parseDate(text, zone, pattern).getTime()); },
       getUuid: function () { return crypto.randomUUID(); },
+      DigestAlgorithm: { SHA_256: 'sha256', SHA_1: 'sha1', MD5: 'md5' },
+      Charset: { UTF_8: 'utf8', US_ASCII: 'ascii' },
+      // Byte[] of signed bytes, like Apps Script
+      computeDigest: function (alg, value) {
+        return RealmArray.from(crypto.createHash(alg).update(String(value), 'utf8').digest(), function (b) { return b > 127 ? b - 256 : b; });
+      },
       sleep: function () { /* no waiting in tests */ },
       base64Encode: function (s) { return Buffer.from(String(s)).toString('base64'); },
       base64Decode: function (s) { return Array.from(Buffer.from(String(s), 'base64')); }

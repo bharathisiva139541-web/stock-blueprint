@@ -115,6 +115,35 @@ at the Vercel API; after that it shows the live data by itself):
    - *sheet feed returned an error* (or *timed out*) right after deploying →
      step 3 point 4 (**Website feed: rebuild now**) was not run yet.
 
+### Step 8 - My Watchlists on every device (PIN)
+
+My Watchlists (`#lists`) are kept in your Google Sheet (hidden tab
+`Site_Watchlists`), so the phone, the Vercel site and the Firebase copy show
+the same lists. It uses the same `SHEET_FEED_URL` + `SHEET_FEED_TOKEN` as the
+live feed - **no new Vercel setting**. The lists are protected by a PIN that
+the SHEET checks (Code2.gs `ab_wlFromSite_`):
+
+1. Paste the new `Code.gs` and `Code2.gs`, Save, and do the **New version**
+   deploy of the EXISTING web app (steps 1 and 2).
+2. Reload the sheet. Menu **Auto Bhavcopy → 3. Quarterly Results & Trend Tags →
+   My Watchlists sync: set / change PIN**: type a PIN of 6-20 letters or
+   digits, then the same PIN again. Only a salted hash is kept (Script
+   Properties `AB_WL_PIN`).
+3. On each device, once: **My Watchlists → Watchlist PIN → Connect**. The lists
+   already in that browser are added to the sheet's (a list with the same name
+   on both becomes one list).
+4. 5 wrong PINs in a row lock the lists for 15 minutes (then 30, 60 ... at most
+   24 h). Setting the PIN again in the sheet unlocks them at once; devices
+   with the old PIN then ask for the new one.
+5. *Sync is not working: auth failed ... older version* → the New version
+   deploy of step 1 was not done. *the sheet has no watchlist PIN yet* →
+   point 2.
+
+Server: `api/watchlists.js` (POST `{op: get|put, pin, base, state}`, never
+cached, CORS for the Firebase copy). Browser: `web/ui/watchlist-sync.js`
+(three-way merge `SB.wlModel.merge`, compare-and-swap on the sheet's
+revision, offline changes go with the next sync).
+
 ## 2. Saved copy (optional, on your PC)
 
 Only needed for localhost, the single-file preview, or as a newer fallback:

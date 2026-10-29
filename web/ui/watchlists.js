@@ -1,11 +1,14 @@
 /* Custom watchlists - the ☆ button next to every stock symbol, its "add to watchlist"
    popover, and saving (this browser's localStorage, key sb:watchlists; other open tabs
    follow along). The data rules live in web/lib/watchlists.js (SB.wlModel); the
-   "My Watchlists" page is web/pages/lists.js.
+   "My Watchlists" page is web/pages/lists.js; keeping the lists in the owner's Google
+   Sheet (the same lists on every device) is web/ui/watchlist-sync.js.
 
    SB.watchlists = { state(), get(id), create(name), rename(id, name), remove(id), add(id, sym),
                      addMany(id, text), removeSym(id, sym), toggle(id, sym), select(id), has(sym),
-                     listsWith(sym), onChange(fn) -> off(), saved(), open(sym, anchor) }
+                     listsWith(sym), onChange(fn(state, origin)) -> off(), saved(), open(sym, anchor),
+                     replace(state) }
+   origin: 'local' (a change made here), 'tab' (another tab of this site), 'sync' (replace: the sheet's lists)
    SB.wlStar(sym) -> the star button's HTML (used by ui.stockCell, the stock drawer, cards) */
 (function () {
   'use strict';
@@ -20,16 +23,19 @@
     saveOk = ui.store.set(KEY, state);
     return saveOk;
   }
-  function changed() {
+  function tell(origin) {
+    listeners.slice().forEach(function (fn) { try { fn(state, origin); } catch (e) { if (window.console) console.error(e); } });
+  }
+  function changed(origin) {
     persist();
     refreshStars();
-    listeners.slice().forEach(function (fn) { try { fn(state); } catch (e) { if (window.console) console.error(e); } });
+    tell(origin);
   }
   /** Apply a model result: { state } / { error } / a bare state. */
   function apply(r) {
     if (r && r.error) return r;
     var next = r && r.lists ? r : r && r.state;
-    if (next && next !== state) { state = next; changed(); }
+    if (next && next !== state) { state = next; changed('local'); }
     return r;
   }
 
@@ -164,8 +170,16 @@
     state = next;
     refreshStars();
     if (pop) renderPop('Updated from another tab.', '');
-    listeners.slice().forEach(function (fn) { fn(state); });
+    tell('tab');
   });
+  /** The lists as the sync made them (this browser's changes already merged in). */
+  function replace(next) {
+    var s = M.load(next);
+    if (JSON.stringify(s) === JSON.stringify(state)) return;
+    state = s;
+    changed('sync');
+    if (pop) renderPop('Updated from your other devices.', '');
+  }
 
   SB.wlStar = starHtml;
   SB.watchlists = {
@@ -183,7 +197,8 @@
     listsWith: function (sym) { return M.listsWith(state, sym); },
     onChange: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
     saved: function () { return saveOk; },
-    open: open
+    open: open,
+    replace: replace
   };
   // first visit: find out whether this browser lets the site save at all
   if (!ui.store.get(KEY, null)) saveOk = ui.store.set(KEY, state);
