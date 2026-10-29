@@ -21,8 +21,9 @@
  * P&L ...) and rows typed 'Entry'/'Position'/'Trade' are left out of every
  * value-revealing field, and any e-mail address left in a string is masked.
  *
- * System tabs (the script's own storage, e.g. 'Site_Feed' = the website
- * feed's stored JSON in 45,000-character cells) are structure only in every
+ * System tabs (the script's own storage: 'Site_Feed' = the website feed's
+ * stored JSON in 45,000-character cells, 'Site_Watchlists' = the viewer's
+ * PIN-protected My Watchlists, same layout) are structure only in every
  * mode: counts and types, no samples, values, titles or header text
  * (result.system = true).
  */
@@ -61,7 +62,7 @@
   var TYPE_HEADER_RE = /\btype\b/i;
   var PRIVATE_ROW_VALUE_RE = /^(entry|position|holding|trade)$/i;
   // tabs Code.gs keeps for itself: the website feed's stored copy (cells of raw JSON text)
-  var SYSTEM_SHEET_RE = /^site_feed$/i;
+  var SYSTEM_SHEET_RE = /^(site_feed|site_watchlists)$/i;
   var HEADER_WORD_RE = /(^|[^a-z])(symbol|ticker|name|company|date|time|price|open|high|low|close|volume|vol|sector|industry|type|status|qty|value|signal|pattern|index|count|total|change|avg|score|level|zone|source|series|notes?|remarks?|setting|key|description)($|[^a-z])|%/i;
 
   var DEFAULTS = { maxSamples: 5, maxDistinct: 30, maxList: 30, headerScanRows: 12, maxTrackDistinct: 20000 };

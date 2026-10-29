@@ -316,6 +316,13 @@ h2 .wl-star { font-size: 20px; margin-left: 4px; }
 .wl-title .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .wl-confirm { margin-top: 10px; }
 .wl-msg { min-height: 1.2em; margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.wl-sync { margin-bottom: 16px; }
+.wl-sync-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.wl-sync-row > div:first-child { flex: 1 1 320px; min-width: 0; }
+.wl-sync-row .wl-msg { margin: 4px 0 0; }
+.wl-sync-row .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wl-sync .controls { margin: 10px 0 4px; }
+.wl-sync-local { margin: 0 0 12px; }
 .wl-rm { width: 28px; height: 28px; font-size: 13px; color: var(--muted); }
 .wl-rm:hover { color: var(--down); }
 

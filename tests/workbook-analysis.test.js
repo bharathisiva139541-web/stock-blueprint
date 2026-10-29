@@ -388,6 +388,24 @@ test('system tab Site_Feed (the website feed Code.gs stores): structure only in 
   assert.deepEqual(col(block(other), 'Note').samples, ['hello', 'world']);
 });
 
+test('system tab Site_Watchlists (My Watchlists, PIN-protected): structure only, no list name or stock in any mode', function () {
+  const mock = require('./fixtures/apps-script-mock.js');
+  const env = mock.loadCodeGs({ sheets: [{ name: 'Main', rows: [['Stock Blueprint']] }] },
+    { props: { AB_FEED_TOKEN: 'f' }, now: Date.UTC(2026, 9, 29, 5, 0), prompts: ['Blue2026', 'Blue2026'] });
+  env.call('runWatchlistPinSetup');
+  const r = env.post({ token: 'f', action: 'watchlists', op: 'put', pin: 'Blue2026', base: 0,
+    state: { v: 1, lists: [{ id: 'w1', name: 'My secret swing list', syms: ['TCS', 'ZOMATO'] }] } });
+  assert.equal(r.rev, 1);
+  const rows = env.sheet('Site_Watchlists').rows.map(function (x) { return [x[0] === '' ? null : x[0]]; });
+  const sw = sheetOf('Site_Watchlists', rows, { state: 'hidden' });
+  [false, true].forEach(function (pub) {
+    const a = A.analyzeSheet(sw, { publicMode: pub });
+    assert.equal(a.system, true, 'publicMode ' + pub);
+    const text = JSON.stringify(a);
+    ['secret', 'swing', 'ZOMATO', 'TCS', 'My Watchlists'].forEach(function (v) { assert.ok(text.indexOf(v) < 0, 'leaked ' + v); });
+  });
+});
+
 test('results are plain JSON and bad input never throws', function () {
   const a = A.analyzeSheet(sheetOf('X', [['Symbol', 'Price'], ['TCS', 1], ['INFY', '#N/A']]), { master: masterMap() });
   assert.deepEqual(roundTrip(a), a);

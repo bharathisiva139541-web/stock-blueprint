@@ -8,9 +8,9 @@ dashboard website (`web/`) built on the same rules.
 |---|---|
 | `Code.gs` | All Apps Script code (V8) - the authoritative engine |
 | `pcbridge/ScreenerBridge/` | Python bridge + .bat helpers (runs on the Windows PC) |
-| `web/` | Static dashboard: Overview, Watchlist, My Watchlists (your own lists, saved in the browser), Daily Suggestions, Industries (official NSE 4-level explorer, docs/INDUSTRIES.md), Strategy Settings, Patterns & FVG, Excel Analysis, Results, Alerts & Trades, Backtesting, IPOs & Markets. Reads the sheet live through `api/site` (saved copy in `web/data/` as fallback) |
+| `web/` | Static dashboard: Overview, Watchlist, My Watchlists (your own lists, saved in the browser and - with your PIN - in the sheet, so every device shows the same lists), Daily Suggestions, Industries (official NSE 4-level explorer, docs/INDUSTRIES.md), Strategy Settings, Patterns & FVG, Excel Analysis, Results, Alerts & Trades, Backtesting, IPOs & Markets. Reads the sheet live through `api/site` (saved copy in `web/data/` as fallback) |
 | `web/lib/` | Engine modules (patterns, FVG, indicators, strategy, risk, backtest, classification, xlsx reader) - shared with the Node tests |
-| `api/` | Vercel functions: live site feed (`api/site`, from the sheet's web app) and market-data providers (Dhan / your sheet / none) |
+| `api/` | Vercel functions: live site feed (`api/site`, from the sheet's web app), My Watchlists sync (`api/watchlists`, PIN checked by the sheet) and market-data providers (Dhan / your sheet / none) |
 | `tools/` | `export_xlsx.py` (sheet export → web/data), `analyze_workbook.js`, `build.js` |
 | `tests/` | `node --test` suites, incl. parity with the sheet's own outputs |
 | `docs/` | `ARCHITECTURE.md`, `STRATEGY.md`, `MARKET_DATA.md`, `DEPLOY.md` |

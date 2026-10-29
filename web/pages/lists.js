@@ -1,10 +1,12 @@
 /* My Watchlists (#lists): the viewer's own watchlists - create, rename, delete, search /
-   filter, add and remove stocks. Saved in this browser (web/ui/watchlists.js); the ☆ next
-   to any stock symbol on the site adds to them too. */
+   filter, add and remove stocks. Saved in this browser (web/ui/watchlists.js) and, after the
+   PIN is typed once on this device, in the owner's Google Sheet (web/ui/watchlist-sync.js:
+   the same lists on every device and site); the ☆ next to any stock symbol adds to them too. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, M = SB.wlModel;
   var V = { q: '', sort: 'name', inList: '', edit: false, confirm: false };
+  var PIN_WHERE = 'set it in your Google Sheet: menu Auto Bhavcopy › 3. Quarterly Results &amp; Trend Tags › My Watchlists sync: set / change PIN';
 
   SB.page('lists', {
     render: function (el, params, ctx) {
@@ -13,9 +15,10 @@
       var table = null;
 
       el.innerHTML = '<div class="page-head"><div><h1>My watchlists</h1><p>Your own lists of stocks. Press ☆ next to any stock symbol on the site, or add symbols here. ' +
-        'Every change is saved at once in this browser, so the lists stay after a reload or a restart. Prices: ' +
+        'Every change is saved at once in this browser - and, once this device is connected with your PIN, in your Google Sheet, ' +
+        'so your phone and both sites show the same lists. Prices: ' +
         ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + '</p></div></div>' +
-        '<div id="wl-save"></div><div class="wl-layout"><aside class="card wl-side" aria-label="Watchlists"><div id="wl-side"></div></aside>' +
+        '<div id="wl-save"></div><div id="wl-sync"></div><div class="wl-layout"><aside class="card wl-side" aria-label="Watchlists"><div id="wl-side"></div></aside>' +
         '<section class="card wl-main" aria-live="polite"><div id="wl-main"></div></section></div>';
 
       function current() {
@@ -116,11 +119,61 @@
         $('#wl-save', el).innerHTML = W.saved() ? '' : '<div class="note bad">This browser is not letting the site save (private window or blocked site data). ' +
           'Your watchlists work until you close this tab but will not be kept.</div>';
       }
-      function drawAll() { drawSave(); drawSide(); drawMain(); }
+      // ---------- top: the same lists on every device (Google Sheet sync) ----------
+      function when(iso) {
+        var d = new Date(iso);
+        if (!iso || isNaN(d.getTime())) return '';
+        var t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return d.toDateString() === new Date().toDateString() ? 'today ' + t : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + t;
+      }
+      function drawSync() {
+        var S = SB.wlSync, host = $('#wl-sync', el);
+        if (!S || !host) return;
+        var s = S.status();
+        if (s.phase === 'nohost') {
+          host.innerHTML = '<p class="sub wl-sync-local">Keeping the same lists on every device works on the live site (Vercel or Firebase). Here the lists stay in this browser.</p>';
+          return;
+        }
+        var head = '<div><h2 id="wl-sync-h">Same lists on every device</h2>';
+        if (!s.linked) {
+          var why = s.phase === 'pin' ? (/locked/i.test(s.message) ? s.message.charAt(0).toUpperCase() + s.message.slice(1) + '.'
+              : !s.message || /wrong pin/i.test(s.message) ? 'Wrong PIN - type it again.' : s.message)
+            : s.phase === 'nopin' ? 'Your Google Sheet has no watchlist PIN yet - ' + PIN_WHERE + ', then type it here.'
+            : '';
+          host.innerHTML = '<section class="card wl-sync" aria-labelledby="wl-sync-h"><div class="wl-sync-row">' + head +
+            '<p class="sub">Now these lists are saved only in this browser. Type your watchlist PIN once to keep them in your Google Sheet: ' +
+            'then your phone, this site and the other site (Vercel / Firebase) all show the same lists. No PIN yet? ' + PIN_WHERE + '.</p></div></div>' +
+            '<form id="wl-pin-form" class="controls"><label class="sr-only" for="wl-pin">Watchlist PIN</label>' +
+            '<input id="wl-pin" class="search" type="password" maxlength="20" autocomplete="off" placeholder="Watchlist PIN" aria-describedby="wl-pin-msg">' +
+            '<button class="btn primary" type="submit">Connect</button></form>' +
+            '<p id="wl-pin-msg" class="wl-msg' + (why ? ' bad' : '') + '" role="status">' + (s.phase === 'nopin' ? why : esc(why)) + '</p></section>';
+          return;
+        }
+        var line = s.phase === 'syncing' ? 'Syncing with your Google Sheet…'
+          : s.phase === 'ok' ? '✓ In step with your Google Sheet' + (s.at ? ' - last synced ' + when(s.at) : '') + '. Changes made here show on your other devices too.'
+          : s.phase === 'locked' ? 'Sync paused - ' + s.message + '. Your lists stay in this browser meanwhile.'
+          : s.phase === 'offline' ? 'Could not reach your Google Sheet just now (' + s.message + '). Your changes are kept in this browser and sent with the next sync.'
+          : 'Sync is not working: ' + s.message + '.';
+        var cls = s.phase === 'ok' ? ' good' : s.phase === 'syncing' ? '' : ' bad';
+        host.innerHTML = '<section class="card wl-sync" aria-labelledby="wl-sync-h"><div class="wl-sync-row">' + head +
+          '<p class="wl-msg' + cls + '" role="status">' + esc(line) + '</p></div>' +
+          '<div class="actions"><button class="btn" type="button" id="wl-sync-now"' + (s.phase === 'syncing' ? ' disabled' : '') + '>Sync now</button>' +
+          '<button class="btn" type="button" id="wl-sync-off">Stop sync on this device</button></div></div></section>';
+      }
+      function drawAll() { drawSave(); drawSync(); drawSide(); drawMain(); }
 
       // ---------- events ----------
       el.addEventListener('submit', function (e) {
         var f = e.target;
+        if (f.id === 'wl-pin-form') {
+          e.preventDefault();
+          var pin = $('#wl-pin', el).value;
+          if (!pin.trim()) { $('#wl-pin', el).focus(); return; }
+          SB.wlSync.connect(pin).then(function (s) {
+            if (!s.linked && el.isConnected && $('#wl-pin', el)) $('#wl-pin', el).focus();
+          });
+          return;
+        }
         if (f.id === 'wl-create') {
           e.preventDefault();
           var inp = $('#wl-new', el), r = W.create(inp.value);
@@ -144,9 +197,10 @@
           if (r3.added.length) parts.push('Added ' + r3.added.join(', ') + '.');
           if (r3.dup.length) parts.push(r3.dup.join(', ') + (r3.dup.length === 1 ? ' is' : ' are') + ' already in this watchlist.');
           if (r3.bad.length) parts.push('Not a symbol: ' + r3.bad.join(', ') + '.');
+          if (r3.full.length) parts.push('Not added - a watchlist holds at most ' + F.int(M.MAX_SYMS) + ' stocks: ' + r3.full.slice(0, 20).join(', ') + (r3.full.length > 20 ? ' and ' + F.int(r3.full.length - 20) + ' more' : '') + '.');
           var unknown = r3.added.filter(function (x) { return !ctx.bySym[x]; });
           if (unknown.length) parts.push(unknown.join(', ') + ' ' + (unknown.length === 1 ? 'is' : 'are') + ' not in the current Stock Blueprint data (kept anyway).');
-          say(parts.join(' '), r3.added.length && !r3.bad.length ? 'good' : r3.added.length ? '' : 'bad');
+          say(parts.join(' '), r3.added.length && !r3.bad.length && !r3.full.length ? 'good' : r3.added.length ? '' : 'bad');
           drawAll();
           $('#wl-add-in', el).focus();
         }
@@ -156,6 +210,8 @@
         if (pick) { W.select(pick.getAttribute('data-wl-pick')); V.edit = false; V.confirm = false; V.inList = ''; say(''); drawSide(); drawMain(); var b = el.querySelector('[data-wl-pick="' + pick.getAttribute('data-wl-pick') + '"]'); if (b) b.focus(); return; }
         var rm = e.target.closest('[data-wl-rm]');
         if (rm) { var x = rm.getAttribute('data-wl-rm'); W.removeSym(current().id, x); say('Removed ' + x + '. Saved.', 'good'); drawSide(); drawMain(); return; }
+        if (e.target.closest('#wl-sync-now')) { SB.wlSync.syncNow(); return; }
+        if (e.target.closest('#wl-sync-off')) { SB.wlSync.disconnect(); return; }
         if (e.target.closest('#wl-rename-btn')) { V.edit = true; V.confirm = false; drawMain(); var i = $('#wl-rename-in', el); i.focus(); i.select(); return; }
         if (e.target.closest('#wl-rename-cancel')) { V.edit = false; say(''); drawMain(); return; }
         if (e.target.closest('#wl-del')) { V.confirm = true; drawMain(); $('#wl-del-no', el).focus(); return; }
@@ -191,6 +247,12 @@
         drawSide();
         if (!V.edit) drawMain();
       });
+      var offSync = SB.wlSync ? SB.wlSync.onStatus(function () {
+        if (!el.isConnected) { offSync(); return; }
+        var typing = document.activeElement && document.activeElement.id === 'wl-pin' ? $('#wl-pin', el).value : null;
+        drawSync();
+        if (typing != null && $('#wl-pin', el)) { $('#wl-pin', el).value = typing; $('#wl-pin', el).focus(); }
+      }) : function () {};
       drawAll();
     }
   });

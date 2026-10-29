@@ -958,6 +958,7 @@ function onOpen() {
         .addItem('Website feed: setup info (read-only token)', 'runFeedSetupInfo')
         .addItem('Website feed: rebuild now', 'runSiteFeedRebuildNow')
         .addItem('Website feed: stop auto-refresh', 'runSiteFeedStopAutoRefresh')
+        .addItem('My Watchlists sync: set / change PIN', 'runWatchlistPinSetup')
         .addSeparator()
         .addItem('Selected row(s)', 'runQuarterlyTrendForSelection')
         .addItem('Paste symbol list...', 'runQuarterlyTrendForSymbolPrompt')
@@ -8742,6 +8743,8 @@ function doPost(e) {
   // Website feed: read-only, its own token (never the bridge token, which can write).
   if (req && req.action === 'snapshot') return ab_feedSnapshot_(req);
   if (req && req.action === 'site') return ab_feedSite_(req);
+  // the website's My Watchlists: the same token, plus the owner's PIN (checked in ab_wlFromSite_, Code2.gs)
+  if (req && req.action === 'watchlists') return ab_wlFromSite_(req);
   const real = ab_bridgeToken_(false);
   if (!req || !real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
 
@@ -8814,7 +8817,9 @@ function doPost(e) {
 // them DELAYED (~20 min). Separate token from the PC bridge: this one can
 // never change the owner's data - it reads the sheet and keeps only the
 // website's own stored copy (hidden tab Site_Feed, action 'site') and that
-// copy's 30-minute refresh trigger.
+// copy's 30-minute refresh trigger. With the owner's PIN it also keeps the
+// website's My Watchlists (action 'watchlists', hidden tab Site_Watchlists,
+// Code2.gs ab_wlFromSite_).
 // ---------------------------------------------------------------------
 const AB_FEED_TOKEN_PROP = 'AB_FEED_TOKEN';
 
@@ -9918,7 +9923,8 @@ function runFeedSetupInfo() {
     '  SHEET_FEED_TOKEN = the token above\n' +
     'then redeploy the site. This token cannot change your data: it reads the sheet and\n' +
     'only keeps the website\'s own stored copy (hidden tab Site_Feed) and its 30-minute\n' +
-    'refresh trigger.\n\n' +
+    'refresh trigger - and, with your watchlist PIN (My Watchlists sync: set / change PIN),\n' +
+    'the website\'s My Watchlists (hidden tab Site_Watchlists).\n\n' +
     'The web app must be on the NEW version of this code - update the EXISTING deployment\n' +
     '(never "New deployment": that changes the address the PC bridge uses):\n' +
     'Deploy > Manage deployments > pencil > Version: New version > Deploy.\n' +

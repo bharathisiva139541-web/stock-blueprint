@@ -57,6 +57,18 @@
                reason: 'the sheet web app does not support part "' + String((body && body.part) || '').replace(/[^a-z]/gi, '').slice(0, 20) +
                  '" yet (update Code.gs and ' + NEW_VERSION + ')' };
     }
+    // My Watchlists (action 'watchlists'): the PIN is checked by the sheet; only the minutes are copied
+    const locked = /locked for (\d{1,5}) min/i.exec(e);
+    if (locked) {
+      return { code: 'locked', reason: (/wrong pin/i.test(e) ? 'wrong PIN - ' : '') + 'too many wrong PINs: the watchlists are locked for ' +
+        locked[1] + ' min (setting the PIN again in the sheet unlocks them)' };
+    }
+    if (/wrong pin/i.test(e)) return { code: 'pin', reason: 'wrong PIN' };
+    if (/no pin set/i.test(e)) {
+      return { code: 'nopin', reason: 'the sheet has no watchlist PIN yet (sheet menu 3 > My Watchlists sync: set / change PIN)' };
+    }
+    if (/too big/i.test(e)) return { code: 'too-big', reason: 'the watchlists are too big to keep in the sheet' };
+    if (/unreadable/i.test(e)) return { code: 'unreadable', reason: 'the sheet\'s stored watchlists (tab Site_Watchlists) could not be read' };
     if (/busy/i.test(e)) return { code: 'busy', reason: 'sheet busy - try again shortly' };
     if (/updating/i.test(e)) {
       // Only the two counts are copied from the upstream text.
