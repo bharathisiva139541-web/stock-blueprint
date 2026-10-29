@@ -1992,22 +1992,222 @@ def mc_step(cfg, want, behind):
 
 
 # ------------------------------------------------------------------- the run
-def acquire_lock():
+# bridge.lock: one round at a time. It holds {pid, boot, started}; a running round touches it every
+# minute (heartbeat). A lock is stale - taken over - when its round is gone: the program is no longer
+# running, the computer was restarted since, or the heartbeat is LOCK_STALE_S old (shut down / killed).
+LOCK_STALE_S = 10 * 60
+LOCK_WAIT_S = 12 * 60          # a new round waits this long for a running one (it may be just finishing)
+_HEARTBEAT = {'stop': None}
+
+
+def _boot_time():
+    """When this computer started (epoch seconds), or None."""
     try:
-        if os.path.exists(LOCK_PATH) and time.time() - os.path.getmtime(LOCK_PATH) < 3 * 3600:
-            return False
-        with open(LOCK_PATH, 'w') as f:
-            f.write(str(os.getpid()))
+        if os.name == 'nt':
+            import ctypes
+            tick = ctypes.windll.kernel32.GetTickCount64
+            tick.restype = ctypes.c_ulonglong              # the default (32-bit int) would wrap after 24 days
+            return time.time() - tick() / 1000.0
+        with open('/proc/uptime') as f:
+            return time.time() - float(f.read().split()[0])
+    except Exception:
+        return None
+
+
+def _pid_alive(pid):
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if os.name == 'nt':
+        try:
+            import ctypes
+            from ctypes import wintypes
+            k = ctypes.WinDLL('kernel32', use_last_error=True)
+            k.OpenProcess.restype = wintypes.HANDLE
+            k.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            k.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+            k.CloseHandle.argtypes = (wintypes.HANDLE,)
+            h = k.OpenProcess(0x1000, False, pid)          # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return ctypes.get_last_error() == 5        # access denied: it exists
+            code = wintypes.DWORD()
+            ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+            k.CloseHandle(h)
+            return bool(ok) and code.value == 259          # STILL_ACTIVE
+        except Exception:
+            return True
+    try:
+        os.kill(pid, 0)                                    # POSIX only (on Windows this would stop the process)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
         return True
     except OSError:
+        return False
+
+
+def lock_is_stale():
+    """True when there is no bridge.lock or its round is gone (see above)."""
+    try:
+        age = time.time() - os.path.getmtime(LOCK_PATH)
+    except OSError:
         return True
+    if age > LOCK_STALE_S:
+        return True
+    try:
+        with open(LOCK_PATH, 'r', encoding='utf-8') as f:
+            raw = f.read().strip()
+        info = json.loads(raw) if raw.startswith('{') else {'pid': raw}
+    except (OSError, ValueError):
+        return False
+    boot, now_boot = info.get('boot'), _boot_time()
+    if isinstance(boot, (int, float)) and now_boot and abs(boot - now_boot) > 120:
+        return True                                        # the computer was restarted since
+    pid = info.get('pid')
+    return bool(pid) and str(pid) != str(os.getpid()) and not _pid_alive(pid)
+
+
+def _beat(stop):
+    while not stop.wait(60):
+        try:
+            os.utime(LOCK_PATH, None)
+        except OSError:
+            pass
+
+
+def acquire_lock(wait_s=0):
+    """Takes bridge.lock (waiting up to wait_s for a running round) and keeps it fresh. False = another round is running."""
+    import threading
+    deadline = time.time() + wait_s
+    told = False
+    while not lock_is_stale():
+        if time.time() >= deadline:
+            return False
+        if not told:
+            log('Another round is still running - waiting for it to finish (up to %d minutes) ...' % max(1, wait_s // 60))
+            told = True
+        time.sleep(30)
+    try:
+        with open(LOCK_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'pid': os.getpid(), 'boot': _boot_time(), 'started': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, f)
+    except OSError:
+        return True
+    stop = threading.Event()
+    _HEARTBEAT['stop'] = stop
+    threading.Thread(target=_beat, args=(stop,), daemon=True).start()
+    return True
 
 
 def release_lock():
+    if _HEARTBEAT['stop'] is not None:
+        _HEARTBEAT['stop'].set()
+        _HEARTBEAT['stop'] = None
     try:
         os.remove(LOCK_PATH)
     except OSError:
         pass
+
+
+# run_state.json: what the current round has sent, so a round that stopped half-way (the computer was shut
+# down, the program closed) is CONTINUED by the next one within RESUME_HOURS: the sheet first processes the
+# pages it already has (Results Day + email), the pages already sent are not fetched again, then the rest
+# of the round (other pages, moneycontrol, processing) runs as usual.
+RUN_STATE_PATH = os.path.join(HERE, 'run_state.json')
+RESUME_HOURS = 12
+
+
+def run_state_load():
+    try:
+        with open(RUN_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def run_state_save(st):
+    try:
+        with open(RUN_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f, indent=1)
+    except OSError as e:
+        log('Could not save %s (%s)' % (RUN_STATE_PATH, e))
+
+
+_LOG_LINE = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})  (.*)$')
+_LOG_ITEM = re.compile(r'^\[\d+/\d+\] (\S+)  (?:ok \(|not on screener)')
+
+
+def run_state_from_log(batch, now=None):
+    """A round of an earlier version of this program (no run_state.json) that stopped half-way, read back from
+    bridge.log: {started, ts, sent, latest: {}, stage, from_log} or None. Only the pages sure to be in the sheet
+    count (whole batches, or all of them once the log shows the round went past the pages)."""
+    try:
+        with open(LOG_PATH, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.read()[-400 * 1024:].splitlines()
+    except OSError:
+        return None
+    start = None
+    for i, line in enumerate(lines):
+        m = _LOG_LINE.match(line)
+        if m and m.group(2).startswith('Sheet wants '):
+            start = i
+    if start is None:
+        return None
+    started = _LOG_LINE.match(lines[start]).group(1)
+    try:
+        ts = time.mktime(time.strptime(started, '%Y-%m-%d %H:%M:%S'))
+    except ValueError:
+        return None
+    if (now or time.time()) - ts > RESUME_HOURS * 3600:
+        return None
+    items, past = [], False
+    for line in lines[start + 1:]:
+        m = _LOG_LINE.match(line)
+        msg = (m.group(2) if m else line).strip()
+        if msg.startswith('Run finished.') or msg.startswith('Sheet: Results Day') or msg.startswith('FAILED sending to sheet'):
+            return None                                    # it finished (or could not send at all)
+        if msg.startswith('Sheet wants '):
+            return None
+        it = _LOG_ITEM.match(msg)
+        if it:
+            items.append(it.group(1))
+        elif msg.startswith('moneycontrol: ') or msg.startswith('Sent ') or msg.startswith('Asking the sheet'):
+            past = True
+    sent = items if past else items[:len(items) // max(1, int(batch)) * max(1, int(batch))]
+    if not sent:
+        return None
+    return {'started': started, 'ts': ts, 'sent': sent, 'latest': {}, 'stage': 'screener', 'from_log': True}
+
+
+def run_state_resume(cfg):
+    """The round to continue, or None."""
+    st = run_state_load()
+    if st is None:
+        return run_state_from_log(cfg.get('batch_size', 5))
+    if st.get('stage') == 'done' or time.time() - float(st.get('ts') or 0) > RESUME_HOURS * 3600:
+        return None
+    return st if st.get('sent') or st.get('stage') == 'process' else None
+
+
+def ask_process(cfg):
+    """The sheet processes the pages it has (Results Day + never-attempted rows). True when it answered."""
+    try:
+        res = api(cfg, 'process', timeout=420, tries=2)
+    except RuntimeError as e:
+        log('Processing call failed (data is safe in the sheet, next run processes it): %s' % e)
+        return False
+    if not res.get('ok'):
+        log('Sheet could not process: %s' % res.get('error'))
+        return False
+    r = res.get('result', {})
+    log('Sheet: Results Day -> %s | Never-attempted rows -> %s' % (r.get('results'), r.get('missing')))
+    for err in r.get('errors', []):
+        log('Sheet problem: %s' % err)
+    return True
 
 
 def wait_for_sheet(cfg, minutes=4):
@@ -2029,8 +2229,8 @@ def run_once(cfg):
     if not cfg.get('url') or not cfg.get('token'):
         log('Not set up yet - run Setup.bat first.')
         return 1
-    if not acquire_lock():
-        log('Another run is still going (or crashed less than 3 h ago) - skipping this one.')
+    if not acquire_lock(LOCK_WAIT_S):
+        log('Another round is still running - skipping this one.')
         return 0
     try:
         try:
@@ -2045,17 +2245,44 @@ def run_once(cfg):
         ipo_step(cfg)
         eod_step(cfg)
         hist_step(cfg, ans.get('h60'))
-        priority = [s for s in ans.get('priority', [])]
-        missing = [s for s in ans.get('missing', [])][:int(cfg['max_missing_per_run'])]
+
+        state = run_state_resume(cfg)
+        resumed = state is not None
+        if resumed:
+            log('Continuing the round of %s that stopped half-way (computer off / program closed?): %d page(s) were already '
+                'sent - they are not fetched again. First the sheet processes them ...'
+                % (state['started'][:16], len(state.get('sent', []))))
+            state['stage'] = 'process'
+            run_state_save(state)
+            if ask_process(cfg):
+                state['stage'] = 'screener'
+                try:
+                    again = api(cfg, 'list', tries=2, timeout=120)
+                    if again.get('ok'):
+                        ans = again
+                except RuntimeError as e:
+                    log('Could not ask the sheet again (%s) - going on with its first answer.' % e)
+        else:
+            state = {'started': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'ts': time.time(), 'sent': [], 'latest': {},
+                     'stage': 'screener'}
+        run_state_save(state)
+        need_process = state['stage'] == 'process'          # the first processing call above did not get through
+        already = set(state.get('sent', []))
+        screener_latest = dict(state.get('latest') or {})   # what screener.in showed, per symbol (from the sheet's answer)
+
+        priority = [s for s in ans.get('priority', []) if s not in already]
+        missing = [s for s in ans.get('missing', []) if s not in already][:int(cfg['max_missing_per_run'])]
         todo = priority + [s for s in missing if s not in priority]
-        log('Sheet wants %d symbol(s): %d results-due/pending, %d never-attempted (of %d waiting).'
-            % (len(todo), len(priority), len(missing), len(ans.get('missing', []))))
-        if not todo:
+        log('Sheet wants %d symbol(s): %d results-due/pending, %d never-attempted (of %d waiting).%s'
+            % (len(todo), len(priority), len(missing), len(ans.get('missing', [])),
+               (' %d sent earlier in this round are skipped.' % len(already)) if already else ''))
+        if not todo and not resumed:
+            state['stage'] = 'done'
+            run_state_save(state)
             return 0
 
         pending_items, posted, fails_in_row, aborted = [], 0, 0, False
         batch = int(cfg['batch_size'])
-        screener_latest = {}       # what screener.in showed, per symbol (from the sheet's answer)
 
         def flush(items):
             nonlocal posted
@@ -2068,6 +2295,9 @@ def run_once(cfg):
             for d in res.get('details', []):
                 if d.get('latest'):
                     screener_latest[d['sym']] = d['latest']
+            state['sent'] = state.get('sent', []) + [it['sym'] for it in items]
+            state['latest'] = screener_latest
+            run_state_save(state)
             # Companies whose consolidated page was thin: also send the standalone page.
             extra = []
             for d in res.get('details', []):
@@ -2084,6 +2314,8 @@ def run_once(cfg):
                 for d in res2.get('details', []):
                     if d.get('latest'):
                         screener_latest[d['sym']] = d['latest']
+                state['latest'] = screener_latest
+                run_state_save(state)
 
         for i, sym in enumerate(todo):
             try:
@@ -2118,6 +2350,8 @@ def run_once(cfg):
                 polite_sleep(cfg)
 
         # Results screener.in does not show yet: moneycontrol's figures first (the sheet decides).
+        state['stage'] = 'moneycontrol'
+        run_state_save(state)
         mc_sent = 0
         try:
             want = ans.get('mc') or {}
@@ -2128,20 +2362,16 @@ def run_once(cfg):
         except Exception as e:   # never let moneycontrol stop the run
             log('moneycontrol: unexpected problem - %s' % e)
 
-        if posted or mc_sent:
+        state['stage'] = 'process'
+        run_state_save(state)
+        processed = True
+        if posted or mc_sent or need_process:
             log('Sent %d page(s)%s. Asking the sheet to process them...'
                 % (posted, (' and %d moneycontrol result(s)' % mc_sent) if mc_sent else ''))
-            try:
-                res = api(cfg, 'process', timeout=420, tries=2)
-                if res.get('ok'):
-                    r = res.get('result', {})
-                    log('Sheet: Results Day -> %s | Never-attempted rows -> %s' % (r.get('results'), r.get('missing')))
-                    for err in r.get('errors', []):
-                        log('Sheet problem: %s' % err)
-                else:
-                    log('Sheet could not process: %s' % res.get('error'))
-            except RuntimeError as e:
-                log('Processing call failed (data is safe in the sheet, next run processes it): %s' % e)
+            processed = ask_process(cfg)
+        if processed:
+            state['stage'] = 'done'
+            run_state_save(state)
         log('Run finished.')
         return 0
     finally:

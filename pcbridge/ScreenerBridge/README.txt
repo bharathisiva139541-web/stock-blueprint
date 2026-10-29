@@ -58,6 +58,17 @@ Watchlist and the stock details (Delivery %).
  - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
  - To switch it off: in config.json add  "eod": false
 
+IF THE COMPUTER GOES OFF IN THE MIDDLE OF A ROUND
+A round can take half an hour (screener.in asks it to slow down now and then). If the computer is shut
+down or the program is closed half-way, the next round CONTINUES it (within 12 hours): the sheet first
+processes the pages it already got (Results Day + the email), those pages are not fetched again, and then
+the rest of the round runs (the other pages, moneycontrol, processing).
+ - run_state.json   remembers what the current round has sent.
+ - bridge.lock      shows a round is running. A lock left behind by a round that is gone (program closed,
+   computer restarted) no longer blocks the next round; while a round really runs, a new one waits up
+   to 12 minutes for it and then skips.
+ - bridge.log says "Continuing the round of ... that stopped half-way".
+
 HISTORY60: 60 DAYS OF DAILY CANDLES (FVG scans + Results Performance)
 The same bhavcopy also has each stock's Open / High / Low / Close / Volume. Every round the program sends
 the trading days the sheet's "History60" tab is missing (the sheet keeps 60 days of your PatternData
