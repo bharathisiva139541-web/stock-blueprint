@@ -158,7 +158,7 @@ test('Results Day: moneycontrol first while screener.in is behind, then screener
   assert.match(t.ACUTAAS.Note, /^moneycontrol figures - Screener still shows Jun 2026; screener\.in replaces them when it shows Sep 2026$/);
   assert.strictEqual(e.mails.length, 1, 'nothing new - no email');
 
-  // next day screener.in shows Sep 2026: its figures replace moneycontrol's, note cleared, no second email
+  // next day screener.in shows Sep 2026: its figures replace moneycontrol's, note cleared
   e.setNow(NOW + 864e5);
   e.post({ token: TOKEN, action: 'put', items: [
     { sym: 'ACUTAAS', html: screener(SQ_NEW, [306, 393, 432, 329, 440], [71, 106, 134, 74, 125], [8.82, 13.19, 16.09, 9.07, 15.5]) }] });
@@ -170,7 +170,15 @@ test('Results Day: moneycontrol first while screener.in is behind, then screener
   assert.match(t.ACUTAAS.Note, /screener\.in figures replaced the moneycontrol ones on 28\/10\/2026 19:30/);
   assert.deepStrictEqual(figures(e, 'ACUTAAS').slice(0, 4), [34, 69, 44, 76]);
   assert.strictEqual(e.sheet('Main').notes[main(e, 'ACUTAAS').idx + ',' + C['QoQ Revenue Growth %']], undefined, 'note cleared');
-  assert.strictEqual(e.mails.length, 1, 'a replacement is not news');
+  // ... and an email says so: the stock in its own section, with screener.in's figures
+  assert.strictEqual(e.mails.length, 2, 'the replacement is emailed');
+  const m3 = e.mails[1][0];
+  assert.match(m3.subject, /^Results Update - 0 updated in Main, 1 now with screener\.in figures, /);
+  assert.match(m3.htmlBody, /Now with screener\.in figures \(they replace the moneycontrol ones\)/);
+  assert.strictEqual((m3.htmlBody.match(/SCREENER\.IN FIGURES/g) || []).length, 1);
+  assert.ok(m3.htmlBody.indexOf('ACUTAAS') > 0 && !/VIA MONEYCONTROL/.test(m3.htmlBody.split('Updated in Main')[0]), 'no moneycontrol pill on it any more');
+  assert.match(m3.body, /NOW WITH SCREENER\.IN FIGURES - THEY REPLACE THE MONEYCONTROL ONES \(1\)\n {2}ACUTAAS \(result /);
+  assert.match(m3.body, /UPDATED IN MAIN TODAY \(0\)/);
   assert.ok(!e.post({ token: TOKEN, action: 'list' }).priority.includes('ACUTAAS'));
 });
 

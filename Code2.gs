@@ -648,6 +648,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   cont.failed += res.failed;
   cont.viaMc = (cont.viaMc || 0) + res.viaMc.length;
   cont.replacedMc = (cont.replacedMc || 0) + res.replacedMc.length;
+  cont.replacedSyms = (cont.replacedSyms || []).concat(res.replacedMc);   // for the email (across continuations)
   const notChecked = cands.length - res.checked;
 
   if (res.outOfTime && notChecked > 0 && cont.count < AB_RS_MAX_CONTINUATIONS) {
@@ -681,7 +682,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     layout: layout, cols: cols, tracker: tr, rowsBySym: rowsBySym, todayKey: todayKey,
     runStartFloor: runStartFloor, slot: cont.slot, checked: cont.checked, failed: cont.failed,
     notChecked: notChecked, throttled: res.throttled, retryAt: retryAt, seasonReset: cont.seasonReset || null, perf: perf,
-    startedAt: startedAt,
+    startedAt: startedAt, replaced: cont.replacedSyms || [],
     // An automatic retry only emails if it actually got something through.
     quietUnlessUpdated: /^Retry/.test(cont.slot || '')
   });
@@ -929,6 +930,16 @@ function ab_rsSendEmail_(ctx) {
     if (a.rdKey !== b.rdKey) return !a.rdKey ? 1 : !b.rdKey ? -1 : (a.rdKey < b.rdKey ? 1 : -1);
     return ab_rsParseTs_(b.updatedAt) - ab_rsParseTs_(a.updatedAt) || (a.symbol < b.symbol ? -1 : 1);
   });
+  // moneycontrol figures replaced by screener.in's in this run: a section of their own (the final figures),
+  // so they are not listed again under "Updated in Main today"
+  const replacedSet = {};
+  (ctx.replaced || []).forEach(function (s) { replacedSet[s] = true; });
+  const byNewest = function (a, b) {
+    if (a.rdKey !== b.rdKey) return !a.rdKey ? 1 : !b.rdKey ? -1 : (a.rdKey < b.rdKey ? 1 : -1);
+    return a.symbol < b.symbol ? -1 : 1;
+  };
+  const replaced = list.filter(function (t) { return replacedSet[t.symbol] && ctx.rowsBySym[t.symbol]; }).sort(byNewest);
+  const updatedShown = updatedToday.filter(function (t) { return !replacedSet[t.symbol]; });
   const waiting = list.filter(function (t) { return t.status === 'Pending' && ctx.rowsBySym[t.symbol]; })
     .sort(function (a, b) { return a.rdKey < b.rdKey ? -1 : a.rdKey > b.rdKey ? 1 : (a.symbol < b.symbol ? -1 : 1); });
   const gaveUp = list.filter(function (t) { return t.status === 'Gave up' && ab_rsParseTs_(t.last) >= ctx.runStartFloor; });
@@ -951,16 +962,17 @@ function ab_rsSendEmail_(ctx) {
   upcoming.sort(function (a, b) { return a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : (a.symbol < b.symbol ? -1 : 1); });
 
   const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
-  const textSummary = updatedToday.length + ' updated today, ' + waiting.length + ' waiting on screener, ' +
+  const textSummary = updatedToday.length + ' updated today, ' +
+    (replaced.length ? replaced.length + ' moved from moneycontrol to screener.in figures, ' : '') + waiting.length + ' waiting on screener, ' +
     upcoming.length + ' due in the next ' + AB_RS_UPCOMING_DAYS + ' days (' + ctx.checked + ' checked this run' +
     (ctx.failed ? ', ' + ctx.failed + ' fetch failures' : '') + ').';
 
   const newThisRun = updatedToday.filter(function (t) { return ab_rsParseTs_(t.updatedAt) >= ctx.runStartFloor; }).length;
-  if (ctx.quietUnlessUpdated && !newThisRun) {
+  if (ctx.quietUnlessUpdated && !newThisRun && !replaced.length) {
     Logger.log('Results Day retry: nothing new got through - no email sent.');
     return { updatedToday: updatedToday.length, text: textSummary + ' Retry run - nothing new, no email sent.' };
   }
-  if (!updatedToday.length && !waiting.length && !upcoming.length && !gaveUp.length) {
+  if (!updatedToday.length && !replaced.length && !waiting.length && !upcoming.length && !gaveUp.length) {
     Logger.log('Results Day: nothing to report - no email sent.');
     return { updatedToday: 0, text: textSummary + ' Nothing to report - no email sent.' };
   }
@@ -968,8 +980,8 @@ function ab_rsSendEmail_(ctx) {
   // TTM Signal / Upside are formulas that recalculate AFTER the new results are written - wait for them.
   let calcNote = '';
   const freshSyms = ctx.reportDayKey ? [] : updatedToday.filter(function (t) {
-    return ab_rsParseTs_(t.updatedAt) >= ctx.runStartFloor;
-  }).map(function (t) { return t.symbol; });
+    return ab_rsParseTs_(t.updatedAt) >= ctx.runStartFloor && !replacedSet[t.symbol];
+  }).map(function (t) { return t.symbol; }).concat(replaced.map(function (t) { return t.symbol; }));
   if (freshSyms.length) {
     const left = ctx.startedAt ? 5.5 * 60000 - (Date.now() - ctx.startedAt) : 45000;
     const w = ab_rsWaitForFormulas_(layout, freshSyms, ctx.rowsBySym, Math.min(45000, left));
@@ -1089,7 +1101,8 @@ function ab_rsSendEmail_(ctx) {
     return '<tr>' +
       '<td ' + td + '>' + '<a href="' + ab_chartUrl_(s) + '" style="color:' + INK + ';font-weight:700;font-size:14px;text-decoration:none">' + ab_rsEsc_(s) + '</a>' +
         (dayHtml || '<br>') + '<a href="' + ab_screenerUrl_(s) + '" style="color:' + FAINT + ';font-size:11px;text-decoration:none">screener &#8599;</a>' +
-        (isNew ? '<br>' + pill('NEW', '#ffffff', AB_C_POS) : '') +
+        (replacedSet[s] ? '<br>' + pill('SCREENER.IN FIGURES', '#ffffff', AB_C_POS)
+          : isNew ? '<br>' + pill('NEW', '#ffffff', AB_C_POS) : '') +
         (t.source === AB_MC_SOURCE ? '<br>' + pill('VIA MONEYCONTROL', '#1d4ed8', '#e3eefc') : '') + '</td>' +
       '<td ' + td + '>' + ab_rsEsc_(t.company || cell(s, layout.name)) + (bi ? '<br><span ' + small + '>' + ab_rsEsc_(bi) + '</span>' : '') + '</td>' +
       '<td ' + td + ' nowrap><b>' + shortDay(t.rdKey) + '</b>' + sinceHtml + '</td>' +
@@ -1106,17 +1119,24 @@ function ab_rsSendEmail_(ctx) {
     '<tr><th ' + th + '>Symbol</th><th ' + th + '>Company</th><th ' + th + '>Result</th><th ' + th + '>Revenue</th>' +
     '<th ' + th + '>Net Profit</th><th ' + th + '>OPM</th><th ' + th + '>Holdings</th>' +
     '<th ' + thKpi + '>TTM Signal</th><th ' + thKpi + '>Upside</th></tr>';
+  const buildReplaced = function () {
+    if (!replaced.length) return '';
+    let s = h3('Now with screener.in figures (they replace the moneycontrol ones)', replaced.length, AB_C_POS) + updatedHead;
+    replaced.forEach(function (t) { s += updatedRow(t); });
+    return s + '</table><div style="color:' + FAINT + ';font-size:12px;margin-top:4px">These were filled first from moneycontrol; ' +
+      'screener.in now shows the quarter, so Main has its figures - TTM EPS, TTM Signal, Upside and the trend tags included.</div>';
+  };
   const buildUpdated = function (limit) {
-    if (!updatedToday.length) {
+    if (!updatedShown.length) {
       return h3('Updated in Main ' + updWhen, 0, AB_C_POS) +
         '<div style="color:' + FAINT + ';font-size:13px">None yet ' + updWhen + '.</div>';
     }
-    const shown = updatedToday.slice(0, limit);
-    let s = h3('Updated in Main ' + updWhen, updatedToday.length, AB_C_POS) + updatedHead;
+    const shown = updatedShown.slice(0, limit);
+    let s = h3('Updated in Main ' + updWhen, updatedShown.length, AB_C_POS) + updatedHead;
     shown.forEach(function (t) { s += updatedRow(t); });
     s += '</table>';
-    if (updatedToday.length > shown.length) {
-      s += '<div style="color:' + FAINT + ';font-size:12px;margin-top:6px">+' + (updatedToday.length - shown.length) +
+    if (updatedShown.length > shown.length) {
+      s += '<div style="color:' + FAINT + ';font-size:12px;margin-top:6px">+' + (updatedShown.length - shown.length) +
            ' more - see the "' + AB_RS_TRACKER_SHEET + '" tab.</div>';
     }
     return s;
@@ -1227,15 +1247,15 @@ function ab_rsSendEmail_(ctx) {
   const assemble = function (updLimit, compactUpcoming, compactWaiting) {
     return '<div style="background:#f4f6fa;padding:16px 8px;font-family:' + FONT + '">' +
            '<div style="max-width:980px;margin:0 auto;background:#ffffff;border:1px solid ' + CARD_BORDER +
-           ';border-radius:14px;padding:22px 18px">' + head + buildUpdated(updLimit) +
+           ';border-radius:14px;padding:22px 18px">' + head + buildReplaced() + buildUpdated(updLimit) +
            buildWaiting(compactWaiting) + gaveUpHtml + buildUpcoming(compactUpcoming) + footer + '</div></div>';
   };
   // Shrink order: upcoming list first, then the waiting list, then (last
   // resort) trim the updated table - the figures you most want stay full.
-  let html = assemble(updatedToday.length, false, false);
-  if (html.length > AB_RS_MAX_HTML_CHARS) html = assemble(updatedToday.length, true, false);
-  if (html.length > AB_RS_MAX_HTML_CHARS) html = assemble(updatedToday.length, true, true);
-  let lim = updatedToday.length;
+  let html = assemble(updatedShown.length, false, false);
+  if (html.length > AB_RS_MAX_HTML_CHARS) html = assemble(updatedShown.length, true, false);
+  if (html.length > AB_RS_MAX_HTML_CHARS) html = assemble(updatedShown.length, true, true);
+  let lim = updatedShown.length;
   while (html.length > AB_RS_MAX_HTML_CHARS && lim > 10) {
     lim = Math.floor(lim * 0.7);
     html = assemble(lim, true, true);
@@ -1243,16 +1263,22 @@ function ab_rsSendEmail_(ctx) {
 
   // Plain-text version.
   let text = 'Results Day Update - ' + ctx.slot + ' - ' + ts + ' IST\n' + textSummary + '\n\n';
-  text += 'UPDATED IN MAIN TODAY (' + updatedToday.length + ')\n';
-  updatedToday.forEach(function (t) {
+  const textLine = function (t) {
     const s = t.symbol;
     const pfT = (ctx.perf || {})[s + '|' + String(t.quarter).toUpperCase()];
-    text += '  ' + s + ' (result ' + ab_rsKeyToDmy_(t.rdKey) + '): Day ' + (cell(s, layout.pctChange) || '-') +
+    return '  ' + s + ' (result ' + ab_rsKeyToDmy_(t.rdKey) + '): Day ' + (cell(s, layout.pctChange) || '-') +
       (pfT && typeof pfT.sincePct === 'number' && !isNaN(pfT.sincePct) ? ' | Since result ' + (pfT.sincePct * 100).toFixed(2) + '%' : '') + ' | Rev QoQ ' + (cell(s, layout.qoqRev) || '-') +
       ' YoY ' + (cell(s, layout.yoyRev) || '-') + ' | NP QoQ ' + (cell(s, layout.qoqNp) || '-') + ' YoY ' + (cell(s, layout.yoyNp) || '-') +
       ' | OPM ' + (cell(s, cols.opmQoQ) || '-') + '/' + (cell(s, cols.opmYoY) || '-') +
       ' | TTM Signal ' + (cell(s, layout.ttmSignal) || '-') + ' | Upside ' + (cell(s, layout.upsidePotential) || '-') + '\n';
-  });
+  };
+  if (replaced.length) {
+    text += 'NOW WITH SCREENER.IN FIGURES - THEY REPLACE THE MONEYCONTROL ONES (' + replaced.length + ')\n';
+    replaced.forEach(function (t) { text += textLine(t); });
+    text += '\n';
+  }
+  text += 'UPDATED IN MAIN TODAY (' + updatedShown.length + ')\n';
+  updatedShown.forEach(function (t) { text += textLine(t); });
   if (waiting.length) {
     text += '\nWAITING ON SCREENER (' + waiting.length + ')\n';
     waiting.forEach(function (t) {
@@ -1267,7 +1293,8 @@ function ab_rsSendEmail_(ctx) {
     text += '    ' + c.symbol + (c.company ? ' - ' + c.company : '') + '\n';
   });
 
-  const subject = 'Results Update - ' + updatedToday.length + ' updated in Main, ' + waiting.length +
+  const subject = 'Results Update - ' + updatedShown.length + ' updated in Main, ' +
+    (replaced.length ? replaced.length + ' now with screener.in figures, ' : '') + waiting.length +
     ' awaiting screener, ' + upcoming.length + ' due in ' + AB_RS_UPCOMING_DAYS + 'd (' + ts + ')';
   try {
     ab_sendMail_({ to: AB_EMAIL_TO, subject: subject, body: text, htmlBody: html });
