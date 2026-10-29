@@ -879,7 +879,7 @@ test('refresh trigger: a run starts no build after ~4.5 minutes', () => {
 });
 
 test('menu: "rebuild now" builds both parts and switches auto-refresh on; "stop auto-refresh" removes it for good', () => {
-  const src = require('fs').readFileSync(mock.CODE_GS, 'utf8');
+  const src = mock.readCode();
   assert.ok(src.includes(".addItem('Website feed: setup info (read-only token)', 'runFeedSetupInfo')\n" +
     "        .addItem('Website feed: rebuild now', 'runSiteFeedRebuildNow')\n" +
     "        .addItem('Website feed: stop auto-refresh', 'runSiteFeedStopAutoRefresh')"), 'menu items under 3. next to setup info');
