@@ -23,6 +23,11 @@ And NSE's end-of-day files: Delivery %, 52-week highs, market statistics, and th
 daily candles of the sheet's "History60" tab (60 trading days for its FVG scans
 and Results Performance).
 
+And WHEN each company's quarterly results reached NSE (corporate announcements):
+before 9:15, during market hours or after 3:30 PM - shown in the Results Tracker,
+the Results Update email and Results Performance, plus a short email before the
+open listing the results filed after the last close.
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
@@ -31,6 +36,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
   python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
+  python screener_bridge.py announcements  send NSE's result filing times of the last days now
   python screener_bridge.py moneycontrol SYMBOL   show moneycontrol's latest quarterly results (test, nothing sent)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
@@ -79,6 +85,7 @@ DEFAULTS = {
     'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
+    'announcements': True,     # when NSE got each company's results (before / during / after market hours)
     'moneycontrol': True,      # results not on screener.in yet: look on moneycontrol and send its figures first
     'max_moneycontrol_per_run': 40,
 }
@@ -1213,6 +1220,151 @@ def ipo_step(cfg, today=None):
         log('IPO lists: unexpected problem - %s' % e)
 
 
+# ------------------------------------------------------------------ NSE results announcements
+# WHEN did a company's quarterly results reach NSE? (owner, 30-Oct-2026: BOROLTD filed at 17:05, after the close,
+# and only reacted the next day - +20 %, upper circuit.) Every round reads NSE's corporate announcements of today and
+# the ANN_DAYS days before (one request) and sends the result filings to the sheet as [SYMBOL, 'yyyy-mm-dd HH:MM:SS',
+# subject]: "Outcome of Board Meeting" that mentions financial results, "Financial Result(s) ..." and "Integrated
+# Filing (Financial)" - never a "Board Meeting Intimation" (the notice of a meeting to come). The sheet keeps the
+# earliest per stock per day, marks it before market / market hours / after market, and - when this runs before
+# 9:15 on a weekday - emails the results filed since the last close.
+ANN_URL = 'https://www.nseindia.com/api/corporate-announcements?index=equities&from_date={f}&to_date={t}'
+ANN_PAGE = 'https://www.nseindia.com/companies-listing/corporate-filings-announcements'
+ANN_DAYS = 3
+ANN_FIELDS = (           # our name <- NSE field names (compared without case / punctuation), first one found wins
+    ('symbol', ('symbol',)),
+    ('time', ('andt', 'sortdate', 'exchdisstime', 'broadcastdatetime', 'broadcastdate', 'dt', 'date')),
+    ('subject', ('desc', 'subject', 'purpose')),
+    ('text', ('attchmnttext', 'details', 'attchmntdetails', 'text')),
+)
+_ANN_TIME = (re.compile(r'^(\d{1,2})[-/ ]([A-Za-z]{3})[a-z]*[-/ ](\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?'),   # 29-Oct-2026 17:05:25
+             re.compile(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?'),                      # 2026-10-29 17:05:25
+             re.compile(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?'))              # 29-10-2026 17:05
+
+
+def ann_time(v):
+    """NSE's date-time text -> 'yyyy-mm-dd HH:MM:SS', or None."""
+    s = str(v or '').strip()
+    m = _ANN_TIME[0].match(s)
+    if m and m.group(2).lower()[:3] in _MONTHS:
+        d, mo, y = int(m.group(1)), _MONTHS[m.group(2).lower()[:3]], int(m.group(3))
+    else:
+        m = _ANN_TIME[1].match(s)
+        if m:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        else:
+            m = _ANN_TIME[2].match(s)
+            if not m:
+                return None
+            d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    try:
+        return datetime(y, mo, d, int(m.group(4)), int(m.group(5)), int(m.group(6) or 0)).strftime('%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return None
+
+
+def ann_is_result(subject, text):
+    """A filing of the quarterly results themselves (not the notice of a meeting to come)."""
+    s, t = (subject or '').lower(), (text or '').lower()
+    if 'intimation' in s:
+        return False
+    if 'financial result' in s:
+        return True
+    if 'integrated filing' in s and 'financial' in s:
+        return True
+    return 'outcome of board meeting' in s and 'financial result' in t
+
+
+def ann_field(rec, name):
+    keys = {_norm_key(k): k for k in rec}
+    for want in dict(ANN_FIELDS)[name]:
+        if want in keys and rec[keys[want]] not in (None, ''):
+            return rec[keys[want]]
+    return None
+
+
+def ann_rows(records):
+    """NSE's announcements -> ([[SYMBOL, 'yyyy-mm-dd HH:MM:SS', subject]] of result filings, the earliest per stock per day,
+    oldest first; how many records had a readable time)."""
+    best, timed = {}, 0
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        at = ann_time(ann_field(rec, 'time'))
+        if at:
+            timed += 1
+        sym = str(ann_field(rec, 'symbol') or '').strip().upper()
+        subject = str(ann_field(rec, 'subject') or '').strip()
+        if not at or not sym or not ann_is_result(subject, str(ann_field(rec, 'text') or '')):
+            continue
+        key = (sym, at[:10])
+        if key not in best or at < best[key][1]:
+            best[key] = [sym, at, subject[:80]]
+    return sorted(best.values(), key=lambda r: (r[1], r[0])), timed
+
+
+def ann_fetch(opener, today):
+    """-> (records, None) or (None, reason)."""
+    f, t = (today - timedelta(days=ANN_DAYS)).strftime('%d-%m-%Y'), today.strftime('%d-%m-%Y')
+    try:
+        status, raw = nse_get(opener, ANN_URL.format(f=f, t=t), referer=ANN_PAGE, timeout=90)
+    except (OSError, urllib.error.URLError, socket.timeout) as e:
+        return None, 'NSE did not answer (%s)' % e
+    if status != 200:
+        return None, 'HTTP %s from NSE' % status
+    try:
+        obj = json.loads(raw.decode('utf-8', errors='replace'))
+    except ValueError:
+        return None, 'NSE did not send data (a web page came back instead)'
+    recs = ipo_records(obj)
+    if recs is None:
+        return None, 'NSE\'s answer had no list of announcements'
+    return recs, None
+
+
+def ann_session():
+    opener = nse_session()
+    try:
+        nse_get(opener, ANN_PAGE, referer='https://www.nseindia.com/', timeout=20)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        pass
+    return opener
+
+
+def ann_step(cfg, today=None):
+    """Sends the result filings of the last days to the sheet. Never raises."""
+    if not cfg.get('announcements', True):
+        return
+    try:
+        today = today or date.today()
+        recs, err = ann_fetch(ann_session(), today)
+        if recs is None:
+            log('Result announcements: could not read NSE - %s (the next round tries again).' % err)
+            return
+        rows, timed = ann_rows(recs)
+        if recs and not timed:
+            log('Result announcements: NSE\'s dates were not recognised - its fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
+            return
+        try:
+            res = api(cfg, 'results_ann', {'ann': rows, 'from': (today - timedelta(days=ANN_DAYS)).isoformat(), 'to': today.isoformat()},
+                      timeout=180)
+        except RuntimeError as e:
+            log('Result announcements: sending to the sheet failed (%s) - the next round tries again.' % e)
+            return
+        if not res.get('ok'):
+            err = res.get('error') or 'unknown error'
+            if err == 'unknown action':
+                err = ('the sheet\'s web app does not know the result announcements yet - in Apps Script: Deploy > '
+                       'Manage deployments > pencil > Version: New version > Deploy')
+            log('Result announcements: the sheet refused - %s' % err)
+            return
+        log('Result announcements: %d result filing(s) on NSE since %s, %d of your stocks (%d new)%s.'
+            % (len(rows), (today - timedelta(days=ANN_DAYS)).strftime('%d-%m-%Y'), res.get('main', 0), res.get('fresh', 0),
+               ' - morning email sent' if res.get('emailed') else ''))
+    except Exception as e:   # never let this stop the screener work
+        log('Result announcements: unexpected problem - %s' % e)
+
+
 # ------------------------------------------------------------------ moneycontrol (reading)
 # moneycontrol.com often shows a quarter's results before screener.in. The run's moneycontrol step
 # (further down, mc_step) sends those figures for results screener.in does not show yet; TestConnection
@@ -2267,6 +2419,7 @@ def run_once(cfg):
         if not ans.get('ok'):
             log('Sheet refused: %s' % ans.get('error'))
             return 1
+        ann_step(cfg)              # first: the evening's Results Update email and the morning email use the times
         price_bands_step(cfg)
         ipo_step(cfg)
         eod_step(cfg)
@@ -2494,7 +2647,20 @@ def cmd_test(cfg):
             print('   PROBLEM - could not download the bhavcopy from NSE.')
     except Exception as e:
         print('   PROBLEM - %s' % e)
-    print('6) moneycontrol from this computer (check only) ...')
+    print('6) NSE result announcements from this computer ...')
+    try:
+        recs, err = ann_fetch(ann_session(), date.today())
+        if recs is None:
+            print('   PROBLEM - %s' % err)
+        else:
+            rows, timed = ann_rows(recs)
+            print('   OK - %d announcement(s) in the last %d days, %d result filing(s)%s. Nothing was sent.'
+                  % (len(recs), ANN_DAYS + 1, len(rows), ('; latest: %s %s' % (rows[-1][0], rows[-1][1])) if rows else ''))
+            if recs and not timed:
+                print('   dates not recognised - NSE fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
+    except Exception as e:
+        print('   PROBLEM - %s' % e)
+    print('7) moneycontrol from this computer (check only) ...')
     try:
         mc_check('TCS', out=print, detail=False)
         print('   (nothing was sent)')
@@ -2662,6 +2828,12 @@ def main(argv):
             log('History60: the sheet refused - %s' % ans.get('error'))
             return 1
         hist_step(dict(cfg, history60=True), ans.get('h60'))
+        return 0
+    if cmd == 'announcements':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        ann_step(dict(cfg, announcements=True))
         return 0
     if cmd == 'pricebands':
         if not cfg.get('url') or not cfg.get('token'):

@@ -115,7 +115,7 @@ def fake_fetch(cfg, sym, consolidated=True):
 sb.api = fake_api
 sb.fetch_page = fake_fetch
 sb.polite_sleep = lambda cfg: None
-for name in ('price_bands_step', 'ipo_step', 'eod_step'):
+for name in ('ann_step', 'price_bands_step', 'ipo_step', 'eod_step'):
     setattr(sb, name, lambda cfg, today=None: None)
 sb.hist_step = lambda cfg, h60, today=None: 0
 sb.mc_step = lambda cfg, want, behind: MC.append((dict(want), sorted(behind))) or 0

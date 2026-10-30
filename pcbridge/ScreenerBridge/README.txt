@@ -12,11 +12,12 @@ it does one more round 1 hour after that (again only with internet).
 Nothing runs continuously. If you stay logged in for days, use RunNow.bat when you want a fresh round.
  - RunNow.bat       do one round right now
  - Reschedule.bat   remove the old hourly schedule and use the log-in schedule (keeps your settings)
- - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists, end-of-day files) + moneycontrol access
+ - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists, end-of-day files, announcements) + moneycontrol access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
  - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
  - EodNow.bat           download NSE's end-of-day files (Delivery %, 52-week highs, market statistics) right now
  - History60Now.bat       send the daily candles the sheet's History60 tab is missing right now (the first fill)
+ - AnnouncementsNow.bat   send WHEN NSE got each company's results (last 4 days) right now
  - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -86,6 +87,21 @@ stocks). The sheet's FVG scans (FVG column, GapUpFVG, UnmitigatedFVG) and Result
  - bridge.log shows "History60: ..." lines.
  - To switch it off: in config.json add  "history60": false
 
+RESULT ANNOUNCEMENT TIMES (before / during / after market hours)
+Every round also reads NSE's corporate announcements of the last 4 days (one request) and sends the
+quarterly-result filings to the sheet with their exact time. The sheet shows:
+ - Results Tracker, column "Announced": e.g. "29/10 17:05 After market".
+ - Results Update email: a pill under the result date (AFTER MKT 17:05 - reacts next session /
+   MKT HOURS 13:20 / BEFORE MKT 08:40).
+ - Results Performance: for results filed after 3:30 PM the reaction day is the NEXT session and the
+   baseline that day's close (column "Reaction From").
+ - When a round runs BEFORE 9:15 AM on a weekday: one email "Before the open: N results filed after the
+   last close" - so switch the PC on before 9:15 to get it (Control Panel can switch it off).
+ - Needs the latest Code.gs + Code2.gs in the sheet AND the New version deploy. Until then bridge.log
+   says "do the New version deploy".
+ - bridge.log shows "Result announcements: ..." lines. TestConnection line 6 checks NSE (sends nothing).
+ - To switch it off: in config.json add  "announcements": false
+
 MONEYCONTROL (first figures while screener.in is late)
 moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies
 whose results are due and whose screener.in page does NOT show the new quarter yet, the program also
@@ -102,7 +118,7 @@ email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace the
  - EPS (for TTM EPS) comes from moneycontrol's results page; when it cannot be used, bridge.log says why
    ("no EPS: ...") and TTM EPS waits for screener.in.
 Checks (they send nothing):
- - TestConnection.bat line 6 looks up TCS on moneycontrol and prints its latest quarter.
+ - TestConnection.bat line 7 looks up TCS on moneycontrol and prints its latest quarter.
  - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and tries each of moneycontrol's
    sources (results widget, results page and its page data, old pages). For each one that works it
    prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS, then what a

@@ -198,6 +198,8 @@ const AB_CP_SECTIONS_ = [
       help: 'Used by the Results Performance tab\'s Market Reaction and Signal columns.' },
     { key: 'AB_RS_MONEYCONTROL', label: 'Use moneycontrol figures first when screener.in is late - 1 = on, 0 = off', def: 1, type: 'number',
       help: 'The PC program reads moneycontrol for companies still waiting. If moneycontrol already shows the quarter, Main gets its figures and the tick (Results Tracker Source = moneycontrol); screener.in replaces them when it catches up.' },
+    { key: 'AB_ANN_MORNING_EMAIL', label: 'Email before 9:15 AM of results filed after the last close - 1 = on, 0 = off', def: 1, type: 'number',
+      help: 'The PC program reads NSE\'s announcements; when it runs before 9:15 on a weekday you get one email with the results filed since the last close (the market has not reacted yet).' },
     { key: 'AB_RS_TARGET_QUARTER', label: 'Force the quarter to verify (normally blank)', def: '', type: 'quarter',
       help: 'Leave blank - the quarter is worked out from each result date. Only fill in (e.g. Sep 2026) to override.' }
   ] },
@@ -8855,6 +8857,9 @@ function doPost(e) {
     }
     if (req.action === 'hist') {
       return ab_bridgeJson_(ab_h60FromBridge_(req));
+    }
+    if (req.action === 'results_ann') {
+      return ab_bridgeJson_(ab_annFromBridge_(req));
     }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
