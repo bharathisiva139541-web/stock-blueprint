@@ -140,7 +140,8 @@ test('the Results Update email shows when NSE got the results', () => {
   })()`);
   assert.strictEqual(e.mails.length, 1);
   const html = e.mails[0][0].htmlBody;
-  assert.match(html, /BOROLTD[\s\S]*29 Oct 2026[\s\S]*AFTER MKT 17:05[\s\S]*reacts next session/);
+  assert.match(html, /BOROLTD[\s\S]*29 Oct 2026[\s\S]*AFTER MKT 17:05/);
+  assert.ok(!/reacts next session/.test(html), 'the pill alone (owner, 30-Oct-2026)');
   const store = e.run(`(function () {
     var store = ab_annLoad_();
     return [ab_annCell_(ab_annFor_(store, 'BOROLTD', '2026-10-29')), ab_annCell_(ab_annFor_(store, 'BOROLTD', '2026-10-20')),

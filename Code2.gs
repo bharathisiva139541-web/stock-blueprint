@@ -1062,7 +1062,7 @@ function ab_rsSendEmail_(ctx) {
     const p = s.code === 'after' ? pill('AFTER MKT ' + hm, '#92400e', '#fef3c7')
       : s.code === 'closed' ? pill('MKT CLOSED ' + hm, '#92400e', '#fef3c7')
         : s.code === 'before' ? pill('BEFORE MKT ' + hm, AB_C_POS, '#e6f6ed') : pill('MKT HOURS ' + hm, AB_C_INFO, '#e3eefc');
-    return '<div style="margin-top:3px">' + p + '</div>' + (s.after ? '<div style="color:' + FAINT + ';font-size:10px">reacts next session</div>' : '');
+    return '<div style="margin-top:3px">' + p + '</div>';
   };
   const upsideCell = function (v) {
     if (!v || /^#/.test(v)) return '<span style="color:' + FAINT + '">-</span>';
