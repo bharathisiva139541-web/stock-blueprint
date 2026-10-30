@@ -24,8 +24,8 @@
   };
   var CACHE = null;               // candle-derived results, computed once per history file
 
-  var FVG_KINDS = [['all', 'Any FVG state'], ['ft', 'First Touch'], ['conf', 'Confirmed'], ['unmit', 'Unmitigated'], ['gap', 'Gap-up'], ['spring', 'FVG+Spring']];
-  var FVG_RX = { ft: /^FVG First Touch \(/, conf: /^FVG First Touch Confirmed/, unmit: /^FVG Unmitigated/, gap: /^Gap-up FVG/, spring: /^FVG\+Spring/ };
+  var FVG_KINDS = [['all', 'Any FVG state'], ['ft', 'First Touch'], ['conf', 'Confirmed'], ['unmit', 'Unmitigated'], ['gap', 'Gap-up'], ['spring', 'FVG+Spring'], ['twin', 'Twin Star + FVG']];
+  var FVG_RX = { ft: /^FVG First Touch \(/, conf: /^FVG First Touch Confirmed/, unmit: /^FVG Unmitigated/, gap: /^Gap-up FVG/, spring: /^FVG\+Spring/, twin: /^Twin Star Bottom \+ FVG/ };
 
   // FVG Backtest categories in the sheet's display order (Code.gs AB_MIT_CATS_ + Spring)
   var BT_CATS = [
@@ -253,8 +253,8 @@
       '<ul class="sub" style="margin:8px 0 0 18px;padding:0;display:grid;gap:4px">' +
       '<li><b>Timeframe:</b> daily candles only - the FVG rules look up to 60 sessions back (History30 tab + History60\'s older days from NSE via your PC); the 10 / 21 EMA support tags use the last 30 (History30), like the sheet.</li>' +
       '<li><b>Bullish 3-candle FVG</b> on day i: Low[i] &gt; High[i−2], and the gap (Low[i] − High[i−2]) is at least 0.7 × the average High−Low range of the 14 days ending on day i. Zone = High[i−2] (bottom) to Low[i] (top). Needs 17+ candles.</li>' +
-      '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 5% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT). Zone = High[i−1] to Low[i]. It is dropped once a later candle trades down to the zone top (Low ≤ top).</li>' +
-      '<li><b>First touch:</b> a candle\'s low crosses below the zone top after the previous low was at or above it. <b>Confirmed:</b> after a touch, a close crosses back above the high of the touch candle. <b>FVG+Spring:</b> a Spring candle pair (big red candle, then a small candle that dips below its low and closes back above it) whose 2nd candle reaches into any FVG formed in the window - touched before or not - while the zone still holds (no close below its bottom before the pair, the Spring candle closes at or above the bottom). These tags are reported for the last 4 candles.</li>' +
+      '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 10% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT, Control Panel). Zone = High[i−1] to Low[i]. It is dropped once a later candle trades down to the zone top (Low ≤ top).</li>' +
+      '<li><b>First touch:</b> a candle\'s low crosses below the zone top after the previous low was at or above it. <b>Confirmed:</b> after a touch, a close crosses back above the high of the touch candle. <b>FVG+Spring:</b> a Spring candle pair (big red candle, then a small candle that dips below its low and closes back above it) whose 2nd candle reaches into any FVG formed in the window - touched before or not - while the zone still holds (no close below its bottom before the pair, the Spring candle closes at or above the bottom). <b>Twin Star Bottom + FVG:</b> a red candle, then two small candles whose lows are within 1% of each other (the Twin Star Bottom pattern), with the stars reaching into an FVG formed before the red candle that still holds (both stars close at or above its bottom). These tags are reported for the last 4 candles.</li>' +
       '<li><b>Unmitigated:</b> the latest 3-candle FVG has not been touched since it formed. <b>Mitigated:</b> the price reached the zone - the sheet logs it (Mitigated FVG Log) and judges the next candle (held / swept / closed inside / broke below…).</li>' +
       '<li><b>Circuit-lock filter:</b> a candle whose High−Low range is ≤ 0.05% of its low is treated as locked at a price band; such candles cannot form a gap-up FVG and do not count as touches.</li>' +
       '<li><b>Turnover filter:</b> stocks whose average daily turnover ((High+Low)/2 × volume, locked candles excluded) is below ₹50 lakh (AB_FVG_MIN_AVG_TURNOVER) are not watched.</li>' +
@@ -283,7 +283,7 @@
     var state = lastDate === sess.date ? 'EOD' : 'CACHED';
     $('#sg-live-state', el).innerHTML = ui.stateBadge(state, lastDate, H.source || 'History30 tab');
     var rows = data.rows;
-    var counts = { pat: 0, patNoQ: 0, fvg: 0, ema: 0, c3: 0 }, patCount = {}, fvgCount = { ft: 0, conf: 0, spring: 0, unmit: 0, gap: 0 }, e10 = 0, e21 = 0;
+    var counts = { pat: 0, patNoQ: 0, fvg: 0, ema: 0, c3: 0 }, patCount = {}, fvgCount = { ft: 0, conf: 0, spring: 0, twin: 0, unmit: 0, gap: 0 }, e10 = 0, e21 = 0;
     var catCount = {};
     rows.forEach(function (r) {
       if (r.pat) counts.pat++;
@@ -322,7 +322,7 @@
       ui.bars(SB.patterns.ORDER.map(function (p) { return { label: p, value: patCount[p] || 0, tip: p + ': ' + F.int(patCount[p] || 0) + ' stocks' }; }).filter(function (b) { return b.value; })
         .concat(SB.patterns.ORDER.some(function (p) { return patCount[p]; }) ? [] : [{ label: 'No pattern on any stock', value: 0 }])) +
       '</div><div><h3 style="margin-bottom:8px">FVG &amp; EMA tags</h3>' +
-      ui.bars([['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'], ['spring', 'FVG+Spring'], ['unmit', 'FVG Unmitigated'], ['gap', 'Gap-up FVG']].map(function (k) {
+      ui.bars([['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'], ['spring', 'FVG+Spring'], ['twin', 'Twin Star Bottom + FVG'], ['unmit', 'FVG Unmitigated'], ['gap', 'Gap-up FVG']].map(function (k) {
         return { label: k[1], value: fvgCount[k[0]], tip: k[1] + ': ' + F.int(fvgCount[k[0]]) + ' stocks' };
       }).concat([{ label: '10 EMA Support', value: e10 }, { label: '21 EMA Support', value: e21 }])) + '</div></div>';
 

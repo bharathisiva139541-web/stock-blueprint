@@ -14,6 +14,9 @@
      thresholds) whose 2nd candle dips into ANY gap formed before the pair
      (touched or not) that still holds: no close below its bottom in between,
      Low <= top and Close >= bottom.
+   - Twin Star Bottom + FVG: patterns.js isTwinStarBottom (red c1, two small
+     candles holding the same low) whose stars reach into any gap formed before
+     c1 that still holds (lowest star low <= top, both star closes >= bottom).
    - Gap-up FVG: Low[i] > High[i-1] by AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT %,
      neither candle circuit-locked; dropped once any later (non-locked)
      candle has Low <= top.
@@ -117,6 +120,21 @@
         if (holds) springSignal[i] = true;
       }
     }
+    // Twin Star Bottom + FVG (ab_longFvgDetail_): c1 = i-2, stars i-1 and i, into a gap formed before c1 that still holds
+    var twinSignal = new Array(n).fill(false);
+    for (i = 4; i < n; i++) {
+      var s1 = candles[i - 1], s2 = candles[i];
+      if (!P.isTwinStarBottom(candles[i - 2], s1, s2)) continue;
+      var starLow = Math.min(s1.Low, s2.Low);
+      for (var g2 = 2; g2 <= i - 3 && !twinSignal[i]; g2++) {
+        if (!isFVGUp[g2]) continue;
+        var tTop = candles[g2].Low, tBottom = candles[g2 - 2].High;
+        if (!(starLow <= tTop && s1.Cls >= tBottom && s2.Cls >= tBottom)) continue;
+        var tHolds = true;
+        for (k = g2 + 1; k <= i - 3; k++) if (candles[k].Cls < tBottom) { tHolds = false; break; }
+        if (tHolds) twinSignal[i] = true;
+      }
+    }
     var ftSignal = new Array(n).fill(false), ftState = 0, cur;
     for (i = 0; i < n; i++) {
       cur = (ftState === 2) ? 0 : ftState;
@@ -134,11 +152,12 @@
       ftcSignal[i] = (cur === 3);
       ftcState = cur;
     }
-    var lastN = Math.min(4, n), touchIdx = -1, confIdx = -1, springIdx = -1;
+    var lastN = Math.min(4, n), touchIdx = -1, confIdx = -1, springIdx = -1, twinIdx = -1;
     for (i = n - lastN; i < n; i++) {
       if (ftSignal[i]) touchIdx = i;
       if (ftcSignal[i]) confIdx = i;
       if (springSignal[i]) springIdx = i;
+      if (twinSignal[i]) twinIdx = i;
     }
     var lastGapIdx = -1;
     for (i = 0; i < n; i++) if (isFVGUp[i]) lastGapIdx = i;
@@ -152,6 +171,7 @@
     if (touchIdx !== -1) tags.push('FVG First Touch ' + rec(touchIdx));
     if (confIdx !== -1) tags.push('FVG First Touch Confirmed ' + rec(confIdx));
     if (springIdx !== -1) tags.push('FVG+Spring ' + rec(springIdx));
+    if (twinIdx !== -1) tags.push('Twin Star Bottom + FVG ' + rec(twinIdx));
     var zone = null;
     if (unmitigated) {
       var daysAgo = (n - 1) - lastGapIdx;
@@ -167,6 +187,7 @@
       if (ftSignal[i]) events.push({ i: i, t: candles[i].t, type: 'first-touch', top: fvgTop[i] });
       if (ftcSignal[i]) events.push({ i: i, t: candles[i].t, type: 'confirmed' });
       if (springSignal[i]) events.push({ i: i, t: candles[i].t, type: 'fvg-spring' });
+      if (twinSignal[i]) events.push({ i: i, t: candles[i].t, type: 'fvg-twinstar' });
     }
     return { tags: tags, unmitigated: zone, events: events };
   }

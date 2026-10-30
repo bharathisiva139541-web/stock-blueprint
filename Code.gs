@@ -4699,7 +4699,7 @@ function ab_styleMainSheet_() {
   put('Win/Loss', mk().whenTextContains('Loss'), '#fecaca');
   put('Triggered Y/N', mk().whenTextEqualTo('Y'), '#fde68a');
   put('Pattern', mk().whenTextEqualTo('Spring?'), '#ede9fe');
-  ['Spring', 'Bullish', 'Morningstar', 'Tweezer'].forEach(function (w) { put('Pattern', mk().whenTextContains(w), '#bbf7d0'); });
+  ['Spring', 'Bullish', 'Morningstar', 'Tweezer', 'Twin Star'].forEach(function (w) { put('Pattern', mk().whenTextContains(w), '#bbf7d0'); });
   put('Pattern', mk().whenTextContains('FVG'), '#bfdbfe');
   put('FVG', mk().whenTextContains('Confirmed'), '#bbf7d0');
   put('FVG', mk().whenTextContains('First Touch'), '#fde68a');
@@ -5344,6 +5344,14 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * the pair, the Spring candle's low reaches the gap top or lower, and
  * it closes back at or above the gap bottom.
  *
+ * Twin Star Bottom + FVG (owner, 30-Oct-2026): the Twin Star Bottom
+ * pattern (ab_isTwinStarBottom_, Code2.gs: a red candle, then two small
+ * candles holding the same low) whose stars dip into ANY bullish gap
+ * formed before the red candle that still holds: no close below the
+ * gap's bottom between the gap and the red candle, the stars' lowest
+ * low reaches the gap top or lower, and both stars close at or above
+ * the gap bottom. Reported for the last 4 candles, like FVG+Spring.
+ *
  * FVG Unmitigated (custom): the most recent gap somewhere in the
  * 30-day window that has never been touched at all, right up through
  * today - i.e. it's still sitting there completely untouched. Unlike
@@ -5423,6 +5431,24 @@ function ab_longFvgDetail_(candles) {
     }
   }
 
+  // Twin Star Bottom + FVG: c1 = i-2 (red), stars i-1 and i, dipping into a gap formed before c1 that still holds
+  const twinSignal = new Array(n).fill(false);
+  for (let i = 4; i < n; i++) {
+    const s1 = candles[i - 1], s2 = candles[i];
+    if (!ab_isTwinStarBottom_(candles[i - 2], s1, s2)) continue;
+    const starLow = Math.min(s1.Low, s2.Low);
+    for (let g = 2; g <= i - 3 && !twinSignal[i]; g++) {
+      if (!isFVGUp[g]) continue;
+      const top = candles[g].Low, bottom = candles[g - 2].High;
+      if (!(starLow <= top && s1.Cls >= bottom && s2.Cls >= bottom)) continue;
+      let holds = true;
+      for (let k = g + 1; k <= i - 3; k++) {
+        if (candles[k].Cls < bottom) { holds = false; break; }
+      }
+      if (holds) twinSignal[i] = true;
+    }
+  }
+
   // State machine: First Touch (fires once per gap, then resets)
   const ftSignal = new Array(n).fill(false);
   let ftState = 0;
@@ -5450,11 +5476,12 @@ function ab_longFvgDetail_(candles) {
   // and remember exactly which bar, so the tag can say how fresh it is
   // (spot brand-new setups without opening every chart).
   const lastN = Math.min(4, n);
-  let touchIdx = -1, confIdx = -1, springIdx = -1;
+  let touchIdx = -1, confIdx = -1, springIdx = -1, twinIdx = -1;
   for (let i = n - lastN; i < n; i++) {
     if (ftSignal[i]) touchIdx = i;   // keeps the most recent occurrence
     if (ftcSignal[i]) confIdx = i;
     if (springSignal[i]) springIdx = i;
+    if (twinSignal[i]) twinIdx = i;
   }
 
   // FVG Unmitigated: the most recent gap in the whole 30-day window that
@@ -5482,6 +5509,7 @@ function ab_longFvgDetail_(candles) {
   if (touchIdx !== -1) tags.push('FVG First Touch ' + recencyLabel_(touchIdx));
   if (confIdx !== -1) tags.push('FVG First Touch Confirmed ' + recencyLabel_(confIdx));
   if (springIdx !== -1) tags.push('FVG+Spring ' + recencyLabel_(springIdx));
+  if (twinIdx !== -1) tags.push('Twin Star Bottom + FVG ' + recencyLabel_(twinIdx));
 
   // The unmitigated gap's actual PRICE LEVELS, taken from the very same
   // state machine that decided the tag. Anything that wants to watch

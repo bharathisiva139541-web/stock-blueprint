@@ -103,7 +103,7 @@
 
   def('pattern', { label: 'Bullish candlestick pattern on the latest bar', kind: 'sheet', setGroup: 'trigger', type: 'reversal', pit: true,
     ref: 'Code.gs updateAllCandlestickPatterns (PatternData col W)',
-    params: [{ key: 'names', label: 'Patterns', def: BULLISH_PATTERNS.slice(), options: BULLISH_PATTERNS.concat(['Spring?', 'Bullish Harami + Inverted Hammer']) }],
+    params: [{ key: 'names', label: 'Patterns', def: BULLISH_PATTERNS.slice(), options: BULLISH_PATTERNS.concat(['Spring?', 'Bullish Harami + Inverted Hammer', 'Twin Star Bottom']) }],
     eval: function (x, p) {
       var got = patternsOf(x), hit = got.filter(function (t) { return p.names.indexOf(t) >= 0; });
       return { pass: hit.length > 0, value: hit.join(', ') || null, detail: got.length ? got.join(', ') : 'no pattern' };
