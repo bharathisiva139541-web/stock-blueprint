@@ -91,7 +91,7 @@ RESULT ANNOUNCEMENT TIMES (before / during / after market hours)
 Every round also reads NSE's corporate announcements of the last 4 days (one request) and sends the
 quarterly-result filings to the sheet with their exact time. The sheet shows:
  - Results Tracker, column "Announced": e.g. "29/10 17:05 After market".
- - Results Update email: a pill under the result date (AFTER MKT 17:05 - reacts next session /
+ - Results Update email: a pill under the result date (AFTER MKT 17:05 /
    MKT HOURS 13:20 / BEFORE MKT 08:40).
  - Results Performance: for results filed after 3:30 PM the reaction day is the NEXT session and the
    baseline that day's close (column "Reaction From").
