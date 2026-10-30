@@ -140,13 +140,14 @@
               : !s.message || /wrong pin/i.test(s.message) ? 'Wrong PIN - type it again.' : s.message)
             : s.phase === 'nopin' ? 'Your Google Sheet has no watchlist PIN yet - ' + PIN_WHERE + ', then type it here.'
             : '';
+          var checking = s.phase === 'syncing';
           host.innerHTML = '<section class="card wl-sync" aria-labelledby="wl-sync-h"><div class="wl-sync-row">' + head +
             '<p class="sub">Now these lists are saved only in this browser. Type your watchlist PIN once to keep them in your Google Sheet: ' +
             'then your phone, this site and the other site (Vercel / Firebase) all show the same lists. No PIN yet? ' + PIN_WHERE + '.</p></div></div>' +
             '<form id="wl-pin-form" class="controls"><label class="sr-only" for="wl-pin">Watchlist PIN</label>' +
             '<input id="wl-pin" class="search" type="password" maxlength="20" autocomplete="off" placeholder="Watchlist PIN" aria-describedby="wl-pin-msg">' +
-            '<button class="btn primary" type="submit">Connect</button></form>' +
-            '<p id="wl-pin-msg" class="wl-msg' + (why ? ' bad' : '') + '" role="status">' + (s.phase === 'nopin' ? why : esc(why)) + '</p></section>';
+            '<button class="btn primary" type="submit"' + (checking ? ' disabled' : '') + '>Connect</button></form>' +
+            '<p id="wl-pin-msg" class="wl-msg' + (why ? ' bad' : '') + '" role="status">' + (checking ? 'Checking the PIN with your Google Sheet…' : s.phase === 'nopin' ? why : esc(why)) + '</p></section>';
           return;
         }
         var line = s.phase === 'syncing' ? 'Syncing with your Google Sheet…'

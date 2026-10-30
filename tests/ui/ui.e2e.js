@@ -448,7 +448,7 @@ function check(name, fn) {
           await page.fill('#rp-table [data-tp="f:0:a"]', '5');
           await page.click('#rp-table [data-tt="addfilter"]');
           await page.selectOption('#rp-table [data-tp="f:1:key"]', 'Results Verdict');
-          await page.selectOption('#rp-table [data-tp="f:1:a"]', 'Strong');
+          await page.check('#rp-table [data-tp="f:1:m"][value="Strong"]');
           await page.click('#rp-table th[data-k="Results Verdict"]');
           await page.click('#rp-table th[data-k="NP YoY %"]', { modifiers: ['Shift'] });
           const check1 = () => page.evaluate(() => {
@@ -464,6 +464,25 @@ function check(name, fn) {
           assert.ok(a.ordered, 'second sort level orders rows with the same verdict');
           assert.strictEqual(a.sorts, 'Results Verdict1,NP YoY %-1');
           assert.match(a.sum, /Result day ≥ 5 · Verdict is Strong/);
+          // a second tick: "is" = any of the ticked values; "is not" = none of them
+          const other = await page.$$eval('#rp-table [data-tp="f:1:m"]', (x) => x.map((e) => e.value).filter((v) => v !== 'Strong')[0]);
+          await page.check('#rp-table [data-tp="f:1:m"][value=' + JSON.stringify(other) + ']');
+          const two = (op) => page.evaluate(([v2, o]) => {
+            const t = document.querySelector('#rp-table').__sbTable;
+            const pick = (r) => r['Results Verdict'] === 'Strong' || r['Results Verdict'] === v2;
+            return { n: t.sorted().length, want: t.rows.filter((r) => r['Result Day %'] >= 5 && (o === 'is' ? pick(r) : r['Results Verdict'] != null && r['Results Verdict'] !== '' && !pick(r))).length,
+              sum: document.querySelector('#rp-table .tbl-sum').textContent };
+          }, [other, op]);
+          const m1 = await two('is');
+          assert.ok(m1.n > a.n && m1.n === m1.want, 'Strong or ' + other + ': ' + JSON.stringify(m1));
+          assert.ok(m1.sum.indexOf('Verdict is Strong or ' + other) >= 0 || m1.sum.indexOf('Verdict is ' + other + ' or Strong') >= 0, m1.sum);
+          await page.selectOption('#rp-table [data-tp="f:1:op"]', 'isnot');
+          assert.strictEqual(await page.$$eval('#rp-table [data-tp="f:1:m"]:checked', (x) => x.length), 2, 'the ticks stay');
+          const m2 = await two('isnot');
+          assert.strictEqual(m2.n, m2.want, 'none of them: ' + JSON.stringify(m2));
+          await page.selectOption('#rp-table [data-tp="f:1:op"]', 'is');
+          await page.uncheck('#rp-table [data-tp="f:1:m"][value=' + JSON.stringify(other) + ']');
+          assert.strictEqual((await check1()).n, a.n, 'back to Strong only');
           await page.reload({ waitUntil: 'load' });
           await page.waitForSelector('#rp-table .tbl-sum', { timeout: 15000 });
           const b = await check1();
@@ -661,7 +680,9 @@ function check(name, fn) {
     assert.ok(await pc.p.$('#wl-pin'), 'not connected yet: the PIN box');
     await pc.p.fill('#wl-pin', 'Wrong123');
     await pc.p.press('#wl-pin', 'Enter');
-    await pc.p.waitForFunction(() => /Wrong PIN/.test(document.querySelector('#wl-pin-msg').textContent), null, { timeout: 15000 });
+    await pc.p.waitForFunction(() => /Checking the PIN/.test((document.querySelector('#wl-pin-msg') || {}).textContent) || /Wrong PIN/.test((document.querySelector('#wl-pin-msg') || {}).textContent), null, { timeout: 15000 });
+    assert.strictEqual(await pc.p.$('#wl-sync-off'), null, 'not shown as connected while the PIN is checked');
+    await pc.p.waitForFunction(() => /Wrong PIN/.test((document.querySelector('#wl-pin-msg') || {}).textContent), null, { timeout: 15000 });
     await pc.p.fill('#wl-pin', 'Blue2026');
     await pc.p.click('#wl-pin-form button[type=submit]');
     await synced(pc.p);

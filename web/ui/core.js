@@ -156,7 +156,9 @@
   // columns: {key, label, type: text|num|pct|price|date|datetime|badge|sym, get(row), html(row), wrap, digits, name, title}
   // Click a heading = sort by that column; Shift+click = add it as the next sort level.
   // "Sort & filter" (above the table): several sort levels and several conditions
-  // ("Result day ≥ 10" AND "Verdict is Strong"...). Kept per table in this browser
+  // ("Result day ≥ 10" AND "Verdict is Strong"...). A text column with few values
+  // (Verdict, OPM QoQ...) offers them as ticks: "is" = any ticked value, "is not" =
+  // none of them (filter.a is then an array). Kept per table in this browser
   // (ui.store 'tbl:<page>|<columns>'); opts.tools false hides the button.
   var tableSeq = 0;
   var OPS = {
@@ -189,6 +191,13 @@
     var empty = v == null || v === '' || (k === 'num' && !isNum(v));
     if (f.op === 'blank') return empty;
     if (f.op === 'notblank') return !empty;
+    if (Array.isArray(f.a)) {                   // ticked values: any of them ("is") / none of them ("is not")
+      if (!f.a.length) return true;
+      if (empty) return false;
+      var sv = String(v).toLowerCase();
+      var hit = f.a.some(function (q) { return String(q).toLowerCase() === sv; });
+      return f.op === 'isnot' ? !hit : hit;
+    }
     var a = f.a == null ? '' : String(f.a).trim(), b = f.b == null ? '' : String(f.b).trim();
     if (a === '' && (f.op !== 'between' || b === '')) return true;
     if (empty) return false;
@@ -267,7 +276,10 @@
     }
     if (Array.isArray(st.f)) {
       this.filters = st.f.filter(function (x) { return x && ok(x.key) && OPS[colKind(self.col(x.key))].some(function (o) { return o[0] === x.op; }); })
-        .map(function (x) { return { key: x.key, op: x.op, a: x.a == null ? '' : String(x.a), b: x.b == null ? '' : String(x.b) }; });
+        .map(function (x) {
+          var a = Array.isArray(x.a) ? x.a.filter(function (v) { return v != null && v !== ''; }).map(String).slice(0, 60) : x.a == null ? '' : String(x.a);
+          return { key: x.key, op: x.op, a: a, b: x.b == null ? '' : String(x.b) };
+        });
     }
     this.sort = this.sorts[0] || null;
   };
@@ -323,8 +335,15 @@
           var ops = OPS[colKind(self.col(fl.key))];
           if (!ops.some(function (o) { return o[0] === fl.op; })) fl.op = ops[0][0];
           fl.a = ''; fl.b = '';
-        } else if (f === 'op') fl.op = x.value;
-        else { fl[f] = x.value; self.page = 0; self.save(); self.draw(); return; }   // a value: the panel stays as it is
+        } else if (f === 'op') {
+          fl.op = x.value;
+          if (Array.isArray(fl.a) && fl.op !== 'is' && fl.op !== 'isnot') fl.a = fl.a.length === 1 ? fl.a[0] : '';
+        } else {                                  // a value: the panel stays as it is
+          if (f === 'm') {
+            fl.a = Array.prototype.map.call(self.panelEl.querySelectorAll('[data-tp="f:' + i + ':m"]:checked'), function (c) { return c.value; });
+          } else fl[f] = x.value;
+          self.page = 0; self.save(); self.draw(); return;
+        }
       }
       self.page = 0;
       self.save();
@@ -412,7 +431,8 @@
     if (fs.length) {
       parts.push(fs.map(function (f) {
         var op = (OPS[colKind(self.col(f.key))].filter(function (o) { return o[0] === f.op; })[0] || ['', f.op])[1];
-        return name(f.key) + ' ' + op + (f.op === 'blank' || f.op === 'notblank' ? '' : ' ' + (f.a || '…') + (f.op === 'between' ? ' and ' + (f.b || '…') : ''));
+        var a = Array.isArray(f.a) ? f.a.join(f.op === 'isnot' ? ', ' : ' or ') : f.a;
+        return name(f.key) + ' ' + op + (f.op === 'blank' || f.op === 'notblank' ? '' : ' ' + (a || '…') + (f.op === 'between' ? ' and ' + (f.b || '…') : ''));
       }).join(' · '));
     }
     return { text: parts.join(' · '), filters: fs.length };
@@ -455,9 +475,13 @@
         if (vals.length > 50) vals = [];
       }
       var inp = function (which, val) {
-        if (k === 'text' && vals.length && (f.op === 'is' || f.op === 'isnot')) {   // few values (Verdict, Reaction...): pick one
-          return '<select class="sel tbl-val" data-tp="f:' + i + ':' + which + '" aria-label="' + esc(c.label) + ' value"><option value="">choose…</option>' +
-            vals.slice().sort().map(function (v) { return '<option value="' + esc(v) + '"' + (v === val ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>';
+        if (k === 'text' && vals.length && (f.op === 'is' || f.op === 'isnot')) {   // few values (Verdict, OPM QoQ...): tick one or more
+          var picked = (Array.isArray(val) ? val : val ? [String(val)] : []).map(function (x) { return String(x).toLowerCase(); });
+          return '<div class="tbl-multi" role="group" aria-label="' + esc(c.label) + ' - tick one or more" title="' +
+            (f.op === 'isnot' ? 'Rows with none of the ticked values' : 'Rows with any of the ticked values') + '">' +
+            vals.slice().sort().map(function (v) {
+              return '<label><input type="checkbox" data-tp="f:' + i + ':m" value="' + esc(v) + '"' + (picked.indexOf(v.toLowerCase()) >= 0 ? ' checked' : '') + '> ' + esc(v) + '</label>';
+            }).join('') + '</div>';
         }
         var type = k === 'num' ? 'number' : k === 'date' ? 'date' : 'text';
         return '<input class="search tbl-val" type="' + type + '"' + (type === 'number' ? ' step="any"' : '') + ' data-tp="f:' + i + ':' + which + '" value="' + esc(val) + '"' +
