@@ -3589,8 +3589,18 @@ const AB_H60_NOTE = 'NSE daily candles read by your PC (full bhavcopy), newest d
 let AB_H60_MEMO_ = null;                // this execution's parsed History60 (ab_h60Load_)
 
 /** A day cell (Date, 'yyyy-MM-dd...', 'dd/MM/yyyy', 'dd-MMM-yyyy') -> 'yyyy-MM-dd', else ''. */
+// Day conversions remembered per execution: the FVG scans / FVG column / Results Performance convert
+// the same few dozen days for every stock - 220,000 Utilities calls on 1,800 stocks (minutes of
+// Apps Script time: Phase 1-3 ran out of their 6 minutes on 29/30-Oct-2026) became about 100.
+const AB_H60_ISO_MEMO_ = {};
+const AB_H60_DATE_MEMO_ = {};
+
 function ab_h60Iso_(v) {
-  if (v instanceof Date) return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, AB_TZ, 'yyyy-MM-dd');
+  if (v instanceof Date) {
+    const t = v.getTime();
+    if (isNaN(t)) return '';
+    return AB_H60_ISO_MEMO_[t] || (AB_H60_ISO_MEMO_[t] = Utilities.formatDate(v, AB_TZ, 'yyyy-MM-dd'));
+  }
   const s = String(v === null || v === undefined ? '' : v).trim();
   let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if (m) return m[1] + '-' + m[2] + '-' + m[3];
@@ -3783,8 +3793,11 @@ function ab_h60Load_() {
   return AB_H60_MEMO_;
 }
 
-/** 'yyyy-MM-dd' -> Date (midnight IST, like History30's day cells). */
-function ab_h60Date_(iso) { return Utilities.parseDate(iso, AB_TZ, 'yyyy-MM-dd'); }
+/** 'yyyy-MM-dd' -> Date (midnight IST, like History30's day cells) - a new Date each call, parsed once per day. */
+function ab_h60Date_(iso) {
+  const t = AB_H60_DATE_MEMO_[iso] || (AB_H60_DATE_MEMO_[iso] = Utilities.parseDate(iso, AB_TZ, 'yyyy-MM-dd').getTime());
+  return new Date(t);
+}
 
 /**
  * History30 + History60's older days: { SYM: [{ date, Opn, High, Low, Cls, Volume }] } oldest first,
@@ -5367,8 +5380,12 @@ function ab_getSignalWatchlistSheet_() {
 }
 
 /** A log date cell ("08-Oct-2026" text, or a real date) -> sortable "yyyymmdd", '' if unreadable. */
+const AB_MS_KEY_MEMO_ = {};                // see AB_H60_ISO_MEMO_
 function ab_msDateKey_(v) {
-  if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, AB_TZ, 'yyyyMMdd');
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    const t = v.getTime();
+    return AB_MS_KEY_MEMO_[t] || (AB_MS_KEY_MEMO_[t] = Utilities.formatDate(v, AB_TZ, 'yyyyMMdd'));
+  }
   const m = String(v || '').trim().match(/^(\d{1,2})[-\/ ]([A-Za-z]{3})[a-z]*[-\/ ](\d{4})$/);
   if (!m) return '';
   const mon = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(m[2].toLowerCase());
@@ -9553,6 +9570,8 @@ function updateAllCandlestickPatterns() {
   const day4Map = mapDay(day4);
 
   const data = sheet2.getDataRange().getValues();
+  // col W is written in ONE go at the end (1,800 single-cell writes slowed Phase 2); a row without a symbol keeps its cell
+  const colW = data.map(function (r) { return [r[AB_COL_W - 1] === undefined || r[AB_COL_W - 1] === null ? '' : r[AB_COL_W - 1]]; });
 
   for (let i = 1; i < data.length; i++) {
     const symbol = String(data[i][3]).trim().toUpperCase(); // col D
@@ -9892,8 +9911,9 @@ function updateAllCandlestickPatterns() {
       allPatterns.push('Twin Star Bottom (confirmed)');
     }
 
-    sheet2.getRange(i + 1, AB_COL_W).setValue(allPatterns.join(', '));
+    colW[i][0] = allPatterns.join(', ');
   }
+  if (data.length > 1) sheet2.getRange(2, AB_COL_W, data.length - 1, 1).setValues(colW.slice(1));
 }
 
 /*****************************************************************
