@@ -53,6 +53,9 @@ test('the owner\'s chart: Twin Star Bottom (+ FVG) on 5-Oct, the red Harami + In
     if (t.length || f.length) found.push(i + ': ' + t.concat(f).join(' | '));
   });
   assert.deepStrictEqual(found, [OCT5 + ': ' + TSB + ' | Twin Star Bottom + FVG (Today)', OCT26 + ': ' + HIH]);
+  // 6-Oct closed 119.21, above the red candle's open (117.82): confirmed - the only one on the chart
+  const conf = MARSONS.map((x, i) => (P.patternsAt(MARSONS, i).indexOf(TSB + ' (confirmed)') >= 0 ? i : -1)).filter((i) => i >= 0);
+  assert.deepStrictEqual(conf, [OCT5 + 1]);
   // the FVG it sits in: 21/24-Aug's gap, 113.36 - 119.54 (formed ~30 bars before, untouched until 30-Sep)
   const next = FVG.longFvgDetail(MARSONS.slice(0, OCT5 + 2)).tags;
   assert.ok(next.indexOf('Twin Star Bottom + FVG (1d ago)') >= 0, next.join(', '));
@@ -77,6 +80,10 @@ test('Twin Star Bottom: each rule', () => {
     const s = bad[why];
     assert.strictEqual(P.isTwinStarBottom(sheetC(s[0]), sheetC(s[1]), sheetC(s[2])), false, why);
   });
+  // confirmed: the next close above candle 1's open (100) - equal is not enough
+  assert.ok(P.patternsAt([RED1, S1, S2, c(97.2, 101, 97, 100.4)], 3).indexOf(TSB + ' (confirmed)') >= 0);
+  assert.ok(P.patternsAt([RED1, S1, S2, c(97.2, 101, 97, 100)], 3).indexOf(TSB + ' (confirmed)') < 0);
+  assert.ok(P.patternsAt([RED1, S1, S2, c(97.2, 99.5, 97, 99.4)], 3).indexOf(TSB + ' (confirmed)') < 0);
   // either colour of star, a doji too
   assert.ok(P.isTwinStarBottom(sheetC(RED1), sheetC(c(96.6, 97.5, 95.8, 96.6)), sheetC(c(96.9, 97.2, 95.9, 96.3))));
 });
@@ -140,6 +147,11 @@ function series(r) {
     p = cl;
   }
   if (r() < 0.7) withStars(r, out, out.length - 3 - Math.floor(r() * 2));
+  if (r() < 0.25) {                     // stars at 26-28, then a strong day that may win back candle 1's open
+    withStars(r, out, 26);
+    const o = out[28].c, cl = +(out[26].o * (0.99 + r() * 0.03)).toFixed(2);
+    out[29] = c(o, +(Math.max(o, cl) * (1 + r() * 0.01)).toFixed(2), +(Math.min(o, cl) * (1 - r() * 0.01)).toFixed(2), cl);
+  }
   if (r() < 0.3) {                      // a red inverted hammer pair at the end
     const o1 = out[27].c, cl1 = +(o1 * (1 - 0.02 - r() * 0.04)).toFixed(2), b1 = o1 - cl1;
     out[28] = c(o1, +(o1 + b1 * r() * 0.2).toFixed(2), +(cl1 - b1 * r() * 0.3).toFixed(2), cl1);
@@ -173,15 +185,17 @@ test('Code.gs and the JS port agree: patterns (col W) and FVG tags (col X), fuzz
   const env2 = mock.loadCodeGs({ sheets: [pd, tab('Day4', 0), tab('ThirdDay', 1), tab('Yesterday', 2), tab('Today', 3)] });
   env2.call('updateAllCandlestickPatterns');
   const grid = env2.sheet('PatternData').rows;
-  let twin = 0, redHih = 0;
+  let twin = 0, redHih = 0, twinConf = 0;
   sets.forEach((s, i) => {
     const sheet = String((grid[i + 1] || [])[22] || '');
     const js = P.patternsAt(s, s.length - 1).join(', ');
     if (sheet.indexOf(TSB) >= 0) twin++;
+    if (sheet.indexOf(TSB + ' (confirmed)') >= 0) twinConf++;
     const t = s[s.length - 1];
     if (sheet.indexOf(HIH) >= 0 && t.c < t.o) redHih++;
     if (sheet !== js) bad.push('pattern ' + syms[i] + ': sheet="' + sheet + '" js="' + js + '"');
   });
   assert.deepStrictEqual(bad.slice(0, 10), [], bad.length + ' mismatches');
-  assert.ok(twin >= 20 && twinFvg >= 3 && redHih >= 3, 'the fuzz must exercise the rules: ' + twin + ' twin stars, ' + twinFvg + ' with FVG, ' + redHih + ' red hammers');
+  assert.ok(twin >= 20 && twinFvg >= 3 && redHih >= 3 && twinConf >= 5, 'the fuzz must exercise the rules: ' + twin + ' twin stars, ' +
+    twinFvg + ' with FVG, ' + redHih + ' red hammers, ' + twinConf + ' confirmed');
 });

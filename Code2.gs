@@ -9475,8 +9475,10 @@ function ab_isHaramiInvHammerPair_(c1, c2) {
  *       other, and c3 closes at or above c2's low (no new breakdown).
  * "Twin Star Bottom + FVG" (FVG column, ab_longFvgDetail_): the stars
  * dip into a bullish FVG formed before c1 that still holds - like
- * FVG+Spring. Candles are {Opn, High, Low, Cls}. Ported 1:1 to
- * web/lib/patterns.js isTwinStarBottom.
+ * FVG+Spring. "Twin Star Bottom (confirmed)" (owner, 30-Oct-2026): the
+ * pattern on the 3 days before, and today's close above c1's OPEN (the
+ * whole red candle won back). Candles are {Opn, High, Low, Cls}. Ported
+ * 1:1 to web/lib/patterns.js isTwinStarBottom.
  *****************************************************************/
 const AB_TSB_C1_BODY_MIN_PCT = 1;
 const AB_TSB_STAR_BODY_MAX = 0.35;
@@ -9885,6 +9887,10 @@ function updateAllCandlestickPatterns() {
       allPatterns.push('Bullish Harami + Inverted Hammer (confirmed)');
     }
     if (thRow && yRow && tRow && ab_isTwinStarBottom_(thRow, yRow, tRow)) allPatterns.push('Twin Star Bottom');
+    const d4Row = day4Map[symbol];
+    if (d4Row && thRow && yRow && tRow && ab_isTwinStarBottom_(d4Row, thRow, yRow) && tRow.Cls > d4Row.Opn) {
+      allPatterns.push('Twin Star Bottom (confirmed)');
+    }
 
     sheet2.getRange(i + 1, AB_COL_W).setValue(allPatterns.join(', '));
   }
