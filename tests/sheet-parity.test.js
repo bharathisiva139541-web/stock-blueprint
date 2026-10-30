@@ -22,7 +22,7 @@ function last4(candles) {
 
 // Patterns added to Code.gs after the saved export was made: until a newer export
 // contains them, the JS tags for them are left out of the comparison.
-const NEW_TAGS = ['Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)'];
+const NEW_TAGS = ['Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom'];
 const EXPORT_HAS_NEW = !!H && Object.keys(H.sheetTags).some((k) => NEW_TAGS.some((t) => String(H.sheetTags[k][0] || '').indexOf(t) >= 0));
 function dropNew(tags) {
   return EXPORT_HAS_NEW ? tags : P.splitTags(tags).filter((t) => NEW_TAGS.indexOf(t) < 0).join(', ');
@@ -41,9 +41,10 @@ test('patterns (col W) match the sheet for every symbol', { skip: !H && 'no web/
   assert.deepStrictEqual(bad.slice(0, 15), [], bad.length + ' mismatches of ' + n);
 });
 
-// FVG+Spring changed to the owner's broader rule (Oct 2026) after the saved export
-// was made, so its tag is set aside here; tests/fvg-spring.test.js checks Code.gs = JS.
-function dropSpring(tags) { return P.splitTags(tags).filter((t) => !/^FVG\+Spring/.test(t)).join(', '); }
+// FVG+Spring changed to the owner's broader rule (Oct 2026) and Twin Star Bottom + FVG was
+// added (30-Oct-2026) after the saved export was made, so those tags are set aside here;
+// tests/fvg-spring.test.js and tests/patterns-twinstar.test.js check Code.gs = JS.
+function dropSpring(tags) { return P.splitTags(tags).filter((t) => !/^FVG\+Spring|^Twin Star Bottom \+ FVG/.test(t)).join(', '); }
 
 test('FVG tags (col X) match the sheet for every symbol', { skip: !H && 'no web/data/history.js' }, () => {
   let n = 0; const bad = [];

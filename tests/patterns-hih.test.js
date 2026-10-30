@@ -48,7 +48,7 @@ test('each rule is enforced', () => {
     'high more than 15% of body 1 above high 1': [RED, c(90.2, 102.6, 90.0, 94.2)],
     'lower wick over 10% of range': [c(100, 101, 88, 90), c(90.2, 100.8, 88.9, 94.2)],
     'low below candle 1 low': [c(100, 101, 90, 90), c(90.2, 100.8, 89.95, 94.2)],
-    'candle 2 red': [RED, c(94.2, 100.8, 90.0, 90.2)]
+    'candle 2 red and opening 4.7% above close 1 (a red one must open within 1%)': [RED, c(94.2, 100.8, 90.0, 90.2)]
   };
   Object.keys(bad).forEach((why) => {
     const pair = bad[why];

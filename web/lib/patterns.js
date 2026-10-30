@@ -23,9 +23,12 @@
   };
   var ORDER = ['Spring', 'Piercing', 'Bullish Engulfing', 'Bullish Harami', 'Tweezer Bottoms', 'Spring?',
     'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch',
-    'Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)'];
-  // Code.gs AB_HIH_* (Bullish Harami + Inverted Hammer)
-  var HIH = { c1BodyMin: 0.65, bodyMin: 0.25, bodyMax: 0.50, openTol: 0.005, upperWickMin: 1.5, lowerWickMax: 0.10, highOverMax: 0.15 };
+    'Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom'];
+  // Code.gs AB_HIH_* (Bullish Harami + Inverted Hammer; red* = the red inverted hammer)
+  var HIH = { c1BodyMin: 0.65, bodyMin: 0.25, bodyMax: 0.50, openTol: 0.005, upperWickMin: 1.5, lowerWickMax: 0.10, highOverMax: 0.15,
+    redBodyMin: 0.10, redOpenTol: 0.01, redLowerWickMax: 0.20 };
+  // Code.gs AB_TSB_* (Twin Star Bottom)
+  var TSB = { c1BodyMinPct: 1, starBodyMax: 0.35, starTopMax: 0.25, lowTolPct: 1 };
 
   function cfgOf(cfg) {
     var o = {};
@@ -55,13 +58,26 @@
 
   /** ab_isHaramiInvHammerPair_: c1 big red, c2 small green inside c1's lower body half
    *  with a long upper wick reaching at least c1's open (at most 15% of c1's body above c1's high), almost no lower wick and
-   *  its low never below c1's low. Candles {Opn,High,Low,Cls}. */
+   *  its low never below c1's low - or c2 a red inverted hammer (body 10-50% of c1's, opening within 1% of c1's close,
+   *  lower wick <= 20% of its range, same upper-wick rules). Candles {Opn,High,Low,Cls}. */
   function isHaramiInvHammerPair(c1, c2) {
     var v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls];
     if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
     var c1Body = c1.Opn - c1.Cls, c1Range = c1.High - c1.Low;
     var c2Body = c2.Cls - c2.Opn, c2Range = c2.High - c2.Low;
-    if (!(c1Body > 0 && c1Range > 0 && c2Body > 0 && c2Range > 0)) return false;
+    if (!(c1Body > 0 && c1Range > 0 && c2Range > 0)) return false;
+    if (c2Body < 0) {
+      var redBody = -c2Body;
+      return (c1Body / c1Range >= HIH.c1BodyMin) &&
+        (redBody >= HIH.redBodyMin * c1Body) && (redBody <= HIH.bodyMax * c1Body) &&
+        (Math.abs(c2.Opn - c1.Cls) <= HIH.redOpenTol * c1.Cls) &&
+        (c2.Opn <= (c1.Opn + c1.Cls) / 2) &&
+        (c2.High - c2.Opn >= HIH.upperWickMin * redBody) &&
+        (c2.High >= c1.Opn) && (c2.High <= c1.High + HIH.highOverMax * c1Body) &&
+        (c2.Cls - c2.Low <= HIH.redLowerWickMax * c2Range) &&
+        (c2.Low >= c1.Low);
+    }
+    if (!(c2Body > 0)) return false;
     return (c1Body / c1Range >= HIH.c1BodyMin) &&
       (c2Body >= HIH.bodyMin * c1Body) && (c2Body <= HIH.bodyMax * c1Body) &&
       (Math.abs(c2.Opn - c1.Cls) <= HIH.openTol * c1.Cls) &&
@@ -70,6 +86,22 @@
       (c2.High >= c1.Opn) && (c2.High <= c1.High + HIH.highOverMax * c1Body) &&
       (c2.Opn - c2.Low <= HIH.lowerWickMax * c2Range) &&
       (c2.Low >= c1.Low);
+  }
+
+  /** ab_isTwinStarBottom_: c1 red (body >= 1% of its open), then two small candles (body <= 35% of c1's,
+   *  body top <= c1's close + 25% of c1's body) whose lows are within 1% of each other; c3 closes at or above
+   *  c2's low. Candles {Opn,High,Low,Cls}. */
+  function isTwinStarBottom(c1, c2, c3) {
+    var v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls, c3.Opn, c3.High, c3.Low, c3.Cls];
+    if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
+    var c1Body = c1.Opn - c1.Cls;
+    if (!(c1Body > 0) || c1Body / c1.Opn * 100 < TSB.c1BodyMinPct) return false;
+    var star = function (c) {
+      return Math.abs(c.Cls - c.Opn) <= TSB.starBodyMax * c1Body && Math.max(c.Opn, c.Cls) <= c1.Cls + TSB.starTopMax * c1Body;
+    };
+    return star(c2) && star(c3) && c2.Low > 0 && c3.Low > 0 &&
+      Math.abs(c2.Low - c3.Low) <= TSB.lowTolPct / 100 * Math.min(c2.Low, c3.Low) &&
+      c3.Cls >= c2.Low;
   }
 
   /** Tags for bar i, in the sheet's fixed order. Returns [] when bar i is missing. */
@@ -208,6 +240,7 @@
     if (thRow && yRow && tRow && isHaramiInvHammerPair(thRow, yRow) && tRow.Cls > yRow.High) {
       all.push('Bullish Harami + Inverted Hammer (confirmed)');
     }
+    if (thRow && yRow && tRow && isTwinStarBottom(thRow, yRow, tRow)) all.push('Twin Star Bottom');
     return all;
   }
 
@@ -222,6 +255,7 @@
     return String(s || '').split(/,(?![^()]*\))/).map(function (x) { return x.trim(); }).filter(Boolean);
   }
 
-  return { DEFAULTS: DEFAULTS, ORDER: ORDER, HIH: HIH, isSpringPair: isSpringPair, isHaramiInvHammerPair: isHaramiInvHammerPair,
+  return { DEFAULTS: DEFAULTS, ORDER: ORDER, HIH: HIH, TSB: TSB, isSpringPair: isSpringPair, isHaramiInvHammerPair: isHaramiInvHammerPair,
+    isTwinStarBottom: isTwinStarBottom,
     patternsAt: patternsAt, latestTags: latestTags, splitTags: splitTags };
 });

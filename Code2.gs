@@ -9399,7 +9399,7 @@ function logRun_(ts, dateUsed, rowCount, status, notes) {
  * output column (W), just reading this spreadsheet's own tabs.
  *****************************************************************/
 /*****************************************************************
- * BULLISH HARAMI + INVERTED HAMMER (2 candles; c1 = red, c2 = green)
+ * BULLISH HARAMI + INVERTED HAMMER (2 candles; c1 = red, c2 = green or red)
  * -----------------------------------------------------------------
  * c1: big red body, at least AB_HIH_C1_BODY_MIN of its High-Low range.
  * c2: small green body (25-50% of c1's body) opening at c1's close
@@ -9410,6 +9410,14 @@ function logRun_(ts, dateUsed, rowCount, status, notes) {
  *     Selling is fading but sellers still capped the high,
  *     so it is a watch signal on its own - the "(confirmed)" tag needs
  *     the NEXT close above c2's high.
+ * c2 may also be a RED inverted hammer (owner, 30-Oct-2026, MARSONS
+ *     23/26-Oct: "include this type also", not strict): body 10-50% of
+ *     c1's body, opening within AB_HIH_RED_OPEN_TOL (1%) of c1's close,
+ *     its body top still in the lower half of c1's body, the same long
+ *     upper wick (>= 1.5 x body above its open, reaching c1's open, at
+ *     most 15% of c1's body above c1's high), a lower wick of at most
+ *     AB_HIH_RED_LOWER_WICK_MAX (20%) of its range and its low never
+ *     below c1's low. Same tags, same confirmation.
  * Candles are {Opn, High, Low, Cls}. Ported 1:1 to web/lib/patterns.js.
  *****************************************************************/
 const AB_HIH_C1_BODY_MIN = 0.65;
@@ -9419,13 +9427,28 @@ const AB_HIH_OPEN_TOL = 0.005;
 const AB_HIH_UPPER_WICK_MIN = 1.5;
 const AB_HIH_LOWER_WICK_MAX = 0.10;
 const AB_HIH_HIGH_OVER_MAX = 0.15;    // c2's wick may poke above c1's high by this x c1's body
+const AB_HIH_RED_BODY_MIN = 0.10;      // red c2: body at least this x c1's body
+const AB_HIH_RED_OPEN_TOL = 0.01;      // red c2: opens within 1% of c1's close
+const AB_HIH_RED_LOWER_WICK_MAX = 0.20;
 
 function ab_isHaramiInvHammerPair_(c1, c2) {
   const v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls];
   if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
   const c1Body = c1.Opn - c1.Cls, c1Range = c1.High - c1.Low;
   const c2Body = c2.Cls - c2.Opn, c2Range = c2.High - c2.Low;
-  if (!(c1Body > 0 && c1Range > 0 && c2Body > 0 && c2Range > 0)) return false;   // red, then green
+  if (!(c1Body > 0 && c1Range > 0 && c2Range > 0)) return false;
+  if (c2Body < 0) {                                  // the red inverted hammer
+    const redBody = -c2Body;
+    return (c1Body / c1Range >= AB_HIH_C1_BODY_MIN) &&
+      (redBody >= AB_HIH_RED_BODY_MIN * c1Body) && (redBody <= AB_HIH_BODY_MAX * c1Body) &&
+      (Math.abs(c2.Opn - c1.Cls) <= AB_HIH_RED_OPEN_TOL * c1.Cls) &&
+      (c2.Opn <= (c1.Opn + c1.Cls) / 2) &&
+      (c2.High - c2.Opn >= AB_HIH_UPPER_WICK_MIN * redBody) &&
+      (c2.High >= c1.Opn) && (c2.High <= c1.High + AB_HIH_HIGH_OVER_MAX * c1Body) &&
+      (c2.Cls - c2.Low <= AB_HIH_RED_LOWER_WICK_MAX * c2Range) &&
+      (c2.Low >= c1.Low);
+  }
+  if (!(c2Body > 0)) return false;                   // red, then green
   return (c1Body / c1Range >= AB_HIH_C1_BODY_MIN) &&
     (c2Body >= AB_HIH_BODY_MIN * c1Body) && (c2Body <= AB_HIH_BODY_MAX * c1Body) &&
     (Math.abs(c2.Opn - c1.Cls) <= AB_HIH_OPEN_TOL * c1.Cls) &&
@@ -9434,6 +9457,44 @@ function ab_isHaramiInvHammerPair_(c1, c2) {
     (c2.High >= c1.Opn) && (c2.High <= c1.High + AB_HIH_HIGH_OVER_MAX * c1Body) &&
     (c2.Opn - c2.Low <= AB_HIH_LOWER_WICK_MAX * c2Range) &&
     (c2.Low >= c1.Low);
+}
+
+/*****************************************************************
+ * TWIN STAR BOTTOM (3 candles; c1 = red, c2 + c3 = two small "stars")
+ * -----------------------------------------------------------------
+ * Owner, 30-Oct-2026 (MARSONS 30-Sep, 1-Oct, 5-Oct: "name it yourself,
+ * need not be strict"): a red candle, then two small-bodied candles
+ * that stop falling at the same level - the selling ran out at the
+ * bottom of the red candle. A watch signal (like Harami + Inverted
+ * Hammer); tagged on the 2nd star's day.
+ *   c1: red, body >= AB_TSB_C1_BODY_MIN_PCT % of its open.
+ *   c2, c3 (either colour): body <= AB_TSB_STAR_BODY_MAX x c1's body,
+ *       body top <= c1's close + AB_TSB_STAR_TOP_MAX x c1's body
+ *       (they sit at the bottom of c1, not back up inside it).
+ *   twin lows: c2's and c3's lows within AB_TSB_LOW_TOL_PCT % of each
+ *       other, and c3 closes at or above c2's low (no new breakdown).
+ * "Twin Star Bottom + FVG" (FVG column, ab_longFvgDetail_): the stars
+ * dip into a bullish FVG formed before c1 that still holds - like
+ * FVG+Spring. Candles are {Opn, High, Low, Cls}. Ported 1:1 to
+ * web/lib/patterns.js isTwinStarBottom.
+ *****************************************************************/
+const AB_TSB_C1_BODY_MIN_PCT = 1;
+const AB_TSB_STAR_BODY_MAX = 0.35;
+const AB_TSB_STAR_TOP_MAX = 0.25;
+const AB_TSB_LOW_TOL_PCT = 1;
+
+function ab_isTwinStarBottom_(c1, c2, c3) {
+  const v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls, c3.Opn, c3.High, c3.Low, c3.Cls];
+  if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
+  const c1Body = c1.Opn - c1.Cls;
+  if (!(c1Body > 0) || c1Body / c1.Opn * 100 < AB_TSB_C1_BODY_MIN_PCT) return false;
+  const star = function (c) {
+    return Math.abs(c.Cls - c.Opn) <= AB_TSB_STAR_BODY_MAX * c1Body &&
+      Math.max(c.Opn, c.Cls) <= c1.Cls + AB_TSB_STAR_TOP_MAX * c1Body;
+  };
+  return star(c2) && star(c3) && c2.Low > 0 && c3.Low > 0 &&
+    Math.abs(c2.Low - c3.Low) <= AB_TSB_LOW_TOL_PCT / 100 * Math.min(c2.Low, c3.Low) &&
+    c3.Cls >= c2.Low;
 }
 
 function updateAllCandlestickPatterns() {
@@ -9823,6 +9884,7 @@ function updateAllCandlestickPatterns() {
     if (thRow && yRow && tRow && ab_isHaramiInvHammerPair_(thRow, yRow) && tRow.Cls > yRow.High) {
       allPatterns.push('Bullish Harami + Inverted Hammer (confirmed)');
     }
+    if (thRow && yRow && tRow && ab_isTwinStarBottom_(thRow, yRow, tRow)) allPatterns.push('Twin Star Bottom');
 
     sheet2.getRange(i + 1, AB_COL_W).setValue(allPatterns.join(', '));
   }
