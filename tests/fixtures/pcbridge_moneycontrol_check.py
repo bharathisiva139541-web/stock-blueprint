@@ -350,7 +350,7 @@ def fake_page(cfg, sym, consolidated=True):
 sb.api = run_api
 sb.fetch_page = fake_page
 sb.polite_sleep = lambda cfg: None
-sb.price_bands_step = sb.ipo_step = lambda cfg: None
+sb.price_bands_step = sb.ipo_step = sb.ann_step = lambda cfg: None
 sb.LOCK_PATH = os.path.join(tmp, 'bridge.lock')
 LIST = {'ok': True, 'priority': ['FIRSTCO', 'SCREENERHAS', 'BLOCKEDCO'], 'missing': [],
         'mc': {'FIRSTCO': 'Sep 2026', 'SCREENERHAS': 'Sep 2026', 'BLOCKEDCO': 'Sep 2026'}}

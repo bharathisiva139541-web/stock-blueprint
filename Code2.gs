@@ -79,7 +79,8 @@ const AB_RS_UPCOMING_MAX_ROWS = 400;  // email size guard
 const AB_RS_MAX_HTML_CHARS = 150000;  // same MailApp body-size guard as Quality Watch
 const AB_RS_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const AB_RS_HEADERS = ['Symbol', 'Company', 'Result Date', 'Quarter Expected', 'Status',
-  'Screener Latest Quarter', 'Checks', 'First Checked', 'Last Checked', 'Updated At', 'Note', 'Source'];
+  'Screener Latest Quarter', 'Checks', 'First Checked', 'Last Checked', 'Updated At', 'Note', 'Source',
+  'Announced'];   // when NSE got the results + session (ab_annCell_, from the PC's NSE announcements)
 const AB_RS_TS_FMT = 'dd/MM/yyyy HH:mm';
 // Which results season (quarter) the Checkbox column currently reflects.
 // When the season rolls over (e.g. Sep 2026 -> Dec 2026 on 1 Jan) every
@@ -229,9 +230,12 @@ function ab_rsWriteTracker_(tr) {
   });
 
   const out = [AB_RS_HEADERS];
+  let ann = null;
+  try { ann = ab_annLoad_(); } catch (e) { ann = null; }
   rows.forEach(function (t) {
     out.push([t.symbol, t.company || '', ab_rsKeyToDmy_(t.rdKey), t.quarter, t.status, t.latest || '',
-              String(t.checks || 0), t.first || '', t.last || '', t.updatedAt || '', t.note || '', t.source || '']);
+              String(t.checks || 0), t.first || '', t.last || '', t.updatedAt || '', t.note || '', t.source || '',
+              ann ? ab_annCell_(ab_annFor_(ann, t.symbol, t.rdKey)) : '']);
   });
 
   const w = AB_RS_HEADERS.length;
@@ -1048,6 +1052,18 @@ function ab_rsSendEmail_(ctx) {
     if (L === 'avoid' || L === 'sell') return pill(ab_rsEsc_(v.toUpperCase()), AB_C_NEG, '#fdecec');
     return pill(ab_rsEsc_(v.toUpperCase()), SLATE, '#eef2f7');
   };
+  // when NSE got the results: a pill under the result date (the PC's NSE announcements; nothing when not known)
+  let annStore = null;
+  try { annStore = ab_annLoad_(); } catch (e) { annStore = null; }
+  const annHtml = function (t) {
+    const e = annStore ? ab_annFor_(annStore, t.symbol, t.rdKey) : null;
+    if (!e) return '';
+    const s = ab_annSession_(e.at), hm = e.at.slice(11, 16);
+    const p = s.code === 'after' ? pill('AFTER MKT ' + hm, '#92400e', '#fef3c7')
+      : s.code === 'closed' ? pill('MKT CLOSED ' + hm, '#92400e', '#fef3c7')
+        : s.code === 'before' ? pill('BEFORE MKT ' + hm, AB_C_POS, '#e6f6ed') : pill('MKT HOURS ' + hm, AB_C_INFO, '#e3eefc');
+    return '<div style="margin-top:3px">' + p + '</div>' + (s.after ? '<div style="color:' + FAINT + ';font-size:10px">reacts next session</div>' : '');
+  };
   const upsideCell = function (v) {
     if (!v || /^#/.test(v)) return '<span style="color:' + FAINT + '">-</span>';
     const n = Number(String(v).replace(/[%,+\s]/g, ''));
@@ -1105,7 +1121,7 @@ function ab_rsSendEmail_(ctx) {
           : isNew ? '<br>' + pill('NEW', '#ffffff', AB_C_POS) : '') +
         (t.source === AB_MC_SOURCE ? '<br>' + pill('VIA MONEYCONTROL', '#1d4ed8', '#e3eefc') : '') + '</td>' +
       '<td ' + td + '>' + ab_rsEsc_(t.company || cell(s, layout.name)) + (bi ? '<br><span ' + small + '>' + ab_rsEsc_(bi) + '</span>' : '') + '</td>' +
-      '<td ' + td + ' nowrap><b>' + shortDay(t.rdKey) + '</b>' + sinceHtml + '</td>' +
+      '<td ' + td + ' nowrap><b>' + shortDay(t.rdKey) + '</b>' + annHtml(t) + sinceHtml + '</td>' +
       '<td ' + td + '>' + kv('QoQ', pct(cell(s, layout.qoqRev))) + kv('YoY', pct(cell(s, layout.yoyRev))) + '</td>' +
       '<td ' + td + '>' + kv('QoQ', pct(cell(s, layout.qoqNp))) + kv('YoY', pct(cell(s, layout.yoyNp))) + '</td>' +
       '<td ' + td + '>' + kv('QoQ', tag('OPM QoQ%', cell(s, cols.opmQoQ))) + kv('YoY', tag('OPM YoY%', cell(s, cols.opmYoY))) + '</td>' +
@@ -1575,11 +1591,15 @@ function runUpcomingResultsEmailNow() {
  * added the moment the Results Day check confirms that company's
  * numbers in Main, and refreshed on every Results Day run.
  *
- * The baseline is the LAST CLOSE BEFORE THE RESULT DATE - the price
- * before the market knew the numbers - so "% Since Results" captures
- * the whole reaction, whether results came out mid-session or after
- * the close. Alongside it:
- *   Result Day %   first session on/after the result date vs baseline
+ * The baseline is the LAST CLOSE BEFORE THE MARKET COULD REACT - the
+ * price before the market knew the numbers. When the PC has read NSE's
+ * filing time (Results Announcements section, 'Announced' column):
+ * filed after 15:30 or on a closed day -> the reaction session is the
+ * NEXT one and the baseline that day's close; filed before 09:15 or
+ * during market hours -> the reaction session is that day. Without a
+ * filing time: the result date (as before). Stored values are worked
+ * out again when that basis changes ('Reaction From').
+ *   Result Day %   the reaction session vs baseline
  *   Next Day %     the session after that vs the result-day close
  *   Max Gain / Max Drawdown   best and worst point since the result,
  *                  vs baseline (from daily highs/lows + today's price)
@@ -1605,11 +1625,11 @@ function runUpcomingResultsEmailNow() {
 const AB_RP_SHEET = 'Results Performance';
 const AB_RP_MOVE_PCT = ab_setting_('AB_RP_MOVE_PCT', 5);
 const AB_RP_HEADER_ROW = 10;
-const AB_RP_COLS = ['Symbol', 'Company', 'Basic Industry', 'Quarter', 'Result Date', 'Days Since',
+const AB_RP_COLS = ['Symbol', 'Company', 'Basic Industry', 'Quarter', 'Result Date', 'Announced', 'Days Since',
   'Pre-Result Close', 'Result Day %', 'Next Day %', 'Current Price', 'Today %', '% Since Results',
   'Max Gain %', 'Max Drawdown %', 'Results Verdict', 'Market Reaction', 'Signal',
   'Rev QoQ %', 'Rev YoY %', 'NP QoQ %', 'NP YoY %', 'OPM QoQ', 'OPM YoY',
-  'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since', 'Last Refreshed'];
+  'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since', 'Reaction From', 'Last Refreshed'];
 
 function ab_rpNum_(v) {
   if (v === '' || v === null || v === undefined) return NaN;
@@ -1645,7 +1665,8 @@ function ab_rpReadExisting_(sh) {
       nextClose: ab_rpNum_(g('Next Day Close')), hi: ab_rpNum_(g('Highest Since')), lo: ab_rpNum_(g('Lowest Since')),
       revQoQ: ab_rpNum_(g('Rev QoQ %')), revYoY: ab_rpNum_(g('Rev YoY %')),
       npQoQ: ab_rpNum_(g('NP QoQ %')), npYoY: ab_rpNum_(g('NP YoY %')),
-      opmQoQ: String(g('OPM QoQ') || ''), opmYoY: String(g('OPM YoY') || '')
+      opmQoQ: String(g('OPM QoQ') || ''), opmYoY: String(g('OPM YoY') || ''),
+      annText: String(g('Announced') || ''), reactFrom: String(g('Reaction From') || '')
     };
   }
   return out;
@@ -1700,6 +1721,8 @@ function ab_rpRefresh_(opts) {
   const sh = ab_getOrCreateSheet_(AB_RP_SHEET);
   const rows = ab_rpReadExisting_(sh);
   const hist = ab_readHistoryMerged_();   // History30 + History60's older days (results up to ~60 sessions back)
+  let annStore = null;
+  try { annStore = ab_annLoad_(); } catch (e) { annStore = null; }
   const todayKey = ab_rsDayKey_(new Date());
   const nowDate = new Date();
 
@@ -1736,7 +1759,7 @@ function ab_rpRefresh_(opts) {
       symbol: t.symbol, company: t.company || mainText(r, layout.name),
       basicIndustry: mainText(r, layout.basicIndustry), quarter: t.quarter,
       rd: ab_rsMakeDate_(p[0], p[1] - 1, p[2]),
-      base: NaN, rdClose: NaN, nextClose: NaN, hi: NaN, lo: NaN,
+      base: NaN, rdClose: NaN, nextClose: NaN, hi: NaN, lo: NaN, annText: '', reactFrom: '',
       revQoQ: mainNum(r, layout.qoqRev) / 100, revYoY: mainNum(r, layout.yoyRev) / 100,
       npQoQ: mainNum(r, layout.qoqNp) / 100, npYoY: mainNum(r, layout.yoyNp) / 100,
       opmQoQ: mainText(r, cols.opmQoQ), opmYoY: mainText(r, cols.opmYoY)
@@ -1757,11 +1780,17 @@ function ab_rpRefresh_(opts) {
     }).filter(function (c) { return c.k && !isNaN(c.Cls); })
       .sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
 
-    if (isNaN(row.base)) {
-      const pre = candles.filter(function (c) { return c.k < rdKey; });
-      if (pre.length) row.base = pre[pre.length - 1].Cls;
+    // the first session that could react: the result date, or - with NSE's filing time - the filing day / the session after it
+    const e = annStore ? ab_annFor_(annStore, row.symbol, rdKey) : null;
+    if (e) row.annText = ab_annCell_(e);
+    const rx = ab_annReaction_(e, rdKey);
+    const pre = candles.filter(function (c) { return rx.strict ? c.k <= rx.from : c.k < rx.from; });
+    if ((row.reactFrom || 'from ' + rdKey) !== rx.text && pre.length) {
+      row.base = NaN; row.rdClose = NaN; row.nextClose = NaN; row.hi = NaN; row.lo = NaN;   // worked out again on the new basis
     }
-    const post = candles.filter(function (c) { return c.k >= rdKey; });
+    if (pre.length || !row.reactFrom) row.reactFrom = rx.text;
+    if (isNaN(row.base) && pre.length) row.base = pre[pre.length - 1].Cls;
+    const post = candles.filter(function (c) { return rx.strict ? c.k > rx.from : c.k >= rx.from; });
     if (isNaN(row.rdClose) && post.length >= 1) row.rdClose = post[0].Cls;
     if (isNaN(row.nextClose) && post.length >= 2) row.nextClose = post[1].Cls;
     post.forEach(function (c) {
@@ -1845,7 +1874,7 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
   // Title
   sh.getRange(1, 1).setValue('Results Performance - how stocks moved after their results')
     .setFontSize(15).setFontWeight('bold').setFontColor('#1f3a5f');
-  sh.getRange(2, 1).setValue('Baseline = last close before the result date. "% Since Results" = current price vs that baseline. ' +
+  sh.getRange(2, 1).setValue('Baseline = last close before the market could react (results filed after 15:30 IST: that day\'s close - NSE filing times via your PC, column Announced). "% Since Results" = current price vs that baseline. ' +
     'Refreshed on every Results Day run · last refreshed ' + Utilities.formatDate(nowDate, AB_TZ, 'dd/MM/yyyy HH:mm') + ' IST')
     .setFontColor('#777777').setFontSize(10);
 
@@ -1916,11 +1945,11 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
     const out = list.map(function (x) {
       return [
         '=HYPERLINK("' + ab_chartUrl_(x.symbol) + '","' + x.symbol + '")',
-        x.company, x.basicIndustry, x.quarter, x.rd, blank(x.days),
+        x.company, x.basicIndustry, x.quarter, x.rd, x.annText || '', blank(x.days),
         blank(x.base), blank(x.rdPct), blank(x.nextPct), blank(x.cur), blank(x.todayPct), blank(x.sincePct),
         blank(x.maxGain), blank(x.maxDD), x.verdict, x.reaction, x.signal,
         blank(x.revQoQ), blank(x.revYoY), blank(x.npQoQ), blank(x.npYoY), x.opmQoQ, x.opmYoY,
-        blank(x.rdClose), blank(x.nextClose), blank(x.hi), blank(x.lo), nowDate
+        blank(x.rdClose), blank(x.nextClose), blank(x.hi), blank(x.lo), x.reactFrom || '', nowDate
       ];
     });
     body.setValues(out);
@@ -1928,7 +1957,8 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
     sh.getRange(H + 1, 1, n, 1).setFontWeight('bold');
     sh.getRange(H + 1, ci('% Since Results'), n, 1).setFontWeight('bold');
     // Light grey for the raw reference columns on the far right.
-    sh.getRange(H + 1, ci('Result Day Close'), n, 5).setFontColor('#888888');
+    sh.getRange(H + 1, ci('Result Day Close'), n, 6).setFontColor('#888888');
+    sh.getRange(H + 1, ci('Announced'), n, 1).setNumberFormat('@');
     sh.getRange(H, 1, n + 1, W).setBorder(null, null, true, null, null, true, '#e3e3e3', SpreadsheetApp.BorderStyle.SOLID);
     sh.getRange(H, 1, n + 1, W).createFilter();
 
@@ -10609,4 +10639,283 @@ function runWatchlistPinSetup() {
     AB_WL_LOCK_AFTER + ' wrong PINs in a row lock the lists for 15 minutes. Setting a PIN here again clears that.\n' +
     'The web app must run this code: Deploy > Manage deployments > pencil > Version: New version > Deploy.',
     ui.ButtonSet.OK);
+}
+
+/*****************************************************************
+ * RESULTS ANNOUNCEMENT TIMES (NSE via the PC)
+ * -----------------------------------------------------------------
+ * Owner, 30-Oct-2026 (BOROLTD: results filed on 29-Oct at 17:05, after
+ * the close - the stock reacted on 30-Oct, +20% to the upper circuit):
+ * "if I came to know the result is after market hours or during market
+ * hours, I can use the opportunity". NSE blocks Google, so the PC
+ * program (screener_bridge.py ann_step) reads NSE's corporate
+ * announcements of the last days at every round and posts the result
+ * filings - [SYMBOL, 'yyyy-mm-dd HH:mm:ss' IST, subject] - to doPost
+ * action 'results_ann' (ab_annFromBridge_). Kept for Main / PatternData
+ * stocks only, the EARLIEST filing per stock per day (when the market
+ * learned), AB_ANN_KEEP_DAYS days, in hidden tab Results_Announcements.
+ * Session (ab_annSession_): before 09:15 = Before market, 09:15-15:30 =
+ * Market hours, after 15:30 = After market, Saturday / Sunday = Market
+ * closed. Used by:
+ *  - Results Tracker column 'Announced' (ab_annCell_),
+ *  - the Results Update email: a pill under the result date,
+ *  - Results Performance: the reaction day = the first session that
+ *    could react (the next one for After market / Market closed), the
+ *    baseline = the close before it (ab_annReaction_),
+ *  - a short email before the open (ab_annMorningEmail_): the results
+ *    filed since the previous weekday's close, with Main's figures -
+ *    sent once a day, only before 09:15 on a weekday (Control Panel
+ *    AB_ANN_MORNING_EMAIL, 1 = on).
+ * A filing is matched to a result date when it is on that date, the day
+ * before, or up to 7 days after (ab_annFor_).
+ *****************************************************************/
+const AB_ANN_SHEET = 'Results_Announcements';
+const AB_ANN_HEADERS = ['Symbol', 'Filed (IST)', 'Session', 'Subject', 'Received'];
+const AB_ANN_KEEP_DAYS = 180;
+const AB_ANN_OPEN = '09:15:00';
+const AB_ANN_CLOSE = '15:30:00';
+const AB_ANN_MORNING_PROP = 'AB_ANN_MORNING_DAY';
+const AB_ANN_MORNING_MAX = 60;           // email size guard
+let AB_ANN_MEMO_ = null;
+
+/** 'yyyy-mm-dd HH:mm[:ss]' (or 'dd-Mon-yyyy HH:mm[:ss]') -> 'yyyy-mm-dd HH:mm:ss', else ''. */
+function ab_annTime_(v) {
+  const s = String(v === null || v === undefined ? '' : v).trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + (m[6] || '00');
+  m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (m) {
+    const mi = ab_rsMonthIdx_(m[2]);
+    if (mi === -1) return '';
+    return m[3] + '-' + ('0' + (mi + 1)).slice(-2) + '-' + ('0' + m[1]).slice(-2) + ' ' + m[4] + ':' + m[5] + ':' + (m[6] || '00');
+  }
+  return '';
+}
+
+/** 'yyyy-mm-dd HH:mm:ss' -> { code: before | market | after | closed, label, after: the market reacts the next session }. */
+function ab_annSession_(at) {
+  const p = at.slice(0, 10).split('-').map(Number);
+  const wd = new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay();
+  const t = at.slice(11, 19);
+  if (wd === 0 || wd === 6) return { code: 'closed', label: 'Market closed', after: true };
+  if (t < AB_ANN_OPEN) return { code: 'before', label: 'Before market', after: false };
+  if (t < AB_ANN_CLOSE) return { code: 'market', label: 'Market hours', after: false };
+  return { code: 'after', label: 'After market', after: true };
+}
+
+/** { byKey: { 'SYM|yyyy-mm-dd': { sym, at, subject, received } }, bySym: { SYM: [entries, oldest first] } } */
+function ab_annLoad_() {
+  if (AB_ANN_MEMO_) return AB_ANN_MEMO_;
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_ANN_SHEET);
+  const out = { byKey: {}, bySym: {} };
+  if (sh && sh.getLastRow() >= 2) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach(function (r) {
+      const sym = String(r[0] || '').trim().toUpperCase();
+      const at = ab_annTime_(r[1] instanceof Date ? Utilities.formatDate(r[1], AB_TZ, 'yyyy-MM-dd HH:mm:ss') : r[1]);
+      if (!sym || !at) return;
+      const key = sym + '|' + at.slice(0, 10);
+      if (out.byKey[key] && out.byKey[key].at <= at) return;
+      out.byKey[key] = { sym: sym, at: at, subject: String(r[3] || ''), received: String(r[4] || '') };
+    });
+  }
+  ab_annIndex_(out);
+  AB_ANN_MEMO_ = out;
+  return out;
+}
+
+function ab_annIndex_(store) {
+  store.bySym = {};
+  Object.keys(store.byKey).forEach(function (k) {
+    const e = store.byKey[k];
+    (store.bySym[e.sym] = store.bySym[e.sym] || []).push(e);
+  });
+  Object.keys(store.bySym).forEach(function (s) { store.bySym[s].sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; }); });
+}
+
+function ab_annSave_(store) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_ANN_SHEET);
+  if (!sh) {
+    let active = null;
+    try { active = ss.getActiveSheet(); } catch (e) { active = null; }
+    sh = ss.insertSheet(AB_ANN_SHEET, ss.getNumSheets());
+    try { if (sh.getMaxColumns() > 5) sh.deleteColumns(6, sh.getMaxColumns() - 5); } catch (e) { /* cosmetic */ }
+    try { if (active) active.activate(); } catch (e) { /* no UI (web app) */ }
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  const cutoff = ab_rsDayKey_(new Date(Date.now() - AB_ANN_KEEP_DAYS * 86400000));
+  const rows = Object.keys(store.byKey).map(function (k) { return store.byKey[k]; })
+    .filter(function (e) { return e.at.slice(0, 10) >= cutoff; })
+    .sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : (a.sym < b.sym ? -1 : 1); })
+    .map(function (e) { return [e.sym, e.at, ab_annSession_(e.at).label, e.subject, e.received]; });
+  const old = sh.getLastRow();
+  const out = [AB_ANN_HEADERS].concat(rows);
+  while (out.length < old) out.push(['', '', '', '', '']);
+  const rg = sh.getRange(1, 1, out.length, 5);
+  rg.setNumberFormat('@');
+  rg.setValues(out);
+  AB_ANN_MEMO_ = null;
+  return rows.length;
+}
+
+/** The result filing that belongs to a result date (that day, the day before, or up to 7 days after), or null. */
+function ab_annFor_(store, sym, rdKey) {
+  const list = store.bySym[String(sym || '').toUpperCase()];
+  if (!list || !rdKey) return null;
+  const from = ab_rsDayKey_(new Date(Date.parse(rdKey + 'T12:00:00Z') - 86400000));
+  const to = ab_rsDayKey_(new Date(Date.parse(rdKey + 'T12:00:00Z') + 7 * 86400000));
+  for (let i = 0; i < list.length; i++) {
+    const d = list[i].at.slice(0, 10);
+    if (d >= from && d <= to) return list[i];
+  }
+  return null;
+}
+
+/** Results Tracker / Results Performance text: '29/10 17:05 After market', '' when not known. */
+function ab_annCell_(e) {
+  if (!e) return '';
+  return e.at.slice(8, 10) + '/' + e.at.slice(5, 7) + ' ' + e.at.slice(11, 16) + ' ' + ab_annSession_(e.at).label;
+}
+
+/**
+ * Results Performance: from which session the market could react - { from: 'yyyy-mm-dd', strict } (strict =
+ * the session AFTER `from`) and the text stored as 'Reaction From'. Without a known filing: the result date (as before).
+ */
+function ab_annReaction_(e, rdKey) {
+  if (!e) return { from: rdKey, strict: false, text: 'from ' + rdKey };
+  const s = ab_annSession_(e.at);
+  const day = e.at.slice(0, 10);
+  return s.after ? { from: day, strict: true, text: 'after ' + day } : { from: day, strict: false, text: 'from ' + day };
+}
+
+/** doPost action 'results_ann' (the PC program): store the filings, fill the tracker column, maybe the morning email. */
+function ab_annFromBridge_(req) {
+  const list = Array.isArray(req.ann) ? req.ann : null;
+  if (!list) return { ok: false, error: 'ann missing - update screener_bridge.py on the PC' };
+  const want = {};
+  ab_p1Symbols_().forEach(function (s) { want[s] = true; });
+  AB_ANN_MEMO_ = null;
+  const store = ab_annLoad_();
+  const received = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  let main = 0, fresh = 0;
+  list.slice(0, 20000).forEach(function (a) {
+    if (!Array.isArray(a)) return;
+    const sym = String(a[0] || '').trim().toUpperCase();
+    const at = ab_annTime_(a[1]);
+    if (!sym || !at || !want[sym]) return;
+    main++;
+    const key = sym + '|' + at.slice(0, 10);
+    const cur = store.byKey[key];
+    if (cur && cur.at <= at) return;                       // the earliest filing of the day = when the market learned
+    store.byKey[key] = { sym: sym, at: at, subject: String(a[2] || '').slice(0, 80), received: received };
+    if (!cur) fresh++;
+  });
+  const kept = ab_annSave_(store);
+  const fresh2 = ab_annLoad_();
+  let trackerRows = 0;
+  try { trackerRows = ab_annFillTracker_(fresh2); } catch (e) { Logger.log('Results Tracker "Announced" not filled: ' + e.message); }
+  let morning = { sent: false, note: '' };
+  try { morning = ab_annMorningEmail_(fresh2, new Date()); } catch (e) { morning = { sent: false, note: 'morning email failed: ' + e.message }; }
+  return { ok: true, received: list.length, main: main, fresh: fresh, kept: kept, tracker: trackerRows,
+           emailed: morning.sent, morning: morning.note };
+}
+
+/** Results Tracker column 'Announced' for every row (one write). Returns how many rows have a time. */
+function ab_annFillTracker_(store) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_RS_TRACKER_SHEET);
+  if (!sh || sh.getLastRow() < 2) return 0;
+  const col = AB_RS_HEADERS.indexOf('Announced') + 1;
+  const n = sh.getLastRow() - 1;
+  const vals = sh.getRange(2, 1, n, 3).getDisplayValues();
+  let filled = 0;
+  const out = vals.map(function (v) {
+    const e = ab_annFor_(store, v[0], ab_rsDmyToKey_(v[2]));
+    if (e) filled++;
+    return [ab_annCell_(e)];
+  });
+  sh.getRange(1, col).setValue('Announced').setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  sh.getRange(2, col, n, 1).setNumberFormat('@').setValues(out);
+  return filled;
+}
+
+/**
+ * Before the open on a weekday: one email with the results filed since the previous weekday's 15:30 (after the
+ * close, overnight, before 09:15) - the ones the market has not reacted to yet - with Main's figures.
+ * Returns { sent, note }.
+ */
+function ab_annMorningEmail_(store, now) {
+  if (Number(ab_setting_('AB_ANN_MORNING_EMAIL', 1)) === 0) return { sent: false, note: 'morning email off (Control Panel)' };
+  const todayKey = ab_rsDayKey_(now);
+  const wd = Number(Utilities.formatDate(now, AB_TZ, 'u'));          // 1 = Monday ... 7 = Sunday
+  const hms = Utilities.formatDate(now, AB_TZ, 'HH:mm:ss');
+  if (wd > 5) return { sent: false, note: 'weekend' };
+  if (hms >= AB_ANN_OPEN) return { sent: false, note: 'after 09:15 - the market already knows' };
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(AB_ANN_MORNING_PROP) === todayKey) return { sent: false, note: 'already sent today' };
+  const prevDay = ab_rsDayKey_(new Date(Date.parse(todayKey + 'T12:00:00Z') - (wd === 1 ? 3 : 1) * 86400000));
+  const since = prevDay + ' ' + AB_ANN_CLOSE;
+  const nowAt = todayKey + ' ' + hms;
+  const hits = [];
+  Object.keys(store.bySym).forEach(function (s) {
+    store.bySym[s].forEach(function (e) { if (e.at >= since && e.at <= nowAt) hits.push(e); });
+  });
+  if (!hits.length) return { sent: false, note: 'no result filed since the last close' };
+  hits.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : (a.sym < b.sym ? -1 : 1); });
+
+  // Main's figures, when the Results Day check has already filled them in for this filing's result date
+  const layout = ab_getMainLayout_();
+  const display = layout.sheet.getDataRange().getDisplayValues();
+  const rowOf = {};
+  for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
+    const sym = ab_cellText_(layout.data[r][layout.symbol]).toUpperCase();
+    if (sym && rowOf[sym] === undefined) rowOf[sym] = r;
+  }
+  const tr = ab_rsReadTracker_();
+  const updated = {};
+  tr.list.forEach(function (t) {
+    if (t.status !== 'Updated') return;
+    const e = ab_annFor_(store, t.symbol, t.rdKey);
+    if (e) updated[t.symbol + '|' + e.at] = t;
+  });
+  const opmQ = ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER);
+  const cell = function (r, c) { return r === undefined || c === -1 || c === undefined ? '' : String(display[r][c] || '').trim(); };
+  const FONT = '-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif';
+  const td = 'style="padding:8px 7px;border-bottom:1px solid #eef0f5;font-size:13px;vertical-align:top"';
+  const th = 'style="text-align:left;padding:8px 7px;background:#f8fafc;border-bottom:1px solid #e6e9f0;font-size:10.5px;color:#94a3b8;text-transform:uppercase"';
+  const pct = function (v) {
+    const n = Number(String(v).replace(/[%,+\s]/g, ''));
+    if (!v || isNaN(n)) return '<span style="color:#94a3b8">-</span>';
+    return '<span style="font-weight:700;color:' + (n > 0 ? AB_C_POS : n < 0 ? AB_C_NEG : AB_C_MUTED) + '">' + (n > 0 ? '+' : '') + ab_rsEsc_(String(v).replace(/[%+]/g, '').trim()) + '%</span>';
+  };
+  const shown = hits.slice(0, AB_ANN_MORNING_MAX);
+  let rowsHtml = '', text = '';
+  shown.forEach(function (e) {
+    const r = rowOf[e.sym], s = ab_annSession_(e.at);
+    const when = e.at.slice(8, 10) + '/' + e.at.slice(5, 7) + ' ' + e.at.slice(11, 16);
+    const have = updated[e.sym + '|' + e.at];
+    rowsHtml += '<tr><td ' + td + '><a href="' + ab_chartUrl_(e.sym) + '" style="color:#0f172a;font-weight:700;text-decoration:none">' + ab_rsEsc_(e.sym) +
+      '</a><br><a href="' + ab_screenerUrl_(e.sym) + '" style="color:#94a3b8;font-size:11px;text-decoration:none">screener &#8599;</a></td>' +
+      '<td ' + td + '>' + ab_rsEsc_(cell(r, layout.name)) + '</td>' +
+      '<td ' + td + ' nowrap><b>' + when + '</b><br><span style="color:#b45309;font-size:11px">' + s.label + '</span></td>' +
+      (have
+        ? '<td ' + td + '>Rev ' + pct(cell(r, layout.qoqRev)) + ' / ' + pct(cell(r, layout.yoyRev)) + '<br>NP ' + pct(cell(r, layout.qoqNp)) + ' / ' + pct(cell(r, layout.yoyNp)) + '</td>' +
+          '<td ' + td + '>' + ab_rsEsc_(cell(r, opmQ) || '-') + '</td><td ' + td + '>' + ab_rsEsc_(cell(r, layout.ttmSignal) || '-') + '</td>'
+        : '<td ' + td + ' colspan="3" style="color:#94a3b8;font-size:12px;padding:8px 7px;border-bottom:1px solid #eef0f5">figures not in the sheet yet (screener.in / moneycontrol)</td>') +
+      '</tr>';
+    text += e.sym + '  ' + when + ' ' + s.label + (have ? '  Rev QoQ ' + cell(r, layout.qoqRev) + ' YoY ' + cell(r, layout.yoyRev) +
+      '  NP QoQ ' + cell(r, layout.qoqNp) + ' YoY ' + cell(r, layout.yoyNp) : '  (figures not in the sheet yet)') + '\n';
+  });
+  const names = shown.slice(0, 6).map(function (e) { return e.sym; }).join(', ') + (hits.length > 6 ? ', ...' : '');
+  const subject = 'Before the open: ' + hits.length + ' result' + (hits.length === 1 ? '' : 's') + ' filed after the last close (' + names + ')';
+  const html = '<div style="font-family:' + FONT + ';color:#0f172a;max-width:760px">' +
+    '<div style="font-size:20px;font-weight:700">Results filed after the last close</div>' +
+    '<div style="color:#64748b;font-size:12px;margin:4px 0 12px 0">Filed on NSE since ' + ab_rsKeyToDmy_(prevDay) + ' 15:30 IST - the market has not reacted to these yet. ' +
+    'Revenue / net profit: QoQ / YoY.</div>' +
+    '<table role="presentation" style="width:100%;border-collapse:collapse;border:1px solid #e6e9f0"><tr><th ' + th + '>Symbol</th><th ' + th + '>Company</th>' +
+    '<th ' + th + '>Filed</th><th ' + th + '>Revenue / Profit</th><th ' + th + '>OPM QoQ</th><th ' + th + '>TTM Signal</th></tr>' + rowsHtml + '</table>' +
+    (hits.length > shown.length ? '<div style="color:#94a3b8;font-size:12px;margin-top:6px">... and ' + (hits.length - shown.length) + ' more (Results Tracker, column Announced).</div>' : '') +
+    '<div style="color:#94a3b8;font-size:11px;margin-top:10px">Filing times: NSE corporate announcements, read by your PC program. Not advice.</div></div>';
+  const ok = ab_sendMail_({ to: AB_EMAIL_TO, subject: subject, body: subject + '\n\n' + text, htmlBody: html });
+  if (ok) props.setProperty(AB_ANN_MORNING_PROP, todayKey);
+  return { sent: !!ok, note: ok ? 'morning email: ' + hits.length + ' result(s)' : 'emails paused' };
 }

@@ -79,7 +79,8 @@
           { key: 'Basic Industry', label: 'Industry', wrap: true },
           { key: 'Quarter', label: 'Quarter' },
           { key: 'Result Date', label: 'Result date', type: 'date' },
-          { key: 'Result Day %', label: 'Result day', type: 'pct' },
+          { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session - read by your PC program. Filed after 15:30: the reaction day is the next session.' },
+          { key: 'Result Day %', label: 'Result day', type: 'pct', title: 'The first session that could react vs the close before it' },
           { key: '% Since Results', label: 'Since results', type: 'pct' },
           { key: 'Max Gain %', label: 'Max gain', type: 'pct' },
           { key: 'Max Drawdown %', label: 'Max drawdown', type: 'pct' },
@@ -106,6 +107,7 @@
         columns: [
           { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
           { key: 'Result Date', label: 'Result date', type: 'date' },
+          { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session - read by your PC program' },
           { key: 'Quarter Expected', label: 'Expected' },
           { key: 'Screener Latest Quarter', label: 'Screener shows' },
           { key: 'Status', label: 'Status', type: 'badge' },
