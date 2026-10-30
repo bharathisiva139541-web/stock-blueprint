@@ -22,7 +22,7 @@ function last4(candles) {
 
 // Patterns added to Code.gs after the saved export was made: until a newer export
 // contains them, the JS tags for them are left out of the comparison.
-const NEW_TAGS = ['Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom'];
+const NEW_TAGS = ['Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom', 'Twin Star Bottom (confirmed)'];
 const EXPORT_HAS_NEW = !!H && Object.keys(H.sheetTags).some((k) => NEW_TAGS.some((t) => String(H.sheetTags[k][0] || '').indexOf(t) >= 0));
 function dropNew(tags) {
   return EXPORT_HAS_NEW ? tags : P.splitTags(tags).filter((t) => NEW_TAGS.indexOf(t) < 0).join(', ');

@@ -23,7 +23,7 @@
   };
   var ORDER = ['Spring', 'Piercing', 'Bullish Engulfing', 'Bullish Harami', 'Tweezer Bottoms', 'Spring?',
     'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch',
-    'Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom'];
+    'Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom', 'Twin Star Bottom (confirmed)'];
   // Code.gs AB_HIH_* (Bullish Harami + Inverted Hammer; red* = the red inverted hammer)
   var HIH = { c1BodyMin: 0.65, bodyMin: 0.25, bodyMax: 0.50, openTol: 0.005, upperWickMin: 1.5, lowerWickMax: 0.10, highOverMax: 0.15,
     redBodyMin: 0.10, redOpenTol: 0.01, redLowerWickMax: 0.20 };
@@ -90,7 +90,7 @@
 
   /** ab_isTwinStarBottom_: c1 red (body >= 1% of its open), then two small candles (body <= 35% of c1's,
    *  body top <= c1's close + 25% of c1's body) whose lows are within 1% of each other; c3 closes at or above
-   *  c2's low. Candles {Opn,High,Low,Cls}. */
+   *  c2's low. "(confirmed)": the pattern on the 3 days before and today's close above c1's open. Candles {Opn,High,Low,Cls}. */
   function isTwinStarBottom(c1, c2, c3) {
     var v = [c1.Opn, c1.High, c1.Low, c1.Cls, c2.Opn, c2.High, c2.Low, c2.Cls, c3.Opn, c3.High, c3.Low, c3.Cls];
     if (v.some(function (x) { return typeof x !== 'number' || isNaN(x); })) return false;
@@ -241,6 +241,7 @@
       all.push('Bullish Harami + Inverted Hammer (confirmed)');
     }
     if (thRow && yRow && tRow && isTwinStarBottom(thRow, yRow, tRow)) all.push('Twin Star Bottom');
+    if (d4Row && thRow && yRow && tRow && isTwinStarBottom(d4Row, thRow, yRow) && tRow.Cls > d4Row.Opn) all.push('Twin Star Bottom (confirmed)');
     return all;
   }
 
