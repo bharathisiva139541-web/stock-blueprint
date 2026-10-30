@@ -13,7 +13,7 @@
 
    SB.wlSync = { status(), connect(pin) -> Promise(status), disconnect(), syncNow() -> Promise,
                  onStatus(fn(status)) -> off() }
-   status() = { phase, linked, at, message }
+   status() = { phase, linked, at, message }   (linked stays false while a newly typed PIN is being checked)
      phase: 'nohost' (no website server here: localhost / file) | 'off' (no PIN on this device) |
             'syncing' | 'ok' | 'offline' (tried, will try again) | 'locked' (too many wrong PINs) |
             'pin' (wrong PIN - type it again) | 'nopin' (the sheet has no PIN yet) | 'error' */
@@ -22,14 +22,14 @@
   var SB = window.SB, ui = SB.ui, M = SB.wlModel, W = SB.watchlists;
   var KEY = 'wlsync', PIN_RE = /^[A-Za-z0-9]{6,20}$/;
   var DEBOUNCE_MS = 1500, FRONT_MS = 20000, TIMEOUT_MS = 30000, MAX_TRIES = 4;
-  var listeners = [], busy = null, again = false, timer = null, lastRun = 0;
+  var listeners = [], busy = null, again = false, timer = null, lastRun = 0, trying = false;
 
   function meta() { var m = ui.store.get(KEY, null); return m && typeof m === 'object' ? m : {}; }
   var st = { phase: meta().pin ? 'syncing' : 'off', linked: !!meta().pin, at: meta().at || null, message: '' };
   function host() { return SB.apiBase ? SB.apiBase() : null; }
   function set(phase, message) {
     var m = meta();
-    st = { phase: phase, linked: !!m.pin, at: m.at || null, message: message || '' };
+    st = { phase: phase, linked: !!m.pin && !trying, at: m.at || null, message: message || '' };
     listeners.slice().forEach(function (fn) { try { fn(st); } catch (e) { if (window.console) console.error(e); } });
   }
   function fail(code, message) {
@@ -120,7 +120,7 @@
     lastRun = Date.now();
     again = false;
     set('syncing');
-    busy = step(m, null, 0).then(function () { set(meta().pin ? 'ok' : 'off'); }, function (e) { failed(m, e); }).then(function () {
+    busy = step(m, null, 0).then(function () { trying = false; set(meta().pin ? 'ok' : 'off'); }, function (e) { trying = false; failed(m, e); }).then(function () {
       busy = null;
       var pin = meta().pin;
       if (again && pin && (st.phase === 'ok' || pin !== m.pin)) return run();   // more changes, or a PIN typed meanwhile
@@ -134,10 +134,12 @@
     var m = meta();
     m.pin = p;
     ui.store.set(KEY, m);
-    return run().then(function () { return st; });
+    trying = true;                                           // shown as "checking the PIN" until the sheet answers
+    return run().then(function () { trying = false; return st; });
   }
   function disconnect() {
     clearTimeout(timer);
+    trying = false;
     ui.store.del(KEY);                                       // the lists stay in this browser (and in the sheet)
     set(host() == null ? 'nohost' : 'off');
   }
