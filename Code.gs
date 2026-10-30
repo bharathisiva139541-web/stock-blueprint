@@ -1425,6 +1425,7 @@ function ab_sendDailyPhaseFailureEmail_(phaseName, ts, e) {
  * make them vanish. Returns true when it ran them just now.
  */
 const AB_FVG_SCANS_PROP_ = 'AB_FVG_SCANS_DONE';
+const AB_FVG_SCANS_TRY_PROP_ = 'AB_FVG_SCANS_TRY';   // 'dd-MMM-yyyy <phase> HH:mm' of today's started scans
 const AB_DATA_FETCHED_PROP_ = 'AB_DATA_FETCHED';
 function ab_todayStr_() { return Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy'); }
 function ab_propGet_(k) { try { return PropertiesService.getScriptProperties().getProperty(k) || ''; } catch (e) { return ''; } }
@@ -1434,6 +1435,16 @@ function ab_runFvgScansIfPending_(label) {
   const today = ab_todayStr_();
   if (ab_propGet_(AB_DATA_FETCHED_PROP_) !== today) return false; // no fresh fetch today - nothing new to scan
   if (ab_propGet_(AB_FVG_SCANS_PROP_) === today) return false;    // already done today
+  // Scans that started today and never finished were stopped by Google's 6-minute limit: they are not
+  // tried again today, so they can never cost Phase 2 its patterns or Phase 3 the EOD email (29/30-Oct-2026:
+  // every phase retried them first and timed out). Fresh data from Phase 1 clears this.
+  const tried = ab_propGet_(AB_FVG_SCANS_TRY_PROP_);
+  if (tried.indexOf(today + ' ') === 0) {
+    Logger.log(label + ' - Gap-up/Unmitigated FVG scans skipped: they started today (' + tried.slice(today.length + 1) +
+               ') and did not finish. GapUpFVG / UnmitigatedFVG keep their earlier lists until the next fetch.');
+    return false;
+  }
+  ab_propSet_(AB_FVG_SCANS_TRY_PROP_, today + ' ' + label + ' ' + Utilities.formatDate(new Date(), AB_TZ, 'HH:mm'));
   const t = Date.now();
   try {
     ab_sendEodMitigatedAlerts_(computeGapUpFvgs_().eodMitigated);
@@ -1553,6 +1564,8 @@ const AB_P1_STALE_MS = 8 * 60 * 1000;        // no progress this long = the run 
 const AB_P1_QUEUED_STALE_MS = 20 * 60 * 1000; // ... or this long while the next part's trigger is pending (it can come late)
 const AB_P1_DIED_PROP_ = 'AB_P1_DIED_REPORTED';
 const AB_P2_WAITING_PROP_ = 'AB_P2_WAITING';
+const AB_P2_START_PROP_ = 'AB_P2_START';     // 'dd-MMM-yyyy <ms>' when today's Phase 2 started its work
+const AB_P2_DEAD_MS = 7 * 60 * 1000;         // longer than Google's 6-minute limit: a Phase 2 still "running" is gone
 const AB_PHASE_WAIT_MS = 3 * 60 * 1000;
 const AB_PHASE_MAX_WAITS = 6;                // then run anyway (after ~18 min)
 
@@ -1700,6 +1713,7 @@ function ab_p1RunPart_(st, t0, lap) {
   ab_p1Save_(st);
   ab_propSet_(AB_DATA_FETCHED_PROP_, ab_todayStr_());
   ab_propSet_(AB_FVG_SCANS_PROP_, ''); // fresh data -> scans must run again
+  ab_propSet_(AB_FVG_SCANS_TRY_PROP_, '');
   lap('OHLC + History30 written' + tag);
 
   try {
@@ -1760,7 +1774,16 @@ function ab_phaseShouldWait_(phase, e) {
   const st = ab_p1State_();
   const p1 = ab_p1Status_(st);
   let why = p1 === 'running' ? 'Phase 1 is still fetching (part ' + (Math.floor((Number(st.next) || 0) / AB_P1_PART_SIZE) + 1) + ' of ' + (st.parts || 1) + ')' : '';
-  if (!why && phase === 3 && ab_propGet_(AB_P2_WAITING_PROP_) === today) why = 'Phase 2 has not finished yet';
+  if (!why && phase === 3 && ab_propGet_(AB_P2_WAITING_PROP_) === today) {
+    // Phase 2 started over 7 minutes ago and never finished = Google stopped it (6-minute limit): nothing to wait for
+    const started = ab_propGet_(AB_P2_START_PROP_);
+    const ms = started.indexOf(today + ' ') === 0 ? Number(started.slice(today.length + 1)) || 0 : 0;
+    if (ms && Date.now() - ms > AB_P2_DEAD_MS) {
+      Logger.log('Phase 3: Phase 2 started at ' + Utilities.formatDate(new Date(ms), AB_TZ, 'HH:mm') +
+                 ' and did not finish (stopped by Google\'s 6-minute limit) - not waiting for it.');
+      ab_propSet_(AB_P2_WAITING_PROP_, '');
+    } else why = 'Phase 2 has not finished yet';
+  }
   if (!why) return false;
   const key = 'AB_PHASE' + phase + '_WAITS';
   const v = ab_propGet_(key);
@@ -1793,6 +1816,7 @@ function ab_dailyPhase2Patterns_(e) {
   if (ab_skipWeekendTrigger_(e, 'Phase 2 (patterns)')) return;
   ab_p1CheckDied_();
   if (ab_phaseShouldWait_(2, e)) return;
+  ab_propSet_(AB_P2_START_PROP_, ab_todayStr_() + ' ' + Date.now());   // Phase 3 knows when it is gone (ab_phaseShouldWait_)
   const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
   try {
     updateAllCandlestickPatterns();
@@ -5561,6 +5585,8 @@ function computeLongFVGTouchPatterns_() {
 
   const data = sheet2.getDataRange().getValues();
   sheet2.getRange(1, AB_COL_LONGFVG).setValue('Long FVG Touch'); // header, safe to re-set every run
+  // the column in ONE write at the end (1,800 single-cell writes slowed Phase 2); a row without a symbol keeps its cell
+  const col = data.map(function (r) { return [r[AB_COL_LONGFVG - 1] === undefined || r[AB_COL_LONGFVG - 1] === null ? '' : r[AB_COL_LONGFVG - 1]]; });
 
   for (let i = 1; i < data.length; i++) {
     const symbol = String(data[i][3]).trim().toUpperCase(); // col D
@@ -5569,8 +5595,9 @@ function computeLongFVGTouchPatterns_() {
     // Both gap families share this column - the 3-candle ICT gaps above
     // and the plain consecutive-day gap-ups. Same candles, one write.
     const tags = ab_computeLongFVGTouchTags_(candles).concat(ab_gapUpTags_(candles));
-    sheet2.getRange(i + 1, AB_COL_LONGFVG).setValue(tags.join(', '));
+    col[i][0] = tags.join(', ');
   }
+  if (data.length > 1) sheet2.getRange(2, AB_COL_LONGFVG, data.length - 1, 1).setValues(col.slice(1));
 }
 
 /*****************************************************************
