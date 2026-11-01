@@ -1,4 +1,4 @@
-/* IPOs & markets: IPO Tracker (mainboard IPOs open / closed - awaiting listing / upcoming,
+/* IPOs & markets: IPO Tracker (mainboard IPOs open / closed - awaiting listing / upcoming / listed recently,
    from NSE via the PC bridge and the sheet's IPO Tracker tab), NSE 52-week highs (52 Week High
    tab, #markets/high52), NSE price band changes, indices, listed IPOs and their bases, new listings. */
 (function () {
@@ -8,7 +8,7 @@
   var H52 = { f: 'new', q: '' };
 
   var SECTIONS = [['open', 'Open now', 'Open for subscription today'], ['closed', 'Closed - awaiting listing', 'Subscription closed, not listed yet'],
-    ['upcoming', 'Upcoming', 'Opens on a later day']];
+    ['upcoming', 'Upcoming', 'Opens on a later day'], ['listed', 'Listed recently', 'Listed in the last 14 days']];
 
   /** 'Updated 2026-10-27 08:28 IST ...' -> '2026-10-27 08:28' */
   function updatedAt(note) { var m = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/.exec(note || ''); return m ? m[1] : null; }
@@ -17,14 +17,15 @@
   function ipoTrackerCard(D) {
     var T = D.ipoTracker;
     if (!T) {
-      return ui.card('IPO tracker - mainboard IPOs', 'Open now, closed - awaiting listing, upcoming',
+      return ui.card('IPO tracker - mainboard IPOs', 'Open now, closed - awaiting listing, upcoming, listed recently',
         '<p class="empty">Not in this copy of the data yet. The sheet\'s <b>IPO Tracker</b> tab is filled from NSE by your PC bridge; ' +
         'the website shows it once the live feed (or the next saved copy) includes that tab.</p>');
     }
     var at = updatedAt(T.note);
     var h = '<section class="card" id="ipot"><div class="card-head"><div><h2>IPO tracker - mainboard IPOs</h2><p>' +
-      'Equity IPOs on NSE, SME and debt issues left out. Dates from NSE, read by your PC ' +
-      ui.stateBadge('CACHED', at, 'IPO Tracker tab (NSE via the PC bridge)') + '. Unofficial summary - check the offer document before applying.</p></div></div>';
+      'Equity IPOs on NSE (EQ and BE), SME and debt issues left out. Dates from NSE, read by your PC ' +
+      ui.stateBadge('CACHED', at, 'IPO Tracker tab (NSE via the PC bridge)') + '. A listing date not yet confirmed by NSE is the T+3 day ' +
+      '(3 trading days after the close) - see the note. Listing price = the listing day\'s open. Unofficial summary - check the offer document before applying.</p></div></div>';
     if (T.warning) h += '<div class="note warn">' + esc(T.warning) + '</div>';
     h += '<div class="tiles">' + SECTIONS.map(function (s) {
       var n = (T[s[0]] && T[s[0]].rows || []).length;
@@ -40,6 +41,24 @@
     if (!T) return;
     SECTIONS.forEach(function (s) {
       var rows = ui.objRows(T[s[0]] || { cols: [], rows: [] });
+      if (s[0] === 'listed') {
+        new ui.Table({
+          rows: rows, pageSize: 20, sort: { key: 'Listing date', dir: -1 }, empty: 'None',
+          columns: [
+            { key: 'Company', label: 'Company', wrap: true, html: function (r) {
+              return '<b>' + esc(r.Company || r.Symbol || '–') + '</b>' + (r.Symbol ? '<span class="co">' + esc(r.Symbol) + '</span>' : '');
+            } },
+            { key: 'Listing date', label: 'Listed', type: 'date' },
+            { key: 'Issue price', label: 'Issue price', type: 'price' },
+            { key: 'Listing price', label: 'Listing price', type: 'price', title: 'The listing day\'s open (NSE bhavcopy)' },
+            { key: 'Listing gain %', label: 'Listing gain', type: 'pct' },
+            { key: 'Last close', label: 'Last close', type: 'price' },
+            { key: 'Since issue %', label: 'Since issue', type: 'pct' },
+            { key: 'Note', label: 'Note', wrap: true }
+          ]
+        }).mount($('#ipot-' + s[0], el));
+        return;
+      }
       var cols = [
         { key: 'Company', label: 'Company', wrap: true, html: function (r) {
           return '<b>' + esc(r.Company || r.Symbol || '–') + '</b>' + (r.Symbol ? '<span class="co">' + esc(r.Symbol) + '</span>' : '');

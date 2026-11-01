@@ -9402,10 +9402,10 @@ function ab_site_mainSymbolCount_(cx) {
 
 /**
  * export_xlsx.py ipo_tracker(): the IPO Tracker tab (filled from NSE by the PC bridge) ->
- * { note, warning, open, closed, upcoming } (each { cols, rows }; the "None" row dropped).
+ * { note, warning, open, closed, upcoming, listed } (each { cols, rows }; the "None" row dropped).
  */
 function ab_site_ipoTracker_(cx, tab) {
-  const keyOf = { 'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming' };
+  const keyOf = { 'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming', 'listed recently': 'listed' };
   const out = { note: '', warning: '' }, found = {};
   tab.values.forEach(function (r, i) {
     const t = !r.length || ab_site_isBlank_(r[0]) ? '' : ab_site_pyStr_(cx, r[0]).trim();
@@ -9419,7 +9419,7 @@ function ab_site_ipoTracker_(cx, tab) {
       found[k] = tb;
     }
   });
-  ['open', 'closed', 'upcoming'].forEach(function (k) { out[k] = found[k] || { cols: [], rows: [] }; });
+  ['open', 'closed', 'upcoming', 'listed'].forEach(function (k) { out[k] = found[k] || { cols: [], rows: [] }; });
   return out;
 }
 
@@ -9630,7 +9630,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 5;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60
+const AB_SITE_FEED_FORMAT = 6;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

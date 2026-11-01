@@ -12,6 +12,20 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,
 const PERSONAL_TABS = ['Portfolio', 'Risk Manager', 'Control Panel', 'Trade Log', 'Trade Dashboard'];
 
 /** rows + one number format per column for the data rows (row index >= from). */
+const IPOT_LISTED_HDR = ['Company', 'Symbol', 'Closes', 'Listing date', 'Issue price', 'Listing price', 'Listing gain %', 'Last close',
+  'Since issue %', 'Note'];
+/** The IPO Tracker tab: dates in the first three sections, money / % formats in Listed recently (row by row, like the sheet). */
+function ipoTrackerSheet(rows) {
+  let listed = false;
+  const numFmts = rows.map(function (r, i) {
+    if (String(r[0]).indexOf('Listed recently') === 0) listed = true;
+    if (i < 4 || r[0] === 'Company') return r.map(function () { return null; });
+    return listed ? [null, null, 'dd/mm/yyyy', 'dd/mm/yyyy', '#,##0.00', '#,##0.00', '0.0%', '#,##0.00', '0.0%', null]
+      : [null, null, 'dd/mm/yyyy', 'dd/mm/yyyy', 'dd/mm/yyyy'];
+  });
+  return { name: 'IPO Tracker', rows: rows, numFmts: numFmts };
+}
+
 function sheet(name, rows, colFmts, from) {
   const numFmts = rows.map(function (r, i) {
     return r.map(function (v, j) { return i >= (from || 0) && colFmts && colFmts[j] ? colFmts[j] : null; });
@@ -130,7 +144,7 @@ function workbook(opts) {
     sheet('IPOs', [['NSE SYMBOL', 'Company', 'Listing Date'], ['NEWCO', 'New Co', '2026-09-30']], [null, null, 'dd/mm/yyyy'], 1),
     sheet('New IPOs', [['COMPANY NAME', 'Open', 'Close'], ['Alpha Ltd', '22-Oct-2026', '24-Oct-26'], ['Beta Ltd', '31/02/2026', 'TBA']]),
     sheet('Price Band Changes', [['Report Date', 'Symbol', 'From', 'To'], ['2026-10-17', 'NEWCO', 0.2, 0.1]], ['yyyy-mm-dd', null, '0%', '0%'], 1),
-    sheet('IPO Tracker', [
+    ipoTrackerSheet([
       ['IPO Tracker - mainboard equity IPOs on NSE (SME and debt issues left out)'],
       ['Updated 2026-10-21 19:28 IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.'],
       [''],
@@ -144,8 +158,12 @@ function workbook(opts) {
       [''],
       ['Upcoming (1)'],
       ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'],
-      ['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', '', '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days']
-    ], [null, null, 'dd/mm/yyyy', 'dd/mm/yyyy', 'dd/mm/yyyy'], 4),
+      ['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', '', '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days'],
+      [''],
+      ['Listed recently (1)'],
+      IPOT_LISTED_HDR,
+      ['Jio Platforms Limited', 'JPL', '2026-10-23', '2026-10-28', 1119, 1150, 0.0277, 1231, 0.1001, 'Listed on 28-Oct; last close on 30-Oct']
+    ]),
     opts.history || history30(['TCS', 'HDFCBANK', 'SBIN']),
     patternData()
   ];
@@ -269,8 +287,10 @@ test('site feed main: results, patterns and market tables', () => {
     warning: '',
     open: { cols: HDR, rows: [['BLS Polymers Limited', 'BLSPOLY', '2026-10-20', '2026-10-22', null, '\u20B9142 to \u20B9150', 11900000, 'Closes tomorrow']] },
     closed: { cols: HDR, rows: [] },
-    upcoming: { cols: HDR, rows: [['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', null, '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days']] }
-  }, 'IPO Tracker sections, "None" rows dropped');
+    upcoming: { cols: HDR, rows: [['M. K. Sons Fine Jewels Limited', 'MKSONS', '2026-10-28', '2026-10-30', null, '\u20B9153 to \u20B9162', 17000000, 'Opens in 7 days']] },
+    listed: { cols: IPOT_LISTED_HDR, rows: [['Jio Platforms Limited', 'JPL', '2026-10-23', '2026-10-28', 1119, 1150, 2.77, 1231, 10.01,
+      'Listed on 28-Oct; last close on 30-Oct']] }
+  }, 'IPO Tracker sections, "None" rows dropped, % columns as percent');
 });
 
 test('site feed main: alerts are watch-level only and leave private symbols out', () => {

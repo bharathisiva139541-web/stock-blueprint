@@ -35,12 +35,23 @@ The sheet files it on the "Price Band Changes" tab and sends the usual email onc
    Auto Bhavcopy > 10. NSE Price Bands > Import Pasted Rows.
  - To switch it off: in config.json add  "price_bands": false
 
-NSE IPO LISTS (IPO Tracker tab + one email a day)
+NSE IPO LISTS (IPO Tracker tab, New IPOs / IPOs / Main by themselves, one email a day)
 Every round also reads NSE > Market Data > IPO (Current, Past Issues, Upcoming Issues) and sends it to
-the sheet. The sheet rebuilds the "IPO Tracker" tab: Open now / Closed - awaiting listing / Upcoming,
-with dates (mainboard equity issues only - SME and debt issues such as NCDs are left out) and sends one
-email the first time each day. The website's IPOs & Markets page shows the same tab.
- - bridge.log shows "IPO lists: ..." for each round.
+the sheet, with NSE's trading holidays and - for closed mainboard issues - NSE's quote of the symbol
+(listing date, Basic Industry) and the listing day's candle from the bhavcopy. The sheet:
+ - rebuilds the "IPO Tracker" tab: Open now / Closed - awaiting listing / Upcoming / Listed recently
+   (last 14 days: issue price, listing price = the listing day's open, gains). Mainboard equity issues
+   only (EQ and BE) - SME and debt issues such as NCDs are left out. A listing date NSE has not given yet
+   is shown as the T+3 day (3 trading days after the close, SEBI's timeline) marked "expected";
+ - adds each closed issue to the "New IPOs" tab (DATE OF LISTING once NSE confirms it, NOTE column);
+ - on the listing day adds it to the IPOs tab and Main (once - a stock you delete is not added back),
+   fills the IPOs tab's LISTING PRICE (listing-day open) and Main's Basic Industry / Sector / Industry
+   when they are blank;
+ - sends ONE email the first time each day: listings today / next trading day first, then all sections.
+The website's IPOs & Markets page shows the same tab. The PC runs only at log-in and an hour later:
+when it is off, nothing is added until its next round.
+ - bridge.log shows "IPO lists: ..." for each round (and what was added).
+ - ipo_state.json keeps NSE's holidays, quotes and listing-day candles.
  - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)
 
 NSE END-OF-DAY: DELIVERY %, 52-WEEK HIGHS, MARKET STATISTICS
@@ -115,13 +126,14 @@ results quarter each date reports on:
  - same quarter, other day (e.g. 31-Oct -> 03-Nov) = NSE MOVED the meeting: that date (and purpose)
    is changed - unless that result already came out (Results Tracker: Updated);
  - a later quarter (e.g. 21-Sep June-quarter results -> 04-Nov September-quarter results) = the next
-   meeting: a NEW row is put right above the old one, so Main reads the new date and the old row stays.
-Rows are never removed - clear the tab yourself after the results season as usual. No email. Main's
+   meeting: the first row gets the new date, so Main reads it;
+and that company's rows of EARLIER quarters are deleted (e.g. PRASOLCHEM 28/09 under its 02/11 row).
+Other rows are never touched - clear the tab yourself after the results season as usual. No email. Main's
 Result Date (and so the Results Day check and the Upcoming Results email) then sees them by itself.
  - Needs the latest Code.gs + Code2.gs AND the New version deploy.
  - bridge.log: "Results calendar: N forthcoming result meeting(s) on NSE (equity N, SME N); N added to
-   the Results tab; N date(s) changed by NSE - SYMBOL 31/10 -> 03/11; N next-quarter meeting(s) put in
-   a new row above the old one - SYMBOL 04/11 (above 21/09)".
+   the Results tab; N date(s) changed by NSE - SYMBOL 31/10 -> 03/11; N next-quarter meeting(s) replaced
+   the old date - SYMBOL 04/11 (was 21/09); N old-quarter row(s) deleted - SYMBOL".
  - calendar_state.json remembers the day it last ran. CalendarNow.bat runs it again at once.
  - TestConnection line 7 checks NSE, says which list answered and, when a list has no result
    meeting, what each link gave (sends nothing). To switch it off:

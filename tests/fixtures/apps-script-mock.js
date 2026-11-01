@@ -293,6 +293,13 @@ function createEnv(workbook, opts) {
         return sheet;
       },
       insertRowsBefore: function (before, n) { return sheet.insertRowsAfter(before - 1, n); },
+      deleteRows: function (at, n) {
+        env.writes.push({ sheet: spec.name, kind: 'deleteRows', row: at, col: 1 });
+        if (size) size.rows -= n;
+        grid.splice(at - 1, n);
+        return sheet;
+      },
+      deleteRow: function (at) { return sheet.deleteRows(at, 1); },
       insertColumnsAfter: function (after, n) {
         env.writes.push({ sheet: spec.name, kind: 'insertColumns', row: 1, col: after + 1 });
         if (size) size.cols += n;

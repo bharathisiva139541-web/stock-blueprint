@@ -278,17 +278,20 @@ function check(name, fn) {
               note: 'Updated 2026-10-27 08:28 IST from NSE, read by your PC.', warning: '',
               open: { cols: H, rows: [['BLS Polymers Limited', 'BLSPOLY', '2026-10-27', '2026-10-29', null, '₹142 to ₹150', 11900000, 'Closes in 2 days']] },
               closed: { cols: H, rows: [] },
-              upcoming: { cols: H, rows: [['Bombay Coated and Special Steels Limited', 'BCSSL', '2026-10-29', '2026-11-02', null, '₹78 to ₹82', 23468846, 'Opens in 2 days']] }
+              upcoming: { cols: H, rows: [['Bombay Coated and Special Steels Limited', 'BCSSL', '2026-10-29', '2026-11-02', null, '₹78 to ₹82', 23468846, 'Opens in 2 days']] },
+              listed: { cols: ['Company', 'Symbol', 'Closes', 'Listing date', 'Issue price', 'Listing price', 'Listing gain %', 'Last close', 'Since issue %', 'Note'],
+                rows: [['Jio Platforms Limited', 'JPL', '2026-10-23', '2026-10-28', 1119, 1150, 2.77, 1231, 10.01, 'Listed on 28-Oct; last close on 30-Oct']] }
             };
             window.SB.route();
             const t = (id) => document.querySelector(id).innerText;
             const pb = window.SB.ctx.D.priceBands;
             const ei = pb.cols.indexOf('Effective (next weekday)');
             const latest = pb.rows.reduce((m, x) => (x[ei] > m ? x[ei] : m), '');
-            return { open: t('#ipot-open'), closed: t('#ipot-closed'), upcoming: t('#ipot-upcoming'),
+            return { open: t('#ipot-open'), closed: t('#ipot-closed'), upcoming: t('#ipot-upcoming'), listed: t('#ipot-listed'),
               count: t('#pb-count'), latestN: pb.rows.filter((x) => x[ei] === latest).length };
           });
           assert.ok(/BLS Polymers Limited/.test(r.open) && /BLSPOLY/.test(r.open) && /1,19,00,000/.test(r.open) && /Closes in 2 days/.test(r.open), r.open);
+          assert.ok(/Jio Platforms Limited/.test(r.listed) && /1,150\.00/.test(r.listed) && /\+2\.8%/.test(r.listed) && /\+10\.0%/.test(r.listed), r.listed);
           assert.ok(/None/.test(r.closed), r.closed);
           assert.ok(/BCSSL/.test(r.upcoming) && /2,34,68,846/.test(r.upcoming), r.upcoming);
           assert.ok(r.count.indexOf(r.latestN + ' of ' + r.latestN) === 0, 'latest day only by default: ' + r.count);
