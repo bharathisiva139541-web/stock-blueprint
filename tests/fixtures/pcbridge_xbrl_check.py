@@ -170,5 +170,47 @@ del OUT[:], SCREENER[:]
 sb.xbrl_check({'screener_base': 'x', 'delay_min': 0, 'delay_max': 0}, [LIST['data'][2]['xbrl']], out=OUT.append)
 txt = '\n'.join(OUT)
 assert 'standalone, quarter Sep 2026' in txt and 'Revenue (Cr)                   140.00' in txt and SCREENER == [('PARAS', False)], txt
+# ---------------------------------------------------------------- step 2: the round's xbrl_step
+sb.XBRL_STATE_PATH = os.path.join(TMP, 'xbrl_state.json')
+GOV = BASE + '/corporate/xbrl/INTEGRATED_FILING_GOVERNANCE_1750484_30102026083256_WEB.xml'
+CONS = BASE + '/corporate/xbrl/INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml'
+STAND = BASE + '/corporate/xbrl/INTEGRATED_FILING_INDAS_1749103_29102026060807_WEB.xml'
+OLDQ = BASE + '/corporate/xbrl/INTEGRATED_FILING_INDAS_1709773_07082026042829_WEB.xml'
+JUN = XBRL.replace(b'2026-07-01', b'2026-04-01').replace(b'2026-09-30', b'2026-06-30')
+ROUTES['/corporate/xbrl/INTEGRATED_FILING_GOVERNANCE_1750484_30102026083256_WEB.xml'] = (200, b'<x/>')
+ROUTES['/corporate/xbrl/INTEGRATED_FILING_INDAS_1709773_07082026042829_WEB.xml'] = (200, JUN)
+ROUTES['/api/ifr2?symbol=PARAS'] = (200, json.dumps({'data': [{'symbol': 'PARAS', 'xbrl': u} for u in (OLDQ, GOV, STAND, CONS)]}).encode())
+ROUTES['/api/ifr2?symbol=LATECO'] = (200, json.dumps({'data': [{'symbol': 'LATECO', 'xbrl': OLDQ}]}).encode())
+ROUTES['/api/fr2?symbol=NONE'] = (200, b'{"data": []}')
+sb.XBRL_STEP_LISTS = (('integrated filing', BASE + '/api/ifr2?symbol={s}'), ('financial results', BASE + '/api/fr2?symbol={s}'))
+SENT, LOGS = [], []
+sb.log = LOGS.append
+def fake_api(cfg, action, payload=None, timeout=120, tries=3):
+    assert action == 'xbrlput', action
+    SENT.append(payload)
+    return {'ok': True, 'stored': len(payload['items'])}
+sb.api = fake_api
+del HITS[:]
+n = sb.xbrl_step({'max_xbrl_per_run': 2}, {'PARAS': 'Sep 2026', 'LATECO': 'Sep 2026', 'NONE': 'Sep 2026'})
+assert n == 1 and len(SENT) == 1, (n, SENT)
+it = SENT[0]['items'][0]
+assert (it['sym'], it['quarter']) == ('PARAS', 'Sep 2026'), it
+assert it['cons']['revenue'] == 151.12 and it['cons']['eps'] == 3.76 and it['cons']['pbt'] == 40.82 and 'pat_owners' not in it['cons'], it
+assert it['stand']['revenue'] == 140.0, 'the standalone file of the same quarter too'
+assert it['files'] == ['INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml', 'INTEGRATED_FILING_INDAS_1749103_29102026060807_WEB.xml'], it
+assert not any('GOVERNANCE' in h for h in HITS), 'governance files are not read'
+assert not any('1709773' in h and 'PARAS' in h for h in HITS) and HITS.count('/corporate/xbrl/INTEGRATED_FILING_INDAS_1709773_07082026042829_WEB.xml') == 1, HITS
+assert not any('NONE' in h for h in HITS), 'over the cap: next round'
+assert LOGS == ['NSE XBRL: 1 of 2 stock(s) have their results filing on NSE - sent PARAS; not filed yet: LATECO; 1 more next round.'], LOGS
+st = json.load(open(sb.XBRL_STATE_PATH))
+assert st['PARAS']['found'] is True and st['LATECO']['found'] is False, st
+# nothing wanted / switched off: no request at all
+del HITS[:], SENT[:]
+assert sb.xbrl_step({}, {}) == 0 and sb.xbrl_step({'xbrl': False}, {'PARAS': 'Sep 2026'}) == 0 and HITS == [] and SENT == []
+# the deployed web app is older
+sb.api = lambda cfg, action, payload=None, timeout=120, tries=3: {'ok': False, 'error': 'unknown action'}
+del LOGS[:]
+assert sb.xbrl_step({}, {'PARAS': 'Sep 2026'}) == 0
+assert 'New version > Deploy' in LOGS[0], LOGS
 srv.shutdown()
 print('OK')

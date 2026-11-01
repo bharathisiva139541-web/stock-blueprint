@@ -8402,11 +8402,20 @@ function ab_qt_parseBoth_(html) {
     : 0;
   const score = (qParsed.ok ? 1 : 0) + Math.max(0, ab_tt_dataScore_(tParsed));
 
-  return {
+  const out = {
     quarterOk: qParsed.ok, growth: growth, quarterError: qParsed.ok ? '' : qParsed.error,
     tagsOk: tParsed.ok, tags: tags, tagsError: tParsed.ok ? '' : tParsed.error,
     quarterOpmCount: quarterOpmCount, score: score
   };
+  // The quarterly figures themselves (last 12 columns), kept with the PC bridge's copy so an NSE XBRL quarter can be
+  // added to them on Results Day (Code2.gs ab_xbrlCombined_: TTM EPS / QoQ / YoY need the earlier quarters).
+  if (qParsed.ok) {
+    const n = qParsed.quarters.length, k = Math.max(0, n - 12);
+    const cut = function (a) { return (a || []).slice(k, n).map(function (v) { return typeof v === 'number' && isFinite(v) ? v : null; }); };
+    out.series = { basis: qParsed.basis, quarters: qParsed.quarters.slice(k), revenue: cut(qParsed.revenue), netProfit: cut(qParsed.netProfit),
+                   eps: cut(qParsed.eps), opm: tParsed.ok ? cut(tParsed.quarterOpm) : [] };
+  }
+  return out;
 }
 
 /*****************************************************************
@@ -8570,6 +8579,9 @@ function ab_bridgeWanted_() {
   // Pending companies the PC may also look up on moneycontrol: symbol -> quarter expected.
   const mc = {};
   const mcOn = ab_mcOn_();
+  // Companies whose NSE XBRL results of the quarter expected are not stored yet: symbol -> quarter (Code2.gs ab_xbrlWant_)
+  let xbrl = {};
+  try { xbrl = ab_xbrlWant_(tr, todayKey); } catch (xErr) { xbrl = {}; }
 
   for (let r = layout.headerRowIdx + 1; r < data.length; r++) {
     const sym = ab_cellText_(data[r][layout.symbol]).toUpperCase();
@@ -8589,8 +8601,8 @@ function ab_bridgeWanted_() {
             if (mcOn) mc[sym] = q;
             continue;
           }
-          // moneycontrol figures in Main: screener.in is still wanted, to replace them
-          if (t.status === 'Updated' && t.source === AB_MC_SOURCE) { priority.push(sym); seen[sym] = true; continue; }
+          // moneycontrol figures in Main: screener.in is still wanted, to replace them; NSE XBRL figures: for the trend tags
+          if (t.status === 'Updated' && (t.source === AB_MC_SOURCE || t.source === AB_XBRL_SOURCE)) { priority.push(sym); seen[sym] = true; continue; }
         }
       }
     }
@@ -8604,7 +8616,7 @@ function ab_bridgeWanted_() {
     if (ab_qt_isParkedTooNew_(tooNew, sym)) continue;
     missing.push(sym); seen[sym] = true;
   }
-  return { priority: priority, missing: missing, mc: mc };
+  return { priority: priority, missing: missing, mc: mc, xbrl: xbrl };
 }
 
 /** Runs the two normal engines on whatever the PC delivered - no live fetches. */
@@ -8812,7 +8824,7 @@ function doPost(e) {
       const w = ab_bridgeWanted_();
       let h60 = null;
       try { h60 = ab_h60Info_(); } catch (hErr) { h60 = { days: [], want: AB_H60_DAYS, error: hErr.message }; }
-      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, h60: h60 });
+      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, xbrl: w.xbrl, h60: h60 });
     }
     if (req.action === 'put') {
       const entries = [], details = [];
@@ -8851,6 +8863,9 @@ function doPost(e) {
     }
     if (req.action === 'mcput') {
       return ab_bridgeJson_(ab_mcFromBridge_(req));
+    }
+    if (req.action === 'xbrlput') {
+      return ab_bridgeJson_(ab_xbrlFromBridge_(req));
     }
     if (req.action === 'eod') {
       return ab_bridgeJson_(ab_eodFromBridge_(req));
@@ -9630,7 +9645,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 6;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed
+const AB_SITE_FEED_FORMAT = 7;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

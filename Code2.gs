@@ -80,7 +80,8 @@ const AB_RS_MAX_HTML_CHARS = 150000;  // same MailApp body-size guard as Quality
 const AB_RS_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const AB_RS_HEADERS = ['Symbol', 'Company', 'Result Date', 'Quarter Expected', 'Status',
   'Screener Latest Quarter', 'Checks', 'First Checked', 'Last Checked', 'Updated At', 'Note', 'Source',
-  'Announced'];   // when NSE got the results + session (ab_annCell_, from the PC's NSE announcements)
+  'Announced',    // when NSE got the results + session (ab_annCell_, from the PC's NSE announcements)
+  'Flags'];       // result flags (ab_rsFlags_): revenue up / profit down, profit faster than revenue, exceptional gain
 const AB_RS_TS_FMT = 'dd/MM/yyyy HH:mm';
 // Which results season (quarter) the Checkbox column currently reflects.
 // When the season rolls over (e.g. Sep 2026 -> Dec 2026 on 1 Jan) every
@@ -203,8 +204,9 @@ function ab_rsReadTracker_() {
       latest: String(v[5] || ''), checks: Number(v[6]) || 0,
       first: String(v[7] || ''), last: String(v[8] || ''), updatedAt: String(v[9] || ''),
       note: String(v[10] || ''),
-      // where Main's figures came from: 'screener.in', 'moneycontrol' (provisional), '' = before this column
-      source: String(v[11] || '').trim()
+      // where Main's figures came from: 'screener.in', 'moneycontrol' (provisional), 'NSE XBRL' (+ screener.in tags), '' = before this column
+      source: String(v[11] || '').trim(),
+      flags: String(v[13] || '').trim()
     };
     const key = sym + '|' + t.quarter.toUpperCase();
     if (byKey[key]) continue; // a hand-made duplicate - first one wins
@@ -235,7 +237,7 @@ function ab_rsWriteTracker_(tr) {
   rows.forEach(function (t) {
     out.push([t.symbol, t.company || '', ab_rsKeyToDmy_(t.rdKey), t.quarter, t.status, t.latest || '',
               String(t.checks || 0), t.first || '', t.last || '', t.updatedAt || '', t.note || '', t.source || '',
-              ann ? ab_annCell_(ab_annFor_(ann, t.symbol, t.rdKey)) : '']);
+              ann ? ab_annCell_(ab_annFor_(ann, t.symbol, t.rdKey)) : '', t.flags || '']);
   });
 
   const w = AB_RS_HEADERS.length;
@@ -250,7 +252,8 @@ function ab_rsWriteTracker_(tr) {
   if (maxRows > 1) sh.getRange(2, 5, maxRows - 1, 1).setBackground(null);
   if (rows.length) {
     sh.getRange(2, 5, rows.length, 1).setBackgrounds(rows.map(function (t) {
-      return [t.status === 'Updated' ? (t.source === AB_MC_SOURCE ? '#e3eefc' : '#d9f2e3') : t.status === 'Pending' ? '#fff4d6' : '#eeeeee'];
+      return [t.status === 'Updated' ? (t.source === AB_MC_SOURCE ? '#e3eefc' : t.source === AB_XBRL_SOURCE ? '#ede9fe' : '#d9f2e3') :
+              t.status === 'Pending' ? '#fff4d6' : '#eeeeee'];
     }));
   }
 }
@@ -481,8 +484,10 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   //    window), so screener.in's figures replace them once it catches up.
   const mcOn = ab_mcOn_();
   const isProvisional = function (t) { return t.status === 'Updated' && t.source === AB_MC_SOURCE; };
+  // figures from NSE XBRL (final): screener.in is still read, for the trend tags XBRL has not got
+  const isXbrlWait = function (t) { return t.status === 'Updated' && t.source === AB_XBRL_SOURCE; };
   const cands = tr.list.filter(function (t) {
-    const prov = isProvisional(t);
+    const prov = isProvisional(t) || isXbrlWait(t);
     if (t.status !== 'Pending' && !prov) return false;
     if (prov && (!t.rdKey || ab_rsDaysBetween_(t.rdKey, todayKey) > AB_RS_MAX_WAIT_DAYS)) return false;
     if (!rowsBySym[t.symbol]) { if (!prov) t.note = 'Symbol not found in Main'; return false; }
@@ -495,8 +500,9 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     return !!isContinuation && /^Could not read screener/.test(t.note || '');
   }).sort(function (a, b) { return a.rdKey < b.rdKey ? -1 : a.rdKey > b.rdKey ? 1 : 0; });
 
-  const res = { checked: 0, failed: 0, retried: 0, recovered: 0, updatedNow: [], viaMc: [], replacedMc: [],
+  const res = { checked: 0, failed: 0, retried: 0, recovered: 0, updatedNow: [], viaMc: [], replacedMc: [], viaXbrl: [], tagsAfterXbrl: [],
                 throttled: false, outOfTime: false };
+  const touched = {};   // symbols whose Main figures (and flags) were written in this run
   let transportFails = 0;
 
   // One fetch + verdict for one company. Returns 'ok' (got a readable
@@ -505,6 +511,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   // 'error' (page came back but unusable).
   const processOne = function (t, label) {
     const prov = isProvisional(t);
+    const xw = isXbrlWait(t);
     const combined = ab_qt_fetchOne_(t.symbol);
     const stamp = nowStr();
     t.checks = (Number(t.checks) || 0) + 1;
@@ -530,6 +537,19 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
         why = 'Unrecognised quarter label "' + latest + '"';
       } else if (li < ei) {
         why = 'Screener still shows ' + latest;
+      } else if (xw) {
+        // The figures came from NSE XBRL (final): only the trend tags XBRL has not got - promoter, FII, OPM YoY.
+        const tg = combined.tagsOk && combined.tags ? combined.tags : null;
+        if (tg) {
+          rowsBySym[t.symbol].forEach(function (rowIdx) {
+            ab_qt_writeRow_(layout, cols, rowIdx, { quarterOk: false, tagsOk: true,
+              tags: { promoter: tg.promoter, fii: tg.fii, opmYoY: tg.opmYoY, opmQoQ: '' } });
+          });
+        }
+        t.source = AB_XBRL_SOURCE_DONE;
+        t.note = 'NSE XBRL figures (final); trend tags (promoter, FII, OPM YoY) from screener.in on ' + stamp +
+                 (tg ? '' : ' - none readable (' + combined.tagsError + ')');
+        res.tagsAfterXbrl.push(t.symbol);
       } else {
         // Screener has the quarter we're waiting for - write it and tick.
         rowsBySym[t.symbol].forEach(function (rowIdx) {
@@ -546,6 +566,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
           // Replaces the moneycontrol figures quietly - the company was already reported as updated.
           notes.push('screener.in figures replaced the moneycontrol ones on ' + stamp);
           res.replacedMc.push(t.symbol);
+          (res.replacedBy = res.replacedBy || {})[t.symbol] = 'screener.in';
         } else {
           t.status = 'Updated';
           t.updatedAt = stamp;
@@ -553,7 +574,47 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
         }
         t.source = 'screener.in';
         t.note = notes.join('; ');
+        t.flags = ab_rsFlags_(combined.growth, ab_xbrlFiguresFor_(t.symbol, t.quarter));
+        touched[t.symbol] = true;
       }
+    }
+
+    // Not on screener.in yet: NSE XBRL (official, final) - for Pending rows and for rows on moneycontrol's figures
+    const xr = why && !xw ? ab_xbrlTry_(t) : null;
+    if (xr && xr.combined) {
+      const xbrlRes = xr.combined;
+      rowsBySym[t.symbol].forEach(function (rowIdx) {
+        ab_qt_writeRow_(layout, cols, rowIdx, xbrlRes);
+        if (tickIt) layout.sheet.getRange(rowIdx + 1, layout.qrCheckbox + 1).setValue(true);
+        if (prov) ab_mcMarkRow_(layout, rowIdx, '');
+      });
+      const notes = ['NSE XBRL figures (' + (xr.consolidated ? 'consolidated' : 'standalone') + ', final) + earlier quarters from screener.in',
+                     'trend tags (promoter, FII, OPM YoY) wait for screener.in'];
+      if (xbrlRes.growth.shortHistory) notes.push('under a year of history - no YoY');
+      if (prov) {
+        notes.push('they replaced the moneycontrol figures on ' + stamp);
+        res.replacedMc.push(t.symbol);
+        (res.replacedBy = res.replacedBy || {})[t.symbol] = AB_XBRL_SOURCE;
+      } else {
+        t.status = 'Updated';
+        t.updatedAt = stamp;
+        res.updatedNow.push(t.symbol);
+      }
+      res.viaXbrl.push(t.symbol);
+      t.source = AB_XBRL_SOURCE;
+      t.note = notes.join('; ');
+      t.flags = ab_rsFlags_(xbrlRes.growth, xr.figures);
+      t.latest = t.latest || '';
+      touched[t.symbol] = true;
+      why = '';
+      outcome = 'ok';
+    } else if (xr && xr.error && why) {
+      why += ' (NSE XBRL: ' + xr.error + ')';
+    }
+    if (why && xw) {
+      outcome = 'ok';
+      t.note = 'NSE XBRL figures (final) - trend tags (promoter, FII, OPM YoY) wait for screener.in: ' + why;
+      why = '';
     }
 
     if (why && prov) {
@@ -578,6 +639,8 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
         t.status = 'Updated';
         t.updatedAt = stamp;
         t.source = AB_MC_SOURCE;
+        t.flags = ab_rsFlags_(mcRes.growth, null);
+        touched[t.symbol] = true;
         const notes = ['moneycontrol figures (' + mcEntry.data.basis + ') - ' + why +
                        '; screener.in replaces them when it shows ' + t.quarter, 'trend tags wait for screener.in'];
         if (mcRes.growth.shortHistory) notes.push('under a year of history - no YoY');
@@ -643,6 +706,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     }
     res.failed += queue.length;
   } finally {
+    try { ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey); } catch (fErr) { Logger.log('Result flags skipped: ' + fErr.message); }
     // Always save progress, even if something above threw part-way.
     ab_rsWriteTracker_(tr);
     SpreadsheetApp.flush();
@@ -653,6 +717,8 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   cont.viaMc = (cont.viaMc || 0) + res.viaMc.length;
   cont.replacedMc = (cont.replacedMc || 0) + res.replacedMc.length;
   cont.replacedSyms = (cont.replacedSyms || []).concat(res.replacedMc);   // for the email (across continuations)
+  cont.replacedBy = Object.assign(cont.replacedBy || {}, res.replacedBy || {});
+  cont.viaXbrl = (cont.viaXbrl || 0) + res.viaXbrl.length;
   const notChecked = cands.length - res.checked;
 
   if (res.outOfTime && notChecked > 0 && cont.count < AB_RS_MAX_CONTINUATIONS) {
@@ -686,13 +752,14 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     layout: layout, cols: cols, tracker: tr, rowsBySym: rowsBySym, todayKey: todayKey,
     runStartFloor: runStartFloor, slot: cont.slot, checked: cont.checked, failed: cont.failed,
     notChecked: notChecked, throttled: res.throttled, retryAt: retryAt, seasonReset: cont.seasonReset || null, perf: perf,
-    startedAt: startedAt, replaced: cont.replacedSyms || [],
+    startedAt: startedAt, replaced: cont.replacedSyms || [], replacedBy: cont.replacedBy || {},
     // An automatic retry only emails if it actually got something through.
     quietUnlessUpdated: /^Retry/.test(cont.slot || '')
   });
   if (cont.viaMc || cont.replacedMc) {
-    summary.text += ' moneycontrol: ' + cont.viaMc + ' filled first from moneycontrol, ' + cont.replacedMc + ' replaced by screener.in.';
+    summary.text += ' moneycontrol: ' + cont.viaMc + ' filled first from moneycontrol, ' + cont.replacedMc + ' replaced by screener.in / NSE XBRL.';
   }
+  if (cont.viaXbrl) summary.text += ' NSE XBRL: ' + cont.viaXbrl + ' filled from NSE XBRL.';
   logRun_(Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm'), '', summary.updatedToday,
           'OK (results day - ' + cont.slot + ')', summary.text);
   return { continued: false, checked: cont.checked, summary: summary, throttled: res.throttled, retryAt: retryAt };
@@ -1117,9 +1184,11 @@ function ab_rsSendEmail_(ctx) {
     return '<tr>' +
       '<td ' + td + '>' + '<a href="' + ab_chartUrl_(s) + '" style="color:' + INK + ';font-weight:700;font-size:14px;text-decoration:none">' + ab_rsEsc_(s) + '</a>' +
         (dayHtml || '<br>') + '<a href="' + ab_screenerUrl_(s) + '" style="color:' + FAINT + ';font-size:11px;text-decoration:none">screener &#8599;</a>' +
-        (replacedSet[s] ? '<br>' + pill('SCREENER.IN FIGURES', '#ffffff', AB_C_POS)
+        (replacedSet[s] ? '<br>' + pill((ctx.replacedBy || {})[s] === AB_XBRL_SOURCE ? 'NSE XBRL FIGURES' : 'SCREENER.IN FIGURES', '#ffffff', AB_C_POS)
           : isNew ? '<br>' + pill('NEW', '#ffffff', AB_C_POS) : '') +
-        (t.source === AB_MC_SOURCE ? '<br>' + pill('VIA MONEYCONTROL', '#1d4ed8', '#e3eefc') : '') + '</td>' +
+        (t.source === AB_MC_SOURCE ? '<br>' + pill('VIA MONEYCONTROL', '#1d4ed8', '#e3eefc') : '') +
+        (t.source === AB_XBRL_SOURCE || t.source === AB_XBRL_SOURCE_DONE ? '<br>' + pill('VIA NSE XBRL', '#6d28d9', '#ede9fe') : '') +
+        ab_rsFlagPills_(t.flags, pill) + '</td>' +
       '<td ' + td + '>' + ab_rsEsc_(t.company || cell(s, layout.name)) + (bi ? '<br><span ' + small + '>' + ab_rsEsc_(bi) + '</span>' : '') + '</td>' +
       '<td ' + td + ' nowrap><b>' + shortDay(t.rdKey) + '</b>' + annHtml(t) + sinceHtml + '</td>' +
       '<td ' + td + '>' + kv('QoQ', pct(cell(s, layout.qoqRev))) + kv('YoY', pct(cell(s, layout.yoyRev))) + '</td>' +
@@ -1137,10 +1206,14 @@ function ab_rsSendEmail_(ctx) {
     '<th ' + thKpi + '>TTM Signal</th><th ' + thKpi + '>Upside</th></tr>';
   const buildReplaced = function () {
     if (!replaced.length) return '';
-    let s = h3('Now with screener.in figures (they replace the moneycontrol ones)', replaced.length, AB_C_POS) + updatedHead;
+    const viaX = replaced.some(function (t) { return (ctx.replacedBy || {})[t.symbol] === AB_XBRL_SOURCE; });
+    let s = h3(viaX ? 'Now with final figures - screener.in / NSE XBRL (they replace the moneycontrol ones)'
+      : 'Now with screener.in figures (they replace the moneycontrol ones)', replaced.length, AB_C_POS) + updatedHead;
     replaced.forEach(function (t) { s += updatedRow(t); });
     return s + '</table><div style="color:' + FAINT + ';font-size:12px;margin-top:4px">These were filled first from moneycontrol; ' +
-      'screener.in now shows the quarter, so Main has its figures - TTM EPS, TTM Signal, Upside and the trend tags included.</div>';
+      (viaX ? 'the final figures are now in Main - TTM EPS, TTM Signal and Upside included (NSE XBRL rows: the promoter / FII / OPM YoY ' +
+              'tags follow from screener.in).</div>'
+            : 'screener.in now shows the quarter, so Main has its figures - TTM EPS, TTM Signal, Upside and the trend tags included.</div>');
   };
   const buildUpdated = function (limit) {
     if (!updatedShown.length) {
@@ -1286,10 +1359,13 @@ function ab_rsSendEmail_(ctx) {
       (pfT && typeof pfT.sincePct === 'number' && !isNaN(pfT.sincePct) ? ' | Since result ' + (pfT.sincePct * 100).toFixed(2) + '%' : '') + ' | Rev QoQ ' + (cell(s, layout.qoqRev) || '-') +
       ' YoY ' + (cell(s, layout.yoyRev) || '-') + ' | NP QoQ ' + (cell(s, layout.qoqNp) || '-') + ' YoY ' + (cell(s, layout.yoyNp) || '-') +
       ' | OPM ' + (cell(s, cols.opmQoQ) || '-') + '/' + (cell(s, cols.opmYoY) || '-') +
-      ' | TTM Signal ' + (cell(s, layout.ttmSignal) || '-') + ' | Upside ' + (cell(s, layout.upsidePotential) || '-') + '\n';
+      ' | TTM Signal ' + (cell(s, layout.ttmSignal) || '-') + ' | Upside ' + (cell(s, layout.upsidePotential) || '-') +
+      (t.source === AB_XBRL_SOURCE || t.source === AB_XBRL_SOURCE_DONE ? ' | via NSE XBRL' : '') + (t.flags ? ' | Flags: ' + t.flags : '') + '\n';
   };
   if (replaced.length) {
-    text += 'NOW WITH SCREENER.IN FIGURES - THEY REPLACE THE MONEYCONTROL ONES (' + replaced.length + ')\n';
+    text += (replaced.some(function (t) { return (ctx.replacedBy || {})[t.symbol] === AB_XBRL_SOURCE; })
+      ? 'NOW WITH FINAL FIGURES (SCREENER.IN / NSE XBRL) - THEY REPLACE THE MONEYCONTROL ONES (' : 'NOW WITH SCREENER.IN FIGURES - THEY REPLACE THE MONEYCONTROL ONES (') +
+      replaced.length + ')\n';
     replaced.forEach(function (t) { text += textLine(t); });
     text += '\n';
   }
@@ -11507,4 +11583,254 @@ function ab_calFromBridge_(req) {
   });
   return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved, replaced: replaced,
            removed: removed, removedSyms: Object.keys(removedSyms).sort(), later: later };
+}
+
+/*****************************************************************
+ * NSE XBRL - official quarterly figures, the same day (via the PC)
+ * -----------------------------------------------------------------
+ * Owner, 01-Nov-2026 (step 2, after XbrlCheck.bat matched screener.in
+ * for PARAS and SHAILY to the paisa - TTM EPS 12.92 / 40.63 both ways):
+ * companies file their results with NSE also as XBRL ("Integrated Filing
+ * - Financial"). The PC program (screener_bridge.py xbrl_step) reads the
+ * filing of the quarter expected for the Results Tracker rows the sheet
+ * lists (`list` -> `xbrl`, ab_xbrlWant_) and posts its figures (crore;
+ * EPS in rupees) for both the consolidated and the standalone file when
+ * filed - doPost action 'xbrlput' -> hidden tab XBRL_Bridge.
+ * Results Day (ab_rsRunCore_): screener.in shows the quarter -> as always;
+ * else NSE XBRL has it -> ab_xbrlCombined_: the XBRL quarter added to the
+ * quarters stored from screener.in (Code.gs ab_qt_parseBoth_ `series`,
+ * the same basis - consolidated / standalone - and the quarter just
+ * before must be there) gives QoQ / YoY / Net Profit / TTM EPS / Last FY
+ * EPS with screener.in's own maths, and OPM QoQ% (EBITDA margin rounded
+ * like screener.in's OPM %). Owner's rules: XBRL figures are FINAL -
+ * screener.in later only gives the trend tags XBRL lacks (Promotor
+ * Holding, FII Activity, OPM YoY%); moneycontrol's provisional figures are
+ * replaced by XBRL as by screener.in. Tracker Source 'NSE XBRL' (tags still
+ * to come) / 'NSE XBRL + screener.in tags'.
+ * Result flags (owner, 01-Nov-2026), tracker column 'Flags' + email pills:
+ *   Revenue up, profit down            (YoY, else QoQ)
+ *   Profit growing faster than revenue (profit growth >= revenue growth +
+ *                                       AB_RS_FLAG_LEAD_PP points)
+ *   Exceptional gain                    (XBRL: PBT - PBT before exceptional
+ *                                       items >= AB_RS_FLAG_EXC_SHARE of PBT)
+ *****************************************************************/
+const AB_XBRL_SHEET = 'XBRL_Bridge';
+const AB_XBRL_HEADER = ['Symbol', 'Quarter', 'Fetched (ms)', 'Fetched at (IST)', 'Data (JSON)'];
+const AB_XBRL_KEEP_MS = 60 * 24 * 60 * 60 * 1000;
+const AB_XBRL_SOURCE = 'NSE XBRL';                         // XBRL figures in Main; screener.in's trend tags still to come
+const AB_XBRL_SOURCE_DONE = 'NSE XBRL + screener.in tags';
+const AB_XBRL_FIGS = ['revenue', 'other_income', 'expenses', 'finance_costs', 'depreciation', 'exceptional', 'pbeit', 'pbt', 'tax',
+  'pat', 'eps'];
+const AB_RS_FLAG_LEAD_PP = 10;     // "profit growing faster than revenue": at least 10 percentage points faster
+const AB_RS_FLAG_EXC_SHARE = 0.10; // "exceptional gain": at least 10% of profit before tax
+let AB_XBRL_CACHE_ = null;
+
+function ab_xbrlSheet_(create) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_XBRL_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(AB_XBRL_SHEET);
+    sh.getRange(1, 1, 1, AB_XBRL_HEADER.length).setValues([AB_XBRL_HEADER]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** symbol -> { at, data: {quarter, cons, stand, files}, row }. Cached per execution. */
+function ab_xbrlLoad_() {
+  if (AB_XBRL_CACHE_) return AB_XBRL_CACHE_;
+  const map = {};
+  const sh = ab_xbrlSheet_(false);
+  if (sh && sh.getLastRow() > 1) {
+    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, AB_XBRL_HEADER.length).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const sym = String(vals[i][0] || '').trim().toUpperCase();
+      if (!sym) continue;
+      let data = null;
+      try { data = JSON.parse(String(vals[i][4] || '')); } catch (e) { data = null; }
+      if (data) map[sym] = { at: Number(vals[i][2]) || 0, data: data, row: i + 2 };
+    }
+  }
+  AB_XBRL_CACHE_ = map;
+  return map;
+}
+
+/** The stored XBRL figures of a symbol (any quarter), if not too old. */
+function ab_xbrlGet_(sym) {
+  const e = ab_xbrlLoad_()[String(sym || '').trim().toUpperCase()] || null;
+  return e && Date.now() - e.at <= AB_XBRL_KEEP_MS ? e : null;
+}
+
+/** True when XBRL figures of `quarter` ('Sep 2026') are stored for the symbol. */
+function ab_xbrlHas_(sym, quarter) {
+  const e = ab_xbrlGet_(sym);
+  return !!e && ab_rsQuarterIndex_(e.data.quarter) === ab_rsQuarterIndex_(quarter);
+}
+
+/** `list` -> `xbrl`: { SYM: quarter } of tracker rows (result date passed, within the wait window, not given up) whose XBRL
+ *  figures are not stored yet - Pending rows first (they need the figures), then the rest (for the exceptional-gain flag). */
+function ab_xbrlWant_(tr, todayKey) {
+  const first = [], later = [];
+  tr.list.forEach(function (t) {
+    if (t.status === 'Gave up' || !t.rdKey || !t.quarter) return;
+    const age = ab_rsDaysBetween_(t.rdKey, todayKey);
+    if (age < 0 || age > AB_RS_MAX_WAIT_DAYS || ab_xbrlHas_(t.symbol, t.quarter)) return;
+    (t.status === 'Pending' || t.source === AB_MC_SOURCE ? first : later).push(t);
+  });
+  const out = {};
+  first.concat(later).forEach(function (t) { if (!out[t.symbol]) out[t.symbol] = t.quarter; });
+  return out;
+}
+
+/** One posted file's figures -> { figure: number|null }, or null when it has neither revenue nor profit. */
+function ab_xbrlCleanFigs_(f) {
+  if (!f || typeof f !== 'object') return null;
+  const out = {};
+  AB_XBRL_FIGS.forEach(function (k) {
+    const v = f[k];
+    out[k] = typeof v === 'number' && isFinite(v) ? v : null;
+  });
+  return out.revenue === null && out.pat === null ? null : out;
+}
+
+/** doPost action 'xbrlput': { items: [{ sym, quarter: 'Sep 2026', cons: {figures}|null, stand: {figures}|null, files: [] }] }. */
+function ab_xbrlFromBridge_(req) {
+  const details = [], entries = [];
+  (Array.isArray(req.items) ? req.items : []).slice(0, 300).forEach(function (it) {
+    const sym = String(it && it.sym || '').trim().toUpperCase();
+    const quarter = String(it && it.quarter || '').trim();
+    const cons = ab_xbrlCleanFigs_(it && it.cons), stand = ab_xbrlCleanFigs_(it && it.stand);
+    if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym) || isNaN(ab_rsQuarterIndex_(quarter)) || (!cons && !stand)) {
+      details.push({ sym: sym, ok: false, error: 'bad item' });
+      return;
+    }
+    entries.push({ sym: sym, data: { quarter: quarter, cons: cons, stand: stand,
+      files: (Array.isArray(it.files) ? it.files : []).slice(0, 4).map(function (f) { return String(f).slice(0, 120); }) } });
+    details.push({ sym: sym, ok: true, quarter: quarter });
+  });
+  if (entries.length) {
+    const sh = ab_xbrlSheet_(true);
+    const map = ab_xbrlLoad_();
+    const now = Date.now(), stamp = Utilities.formatDate(new Date(now), AB_TZ, 'dd-MMM-yyyy HH:mm');
+    const adds = [];
+    entries.forEach(function (en) {
+      const row = [en.sym, en.data.quarter, now, stamp, JSON.stringify(en.data)];
+      const cur = map[en.sym];
+      if (cur && cur.row > 0) { sh.getRange(cur.row, 1, 1, row.length).setValues([row]); cur.at = now; cur.data = en.data; }
+      else { adds.push(row); map[en.sym] = { at: now, data: en.data, row: -1 }; }
+    });
+    if (adds.length) {
+      const start = sh.getLastRow() + 1;
+      sh.getRange(start, 1, adds.length, AB_XBRL_HEADER.length).setValues(adds);
+      adds.forEach(function (row, i) { map[row[0]].row = start + i; });
+    }
+  }
+  return { ok: true, stored: entries.length, details: details };
+}
+
+/** OPM % of XBRL figures the way screener.in shows it: (Revenue - Expenses + Interest + Depreciation) / Revenue, whole %. */
+function ab_xbrlOpm_(f) {
+  if (!f || !f.revenue) return NaN;
+  let op;
+  if (f.expenses !== null) op = f.revenue - f.expenses + (f.finance_costs || 0) + (f.depreciation || 0);
+  else if (f.pbt !== null) op = f.pbt + (f.finance_costs || 0) + (f.depreciation || 0) - (f.other_income || 0) - ab_xbrlExceptional_(f);
+  else return NaN;
+  return Math.round(op / f.revenue * 100);
+}
+
+/** The exceptional items in the profit (gain > 0): PBT - PBT before exceptional items, else the exceptional figure itself. */
+function ab_xbrlExceptional_(f) {
+  if (!f) return 0;
+  if (f.pbt !== null && f.pbeit !== null) return f.pbt - f.pbeit;
+  return f.exceptional || 0;
+}
+
+/**
+ * Stored screener.in quarters (bridge `series`) + the XBRL quarter -> an ab_qt_parseBoth_-shaped result, or { error }.
+ * Only when the stored quarters end exactly one quarter before and XBRL has the same basis (consolidated / standalone).
+ */
+function ab_xbrlCombined_(stored, xd) {
+  const s = stored && stored.series;
+  if (!s || !Array.isArray(s.quarters) || !s.quarters.length) return { error: 'no screener.in quarters stored yet for this stock' };
+  const basis = String(s.basis || '');
+  const cons = !/standalone/i.test(basis);
+  const f = cons ? (xd.cons || (/consolidated/i.test(basis) ? null : xd.stand)) : xd.stand;
+  if (!f) return { error: 'NSE XBRL has no ' + (cons ? 'consolidated' : 'standalone') + ' figures (screener.in\'s are ' + (basis || 'unknown') + ')' };
+  let li = -1;
+  for (let i = s.revenue.length - 1; i >= 0; i--) { if (typeof s.revenue[i] === 'number') { li = i; break; } }
+  const lastQ = li >= 0 ? s.quarters[li] : '';
+  if (li < 0 || ab_rsQuarterIndex_(lastQ) !== ab_rsQuarterIndex_(xd.quarter) - 3) {
+    return { error: 'screener.in\'s stored quarters end ' + (lastQ || 'nowhere') + ', not the quarter before ' + xd.quarter };
+  }
+  const arr = function (a, v) { return (a || []).slice(0, li + 1).map(function (x) { return typeof x === 'number' ? x : NaN; }).concat([v === null ? NaN : v]); };
+  const parsed = { ok: true, basis: (cons ? 'Consolidated' : 'Standalone') + ' (NSE XBRL)', quarters: s.quarters.slice(0, li + 1).concat([xd.quarter]),
+                   revenue: arr(s.revenue, f.revenue), netProfit: arr(s.netProfit, f.pat), eps: (s.eps || []).length ? arr(s.eps, f.eps) : [], error: '' };
+  const growth = ab_computeQuarterGrowth_(parsed);
+  const prevOpm = (s.opm || [])[li];
+  const opmQoQ = typeof prevOpm === 'number' ? ab_tt_tagOpmPair_(prevOpm, ab_xbrlOpm_(f)) : '';
+  return { combined: { quarterOk: true, growth: growth, quarterError: '', tagsOk: true,
+                       tags: { opmQoQ: opmQoQ, opmYoY: '', promoter: '', fii: '' }, tagsError: '', quarterOpmCount: 0, score: 0, fromXbrl: true },
+           figures: f, consolidated: cons };
+}
+
+/** Results Day: the NSE XBRL figures of a tracker row's quarter combined with screener.in's stored quarters ->
+ *  { combined, figures, consolidated } | { error } | null (nothing from NSE yet). */
+function ab_xbrlTry_(t) {
+  const e = ab_xbrlGet_(t.symbol);
+  if (!e) return null;
+  if (ab_rsQuarterIndex_(e.data.quarter) !== ab_rsQuarterIndex_(t.quarter)) return { error: 'its newest filing is for ' + e.data.quarter };
+  const b = ab_bridgeGet_(t.symbol);
+  return ab_xbrlCombined_(b && b.combined, e.data);
+}
+
+/** The XBRL figures of a tracker row's quarter for the flags (consolidated when filed), or null. */
+function ab_xbrlFiguresFor_(sym, quarter) {
+  const e = ab_xbrlGet_(sym);
+  if (!e || ab_rsQuarterIndex_(e.data.quarter) !== ab_rsQuarterIndex_(quarter)) return null;
+  return e.data.cons || e.data.stand || null;
+}
+
+/** The result flags as one text ('; ' between), from the growth figures (YoY, else QoQ) and the XBRL figures. */
+function ab_rsFlags_(g, f) {
+  const num = function (v) { return v === '' || v === null || v === undefined || isNaN(Number(v)) ? null : Number(v); };
+  const pc = function (v) { return (v > 0 ? '+' : '') + v.toFixed(1) + '%'; };
+  const out = [];
+  let rev = num(g && g.yoyRev), np = num(g && g.yoyNp), basis = 'YoY';
+  if (rev === null || np === null) { rev = num(g && g.qoqRev); np = num(g && g.qoqNp); basis = 'QoQ'; }
+  if (rev !== null && np !== null) {
+    if (rev > 0 && np < 0) out.push('Revenue up, profit down (' + basis + ' revenue ' + pc(rev) + ', profit ' + pc(np) + ')');
+    else if (np > 0 && np - rev >= AB_RS_FLAG_LEAD_PP) out.push('Profit growing faster than revenue (' + basis + ' profit ' + pc(np) + ' vs revenue ' + pc(rev) + ')');
+  }
+  if (f && f.pbt !== null && f.pbt > 0) {
+    const gain = ab_xbrlExceptional_(f);
+    if (gain > 0 && gain >= AB_RS_FLAG_EXC_SHARE * f.pbt) {
+      out.push('Exceptional gain Rs ' + gain.toFixed(2) + ' Cr = ' + Math.round(gain / f.pbt * 100) + '% of PBT');
+    }
+  }
+  return out.join('; ');
+}
+
+/** Flags of the Updated rows (within the wait window) not written in this run, from Main's figures + the XBRL figures
+ *  (an XBRL filing read after screener.in's figures still adds the exceptional-gain flag). */
+function ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey) {
+  tr.list.forEach(function (t) {
+    if (t.status !== 'Updated' || touched[t.symbol] || !t.rdKey || !rowsBySym[t.symbol]) return;
+    const age = ab_rsDaysBetween_(t.rdKey, todayKey);
+    if (age < 0 || age > AB_RS_MAX_WAIT_DAYS) return;
+    const row = layout.data[rowsBySym[t.symbol][0]];
+    const val = function (c) { return c === -1 ? '' : row[c]; };
+    t.flags = ab_rsFlags_({ qoqRev: val(layout.qoqRev), qoqNp: val(layout.qoqNp), yoyRev: val(layout.yoyRev), yoyNp: val(layout.yoyNp) },
+                          ab_xbrlFiguresFor_(t.symbol, t.quarter));
+  });
+}
+
+/** The email pills of a tracker row's flags. */
+function ab_rsFlagPills_(flags, pill) {
+  const f = String(flags || '');
+  let out = '';
+  if (/^Revenue up, profit down|; Revenue up, profit down/.test(f)) out += '<br>' + pill('REV &#8593; PROFIT &#8595;', '#b91c1c', '#fde8e8');
+  if (/Profit growing faster than revenue/.test(f)) out += '<br>' + pill('PROFIT &gt; REVENUE', '#15803d', '#e6f6ec');
+  if (/Exceptional gain/.test(f)) out += '<br>' + pill('EXCEPTIONAL GAIN', '#a16207', '#fef3c7');
+  return out;
 }

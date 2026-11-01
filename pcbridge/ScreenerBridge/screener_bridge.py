@@ -92,6 +92,8 @@ DEFAULTS = {
     'abort_after_failures': 5, # stop the run after this many failures in a row
     'price_bands': True,       # download NSE's price band changes at every run
     'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
+    'xbrl': True,              # read NSE's XBRL results filings of the results the sheet waits for (Results Day figures)
+    'max_xbrl_per_run': 25,
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
@@ -1862,6 +1864,7 @@ XBRL_FACTS = (   # our name <- XBRL element names (the part after the colon, any
     ('depreciation', ('DepreciationDepletionAndAmortisationExpense', 'DepreciationAndAmortisationExpense',
                       'DepreciationAmortisationAndImpairmentExpense')),
     ('exceptional', ('ExceptionalItemsBeforeTax', 'ExceptionalItems')),
+    ('pbeit', ('ProfitBeforeExceptionalItemsAndTax', 'ProfitLossBeforeExceptionalItemsAndTax')),
     ('pbt', ('ProfitBeforeTax', 'ProfitLossBeforeTax')),
     ('tax', ('TaxExpense', 'TotalTaxExpense')),
     ('pat', ('ProfitLossForPeriod', 'ProfitLossForThePeriod', 'ProfitLossForPeriodFromContinuingOperations',
@@ -2050,11 +2053,13 @@ def xbrl_compare(x, sc):
     return lines
 
 
-def xbrl_links(opener, sym, out):
+def xbrl_links(opener, sym, out, lists=None, first_only=False):
     """XBRL links of a stock from NSE's lists -> [url] newest first (by the date-time in the file name), printing what
-    each list gave."""
+    each list gave (first_only: stop at the first list that gives links)."""
     found = []
-    for name, url in XBRL_LISTS:
+    for name, url in (lists or XBRL_LISTS):
+        if first_only and found:
+            break
         time.sleep(1.0)
         try:
             status, raw = nse_get(opener, url.format(s=urllib.parse.quote(sym)), referer=XBRL_PAGE)
@@ -2157,6 +2162,115 @@ def xbrl_check(cfg, args, out=print):
                 out(line)
     out('')
     out('(nothing was sent to the sheet; the XBRL files are in %s)' % XBRL_CHECK_DIR)
+
+
+# Step 2 (owner, 01-Nov-2026, after XbrlCheck.bat matched screener.in): every round, for the Results Tracker rows the
+# sheet lists (`list` -> `xbrl`: {SYMBOL: 'Sep 2026'}, the Pending ones first), the filing of that quarter - the
+# consolidated and the standalone file when filed (the sheet uses the one matching screener.in's figures), a Revised
+# file before the Original (newest first) - is read and its figures (crore; EPS in rupees) posted to action 'xbrlput'.
+# The sheet's Results Day uses them while screener.in lacks the quarter (final figures), and for the result flags.
+XBRL_STEP_LISTS = (   # NSE's Integrated Filing - Financials list first (its XBRL column), then the Financial Results list, then SME
+    ('integrated filing', 'https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol={s}&period=Quarterly'),
+    ('financial results', 'https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol={s}&period=Quarterly'),
+    ('integrated filing sme', 'https://www.nseindia.com/api/integrated-filing-results?index=sme&symbol={s}&period=Quarterly'),
+)
+XBRL_STATE_PATH = os.path.join(HERE, 'xbrl_state.json')
+XBRL_FILES_PER_STOCK = 4
+
+
+def xbrl_figures(x):
+    """xbrl_parse's quarter -> the figures sent to the sheet: amounts in crore (4 decimals), EPS as filed."""
+    out = {}
+    for k, v in x['q'].items():
+        if k == 'pat_owners':
+            continue
+        out[k] = None if v is None else (v if k == 'eps' else round(v / CRORE, 4))
+    return out
+
+
+def xbrl_quarter(opener, sym, quarter):
+    """The filing of `quarter` ('Sep 2026') of a stock -> {'cons': figures|None, 'stand': figures|None, 'files': [...]} or
+    None when NSE has none of that quarter yet. Newest files first; stops at the first file of an older quarter."""
+    links = xbrl_links(opener, sym, lambda *a: None, lists=XBRL_STEP_LISTS, first_only=True)
+    got, files, read = {}, [], 0
+    for url in links:
+        name = url.rsplit('/', 1)[-1]
+        if 'GOVERNANCE' in name.upper():
+            continue
+        if read >= XBRL_FILES_PER_STOCK or ('cons' in got and 'stand' in got):
+            break
+        time.sleep(1.0)
+        read += 1
+        try:
+            status, raw = nse_get(opener, url, referer=XBRL_PAGE, timeout=60)
+        except (OSError, urllib.error.URLError, socket.timeout):
+            continue
+        x = xbrl_parse(raw) if status == 200 else None
+        if not x:
+            continue
+        if _qkey(x['quarter']) < _qkey(quarter):
+            break                                  # newest first: the rest are older still
+        if x['quarter'] != quarter or not any(v is not None for v in x['q'].values()):
+            continue
+        key = 'cons' if 'consol' in (x['nature'] or '').lower() else 'stand'
+        if key not in got:                         # the newest of each kind (a Revised file comes after the Original)
+            got[key] = xbrl_figures(x)
+            files.append(name)
+    if not got:
+        return None
+    return {'cons': got.get('cons'), 'stand': got.get('stand'), 'files': files}
+
+
+def xbrl_step(cfg, want, now=None):
+    """Reads and sends the XBRL filings the sheet wants. Returns how many were sent; never raises."""
+    if cfg.get('xbrl') is False or not want:
+        return 0
+    try:
+        now = now or datetime.now()
+        try:
+            with open(XBRL_STATE_PATH, 'r', encoding='utf-8') as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            st = {}
+        cap = int(cfg.get('max_xbrl_per_run', 25))
+        todo = list(want.items())[:cap]
+        opener = nse_session()
+        items, waiting = [], []
+        for sym, quarter in todo:
+            try:
+                got = xbrl_quarter(opener, sym, str(quarter))
+            except Exception as e:     # one stock's oddity never stops the rest
+                got = None
+                log('NSE XBRL: %s - %s' % (sym, e))
+            st[sym] = {'quarter': quarter, 'tried': now.strftime('%Y-%m-%d %H:%M'), 'found': bool(got)}
+            if got:
+                items.append(dict(got, sym=sym, quarter=quarter))
+            else:
+                waiting.append(sym)
+        sent = 0
+        if items:
+            res = api(cfg, 'xbrlput', {'items': items}, timeout=180)
+            if not res.get('ok'):
+                err = res.get('error') or 'unknown error'
+                if err == 'unknown action':
+                    err = ('the sheet\'s web app does not know NSE XBRL yet - in Apps Script: Deploy > Manage deployments > '
+                           'pencil > Version: New version > Deploy')
+                log('NSE XBRL: the sheet refused - %s' % err)
+            else:
+                sent = res.get('stored', 0)
+        log('NSE XBRL: %d of %d stock(s) have their results filing on NSE%s%s%s.' % (
+            len(items), len(todo), (' - sent ' + ', '.join(i['sym'] for i in items[:15]) + (' ...' if len(items) > 15 else '')) if sent else '',
+            ('; not filed yet: ' + ', '.join(waiting[:15]) + (' ...' if len(waiting) > 15 else '')) if waiting else '',
+            ('; %d more next round' % (len(want) - len(todo))) if len(want) > len(todo) else ''))
+        try:
+            with open(XBRL_STATE_PATH, 'w', encoding='utf-8') as f:
+                json.dump(st, f, indent=1, sort_keys=True)
+        except OSError:
+            pass
+        return sent
+    except Exception as e:
+        log('NSE XBRL: unexpected problem - %s' % e)
+        return 0
 
 
 # ------------------------------------------------------------------ moneycontrol (reading)
@@ -3251,6 +3365,9 @@ def run_once(cfg):
             % (len(todo), len(priority), len(missing), len(ans.get('missing', [])),
                (' %d sent earlier in this round are skipped.' % len(already)) if already else ''))
         if not todo and not resumed:
+            if xbrl_step(cfg, ans.get('xbrl') or {}):
+                log('Asking the sheet to process the NSE XBRL filing(s)...')
+                ask_process(cfg)
             state['stage'] = 'done'
             run_state_save(state)
             return 0
@@ -3336,12 +3453,23 @@ def run_once(cfg):
         except Exception as e:   # never let moneycontrol stop the run
             log('moneycontrol: unexpected problem - %s' % e)
 
+        # NSE XBRL filings (official figures, the same day) of the results the sheet waits for
+        xbrl_sent = 0
+        try:
+            if 'xbrl' not in ans and priority and cfg.get('xbrl') is not False:
+                log('NSE XBRL: the sheet\'s web app does not ask for it yet - after pasting the new Code.gs + Code2.gs, '
+                    'do the New version deploy (see README).')
+            xbrl_sent = xbrl_step(cfg, ans.get('xbrl') or {})
+        except Exception as e:   # never let XBRL stop the run
+            log('NSE XBRL: unexpected problem - %s' % e)
+
         state['stage'] = 'process'
         run_state_save(state)
         processed = True
-        if posted or mc_sent or need_process:
-            log('Sent %d page(s)%s. Asking the sheet to process them...'
-                % (posted, (' and %d moneycontrol result(s)' % mc_sent) if mc_sent else ''))
+        if posted or mc_sent or xbrl_sent or need_process:
+            log('Sent %d page(s)%s%s. Asking the sheet to process them...'
+                % (posted, (' and %d moneycontrol result(s)' % mc_sent) if mc_sent else '',
+                   (' and %d NSE XBRL filing(s)' % xbrl_sent) if xbrl_sent else ''))
             processed = ask_process(cfg)
         if processed:
             state['stage'] = 'done'
