@@ -106,18 +106,25 @@ quarterly-result filings to the sheet with their exact time. The sheet shows:
 RESULTS CALENDAR (the Results tab fills itself)
 Once a day (the first round of the day) the program reads NSE's Event Calendar - All Forthcoming,
 Equity and SME - and sends the board meetings whose purpose has "Financial Results" (Financial
-Results, Financial Results/Dividend, .../Fund Raising, .../Other business matters ...). The sheet ADDS
-the companies that are not on the Results tab yet, at the bottom, in the same format (SYMBOL,
-COMPANY, PURPOSE, DATE). When NSE MOVES the meeting of a company already on the tab, its date (and
-purpose) is changed - unless that result already came out (Results Tracker: Updated) or the dates are
-more than 45 days apart (another season). Rows are never removed - clear the tab yourself after the
-results season as usual. No email. Main's Result Date (and so the Results Day check and the
-Upcoming Results email) then sees the new companies by itself.
+Results, Financial Results/Dividend, .../Fund Raising, .../Other business matters ...). When a list
+gives no such meeting (SME gave 0 on the first run), NSE's Board Meetings list is read instead
+(meetings before today left out). The sheet ADDS the companies that are not on the Results tab yet,
+at the bottom, in the same format (SYMBOL, COMPANY, PURPOSE, DATE). For a company already on the tab
+NSE's date is compared with the company's FIRST row (the one Main's Result Date reads), by the
+results quarter each date reports on:
+ - same quarter, other day (e.g. 31-Oct -> 03-Nov) = NSE MOVED the meeting: that date (and purpose)
+   is changed - unless that result already came out (Results Tracker: Updated);
+ - a later quarter (e.g. 21-Sep June-quarter results -> 04-Nov September-quarter results) = the next
+   meeting: a NEW row is put right above the old one, so Main reads the new date and the old row stays.
+Rows are never removed - clear the tab yourself after the results season as usual. No email. Main's
+Result Date (and so the Results Day check and the Upcoming Results email) then sees them by itself.
  - Needs the latest Code.gs + Code2.gs AND the New version deploy.
- - bridge.log: "Results calendar: N forthcoming result meeting(s) on NSE ...; N added to the Results tab;
-   N date(s) changed by NSE - SYMBOL 05/11 -> 07/11".
+ - bridge.log: "Results calendar: N forthcoming result meeting(s) on NSE (equity N, SME N); N added to
+   the Results tab; N date(s) changed by NSE - SYMBOL 31/10 -> 03/11; N next-quarter meeting(s) put in
+   a new row above the old one - SYMBOL 04/11 (above 21/09)".
  - calendar_state.json remembers the day it last ran. CalendarNow.bat runs it again at once.
- - TestConnection line 7 checks NSE (sends nothing). To switch it off: "calendar": false in config.json.
+ - TestConnection line 7 checks NSE and says which list answered (sends nothing). To switch it off:
+   "calendar": false in config.json.
 
 MONEYCONTROL (first figures while screener.in is late)
 moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies

@@ -10934,16 +10934,30 @@ function ab_annMorningEmail_(store, now) {
  * DATE cells written like the ones already there: text such as
  * 01-Nov-26, or real dates with their number format), at the bottom, by
  * date; no email. Rows are never removed (the owner clears the tab after
- * each season). A company already on the tab whose meeting NSE MOVED
- * (owner, 01-Nov-2026) gets the new date (and purpose) in the rows of the
- * old date - only when the two dates are at most AB_CAL_MOVE_DAYS apart
- * (further apart = another season's meeting) and the Results Tracker
- * does not already show that result as Updated (then it took place).
+ * each season). For a company already on the tab (owner, 01-Nov-2026)
+ * NSE's date is compared with the date of its FIRST row - the one Main's
+ * Result Date formula reads - by the results quarter each date reports
+ * on (ab_calQuarter_: the latest quarter-end before it):
+ *  - same quarter, other day = NSE MOVED the meeting: the rows of the old
+ *    date get the new date (and purpose) - unless the Results Tracker
+ *    shows that result as Updated (then it took place on the old date);
+ *  - a later quarter = the next quarter's meeting (e.g. 21-Sep June-
+ *    quarter results, 04-Nov September-quarter results): a NEW row is put
+ *    right ABOVE the company's first row, so Main reads the new date and
+ *    the old row stays where it was (the first live run, 01-Nov-2026,
+ *    overwrote such old rows with the 45-day rule this replaces).
  *****************************************************************/
 const AB_CAL_SYM_RE = /^[A-Z0-9][A-Z0-9&._-]{0,29}$/;
-const AB_CAL_MOVE_DAYS = 45;
+const AB_CAL_INSERT_MS = 180000;                         // new rows above old ones: stop after 3 minutes (the rest next run)
+
+/** The results quarter a meeting on `iso` reports on (the latest quarter-end before it), as a comparable number. */
+function ab_calQuarter_(iso) {
+  const p = String(iso).split('-').map(Number);
+  return p[0] * 4 + Math.floor((p[1] - 1) / 3) - 1;
+}
 
 function ab_calFromBridge_(req) {
+  const t0 = Date.now();
   const rows = Array.isArray(req.rows) ? req.rows : null;
   if (!rows) return { ok: false, error: 'rows missing - update screener_bridge.py on the PC' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -10962,7 +10976,7 @@ function ab_calFromBridge_(req) {
     }
   }
   if (h === -1) return { ok: false, error: 'the Results tab has no SYMBOL / DATE header row' };
-  const have = {}, first = {};                             // symbol -> the day of its first row (what Main's formula reads)
+  const have = {}, first = {}, firstRow = {};               // symbol -> the day / row of its first row (what Main's formula reads)
   let last = h;
   for (let r = h + 1; r < vals.length; r++) {
     const s = String(vals[r][cSym] || '').trim().toUpperCase();
@@ -10972,6 +10986,7 @@ function ab_calFromBridge_(req) {
     if (first[s] === undefined) {
       const d = ab_rsToDate_(vals[r][cDate]);
       first[s] = d ? ab_rsDayKey_(d) : '';
+      firstRow[s] = r;
     }
   }
   // how the DATE cells already there are written (the Result Date formula reads them as they are)
@@ -10987,26 +11002,39 @@ function ab_calFromBridge_(req) {
     const t = String(d === null || d === undefined ? '' : d).trim();
     if (/^\d{1,2}-[A-Za-z]{3}-\d{2}(\d{2})?$/.test(t)) { style = { kind: 'text', year4: /\d{4}$/.test(t), fmt: '' }; break; }
   }
-  const add = [], seen = {}, moves = [];
+  const add = [], seen = {}, moves = [], ahead = [];
   rows.slice(0, 5000).forEach(function (x) {
     if (!Array.isArray(x)) return;
     const sym = String(x[0] || '').trim().toUpperCase();
-    const purpose = String(x[2] || '').replace(/\s+/g, ' ').trim();
+    const purpose = String(x[2] || '').replace(/\s+/g, ' ').trim().slice(0, 150);
+    const company = String(x[1] || '').replace(/\s+/g, ' ').trim().slice(0, 150);
     const iso = String(x[3] || '').trim();
     if (!AB_CAL_SYM_RE.test(sym) || seen[sym]) return;
     if (!/financial result/i.test(purpose) || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
     seen[sym] = true;
-    if (!have[sym]) add.push([sym, String(x[1] || '').replace(/\s+/g, ' ').trim().slice(0, 150), purpose.slice(0, 150), iso]);
-    else if (first[sym] && first[sym] !== iso && Math.abs(ab_rsDaysBetween_(first[sym], iso)) <= AB_CAL_MOVE_DAYS) {
-      moves.push({ sym: sym, from: first[sym], to: iso, purpose: purpose.slice(0, 150) });
-    }
+    if (!have[sym]) { add.push([sym, company, purpose, iso]); return; }
+    if (!first[sym] || first[sym] === iso) return;
+    const qOld = ab_calQuarter_(first[sym]), qNew = ab_calQuarter_(iso);
+    if (qNew === qOld) moves.push({ sym: sym, from: first[sym], to: iso, purpose: purpose });
+    else if (qNew > qOld) ahead.push({ sym: sym, row: firstRow[sym], before: first[sym], line: [sym, company, purpose, iso] });
   });
   const dateOf = function (iso, st) {
     const p = iso.split('-').map(Number);
     if (st.kind === 'date') return ab_rsMakeDate_(p[0], p[1] - 1, p[2]);
     return ('0' + p[2]).slice(-2) + '-' + AB_RS_MONTHS[p[1] - 1] + '-' + (st.year4 ? String(p[0]) : String(p[0]).slice(2));
   };
-  // meetings NSE moved: the rows of the old date get the new one - unless the result already came out on it
+  const short = function (iso) { return ab_rsKeyToDmy_(iso).slice(0, 5); };
+  const width = Math.max(cSym, cCo, cPur, cDate) + 1;
+  const lineOf = function (a) {
+    const row = [];
+    for (let c = 0; c < width; c++) row.push('');
+    row[cSym] = a[0];
+    if (cCo !== -1) row[cCo] = a[1];
+    if (cPur !== -1) row[cPur] = a[2];
+    row[cDate] = dateOf(a[3], style);
+    return row;
+  };
+  // 1. meetings NSE moved within the quarter: the rows of the old date get the new one - unless the result already came out on it
   const moved = [];
   if (moves.length) {
     const done = {};
@@ -11024,30 +11052,38 @@ function ab_calFromBridge_(req) {
         sh.getRange(r + 1, cDate + 1).setValue(dateOf(m.to, st));
         if (cPur !== -1) sh.getRange(r + 1, cPur + 1).setValue(m.purpose);
       }
-      moved.push(m.sym + ' ' + ab_rsKeyToDmy_(m.from).slice(0, 5) + ' -> ' + ab_rsKeyToDmy_(m.to).slice(0, 5));
+      moved.push(m.sym + ' ' + short(m.from) + ' -> ' + short(m.to));
     });
   }
-  if (!add.length) return { ok: true, received: rows.length, added: [], moved: moved };
+  // 2. companies not on the tab: at the bottom, by date
   add.sort(function (a, b) { return a[3] < b[3] ? -1 : a[3] > b[3] ? 1 : (a[0] < b[0] ? -1 : 1); });
-  const width = Math.max(cSym, cCo, cPur, cDate) + 1;
-  const out = add.map(function (a) {
-    const row = [];
-    for (let c = 0; c < width; c++) row.push('');
-    row[cSym] = a[0];
-    if (cCo !== -1) row[cCo] = a[1];
-    if (cPur !== -1) row[cPur] = a[2];
-    row[cDate] = dateOf(a[3], style);
-    return row;
-  });
-  const start = last + 2;                                  // the row below the last company (1-based)
-  const end = start + out.length - 1;
-  if (sh.getMaxRows() < end) sh.insertRowsAfter(sh.getMaxRows(), end - sh.getMaxRows());
-  if (last > h) {
-    try { sh.getRange(last + 1, 1, 1, width).copyFormatToRange(sh, 1, width, start, end); } catch (e) { /* cosmetic */ }
+  if (add.length) {
+    const out = add.map(lineOf);
+    const start = last + 2;                                // the row below the last company (1-based)
+    const end = start + out.length - 1;
+    if (sh.getMaxRows() < end) sh.insertRowsAfter(sh.getMaxRows(), end - sh.getMaxRows());
+    if (last > h) {
+      try { sh.getRange(last + 1, 1, 1, width).copyFormatToRange(sh, 1, width, start, end); } catch (e) { /* cosmetic */ }
+    }
+    const dates = sh.getRange(start, cDate + 1, out.length, 1);
+    if (style.kind === 'text') dates.setNumberFormat('@');
+    else if (style.fmt) dates.setNumberFormat(style.fmt);
+    sh.getRange(start, 1, out.length, width).setValues(out);
   }
-  const dates = sh.getRange(start, cDate + 1, out.length, 1);
-  if (style.kind === 'text') dates.setNumberFormat('@');
-  else if (style.fmt) dates.setNumberFormat(style.fmt);
-  sh.getRange(start, 1, out.length, width).setValues(out);
-  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved };
+  // 3. the next quarter's meeting of a company already on the tab: a new row right above its first row (bottom-most first,
+  //    so the rows above keep their places); the old row stays
+  //    (a tab not cleared after the season could need hundreds: past AB_CAL_INSERT_MS the rest wait for the next run)
+  const above = [];
+  let later = 0;
+  ahead.sort(function (a, b) { return b.row - a.row; }).forEach(function (a) {
+    if (Date.now() - t0 > AB_CAL_INSERT_MS) { later++; return; }
+    const at = a.row + 1;                                  // 1-based row of the old first row
+    sh.insertRowsBefore(at, 1);
+    try { sh.getRange(at + 1, 1, 1, width).copyFormatToRange(sh, 1, width, at, at); } catch (e) { /* cosmetic */ }
+    if (style.kind === 'text') sh.getRange(at, cDate + 1).setNumberFormat('@');
+    else if (style.fmt) sh.getRange(at, cDate + 1).setNumberFormat(style.fmt);
+    sh.getRange(at, 1, 1, width).setValues([lineOf(a.line)]);
+    above.unshift(a.sym + ' ' + short(a.line[3]) + ' (above ' + short(a.before) + ')');
+  });
+  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved, above: above, later: later };
 }

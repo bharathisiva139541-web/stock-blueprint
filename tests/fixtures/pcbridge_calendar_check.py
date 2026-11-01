@@ -1,5 +1,6 @@
 """Offline checks for the PC bridge's results calendar (screener_bridge.py cal_*): NSE's Event Calendar (All
-Forthcoming, Equity + SME) -> the "Financial Results" meetings sent to the sheet, once a day. A local HTTP server
+Forthcoming, Equity + SME; NSE's Board Meetings list when a list gives none) -> the "Financial Results" meetings
+from today on sent to the sheet, once a day. A local HTTP server
 plays NSE, a fake api() plays the sheet. No network is used.
 Run by tests/pcbridge-calendar.test.js (prints OK on success, raises on failure)."""
 import importlib.util
@@ -36,8 +37,16 @@ assert dated == 5, dated
 assert rows == [['POWERGRID', 'Power Grid Corporation of India Limited', 'Financial Results/Dividend', '2026-11-01'],
                 ['SAIPARENT', 'Sai Parenterals Limited', 'Financial Results', '2026-11-01'],
                 ['AAKASH', 'Aakash Exploration Services Limited', 'Financial Results/Other business matters', '2026-11-02']], rows
+# from a day on: earlier meetings left out (the Board Meetings list has past ones too)
+assert [r[0] + ' ' + r[3] for r in sb.cal_rows(EQ, date(2026, 11, 2))[0]] == ['AAKASH 2026-11-02'], sb.cal_rows(EQ, date(2026, 11, 2))
+# NSE's Board Meetings list (bm_ field names)
+BM = {'data': [{'bm_symbol': 'SMEONE', 'sm_name': 'SME One Limited', 'bm_purpose': 'Financial Results', 'bm_date': '04-Nov-2026',
+                'bm_desc': 'To consider the half-yearly results'},
+               {'bm_symbol': 'SMEOLD', 'sm_name': 'SME Old Limited', 'bm_purpose': 'Financial Results', 'bm_date': '30-Oct-2026'},
+               {'bm_symbol': 'SMEFUND', 'sm_name': 'SME Fund Limited', 'bm_purpose': 'Fund Raising', 'bm_date': '05-Nov-2026'}]}
 
-BODY = {'/api/event-calendar?index=equities': json.dumps(EQ).encode(), '/api/event-calendar?index=sme': json.dumps(SME).encode()}
+BODY = {'/api/event-calendar?index=equities': json.dumps(EQ).encode(), '/api/event-calendar?index=sme': json.dumps(SME).encode(),
+        '/api/corporate-board-meetings?index=sme': json.dumps(BM).encode()}
 HITS = []
 
 
@@ -58,7 +67,8 @@ class NSE(BaseHTTPRequestHandler):
 srv = HTTPServer(('127.0.0.1', 0), NSE)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = 'http://127.0.0.1:%d' % srv.server_port
-sb.CAL_SOURCES = (('equity', BASE + '/api/event-calendar?index=equities'), ('SME', BASE + '/api/event-calendar?index=sme'))
+sb.CAL_SOURCES = (('equity', (BASE + '/api/event-calendar?index=equities',)),
+                  ('SME', (BASE + '/api/event-calendar?index=sme', BASE + '/api/corporate-board-meetings?index=sme')))
 sb.CAL_PAGE = BASE + '/companies-listing/corporate-filings-event-calendar'
 sb.nse_session = lambda: urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
 POSTS, LOGS, REPLY = [], [], {}
@@ -79,6 +89,7 @@ sb.cal_step(CFG, today=SUN)
 assert [r[0] for r in POSTS[0]['rows']] == ['POWERGRID', 'SAIPARENT', 'AAKASH', 'SMEONE'], POSTS
 assert LOGS == ['Results calendar: 4 forthcoming result meeting(s) on NSE (equity 3, SME 1); 3 added to the Results tab - POWERGRID, SAIPARENT, SMEONE.'], LOGS
 assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-01'
+assert '/api/corporate-board-meetings?index=sme' not in HITS, 'the second link only when the first gives no result meetings'
 
 # once a day: the second round the same day does nothing; the next day again; "calendar" command forces it
 del POSTS[:], LOGS[:], HITS[:]
@@ -91,25 +102,41 @@ del POSTS[:], LOGS[:]
 sb.cal_step(CFG, today=date(2026, 11, 2))
 assert len(POSTS) == 1 and LOGS[0].endswith('; 0 added to the Results tab.'), LOGS
 
+# the first live run: SME's event calendar gave no result meetings -> the Board Meetings list (from today on); the
+# sheet's answer with moved dates, new rows above old ones and some left for the next round
+BODY['/api/event-calendar?index=sme'] = json.dumps({'data': []}).encode()
+REPLY['r'] = {'ok': True, 'added': ['SMEONE'], 'moved': ['GSFC 12/10 -> 02/11'], 'above': ['ESDS 02/11 (above 24/09)'], 'later': 2}
+del POSTS[:], LOGS[:], HITS[:]
+sb.cal_step(CFG, today=date(2026, 11, 3))
+assert [r[0] + ' ' + r[3] for r in POSTS[0]['rows']] == ['AAKASH 2026-11-20', 'SMEONE 2026-11-04'], POSTS   # SMEOLD is past
+assert HITS[-1] == '/api/corporate-board-meetings?index=sme', HITS
+assert LOGS == ['Results calendar: 2 forthcoming result meeting(s) on NSE (equity 1, SME 1 (board meetings list)); 1 added to the '
+                'Results tab - SMEONE; 1 date(s) changed by NSE - GSFC 12/10 -> 02/11; 1 next-quarter meeting(s) put in a new row '
+                'above the old one - ESDS 02/11 (above 24/09); 2 more next round.'], LOGS
+assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-02', 'rows left for the next round: not marked done'
+
 # one list unreadable: the other is still sent, and the day is tried again later
 BODY['/api/event-calendar?index=sme'] = b'<html>Access Denied</html>'
+BODY['/api/corporate-board-meetings?index=sme'] = b'<html>Access Denied</html>'
 REPLY.pop('r')
 del POSTS[:], LOGS[:]
-sb.cal_step(CFG, today=date(2026, 11, 3))
-assert [r[0] for r in POSTS[0]['rows']] == ['POWERGRID', 'SAIPARENT', 'AAKASH'] and 'SME: NSE did not send data' in LOGS[1], LOGS
+sb.cal_step(CFG, today=date(2026, 11, 5))
+assert [r[0] for r in POSTS[0]['rows']] == ['AAKASH'], POSTS
+assert 'SME: link 1: NSE did not send data' in LOGS[1] and 'link 2: NSE did not send data' in LOGS[1], LOGS
+assert LOGS[1].endswith('- tried again next round.'), LOGS
 assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-02', 'not marked done'
 
 # both unreadable / an older web app / switched off
 BODY['/api/event-calendar?index=equities'] = b'<html>Access Denied</html>'
 del POSTS[:], LOGS[:]
-sb.cal_step(CFG, today=date(2026, 11, 3))
+sb.cal_step(CFG, today=date(2026, 11, 5))
 assert POSTS == [] and LOGS[0].startswith('Results calendar: could not read NSE'), LOGS
 BODY['/api/event-calendar?index=equities'] = json.dumps(EQ).encode()
 REPLY['r'] = {'ok': False, 'error': 'unknown action'}
 del LOGS[:]
-sb.cal_step(CFG, today=date(2026, 11, 3))
+sb.cal_step(CFG, today=date(2026, 11, 5))
 assert 'Version: New version > Deploy' in LOGS[0], LOGS
 del LOGS[:], HITS[:]
-sb.cal_step(dict(CFG, calendar=False), today=date(2026, 11, 3))
+sb.cal_step(dict(CFG, calendar=False), today=date(2026, 11, 5))
 assert LOGS == [] and HITS == []
 print('OK')
