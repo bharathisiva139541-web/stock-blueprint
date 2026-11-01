@@ -72,21 +72,23 @@ sb.IPO_SOURCES = (('current', (BASE + '/api/ipo-current-issue',)),
                   ('upcoming', (BASE + '/api/all-upcoming-issues?category=ipo',)))
 sb.nse_session = lambda: urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
 sb.IPO_HOLIDAYS_URL = BASE + '/api/holiday-master?type=trading'
-sb.IPO_QUOTE_URL = BASE + '/api/quote-equity?symbol={s}'
+sb.IPO_QUOTE_URLS = (BASE + '/api/quote-equity?symbol={s}',
+                     BASE + '/api/NextApi/apiClient/GetQuoteApi?functionName=getSymbolData&marketType=N&series={series}&symbol={s}')
 sb.EOD_FILES = dict(sb.EOD_FILES, bhav=(BASE + '/bhav_{d}.csv',))
 ROUTES['/api/holiday-master'] = (200, json.dumps({'CM': [{'tradingDate': '20-Oct-2026', 'weekDay': 'Tuesday', 'description': 'Dussehra'},
                                                          {'tradingDate': '10-Nov-2026', 'description': 'Diwali Balipratipada'}],
                                                   'FO': [{'tradingDate': '01-Jan-2026'}]}).encode())
 # NSE's quote: the listing date (its confirmation) and the industry; PARASHLTH is not set up on NSE yet
-ROUTES['/api/quote-equity?symbol=TONBO'] = (200, json.dumps({
+ROUTES['/api/quote-equity?symbol=TONBO'] = QUOTE_TONBO = (200, json.dumps({
     'info': {'symbol': 'TONBO', 'companyName': 'Tonbo Imaging India Limited', 'listingDate': '23-Oct-2026'},
     'metadata': {'series': 'EQ', 'listingDate': '23-Oct-2026'},
     'industryInfo': {'macro': 'Industrials', 'sector': 'Capital Goods', 'industry': 'Aerospace & Defense',
                      'basicIndustry': 'Aerospace & Defense'}}).encode())
-ROUTES['/api/quote-equity?symbol=NITYAS'] = (200, json.dumps({
-    'info': {'symbol': 'NITYAS', 'listingDate': '22-Oct-2026'}, 'metadata': {'series': 'BE', 'listingDate': '22-Oct-2026'},
-    'industryInfo': {'macro': 'Consumer Discretionary', 'sector': 'Consumer Durables', 'industry': 'Consumer Durables',
-                     'basicIndustry': 'Gems, Jewellery And Watches'}}).encode())
+# NITYAS: the first link refuses, the second (NSE's newer quote data, another shape) has it - series BE asked
+ROUTES['/api/quote-equity?symbol=NITYAS'] = (401, b'')
+ROUTES['/api/NextApi/apiClient/GetQuoteApi?functionName=getSymbolData&marketType=N&series=BE&symbol=NITYAS'] = (200, json.dumps({
+    'equityResponse': [{'secInfo': {'listingDate': '22-Oct-2026', 'macro': 'Consumer Discretionary', 'sector': 'Consumer Durables',
+                                    'industry': 'Consumer Durables', 'basicIndustry': 'Gems, Jewellery And Watches'}}]}).encode())
 ROUTES['/api/quote-equity?symbol=PARASHLTH'] = (404, b'')
 # the bhavcopies: TONBO's listing day (23-10) and the newest one out (26-10; 27-10 not out yet)
 ROUTES['/bhav_23102026.csv'] = (200, bhav('23-Oct-2026', [('TONBO', 'EQ', '700.00, 812.00, 830.00, 790.00, 801.00, 805.40, 805.00, 0, 0, 0, 0, 0')]))
@@ -155,11 +157,15 @@ assert 'nseListing' not in by['TINY'], 'SME issues: no quote asked'
 assert not any('symbol=TINY' in h or 'symbol=EAAA' in h or 'symbol=BCSSL' in h for h in HITS), HITS
 st = json.load(open(sb.IPO_STATE_PATH))
 assert st['candles']['TONBO'] == {'day': '2026-10-23', 'ohlc': [812.0, 830.0, 790.0, 805.4]}, st['candles']
-assert st['quotes']['TONBO']['listing'] == '2026-10-23' and st['quotes']['PARASHLTH'] == {'at': '2026-10-27', 'listing': '', 'industry': {}}
+assert st['quotes']['TONBO']['listing'] == '2026-10-23' and 'why' not in st['quotes']['TONBO']
+pq = st['quotes']['PARASHLTH']
+assert (pq['listing'], pq['industry'], pq['why']) == ('', {}, 'link 1: HTTP 404; link 2: HTTP 404'), pq
+assert 'IPO lists: NSE quote gave no Basic Industry yet for PARASHLTH (PARASHLTH: link 1: HTTP 404; link 2: HTTP 404) - asked again next round.' in logtail(), logtail()
 # the next run: known quotes and candles are not asked again; holidays read again only after a week
 del SENT[:], HITS[:]
 sb.ipo_step(CFG, today=TUE)
-assert SENT[0]['records'] and [h for h in HITS if 'quote-equity' in h] == ['/api/quote-equity?symbol=PARASHLTH'], HITS
+assert SENT[0]['records'] and [h for h in HITS if 'quote' in h.lower()] == [
+    '/api/quote-equity?symbol=PARASHLTH', '/api/NextApi/apiClient/GetQuoteApi?functionName=getSymbolData&marketType=N&series=EQ&symbol=PARASHLTH'], HITS
 assert not any('holiday' in h or 'bhav_23' in h or 'bhav_22' in h for h in HITS), HITS
 assert {r['symbol']: r for r in SENT[0]['records']}['TONBO']['day1'] == [812.0, 830.0, 790.0, 805.4]
 assert by['PARASHLTH']['list'] == 'past' and by['PARASHLTH']['listing'] == '' and by['PARASHLTH']['price'] == 'Rs.660 to Rs.693'
@@ -193,6 +199,15 @@ for k in list(ROUTES):
     ROUTES[k] = (401, b'{}')
 sb.ipo_step(CFG, today=TUE)
 assert SENT == [] and 'IPO lists: could not read NSE - current: HTTP 401 from NSE' in logtail(), logtail()
+
+# --- one symbol's quote, as TestConnection line 4 shows it
+ROUTES['/api/quote-equity?symbol=TONBO'] = QUOTE_TONBO
+got, said = sb.ipo_quote(sb.nse_session(), 'TONBO')
+assert got['listing'] == '2026-10-23' and got['industry']['basic'] == 'Aerospace & Defense' and said == ['link 1: OK'], (got, said)
+ROUTES['/api/quote-equity?symbol=ODD'] = (200, json.dumps({'info': {'symbol': 'ODD'}, 'priceInfo': {}}).encode())
+got, said = sb.ipo_quote(sb.nse_session(), 'ODD')
+assert got == {'listing': '', 'industry': {}} and said == ['link 1: no listing date / Basic Industry (answer keys: info, priceInfo)',
+                                                          'link 2: HTTP 404'], said
 
 # --- the deployed web app is older: the fix is named
 ROUTES['/api/ipo-current-issue'] = (200, json.dumps(CURRENT).encode())

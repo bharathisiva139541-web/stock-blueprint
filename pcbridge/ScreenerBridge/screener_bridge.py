@@ -1065,8 +1065,11 @@ IPO_PAST_DAYS = 30       # past issues closed in the last 30 days (older ones ar
 IPO_LISTED_DAYS = 14     # issues listed in the last 14 days are sent too ("Listed recently"; added to Main on the listing day)
 IPO_HOLIDAYS_URL = 'https://www.nseindia.com/api/holiday-master?type=trading'
 IPO_HOLIDAYS_DAYS = 7    # NSE's holiday list is read again after a week
-IPO_QUOTE_URL = 'https://www.nseindia.com/api/quote-equity?symbol={s}'
-IPO_QUOTE_PAGE = 'https://www.nseindia.com/get-quotes/equity?symbol={s}'
+# NSE's quote of a symbol, links tried in turn (the first live run, 01-Nov-2026, got no Basic Industry from the first one;
+# NSE's quote page moved to get-quote/equity/SYMBOL/Name, so its newer data link is the second choice)
+IPO_QUOTE_URLS = ('https://www.nseindia.com/api/quote-equity?symbol={s}',
+                  'https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi?functionName=getSymbolData&marketType=N&series={series}&symbol={s}')
+IPO_QUOTE_PAGE = 'https://www.nseindia.com/get-quote/equity/{s}'
 IPO_QUOTES_PER_RUN = 12  # NSE quotes read per run (closed issues whose listing date / industry is not known yet)
 IPO_STATE_PATH = os.path.join(HERE, 'ipo_state.json')   # holidays + what the quotes and bhavcopies gave, per symbol
 IPO_FIELDS = (           # our name <- NSE field names (compared without case / punctuation)
@@ -1269,10 +1272,32 @@ def ipo_find(obj, want, depth=0):
     return None
 
 
+def ipo_holder(obj, want, depth=0):
+    """The first dict, anywhere in NSE's answer, holding a key whose normalised name is `want`."""
+    if depth > 5:
+        return None
+    if isinstance(obj, dict):
+        if any(_norm_key(k) == want and v not in (None, '', '-') for k, v in obj.items()):
+            return obj
+        kids = list(obj.values())
+    elif isinstance(obj, list):
+        kids = obj[:5]
+    else:
+        return None
+    for v in kids:
+        got = ipo_holder(v, want, depth + 1)
+        if got is not None:
+            return got
+    return None
+
+
 def ipo_quote_parse(obj):
-    """NSE's quote of a symbol -> {'listing': 'yyyy-mm-dd' or '', 'industry': {macro, sector, industry, basic} or {}}."""
-    out = {'listing': ipo_date(ipo_find(obj, 'listingdate') or ''), 'industry': {}}
+    """NSE's quote of a symbol -> {'listing': 'yyyy-mm-dd' or '', 'industry': {macro, sector, industry, basic} or {}}
+    (industryInfo, or wherever a basicIndustry sits in the answer)."""
+    out = {'listing': ipo_date(ipo_find(obj, 'listingdate') or ipo_find(obj, 'dateoflisting') or ''), 'industry': {}}
     info = ipo_find(obj, 'industryinfo')
+    if not isinstance(info, dict):
+        info = ipo_holder(obj, 'basicindustry')
     if isinstance(info, dict):
         nk = {_norm_key(k): str(v).strip() for k, v in info.items() if v not in (None, '', '-')}
         ind = {'macro': nk.get('macro', ''), 'sector': nk.get('sector', ''), 'industry': nk.get('industry', ''),
@@ -1282,28 +1307,60 @@ def ipo_quote_parse(obj):
     return out
 
 
+def ipo_quote(opener, sym, series='EQ'):
+    """NSE's quote of one symbol: IPO_QUOTE_URLS in turn until one gives both the listing date and the Basic Industry.
+    -> ({'listing', 'industry'} - the best found, [what each link gave])."""
+    best, said = {'listing': '', 'industry': {}}, []
+    for n, u in enumerate(IPO_QUOTE_URLS, 1):
+        if n > 1:
+            time.sleep(1.0)
+        url = u.format(s=urllib.parse.quote(sym), series=urllib.parse.quote(series or 'EQ'))
+        try:
+            status, raw = nse_get(opener, url, referer=IPO_QUOTE_PAGE.format(s=urllib.parse.quote(sym)))
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            said.append('link %d: NSE did not answer (%s)' % (n, e))
+            continue
+        if status != 200:
+            said.append('link %d: HTTP %s' % (n, status))
+            continue
+        try:
+            obj = json.loads(raw.decode('utf-8', errors='replace'))
+        except ValueError:
+            said.append('link %d: a web page came back, not data' % n)
+            continue
+        got = ipo_quote_parse(obj)
+        best = {'listing': best['listing'] or got['listing'], 'industry': best['industry'] or got['industry']}
+        if got['listing'] and got['industry']:
+            said.append('link %d: OK' % n)
+            return best, said
+        keys = sorted(obj.keys())[:12] if isinstance(obj, dict) else (['(a list of %d)' % len(obj)] if isinstance(obj, list) else [])
+        miss = [w for w, ok in (('listing date', got['listing']), ('Basic Industry', got['industry'])) if not ok]
+        said.append('link %d: no %s (answer keys: %s)' % (n, ' / '.join(miss), ', '.join(str(k) for k in keys) or 'none'))
+    return best, said
+
+
 def ipo_quotes(opener, st, main, today):
-    """NSE's quote of the closed mainboard issues whose listing date or industry is not known yet (saved per symbol)."""
+    """NSE's quote of the closed mainboard issues whose listing date or industry is not known yet (saved per symbol; the
+    longest-unasked first, at most IPO_QUOTES_PER_RUN). -> {SYM: what the links gave} of those still without a Basic Industry."""
     q = st.setdefault('quotes', {})
     keep = (today - timedelta(days=60)).isoformat()
     for k in [k for k, v in q.items() if not isinstance(v, dict) or v.get('at', '') < keep]:
         del q[k]
     t = today.isoformat()
-    todo = [r['symbol'] for r in main if r['symbol'] and r['end'] and r['end'] < t
-            and not (q.get(r['symbol'], {}).get('listing') and q.get(r['symbol'], {}).get('industry'))]
-    asked = 0
-    for sym in sorted(set(todo))[:IPO_QUOTES_PER_RUN]:
+    series = {r['symbol']: ('BE' if str(r.get('type') or '').upper() == 'BE' else 'EQ') for r in main if r['symbol']}
+    todo = {r['symbol'] for r in main if r['symbol'] and r['end'] and r['end'] < t
+            and not (q.get(r['symbol'], {}).get('listing') and q.get(r['symbol'], {}).get('industry'))}
+    missing = {}
+    for sym in sorted(todo, key=lambda x: ((q.get(x) or {}).get('asked', ''), x))[:IPO_QUOTES_PER_RUN]:
         time.sleep(1.0)
-        asked += 1
-        try:
-            status, raw = nse_get(opener, IPO_QUOTE_URL.format(s=urllib.parse.quote(sym)), referer=IPO_QUOTE_PAGE.format(s=sym))
-            got = ipo_quote_parse(json.loads(raw.decode('utf-8', errors='replace'))) if status == 200 else None
-        except (OSError, urllib.error.URLError, socket.timeout, ValueError):
-            got = None
+        got, said = ipo_quote(opener, sym, series.get(sym, 'EQ'))
         old = q.get(sym) or {}
-        q[sym] = {'at': t, 'listing': (got or {}).get('listing') or old.get('listing', ''),
-                  'industry': (got or {}).get('industry') or old.get('industry') or {}}
-    return asked
+        q[sym] = {'at': t, 'asked': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'listing': got['listing'] or old.get('listing', ''),
+                  'industry': got['industry'] or old.get('industry') or {}}
+        if not q[sym]['industry']:
+            q[sym]['why'] = '; '.join(said)
+            missing[sym] = q[sym]['why']
+    return missing
 
 
 def ipo_bhav(opener, d):
@@ -1375,10 +1432,10 @@ def ipo_step(cfg, today=None):
             return
         st = ipo_load_state()
         main = [r for r in records if ipo_kind(r) == 'main' and r['symbol']]
-        extra = {}
+        extra, missing = {}, {}
         try:
             holidays = ipo_holidays(opener, st, today)
-            ipo_quotes(opener, st, main, today)
+            missing = ipo_quotes(opener, st, main, today)
             q = st.get('quotes') or {}
             listed = {}
             for r in main:
@@ -1435,6 +1492,10 @@ def ipo_step(cfg, today=None):
             log('IPO lists: could not read %s this time - %s' % (', '.join(failed), '; '.join(notes)))
         elif notes:
             log('IPO lists: %s' % '; '.join(notes))
+        if missing:
+            syms = sorted(missing)
+            log('IPO lists: NSE quote gave no Basic Industry yet for %s (%s: %s) - asked again next round.'
+                % (', '.join(syms[:8]) + (' +%d' % (len(syms) - 8) if len(syms) > 8 else ''), syms[0], missing[syms[0]]))
     except Exception as e:   # never let the IPO lists stop the screener work
         log('IPO lists: unexpected problem - %s' % e)
 
@@ -3011,6 +3072,7 @@ def cmd_test(cfg):
     print('4) NSE IPO lists from this computer ...')
     try:
         opener = ipo_session()
+        listed_main = []
         for which, urls in IPO_SOURCES:
             recs, err, keys = ipo_fetch_list(opener, which, urls, date.today())
             if recs is None:
@@ -3028,6 +3090,14 @@ def cmd_test(cfg):
                 print('            types: %s' % ', '.join('%s %d' % kv for kv in sorted(types.items())))
             if recs and not any(r['start'] or r['end'] for r in recs):
                 print('            dates not recognised - NSE fields: %s' % ', '.join(keys[:20]))
+            listed_main.extend(r for r in main if r['symbol'] and r['listing'])
+        # NSE's quote: the listing date + Basic Industry the IPO workflow needs (the newest listed issue, else TCS)
+        pick = max(listed_main, key=lambda r: r['listing']) if listed_main else {'symbol': 'TCS', 'type': 'EQ'}
+        got, said = ipo_quote(opener, pick['symbol'], 'BE' if str(pick.get('type') or '').upper() == 'BE' else 'EQ')
+        print('   %-8s %s - %s: listing date %s, Basic Industry %s' % ('quote:', 'OK' if got['listing'] and got['industry'] else 'PROBLEM',
+              pick['symbol'], got['listing'] or 'not found', (got['industry'] or {}).get('basic') or 'not found'))
+        for line in said:
+            print('            %s' % line)
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
