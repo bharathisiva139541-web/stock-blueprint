@@ -107,12 +107,15 @@ RESULTS CALENDAR (the Results tab fills itself)
 Once a day (the first round of the day) the program reads NSE's Event Calendar - All Forthcoming,
 Equity and SME - and sends the board meetings whose purpose has "Financial Results" (Financial
 Results, Financial Results/Dividend, .../Fund Raising, .../Other business matters ...). The sheet ADDS
-only the companies that are not on the Results tab yet, at the bottom, in the same format (SYMBOL,
-COMPANY, PURPOSE, DATE). Rows already there are never changed or removed - clear the tab yourself after
-the results season as usual. No email. Main's Result Date (and so the Results Day check and the
+the companies that are not on the Results tab yet, at the bottom, in the same format (SYMBOL,
+COMPANY, PURPOSE, DATE). When NSE MOVES the meeting of a company already on the tab, its date (and
+purpose) is changed - unless that result already came out (Results Tracker: Updated) or the dates are
+more than 45 days apart (another season). Rows are never removed - clear the tab yourself after the
+results season as usual. No email. Main's Result Date (and so the Results Day check and the
 Upcoming Results email) then sees the new companies by itself.
  - Needs the latest Code.gs + Code2.gs AND the New version deploy.
- - bridge.log: "Results calendar: N forthcoming result meeting(s) on NSE ...; N added to the Results tab".
+ - bridge.log: "Results calendar: N forthcoming result meeting(s) on NSE ...; N added to the Results tab;
+   N date(s) changed by NSE - SYMBOL 05/11 -> 07/11".
  - calendar_state.json remembers the day it last ran. CalendarNow.bat runs it again at once.
  - TestConnection line 7 checks NSE (sends nothing). To switch it off: "calendar": false in config.json.
 

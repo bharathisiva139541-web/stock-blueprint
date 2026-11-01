@@ -10929,14 +10929,19 @@ function ab_annMorningEmail_(store, now) {
  * program (screener_bridge.py cal_step) reads NSE's Event Calendar,
  * All Forthcoming, Equity and SME, and posts the "Financial Results..."
  * meetings - [SYMBOL, company, purpose, 'yyyy-mm-dd'] - to doPost action
- * 'calendar' (ab_calFromBridge_). Owner's rules: add ONLY the companies
- * not on the tab yet (rows already there are never changed or removed -
- * the owner clears the tab after each season), the same format (SYMBOL,
- * COMPANY, PURPOSE, DATE; the DATE cells written like the ones already
- * there: text such as 01-Nov-26, or real dates with their number
- * format), at the bottom, by date; no email.
+ * 'calendar' (ab_calFromBridge_). Owner's rules: add the companies not
+ * on the tab yet, the same format (SYMBOL, COMPANY, PURPOSE, DATE; the
+ * DATE cells written like the ones already there: text such as
+ * 01-Nov-26, or real dates with their number format), at the bottom, by
+ * date; no email. Rows are never removed (the owner clears the tab after
+ * each season). A company already on the tab whose meeting NSE MOVED
+ * (owner, 01-Nov-2026) gets the new date (and purpose) in the rows of the
+ * old date - only when the two dates are at most AB_CAL_MOVE_DAYS apart
+ * (further apart = another season's meeting) and the Results Tracker
+ * does not already show that result as Updated (then it took place).
  *****************************************************************/
 const AB_CAL_SYM_RE = /^[A-Z0-9][A-Z0-9&._-]{0,29}$/;
+const AB_CAL_MOVE_DAYS = 45;
 
 function ab_calFromBridge_(req) {
   const rows = Array.isArray(req.rows) ? req.rows : null;
@@ -10957,11 +10962,17 @@ function ab_calFromBridge_(req) {
     }
   }
   if (h === -1) return { ok: false, error: 'the Results tab has no SYMBOL / DATE header row' };
-  const have = {};
+  const have = {}, first = {};                             // symbol -> the day of its first row (what Main's formula reads)
   let last = h;
   for (let r = h + 1; r < vals.length; r++) {
     const s = String(vals[r][cSym] || '').trim().toUpperCase();
-    if (s) { have[s] = true; last = r; }
+    if (!s) continue;
+    have[s] = true;
+    last = r;
+    if (first[s] === undefined) {
+      const d = ab_rsToDate_(vals[r][cDate]);
+      first[s] = d ? ab_rsDayKey_(d) : '';
+    }
   }
   // how the DATE cells already there are written (the Result Date formula reads them as they are)
   let style = { kind: 'text', year4: false, fmt: '' };
@@ -10976,24 +10987,48 @@ function ab_calFromBridge_(req) {
     const t = String(d === null || d === undefined ? '' : d).trim();
     if (/^\d{1,2}-[A-Za-z]{3}-\d{2}(\d{2})?$/.test(t)) { style = { kind: 'text', year4: /\d{4}$/.test(t), fmt: '' }; break; }
   }
-  const add = [], seen = {};
+  const add = [], seen = {}, moves = [];
   rows.slice(0, 5000).forEach(function (x) {
     if (!Array.isArray(x)) return;
     const sym = String(x[0] || '').trim().toUpperCase();
     const purpose = String(x[2] || '').replace(/\s+/g, ' ').trim();
     const iso = String(x[3] || '').trim();
-    if (!AB_CAL_SYM_RE.test(sym) || have[sym] || seen[sym]) return;
+    if (!AB_CAL_SYM_RE.test(sym) || seen[sym]) return;
     if (!/financial result/i.test(purpose) || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
     seen[sym] = true;
-    add.push([sym, String(x[1] || '').replace(/\s+/g, ' ').trim().slice(0, 150), purpose.slice(0, 150), iso]);
+    if (!have[sym]) add.push([sym, String(x[1] || '').replace(/\s+/g, ' ').trim().slice(0, 150), purpose.slice(0, 150), iso]);
+    else if (first[sym] && first[sym] !== iso && Math.abs(ab_rsDaysBetween_(first[sym], iso)) <= AB_CAL_MOVE_DAYS) {
+      moves.push({ sym: sym, from: first[sym], to: iso, purpose: purpose.slice(0, 150) });
+    }
   });
-  if (!add.length) return { ok: true, received: rows.length, added: [] };
-  add.sort(function (a, b) { return a[3] < b[3] ? -1 : a[3] > b[3] ? 1 : (a[0] < b[0] ? -1 : 1); });
-  const dateOf = function (iso) {
+  const dateOf = function (iso, st) {
     const p = iso.split('-').map(Number);
-    if (style.kind === 'date') return ab_rsMakeDate_(p[0], p[1] - 1, p[2]);
-    return ('0' + p[2]).slice(-2) + '-' + AB_RS_MONTHS[p[1] - 1] + '-' + (style.year4 ? String(p[0]) : String(p[0]).slice(2));
+    if (st.kind === 'date') return ab_rsMakeDate_(p[0], p[1] - 1, p[2]);
+    return ('0' + p[2]).slice(-2) + '-' + AB_RS_MONTHS[p[1] - 1] + '-' + (st.year4 ? String(p[0]) : String(p[0]).slice(2));
   };
+  // meetings NSE moved: the rows of the old date get the new one - unless the result already came out on it
+  const moved = [];
+  if (moves.length) {
+    const done = {};
+    try {
+      ab_rsReadTracker_().list.forEach(function (t) { if (t.status === 'Updated') done[t.symbol + '|' + t.rdKey] = true; });
+    } catch (e) { /* no tracker yet */ }
+    moves.forEach(function (m) {
+      if (done[m.sym + '|' + m.from]) return;
+      for (let r = h + 1; r < vals.length; r++) {
+        if (String(vals[r][cSym] || '').trim().toUpperCase() !== m.sym) continue;
+        const d = ab_rsToDate_(vals[r][cDate]);
+        if (!d || ab_rsDayKey_(d) !== m.from) continue;
+        const cur = vals[r][cDate];
+        const st = cur instanceof Date ? { kind: 'date' } : { kind: 'text', year4: /\d{4}\s*$/.test(String(cur)) };
+        sh.getRange(r + 1, cDate + 1).setValue(dateOf(m.to, st));
+        if (cPur !== -1) sh.getRange(r + 1, cPur + 1).setValue(m.purpose);
+      }
+      moved.push(m.sym + ' ' + ab_rsKeyToDmy_(m.from).slice(0, 5) + ' -> ' + ab_rsKeyToDmy_(m.to).slice(0, 5));
+    });
+  }
+  if (!add.length) return { ok: true, received: rows.length, added: [], moved: moved };
+  add.sort(function (a, b) { return a[3] < b[3] ? -1 : a[3] > b[3] ? 1 : (a[0] < b[0] ? -1 : 1); });
   const width = Math.max(cSym, cCo, cPur, cDate) + 1;
   const out = add.map(function (a) {
     const row = [];
@@ -11001,7 +11036,7 @@ function ab_calFromBridge_(req) {
     row[cSym] = a[0];
     if (cCo !== -1) row[cCo] = a[1];
     if (cPur !== -1) row[cPur] = a[2];
-    row[cDate] = dateOf(a[3]);
+    row[cDate] = dateOf(a[3], style);
     return row;
   });
   const start = last + 2;                                  // the row below the last company (1-based)
@@ -11014,5 +11049,5 @@ function ab_calFromBridge_(req) {
   if (style.kind === 'text') dates.setNumberFormat('@');
   else if (style.fmt) dates.setNumberFormat(style.fmt);
   sh.getRange(start, 1, out.length, width).setValues(out);
-  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }) };
+  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved };
 }

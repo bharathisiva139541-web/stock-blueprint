@@ -1375,8 +1375,8 @@ def ann_step(cfg, today=None):
 # Owner, 01-Nov-2026: the Results tab (NSE's results calendar, pasted by hand a week earlier - Main's Result Date
 # reads it) missed POWERGRID and SAIPARENT, added by NSE after the paste. Once a day the first round reads NSE's
 # Event Calendar, "All Forthcoming", Equity and SME, keeps the "Financial Results..." meetings and sends them; the
-# sheet adds only the companies not on the tab yet (rows already there are never changed - the owner clears the
-# tab after each results season). No email.
+# sheet adds the companies not on the tab yet and, for a company already there whose meeting NSE moved, changes the
+# date (rows are never removed - the owner clears the tab after each results season). No email.
 CAL_SOURCES = (('equity', 'https://www.nseindia.com/api/event-calendar?index=equities'),
                ('SME', 'https://www.nseindia.com/api/event-calendar?index=sme'))
 CAL_PAGE = 'https://www.nseindia.com/companies-listing/corporate-filings-event-calendar'
@@ -1485,9 +1485,10 @@ def cal_step(cfg, today=None, force=False):
                        'Manage deployments > pencil > Version: New version > Deploy')
             log('Results calendar: the sheet refused - %s' % err)
             return
-        added = res.get('added') or []
-        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s.'
-            % (len(rows), ', '.join(counts), len(added), (' - ' + ', '.join(added[:15]) + (' ...' if len(added) > 15 else '')) if added else ''))
+        added, moved = res.get('added') or [], res.get('moved') or []
+        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s%s.'
+            % (len(rows), ', '.join(counts), len(added), (' - ' + ', '.join(added[:15]) + (' ...' if len(added) > 15 else '')) if added else '',
+               ('; %d date(s) changed by NSE - %s' % (len(moved), ', '.join(moved[:10]) + (' ...' if len(moved) > 10 else ''))) if moved else ''))
         if problems:
             log('Results calendar: %s - tried again tomorrow.' % '; '.join(problems))
         else:
