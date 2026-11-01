@@ -8861,6 +8861,9 @@ function doPost(e) {
     if (req.action === 'results_ann') {
       return ab_bridgeJson_(ab_annFromBridge_(req));
     }
+    if (req.action === 'calendar') {
+      return ab_bridgeJson_(ab_calFromBridge_(req));
+    }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return ab_bridgeJson_({ ok: false, error: err.message });

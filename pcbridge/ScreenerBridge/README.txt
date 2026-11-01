@@ -12,12 +12,13 @@ it does one more round 1 hour after that (again only with internet).
 Nothing runs continuously. If you stay logged in for days, use RunNow.bat when you want a fresh round.
  - RunNow.bat       do one round right now
  - Reschedule.bat   remove the old hourly schedule and use the log-in schedule (keeps your settings)
- - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists, end-of-day files, announcements) + moneycontrol access
+ - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists, end-of-day files, announcements, event calendar) + moneycontrol access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
  - IposNow.bat          read NSE's IPO lists and update the sheet's IPO Tracker tab right now
  - EodNow.bat           download NSE's end-of-day files (Delivery %, 52-week highs, market statistics) right now
  - History60Now.bat       send the daily candles the sheet's History60 tab is missing right now (the first fill)
  - AnnouncementsNow.bat   send WHEN NSE got each company's results (last 4 days) right now
+ - CalendarNow.bat        add NSE's forthcoming result meetings missing from the Results tab right now
  - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -102,6 +103,19 @@ quarterly-result filings to the sheet with their exact time. The sheet shows:
  - bridge.log shows "Result announcements: ..." lines. TestConnection line 6 checks NSE (sends nothing).
  - To switch it off: in config.json add  "announcements": false
 
+RESULTS CALENDAR (the Results tab fills itself)
+Once a day (the first round of the day) the program reads NSE's Event Calendar - All Forthcoming,
+Equity and SME - and sends the board meetings whose purpose has "Financial Results" (Financial
+Results, Financial Results/Dividend, .../Fund Raising, .../Other business matters ...). The sheet ADDS
+only the companies that are not on the Results tab yet, at the bottom, in the same format (SYMBOL,
+COMPANY, PURPOSE, DATE). Rows already there are never changed or removed - clear the tab yourself after
+the results season as usual. No email. Main's Result Date (and so the Results Day check and the
+Upcoming Results email) then sees the new companies by itself.
+ - Needs the latest Code.gs + Code2.gs AND the New version deploy.
+ - bridge.log: "Results calendar: N forthcoming result meeting(s) on NSE ...; N added to the Results tab".
+ - calendar_state.json remembers the day it last ran. CalendarNow.bat runs it again at once.
+ - TestConnection line 7 checks NSE (sends nothing). To switch it off: "calendar": false in config.json.
+
 MONEYCONTROL (first figures while screener.in is late)
 moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies
 whose results are due and whose screener.in page does NOT show the new quarter yet, the program also
@@ -118,7 +132,7 @@ email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace the
  - EPS (for TTM EPS) comes from moneycontrol's results page; when it cannot be used, bridge.log says why
    ("no EPS: ...") and TTM EPS waits for screener.in.
 Checks (they send nothing):
- - TestConnection.bat line 7 looks up TCS on moneycontrol and prints its latest quarter.
+ - TestConnection.bat line 8 looks up TCS on moneycontrol and prints its latest quarter.
  - MoneycontrolCheck.bat asks for symbols (for example: TCS ACUTAAS) and tries each of moneycontrol's
    sources (results widget, results page and its page data, old pages). For each one that works it
    prints the latest quarter, revenue and net profit (with QoQ / YoY change) and EPS, then what a
