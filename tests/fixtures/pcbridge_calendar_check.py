@@ -105,14 +105,15 @@ assert len(POSTS) == 1 and LOGS[0].endswith('; 0 added to the Results tab.'), LO
 # the first live run: SME's event calendar gave no result meetings -> the Board Meetings list (from today on); the
 # sheet's answer with moved dates, new rows above old ones and some left for the next round
 BODY['/api/event-calendar?index=sme'] = json.dumps({'data': []}).encode()
-REPLY['r'] = {'ok': True, 'added': ['SMEONE'], 'moved': ['GSFC 12/10 -> 02/11'], 'above': ['ESDS 02/11 (above 24/09)'], 'later': 2}
+REPLY['r'] = {'ok': True, 'added': ['SMEONE'], 'moved': ['GSFC 12/10 -> 02/11'], 'replaced': ['ESDS 02/11 (was 24/09)'], 'removed': 3,
+              'removedSyms': ['AUGMONT', 'PRASOLCHEM'], 'later': 2}
 del POSTS[:], LOGS[:], HITS[:]
 sb.cal_step(CFG, today=date(2026, 11, 3))
 assert [r[0] + ' ' + r[3] for r in POSTS[0]['rows']] == ['AAKASH 2026-11-20', 'SMEONE 2026-11-04'], POSTS   # SMEOLD is past
 assert HITS[-1] == '/api/corporate-board-meetings?index=sme', HITS
 assert LOGS == ['Results calendar: 2 forthcoming result meeting(s) on NSE (equity 1, SME 1 (board meetings list)); 1 added to the '
-                'Results tab - SMEONE; 1 date(s) changed by NSE - GSFC 12/10 -> 02/11; 1 next-quarter meeting(s) put in a new row '
-                'above the old one - ESDS 02/11 (above 24/09); 2 more next round.'], LOGS
+                'Results tab - SMEONE; 1 date(s) changed by NSE - GSFC 12/10 -> 02/11; 1 next-quarter meeting(s) replaced the old date - '
+                'ESDS 02/11 (was 24/09); 3 old-quarter row(s) deleted - AUGMONT, PRASOLCHEM; 2 more next round.'], LOGS
 assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-02', 'rows left for the next round: not marked done'
 
 # no result meeting in either SME link: the log says what each gave (SME firms often file "Board Meeting Intimation")

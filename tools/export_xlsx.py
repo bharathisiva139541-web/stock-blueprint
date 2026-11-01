@@ -194,11 +194,11 @@ def note_table(rows, first_header, **kw):
     return {'note': str(first).strip() if first != '' else '', 'cols': t['cols'], 'rows': t['rows']}
 
 
-IPO_SECTIONS = {'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming'}
+IPO_SECTIONS = {'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming', 'listed recently': 'listed'}
 
 
 def ipo_tracker(rows):
-    """The IPO Tracker tab (filled from NSE by the PC bridge) -> {note, warning, open, closed, upcoming}
+    """The IPO Tracker tab (filled from NSE by the PC bridge) -> {note, warning, open, closed, upcoming, listed}
     (each {cols, rows}; the "None" row dropped). Code.gs ab_site_ipoTracker_ does the same."""
     out, found = {'note': '', 'warning': ''}, {}
     for i, r in enumerate(rows):
@@ -213,7 +213,7 @@ def ipo_tracker(rows):
             tb = table(rows, 'Company', start=i + 1)
             tb['rows'] = [x for x in tb['rows'] if not (x[0] == 'None' and all(v is None for v in x[1:]))]
             found[k] = tb
-    for k in ('open', 'closed', 'upcoming'):
+    for k in ('open', 'closed', 'upcoming', 'listed'):
         out[k] = found.get(k, {'cols': [], 'rows': []})
     return out
 

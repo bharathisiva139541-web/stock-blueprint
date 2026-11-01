@@ -3150,57 +3150,125 @@ function runImportPastedPriceBands() {
  * (screener_bridge.py) reads NSE's IPO lists (Market Data > IPO:
  * Current, Past Issues, Upcoming Issues) at every run and posts them
  * to doPost action 'ipos' (ab_ipotFromBridge_). The "IPO Tracker" tab
- * is rebuilt each time with three sections:
+ * is rebuilt each time with four sections:
  *   Open now                  - open for subscription today
- *   Closed - awaiting listing - closed, not listed yet
+ *   Closed - awaiting listing - closed, not listed yet (NSE's listing
+ *                               date, else the T+3 day: 3 trading days
+ *                               after the close - SEBI's timeline)
  *   Upcoming                  - opens on a later day
- * Only equity mainboard issues are kept: SME issues and debt / other
- * issues (NCDs, bonds, units - anything NSE does not type EQ) are left
- * out. The first update of each day (IST) also sends one short email
- * (Control Panel: AB_IPOT_EMAIL). Subscription figures are not read.
- * Dates come from the PC as yyyy-mm-dd.
+ *   Listed recently           - listed in the last AB_IPOT_LISTED_DAYS
+ *                               days: issue price, listing price (the
+ *                               listing day's open), gains
+ * Only equity mainboard issues are kept (NSE type EQ, or BE = a smaller
+ * issue that lists in the trade-for-trade segment): SME issues and debt /
+ * other issues (NCDs, bonds, units) are left out. The first update of
+ * each day (IST) also sends ONE email with all of it - listings today and
+ * on the next trading day first (Control Panel: AB_IPOT_EMAIL).
+ *
+ * The IPO workflow (owner, 01-Nov-2026), ab_ipoAuto_ on every update:
+ *  - each closed issue gets a row in the "New IPOs" tab (newest first,
+ *    DATE OF LISTING once NSE confirms it, a NOTE column says where it is);
+ *  - on the listing day (NSE's date, confirmed) it is added to the IPOs
+ *    tab and Main - the same as menu "Add New IPOs", once per issue
+ *    (property AB_IPO_AUTO: a stock you later delete is not added back);
+ *  - the IPOs tab's LISTING PRICE = the listing day's open (NSE
+ *    bhavcopy), filled when blank;
+ *  - Main's Basic Industry (+ Sector / Industry) from NSE's quote, filled
+ *    when blank.
+ * The PC sends with each closed issue: nseListing (NSE quote's listing
+ * date), industry {macro, sector, industry, basic}, day1 [o, h, l, c]
+ * of the listing day, last ['yyyy-mm-dd', close], issue (final price),
+ * and NSE's trading holidays. Dates come from the PC as yyyy-mm-dd.
  *****************************************************************/
 const AB_IPOT_SHEET = 'IPO Tracker';
 const AB_IPOT_EMAIL = ab_setting_('AB_IPOT_EMAIL', true);
 const AB_IPOT_EMAIL_DAY_PROP = 'AB_IPOT_EMAIL_DAY';
 const AB_IPOT_CLOSED_MAX_DAYS = 30;   // closed longer ago than this and never listed = withdrawn / stale, not shown
+const AB_IPOT_LISTED_DAYS = 14;       // "Listed recently" = listed in the last 14 days (the PC sends those)
+const AB_IPOT_HOLIDAYS_PROP = 'AB_NSE_HOLIDAYS';   // NSE's trading holidays from the PC (JSON ['yyyy-mm-dd'])
+const AB_IPO_AUTO_PROP = 'AB_IPO_AUTO';            // {SYM: {at, d: listing day handled, a: day the sheet added it, p: price done, i: industry done}}
 const AB_IPOT_HEADERS_ = ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'];
+const AB_IPOT_LISTED_HEADERS_ = ['Company', 'Symbol', 'Closes', 'Listing date', 'Issue price', 'Listing price', 'Listing gain %',
+  'Last close', 'Since issue %', 'Note'];
 const AB_IPOT_MON_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const AB_IPOT_WDAY_ = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function ab_ipotIso_(v) { const m = String(v || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[0] : ''; }
 /** yyyy-mm-dd -> a Date at midnight (for sheet cells), '' when empty. */
 function ab_ipotCell_(iso) { if (!iso) return ''; const p = iso.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
 /** yyyy-mm-dd -> "27-Oct". */
 function ab_ipotShort_(iso) { if (!iso) return '-'; const p = iso.split('-'); return p[2] + '-' + AB_IPOT_MON_[Number(p[1]) - 1]; }
+/** yyyy-mm-dd -> "Mon 02-Nov". */
+function ab_ipotDay_(iso) { const p = iso.split('-'); return AB_IPOT_WDAY_[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()] + ' ' + ab_ipotShort_(iso); }
 function ab_ipotDays_(fromIso, toIso) {
   const a = fromIso.split('-'), b = toIso.split('-');
   return Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 864e5);
 }
+/** yyyy-mm-dd + n calendar days. */
+function ab_ipotAddDays_(iso, n) {
+  const p = iso.split('-');
+  return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + n * 864e5).toISOString().slice(0, 10);
+}
+/** The n-th trading day after `iso` (weekends and NSE's holidays skipped): T+3 = ab_ipoTradingDayAfter_(close, 3, ...). */
+function ab_ipoTradingDayAfter_(iso, n, holidays) {
+  const off = {};
+  (holidays || []).forEach(function (h) { off[h] = true; });
+  let d = iso, k = 0;
+  for (let guard = 0; k < n && guard < 60; guard++) {
+    d = ab_ipotAddDays_(d, 1);
+    const p = d.split('-'), wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    if (wd !== 0 && wd !== 6 && !off[d]) k++;
+  }
+  return d;
+}
+/** NSE's trading holidays: the PC's list (kept), else the last one it sent. */
+function ab_ipotHolidays_(sent, todayIso) {
+  const props = PropertiesService.getScriptProperties();
+  const ok = (Array.isArray(sent) ? sent : []).map(String).filter(function (h) { return ab_ipotIso_(h) && h >= ab_ipotAddDays_(todayIso, -400); });
+  if (ok.length) { props.setProperty(AB_IPOT_HOLIDAYS_PROP, JSON.stringify(ok.sort())); return ok; }
+  try { const v = JSON.parse(props.getProperty(AB_IPOT_HOLIDAYS_PROP) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
 function ab_ipotIsSme_(type) { const t = String(type || '').trim(); return /SME|EMERGE/i.test(t) || /^(SM|ST)$/i.test(t); }
 /**
  * 'main' (equity mainboard), 'sme', or 'other' (debt: NCDs / bonds, REIT / InvIT units...).
- * NSE types an equity issue EQ. With no type, a symbol ending in digits and a single price
- * (no "x to y" range) is a debt issue (e.g. SMCG04 at Rs.1,000).
+ * NSE types an equity issue EQ - or BE, a smaller issue that lists in the trade-for-trade segment. With
+ * no type, a symbol ending in digits and a single price (no "x to y" range) is a debt issue (e.g. SMCG04 at Rs.1,000).
  */
 function ab_ipotKind_(rec) {
   const t = String(rec.type || '').trim();
   if (ab_ipotIsSme_(t)) return 'sme';
-  if (t) return /^(EQ|EQUITY|MAIN ?BOARD)$/i.test(t) ? 'main' : 'other';
+  if (t) return /^(EQ|BE|EQUITY|MAIN ?BOARD)$/i.test(t) ? 'main' : 'other';
   return /\d{2}$/.test(rec.symbol || '') && !/ to /i.test(rec.price || '') ? 'other' : 'main';
 }
 function ab_ipotPrice_(v) { return String(v || '').replace(/Rs\.?\s*/gi, '₹').replace(/\s+/g, ' ').trim(); }
+/** 1231 -> "1,231", 123456.5 -> "1,23,456.5" (Indian grouping, up to 2 decimals; no locale data needed). */
+function ab_ipotInr_(v) {
+  const n = Math.round(Number(v) * 100) / 100;
+  const parts = String(Math.abs(n)).split('.');
+  const i = parts[0], last3 = i.slice(-3), rest = i.slice(0, -3);
+  return (n < 0 ? '-' : '') + (rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' : '') + last3 + (parts[1] ? '.' + parts[1] : '');
+}
+function ab_ipotNum_(v) { const n = Number(String(v === null || v === undefined ? '' : v).replace(/,/g, '')); return isFinite(n) && n > 0 ? n : null; }
 
 /**
- * NSE records from the PC -> { open, closed, upcoming, sme } (mainboard only, one row per issue).
- * records: [{ list: 'current'|'past'|'upcoming', company, symbol, type, start, end, listing, price, size }].
+ * NSE records from the PC -> { open, closed, upcoming, listed, soon, sme, other } (mainboard only, one row per issue).
+ * records: [{ list: 'current'|'past'|'upcoming', company, symbol, type, start, end, listing, price, size,
+ *             issue?, nseListing?, industry?, day1?, last? }].
+ * Each kept issue gets: listing (NSE's date - its lists or its quote - or ''), expected (the T+3 day when NSE has not
+ * given one), next (the next trading day). soon = closed issues listing today or on the next trading day.
  */
-function ab_ipotClassify_(records, todayIso) {
+function ab_ipotClassify_(records, todayIso, holidays) {
   const best = {}, sme = {}, other = {};
   (Array.isArray(records) ? records : []).forEach(function (r) {
     if (!r || typeof r !== 'object') return;
+    const ind = r.industry && typeof r.industry === 'object' ? r.industry : {};
     const rec = { list: String(r.list || ''), company: String(r.company || '').trim(), symbol: String(r.symbol || '').trim().toUpperCase(),
       type: String(r.type || '').trim(), start: ab_ipotIso_(r.start), end: ab_ipotIso_(r.end), listing: ab_ipotIso_(r.listing),
-      price: ab_ipotPrice_(r.price), size: String(r.size || '').trim() };
+      price: ab_ipotPrice_(r.price), size: String(r.size || '').trim(), issue: ab_ipotNum_(r.issue), nseListing: ab_ipotIso_(r.nseListing),
+      industry: String(ind.basic || '').trim() ? { macro: String(ind.macro || '').trim().slice(0, 80), sector: String(ind.sector || '').trim().slice(0, 80),
+        industry: String(ind.industry || '').trim().slice(0, 80), basic: String(ind.basic || '').trim().slice(0, 80) } : null,
+      day1: Array.isArray(r.day1) && ab_ipotNum_(r.day1[0]) ? r.day1.slice(0, 4).map(ab_ipotNum_) : null,
+      last: Array.isArray(r.last) && ab_ipotIso_(r.last[0]) && ab_ipotNum_(r.last[1]) ? [ab_ipotIso_(r.last[0]), ab_ipotNum_(r.last[1])] : null };
     if (!rec.company && !rec.symbol) return;
     const k = rec.symbol || rec.company.toLowerCase();
     const kind = ab_ipotKind_(rec);
@@ -3210,10 +3278,16 @@ function ab_ipotClassify_(records, todayIso) {
     if (!cur) { best[k] = rec; return; }
     Object.keys(rec).forEach(function (f) { if (!cur[f] && rec[f]) cur[f] = rec[f]; });   // same issue in two lists
   });
-  const out = { open: [], closed: [], upcoming: [], sme: Object.keys(sme).length, other: Object.keys(other).length };
+  const next = ab_ipoTradingDayAfter_(todayIso, 1, holidays);
+  const since = ab_ipotAddDays_(todayIso, -AB_IPOT_LISTED_DAYS);
+  const out = { open: [], closed: [], upcoming: [], listed: [], soon: [], next: next,
+                sme: Object.keys(sme).length, other: Object.keys(other).length };
   Object.keys(best).forEach(function (k) {
     const r = best[k];
-    if (r.listing && r.listing < todayIso) return;                      // listed already
+    r.listing = r.listing || r.nseListing;
+    r.expected = !r.listing && r.end && r.end < todayIso ? ab_ipoTradingDayAfter_(r.end, 3, holidays) : '';
+    if (r.listing && r.listing < since) return;                            // listed long ago
+    if (r.listing && (r.listing < todayIso || (r.listing === todayIso && r.day1))) { out.listed.push(r); return; }
     if (r.start && r.start > todayIso) out.upcoming.push(r);
     else if (r.end && r.end >= todayIso) (r.list === 'upcoming' && !r.start ? out.upcoming : out.open).push(r);
     else if (r.end) { if (r.listing || ab_ipotDays_(r.end, todayIso) <= AB_IPOT_CLOSED_MAX_DAYS) out.closed.push(r); }
@@ -3224,42 +3298,76 @@ function ab_ipotClassify_(records, todayIso) {
     return function (a, b) { return (a[f] || '9999') < (b[f] || '9999') ? -1 : (a[f] || '9999') > (b[f] || '9999') ? 1 :
       (a[g] || '9999') < (b[g] || '9999') ? -1 : (a[g] || '9999') > (b[g] || '9999') ? 1 : a.company < b.company ? -1 : 1; };
   };
+  out.closed.forEach(function (r) { r.due = r.listing || r.expected; });
   out.open.sort(by('end', 'start'));
-  out.closed.sort(by('listing', 'end'));
+  out.closed.sort(by('due', 'end'));
   out.upcoming.sort(by('start', 'end'));
+  out.listed.sort(function (a, b) { return a.listing < b.listing ? 1 : a.listing > b.listing ? -1 : a.company < b.company ? -1 : 1; });
+  out.closed.forEach(function (r) { if (r.due === todayIso || r.due === next) out.soon.push(r); });
   return out;
 }
 
-/** One line about where the issue stands, e.g. "Closes in 2 days", "Lists on 30-Oct". */
-function ab_ipotNote_(section, r, todayIso) {
+/** "lists today" / "lists tomorrow" / "lists on Mon 02-Nov (next trading day)" / "lists on 05-Nov". */
+function ab_ipotWhen_(day, todayIso, next) {
+  if (day === todayIso) return 'today';
+  if (day === ab_ipotAddDays_(todayIso, 1)) return 'tomorrow';
+  if (day === next) return 'on ' + ab_ipotDay_(day) + ' (next trading day)';
+  return 'on ' + ab_ipotShort_(day);
+}
+/** One line about where the issue stands, e.g. "Closes in 2 days", "Lists on 30-Oct", "Expected ... (T+3)". */
+function ab_ipotNote_(section, r, todayIso, next) {
   const days = function (n, word) { return n === 0 ? word + ' today' : n === 1 ? word + ' tomorrow' : word + ' in ' + n + ' days'; };
   if (section === 'open') return r.end ? days(ab_ipotDays_(todayIso, r.end), 'Closes') : 'Open';
-  if (section === 'closed') return !r.listing ? 'Listing date not announced' : r.listing === todayIso ? 'Lists today' : 'Lists on ' + ab_ipotShort_(r.listing);
+  if (section === 'closed') {
+    if (r.listing) return 'Lists ' + ab_ipotWhen_(r.listing, todayIso, next) + ' (NSE)';
+    if (!r.expected) return 'Listing date not announced';
+    if (r.expected < todayIso) return 'Expected on ' + ab_ipotShort_(r.expected) + ' (T+3) - not listed yet, check NSE';
+    return 'Expected to list ' + ab_ipotWhen_(r.expected, todayIso, next) + ' (T+3, not confirmed by NSE yet)';
+  }
+  if (section === 'listed') {
+    return (r.listing === todayIso ? 'Listed today' : 'Listed on ' + ab_ipotShort_(r.listing)) +
+      (r.last && r.last[0] !== r.listing ? '; last close on ' + ab_ipotShort_(r.last[0]) : '');
+  }
   return r.start ? days(ab_ipotDays_(todayIso, r.start), 'Opens') : 'Dates not announced';
+}
+/** Listing price, listing gain, last close and change since the issue of a listed issue (fractions, '' when unknown). */
+function ab_ipotGains_(r) {
+  const open = r.day1 ? r.day1[0] : null;
+  const last = r.last ? r.last[1] : r.day1 ? r.day1[3] : null;
+  return { open: open || '', gain: open && r.issue ? open / r.issue - 1 : '', last: last || '', since: last && r.issue ? last / r.issue - 1 : '' };
 }
 
 function ab_ipotSections_(c) {
-  return [['open', 'Open now', c.open], ['closed', 'Closed - awaiting listing', c.closed], ['upcoming', 'Upcoming', c.upcoming]];
+  return [['open', 'Open now', c.open], ['closed', 'Closed - awaiting listing', c.closed], ['upcoming', 'Upcoming', c.upcoming],
+          ['listed', 'Listed recently', c.listed]];
 }
 
 /** Rebuilds the IPO Tracker tab (a snapshot - nothing on it is kept between updates). */
 function ab_ipotWriteTab_(c, fetchedAt, failed, todayIso) {
   const sh = ab_getOrCreateSheet_(AB_IPOT_SHEET);
-  const W = AB_IPOT_HEADERS_.length;
+  const W = AB_IPOT_LISTED_HEADERS_.length;
   const pad = function (a) { while (a.length < W) a.push(''); return a; };
   const rows = [], titles = [], heads = [], data = [];
-  rows.push(pad(['IPO Tracker - mainboard equity IPOs on NSE (SME and debt issues left out)']));
+  rows.push(pad(['IPO Tracker - mainboard equity IPOs on NSE (EQ and BE; SME and debt issues left out)']));
   rows.push(pad(['Updated ' + fetchedAt + ' IST from NSE, read by your PC. Unofficial summary - check the offer document before applying.']));
   if (failed.length) rows.push(pad(['Could not read from NSE this time: ' + failed.join(', ') + ' - those sections may be incomplete.']));
   ab_ipotSections_(c).forEach(function (s) {
+    const listed = s[0] === 'listed';
     rows.push(pad([]));
     titles.push(rows.length + 1); rows.push(pad([s[1] + ' (' + s[2].length + ')']));
-    heads.push(rows.length + 1); rows.push(AB_IPOT_HEADERS_.slice());
+    heads.push(rows.length + 1); rows.push(pad((listed ? AB_IPOT_LISTED_HEADERS_ : AB_IPOT_HEADERS_).slice()));
     if (!s[2].length) { rows.push(pad(['None'])); return; }
-    data.push([rows.length + 1, s[2].length]);
+    data.push([rows.length + 1, s[2].length, s[0]]);
     s[2].forEach(function (r) {
-      rows.push([r.company || r.symbol, r.symbol, ab_ipotCell_(r.start), ab_ipotCell_(r.end), ab_ipotCell_(r.listing),
-                 r.price, r.size, ab_ipotNote_(s[0], r, todayIso)]);
+      if (listed) {
+        const g = ab_ipotGains_(r);
+        rows.push([r.company || r.symbol, r.symbol, ab_ipotCell_(r.end), ab_ipotCell_(r.listing), r.issue || '', g.open, g.gain, g.last, g.since,
+                   ab_ipotNote_('listed', r, todayIso, c.next)]);
+        return;
+      }
+      rows.push(pad([r.company || r.symbol, r.symbol, ab_ipotCell_(r.start), ab_ipotCell_(r.end),
+                     ab_ipotCell_(s[0] === 'closed' ? r.listing || r.expected : r.listing),
+                     r.price, r.size, ab_ipotNote_(s[0], r, todayIso, c.next)]));
     });
   });
   sh.clear();
@@ -3271,47 +3379,322 @@ function ab_ipotWriteTab_(c, fetchedAt, failed, todayIso) {
   titles.forEach(function (r) { sh.getRange(r, 1, 1, W).setFontWeight('bold').setBackground('#e8f0fe'); });
   heads.forEach(function (r) { sh.getRange(r, 1, 1, W).setFontWeight('bold').setBackground('#f1f3f4'); });
   data.forEach(function (d) {
+    if (d[2] === 'listed') {
+      sh.getRange(d[0], 3, d[1], 2).setNumberFormat('dd/mm/yyyy');
+      sh.getRange(d[0], 5, d[1], 2).setNumberFormat('#,##0.00');
+      sh.getRange(d[0], 7, d[1], 1).setNumberFormat('0.0%');
+      sh.getRange(d[0], 8, d[1], 1).setNumberFormat('#,##0.00');
+      sh.getRange(d[0], 9, d[1], 1).setNumberFormat('0.0%');
+      return;
+    }
     sh.getRange(d[0], 3, d[1], 3).setNumberFormat('dd/mm/yyyy');
     sh.getRange(d[0], 7, d[1], 1).setNumberFormat('[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0');   // 2,34,68,846
   });
   sh.autoResizeColumns(1, W);
 }
 
-/** The day's short email: three small tables. */
-function ab_ipotSendEmail_(c, fetchedAt, failed, todayIso) {
+/** The day's one IPO email: listings today / on the next trading day first, what the sheet did, then the four tables. */
+function ab_ipotSendEmail_(c, fetchedAt, failed, todayIso, auto) {
   const th = 'style="text-align:left;padding:5px 8px;background:#f1f3f4;border-bottom:2px solid #dadce0;font-size:12px;color:#5f6368"';
   const td = 'style="padding:5px 8px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top"';
   const esc = function (v) { return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  const money = function (v) { return v ? '₹' + ab_ipotInr_(v) : '-'; };
+  const pct = function (v) { return v === '' || v === null || v === undefined ? '-' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%'; };
+  const col = function (v) { return v === '' || v === null || v === undefined ? '#202124' : v >= 0 ? '#137333' : '#c5221f'; };
+  const name = function (r) { return '<b>' + esc(r.company || r.symbol) + '</b>' + (r.symbol ? '<br><span style="color:#5f6368;font-size:11px">' + esc(r.symbol) + '</span>' : ''); };
   let html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;color:#202124">' +
     '<h2 style="margin:0 0 4px;font-size:18px">IPO Tracker</h2>' +
-    '<p style="margin:0 0 4px;color:#5f6368;font-size:12px">Mainboard equity IPOs on NSE (SME and debt issues left out). Read from NSE by your PC at ' + esc(fetchedAt) + ' IST.' +
+    '<p style="margin:0 0 4px;color:#5f6368;font-size:12px">Mainboard equity IPOs on NSE (EQ and BE; SME and debt issues left out). Read from NSE by your PC at ' + esc(fetchedAt) + ' IST.' +
     (failed.length ? ' <b>Could not read: ' + esc(failed.join(', ')) + '.</b>' : '') + '</p>';
-  let text = 'IPO TRACKER - mainboard equity IPOs on NSE (SME and debt issues left out), read ' + fetchedAt + ' IST\n';
+  let text = 'IPO TRACKER - mainboard equity IPOs on NSE (EQ and BE; SME and debt issues left out), read ' + fetchedAt + ' IST\n';
+  // 1. listings today / on the next trading day
+  if (c.soon.length) {
+    html += '<div style="margin:12px 0;padding:10px 12px;background:#fef7e0;border:1px solid #f9d67a;border-radius:6px">' +
+      '<div style="font-weight:bold;font-size:14px;margin-bottom:6px">Listing today / next trading day</div>';
+    text += '\nLISTING TODAY / NEXT TRADING DAY\n';
+    c.soon.forEach(function (r) {
+      const line = (r.company || r.symbol) + (r.symbol ? ' (' + r.symbol + ')' : '') + ' lists ' + ab_ipotWhen_(r.due, todayIso, c.next) +
+        (r.listing ? ' - confirmed by NSE' : ' - expected (T+3), not confirmed by NSE yet') + (r.issue ? '; issue price ' + money(r.issue) : r.price ? '; price band ' + r.price : '');
+      html += '<div style="font-size:13px;margin:3px 0">' + esc(line) + '</div>';
+      text += '  ' + line + '\n';
+    });
+    html += '</div>';
+  }
+  // 2. what the sheet did
+  const did = [['Added to the New IPOs tab', auto.newIpos], ['Added to the IPOs tab and Main', auto.added],
+               ['LISTING PRICE filled (listing-day open)', auto.priced], ['Basic Industry filled in Main', auto.industry],
+               ['Could not finish', auto.problems]].filter(function (x) { return x[1] && x[1].length; });
+  if (did.length) {
+    html += '<p style="margin:10px 0;font-size:12px;color:#3c4043">' + did.map(function (x) { return '<b>' + esc(x[0]) + ':</b> ' + esc(x[1].join(', ')); }).join('<br>') + '</p>';
+    text += '\n' + did.map(function (x) { return x[0] + ': ' + x[1].join(', '); }).join('\n') + '\n';
+  }
+  // 3. the tables
   ab_ipotSections_(c).forEach(function (s) {
     html += '<h3 style="margin:16px 0 6px;font-size:15px">' + s[1] + ' (' + s[2].length + ')</h3>';
     text += '\n' + s[1].toUpperCase() + ' (' + s[2].length + ')\n';
     if (!s[2].length) { html += '<p style="margin:0;font-size:13px;color:#5f6368">None</p>'; text += '  none\n'; return; }
+    if (s[0] === 'listed') {
+      html += '<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr>' +
+        ['Company', 'Listed', 'Issue', 'Listing', 'Gain', 'Last', 'Since issue'].map(function (t) { return '<th ' + th + '>' + t + '</th>'; }).join('') + '</tr>';
+      s[2].forEach(function (r) {
+        const g = ab_ipotGains_(r);
+        html += '<tr><td ' + td + '>' + name(r) + '</td><td ' + td + '>' + ab_ipotShort_(r.listing) + '</td><td ' + td + '>' + money(r.issue) + '</td><td ' + td + '>' +
+          money(g.open) + '</td><td ' + td.replace('vertical-align:top', 'vertical-align:top;color:' + col(g.gain)) + '>' + pct(g.gain) + '</td><td ' + td + '>' +
+          money(g.last) + '</td><td ' + td.replace('vertical-align:top', 'vertical-align:top;color:' + col(g.since)) + '>' + pct(g.since) + '</td></tr>';
+        text += '  ' + (r.company || r.symbol) + (r.symbol ? ' (' + r.symbol + ')' : '') + ': listed ' + ab_ipotShort_(r.listing) + ', issue ' + money(r.issue) +
+          ', listing ' + money(g.open) + ' (' + pct(g.gain) + '), last ' + money(g.last) + ' (' + pct(g.since) + ' since issue)\n';
+      });
+      html += '</table>';
+      return;
+    }
     html += '<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr>' +
       ['Company', 'Opens', 'Closes', s[0] === 'closed' ? 'Listing' : 'Price range', ''].map(function (t) { return '<th ' + th + '>' + t + '</th>'; }).join('') + '</tr>';
     s[2].forEach(function (r) {
-      const note = ab_ipotNote_(s[0], r, todayIso);
-      html += '<tr><td ' + td + '><b>' + esc(r.company || r.symbol) + '</b>' + (r.symbol ? '<br><span style="color:#5f6368;font-size:11px">' + esc(r.symbol) + '</span>' : '') +
-        '</td><td ' + td + '>' + ab_ipotShort_(r.start) + '</td><td ' + td + '>' + ab_ipotShort_(r.end) + '</td><td ' + td + '>' +
-        (s[0] === 'closed' ? ab_ipotShort_(r.listing) : esc(r.price || '-')) + '</td><td ' + td + ' style="color:#5f6368">' + esc(note) + '</td></tr>';
+      const note = ab_ipotNote_(s[0], r, todayIso, c.next);
+      const listing = s[0] === 'closed' ? ab_ipotShort_(r.listing || r.expected) + (r.listing ? '' : '*') : '';
+      html += '<tr><td ' + td + '>' + name(r) + '</td><td ' + td + '>' + ab_ipotShort_(r.start) + '</td><td ' + td + '>' + ab_ipotShort_(r.end) + '</td><td ' + td + '>' +
+        (s[0] === 'closed' ? esc(listing) : esc(r.price || '-')) + '</td><td ' + td + ' style="color:#5f6368">' + esc(note) + '</td></tr>';
       text += '  ' + (r.company || r.symbol) + (r.symbol ? ' (' + r.symbol + ')' : '') + ': ' + ab_ipotShort_(r.start) + ' to ' + ab_ipotShort_(r.end) +
-        (s[0] === 'closed' ? ', listing ' + ab_ipotShort_(r.listing) : r.price ? ', ' + r.price : '') + ' - ' + note + '\n';
+        (s[0] === 'closed' ? ', listing ' + listing : r.price ? ', ' + r.price : '') + ' - ' + note + '\n';
     });
     html += '</table>';
+    if (s[0] === 'closed' && s[2].some(function (r) { return !r.listing; })) {
+      html += '<p style="margin:4px 0 0;font-size:11px;color:#5f6368">* expected: the T+3 day (3 trading days after the close), until NSE confirms it.</p>';
+    }
   });
   html += '<p style="margin:16px 0 0;color:#5f6368;font-size:11px">Details: the "' + AB_IPOT_SHEET + '" tab. Dates from NSE; not advice.</p></div>';
-  const subject = 'IPO Tracker (' + ab_ipotShort_(todayIso) + '): ' + c.open.length + ' open, ' + c.closed.length + ' awaiting listing, ' +
-    c.upcoming.length + ' upcoming';
+  const soon = function (when) {
+    const s = c.soon.filter(function (r) { return when === 'today' ? r.due === todayIso : r.due !== todayIso; }).map(function (r) { return r.symbol || r.company; });
+    return s.length ? s.slice(0, 4).join(', ') + (s.length > 4 ? ' +' + (s.length - 4) : '') : '';
+  };
+  const head = [soon('today') ? soon('today') + ' list' + (c.soon.filter(function (r) { return r.due === todayIso; }).length > 1 ? '' : 's') + ' today' : '',
+                soon('next') ? soon('next') + ' on ' + ab_ipotDay_(c.next) : ''].filter(String).join('; ');
+  const subject = 'IPO Tracker (' + ab_ipotShort_(todayIso) + '): ' + (head ? head + ' | ' : '') + c.open.length + ' open, ' + c.closed.length + ' awaiting listing, ' +
+    c.upcoming.length + ' upcoming, ' + c.listed.length + ' listed recently';
   return ab_sendMail_({ to: AB_EMAIL_TO, subject: subject, body: text, htmlBody: html });
 }
 
+/** AB_IPO_AUTO: what the workflow already did per issue (kept 60 days). */
+function ab_ipoAutoLoad_(todayIso) {
+  let v = {};
+  try { v = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_IPO_AUTO_PROP) || '{}') || {}; } catch (e) { v = {}; }
+  const keep = ab_ipotAddDays_(todayIso, -60), out = {};
+  Object.keys(v).forEach(function (k) { if (v[k] && typeof v[k] === 'object' && String(v[k].at || '') >= keep) out[k] = v[k]; });
+  return out;
+}
+
 /**
- * PC bridge: NSE's IPO lists. req = { fetchedAt: 'yyyy-mm-dd HH:MM', failed: ['past', ...], records: [...] }.
- * Rebuilds the tab; emails once per IST day (the first update of the day).
+ * The "New IPOs" tab: each closed issue gets a row (newest first, under the header): COMPANY NAME, SECURITY TYPE, Symbol,
+ * DATE OF LISTING (only NSE's own date - the menu "Add New IPOs" takes a row once that day has come) and NOTE. Rows already
+ * there (pasted by hand too) get the date when it was blank, and the note. DATE OF LISTING is written like the cells there.
+ */
+function ab_ipoNewIposTab_(issues, todayIso, next, st, out) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_NEWIPO_PASTE_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AB_NEWIPO_PASTE_SHEET);
+    sh.getRange(1, 1, 1, 5).setValues([['COMPANY NAME', 'SECURITY TYPE', 'Symbol', 'DATE OF LISTING', 'NOTE']]).setFontWeight('bold').setBackground('#f1f3f4');
+    sh.setFrozenRows(1);
+  }
+  const grid = sh.getDataRange().getValues();
+  let h = -1, c = {};
+  for (let r = 0; r < Math.min(5, grid.length); r++) {
+    const row = grid[r].map(ab_normHeader_);
+    if (row.indexOf('SYMBOL') !== -1 && row.indexOf('DATEOFLISTING') !== -1) {
+      h = r;
+      c = { co: row.indexOf('COMPANYNAME'), type: row.indexOf('SECURITYTYPE'), sym: row.indexOf('SYMBOL'), date: row.indexOf('DATEOFLISTING'), note: row.indexOf('NOTE') };
+      break;
+    }
+  }
+  if (h === -1) throw new Error('the "' + AB_NEWIPO_PASTE_SHEET + '" tab has no Symbol / DATE OF LISTING header row');
+  if (c.note === -1) {
+    let w = grid[h].length;
+    while (w > 0 && String(grid[h][w - 1]).trim() === '') w--;
+    c.note = w;
+    sh.getRange(h + 1, c.note + 1).setValue('NOTE').setFontWeight('bold');
+  }
+  const width = Math.max(c.co, c.type, c.sym, c.date, c.note) + 1;
+  const have = {};
+  let style = null;                                        // how the DATE OF LISTING cells there are written: the first filled one
+  for (let r = h + 1; r < grid.length; r++) {
+    const s = String(grid[r][c.sym] === undefined ? '' : grid[r][c.sym]).trim().toUpperCase();
+    if (s && have[s] === undefined) have[s] = r;
+    const d = grid[r][c.date];
+    if (!style && d instanceof Date) {
+      let fmt = '';
+      try { fmt = sh.getRange(r + 1, c.date + 1).getNumberFormat() || ''; } catch (e) { fmt = ''; }
+      style = { kind: 'date', fmt: fmt };
+    } else if (!style && d !== '' && d !== null && d !== undefined) style = { kind: 'text', fmt: '' };
+  }
+  style = style || { kind: 'text', fmt: '' };
+  const dateCell = function (iso) {
+    if (!iso) return '';
+    const p = iso.split('-');
+    return style.kind === 'date' ? ab_ipotCell_(iso) : p[2] + '-' + AB_IPOT_MON_[Number(p[1]) - 1] + '-' + p[0].slice(2);
+  };
+  const noteOf = function (r) {
+    const a = st[r.symbol] && st[r.symbol].a;
+    if (a) return 'Added to the IPOs tab + Main on ' + ab_ipotShort_(a);
+    if (r.listing) return (r.listing < todayIso ? 'Listed on ' : 'Lists on ') + ab_ipotShort_(r.listing) + ' (NSE)';
+    if (r.expected) return 'Closed ' + ab_ipotShort_(r.end) + '; listing expected ' + ab_ipotShort_(r.expected) + ' (T+3)';
+    return 'Closed ' + ab_ipotShort_(r.end);
+  };
+  const fresh = [];
+  issues.forEach(function (r) {
+    const at = have[r.symbol];
+    if (at === undefined) { fresh.push(r); return; }
+    const cur = grid[at][c.date];
+    if ((cur === '' || cur === null || cur === undefined) && r.listing) {
+      const cell = sh.getRange(at + 1, c.date + 1);
+      if (style.kind === 'text') cell.setNumberFormat('@'); else if (style.fmt) cell.setNumberFormat(style.fmt);
+      cell.setValue(dateCell(r.listing));
+    }
+    const note = noteOf(r);
+    if (String(grid[at][c.note] === undefined ? '' : grid[at][c.note]) !== note) sh.getRange(at + 1, c.note + 1).setValue(note);
+  });
+  if (!fresh.length) return;
+  fresh.sort(function (a, b) { return (b.end || '') < (a.end || '') ? -1 : (b.end || '') > (a.end || '') ? 1 : a.symbol < b.symbol ? -1 : 1; });
+  const lines = fresh.map(function (r) {
+    const row = [];
+    for (let k = 0; k < width; k++) row.push('');
+    if (c.co !== -1) row[c.co] = r.company;
+    if (c.type !== -1) row[c.type] = /^BE$/i.test(r.type) ? 'BE' : 'EQ';
+    row[c.sym] = r.symbol;
+    row[c.date] = dateCell(r.listing);
+    row[c.note] = noteOf(r);
+    return row;
+  });
+  const top = h + 2, hasBelow = grid.length > h + 1;
+  sh.insertRowsAfter(h + 1, lines.length);
+  if (hasBelow) {
+    try { sh.getRange(top + lines.length, 1, 1, width).copyFormatToRange(sh, 1, width, top, top + lines.length - 1); } catch (e) { /* cosmetic */ }
+  }
+  const dates = sh.getRange(top, c.date + 1, lines.length, 1);
+  if (style.kind === 'text') dates.setNumberFormat('@'); else if (style.fmt) dates.setNumberFormat(style.fmt);
+  sh.getRange(top, 1, lines.length, width).setValues(lines);
+  fresh.forEach(function (r) { out.newIpos.push(r.symbol); });
+}
+
+/**
+ * On the listing day (NSE's date, confirmed) an issue goes to the IPOs tab and Main - like menu "Add New IPOs", once per issue
+ * (AB_IPO_AUTO .a; a stock you delete later is not added back). Main: the formula columns copied from the last stock, the
+ * NSE name in StockName; the IPOs tab: listing date and LISTING PRICE (the listing day's open, when known).
+ */
+function ab_ipoAddListed_(due, todayIso, st, out) {
+  if (!due.length) return;
+  due.sort(function (a, b) { return a.listing < b.listing ? -1 : a.listing > b.listing ? 1 : a.symbol < b.symbol ? -1 : 1; });
+  const main = ab_getMainLayout_();
+  const inMain = {};
+  for (let r = main.headerRowIdx + 1; r < main.data.length; r++) {
+    const s = ab_cellText_(main.data[r][main.symbol]).toUpperCase();
+    if (s) inMain[s] = true;
+  }
+  const mainNew = due.filter(function (r) { return !inMain[r.symbol]; });
+  if (mainNew.length) {
+    ab_withFilterOff_(main.sheet, function () { ab_appendMainRows_(mainNew.map(function (r) { return { symbol: r.symbol }; })); });
+    if (main.name !== -1) {
+      const again = ab_getMainLayout_();
+      const want = {};
+      mainNew.forEach(function (r) { want[r.symbol] = r.company; });
+      for (let r = again.headerRowIdx + 1; r < again.data.length; r++) {
+        const s = ab_cellText_(again.data[r][again.symbol]).toUpperCase();
+        if (want[s] && !ab_cellText_(again.data[r][again.name])) again.sheet.getRange(r + 1, again.name + 1).setValue(want[s]);
+      }
+    }
+  }
+  const ipo = ab_getIpoSheetLayout_();
+  if (ipo.symbol === -1 || ipo.listingDate === -1) throw new Error(AB_IPO_SHEET + ' needs "' + AB_IPO_SYMBOL_HEADER + '" and "LISTING DATE" columns');
+  const inIpo = {};
+  let lastSymRow = ipo.headerRowIdx + 1;
+  for (let r = ipo.headerRowIdx + 1; r < ipo.data.length; r++) {
+    const s = ab_cellText_(ipo.data[r][ipo.symbol]).toUpperCase();
+    if (s) { inIpo[s] = true; lastSymRow = r + 1; }
+  }
+  const ipoNew = due.filter(function (r) { return !inIpo[r.symbol]; });
+  if (ipoNew.length) {
+    const prices = {};
+    ipoNew.forEach(function (r) { if (r.day1) prices[r.symbol] = r.day1[0]; });   // the PC sends day1 of the listing day only
+    ab_withFilterOff_(ipo.sheet, function () {
+      ab_appendIpoRows_(ipo, lastSymRow, ipoNew.map(function (r) { return { symbol: r.symbol, date: ab_ipotCell_(r.listing) }; }), prices);
+    });
+    try { fillIpoLevel_(); } catch (e) { Logger.log('fillIpoLevel_ after the IPO workflow skipped: ' + e.message); }
+  }
+  due.forEach(function (r) {
+    st[r.symbol] = Object.assign(st[r.symbol] || {}, { at: (st[r.symbol] && st[r.symbol].at) || todayIso, d: 1 });
+    if (!inMain[r.symbol] || !inIpo[r.symbol]) {
+      st[r.symbol].a = todayIso;
+      out.added.push(r.symbol + (inMain[r.symbol] ? ' (IPOs tab)' : inIpo[r.symbol] ? ' (Main)' : ''));
+    }
+  });
+}
+
+/** The IPOs tab's blank LISTING PRICE of a listed issue = the listing day's open (NSE bhavcopy, from the PC). */
+function ab_ipoListingPrices_(listed, st, todayIso, out) {
+  const todo = listed.filter(function (r) { return r.day1 && !(st[r.symbol] && st[r.symbol].p); });
+  if (!todo.length) return;
+  const ipo = ab_getIpoSheetLayout_();
+  if (ipo.symbol === -1 || ipo.listingPrice === -1) return;
+  const want = {};
+  todo.forEach(function (r) { want[r.symbol] = r; });
+  for (let r = ipo.headerRowIdx + 1; r < ipo.data.length; r++) {
+    const s = ab_cellText_(ipo.data[r][ipo.symbol]).toUpperCase();
+    const x = want[s];
+    if (!x) continue;
+    if (ab_cellText_(ipo.data[r][ipo.listingPrice]) === '') {
+      ipo.sheet.getRange(r + 1, ipo.listingPrice + 1).setValue(x.day1[0]);
+      out.priced.push(s + ' ' + x.day1[0]);
+    }
+    st[s] = Object.assign(st[s] || {}, { at: (st[s] && st[s].at) || todayIso, p: 1 });
+  }
+}
+
+/** Main's blank Basic Industry (and Sector / Industry) of a new issue, from NSE's quote. */
+function ab_ipoIndustry_(issues, st, todayIso, out) {
+  const todo = issues.filter(function (r) { return r.industry && !(st[r.symbol] && st[r.symbol].i); });
+  if (!todo.length) return;
+  const main = ab_getMainLayout_();
+  if (main.basicIndustry === -1) return;
+  const want = {};
+  todo.forEach(function (r) { want[r.symbol] = r; });
+  for (let r = main.headerRowIdx + 1; r < main.data.length; r++) {
+    const s = ab_cellText_(main.data[r][main.symbol]).toUpperCase();
+    const x = want[s];
+    if (!x) continue;
+    const ind = x.industry, row = r + 1;
+    if (ab_cellText_(main.data[r][main.basicIndustry]) === '') {
+      main.sheet.getRange(row, main.basicIndustry + 1).setValue(ind.basic);
+      const cls = ab_nseResolve_('', '', ind.basic);
+      if (main.sector !== -1 && ab_cellText_(main.data[r][main.sector]) === '') main.sheet.getRange(row, main.sector + 1).setValue(cls ? cls.sector : ind.sector);
+      if (main.industry !== -1 && ab_cellText_(main.data[r][main.industry]) === '') main.sheet.getRange(row, main.industry + 1).setValue(cls ? cls.industry : ind.industry);
+      out.industry.push(s + ': ' + ind.basic);
+    }
+    st[s] = Object.assign(st[s] || {}, { at: (st[s] && st[s].at) || todayIso, i: 1 });
+  }
+}
+
+/** The IPO workflow on each update (never throws; what failed is in .problems). */
+function ab_ipoAuto_(c, todayIso) {
+  const out = { newIpos: [], added: [], priced: [], industry: [], problems: [] };
+  const issues = c.closed.concat(c.listed).filter(function (r) { return /^[A-Z0-9][A-Z0-9&._-]{0,29}$/.test(r.symbol); });
+  if (!issues.length) return out;
+  const st = ab_ipoAutoLoad_(todayIso);
+  issues.forEach(function (r) { if (st[r.symbol]) st[r.symbol].at = st[r.symbol].at || todayIso; });
+  const step = function (what, fn) {
+    try { fn(); } catch (e) { out.problems.push(what + ': ' + e.message); Logger.log('IPO workflow - ' + what + ' failed: ' + e.message + '\n' + e.stack); }
+  };
+  step('IPOs tab + Main', function () {
+    ab_ipoAddListed_(issues.filter(function (r) { return r.listing && r.listing <= todayIso && !(st[r.symbol] && st[r.symbol].d); }), todayIso, st, out);
+  });
+  step('New IPOs tab', function () { ab_ipoNewIposTab_(issues, todayIso, c.next, st, out); });
+  step('LISTING PRICE', function () { ab_ipoListingPrices_(c.listed, st, todayIso, out); });
+  step('Basic Industry', function () { ab_ipoIndustry_(issues.filter(function (r) { return st[r.symbol] && st[r.symbol].d; }), st, todayIso, out); });
+  try { PropertiesService.getScriptProperties().setProperty(AB_IPO_AUTO_PROP, JSON.stringify(st)); } catch (e) { out.problems.push('saving: ' + e.message); }
+  return out;
+}
+
+/**
+ * PC bridge: NSE's IPO lists. req = { fetchedAt: 'yyyy-mm-dd HH:MM', failed: ['past', ...], records: [...], holidays: [...] }.
+ * Runs the IPO workflow, rebuilds the tab; emails once per IST day (the first update of the day).
  */
 function ab_ipotFromBridge_(req) {
   const records = Array.isArray(req.records) ? req.records.slice(0, 1000) : null;
@@ -3320,15 +3703,18 @@ function ab_ipotFromBridge_(req) {
   const now = new Date();
   const todayIso = Utilities.formatDate(now, AB_TZ, 'yyyy-MM-dd');
   const fetchedAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(req.fetchedAt || '')) ? String(req.fetchedAt) : Utilities.formatDate(now, AB_TZ, 'yyyy-MM-dd HH:mm');
-  const c = ab_ipotClassify_(records, todayIso);
+  const c = ab_ipotClassify_(records, todayIso, ab_ipotHolidays_(req.holidays, todayIso));
+  const auto = ab_ipoAuto_(c, todayIso);
   ab_ipotWriteTab_(c, fetchedAt, failed, todayIso);
   let emailed = false;
   const props = PropertiesService.getScriptProperties();
-  if (AB_IPOT_EMAIL && props.getProperty(AB_IPOT_EMAIL_DAY_PROP) !== todayIso && ab_ipotSendEmail_(c, fetchedAt, failed, todayIso)) {
+  if (AB_IPOT_EMAIL && props.getProperty(AB_IPOT_EMAIL_DAY_PROP) !== todayIso && ab_ipotSendEmail_(c, fetchedAt, failed, todayIso, auto)) {
     props.setProperty(AB_IPOT_EMAIL_DAY_PROP, todayIso);
     emailed = true;
   }
-  return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, sme: c.sme, other: c.other, emailed: emailed };
+  return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, listed: c.listed.length, sme: c.sme, other: c.other,
+           emailed: emailed, soon: c.soon.map(function (r) { return r.symbol + ' lists ' + ab_ipotWhen_(r.due, todayIso, c.next) + (r.listing ? ' (NSE)' : ' (T+3, not confirmed by NSE yet)'); }),
+           newIpos: auto.newIpos, added: auto.added, priced: auto.priced, industry: auto.industry, problems: auto.problems };
 }
 
 /*****************************************************************
@@ -10942,13 +11328,16 @@ function ab_annMorningEmail_(store, now) {
  *    date get the new date (and purpose) - unless the Results Tracker
  *    shows that result as Updated (then it took place on the old date);
  *  - a later quarter = the next quarter's meeting (e.g. 21-Sep June-
- *    quarter results, 04-Nov September-quarter results): a NEW row is put
- *    right ABOVE the company's first row, so Main reads the new date and
- *    the old row stays where it was (the first live run, 01-Nov-2026,
- *    overwrote such old rows with the 45-day rule this replaces).
+ *    quarter results, 04-Nov September-quarter results): the first row
+ *    gets the new date (and purpose), so Main reads it;
+ * and the company's rows of an EARLIER quarter than NSE's meeting are
+ * deleted (owner, 01-Nov-2026: "you can delete the old lines" - at first
+ * the next quarter's meeting went in a new row above the old one, e.g.
+ * PRASOLCHEM 02/11 above 28/09; such rows go now too). Rows of other
+ * companies, and of companies NSE does not list, are never touched.
  *****************************************************************/
 const AB_CAL_SYM_RE = /^[A-Z0-9][A-Z0-9&._-]{0,29}$/;
-const AB_CAL_INSERT_MS = 180000;                         // new rows above old ones: stop after 3 minutes (the rest next run)
+const AB_CAL_INSERT_MS = 180000;                         // deleting old-quarter rows: stop after 3 minutes (the rest next run)
 
 /** The results quarter a meeting on `iso` reports on (the latest quarter-end before it), as a comparable number. */
 function ab_calQuarter_(iso) {
@@ -11002,7 +11391,7 @@ function ab_calFromBridge_(req) {
     const t = String(d === null || d === undefined ? '' : d).trim();
     if (/^\d{1,2}-[A-Za-z]{3}-\d{2}(\d{2})?$/.test(t)) { style = { kind: 'text', year4: /\d{4}$/.test(t), fmt: '' }; break; }
   }
-  const add = [], seen = {}, moves = [], ahead = [];
+  const add = [], seen = {}, moves = [], ahead = [], prune = {};
   rows.slice(0, 5000).forEach(function (x) {
     if (!Array.isArray(x)) return;
     const sym = String(x[0] || '').trim().toUpperCase();
@@ -11013,10 +11402,13 @@ function ab_calFromBridge_(req) {
     if (!/financial result/i.test(purpose) || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
     seen[sym] = true;
     if (!have[sym]) { add.push([sym, company, purpose, iso]); return; }
+    const qNew = ab_calQuarter_(iso);
+    prune[sym] = qNew;                                     // rows of an earlier quarter than this meeting go
     if (!first[sym] || first[sym] === iso) return;
-    const qOld = ab_calQuarter_(first[sym]), qNew = ab_calQuarter_(iso);
+    const qOld = ab_calQuarter_(first[sym]);
     if (qNew === qOld) moves.push({ sym: sym, from: first[sym], to: iso, purpose: purpose });
-    else if (qNew > qOld) ahead.push({ sym: sym, row: firstRow[sym], before: first[sym], line: [sym, company, purpose, iso] });
+    else if (qNew > qOld) ahead.push({ sym: sym, row: firstRow[sym], before: first[sym], purpose: purpose, iso: iso });
+    else delete prune[sym];                                // NSE's meeting is older than the tab's: left alone
   });
   const dateOf = function (iso, st) {
     const p = iso.split('-').map(Number);
@@ -11070,20 +11462,35 @@ function ab_calFromBridge_(req) {
     else if (style.fmt) dates.setNumberFormat(style.fmt);
     sh.getRange(start, 1, out.length, width).setValues(out);
   }
-  // 3. the next quarter's meeting of a company already on the tab: a new row right above its first row (bottom-most first,
-  //    so the rows above keep their places); the old row stays
-  //    (a tab not cleared after the season could need hundreds: past AB_CAL_INSERT_MS the rest wait for the next run)
-  const above = [];
-  let later = 0;
-  ahead.sort(function (a, b) { return b.row - a.row; }).forEach(function (a) {
-    if (Date.now() - t0 > AB_CAL_INSERT_MS) { later++; return; }
-    const at = a.row + 1;                                  // 1-based row of the old first row
-    sh.insertRowsBefore(at, 1);
-    try { sh.getRange(at + 1, 1, 1, width).copyFormatToRange(sh, 1, width, at, at); } catch (e) { /* cosmetic */ }
-    if (style.kind === 'text') sh.getRange(at, cDate + 1).setNumberFormat('@');
-    else if (style.fmt) sh.getRange(at, cDate + 1).setNumberFormat(style.fmt);
-    sh.getRange(at, 1, 1, width).setValues([lineOf(a.line)]);
-    above.unshift(a.sym + ' ' + short(a.line[3]) + ' (above ' + short(a.before) + ')');
+  // 3. the next quarter's meeting of a company already on the tab: its first row (what Main reads) gets the new date
+  const replaced = [], keepRow = {};
+  ahead.forEach(function (a) {
+    const cur = vals[a.row][cDate];
+    const st = cur instanceof Date ? { kind: 'date' } : { kind: 'text', year4: /\d{4}\s*$/.test(String(cur)) };
+    const cell = sh.getRange(a.row + 1, cDate + 1);
+    if (st.kind === 'text') cell.setNumberFormat('@');
+    cell.setValue(dateOf(a.iso, st));
+    if (cPur !== -1) sh.getRange(a.row + 1, cPur + 1).setValue(a.purpose);
+    keepRow[a.row] = true;
+    replaced.push(a.sym + ' ' + short(a.iso) + ' (was ' + short(a.before) + ')');
   });
-  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved, above: above, later: later };
+  // 4. the company's rows of an earlier quarter than NSE's meeting are deleted - bottom-most first, so the rows above keep
+  //    their places (a tab not cleared after the season could have hundreds: past AB_CAL_INSERT_MS the rest wait)
+  const gone = [];
+  for (let r = h + 1; r < vals.length; r++) {
+    const s = String(vals[r][cSym] || '').trim().toUpperCase();
+    if (!s || prune[s] === undefined || keepRow[r]) continue;
+    const d = ab_rsToDate_(vals[r][cDate]);
+    if (d && ab_calQuarter_(ab_rsDayKey_(d)) < prune[s]) gone.push(r);
+  }
+  let removed = 0, later = 0;
+  const removedSyms = {};
+  gone.reverse().forEach(function (r) {
+    if (Date.now() - t0 > AB_CAL_INSERT_MS) { later++; return; }
+    sh.deleteRow(r + 1);
+    removed++;
+    removedSyms[String(vals[r][cSym]).trim().toUpperCase()] = true;
+  });
+  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved, replaced: replaced,
+           removed: removed, removedSyms: Object.keys(removedSyms).sort(), later: later };
 }

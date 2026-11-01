@@ -1043,8 +1043,16 @@ def hist_step(cfg, h60, today=None):
 # ------------------------------------------------------------------ NSE IPO lists
 # NSE > Market Data > IPO (the page below): Current, Past Issues and Upcoming Issues. The page
 # fills its tables from NSE's own data addresses; this reads the same data. The sheet (doPost
-# 'ipos') sorts the issues into Open now / Closed - awaiting listing / Upcoming, leaves SME
-# issues out, rebuilds the "IPO Tracker" tab and sends one email a day.
+# 'ipos') sorts the issues into Open now / Closed - awaiting listing / Upcoming / Listed recently,
+# leaves SME and debt issues out, rebuilds the "IPO Tracker" tab and sends one email a day.
+# Owner, 01-Nov-2026 (the IPO workflow): issues listed in the last IPO_LISTED_DAYS days are sent too, and
+# for the closed mainboard issues the program also sends
+#  - NSE's trading holidays (the sheet works out the T+3 listing day: 3 trading days after the close),
+#  - from NSE's quote of the symbol: the listing date (NSE's confirmation - the Past Issues list often
+#    shows it only on the day) and the Macro / Sector / Industry / Basic Industry (Main's Basic Industry),
+#  - from the bhavcopy: the listing day's candle (its open = the LISTING PRICE in the IPOs tab) and the
+#    latest close.
+# The sheet then adds each closed issue to the New IPOs tab and, on the listing day, to the IPOs tab and Main.
 IPO_PAGE = 'https://www.nseindia.com/market-data/all-upcoming-issues-ipo'
 IPO_SOURCES = (
     ('current', ('https://www.nseindia.com/api/ipo-current-issue',)),
@@ -1054,6 +1062,13 @@ IPO_SOURCES = (
     ('upcoming', ('https://www.nseindia.com/api/all-upcoming-issues?category=ipo',)),
 )
 IPO_PAST_DAYS = 30       # past issues closed in the last 30 days (older ones are listed long ago)
+IPO_LISTED_DAYS = 14     # issues listed in the last 14 days are sent too ("Listed recently"; added to Main on the listing day)
+IPO_HOLIDAYS_URL = 'https://www.nseindia.com/api/holiday-master?type=trading'
+IPO_HOLIDAYS_DAYS = 7    # NSE's holiday list is read again after a week
+IPO_QUOTE_URL = 'https://www.nseindia.com/api/quote-equity?symbol={s}'
+IPO_QUOTE_PAGE = 'https://www.nseindia.com/get-quotes/equity?symbol={s}'
+IPO_QUOTES_PER_RUN = 12  # NSE quotes read per run (closed issues whose listing date / industry is not known yet)
+IPO_STATE_PATH = os.path.join(HERE, 'ipo_state.json')   # holidays + what the quotes and bhavcopies gave, per symbol
 IPO_FIELDS = (           # our name <- NSE field names (compared without case / punctuation)
     ('company', ('companyname', 'company', 'name', 'issuername', 'securityname')),
     ('symbol', ('symbol',)),
@@ -1063,6 +1078,7 @@ IPO_FIELDS = (           # our name <- NSE field names (compared without case / 
     ('listing', ('listingdate', 'dateoflisting', 'listingon')),
     ('price', ('pricerange', 'priceband', 'issueprice', 'price')),
     ('size', ('issuesize', 'totalissuesize', 'size')),
+    ('issue', ('issueprice', 'finalissueprice', 'finalprice', 'offerprice')),   # the final price, once fixed (one number)
 )
 _MONTHS = {m: i + 1 for i, m in enumerate(('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'))}
 
@@ -1128,6 +1144,8 @@ def ipo_normalize(rec, which):
         out[field] = val
     for f in ('start', 'end', 'listing'):
         out[f] = ipo_date(out[f])
+    n = _fnum(re.sub(r'(?i)rs\.?|\u20b9', '', out['issue'])) if out['issue'] else None
+    out['issue'] = ('%g' % n) if n and n > 0 else ''        # "Rs.400 to Rs.420" is a price band, not the issue price
     if not out['type'] and str(nk.get('issme', '')).strip().lower() in ('true', 'y', 'yes', '1'):
         out['type'] = 'SME'
     return out
@@ -1139,12 +1157,13 @@ def ipo_is_sme(t):
 
 
 def ipo_kind(r):
-    """'main' (equity mainboard), 'sme' or 'other' (debt NCDs / bonds, units...) - the sheet's ab_ipotKind_ rule."""
+    """'main' (equity mainboard: EQ, or BE = a smaller issue listed in the trade-for-trade segment), 'sme' or 'other'
+    (debt NCDs / bonds, units...) - the sheet's ab_ipotKind_ rule."""
     t = str(r.get('type') or '').strip()
     if ipo_is_sme(t):
         return 'sme'
     if t:
-        return 'main' if re.match(r'^(EQ|EQUITY|MAIN ?BOARD)$', t, re.I) else 'other'
+        return 'main' if re.match(r'^(EQ|BE|EQUITY|MAIN ?BOARD)$', t, re.I) else 'other'
     return 'other' if re.search(r'\d{2}$', r.get('symbol') or '') and not re.search(r' to ', r.get('price') or '', re.I) else 'main'
 
 
@@ -1183,28 +1202,213 @@ def ipo_session():
     return opener
 
 
+def ipo_load_state():
+    try:
+        with open(IPO_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def ipo_save_state(st):
+    try:
+        with open(IPO_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f, indent=1, sort_keys=True)
+    except OSError as e:
+        log('IPO lists: could not save %s (%s)' % (IPO_STATE_PATH, e))
+
+
+def ipo_holidays_parse(obj):
+    """NSE's holiday-master answer -> sorted ['yyyy-mm-dd'] of the equity (CM) trading holidays."""
+    recs = obj.get('CM') if isinstance(obj, dict) and isinstance(obj.get('CM'), list) else ipo_records(obj)
+    days = set()
+    for r in recs or []:
+        if isinstance(r, dict):
+            nk = {_norm_key(k): v for k, v in r.items()}
+            d = ipo_date(nk.get('tradingdate') or nk.get('date') or nk.get('holidaydate') or '')
+            if d:
+                days.add(d)
+    return sorted(days)
+
+
+def ipo_holidays(opener, st, today):
+    """NSE's trading holidays, read again after IPO_HOLIDAYS_DAYS days (the saved list when NSE does not answer)."""
+    h = st.get('holidays') or {}
+    if h.get('days') and h.get('at', '') >= (today - timedelta(days=IPO_HOLIDAYS_DAYS)).isoformat():
+        return h['days']
+    try:
+        status, raw = nse_get(opener, IPO_HOLIDAYS_URL, referer='https://www.nseindia.com/resources/exchange-communication-holidays')
+        days = ipo_holidays_parse(json.loads(raw.decode('utf-8', errors='replace'))) if status == 200 else []
+    except (OSError, urllib.error.URLError, socket.timeout, ValueError):
+        days = []
+    if days:
+        st['holidays'] = {'at': today.isoformat(), 'days': days}
+        return days
+    return h.get('days') or []
+
+
+def ipo_find(obj, want, depth=0):
+    """The first value under a key whose normalised name is `want`, anywhere in NSE's quote answer."""
+    if depth > 4:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if _norm_key(k) == want and v not in (None, '', '-'):
+                return v
+        for v in obj.values():
+            if isinstance(v, (dict, list)):
+                got = ipo_find(v, want, depth + 1)
+                if got not in (None, ''):
+                    return got
+    elif isinstance(obj, list):
+        for v in obj[:5]:
+            got = ipo_find(v, want, depth + 1)
+            if got not in (None, ''):
+                return got
+    return None
+
+
+def ipo_quote_parse(obj):
+    """NSE's quote of a symbol -> {'listing': 'yyyy-mm-dd' or '', 'industry': {macro, sector, industry, basic} or {}}."""
+    out = {'listing': ipo_date(ipo_find(obj, 'listingdate') or ''), 'industry': {}}
+    info = ipo_find(obj, 'industryinfo')
+    if isinstance(info, dict):
+        nk = {_norm_key(k): str(v).strip() for k, v in info.items() if v not in (None, '', '-')}
+        ind = {'macro': nk.get('macro', ''), 'sector': nk.get('sector', ''), 'industry': nk.get('industry', ''),
+               'basic': nk.get('basicindustry', '')}
+        if ind['basic']:
+            out['industry'] = ind
+    return out
+
+
+def ipo_quotes(opener, st, main, today):
+    """NSE's quote of the closed mainboard issues whose listing date or industry is not known yet (saved per symbol)."""
+    q = st.setdefault('quotes', {})
+    keep = (today - timedelta(days=60)).isoformat()
+    for k in [k for k, v in q.items() if not isinstance(v, dict) or v.get('at', '') < keep]:
+        del q[k]
+    t = today.isoformat()
+    todo = [r['symbol'] for r in main if r['symbol'] and r['end'] and r['end'] < t
+            and not (q.get(r['symbol'], {}).get('listing') and q.get(r['symbol'], {}).get('industry'))]
+    asked = 0
+    for sym in sorted(set(todo))[:IPO_QUOTES_PER_RUN]:
+        time.sleep(1.0)
+        asked += 1
+        try:
+            status, raw = nse_get(opener, IPO_QUOTE_URL.format(s=urllib.parse.quote(sym)), referer=IPO_QUOTE_PAGE.format(s=sym))
+            got = ipo_quote_parse(json.loads(raw.decode('utf-8', errors='replace'))) if status == 200 else None
+        except (OSError, urllib.error.URLError, socket.timeout, ValueError):
+            got = None
+        old = q.get(sym) or {}
+        q[sym] = {'at': t, 'listing': (got or {}).get('listing') or old.get('listing', ''),
+                  'industry': (got or {}).get('industry') or old.get('industry') or {}}
+    return asked
+
+
+def ipo_bhav(opener, d):
+    """The parsed bhavcopy of trading day d (shared with the end-of-day step), or None (not out yet / a holiday)."""
+    if d not in _BHAV_CACHE:
+        kind, val = eod_fetch(opener, 'bhav', d)
+        time.sleep(1.0)
+        if kind != 'ok':
+            return None
+        _BHAV_CACHE[d] = val
+    val = _BHAV_CACHE[d]
+    return val if bhav_day(val) in (None, d) else None
+
+
+def ipo_candles(opener, st, listed, today):
+    """The listing day's candle [open, high, low, close] per listed issue (saved once found) and the latest close
+    ['yyyy-mm-dd', close] from the newest bhavcopy out."""
+    c = st.setdefault('candles', {})
+    keep = (today - timedelta(days=60)).isoformat()
+    for k in [k for k, v in c.items() if not isinstance(v, dict) or v.get('day', '') < keep]:
+        del c[k]
+    pick = lambda bhav, sym: next((r for s in EOD_SERIES for r in bhav if r['sym'] == sym and r['series'] == s
+                                   and r.get('open') and r['close']), None)
+    for sym, day in sorted(listed.items()):
+        if c.get(sym, {}).get('day') == day and c[sym].get('ohlc'):
+            continue
+        bhav = ipo_bhav(opener, date.fromisoformat(day))
+        r = pick(bhav, sym) if bhav else None
+        if r:
+            c[sym] = {'day': day, 'ohlc': [r['open'], r.get('high'), r.get('low'), r['close']]}
+    last = {}
+    if listed:
+        for back in range(0, 7):
+            d = today - timedelta(days=back)
+            if d.weekday() >= 5 or d.isoformat() < min(listed.values()):
+                continue
+            bhav = ipo_bhav(opener, d)
+            if bhav:
+                for sym in listed:
+                    r = pick(bhav, sym)
+                    if r:
+                        last[sym] = [d.isoformat(), r['close']]
+                break
+    return last
+
+
 def ipo_step(cfg, today=None):
-    """Reads NSE's three IPO lists and hands them to the sheet. Never raises."""
+    """Reads NSE's three IPO lists (+ holidays, quotes and listing-day candles of the closed mainboard issues) and hands
+    them to the sheet. Never raises."""
     if not cfg.get('ipos', True):
         return
     try:
         today = today or date.today()
         opener = ipo_session()
         records, failed, notes = [], [], []
+        since = (today - timedelta(days=IPO_LISTED_DAYS)).isoformat()
         for i, (which, urls) in enumerate(IPO_SOURCES):
             recs, err, _ = ipo_fetch_list(opener, which, urls, today)
             if recs is None:
                 failed.append(which)
                 notes.append('%s: %s' % (which, err))
             else:
-                # issues that listed before today are of no interest
-                records.extend(r for r in recs if not (r['listing'] and r['listing'] < today.isoformat()))
+                # issues listed more than IPO_LISTED_DAYS days ago are of no interest
+                records.extend(r for r in recs if not (r['listing'] and r['listing'] < since))
             if i < len(IPO_SOURCES) - 1:
                 time.sleep(1.0)
         if len(failed) == len(IPO_SOURCES):
             log('IPO lists: could not read NSE - %s' % '; '.join(notes))
             return
-        payload = {'fetchedAt': datetime.now().strftime('%Y-%m-%d %H:%M'), 'failed': failed, 'records': records}
+        st = ipo_load_state()
+        main = [r for r in records if ipo_kind(r) == 'main' and r['symbol']]
+        extra = {}
+        try:
+            holidays = ipo_holidays(opener, st, today)
+            ipo_quotes(opener, st, main, today)
+            q = st.get('quotes') or {}
+            listed = {}
+            for r in main:
+                day = r['listing'] or (q.get(r['symbol']) or {}).get('listing', '')
+                if day and since <= day <= today.isoformat():
+                    listed[r['symbol']] = day
+            last = ipo_candles(opener, st, listed, today)
+            cd = st.get('candles') or {}
+            for r in main:
+                x = {}
+                qq = q.get(r['symbol']) or {}
+                if qq.get('listing'):
+                    x['nseListing'] = qq['listing']
+                if qq.get('industry'):
+                    x['industry'] = qq['industry']
+                if r['symbol'] in listed and (cd.get(r['symbol']) or {}).get('day') == listed[r['symbol']]:
+                    x['day1'] = cd[r['symbol']]['ohlc']
+                if r['symbol'] in last:
+                    x['last'] = last[r['symbol']]
+                if x:
+                    extra[r['symbol']] = x
+        except Exception as e:   # the lists still go to the sheet
+            holidays = (st.get('holidays') or {}).get('days') or []
+            notes.append('listing dates / industries: %s' % e)
+        for r in records:
+            if r['symbol'] in extra and ipo_kind(r) == 'main':
+                r.update(extra[r['symbol']])
+        ipo_save_state(st)
+        payload = {'fetchedAt': datetime.now().strftime('%Y-%m-%d %H:%M'), 'failed': failed, 'records': records,
+                   'holidays': holidays}
         try:
             res = api(cfg, 'ipos', payload, timeout=180)
         except RuntimeError as e:
@@ -1217,11 +1421,20 @@ def ipo_step(cfg, today=None):
                        'pencil > Version: New version > Deploy')
             log('IPO lists: the sheet refused - %s' % err)
             return
-        log('IPO lists: %d open, %d closed - awaiting listing, %d upcoming (mainboard equity; %d SME and %d debt/other left out)%s.'
-            % (res.get('open', 0), res.get('closed', 0), res.get('upcoming', 0), res.get('sme', 0), res.get('other', 0),
-               ', email sent' if res.get('emailed') else ''))
+        log('IPO lists: %d open, %d closed - awaiting listing, %d upcoming, %d listed recently (mainboard equity; %d SME and %d '
+            'debt/other left out)%s.'
+            % (res.get('open', 0), res.get('closed', 0), res.get('upcoming', 0), res.get('listed', 0), res.get('sme', 0),
+               res.get('other', 0), ', email sent' if res.get('emailed') else ''))
+        for key, what in (('soon', 'listing today / next trading day'), ('newIpos', 'added to the New IPOs tab'),
+                          ('added', 'added to the IPOs tab + Main'),
+                          ('priced', 'LISTING PRICE filled (listing-day open)'), ('industry', 'Basic Industry filled in Main'),
+                          ('problems', 'could not finish')):
+            if res.get(key):
+                log('IPO lists: %s - %s' % (what, ', '.join(str(x) for x in res[key][:20])))
         if failed:
             log('IPO lists: could not read %s this time - %s' % (', '.join(failed), '; '.join(notes)))
+        elif notes:
+            log('IPO lists: %s' % '; '.join(notes))
     except Exception as e:   # never let the IPO lists stop the screener work
         log('IPO lists: unexpected problem - %s' % e)
 
@@ -1377,8 +1590,8 @@ def ann_step(cfg, today=None):
 # Event Calendar, "All Forthcoming", Equity and SME, keeps the "Financial Results..." meetings and sends them; the
 # sheet adds the companies not on the tab yet; for a company already there it compares NSE's date with the tab's
 # first row by results quarter: same quarter = NSE moved the meeting (the date is changed), a later quarter = the
-# next quarter's meeting (a new row above the old one). Rows are never removed - the owner clears the tab after each
-# results season. No email.
+# next quarter's meeting (the first row gets it); the company's rows of earlier quarters are deleted (owner,
+# 01-Nov-2026). Other rows are never touched - the owner clears the tab after each results season. No email.
 # Each list has links tried in turn until one gives "Financial Results" meetings: the first live run (01-Nov-2026)
 # got 0 for SME from the Event Calendar link, so NSE's Board Meetings list (past ones too - dates before today are
 # left out) is the second choice.
@@ -1540,12 +1753,14 @@ def cal_step(cfg, today=None, force=False):
             log('Results calendar: the sheet refused - %s' % err)
             return
         added, moved, above = res.get('added') or [], res.get('moved') or [], res.get('above') or []
-        later = res.get('later') or 0
-        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s%s%s%s.'
-            % (len(rows), ', '.join(counts), len(added), (' - ' + ', '.join(added[:15]) + (' ...' if len(added) > 15 else '')) if added else '',
-               ('; %d date(s) changed by NSE - %s' % (len(moved), ', '.join(moved[:10]) + (' ...' if len(moved) > 10 else ''))) if moved else '',
-               ('; %d next-quarter meeting(s) put in a new row above the old one - %s'
-                % (len(above), ', '.join(above[:10]) + (' ...' if len(above) > 10 else ''))) if above else '',
+        replaced, removed, later = res.get('replaced') or [], res.get('removed') or 0, res.get('later') or 0
+        some = lambda xs, n: ', '.join(xs[:n]) + (' ...' if len(xs) > n else '')
+        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s%s%s%s%s%s.'
+            % (len(rows), ', '.join(counts), len(added), (' - ' + some(added, 15)) if added else '',
+               ('; %d date(s) changed by NSE - %s' % (len(moved), some(moved, 10))) if moved else '',
+               ('; %d next-quarter meeting(s) put in a new row above the old one - %s' % (len(above), some(above, 10))) if above else '',
+               ('; %d next-quarter meeting(s) replaced the old date - %s' % (len(replaced), some(replaced, 10))) if replaced else '',
+               ('; %d old-quarter row(s) deleted - %s' % (removed, some(res.get('removedSyms') or [], 10))) if removed else '',
                ('; %d more next round' % later) if later else ''))
         if problems:
             log('Results calendar: %s - tried again next round.' % '; '.join(problems))
