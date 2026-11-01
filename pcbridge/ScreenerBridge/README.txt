@@ -153,8 +153,10 @@ Results Update email) marks: revenue up but profit down; profit growing at least
 an exceptional gain of 10% of the profit before tax or more.
  - bridge.log: "NSE XBRL: N of M stock(s) have their results filing on NSE - sent ...; not filed yet: ...".
  - Needs the latest Code.gs + Code2.gs AND the New version deploy.
+ - Results waiting for figures come first; results already filled from screener.in are read only while they are
+   at most 3 days old (for the exceptional-gain flag), and only the file the sheet needs (consolidated / standalone).
  - xbrl_state.json remembers what was tried. To switch it off: "xbrl": false in config.json
-   ("max_xbrl_per_run": 25 = stocks a round).
+   ("max_xbrl_per_run": 60 = stocks a round).
 
 NSE XBRL RESULTS - TEST (XbrlCheck.bat)
 Companies also file their results with NSE as XBRL ("Integrated Filing - Financial", an XML file of tagged figures,

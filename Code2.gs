@@ -11621,6 +11621,7 @@ const AB_XBRL_SOURCE = 'NSE XBRL';                         // XBRL figures in Ma
 const AB_XBRL_SOURCE_DONE = 'NSE XBRL + screener.in tags';
 const AB_XBRL_FIGS = ['revenue', 'other_income', 'expenses', 'finance_costs', 'depreciation', 'exceptional', 'pbeit', 'pbt', 'tax',
   'pat', 'eps'];
+const AB_XBRL_FLAG_DAYS = 3;       // Updated rows asked for XBRL (exceptional-gain flag) only while the result is this fresh
 const AB_RS_FLAG_LEAD_PP = 10;     // "profit growing faster than revenue": at least 10 percentage points faster
 const AB_RS_FLAG_EXC_SHARE = 0.10; // "exceptional gain": at least 10% of profit before tax
 let AB_XBRL_CACHE_ = null;
@@ -11668,18 +11669,33 @@ function ab_xbrlHas_(sym, quarter) {
   return !!e && ab_rsQuarterIndex_(e.data.quarter) === ab_rsQuarterIndex_(quarter);
 }
 
-/** `list` -> `xbrl`: { SYM: quarter } of tracker rows (result date passed, within the wait window, not given up) whose XBRL
- *  figures are not stored yet - Pending rows first (they need the figures), then the rest (for the exceptional-gain flag). */
-function ab_xbrlWant_(tr, todayKey) {
+/**
+ * `list` -> `xbrl`: { SYM: quarter } of the tracker rows whose XBRL figures are not stored yet (result date passed, not
+ * given up): first the rows that need figures - Pending, or on moneycontrol's - within the wait window; then rows already
+ * Updated from screener.in whose result date is at most AB_XBRL_FLAG_DAYS old, for the exceptional-gain flag (the
+ * first live round, 02-Nov-2026, was asked 631 stocks - every result of 21 days - at 25 a round).
+ * `basis` (filled in): { SYM: 'C' | 'S' } = which file the PC needs - the basis of screener.in's stored figures
+ * (consolidated / standalone); a symbol without stored figures gets both.
+ */
+function ab_xbrlWant_(tr, todayKey, basis) {
   const first = [], later = [];
   tr.list.forEach(function (t) {
     if (t.status === 'Gave up' || !t.rdKey || !t.quarter) return;
     const age = ab_rsDaysBetween_(t.rdKey, todayKey);
     if (age < 0 || age > AB_RS_MAX_WAIT_DAYS || ab_xbrlHas_(t.symbol, t.quarter)) return;
-    (t.status === 'Pending' || t.source === AB_MC_SOURCE ? first : later).push(t);
+    if (t.status === 'Pending' || t.source === AB_MC_SOURCE) first.push(t);
+    else if (age <= AB_XBRL_FLAG_DAYS) later.push(t);
   });
   const out = {};
-  first.concat(later).forEach(function (t) { if (!out[t.symbol]) out[t.symbol] = t.quarter; });
+  first.concat(later).forEach(function (t) {
+    if (out[t.symbol]) return;
+    out[t.symbol] = t.quarter;
+    if (basis) {
+      const b = ab_bridgeGet_(t.symbol);
+      const sb = b && b.combined && b.combined.series ? String(b.combined.series.basis || '') : '';
+      if (sb) basis[t.symbol] = /standalone/i.test(sb) ? 'S' : 'C';
+    }
+  });
   return out;
 }
 

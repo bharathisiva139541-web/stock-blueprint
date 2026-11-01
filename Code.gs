@@ -8581,7 +8581,8 @@ function ab_bridgeWanted_() {
   const mcOn = ab_mcOn_();
   // Companies whose NSE XBRL results of the quarter expected are not stored yet: symbol -> quarter (Code2.gs ab_xbrlWant_)
   let xbrl = {};
-  try { xbrl = ab_xbrlWant_(tr, todayKey); } catch (xErr) { xbrl = {}; }
+  const xbrlBasis = {};
+  try { xbrl = ab_xbrlWant_(tr, todayKey, xbrlBasis); } catch (xErr) { xbrl = {}; }
 
   for (let r = layout.headerRowIdx + 1; r < data.length; r++) {
     const sym = ab_cellText_(data[r][layout.symbol]).toUpperCase();
@@ -8616,7 +8617,7 @@ function ab_bridgeWanted_() {
     if (ab_qt_isParkedTooNew_(tooNew, sym)) continue;
     missing.push(sym); seen[sym] = true;
   }
-  return { priority: priority, missing: missing, mc: mc, xbrl: xbrl };
+  return { priority: priority, missing: missing, mc: mc, xbrl: xbrl, xbrlBasis: xbrlBasis };
 }
 
 /** Runs the two normal engines on whatever the PC delivered - no live fetches. */
@@ -8824,7 +8825,7 @@ function doPost(e) {
       const w = ab_bridgeWanted_();
       let h60 = null;
       try { h60 = ab_h60Info_(); } catch (hErr) { h60 = { days: [], want: AB_H60_DAYS, error: hErr.message }; }
-      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, xbrl: w.xbrl, h60: h60 });
+      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, xbrl: w.xbrl, xbrlBasis: w.xbrlBasis, h60: h60 });
     }
     if (req.action === 'put') {
       const entries = [], details = [];
