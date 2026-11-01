@@ -28,6 +28,10 @@ before 9:15, during market hours or after 3:30 PM - shown in the Results Tracker
 the Results Update email and Results Performance, plus a short email before the
 open listing the results filed after the last close.
 
+And NSE's Event Calendar (all forthcoming board meetings, Equity and SME): once a
+day, companies with "Financial Results" meetings that are not yet on the sheet's
+Results tab are added to it (the tab Main's Result Date reads).
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
@@ -37,6 +41,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
+  python screener_bridge.py calendar   add NSE's forthcoming result meetings missing from the Results tab now
   python screener_bridge.py moneycontrol SYMBOL   show moneycontrol's latest quarterly results (test, nothing sent)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
@@ -86,6 +91,7 @@ DEFAULTS = {
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
+    'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
     'moneycontrol': True,      # results not on screener.in yet: look on moneycontrol and send its figures first
     'max_moneycontrol_per_run': 40,
 }
@@ -1365,6 +1371,132 @@ def ann_step(cfg, today=None):
         log('Result announcements: unexpected problem - %s' % e)
 
 
+# ------------------------------------------------------------------ NSE event calendar -> the Results tab
+# Owner, 01-Nov-2026: the Results tab (NSE's results calendar, pasted by hand a week earlier - Main's Result Date
+# reads it) missed POWERGRID and SAIPARENT, added by NSE after the paste. Once a day the first round reads NSE's
+# Event Calendar, "All Forthcoming", Equity and SME, keeps the "Financial Results..." meetings and sends them; the
+# sheet adds only the companies not on the tab yet (rows already there are never changed - the owner clears the
+# tab after each results season). No email.
+CAL_SOURCES = (('equity', 'https://www.nseindia.com/api/event-calendar?index=equities'),
+               ('SME', 'https://www.nseindia.com/api/event-calendar?index=sme'))
+CAL_PAGE = 'https://www.nseindia.com/companies-listing/corporate-filings-event-calendar'
+CAL_STATE_PATH = os.path.join(HERE, 'calendar_state.json')
+CAL_FIELDS = (           # our name <- NSE field names (compared without case / punctuation), first one found wins
+    ('symbol', ('symbol',)),
+    ('company', ('company', 'companyname', 'smname', 'name')),
+    ('purpose', ('purpose', 'bmpurpose')),
+    ('date', ('date', 'bmdate', 'meetingdate', 'boardmeetingdate')),
+)
+
+
+def cal_field(rec, name):
+    keys = {_norm_key(k): k for k in rec}
+    for want in dict(CAL_FIELDS)[name]:
+        if want in keys and rec[keys[want]] not in (None, ''):
+            return rec[keys[want]]
+    return None
+
+
+def cal_rows(records):
+    """NSE's event calendar -> ([[SYMBOL, company, purpose, 'yyyy-mm-dd']] of "Financial Results" meetings, the earliest
+    per company, by date; how many records had a readable date)."""
+    best, dated = {}, 0
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        day = ipo_date(cal_field(rec, 'date'))
+        if day:
+            dated += 1
+        sym = str(cal_field(rec, 'symbol') or '').strip().upper()
+        purpose = re.sub(r'\s+', ' ', str(cal_field(rec, 'purpose') or '')).strip()
+        if not day or not sym or 'financial result' not in purpose.lower():
+            continue
+        if sym not in best or day < best[sym][3]:
+            best[sym] = [sym, re.sub(r'\s+', ' ', str(cal_field(rec, 'company') or '')).strip(), purpose, day]
+    return sorted(best.values(), key=lambda r: (r[3], r[0])), dated
+
+
+def cal_fetch(opener, url):
+    """-> (records, None) or (None, reason)."""
+    try:
+        status, raw = nse_get(opener, url, referer=CAL_PAGE, timeout=60)
+    except (OSError, urllib.error.URLError, socket.timeout) as e:
+        return None, 'NSE did not answer (%s)' % e
+    if status != 200:
+        return None, 'HTTP %s from NSE' % status
+    try:
+        obj = json.loads(raw.decode('utf-8', errors='replace'))
+    except ValueError:
+        return None, 'NSE did not send data (a web page came back instead)'
+    recs = ipo_records(obj)
+    if recs is None:
+        return None, 'NSE\'s answer had no list of meetings'
+    return recs, None
+
+
+def cal_session():
+    opener = nse_session()
+    try:
+        nse_get(opener, CAL_PAGE, referer='https://www.nseindia.com/', timeout=20)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        pass
+    return opener
+
+
+def cal_step(cfg, today=None, force=False):
+    """Once a day: sends NSE's forthcoming result meetings; the sheet adds the companies its Results tab lacks.
+    Never raises."""
+    if not cfg.get('calendar', True):
+        return
+    try:
+        today = today or date.today()
+        try:
+            with open(CAL_STATE_PATH, 'r', encoding='utf-8') as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            st = {}
+        if not force and st.get('day') == today.isoformat():
+            return
+        opener, rows, counts, problems = cal_session(), [], [], []
+        for i, (which, url) in enumerate(CAL_SOURCES):
+            recs, err = cal_fetch(opener, url)
+            if recs is None:
+                problems.append('%s: %s' % (which, err))
+            else:
+                got, dated = cal_rows(recs)
+                if recs and not dated:
+                    problems.append('%s: dates not recognised - NSE fields: %s' % (which, ', '.join(sorted(recs[0].keys())[:20])))
+                rows.extend(got)
+                counts.append('%s %d' % (which, len(got)))
+            if i < len(CAL_SOURCES) - 1:
+                time.sleep(1.0)
+        if problems and not rows:
+            log('Results calendar: could not read NSE - %s (the next round tries again).' % '; '.join(problems))
+            return
+        try:
+            res = api(cfg, 'calendar', {'rows': rows}, timeout=180)
+        except RuntimeError as e:
+            log('Results calendar: sending to the sheet failed (%s) - the next round tries again.' % e)
+            return
+        if not res.get('ok'):
+            err = res.get('error') or 'unknown error'
+            if err == 'unknown action':
+                err = ('the sheet\'s web app does not know the results calendar yet - in Apps Script: Deploy > '
+                       'Manage deployments > pencil > Version: New version > Deploy')
+            log('Results calendar: the sheet refused - %s' % err)
+            return
+        added = res.get('added') or []
+        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s.'
+            % (len(rows), ', '.join(counts), len(added), (' - ' + ', '.join(added[:15]) + (' ...' if len(added) > 15 else '')) if added else ''))
+        if problems:
+            log('Results calendar: %s - tried again tomorrow.' % '; '.join(problems))
+        else:
+            with open(CAL_STATE_PATH, 'w', encoding='utf-8') as f:
+                json.dump({'day': today.isoformat(), 'added': len(added)}, f)
+    except Exception as e:   # never let this stop the screener work
+        log('Results calendar: unexpected problem - %s' % e)
+
+
 # ------------------------------------------------------------------ moneycontrol (reading)
 # moneycontrol.com often shows a quarter's results before screener.in. The run's moneycontrol step
 # (further down, mc_step) sends those figures for results screener.in does not show yet; TestConnection
@@ -2420,6 +2552,7 @@ def run_once(cfg):
             log('Sheet refused: %s' % ans.get('error'))
             return 1
         ann_step(cfg)              # first: the evening's Results Update email and the morning email use the times
+        cal_step(cfg)              # once a day: result meetings missing from the Results tab (Main's Result Date)
         price_bands_step(cfg)
         ipo_step(cfg)
         eod_step(cfg)
@@ -2660,7 +2793,23 @@ def cmd_test(cfg):
                 print('   dates not recognised - NSE fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
     except Exception as e:
         print('   PROBLEM - %s' % e)
-    print('7) moneycontrol from this computer (check only) ...')
+    print('7) NSE event calendar (forthcoming result meetings) from this computer ...')
+    try:
+        opener = cal_session()
+        for which, url in CAL_SOURCES:
+            recs, err = cal_fetch(opener, url)
+            if recs is None:
+                print('   %-7s PROBLEM - %s' % (which + ':', err))
+                continue
+            rows, dated = cal_rows(recs)
+            print('   %-7s OK - %d meeting(s), %d with Financial Results%s' % (which + ':', len(recs), len(rows),
+                  ('; e.g. %s %s' % (rows[0][0], rows[0][3])) if rows else ''))
+            if recs and not dated:
+                print('            dates not recognised - NSE fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
+        print('   (nothing was sent)')
+    except Exception as e:
+        print('   PROBLEM - %s' % e)
+    print('8) moneycontrol from this computer (check only) ...')
     try:
         mc_check('TCS', out=print, detail=False)
         print('   (nothing was sent)')
@@ -2834,6 +2983,12 @@ def main(argv):
             log('Not set up yet - run Setup.bat first.')
             return 1
         ann_step(dict(cfg, announcements=True))
+        return 0
+    if cmd == 'calendar':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        cal_step(dict(cfg, calendar=True), force=True)
         return 0
     if cmd == 'pricebands':
         if not cfg.get('url') or not cfg.get('token'):

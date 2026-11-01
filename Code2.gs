@@ -10919,3 +10919,100 @@ function ab_annMorningEmail_(store, now) {
   if (ok) props.setProperty(AB_ANN_MORNING_PROP, todayKey);
   return { sent: !!ok, note: ok ? 'morning email: ' + hits.length + ' result(s)' : 'emails paused' };
 }
+
+/*****************************************************************
+ * RESULTS CALENDAR FROM NSE (via the PC)
+ * -----------------------------------------------------------------
+ * Owner, 01-Nov-2026: the Results tab (NSE's results calendar, pasted
+ * by hand - Main's Result Date formula reads it) missed companies NSE
+ * added after the paste (POWERGRID, SAIPARENT). Once a day the PC
+ * program (screener_bridge.py cal_step) reads NSE's Event Calendar,
+ * All Forthcoming, Equity and SME, and posts the "Financial Results..."
+ * meetings - [SYMBOL, company, purpose, 'yyyy-mm-dd'] - to doPost action
+ * 'calendar' (ab_calFromBridge_). Owner's rules: add ONLY the companies
+ * not on the tab yet (rows already there are never changed or removed -
+ * the owner clears the tab after each season), the same format (SYMBOL,
+ * COMPANY, PURPOSE, DATE; the DATE cells written like the ones already
+ * there: text such as 01-Nov-26, or real dates with their number
+ * format), at the bottom, by date; no email.
+ *****************************************************************/
+const AB_CAL_SYM_RE = /^[A-Z0-9][A-Z0-9&._-]{0,29}$/;
+
+function ab_calFromBridge_(req) {
+  const rows = Array.isArray(req.rows) ? req.rows : null;
+  if (!rows) return { ok: false, error: 'rows missing - update screener_bridge.py on the PC' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_RESULTS_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AB_RESULTS_SHEET);
+    sh.getRange(1, 1, 2, 4).setValues([['Result Calender', '', '', ''], ['SYMBOL', 'COMPANY', 'PURPOSE', 'DATE']]);
+  }
+  const vals = sh.getDataRange().getValues();
+  let h = -1, cSym = -1, cCo = -1, cPur = -1, cDate = -1;
+  for (let r = 0; r < Math.min(10, vals.length); r++) {
+    const row = vals[r].map(function (v) { return String(v).trim().toUpperCase(); });
+    if (row.indexOf('SYMBOL') !== -1 && row.indexOf('DATE') !== -1) {
+      h = r; cSym = row.indexOf('SYMBOL'); cDate = row.indexOf('DATE'); cCo = row.indexOf('COMPANY'); cPur = row.indexOf('PURPOSE');
+      break;
+    }
+  }
+  if (h === -1) return { ok: false, error: 'the Results tab has no SYMBOL / DATE header row' };
+  const have = {};
+  let last = h;
+  for (let r = h + 1; r < vals.length; r++) {
+    const s = String(vals[r][cSym] || '').trim().toUpperCase();
+    if (s) { have[s] = true; last = r; }
+  }
+  // how the DATE cells already there are written (the Result Date formula reads them as they are)
+  let style = { kind: 'text', year4: false, fmt: '' };
+  for (let r = last; r > h; r--) {
+    const d = vals[r][cDate];
+    if (d instanceof Date) {
+      let fmt = '';
+      try { fmt = sh.getRange(r + 1, cDate + 1).getNumberFormat() || ''; } catch (e) { fmt = ''; }
+      style = { kind: 'date', year4: false, fmt: fmt };
+      break;
+    }
+    const t = String(d === null || d === undefined ? '' : d).trim();
+    if (/^\d{1,2}-[A-Za-z]{3}-\d{2}(\d{2})?$/.test(t)) { style = { kind: 'text', year4: /\d{4}$/.test(t), fmt: '' }; break; }
+  }
+  const add = [], seen = {};
+  rows.slice(0, 5000).forEach(function (x) {
+    if (!Array.isArray(x)) return;
+    const sym = String(x[0] || '').trim().toUpperCase();
+    const purpose = String(x[2] || '').replace(/\s+/g, ' ').trim();
+    const iso = String(x[3] || '').trim();
+    if (!AB_CAL_SYM_RE.test(sym) || have[sym] || seen[sym]) return;
+    if (!/financial result/i.test(purpose) || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+    seen[sym] = true;
+    add.push([sym, String(x[1] || '').replace(/\s+/g, ' ').trim().slice(0, 150), purpose.slice(0, 150), iso]);
+  });
+  if (!add.length) return { ok: true, received: rows.length, added: [] };
+  add.sort(function (a, b) { return a[3] < b[3] ? -1 : a[3] > b[3] ? 1 : (a[0] < b[0] ? -1 : 1); });
+  const dateOf = function (iso) {
+    const p = iso.split('-').map(Number);
+    if (style.kind === 'date') return ab_rsMakeDate_(p[0], p[1] - 1, p[2]);
+    return ('0' + p[2]).slice(-2) + '-' + AB_RS_MONTHS[p[1] - 1] + '-' + (style.year4 ? String(p[0]) : String(p[0]).slice(2));
+  };
+  const width = Math.max(cSym, cCo, cPur, cDate) + 1;
+  const out = add.map(function (a) {
+    const row = [];
+    for (let c = 0; c < width; c++) row.push('');
+    row[cSym] = a[0];
+    if (cCo !== -1) row[cCo] = a[1];
+    if (cPur !== -1) row[cPur] = a[2];
+    row[cDate] = dateOf(a[3]);
+    return row;
+  });
+  const start = last + 2;                                  // the row below the last company (1-based)
+  const end = start + out.length - 1;
+  if (sh.getMaxRows() < end) sh.insertRowsAfter(sh.getMaxRows(), end - sh.getMaxRows());
+  if (last > h) {
+    try { sh.getRange(last + 1, 1, 1, width).copyFormatToRange(sh, 1, width, start, end); } catch (e) { /* cosmetic */ }
+  }
+  const dates = sh.getRange(start, cDate + 1, out.length, 1);
+  if (style.kind === 'text') dates.setNumberFormat('@');
+  else if (style.fmt) dates.setNumberFormat(style.fmt);
+  sh.getRange(start, 1, out.length, width).setValues(out);
+  return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }) };
+}
