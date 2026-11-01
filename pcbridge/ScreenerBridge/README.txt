@@ -51,7 +51,9 @@ the sheet, with NSE's trading holidays and - for closed mainboard issues - NSE's
 The website's IPOs & Markets page shows the same tab. The PC runs only at log-in and an hour later:
 when it is off, nothing is added until its next round.
  - bridge.log shows "IPO lists: ..." for each round (and what was added).
- - ipo_state.json keeps NSE's holidays, quotes and listing-day candles.
+ - ipo_state.json keeps NSE's holidays, quotes and listing-day candles. When NSE's quote gives no Basic
+   Industry, bridge.log says "NSE quote gave no Basic Industry yet for ..." with what each link answered;
+   TestConnection line 4 ("quote:") checks it for the newest listed issue.
  - To switch it off: in config.json add  "ipos": false   (the email: Control Panel > IPOs)
 
 NSE END-OF-DAY: DELIVERY %, 52-WEEK HIGHS, MARKET STATISTICS
