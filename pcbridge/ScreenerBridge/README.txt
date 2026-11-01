@@ -142,7 +142,21 @@ Result Date (and so the Results Day check and the Upcoming Results email) then s
    meeting, what each link gave (sends nothing). To switch it off:
    "calendar": false in config.json.
 
-NSE XBRL RESULTS - TEST ONLY (XbrlCheck.bat)
+NSE XBRL RESULTS (official figures, the same day)
+Every round the program also reads, for the results the sheet waits for, the company's XBRL filing of that quarter
+on NSE ("Integrated Filing - Financials": consolidated and standalone) and sends its figures to the sheet. When
+screener.in does not show the quarter yet, Results Day takes NSE's figures + the earlier quarters already read from
+screener.in: QoQ / YoY, Net Profit, TTM EPS, Last FY EPS, OPM QoQ% - final figures (tracker Source "NSE XBRL").
+When screener.in shows the quarter later, only Promotor Holding, FII Activity and OPM YoY% are taken from it.
+moneycontrol's first figures are replaced by NSE's. The Results Tracker's new "Flags" column (and pills in the
+Results Update email) marks: revenue up but profit down; profit growing at least 10 points faster than revenue;
+an exceptional gain of 10% of the profit before tax or more.
+ - bridge.log: "NSE XBRL: N of M stock(s) have their results filing on NSE - sent ...; not filed yet: ...".
+ - Needs the latest Code.gs + Code2.gs AND the New version deploy.
+ - xbrl_state.json remembers what was tried. To switch it off: "xbrl": false in config.json
+   ("max_xbrl_per_run": 25 = stocks a round).
+
+NSE XBRL RESULTS - TEST (XbrlCheck.bat)
 Companies also file their results with NSE as XBRL ("Integrated Filing - Financial", an XML file of tagged figures,
 the same day). The plan: an official third source for Results Day, with EPS. XbrlCheck.bat is the first, test-only
 step: type NSE symbols (e.g. PARAS TCS) or paste an XBRL link. For each it shows
