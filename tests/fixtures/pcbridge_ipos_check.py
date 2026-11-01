@@ -177,11 +177,12 @@ assert 'IPO lists: 1 open, 1 closed - awaiting listing, 1 upcoming, 0 listed rec
 # the sheet's answer: what it did, each in its own log line
 SHEET['reply'] = {'ok': True, 'open': 1, 'closed': 1, 'upcoming': 1, 'listed': 2, 'sme': 1, 'other': 0, 'emailed': False,
                   'soon': ['EDELALTS lists today (T+3, not confirmed by NSE yet)'], 'newIpos': ['PARASHLTH'], 'added': ['JPL'],
-                  'priced': ['TONBO 812'], 'industry': ['TONBO: Aerospace & Defense'], 'problems': []}
+                  'priced': ['TONBO 812'], 'industry': ['TONBO: Aerospace & Defense'], 'indices': ['JPL'], 'problems': []}
 sb.ipo_step(CFG, today=TUE)
 for line in ('IPO lists: listing today / next trading day - EDELALTS lists today (T+3, not confirmed by NSE yet)',
              'IPO lists: added to the New IPOs tab - PARASHLTH', 'IPO lists: added to the IPOs tab + Main - JPL',
-             'IPO lists: LISTING PRICE filled (listing-day open) - TONBO 812', 'IPO lists: Basic Industry filled in Main - TONBO: Aerospace & Defense'):
+             'IPO lists: LISTING PRICE filled (listing-day open) - TONBO 812', 'IPO lists: Basic Industry filled in Main - TONBO: Aerospace & Defense',
+             'IPO lists: INDICES set to NIFTY IPO in Main - JPL'):
     assert line in logtail(), (line, logtail())
 assert 'could not finish' not in logtail()
 SHEET['reply'] = None

@@ -45,8 +45,8 @@ the sheet, with NSE's trading holidays and - for closed mainboard issues - NSE's
    is shown as the T+3 day (3 trading days after the close, SEBI's timeline) marked "expected";
  - adds each closed issue to the "New IPOs" tab (DATE OF LISTING once NSE confirms it, NOTE column);
  - on the listing day adds it to the IPOs tab and Main (once - a stock you delete is not added back),
-   fills the IPOs tab's LISTING PRICE (listing-day open) and Main's Basic Industry / Sector / Industry
-   when they are blank;
+   fills the IPOs tab's LISTING PRICE (listing-day open), Main's Basic Industry / Sector / Industry and
+   Main's INDICES (NIFTY IPO) when they are blank;
  - sends ONE email the first time each day: listings today / next trading day first, then all sections.
 The website's IPOs & Markets page shows the same tab. The PC runs only at log-in and an hour later:
 when it is off, nothing is added until its next round.
