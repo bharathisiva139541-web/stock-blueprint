@@ -123,7 +123,8 @@ Result Date (and so the Results Day check and the Upcoming Results email) then s
    the Results tab; N date(s) changed by NSE - SYMBOL 31/10 -> 03/11; N next-quarter meeting(s) put in
    a new row above the old one - SYMBOL 04/11 (above 21/09)".
  - calendar_state.json remembers the day it last ran. CalendarNow.bat runs it again at once.
- - TestConnection line 7 checks NSE and says which list answered (sends nothing). To switch it off:
+ - TestConnection line 7 checks NSE, says which list answered and, when a list has no result
+   meeting, what each link gave (sends nothing). To switch it off:
    "calendar": false in config.json.
 
 MONEYCONTROL (first figures while screener.in is late)

@@ -115,6 +115,19 @@ assert LOGS == ['Results calendar: 2 forthcoming result meeting(s) on NSE (equit
                 'above the old one - ESDS 02/11 (above 24/09); 2 more next round.'], LOGS
 assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-02', 'rows left for the next round: not marked done'
 
+# no result meeting in either SME link: the log says what each gave (SME firms often file "Board Meeting Intimation")
+BODY['/api/corporate-board-meetings?index=sme'] = json.dumps({'data': [
+    {'bm_symbol': 'SAHAJSOLAR', 'sm_name': 'Sahaj Solar Limited', 'bm_purpose': 'Board Meeting Intimation', 'bm_date': '04-Nov-2026'},
+    {'bm_symbol': 'AVP', 'sm_name': 'AVP Infracon Limited', 'bm_purpose': 'Board Meeting Intimation', 'bm_date': '05-Nov-2026'},
+    {'bm_symbol': 'SMEFUND', 'sm_name': 'SME Fund Limited', 'bm_purpose': 'Fund Raising', 'bm_date': '05-Nov-2026'},
+    {'bm_symbol': 'SMEOLD', 'sm_name': 'SME Old Limited', 'bm_purpose': 'Financial Results', 'bm_date': '30-Oct-2026'}]}).encode()
+REPLY['r'] = {'ok': True, 'added': []}
+del POSTS[:], LOGS[:]
+sb.cal_step(CFG, today=date(2026, 11, 4))
+assert [r[0] for r in POSTS[0]['rows']] == ['AAKASH'], POSTS
+assert LOGS == ['Results calendar: 1 forthcoming result meeting(s) on NSE (equity 1, SME 0 (link 1: no meetings; link 2: 4 meeting(s), '
+                '0 with Financial Results from today - Board Meeting Intimation 2, Fund Raising 1)); 0 added to the Results tab.'], LOGS
+
 # one list unreadable: the other is still sent, and the day is tried again later
 BODY['/api/event-calendar?index=sme'] = b'<html>Access Denied</html>'
 BODY['/api/corporate-board-meetings?index=sme'] = b'<html>Access Denied</html>'
@@ -124,7 +137,7 @@ sb.cal_step(CFG, today=date(2026, 11, 5))
 assert [r[0] for r in POSTS[0]['rows']] == ['AAKASH'], POSTS
 assert 'SME: link 1: NSE did not send data' in LOGS[1] and 'link 2: NSE did not send data' in LOGS[1], LOGS
 assert LOGS[1].endswith('- tried again next round.'), LOGS
-assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-02', 'not marked done'
+assert json.load(open(sb.CAL_STATE_PATH))['day'] == '2026-11-04', 'not marked done'
 
 # both unreadable / an older web app / switched off
 BODY['/api/event-calendar?index=equities'] = b'<html>Access Denied</html>'
