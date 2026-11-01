@@ -2089,27 +2089,29 @@ def xbrl_links(opener, sym, out):
 
 
 def xbrl_check(cfg, args, out=print):
-    """XbrlCheck.bat: for each NSE symbol (or XBRL link) - its newest XBRL files, read and compared with screener.in."""
+    """XbrlCheck.bat: for each NSE symbol (or the XBRL links pasted, taken as one company) - its newest XBRL files, read, and
+    the one the sheet would use (consolidated when filed, else standalone) compared with screener.in."""
     opener = nse_session()
     os.makedirs(XBRL_CHECK_DIR, exist_ok=True)
     pages = {}
-    for arg in args:
-        direct = re.match(r'(?i)^https?://', arg)
-        sym = '' if direct else arg.strip().upper()
+    urls = [a for a in args if re.match(r'(?i)^https?://', a)]
+    groups = [(a.strip().upper(), None) for a in args if a not in urls] + ([('', urls)] if urls else [])   # pasted links = one company
+    for sym, given in groups:
         out('')
-        out('== %s' % (arg if direct else sym))
-        links = [arg] if direct else xbrl_links(opener, sym, out)
+        out('== %s' % (sym or ' + '.join(u.rsplit('/', 1)[-1] for u in given)))
+        links = given or xbrl_links(opener, sym, out)
         if not links:
             out('   no XBRL link found on NSE for %s' % sym)
             continue
+        files = []                                         # (url, parsed) of the files read
         for url in links[:XBRL_MAX_FILES]:
             time.sleep(1.0)
+            name = url.rsplit('/', 1)[-1]
             try:
                 status, raw = nse_get(opener, url, referer=XBRL_PAGE, timeout=60)
             except (OSError, urllib.error.URLError, socket.timeout) as e:
-                out('   %s: NSE did not answer (%s)' % (url.rsplit('/', 1)[-1], e))
+                out('   %s: NSE did not answer (%s)' % (name, e))
                 continue
-            name = url.rsplit('/', 1)[-1]
             if status != 200:
                 out('   %s: HTTP %s' % (name, status))
                 continue
@@ -2122,15 +2124,27 @@ def xbrl_check(cfg, args, out=print):
             if not x:
                 out('   %s: not an XBRL file with a quarter in it (%d bytes)' % (name, len(raw)))
                 continue
+            x['consolidated'] = 'consol' in (x['nature'] or '').lower()
+            files.append((name, x))
+        # the owner's rule (as for screener.in): the consolidated figures when the company files them, else standalone
+        newest = max((x['end'] for _, x in files), default='')
+        latest = [(n, x) for n, x in files if x['end'] == newest]
+        use = [(n, x) for n, x in latest if x['consolidated']][:1] or latest[:1]
+        for name, x in files:
+            if (name, x) in use:
+                continue
+            out('   %s: %s, quarter %s - not used (%s)' % (name, 'consolidated' if x['consolidated'] else 'standalone' if x['nature'] else '?',
+                x['quarter'], 'an older quarter' if x['end'] != newest else 'the consolidated file is used'))
+        for name, x in use:
             sym = sym or (x['symbol'] or '').upper()
-            nature = 'consolidated' if 'consol' in (x['nature'] or '').lower() else 'standalone' if x['nature'] else '?'
+            nature = 'consolidated' if x['consolidated'] else 'standalone' if x['nature'] else '? (taken as standalone)'
             out('   %s: %s, %s, quarter %s (%s to %s)%s' % (name, x['company'] or sym, nature, x['quarter'], x['start'], x['end'],
                 ('; also %d months to %s' % (x['cum_months'], x['end'])) if x['cum_months'] else ''))
             if not any(v is not None for v in x['q'].values()):
                 out('     none of the usual figures found - the quarter\'s numbers in the file: %s'
                     % ', '.join('%s=%g' % kv for kv in x['numeric'][:25]))
                 continue
-            key = (sym, nature != 'standalone')
+            key = (sym, x['consolidated'])
             if key not in pages and sym:
                 try:
                     kind, html = fetch_page(cfg, sym, consolidated=key[1])
