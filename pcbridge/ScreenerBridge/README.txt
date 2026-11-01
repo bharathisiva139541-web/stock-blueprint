@@ -147,7 +147,8 @@ Companies also file their results with NSE as XBRL ("Integrated Filing - Financi
 the same day). The plan: an official third source for Results Day, with EPS. XbrlCheck.bat is the first, test-only
 step: type NSE symbols (e.g. PARAS TCS) or paste an XBRL link. For each it shows
  - which NSE lists gave XBRL links (and the field names when none did),
- - each newest XBRL file: company, standalone / consolidated, the quarter,
+ - each newest XBRL file: company, standalone / consolidated, the quarter - the CONSOLIDATED one is used when the company
+   files it, else the standalone one (like screener.in in Main),
  - the quarter's Revenue, Other income, Depreciation, Interest, PBT, Net Profit, EPS and OPM % next to screener.in's,
  - TTM EPS worked out the planned way: the XBRL quarter + screener.in's 3 earlier quarters (and screener's own, once it
    shows the quarter), Revenue QoQ / YoY.

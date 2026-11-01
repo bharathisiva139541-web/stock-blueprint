@@ -124,11 +124,15 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = 'http://127.0.0.1:%d' % srv.server_port
 LIST['data'][0]['xbrl'] = BASE + '/corporate/xbrl/INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml'
 LIST['data'].append({'symbol': 'PARAS', 'xbrl': BASE + '/corporate/xbrl/INTEGRATED_FILING_INDAS_1611111_30072026101010_WEB.xml'})
+# the standalone file of the same quarter (filed a minute earlier): read, but the consolidated one is used
+STANDALONE = XBRL.replace(b'>Consolidated<', b'>Standalone<').replace(amt(151.12).encode(), amt(140.00).encode())
+LIST['data'].append({'symbol': 'PARAS', 'xbrl': BASE + '/corporate/xbrl/INTEGRATED_FILING_INDAS_1749103_29102026060807_WEB.xml'})
 ROUTES['/api/fr?symbol=PARAS'] = (200, json.dumps(LIST).encode())
 ROUTES['/api/ifr?symbol=PARAS'] = (403, b'')
 ROUTES['/api/ann?symbol=PARAS'] = (200, json.dumps([{'symbol': 'PARAS', 'desc': 'Outcome of Board Meeting', 'attchmntFile': 'x.pdf'}]).encode())
 ROUTES['/corporate/xbrl/INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml'] = (200, XBRL)
 ROUTES['/corporate/xbrl/INTEGRATED_FILING_INDAS_1611111_30072026101010_WEB.xml'] = (200, b'<html>gone</html>')
+ROUTES['/corporate/xbrl/INTEGRATED_FILING_INDAS_1749103_29102026060807_WEB.xml'] = (200, STANDALONE)
 sb.XBRL_LISTS = (('financial results', BASE + '/api/fr?symbol={s}'), ('integrated filing', BASE + '/api/ifr?symbol={s}'),
                  ('announcements', BASE + '/api/ann?symbol={s}'))
 sb.nse_session = lambda: urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
@@ -140,19 +144,31 @@ sb.fetch_page = fake_fetch
 OUT = []
 sb.xbrl_check({'screener_base': 'x', 'delay_min': 0, 'delay_max': 0}, ['paras'], out=OUT.append)
 txt = '\n'.join(OUT)
-assert '   financial results: 2 record(s), 2 XBRL link(s)' in txt, txt
+assert '   financial results: 3 record(s), 3 XBRL link(s)' in txt, txt
 assert '   integrated filing: HTTP 403' in txt and "   announcements:     1 record(s), 0 XBRL link(s); fields: attchmntFile, desc, symbol" in txt, txt
 assert ('   INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml: Paras Defence and Space Technologies Limited, consolidated, '
         'quarter Sep 2026 (2026-07-01 to 2026-09-30); also 6 months to 2026-09-30') in txt, txt
-assert txt.index('29102026060924') < txt.index('30072026101010'), 'newest file first'
+xml_hits = [h for h in HITS if h.endswith('.xml')]
+assert xml_hits == ['/corporate/xbrl/INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml',
+                    '/corporate/xbrl/INTEGRATED_FILING_INDAS_1749103_29102026060807_WEB.xml',
+                    '/corporate/xbrl/INTEGRATED_FILING_INDAS_1611111_30072026101010_WEB.xml'], 'newest file first: %s' % xml_hits
 assert 'INTEGRATED_FILING_INDAS_1611111_30072026101010_WEB.xml: not an XBRL file with a quarter in it' in txt, txt
 assert 'TTM EPS: 10.19 = XBRL 3.76' in txt and SCREENER == [('PARAS', True)], (SCREENER, txt)
+assert ('INTEGRATED_FILING_INDAS_1749103_29102026060807_WEB.xml: standalone, quarter Sep 2026 - not used (the consolidated file is used)'
+        in txt), txt
+assert 'Revenue (Cr)                   151.12' in txt and '140.00' not in txt, txt
 assert os.path.exists(os.path.join(sb.XBRL_CHECK_DIR, 'PARAS_INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml'))
 assert txt.rstrip().endswith('(nothing was sent to the sheet; the XBRL files are in %s)' % sb.XBRL_CHECK_DIR)
 
-# a link given straight (the owner's PARAS file)
+# links pasted straight (the owner's PARAS files): taken as one company - the consolidated one is used
 del OUT[:], SCREENER[:]
-sb.xbrl_check({'screener_base': 'x', 'delay_min': 0, 'delay_max': 0}, [LIST['data'][0]['xbrl']], out=OUT.append)
-assert 'quarter Sep 2026' in '\n'.join(OUT) and SCREENER == [('PARAS', True)], OUT
+sb.xbrl_check({'screener_base': 'x', 'delay_min': 0, 'delay_max': 0}, [LIST['data'][2]['xbrl'], LIST['data'][0]['xbrl']], out=OUT.append)
+txt = '\n'.join(OUT)
+assert 'consolidated, quarter Sep 2026' in txt and 'not used (the consolidated file is used)' in txt and SCREENER == [('PARAS', True)], txt
+# a company that files standalone only: the standalone figures, compared with screener.in's standalone page
+del OUT[:], SCREENER[:]
+sb.xbrl_check({'screener_base': 'x', 'delay_min': 0, 'delay_max': 0}, [LIST['data'][2]['xbrl']], out=OUT.append)
+txt = '\n'.join(OUT)
+assert 'standalone, quarter Sep 2026' in txt and 'Revenue (Cr)                   140.00' in txt and SCREENER == [('PARAS', False)], txt
 srv.shutdown()
 print('OK')
