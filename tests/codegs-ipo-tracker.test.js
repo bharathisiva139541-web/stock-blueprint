@@ -130,9 +130,10 @@ const D = (y, m, d) => new Date(y, m - 1, d);
 function book() {
   return { sheets: [
     { name: 'Main', rows: [['Stock Blueprint'],
-      ['Checkbox', 'StockName', 'SYMBOL', 'Sector', 'Industry', 'Basic Industry', 'MKT Price', 'Price Fall Alert Price', 'Breakout Alert Price', 'Triggered Y/N'],
-      [false, 'Reliance Industries Ltd', 'RELIANCE', 'Oil, Gas & Consumable Fuels', 'Petroleum Products', 'Refineries & Marketing', 1400],
-      [false, 'Tonbo Imaging India Ltd', 'TONBO', '', '', 'Aerospace & Defense', 812]] },
+      ['Checkbox', 'StockName', 'SYMBOL', 'Sector', 'Industry', 'Basic Industry', 'MKT Price', 'Price Fall Alert Price', 'Breakout Alert Price', 'Triggered Y/N',
+       'INDICES'],
+      [false, 'Reliance Industries Ltd', 'RELIANCE', 'Oil, Gas & Consumable Fuels', 'Petroleum Products', 'Refineries & Marketing', 1400, '', '', '', ''],
+      [false, 'Tonbo Imaging India Ltd', 'TONBO', '', '', 'Aerospace & Defense', 812, '', '', '', 'NIFTY IPO, MICROCAP250']] },
     { name: 'IPOs', rows: [['S.No', 'NSE SYMBOL', 'LISTING DATE', 'LISTING PRICE', 'MarketPrice'],
       [1, 'FUSIONCX', D(2026, 10, 22), 300, 310], [2, 'TONBO', D(2026, 10, 23), '', 820]] },
     { name: 'New IPOs', rows: [['COMPANY NAME', 'SECURITY TYPE', 'Symbol', 'DATE OF LISTING'],
@@ -165,6 +166,7 @@ test('workflow: listing-day adds to IPOs + Main, New IPOs rows, listing price, B
   assert.deepStrictEqual(Array.from(r.newIpos), ['BLSPOLY', 'SFCTECH', 'EDELALTS', 'JPL']);
   assert.deepStrictEqual(Array.from(r.priced), ['TONBO 812'], 'TONBO\'s blank LISTING PRICE = its listing-day open');
   assert.deepStrictEqual(Array.from(r.industry), ['JPL: Aerospace & Defense', 'EDELALTS: Asset Management Company']);
+  assert.deepStrictEqual(Array.from(r.indices), ['JPL', 'EDELALTS'], 'INDICES = NIFTY IPO for the new listings');
   // Main: the new stocks after the last one, NSE's name, Basic Industry + Sector / Industry; TONBO's typed Basic Industry kept
   const main = e.sheet('Main').rows;
   const row = (sym) => main.find((x) => x[2] === sym);
@@ -172,6 +174,7 @@ test('workflow: listing-day adds to IPOs + Main, New IPOs rows, listing price, B
   assert.deepStrictEqual(row('JPL').slice(1, 6), ['Jio Platforms Limited', 'JPL', 'Capital Goods', 'Aerospace & Defense', 'Aerospace & Defense']);
   assert.strictEqual(row('EDELALTS')[5], 'Asset Management Company');
   assert.strictEqual(row('TONBO')[5], 'Aerospace & Defense', 'never overwritten');
+  assert.deepStrictEqual([row('JPL')[10], row('EDELALTS')[10], row('TONBO')[10], row('RELIANCE')[10]], ['NIFTY IPO', 'NIFTY IPO', 'NIFTY IPO, MICROCAP250', '']);
   // IPOs tab: listing date, listing price (JPL: its listing-day open; EDELALTS: not known yet)
   const ipos = e.sheet('IPOs').rows;
   const ipo = (sym) => ipos.find((x) => x[1] === sym);
@@ -202,10 +205,11 @@ test('workflow: listing-day adds to IPOs + Main, New IPOs rows, listing price, B
   const m = e.mails[0][0];
   assert.strictEqual(m.subject, 'IPO Tracker (02-Nov): EDELALTS lists today; BLSPOLY, SFCTECH on Tue 03-Nov | 0 open, 3 awaiting listing, 1 upcoming, 2 listed recently');
   assert.ok(/Added to the IPOs tab and Main: JPL, EDELALTS/.test(m.body) && /LISTING PRICE filled \(listing-day open\): TONBO 812/.test(m.body), m.body);
+  assert.ok(/INDICES set to NIFTY IPO in Main: JPL, EDELALTS/.test(m.body), m.body);
   assert.ok(/Jio Platforms Limited \(JPL\): listed 28-Oct, issue ₹1,119, listing ₹1,150 \(\+2\.8%\), last ₹1,231 \(\+10\.0% since issue\)/.test(m.body), m.body);
   // the next round the same day: nothing done twice, no second email
   const r2 = work(e, { fetchedAt: '2026-11-02 09:05' });
-  assert.deepStrictEqual([r2.added, r2.newIpos, r2.priced, r2.industry, r2.problems].map((x) => x.length), [0, 0, 0, 0, 0]);
+  assert.deepStrictEqual([r2.added, r2.newIpos, r2.priced, r2.industry, r2.indices, r2.problems].map((x) => x.length), [0, 0, 0, 0, 0, 0]);
   assert.strictEqual(e.mails.length, 1);
   assert.strictEqual(e.sheet('Main').rows.filter((x) => x[2] === 'JPL').length, 1);
 });

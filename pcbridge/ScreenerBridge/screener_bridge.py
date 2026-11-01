@@ -1485,6 +1485,7 @@ def ipo_step(cfg, today=None):
         for key, what in (('soon', 'listing today / next trading day'), ('newIpos', 'added to the New IPOs tab'),
                           ('added', 'added to the IPOs tab + Main'),
                           ('priced', 'LISTING PRICE filled (listing-day open)'), ('industry', 'Basic Industry filled in Main'),
+                          ('indices', 'INDICES set to NIFTY IPO in Main'),
                           ('problems', 'could not finish')):
             if res.get(key):
                 log('IPO lists: %s - %s' % (what, ', '.join(str(x) for x in res[key][:20])))

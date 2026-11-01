@@ -3173,8 +3173,8 @@ function runImportPastedPriceBands() {
  *    (property AB_IPO_AUTO: a stock you later delete is not added back);
  *  - the IPOs tab's LISTING PRICE = the listing day's open (NSE
  *    bhavcopy), filled when blank;
- *  - Main's Basic Industry (+ Sector / Industry) from NSE's quote, filled
- *    when blank.
+ *  - Main's Basic Industry (+ Sector / Industry) from NSE's quote, and
+ *    INDICES = "NIFTY IPO" (owner, 01-Nov-2026), filled when blank.
  * The PC sends with each closed issue: nseListing (NSE quote's listing
  * date), industry {macro, sector, industry, basic}, day1 [o, h, l, c]
  * of the listing day, last ['yyyy-mm-dd', close], issue (final price),
@@ -3186,7 +3186,8 @@ const AB_IPOT_EMAIL_DAY_PROP = 'AB_IPOT_EMAIL_DAY';
 const AB_IPOT_CLOSED_MAX_DAYS = 30;   // closed longer ago than this and never listed = withdrawn / stale, not shown
 const AB_IPOT_LISTED_DAYS = 14;       // "Listed recently" = listed in the last 14 days (the PC sends those)
 const AB_IPOT_HOLIDAYS_PROP = 'AB_NSE_HOLIDAYS';   // NSE's trading holidays from the PC (JSON ['yyyy-mm-dd'])
-const AB_IPO_AUTO_PROP = 'AB_IPO_AUTO';            // {SYM: {at, d: listing day handled, a: day the sheet added it, p: price done, i: industry done}}
+const AB_IPO_AUTO_PROP = 'AB_IPO_AUTO';            // {SYM: {at, d: listing day handled, a: day the sheet added it, p: price done, i: industry done, x: INDICES done}}
+const AB_IPO_MAIN_INDEX = 'NIFTY IPO';              // Main's INDICES of a new listing (owner, 01-Nov-2026)
 const AB_IPOT_HEADERS_ = ['Company', 'Symbol', 'Opens', 'Closes', 'Listing date', 'Price range', 'Issue size (shares)', 'Note'];
 const AB_IPOT_LISTED_HEADERS_ = ['Company', 'Symbol', 'Closes', 'Listing date', 'Issue price', 'Listing price', 'Listing gain %',
   'Last close', 'Since issue %', 'Note'];
@@ -3423,6 +3424,7 @@ function ab_ipotSendEmail_(c, fetchedAt, failed, todayIso, auto) {
   // 2. what the sheet did
   const did = [['Added to the New IPOs tab', auto.newIpos], ['Added to the IPOs tab and Main', auto.added],
                ['LISTING PRICE filled (listing-day open)', auto.priced], ['Basic Industry filled in Main', auto.industry],
+               ['INDICES set to ' + AB_IPO_MAIN_INDEX + ' in Main', auto.indices],
                ['Could not finish', auto.problems]].filter(function (x) { return x[1] && x[1].length; });
   if (did.length) {
     html += '<p style="margin:10px 0;font-size:12px;color:#3c4043">' + did.map(function (x) { return '<b>' + esc(x[0]) + ':</b> ' + esc(x[1].join(', ')); }).join('<br>') + '</p>';
@@ -3648,33 +3650,45 @@ function ab_ipoListingPrices_(listed, st, todayIso, out) {
   }
 }
 
-/** Main's blank Basic Industry (and Sector / Industry) of a new issue, from NSE's quote. */
-function ab_ipoIndustry_(issues, st, todayIso, out) {
-  const todo = issues.filter(function (r) { return r.industry && !(st[r.symbol] && st[r.symbol].i); });
+/** Main's blank Basic Industry (and Sector / Industry) of a new issue, from NSE's quote, and its blank INDICES = "NIFTY IPO". */
+function ab_ipoMainFill_(issues, st, todayIso, out) {
+  const wantInd = function (r) { return r.industry && !(st[r.symbol] && st[r.symbol].i); };
+  const wantIdx = function (r) { return !(st[r.symbol] && st[r.symbol].x); };
+  const todo = issues.filter(function (r) { return wantInd(r) || wantIdx(r); });
   if (!todo.length) return;
   const main = ab_getMainLayout_();
-  if (main.basicIndustry === -1) return;
   const want = {};
   todo.forEach(function (r) { want[r.symbol] = r; });
   for (let r = main.headerRowIdx + 1; r < main.data.length; r++) {
     const s = ab_cellText_(main.data[r][main.symbol]).toUpperCase();
     const x = want[s];
     if (!x) continue;
-    const ind = x.industry, row = r + 1;
-    if (ab_cellText_(main.data[r][main.basicIndustry]) === '') {
-      main.sheet.getRange(row, main.basicIndustry + 1).setValue(ind.basic);
-      const cls = ab_nseResolve_('', '', ind.basic);
-      if (main.sector !== -1 && ab_cellText_(main.data[r][main.sector]) === '') main.sheet.getRange(row, main.sector + 1).setValue(cls ? cls.sector : ind.sector);
-      if (main.industry !== -1 && ab_cellText_(main.data[r][main.industry]) === '') main.sheet.getRange(row, main.industry + 1).setValue(cls ? cls.industry : ind.industry);
-      out.industry.push(s + ': ' + ind.basic);
+    delete want[s];                                        // the first row of a symbol only
+    const row = r + 1, mark = function (k) { st[s] = Object.assign(st[s] || {}, { at: (st[s] && st[s].at) || todayIso }); st[s][k] = 1; };
+    if (wantInd(x) && main.basicIndustry !== -1) {
+      const ind = x.industry;
+      if (ab_cellText_(main.data[r][main.basicIndustry]) === '') {
+        main.sheet.getRange(row, main.basicIndustry + 1).setValue(ind.basic);
+        const cls = ab_nseResolve_('', '', ind.basic);
+        if (main.sector !== -1 && ab_cellText_(main.data[r][main.sector]) === '') main.sheet.getRange(row, main.sector + 1).setValue(cls ? cls.sector : ind.sector);
+        if (main.industry !== -1 && ab_cellText_(main.data[r][main.industry]) === '') main.sheet.getRange(row, main.industry + 1).setValue(cls ? cls.industry : ind.industry);
+        out.industry.push(s + ': ' + ind.basic);
+      }
+      mark('i');
     }
-    st[s] = Object.assign(st[s] || {}, { at: (st[s] && st[s].at) || todayIso, i: 1 });
+    if (wantIdx(x) && main.indices !== -1) {
+      if (ab_cellText_(main.data[r][main.indices]) === '') {
+        main.sheet.getRange(row, main.indices + 1).setValue(AB_IPO_MAIN_INDEX);
+        out.indices.push(s);
+      }
+      mark('x');
+    }
   }
 }
 
 /** The IPO workflow on each update (never throws; what failed is in .problems). */
 function ab_ipoAuto_(c, todayIso) {
-  const out = { newIpos: [], added: [], priced: [], industry: [], problems: [] };
+  const out = { newIpos: [], added: [], priced: [], industry: [], indices: [], problems: [] };
   const issues = c.closed.concat(c.listed).filter(function (r) { return /^[A-Z0-9][A-Z0-9&._-]{0,29}$/.test(r.symbol); });
   if (!issues.length) return out;
   const st = ab_ipoAutoLoad_(todayIso);
@@ -3687,7 +3701,7 @@ function ab_ipoAuto_(c, todayIso) {
   });
   step('New IPOs tab', function () { ab_ipoNewIposTab_(issues, todayIso, c.next, st, out); });
   step('LISTING PRICE', function () { ab_ipoListingPrices_(c.listed, st, todayIso, out); });
-  step('Basic Industry', function () { ab_ipoIndustry_(issues.filter(function (r) { return st[r.symbol] && st[r.symbol].d; }), st, todayIso, out); });
+  step('Basic Industry / INDICES', function () { ab_ipoMainFill_(issues.filter(function (r) { return st[r.symbol] && st[r.symbol].d; }), st, todayIso, out); });
   try { PropertiesService.getScriptProperties().setProperty(AB_IPO_AUTO_PROP, JSON.stringify(st)); } catch (e) { out.problems.push('saving: ' + e.message); }
   return out;
 }
@@ -3714,7 +3728,7 @@ function ab_ipotFromBridge_(req) {
   }
   return { ok: true, open: c.open.length, closed: c.closed.length, upcoming: c.upcoming.length, listed: c.listed.length, sme: c.sme, other: c.other,
            emailed: emailed, soon: c.soon.map(function (r) { return r.symbol + ' lists ' + ab_ipotWhen_(r.due, todayIso, c.next) + (r.listing ? ' (NSE)' : ' (T+3, not confirmed by NSE yet)'); }),
-           newIpos: auto.newIpos, added: auto.added, priced: auto.priced, industry: auto.industry, problems: auto.problems };
+           newIpos: auto.newIpos, added: auto.added, priced: auto.priced, industry: auto.industry, indices: auto.indices, problems: auto.problems };
 }
 
 /*****************************************************************
