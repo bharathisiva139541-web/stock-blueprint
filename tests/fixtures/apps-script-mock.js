@@ -292,6 +292,7 @@ function createEnv(workbook, opts) {
         grid.splice.apply(grid, [Math.min(after, grid.length), 0].concat(Array.from({ length: n }, function () { return []; })));
         return sheet;
       },
+      insertRowsBefore: function (before, n) { return sheet.insertRowsAfter(before - 1, n); },
       insertColumnsAfter: function (after, n) {
         env.writes.push({ sheet: spec.name, kind: 'insertColumns', row: 1, col: after + 1 });
         if (size) size.cols += n;

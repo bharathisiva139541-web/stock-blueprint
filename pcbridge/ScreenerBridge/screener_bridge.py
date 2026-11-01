@@ -1375,14 +1375,21 @@ def ann_step(cfg, today=None):
 # Owner, 01-Nov-2026: the Results tab (NSE's results calendar, pasted by hand a week earlier - Main's Result Date
 # reads it) missed POWERGRID and SAIPARENT, added by NSE after the paste. Once a day the first round reads NSE's
 # Event Calendar, "All Forthcoming", Equity and SME, keeps the "Financial Results..." meetings and sends them; the
-# sheet adds the companies not on the tab yet and, for a company already there whose meeting NSE moved, changes the
-# date (rows are never removed - the owner clears the tab after each results season). No email.
-CAL_SOURCES = (('equity', 'https://www.nseindia.com/api/event-calendar?index=equities'),
-               ('SME', 'https://www.nseindia.com/api/event-calendar?index=sme'))
+# sheet adds the companies not on the tab yet; for a company already there it compares NSE's date with the tab's
+# first row by results quarter: same quarter = NSE moved the meeting (the date is changed), a later quarter = the
+# next quarter's meeting (a new row above the old one). Rows are never removed - the owner clears the tab after each
+# results season. No email.
+# Each list has links tried in turn until one gives "Financial Results" meetings: the first live run (01-Nov-2026)
+# got 0 for SME from the Event Calendar link, so NSE's Board Meetings list (past ones too - dates before today are
+# left out) is the second choice.
+CAL_SOURCES = (('equity', ('https://www.nseindia.com/api/event-calendar?index=equities',
+                           'https://www.nseindia.com/api/corporate-board-meetings?index=equities')),
+               ('SME', ('https://www.nseindia.com/api/event-calendar?index=sme',
+                        'https://www.nseindia.com/api/corporate-board-meetings?index=sme')))
 CAL_PAGE = 'https://www.nseindia.com/companies-listing/corporate-filings-event-calendar'
 CAL_STATE_PATH = os.path.join(HERE, 'calendar_state.json')
 CAL_FIELDS = (           # our name <- NSE field names (compared without case / punctuation), first one found wins
-    ('symbol', ('symbol',)),
+    ('symbol', ('symbol', 'bmsymbol')),
     ('company', ('company', 'companyname', 'smname', 'name')),
     ('purpose', ('purpose', 'bmpurpose')),
     ('date', ('date', 'bmdate', 'meetingdate', 'boardmeetingdate')),
@@ -1397,10 +1404,10 @@ def cal_field(rec, name):
     return None
 
 
-def cal_rows(records):
+def cal_rows(records, today=None):
     """NSE's event calendar -> ([[SYMBOL, company, purpose, 'yyyy-mm-dd']] of "Financial Results" meetings, the earliest
-    per company, by date; how many records had a readable date)."""
-    best, dated = {}, 0
+    per company from `today` on (a date), by date; how many records had a readable date)."""
+    best, dated, since = {}, 0, today.isoformat() if today else ''
     for rec in records or []:
         if not isinstance(rec, dict):
             continue
@@ -1409,7 +1416,7 @@ def cal_rows(records):
             dated += 1
         sym = str(cal_field(rec, 'symbol') or '').strip().upper()
         purpose = re.sub(r'\s+', ' ', str(cal_field(rec, 'purpose') or '')).strip()
-        if not day or not sym or 'financial result' not in purpose.lower():
+        if not day or not sym or 'financial result' not in purpose.lower() or day < since:
             continue
         if sym not in best or day < best[sym][3]:
             best[sym] = [sym, re.sub(r'\s+', ' ', str(cal_field(rec, 'company') or '')).strip(), purpose, day]
@@ -1432,6 +1439,27 @@ def cal_fetch(opener, url):
     if recs is None:
         return None, 'NSE\'s answer had no list of meetings'
     return recs, None
+
+
+def cal_list(opener, urls, today=None):
+    """One list (Equity or SME): its links in turn until one gives "Financial Results" meetings from today on.
+    -> {'rows', 'err' (None, or why no link could be read), 'link' (1.. the one used), 'records', 'dated', 'fields'}."""
+    found, errs = None, []
+    for n, url in enumerate(urls, 1):
+        if n > 1:
+            time.sleep(1.0)
+        recs, err = cal_fetch(opener, url)
+        if recs is None:
+            errs.append(err if len(urls) == 1 else 'link %d: %s' % (n, err))
+            continue
+        rows, dated = cal_rows(recs, today)
+        got = {'rows': rows, 'err': None, 'link': n, 'records': len(recs), 'dated': dated,
+               'fields': sorted(recs[0].keys())[:20] if recs and isinstance(recs[0], dict) else []}
+        if rows:
+            return got
+        if found is None or (recs and not found['records']):
+            found = got
+    return found or {'rows': [], 'err': '; '.join(errs), 'link': 0, 'records': 0, 'dated': 0, 'fields': []}
 
 
 def cal_session():
@@ -1457,17 +1485,18 @@ def cal_step(cfg, today=None, force=False):
             st = {}
         if not force and st.get('day') == today.isoformat():
             return
-        opener, rows, counts, problems = cal_session(), [], [], []
-        for i, (which, url) in enumerate(CAL_SOURCES):
-            recs, err = cal_fetch(opener, url)
-            if recs is None:
-                problems.append('%s: %s' % (which, err))
+        opener, rows, counts, problems, seen = cal_session(), [], [], [], set()
+        for i, (which, urls) in enumerate(CAL_SOURCES):
+            got = cal_list(opener, urls, today)
+            if got['err']:
+                problems.append('%s: %s' % (which, got['err']))
             else:
-                got, dated = cal_rows(recs)
-                if recs and not dated:
-                    problems.append('%s: dates not recognised - NSE fields: %s' % (which, ', '.join(sorted(recs[0].keys())[:20])))
-                rows.extend(got)
-                counts.append('%s %d' % (which, len(got)))
+                if got['records'] and not got['dated']:
+                    problems.append('%s: dates not recognised - NSE fields: %s' % (which, ', '.join(got['fields'])))
+                new = [r for r in got['rows'] if r[0] not in seen]
+                seen.update(r[0] for r in new)
+                rows.extend(new)
+                counts.append('%s %d%s' % (which, len(new), ' (board meetings list)' if got['link'] > 1 else ''))
             if i < len(CAL_SOURCES) - 1:
                 time.sleep(1.0)
         if problems and not rows:
@@ -1485,13 +1514,17 @@ def cal_step(cfg, today=None, force=False):
                        'Manage deployments > pencil > Version: New version > Deploy')
             log('Results calendar: the sheet refused - %s' % err)
             return
-        added, moved = res.get('added') or [], res.get('moved') or []
-        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s%s.'
+        added, moved, above = res.get('added') or [], res.get('moved') or [], res.get('above') or []
+        later = res.get('later') or 0
+        log('Results calendar: %d forthcoming result meeting(s) on NSE (%s); %d added to the Results tab%s%s%s%s.'
             % (len(rows), ', '.join(counts), len(added), (' - ' + ', '.join(added[:15]) + (' ...' if len(added) > 15 else '')) if added else '',
-               ('; %d date(s) changed by NSE - %s' % (len(moved), ', '.join(moved[:10]) + (' ...' if len(moved) > 10 else ''))) if moved else ''))
+               ('; %d date(s) changed by NSE - %s' % (len(moved), ', '.join(moved[:10]) + (' ...' if len(moved) > 10 else ''))) if moved else '',
+               ('; %d next-quarter meeting(s) put in a new row above the old one - %s'
+                % (len(above), ', '.join(above[:10]) + (' ...' if len(above) > 10 else ''))) if above else '',
+               ('; %d more next round' % later) if later else ''))
         if problems:
-            log('Results calendar: %s - tried again tomorrow.' % '; '.join(problems))
-        else:
+            log('Results calendar: %s - tried again next round.' % '; '.join(problems))
+        if not problems and not later:
             with open(CAL_STATE_PATH, 'w', encoding='utf-8') as f:
                 json.dump({'day': today.isoformat(), 'added': len(added)}, f)
     except Exception as e:   # never let this stop the screener work
@@ -2797,16 +2830,17 @@ def cmd_test(cfg):
     print('7) NSE event calendar (forthcoming result meetings) from this computer ...')
     try:
         opener = cal_session()
-        for which, url in CAL_SOURCES:
-            recs, err = cal_fetch(opener, url)
-            if recs is None:
-                print('   %-7s PROBLEM - %s' % (which + ':', err))
+        for which, urls in CAL_SOURCES:
+            got = cal_list(opener, urls, date.today())
+            if got['err']:
+                print('   %-7s PROBLEM - %s' % (which + ':', got['err']))
                 continue
-            rows, dated = cal_rows(recs)
-            print('   %-7s OK - %d meeting(s), %d with Financial Results%s' % (which + ':', len(recs), len(rows),
-                  ('; e.g. %s %s' % (rows[0][0], rows[0][3])) if rows else ''))
-            if recs and not dated:
-                print('            dates not recognised - NSE fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
+            rows = got['rows']
+            print('   %-7s OK - %d meeting(s) in the %s, %d forthcoming with Financial Results%s' % (
+                which + ':', got['records'], 'event calendar' if got['link'] == 1 else 'board meetings list', len(rows),
+                ('; e.g. %s %s' % (rows[0][0], rows[0][3])) if rows else ''))
+            if got['records'] and not got['dated']:
+                print('            dates not recognised - NSE fields: %s' % ', '.join(got['fields']))
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
