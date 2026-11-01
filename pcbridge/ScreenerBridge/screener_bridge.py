@@ -32,6 +32,9 @@ And NSE's Event Calendar (all forthcoming board meetings, Equity and SME): once 
 day, companies with "Financial Results" meetings that are not yet on the sheet's
 Results tab are added to it (the tab Main's Result Date reads).
 
+XbrlCheck.bat (test only, nothing sent): NSE's XBRL results files of the symbols
+you type, read and compared with screener.in.
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
@@ -43,6 +46,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
   python screener_bridge.py calendar   add NSE's forthcoming result meetings missing from the Results tab now
   python screener_bridge.py moneycontrol SYMBOL   show moneycontrol's latest quarterly results (test, nothing sent)
+  python screener_bridge.py xbrl SYMBOL   read NSE's XBRL results files and compare them with screener.in (test, nothing sent)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -1833,6 +1837,314 @@ def cal_step(cfg, today=None, force=False):
         log('Results calendar: unexpected problem - %s' % e)
 
 
+# ------------------------------------------------------------------ NSE XBRL results (check only)
+# Owner, 01-Nov-2026 (after a ChatGPT chat about PARAS): companies also file their results with NSE as XBRL
+# ("Integrated Filing - Financial": an XML file of tagged figures). Planned use: a third source for Results Day -
+# official, the same day, WITH EPS (moneycontrol has none): the new quarter from XBRL + the earlier quarters already
+# stored from screener.in give TTM EPS / QoQ / YoY; XBRL figures are final (screener.in later only gives Promotor /
+# FII and the annual OPM). Step 1 (this): XbrlCheck.bat / command `xbrl SYMBOL ...` (or an XBRL link) finds a stock's
+# newest XBRL files on NSE, reads them and compares them with screener.in - nothing is sent to the sheet; the files
+# are saved in xbrl_check\ so they can be looked at.
+XBRL_LISTS = (   # where NSE lists a company's results with their XBRL links (tried in turn; the 2nd is a guess)
+    ('financial results', 'https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol={s}&period=Quarterly'),
+    ('integrated filing', 'https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol={s}&period=Quarterly'),
+    ('announcements', 'https://www.nseindia.com/api/corporate-announcements?index=equities&symbol={s}'),
+)
+XBRL_PAGE = 'https://www.nseindia.com/companies-listing/corporate-filings-financial-results'
+XBRL_CHECK_DIR = os.path.join(HERE, 'xbrl_check')
+XBRL_MAX_FILES = 4
+XBRL_FACTS = (   # our name <- XBRL element names (the part after the colon, any case), first one found wins
+    ('revenue', ('RevenueFromOperations', 'RevenueFromOperationsNet', 'TotalRevenueFromOperations', 'InterestEarned')),
+    ('other_income', ('OtherIncome',)),
+    ('total_income', ('Income', 'TotalIncome')),
+    ('expenses', ('Expenses', 'TotalExpenses')),
+    ('finance_costs', ('FinanceCosts', 'FinanceCost')),
+    ('depreciation', ('DepreciationDepletionAndAmortisationExpense', 'DepreciationAndAmortisationExpense',
+                      'DepreciationAmortisationAndImpairmentExpense')),
+    ('exceptional', ('ExceptionalItemsBeforeTax', 'ExceptionalItems')),
+    ('pbt', ('ProfitBeforeTax', 'ProfitLossBeforeTax')),
+    ('tax', ('TaxExpense', 'TotalTaxExpense')),
+    ('pat', ('ProfitLossForPeriod', 'ProfitLossForThePeriod', 'ProfitLossForPeriodFromContinuingOperations',
+             'ProfitLossFromContinuingOperations')),
+    ('pat_owners', ('ProfitOrLossAttributableToOwnersOfParent', 'ProfitLossAttributableToOwnersOfParent')),
+    ('eps', ('BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations', 'BasicEarningsLossPerShareFromContinuingOperations',
+             'BasicEarningsPerShare', 'BasicEarningsLossPerShare')),
+)
+XBRL_TEXTS = (('nature', ('NatureOfReportStandaloneConsolidated', 'NatureOfReport')), ('symbol', ('Symbol', 'NSESymbol')),
+              ('company', ('NameOfTheCompany', 'NameOfCompany')))
+SCREENER_ROWS = (('sales', ('sales', 'revenue')), ('expenses', ('expenses',)), ('op', ('operating profit', 'financing profit')),
+                 ('opm', ('opm %', 'opm', 'financing margin %')), ('other_income', ('other income',)), ('interest', ('interest',)),
+                 ('depreciation', ('depreciation',)), ('pbt', ('profit before tax',)), ('pat', ('net profit',)), ('eps', ('eps in rs', 'eps')))
+CRORE = 1e7
+
+
+def _iso_days(a, b):
+    try:
+        return (date.fromisoformat(b[:10]) - date.fromisoformat(a[:10])).days
+    except (TypeError, ValueError):
+        return None
+
+
+def xbrl_parse(raw):
+    """An XBRL file (bytes) -> {'nature', 'symbol', 'company', 'quarter' ('Sep 2026'), 'start', 'end', 'q': {our name: value},
+    'cum': {our name: value} of the longer period ending the same day (half year / 9 months / year) and its 'cum_months',
+    'numeric': [(element, value)] of the quarter, 'contexts'}, or None (not XBRL / no quarter in it). Amounts as filed
+    (rupees), EPS in rupees a share."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return None
+    local = lambda tag: str(tag).rsplit('}', 1)[-1]
+    ctx = {}
+    for c in root.iter():
+        if local(c.tag) != 'context':
+            continue
+        start = end = None
+        dim = False
+        for e in c.iter():
+            n = local(e.tag)
+            if n == 'startDate':
+                start = (e.text or '').strip()
+            elif n in ('endDate', 'instant'):
+                end = (e.text or '').strip()
+            elif n in ('segment', 'scenario'):
+                dim = True
+        ctx[c.get('id')] = (start, end, dim)
+    facts = {}
+    for e in root.iter():
+        ref = e.get('contextRef')
+        if ref is not None and len(e) == 0:
+            facts.setdefault(local(e.tag).lower(), []).append((ref, (e.text or '').strip()))
+    plain = {k: v for k, v in ctx.items() if not v[2] and v[0] and v[1]}
+    quarters = [(v[1], k) for k, v in plain.items() if 80 <= (_iso_days(v[0], v[1]) or 0) <= 100]
+    if not quarters:
+        return None
+    end, qid = max(quarters)
+    longer = [(_iso_days(v[0], v[1]), k) for k, v in plain.items() if v[1] == end and (_iso_days(v[0], v[1]) or 0) > 100]
+    cid = min(longer)[1] if longer else None
+
+    def num_of(names, ref):
+        for n in names:
+            for r, t in facts.get(n.lower(), []):
+                if r == ref:
+                    v = _fnum(t)
+                    if v is not None:
+                        return v
+        return None
+    out = {'quarter': '%s %s' % (_MON[int(end[5:7]) - 1].title(), end[:4]), 'start': plain[qid][0], 'end': end,
+           'q': {}, 'cum': {}, 'cum_months': round((_iso_days(plain[cid][0], end) or 0) / 30.4) if cid else 0, 'contexts': len(ctx)}
+    for name, names in XBRL_FACTS:
+        out['q'][name] = num_of(names, qid)
+        if cid:
+            out['cum'][name] = num_of(names, cid)
+    for name, names in XBRL_TEXTS:
+        out[name] = next((t for n in names for _, t in facts.get(n.lower(), []) if t), '')
+    out['numeric'] = [(k, _fnum(t)) for k, vals in sorted(facts.items()) for r, t in vals if r == qid and _fnum(t) is not None][:60]
+    return out
+
+
+def xbrl_opm(q):
+    """The quarter's OPM % two ways: (Revenue - Expenses + Finance costs + Depreciation) / Revenue (screener.in's Operating
+    Profit) and (PBT + Finance costs + Depreciation - Other income) / Revenue (EBITDA as in the ChatGPT chat). None when a
+    figure is missing."""
+    r, f, d = q.get('revenue'), q.get('finance_costs') or 0.0, q.get('depreciation') or 0.0
+    if not r:
+        return None, None
+    a = (r - q['expenses'] + f + d) / r * 100 if q.get('expenses') is not None else None
+    b = (q['pbt'] + f + d - (q.get('other_income') or 0.0)) / r * 100 if q.get('pbt') is not None else None
+    return a, b
+
+
+def screener_quarters(html):
+    """screener.in company page -> {'quarters': ['Sep 2026', ...] newest first, 'rows': {our name: {quarter: value}}} from the
+    Quarterly Results table, or None."""
+    i = max(html.find('id="quarters"'), html.find("id='quarters'"))
+    j = max(html.find('id="profit-loss"'), html.find("id='profit-loss'"))
+    seg = html[i:j] if 0 <= i < j else html[i:] if i >= 0 else html
+    p = _Tables()
+    try:
+        p.feed(seg)
+    except Exception:
+        pass
+    for tb in p.tables:
+        for hi, head in enumerate(tb[:3]):
+            qs = [(k, _qlabel(c, True)) for k, c in enumerate(head)]
+            qs = [x for x in qs if x[1]]
+            if len(qs) < 2:
+                continue
+            rows = {}
+            for r in tb[hi + 1:]:
+                if not r:
+                    continue
+                label = re.sub(r'\s*\+\s*$', '', r[0]).strip().lower()
+                key = next((k for k, names in SCREENER_ROWS if label in names), None)
+                if not key or key in rows:
+                    continue
+                shift = len(r) - len(head)
+                rows[key] = {q: _num(str(r[k + shift]).replace('%', '')) for k, q in qs if 0 <= k + shift < len(r)}
+                rows[key] = {q: v for q, v in rows[key].items() if v is not None}
+            if rows.get('sales') or rows.get('pat'):
+                return {'quarters': sorted({q for _, q in qs}, key=_qkey, reverse=True), 'rows': rows}
+    return None
+
+
+def xbrl_compare(x, sc):
+    """One XBRL file's quarter vs screener.in's table -> lines to print (what the sheet would get, and screener's own)."""
+    q, quarter = x['q'], x['quarter']
+    rows = (sc or {}).get('rows') or {}
+    has = lambda key, qq: qq in (rows.get(key) or {})
+    shown = has('sales', quarter) or has('pat', quarter)
+    lines = []
+
+    def cmp(label, mine, key, scale=1.0, fmt='%.2f'):
+        theirs = rows.get(key, {}).get(quarter) if shown else None
+        m = (fmt % (mine / scale)) if mine is not None else '-'
+        t = (fmt % theirs) if theirs is not None else '-'
+        diff = ''
+        if mine is not None and theirs:
+            d, gap = (mine / scale - theirs) / abs(theirs) * 100, abs(mine / scale - theirs)
+            # screener.in rounds: 2 decimals, whole crores for big figures
+            diff = 'OK' if abs(d) < 0.1 or gap <= 0.011 or (abs(theirs) >= 1000 and gap <= 0.51) else 'differs %+.1f%%' % d
+        lines.append('     %-22s %14s %14s   %s' % (label, m, t, diff))
+    lines.append('     %-22s %14s %14s' % ('', 'XBRL', 'screener.in' if shown else '(not shown yet)'))
+    cmp('Revenue (Cr)', q.get('revenue'), 'sales', CRORE)
+    cmp('Other income (Cr)', q.get('other_income'), 'other_income', CRORE)
+    cmp('Depreciation (Cr)', q.get('depreciation'), 'depreciation', CRORE)
+    cmp('Interest (Cr)', q.get('finance_costs'), 'interest', CRORE)
+    cmp('PBT (Cr)', q.get('pbt'), 'pbt', CRORE)
+    cmp('Net Profit (Cr)', q.get('pat'), 'pat', CRORE)
+    if q.get('pat_owners') is not None:
+        cmp('  owners\' share (Cr)', q.get('pat_owners'), 'pat', CRORE)
+    cmp('EPS (Rs)', q.get('eps'), 'eps')
+    a, b = xbrl_opm(q)
+    theirs = rows.get('opm', {}).get(quarter) if shown else None
+    lines.append('     %-22s %14s %14s   %s' % ('OPM %', '%.1f / %.1f' % (a, b) if a is not None and b is not None else
+                                                ('%.1f' % (a if a is not None else b)) if (a is not None or b is not None) else '-',
+                                                '%.0f' % theirs if theirs is not None else '-',
+                                                '(1st = Revenue - Expenses + Interest + Depreciation; 2nd = PBT + Interest + '
+                                                'Depreciation - Other income)'))
+    # what the sheet would work out: the new quarter from XBRL + the earlier quarters from screener.in
+    eps = dict(rows.get('eps') or {})
+    prev = [_qshift(quarter, 3 * k) for k in (1, 2, 3)]
+    older = [_qshift(quarter, 3 * k) for k in (4, 5, 6, 7)]
+    if q.get('eps') is not None and all(p in eps for p in prev):
+        ttm = q['eps'] + sum(eps[p] for p in prev)
+        lfy = sum(eps[p] for p in older) if all(p in eps for p in older) else None
+        own = sum(eps[p] for p in [quarter] + prev) if shown and quarter in eps else None
+        lines.append('     TTM EPS: %.2f = XBRL %.2f + screener %s%s%s' % (
+            ttm, q['eps'], ' + '.join('%s %.2f' % (p, eps[p]) for p in prev),
+            ('; Last FY EPS %.2f' % lfy) if lfy is not None else '; Last FY EPS: older quarters missing',
+            ('; screener.in\'s own TTM EPS %.2f %s' % (own, 'OK' if abs(own - ttm) < 0.06 else 'DIFFERS')) if own is not None else ''))
+    else:
+        lines.append('     TTM EPS: cannot be worked out - screener.in lacks %s' % ', '.join(p for p in prev if p not in eps) or 'the EPS')
+    sales = rows.get('sales') or {}
+    if q.get('revenue') is not None:
+        for what, back in (('QoQ', 3), ('YoY', 12)):
+            base = sales.get(_qshift(quarter, back))
+            if base:
+                mine = (q['revenue'] / CRORE / base - 1) * 100
+                own = (sales[quarter] / base - 1) * 100 if shown and sales.get(quarter) else None
+                lines.append('     Revenue %s: %+.1f%% (vs %s %.2f Cr)%s' % (what, mine, _qshift(quarter, back), base,
+                             ('; screener.in %+.1f%%' % own) if own is not None else ''))
+    return lines
+
+
+def xbrl_links(opener, sym, out):
+    """XBRL links of a stock from NSE's lists -> [url] newest first (by the date-time in the file name), printing what
+    each list gave."""
+    found = []
+    for name, url in XBRL_LISTS:
+        time.sleep(1.0)
+        try:
+            status, raw = nse_get(opener, url.format(s=urllib.parse.quote(sym)), referer=XBRL_PAGE)
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            out('   %-18s NSE did not answer (%s)' % (name + ':', e))
+            continue
+        if status != 200:
+            out('   %-18s HTTP %s' % (name + ':', status))
+            continue
+        try:
+            obj = json.loads(raw.decode('utf-8', errors='replace'))
+        except ValueError:
+            out('   %-18s a web page came back, not data' % (name + ':'))
+            continue
+        links, stack = [], [obj]
+        while stack:
+            v = stack.pop()
+            if isinstance(v, dict):
+                stack.extend(v.values())
+            elif isinstance(v, list):
+                stack.extend(v)
+            elif isinstance(v, str) and re.match(r'(?i)^https?://\S+\.xml$', v.strip()):
+                links.append(v.strip())
+        recs = ipo_records(obj) or []
+        keys = sorted(recs[0].keys())[:14] if recs and isinstance(recs[0], dict) else []
+        out('   %-18s %d record(s), %d XBRL link(s)%s' % (name + ':', len(recs), len(set(links)),
+            ('; fields: ' + ', '.join(keys)) if keys and not links else ''))
+        found += [u for u in links if u not in found]
+    stamp = lambda u: (lambda m: m.group(1)[4:8] + m.group(1)[2:4] + m.group(1)[:2] + m.group(1)[8:] if m else '')(
+        re.search(r'_(\d{14})_', u))
+    return sorted(found, key=stamp, reverse=True)
+
+
+def xbrl_check(cfg, args, out=print):
+    """XbrlCheck.bat: for each NSE symbol (or XBRL link) - its newest XBRL files, read and compared with screener.in."""
+    opener = nse_session()
+    os.makedirs(XBRL_CHECK_DIR, exist_ok=True)
+    pages = {}
+    for arg in args:
+        direct = re.match(r'(?i)^https?://', arg)
+        sym = '' if direct else arg.strip().upper()
+        out('')
+        out('== %s' % (arg if direct else sym))
+        links = [arg] if direct else xbrl_links(opener, sym, out)
+        if not links:
+            out('   no XBRL link found on NSE for %s' % sym)
+            continue
+        for url in links[:XBRL_MAX_FILES]:
+            time.sleep(1.0)
+            try:
+                status, raw = nse_get(opener, url, referer=XBRL_PAGE, timeout=60)
+            except (OSError, urllib.error.URLError, socket.timeout) as e:
+                out('   %s: NSE did not answer (%s)' % (url.rsplit('/', 1)[-1], e))
+                continue
+            name = url.rsplit('/', 1)[-1]
+            if status != 200:
+                out('   %s: HTTP %s' % (name, status))
+                continue
+            try:
+                with open(os.path.join(XBRL_CHECK_DIR, re.sub(r'[^A-Za-z0-9._-]', '_', (sym or 'link') + '_' + name)), 'wb') as f:
+                    f.write(raw)
+            except OSError:
+                pass
+            x = xbrl_parse(raw)
+            if not x:
+                out('   %s: not an XBRL file with a quarter in it (%d bytes)' % (name, len(raw)))
+                continue
+            sym = sym or (x['symbol'] or '').upper()
+            nature = 'consolidated' if 'consol' in (x['nature'] or '').lower() else 'standalone' if x['nature'] else '?'
+            out('   %s: %s, %s, quarter %s (%s to %s)%s' % (name, x['company'] or sym, nature, x['quarter'], x['start'], x['end'],
+                ('; also %d months to %s' % (x['cum_months'], x['end'])) if x['cum_months'] else ''))
+            if not any(v is not None for v in x['q'].values()):
+                out('     none of the usual figures found - the quarter\'s numbers in the file: %s'
+                    % ', '.join('%s=%g' % kv for kv in x['numeric'][:25]))
+                continue
+            key = (sym, nature != 'standalone')
+            if key not in pages and sym:
+                try:
+                    kind, html = fetch_page(cfg, sym, consolidated=key[1])
+                    pages[key] = screener_quarters(html) if kind == 'ok' else None
+                except Blocked as e:
+                    pages[key] = None
+                    out('     screener.in: %s' % e)
+                polite_sleep(cfg)
+            for line in xbrl_compare(x, pages.get(key)):
+                out(line)
+    out('')
+    out('(nothing was sent to the sheet; the XBRL files are in %s)' % XBRL_CHECK_DIR)
+
+
 # ------------------------------------------------------------------ moneycontrol (reading)
 # moneycontrol.com often shows a quarter's results before screener.in. The run's moneycontrol step
 # (further down, mc_step) sends those figures for results screener.in does not show yet; TestConnection
@@ -3294,6 +3606,11 @@ def main(argv):
         return run_once(cfg)
     if cmd == 'test':
         return cmd_test(cfg)
+    if cmd == 'xbrl':
+        args = [a for a in argv[2:] if a.strip()] or ['TCS']
+        print('NSE XBRL test - figures from the XBRL files vs screener.in (nothing is sent to the sheet)')
+        xbrl_check(cfg, args, out=print)
+        return 0
     if cmd == 'moneycontrol':
         syms = [a for a in argv[2:] if a.strip()] or ['TCS']
         print('moneycontrol test (nothing is sent to the sheet)')

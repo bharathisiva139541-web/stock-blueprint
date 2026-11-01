@@ -20,6 +20,7 @@ Nothing runs continuously. If you stay logged in for days, use RunNow.bat when y
  - AnnouncementsNow.bat   send WHEN NSE got each company's results (last 4 days) right now
  - CalendarNow.bat        add NSE's forthcoming result meetings missing from the Results tab right now
  - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
+ - XbrlCheck.bat           read NSE's XBRL results files for the symbols you type and compare them with screener.in (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
@@ -140,6 +141,17 @@ Result Date (and so the Results Day check and the Upcoming Results email) then s
  - TestConnection line 7 checks NSE, says which list answered and, when a list has no result
    meeting, what each link gave (sends nothing). To switch it off:
    "calendar": false in config.json.
+
+NSE XBRL RESULTS - TEST ONLY (XbrlCheck.bat)
+Companies also file their results with NSE as XBRL ("Integrated Filing - Financial", an XML file of tagged figures,
+the same day). The plan: an official third source for Results Day, with EPS. XbrlCheck.bat is the first, test-only
+step: type NSE symbols (e.g. PARAS TCS) or paste an XBRL link. For each it shows
+ - which NSE lists gave XBRL links (and the field names when none did),
+ - each newest XBRL file: company, standalone / consolidated, the quarter,
+ - the quarter's Revenue, Other income, Depreciation, Interest, PBT, Net Profit, EPS and OPM % next to screener.in's,
+ - TTM EPS worked out the planned way: the XBRL quarter + screener.in's 3 earlier quarters (and screener's own, once it
+   shows the quarter), Revenue QoQ / YoY.
+Nothing is sent to the sheet. The files are saved in the xbrl_check folder. Send the screen to Claude.
 
 MONEYCONTROL (first figures while screener.in is late)
 moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies
