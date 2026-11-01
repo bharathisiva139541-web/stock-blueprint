@@ -1,7 +1,8 @@
 'use strict';
 // Results calendar from NSE (owner, 01-Nov-2026): the PC posts NSE's forthcoming "Financial Results" meetings
-// (doPost action 'calendar'); the sheet adds ONLY the companies its Results tab does not have yet - at the
-// bottom, same columns, DATE written like the cells already there - and never changes a row that is there.
+// (doPost action 'calendar'); the sheet adds the companies its Results tab does not have yet - at the bottom,
+// same columns, DATE written like the cells already there - and moves the date of a company NSE rescheduled
+// (not when that result already came out, nor to another season's meeting). Rows are never removed.
 const test = require('node:test');
 const assert = require('node:assert');
 const mock = require('./fixtures/apps-script-mock.js');
@@ -23,26 +24,40 @@ const load = (rows) => mock.loadCodeGs({ sheets: [{ name: 'Results', rows: HEAD.
   { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
 const post = (e, rows) => e.post({ token: TOKEN, action: 'calendar', rows: rows });
 
-test('only the missing companies are added, at the bottom, by date, with text dates like the tab has', () => {
+test('the missing companies are added at the bottom by date, text dates like the tab has; a moved meeting gets its new date', () => {
   const e = load([['AAKASH', 'Aakash Exploration Services Limited', 'Financial Results/Ot', '02-Nov-26'],
                   ['ZENTEC', 'Zen Technologies Limited', 'Financial Results/Ot', '31-Oct-26'], ['', '', '', '']]);
   const r = post(e, NSE);
   assert.strictEqual(r.ok, true);
   assert.deepStrictEqual(Array.from(r.added), ['POWERGRID', 'SAIPARENT', 'NEWSME']);
+  assert.deepStrictEqual(Array.from(r.moved), ['ZENTEC 31/10 -> 05/11']);
   const rows = e.sheet('Results').rows;
   assert.deepStrictEqual(rows.slice(2, 7).map((x) => x.slice(0, 4)), [
     ['AAKASH', 'Aakash Exploration Services Limited', 'Financial Results/Ot', '02-Nov-26'],
-    ['ZENTEC', 'Zen Technologies Limited', 'Financial Results/Ot', '31-Oct-26'],      // never changed (NSE says 05-Nov)
+    ['ZENTEC', 'Zen Technologies Limited', 'Financial Results', '05-Nov-26'],          // NSE moved it from 31-Oct
     ['POWERGRID', 'Power Grid Corporation of India Limited', 'Financial Results/Dividend', '01-Nov-26'],
     ['SAIPARENT', 'Sai Parenterals Limited', 'Financial Results', '01-Nov-26'],
     ['NEWSME', 'New SME Limited', 'Financial Results/Fund Raising', '04-Nov-26']]);
   assert.ok(e.writes.some((w) => w.sheet === 'Results' && w.kind === 'format' && w.row === 5 && w.col === 4), 'DATE cells set to plain text first');
   // what Main's Result Date and the Results Day check read
   const cal = e.call('ab_rsReadCalendar_').map((c) => c.symbol + ' ' + c.dayKey);
-  assert.deepStrictEqual(Array.from(cal), ['AAKASH 2026-11-02', 'ZENTEC 2026-10-31', 'POWERGRID 2026-11-01', 'SAIPARENT 2026-11-01', 'NEWSME 2026-11-04']);
-  // the next day: nothing new
-  assert.deepStrictEqual(Array.from(post(e, NSE).added), []);
+  assert.deepStrictEqual(Array.from(cal), ['AAKASH 2026-11-02', 'ZENTEC 2026-11-05', 'POWERGRID 2026-11-01', 'SAIPARENT 2026-11-01', 'NEWSME 2026-11-04']);
+  // the next day: nothing new, nothing moved
+  const again = post(e, NSE);
+  assert.deepStrictEqual([Array.from(again.added), Array.from(again.moved)], [[], []]);
   assert.strictEqual(e.sheet('Results').rows.filter((x) => x[0]).length, 7);
+});
+
+test('a date is not moved when that result already came out, or to another season\'s meeting', () => {
+  const e = mock.loadCodeGs({ sheets: [
+    { name: 'Results', rows: HEAD.concat([['ZENTEC', 'Zen', 'Financial Results', '31-Oct-26'], ['AAKASH', 'Aakash', 'Financial Results', '10-Aug-26'],
+      ['SAIPARENT', 'Sai', 'Financial Results', '30-Oct-26'], ['SAIPARENT', 'Sai', 'Financial Results', '30-Oct-26']]) },
+    { name: 'Results Tracker', rows: [['Symbol', 'Company', 'Result Date', 'Quarter Expected', 'Status'], ['ZENTEC', 'Zen', '31/10/2026', 'Sep 2026', 'Updated']] }
+  ] }, { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
+  const r = post(e, NSE);
+  assert.deepStrictEqual(Array.from(r.moved), ['SAIPARENT 30/10 -> 01/11'], 'ZENTEC came out on 31-Oct; AAKASH 10-Aug is another season');
+  const rows = e.sheet('Results').rows;
+  assert.deepStrictEqual(rows.slice(2, 6).map((x) => x[0] + ' ' + x[3]), ['ZENTEC 31-Oct-26', 'AAKASH 10-Aug-26', 'SAIPARENT 01-Nov-26', 'SAIPARENT 01-Nov-26']);
 });
 
 test('the DATE style of the tab is kept: 4-digit years, or real dates', () => {

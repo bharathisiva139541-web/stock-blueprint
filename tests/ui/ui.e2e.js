@@ -492,6 +492,32 @@ function check(name, fn) {
           assert.deepStrictEqual(c, [c[1], c[1], 0], 'Clear shows every row again');
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
+        await check('results: every tile and bar opens the list of its stocks, with the same numbers', async () => {
+          errors.length = 0;
+          await page.goto(base + '#results', { waitUntil: 'load' });
+          await page.waitForSelector('a.tile-link[href="#results/above"]', { timeout: 15000 });
+          const tiles = await page.$$eval('a.tile-link', (a) => a.map((x) => x.getAttribute('href')));
+          assert.deepStrictEqual(tiles, ['#results/tracked', '#results/tracked', '#results/tracked', '#results/above', '#results/soldoff', '#results/waiting']);
+          const above = await page.$eval('a.tile-link[href="#results/above"] .value', (x) => x.textContent.trim());
+          await page.click('a.tile-link[href="#results/above"]');
+          await page.waitForFunction(() => location.hash === '#results/above' && document.querySelector('#rl-count'), null, { timeout: 15000 });
+          const a1 = await page.evaluate(() => ({ count: document.querySelector('#rl-count').textContent, cur: document.querySelector('.rl-kinds [aria-current="page"]').textContent,
+            h1: document.querySelector('h1').textContent }));
+          assert.ok(a1.count.indexOf(above.split(' ')[0] + ' of ') === 0, a1.count + ' vs tile ' + above);
+          assert.match(a1.cur, /Above pre-result price/);
+          assert.strictEqual(a1.h1, 'Above pre-result price');
+          // a verdict bar, then the way back
+          await page.click('a[href="#results"]');
+          await page.waitForSelector('a.bar-row[href="#results/strong"]', { timeout: 15000 });
+          const strongBar = await page.$eval('a.bar-row[href="#results/strong"] .bar-val', (x) => x.textContent.trim());
+          await page.click('a.bar-row[href="#results/strong"]');
+          await page.waitForFunction(() => location.hash === '#results/strong' && document.querySelector('#rl-count'), null, { timeout: 15000 });
+          assert.ok((await page.$eval('#rl-count', (x) => x.textContent)).indexOf(strongBar + ' of ') === 0, 'Strong bar ' + strongBar);
+          await page.fill('#rl-q', 'zzzz-no-such');
+          await page.waitForFunction(() => /^0 of /.test(document.querySelector('#rl-count').textContent));
+          await page.fill('#rl-q', '');
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
         await check('strategy: post-results opportunities preset runs and labels its four set-ups', async () => {
           const r = await page.evaluate(async () => {
             await window.SB.loadHistory();
