@@ -93,7 +93,7 @@ DEFAULTS = {
     'price_bands': True,       # download NSE's price band changes at every run
     'ipos': True,              # read NSE's IPO lists at every run (IPO Tracker tab + daily email)
     'xbrl': True,              # read NSE's XBRL results filings of the results the sheet waits for (Results Day figures)
-    'max_xbrl_per_run': 25,
+    'max_xbrl_per_run': 60,
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
@@ -2188,16 +2188,18 @@ def xbrl_figures(x):
     return out
 
 
-def xbrl_quarter(opener, sym, quarter):
+def xbrl_quarter(opener, sym, quarter, basis=''):
     """The filing of `quarter` ('Sep 2026') of a stock -> {'cons': figures|None, 'stand': figures|None, 'files': [...]} or
-    None when NSE has none of that quarter yet. Newest files first; stops at the first file of an older quarter."""
+    None when NSE has none of that quarter yet. Newest files first; stops at the first file of an older quarter.
+    basis 'C' / 'S' = only the consolidated / standalone file is needed (the basis of screener.in's figures in the sheet)."""
+    need = {'C': ('cons',), 'S': ('stand',)}.get(str(basis or '').upper(), ('cons', 'stand'))
     links = xbrl_links(opener, sym, lambda *a: None, lists=XBRL_STEP_LISTS, first_only=True)
     got, files, read = {}, [], 0
     for url in links:
         name = url.rsplit('/', 1)[-1]
         if 'GOVERNANCE' in name.upper():
             continue
-        if read >= XBRL_FILES_PER_STOCK or ('cons' in got and 'stand' in got):
+        if read >= XBRL_FILES_PER_STOCK or all(k in got for k in need):
             break
         time.sleep(1.0)
         read += 1
@@ -2213,7 +2215,7 @@ def xbrl_quarter(opener, sym, quarter):
         if x['quarter'] != quarter or not any(v is not None for v in x['q'].values()):
             continue
         key = 'cons' if 'consol' in (x['nature'] or '').lower() else 'stand'
-        if key not in got:                         # the newest of each kind (a Revised file comes after the Original)
+        if key in need and key not in got:         # the newest of each kind (a Revised file comes after the Original)
             got[key] = xbrl_figures(x)
             files.append(name)
     if not got:
@@ -2221,8 +2223,9 @@ def xbrl_quarter(opener, sym, quarter):
     return {'cons': got.get('cons'), 'stand': got.get('stand'), 'files': files}
 
 
-def xbrl_step(cfg, want, now=None):
-    """Reads and sends the XBRL filings the sheet wants. Returns how many were sent; never raises."""
+def xbrl_step(cfg, want, now=None, basis=None):
+    """Reads and sends the XBRL filings the sheet wants (basis: {SYM: 'C' | 'S'} - the one file needed). Returns how many
+    were sent; never raises."""
     if cfg.get('xbrl') is False or not want:
         return 0
     try:
@@ -2232,13 +2235,14 @@ def xbrl_step(cfg, want, now=None):
                 st = json.load(f)
         except (OSError, ValueError):
             st = {}
-        cap = int(cfg.get('max_xbrl_per_run', 25))
+        cap = int(cfg.get('max_xbrl_per_run', 60))
+        basis = basis or {}
         todo = list(want.items())[:cap]
         opener = nse_session()
         items, waiting = [], []
         for sym, quarter in todo:
             try:
-                got = xbrl_quarter(opener, sym, str(quarter))
+                got = xbrl_quarter(opener, sym, str(quarter), basis.get(sym, ''))
             except Exception as e:     # one stock's oddity never stops the rest
                 got = None
                 log('NSE XBRL: %s - %s' % (sym, e))
@@ -3365,7 +3369,7 @@ def run_once(cfg):
             % (len(todo), len(priority), len(missing), len(ans.get('missing', [])),
                (' %d sent earlier in this round are skipped.' % len(already)) if already else ''))
         if not todo and not resumed:
-            if xbrl_step(cfg, ans.get('xbrl') or {}):
+            if xbrl_step(cfg, ans.get('xbrl') or {}, basis=ans.get('xbrlBasis') or {}):
                 log('Asking the sheet to process the NSE XBRL filing(s)...')
                 ask_process(cfg)
             state['stage'] = 'done'
@@ -3459,7 +3463,7 @@ def run_once(cfg):
             if 'xbrl' not in ans and priority and cfg.get('xbrl') is not False:
                 log('NSE XBRL: the sheet\'s web app does not ask for it yet - after pasting the new Code.gs + Code2.gs, '
                     'do the New version deploy (see README).')
-            xbrl_sent = xbrl_step(cfg, ans.get('xbrl') or {})
+            xbrl_sent = xbrl_step(cfg, ans.get('xbrl') or {}, basis=ans.get('xbrlBasis') or {})
         except Exception as e:   # never let XBRL stop the run
             log('NSE XBRL: unexpected problem - %s' % e)
 

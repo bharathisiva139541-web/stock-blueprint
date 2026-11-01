@@ -75,6 +75,28 @@ test('xbrlput: figures checked and stored in a hidden tab; list asks for the qua
   assert.deepStrictEqual(e.post({ token: 'nope', action: 'xbrlput', items: [] }), { ok: false, error: 'bad token' });
 });
 
+test('list -> xbrl: rows needing figures first; Updated rows only while the result is 3 days old; the file needed', () => {
+  const e = env();
+  e.post({ token: TOKEN, action: 'put', items: [{ sym: 'PARAS', html: page(Q8, PARAS_OLD) },
+    { sym: 'STAND', html: page(Q8, PARAS_OLD, { basis: 'Standalone' }) }] });
+  const tr = { list: [
+    { symbol: 'OLDUPD', status: 'Updated', source: 'screener.in', rdKey: '2026-10-20', quarter: 'Sep 2026' },   // 10 days: no
+    { symbol: 'NEWUPD', status: 'Updated', source: 'screener.in', rdKey: '2026-10-28', quarter: 'Sep 2026' },   // 2 days
+    { symbol: 'PARAS', status: 'Pending', source: '', rdKey: '2026-10-12', quarter: 'Sep 2026' },
+    { symbol: 'STAND', status: 'Pending', source: '', rdKey: '2026-10-29', quarter: 'Sep 2026' },
+    { symbol: 'MCROW', status: 'Updated', source: 'moneycontrol', rdKey: '2026-10-15', quarter: 'Sep 2026' },
+    { symbol: 'FUTURE', status: 'Pending', source: '', rdKey: '2026-11-05', quarter: 'Sep 2026' },
+    { symbol: 'GONE', status: 'Gave up', source: '', rdKey: '2026-10-25', quarter: 'Sep 2026' },
+    { symbol: 'XDONE', status: 'Updated', source: 'NSE XBRL', rdKey: '2026-10-29', quarter: 'Sep 2026' }] };
+  e.post({ token: TOKEN, action: 'xbrlput', items: [{ sym: 'XDONE', quarter: 'Sep 2026', cons: PARAS_X }] });
+  const basis = {};
+  const want = e.call('ab_xbrlWant_', tr, '2026-10-30', basis);
+  assert.deepStrictEqual(Object.keys(want), ['PARAS', 'STAND', 'MCROW', 'NEWUPD']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(basis)), { PARAS: 'C', STAND: 'S' }, 'no stored screener.in figures: both files');
+  const l = e.post({ token: TOKEN, action: 'list' });
+  assert.ok(l.xbrlBasis && typeof l.xbrlBasis === 'object', 'list sends the basis too');
+});
+
 test('Results Day: NSE XBRL figures while screener.in is behind (final), then only the trend tags from screener.in', () => {
   const e = env();
   e.post({ token: TOKEN, action: 'put', items: [{ sym: 'PARAS', html: page(Q8, PARAS_OLD) }] });

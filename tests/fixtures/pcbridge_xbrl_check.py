@@ -191,6 +191,7 @@ def fake_api(cfg, action, payload=None, timeout=120, tries=3):
     return {'ok': True, 'stored': len(payload['items'])}
 sb.api = fake_api
 del HITS[:]
+assert sb.DEFAULTS['max_xbrl_per_run'] == 60
 n = sb.xbrl_step({'max_xbrl_per_run': 2}, {'PARAS': 'Sep 2026', 'LATECO': 'Sep 2026', 'NONE': 'Sep 2026'})
 assert n == 1 and len(SENT) == 1, (n, SENT)
 it = SENT[0]['items'][0]
@@ -204,6 +205,16 @@ assert not any('NONE' in h for h in HITS), 'over the cap: next round'
 assert LOGS == ['NSE XBRL: 1 of 2 stock(s) have their results filing on NSE - sent PARAS; not filed yet: LATECO; 1 more next round.'], LOGS
 st = json.load(open(sb.XBRL_STATE_PATH))
 assert st['PARAS']['found'] is True and st['LATECO']['found'] is False, st
+# the sheet's figures are consolidated: only that file is read (the standalone one is not downloaded)
+del HITS[:], SENT[:]
+sb.api = fake_api
+assert sb.xbrl_step({}, {'PARAS': 'Sep 2026'}, basis={'PARAS': 'C'}) == 1
+it = SENT[0]['items'][0]
+assert it['cons']['revenue'] == 151.12 and it['stand'] is None and it['files'] == ['INTEGRATED_FILING_INDAS_1749104_29102026060924_WEB.xml'], it
+assert not any('1749103' in h for h in HITS), HITS
+del HITS[:], SENT[:]
+assert sb.xbrl_step({}, {'PARAS': 'Sep 2026'}, basis={'PARAS': 'S'}) == 1
+assert SENT[0]['items'][0]['cons'] is None and SENT[0]['items'][0]['stand']['revenue'] == 140.0
 # nothing wanted / switched off: no request at all
 del HITS[:], SENT[:]
 assert sb.xbrl_step({}, {}) == 0 and sb.xbrl_step({'xbrl': False}, {'PARAS': 'Sep 2026'}) == 0 and HITS == [] and SENT == []
