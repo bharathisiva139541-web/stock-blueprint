@@ -1441,25 +1441,49 @@ def cal_fetch(opener, url):
     return recs, None
 
 
+def cal_purposes(records, today=None, top=4):
+    """What NSE's meetings from `today` on are for, most frequent first: 'Board Meeting Intimation 30, Fund Raising 2'."""
+    since, seen = today.isoformat() if today else '', {}
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        day = ipo_date(cal_field(rec, 'date'))
+        if not day or day < since:
+            continue
+        p = re.sub(r'\s+', ' ', str(cal_field(rec, 'purpose') or '')).strip()[:40] or '(no purpose)'
+        seen[p] = seen.get(p, 0) + 1
+    return ', '.join('%s %d' % kv for kv in sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))[:top])
+
+
 def cal_list(opener, urls, today=None):
     """One list (Equity or SME): its links in turn until one gives "Financial Results" meetings from today on.
-    -> {'rows', 'err' (None, or why no link could be read), 'link' (1.. the one used), 'records', 'dated', 'fields'}."""
-    found, errs = None, []
+    -> {'rows', 'err' (None, or why no link could be read), 'link' (1.. the one used), 'records', 'dated', 'fields',
+        'tried' (one line per link read: what it gave - shown when the list has no result meeting)}."""
+    found, errs, tried = None, [], []
     for n, url in enumerate(urls, 1):
         if n > 1:
             time.sleep(1.0)
         recs, err = cal_fetch(opener, url)
         if recs is None:
             errs.append(err if len(urls) == 1 else 'link %d: %s' % (n, err))
+            tried.append('link %d: %s' % (n, err))
             continue
         rows, dated = cal_rows(recs, today)
+        if not recs:
+            tried.append('link %d: no meetings' % n)
+        else:
+            what = cal_purposes(recs, today)
+            tried.append('link %d: %d meeting(s), %d with Financial Results from today%s'
+                         % (n, len(recs), len(rows), (' - ' + what) if what and not rows else ''))
         got = {'rows': rows, 'err': None, 'link': n, 'records': len(recs), 'dated': dated,
-               'fields': sorted(recs[0].keys())[:20] if recs and isinstance(recs[0], dict) else []}
+               'fields': sorted(recs[0].keys())[:20] if recs and isinstance(recs[0], dict) else [], 'tried': tried}
         if rows:
             return got
         if found is None or (recs and not found['records']):
             found = got
-    return found or {'rows': [], 'err': '; '.join(errs), 'link': 0, 'records': 0, 'dated': 0, 'fields': []}
+    if found:
+        return found
+    return {'rows': [], 'err': '; '.join(errs), 'link': 0, 'records': 0, 'dated': 0, 'fields': [], 'tried': tried}
 
 
 def cal_session():
@@ -1496,7 +1520,8 @@ def cal_step(cfg, today=None, force=False):
                 new = [r for r in got['rows'] if r[0] not in seen]
                 seen.update(r[0] for r in new)
                 rows.extend(new)
-                counts.append('%s %d%s' % (which, len(new), ' (board meetings list)' if got['link'] > 1 else ''))
+                counts.append('%s %d%s' % (which, len(new), ' (board meetings list)' if got['link'] > 1 and got['rows'] else
+                                           (' (%s)' % '; '.join(got['tried'])) if not got['rows'] else ''))
             if i < len(CAL_SOURCES) - 1:
                 time.sleep(1.0)
         if problems and not rows:
@@ -2839,6 +2864,9 @@ def cmd_test(cfg):
             print('   %-7s OK - %d meeting(s) in the %s, %d forthcoming with Financial Results%s' % (
                 which + ':', got['records'], 'event calendar' if got['link'] == 1 else 'board meetings list', len(rows),
                 ('; e.g. %s %s' % (rows[0][0], rows[0][3])) if rows else ''))
+            if not rows or got['link'] > 1:
+                for line in got['tried']:
+                    print('            %s' % line)
             if got['records'] and not got['dated']:
                 print('            dates not recognised - NSE fields: %s' % ', '.join(got['fields']))
         print('   (nothing was sent)')
