@@ -584,7 +584,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
         }
         t.source = 'screener.in';
         t.note = notes.join('; ');
-        t.flags = ab_rsFlags_(combined.growth, ab_xbrlFiguresFor_(t.symbol, t.quarter));
+        t.flags = ab_rsFlags_(combined.growth, ab_xbrlFiguresFor_(t.symbol, t.quarter), ab_rsOtherIncome_(t.symbol, t.quarter));
         touched[t.symbol] = true;
       }
     }
@@ -613,7 +613,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
       res.viaXbrl.push(t.symbol);
       t.source = AB_XBRL_SOURCE;
       t.note = notes.join('; ');
-      t.flags = ab_rsFlags_(xbrlRes.growth, xr.figures);
+      t.flags = ab_rsFlags_(xbrlRes.growth, xr.figures, ab_rsOtherIncome_(t.symbol, t.quarter));
       t.latest = t.latest || '';
       touched[t.symbol] = true;
       why = '';
@@ -649,7 +649,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
         t.status = 'Updated';
         t.updatedAt = stamp;
         t.source = AB_MC_SOURCE;
-        t.flags = ab_rsFlags_(mcRes.growth, null);
+        t.flags = ab_rsFlags_(mcRes.growth, null, ab_rsOtherIncome_(t.symbol, t.quarter));
         touched[t.symbol] = true;
         const notes = ['moneycontrol figures (' + mcEntry.data.basis + ') - ' + why +
                        '; screener.in replaces them when it shows ' + t.quarter, 'trend tags wait for screener.in'];
@@ -11575,6 +11575,11 @@ const AB_XBRL_FIGS = ['revenue', 'other_income', 'expenses', 'finance_costs', 'd
 const AB_XBRL_FLAG_DAYS = 3;       // Updated rows asked for XBRL (exceptional-gain flag) only while the result is this fresh
 const AB_RS_FLAG_LEAD_PP = 10;     // "profit growing faster than revenue": at least 10 percentage points faster
 const AB_RS_FLAG_EXC_SHARE = 0.10; // "exceptional gain": at least 10% of profit before tax
+// "other income high" (owner, 03-Nov-2026): other income >= 25% of PBT, or more than double the same quarter a year ago
+// while it is at least 10% of PBT (a tiny amount doubling does not count)
+const AB_RS_FLAG_OI_SHARE = 0.25;
+const AB_RS_FLAG_OI_TIMES = 2;
+const AB_RS_FLAG_OI_MIN_SHARE = 0.10;
 let AB_XBRL_CACHE_ = null;
 
 function ab_xbrlSheet_(create) {
@@ -11770,8 +11775,9 @@ function ab_xbrlFiguresFor_(sym, quarter) {
   return e.data.cons || e.data.stand || null;
 }
 
-/** The result flags as one text ('; ' between), from the growth figures (YoY, else QoQ) and the XBRL figures. */
-function ab_rsFlags_(g, f) {
+/** The result flags as one text ('; ' between), from the growth figures (YoY, else QoQ), the XBRL figures and the
+ *  quarter's other income (`oi` = ab_rsOtherIncome_: { cur, ago, pbt } in Rs crore, null = not known). */
+function ab_rsFlags_(g, f, oi) {
   const num = function (v) { return v === '' || v === null || v === undefined || isNaN(Number(v)) ? null : Number(v); };
   const pc = function (v) { return (v > 0 ? '+' : '') + v.toFixed(1) + '%'; };
   const out = [];
@@ -11787,7 +11793,46 @@ function ab_rsFlags_(g, f) {
       out.push('Exceptional gain Rs ' + gain.toFixed(2) + ' Cr = ' + Math.round(gain / f.pbt * 100) + '% of PBT');
     }
   }
+  // owner, 03-Nov-2026: one-off income (interest, investment / asset sales) often sits in Other Income, not in the
+  // exceptional items - flag it when it is a big part of the profit before tax, or more than double a year ago
+  if (oi && typeof oi.cur === 'number' && typeof oi.pbt === 'number' && oi.cur > 0 && oi.pbt > 0) {
+    const share = oi.cur / oi.pbt;
+    const times = typeof oi.ago === 'number' && oi.ago > 0 ? oi.cur / oi.ago : NaN;
+    const jump = times >= AB_RS_FLAG_OI_TIMES && share >= AB_RS_FLAG_OI_MIN_SHARE;
+    if (share >= AB_RS_FLAG_OI_SHARE || jump) {
+      out.push('Other income high: Rs ' + oi.cur.toFixed(2) + ' Cr = ' + Math.round(share * 100) + '% of PBT' +
+               (jump ? ', ' + times.toFixed(1) + 'x a year ago (Rs ' + oi.ago.toFixed(2) + ' Cr)' : ''));
+    }
+  }
   return out.join('; ');
+}
+
+/**
+ * The quarter's other income for the flag: { cur, ago, pbt } in Rs crore (null = not known). This quarter from the NSE
+ * XBRL filing when one is stored (the same basis as screener.in's stored figures, like ab_xbrlCombined_), else from
+ * screener.in's stored page (its quarterly table's Other Income / Profit before tax rows - pages stored from
+ * 03-Nov-2026); the same quarter a year ago from screener.in's page (matched by name; only when it is the same basis).
+ */
+function ab_rsOtherIncome_(sym, quarter) {
+  const qi = ab_rsQuarterIndex_(quarter);
+  const b = ab_bridgeGet_(sym);
+  const s = b && b.combined ? b.combined.series : null;
+  const at = function (arr, idx) {
+    if (!s || !Array.isArray(s.quarters) || !Array.isArray(arr)) return null;
+    for (let i = 0; i < s.quarters.length; i++) {
+      if (ab_rsQuarterIndex_(s.quarters[i]) === idx) return typeof arr[i] === 'number' && isFinite(arr[i]) ? arr[i] : null;
+    }
+    return null;
+  };
+  const out = { cur: at(s && s.otherIncome, qi), ago: at(s && s.otherIncome, qi - 12), pbt: at(s && s.pbt, qi) };
+  const e = ab_xbrlGet_(sym);
+  if (e && ab_rsQuarterIndex_(e.data.quarter) === qi) {
+    const stand = s && /standalone/i.test(String(s.basis || ''));
+    let f = stand ? e.data.stand : e.data.cons;
+    if (!f) { f = e.data.cons || e.data.stand; out.ago = null; }      // another basis than screener.in's: no year-ago from it
+    if (f && typeof f.other_income === 'number' && typeof f.pbt === 'number') { out.cur = f.other_income; out.pbt = f.pbt; }
+  }
+  return out;
 }
 
 /** Flags of the Updated rows (within the wait window) not written in this run, from Main's figures + the XBRL figures
@@ -11800,7 +11845,7 @@ function ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey) {
     const row = layout.data[rowsBySym[t.symbol][0]];
     const val = function (c) { return c === -1 ? '' : row[c]; };
     t.flags = ab_rsFlags_({ qoqRev: val(layout.qoqRev), qoqNp: val(layout.qoqNp), yoyRev: val(layout.yoyRev), yoyNp: val(layout.yoyNp) },
-                          ab_xbrlFiguresFor_(t.symbol, t.quarter));
+                          ab_xbrlFiguresFor_(t.symbol, t.quarter), ab_rsOtherIncome_(t.symbol, t.quarter));
   });
 }
 
@@ -11811,6 +11856,7 @@ function ab_rsFlagPills_(flags, pill) {
   if (/^Revenue up, profit down|; Revenue up, profit down/.test(f)) out += '<br>' + pill('REV &#8593; PROFIT &#8595;', '#b91c1c', '#fde8e8');
   if (/Profit growing faster than revenue/.test(f)) out += '<br>' + pill('PROFIT &gt; REVENUE', '#15803d', '#e6f6ec');
   if (/Exceptional gain/.test(f)) out += '<br>' + pill('EXCEPTIONAL GAIN', '#a16207', '#fef3c7');
+  if (/Other income high/.test(f)) out += '<br>' + pill('OTHER INCOME HIGH', '#a16207', '#fef3c7');
   return out;
 }
 
@@ -11929,7 +11975,7 @@ function ab_rsGapRepair_(tr, layout, cols, rowsBySym, season, touched, stamp) {
     rows.forEach(function (rowIdx) {
       ab_qt_writeRow_(layout, cols, rowIdx, { quarterOk: true, growth: neu, tagsOk: false, tags: null });
     });
-    t.flags = ab_rsFlags_(neu, ab_xbrlFiguresFor_(t.symbol, t.quarter));
+    t.flags = ab_rsFlags_(neu, ab_xbrlFiguresFor_(t.symbol, t.quarter), ab_rsOtherIncome_(t.symbol, t.quarter));
     t.note = (t.note ? t.note + '; ' : '') + 'figures corrected on ' + stamp + ' (screener.in\'s table skips a quarter - ' +
              'quarters now matched by name)';
     touched[t.symbol] = true;

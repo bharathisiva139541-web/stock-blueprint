@@ -499,7 +499,7 @@ function check(name, fn) {
           errors.length = 0;
           await page.goto(base + '#results', { waitUntil: 'load' });
           await page.waitForSelector('a.tile-link[href="#results/above"]', { timeout: 15000 });
-          const tiles = await page.$$eval('a.tile-link', (a) => a.map((x) => x.getAttribute('href')));
+          const tiles = await page.evaluate(() => [...document.querySelector('.tiles').querySelectorAll('a.tile-link')].map((x) => x.getAttribute('href')));
           assert.deepStrictEqual(tiles, ['#results/tracked', '#results/tracked', '#results/tracked', '#results/above', '#results/soldoff', '#results/waiting']);
           const above = await page.$eval('a.tile-link[href="#results/above"] .value', (x) => x.textContent.trim());
           await page.click('a.tile-link[href="#results/above"]');
@@ -519,6 +519,24 @@ function check(name, fn) {
           await page.fill('#rl-q', 'zzzz-no-such');
           await page.waitForFunction(() => /^0 of /.test(document.querySelector('#rl-count').textContent));
           await page.fill('#rl-q', '');
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
+        await check('results: "fell after results, then back above" card (daily closes) and its lists', async () => {
+          errors.length = 0;
+          await page.goto(base + '#results', { waitUntil: 'load' });
+          await page.waitForSelector('#rc-body a.tile-link[href="#results/reclaimed"]', { timeout: 20000 });
+          const rc = await page.$$eval('#rc-body a.tile-link', (a) => a.map((x) => [x.getAttribute('href'), x.querySelector('.value').textContent.trim()]));
+          assert.deepStrictEqual(rc.map((x) => x[0]), ['#results/reclaimed', '#results/reclaimslow', '#results/nearreclaim']);
+          await page.click('#rc-body a.tile-link[href="#results/reclaimed"]');
+          await page.waitForFunction(() => location.hash === '#results/reclaimed' && document.querySelector('#rl-count'), null, { timeout: 15000 });
+          assert.ok((await page.$eval('#rl-count', (x) => x.textContent)).indexOf(rc[0][1] + ' of ') === 0, 'tile ' + rc[0][1]);
+          const heads = await page.$$eval('#rl-t th', (t) => t.map((x) => x.textContent.trim()));
+          ['Fell to', 'Back above on session', 'Now vs pre-result', 'Trend'].forEach((h) => assert.ok(heads.some((x) => x.indexOf(h) === 0), h + ' in ' + heads));
+          // opened directly (candles not loaded yet): loads them, then the list
+          await page.goto(base + '#markets', { waitUntil: 'load' });
+          await page.goto(base + '#results/nearreclaim', { waitUntil: 'load' });
+          await page.waitForSelector('#rl-count', { timeout: 20000 });
+          assert.match(await page.$eval('h1', (x) => x.textContent), /close to the pre-result price/);
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         await check('strategy: post-results opportunities preset runs and labels its four set-ups', async () => {

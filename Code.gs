@@ -7168,7 +7168,7 @@ function ab_parseScreenerQuarters_(html) {
   const tbodyMatch = section.match(/<tbody[\s\S]*?<\/tbody>/i);
   if (!tbodyMatch) return fail('no table body');
 
-  let revenue = null, netProfit = null, eps = null;
+  let revenue = null, netProfit = null, eps = null, otherIncome = null, pbt = null;
   const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let tr;
   while ((tr = trRe.exec(tbodyMatch[0])) !== null) {
@@ -7186,6 +7186,8 @@ function ab_parseScreenerQuarters_(html) {
     if (!revenue && (label === 'SALES' || label === 'REVENUE')) revenue = nums;
     else if (!netProfit && label === 'NETPROFIT') netProfit = nums;
     else if (!eps && label === 'EPSINRS') eps = nums; // "EPS in Rs"
+    else if (!otherIncome && label === 'OTHERINCOME') otherIncome = nums;      // for the Other Income flag (Code2.gs ab_rsOtherIncome_)
+    else if (!pbt && label === 'PROFITBEFORETAX') pbt = nums;
   }
 
   if (!revenue) return fail('no Sales/Revenue row');
@@ -7195,6 +7197,7 @@ function ab_parseScreenerQuarters_(html) {
     ok: true, basis: basis, quarters: quarters,
     revenue: revenue, netProfit: netProfit,
     eps: eps || [], // optional - a company can report results without an EPS row
+    otherIncome: otherIncome || [], pbt: pbt || [],
     error: ''
   };
 }
@@ -8481,7 +8484,8 @@ function ab_qt_parseBoth_(html) {
     const n = qParsed.quarters.length, k = Math.max(0, n - 12);
     const cut = function (a) { return (a || []).slice(k, n).map(function (v) { return typeof v === 'number' && isFinite(v) ? v : null; }); };
     out.series = { basis: qParsed.basis, quarters: qParsed.quarters.slice(k), revenue: cut(qParsed.revenue), netProfit: cut(qParsed.netProfit),
-                   eps: cut(qParsed.eps), opm: tParsed.ok ? cut(tParsed.quarterOpm) : [] };
+                   eps: cut(qParsed.eps), opm: tParsed.ok ? cut(tParsed.quarterOpm) : [],
+                   otherIncome: cut(qParsed.otherIncome), pbt: cut(qParsed.pbt) };
   }
   return out;
 }

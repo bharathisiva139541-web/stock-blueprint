@@ -10,11 +10,29 @@
       (note ? '<div class="note2">' + note + '</div>' : '') + '<span class="tile-go" aria-hidden="true">→</span></a>';
   }
 
+  // "fell after results, then back above" needs the daily closes: loaded on demand, then the part is drawn again
+  function withCandles(el, ctx, then) {
+    if (ctx.history) return true;
+    SB.loadHistory().then(function () { if (el.isConnected) then(); }, function (e) {
+      if (el.isConnected) { var x = $('#rc-body', el); if (x) x.innerHTML = '<p class="empty">Daily prices could not be loaded: ' + esc(e && e.message || e) + '</p>'; }
+    });
+    return false;
+  }
+  var RC_HELP = 'Closed at least ' + R.RECLAIM.minDipPct + '% below the close before the results, then closed back above it - ' +
+    'and the latest close is still above. Daily closes from the session that could first react (after-market results: the next session).';
+
   /** #results/<kind>: the stocks behind one tile / bar. */
   function renderList(el, ctx, kind, perf, pRows, tRows, seasonName) {
     var K = R.KINDS.filter(function (k) { return k.id === kind; })[0];
-    var n = R.counts(pRows, tRows);
-    var src = K.src === 'perf' ? 'Results Performance' : 'Results Tracker';
+    var rc = ctx.history ? R.reclaimRows(pRows, ctx.history) : null;
+    if (K.src === 'reclaim' && !rc) {
+      el.innerHTML = '<p class="sub"><a href="#results">← Results &amp; corporate events</a></p><h1>' + esc(K.label) + '</h1>' + ui.skeleton(6) +
+        '<div id="rc-body"></div>';
+      withCandles(el, ctx, function () { renderList(el, ctx, kind, perf, pRows, tRows, seasonName); });
+      return;
+    }
+    var n = R.counts(pRows, tRows, rc);
+    var src = K.src === 'tracker' ? 'Results Tracker' : 'Results Performance';
     el.innerHTML = '<div class="page-head"><div><p class="sub"><a href="#results">← Results &amp; corporate events</a></p><h1>' + esc(K.label) + '</h1><p>' +
       (seasonName ? esc(seasonName) + ' season · ' : '') + 'from your sheet\'s ' + src + ' tab ' + ui.stateBadge('CACHED', perf.asOf || ctx.D.asOf, src + ' tab') + '</p></div>' +
       '<div class="actions"><button class="btn" type="button" id="rl-csv">Export CSV</button></div></div>' +
@@ -22,9 +40,26 @@
         return '<a class="chip" href="#results/' + k.id + '" aria-pressed="' + (k.id === kind) + '"' + (k.id === kind ? ' aria-current="page"' : '') + '>' +
           esc(k.label) + ' <b>' + F.int(n[k.id]) + '</b></a>';
       }).join('') + '</nav>' +
+      (K.src === 'reclaim' ? '<p class="sub">' + esc(RC_HELP) + ' "Back above after 2+ weeks" = it closed back above on the ' + R.RECLAIM.slowDays +
+        'th session after the results or later; "close to" = still below, within ' + R.RECLAIM.nearPct + '% of it and ' + R.RECLAIM.bouncePct +
+        '% or more up from its lowest close. Closes up to ' + F.date(rc.length ? rc[0].reclaim.nowDate : null) + '.</p>' : '') +
       '<div class="controls"><input class="search" id="rl-q" type="search" placeholder="Search symbol, company or industry" aria-label="Search this list" value="' + esc(RL.q) + '">' +
       '<span class="count" id="rl-count"></span></div><div id="rl-t"></div></section>';
-    var cols = K.src === 'perf' ? [
+    var cols = K.src === 'reclaim' ? [
+      { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
+      { key: 'Result Date', label: 'Result date', type: 'date' },
+      { key: 'Pre-Result Close', label: 'Pre-result close', type: 'price' },
+      { key: 'lowPct', label: 'Fell to', type: 'pct', digits: 1, title: 'The lowest close after the results vs the pre-result close' },
+      { key: 'lowDay', label: 'Low on session', type: 'num', title: 'Session number after the results of the lowest close' },
+      { key: 'reclaimDay', label: 'Back above on session', type: 'num', title: 'The first close back above the pre-result close after the low (session number after the results)' },
+      { key: 'reclaimDate', label: 'Back above on', type: 'date' },
+      { key: 'nowPct', label: 'Now vs pre-result', type: 'pct', digits: 1, title: 'Latest close vs the pre-result close' },
+      { key: 'trend', label: 'Trend', type: 'badge', title: 'Rising = the latest close is within 2% of its highest close since it climbed back; Holding = still above the pre-result close but pulled back from that high' },
+      { key: 'sessions', label: 'Sessions since', type: 'num' },
+      { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
+      { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
+      { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 }
+    ] : K.src === 'perf' ? [
       { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
       { key: 'Basic Industry', label: 'Industry', wrap: true },
       { key: 'Result Date', label: 'Result date', type: 'date' },
@@ -50,7 +85,7 @@
       { key: 'Note', label: 'Note', wrap: true }
     ];
     var t = new ui.Table({ id: 'results-list-' + K.src, rows: [], pageSize: 50, sort: K.sort, empty: 'No stocks in this list', columns: cols }).mount($('#rl-t', el));
-    var list = R.pick(kind, pRows, tRows);
+    var list = R.pick(kind, pRows, tRows, rc);
     function apply() {
       var rows = list.filter(function (r) { return ui.textMatch(RL.q, [r.Symbol, r.Company, r['Basic Industry']]); });
       $('#rl-count', el).textContent = F.int(rows.length) + ' of ' + F.int(list.length) + ' stock' + (list.length === 1 ? '' : 's');
@@ -126,6 +161,8 @@
         ui.card('Best since results', 'Top 5 this season · <a href="#results/above">all above the pre-result price →</a>', '<div id="mv-best"></div>') +
         ui.card('Worst since results', 'Bottom 5 this season · <a href="#results/below">all at or below it →</a>', '<div id="mv-worst"></div>') +
         '</div>';
+      // the owner's friend's idea (03-Nov-2026): fell below the pre-results price, then climbed back above it
+      h += ui.card('Fell after results, then back above', esc(RC_HELP) + ' Click a number for the list.', '<div id="rc-body">' + ui.skeleton(2) + '</div>');
       h += ui.card('Upcoming results (next 30 days)', upcoming.length + ' stocks · from the Main tab Result Date (NSE results calendar in the Results tab, kept up to date by your PC program)', '<div id="up-t"></div>');
       h += ui.card('Results performance', esc(perf.note || '') + ' · FII trend and TTM EPS growth: Main tab', '<div class="controls"><input class="search" id="rp-q" type="search" placeholder="Search symbol or industry" aria-label="Search results performance"><button class="btn" type="button" id="rp-csv">Export CSV</button></div><div id="rp-table"></div>');
       h += '<section class="card"><div class="card-head"><div><h2>Results tracker</h2><p>Every stock whose result date has arrived. Pending = screener.in does not show the new quarter yet (retried every run).</p></div></div>' +
@@ -134,6 +171,17 @@
           ['Gave up', 'Gave up (' + tracker.filter(function (r) { return r.Status === 'Gave up'; }).length + ')']], RS.status) + '</div>' +
         '<div id="rs-table"></div></section>';
       el.innerHTML = h;
+
+      var drawReclaim = function () {
+        var rc = R.reclaimRows(pRows, ctx.history), n = R.counts(pRows, tRows, rc);
+        var fell = rc.filter(function (r) { return r.reclaim.status !== 'held'; }).length;
+        $('#rc-body', el).innerHTML = '<div class="tiles">' +
+          linkTile('reclaimed', 'Back above now', F.int(n.reclaimed), F.int(fell) + ' of ' + F.int(rc.length) + ' fell ' + R.RECLAIM.minDipPct + '%+ below') +
+          linkTile('reclaimslow', 'Back above after 2+ weeks', F.int(n.reclaimslow), 'climbed back on session ' + R.RECLAIM.slowDays + ' or later') +
+          linkTile('nearreclaim', 'Close to it (still below)', F.int(n.nearreclaim), 'within ' + R.RECLAIM.nearPct + '%, bouncing off the low') +
+          '</div>' + (rc.length < pRows.length ? '<p class="sub">' + F.int(pRows.length - rc.length) + ' stock(s) have no daily prices on the site.</p>' : '');
+      };
+      if (withCandles(el, ctx, drawReclaim)) drawReclaim();
 
       [['#mv-best', mv.best], ['#mv-worst', mv.worst]].forEach(function (m) {
         new ui.Table({

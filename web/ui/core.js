@@ -80,6 +80,7 @@
     strong: 's-good', mixed: 's-warn', weak: 's-bad',
     untouched: 's-info', 'first touch': 's-warn', mitigated: 's-warn',
     rallied: 's-good', flat: 's-warn', 'sold off': 's-bad', fell: 's-bad',
+    rising: 's-good', holding: 's-info',
     qualified: 's-good', breakout: 's-good', pullback: 's-good', watch: 's-info', exit: 's-bad',
     'no signal': '', 'insufficient data': 's-warn', demo: 's-warn',
     live: 's-good', delayed: 's-info', eod: 's-info', cached: 's-warn', unavailable: 's-bad'
