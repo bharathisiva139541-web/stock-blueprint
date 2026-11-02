@@ -7239,7 +7239,17 @@ function ab_pctChange_(cur, prev) {
  * YoY compares against 4 quarters back - the same quarter last year -
  * so seasonal businesses aren't measured against their off-season.
  */
-function ab_computeQuarterGrowth_(parsed) {
+/**
+ * QoQ / YoY / TTM EPS / Last FY EPS of the newest reported quarter.
+ * The quarters are matched BY NAME (owner, 02-Nov-2026: ESDS - screener.in's table had no Dec 2025 column, so
+ * "4 columns back" was Jun 2025 and YoY came out +10% instead of +47%): QoQ = the quarter 3 months earlier, YoY = 12
+ * months earlier, TTM EPS = the newest quarter + the 3 before it, Last FY EPS = the 4 before those. A quarter that is
+ * not in the table leaves its figure blank; when the table does go back further (a GAP, not just a short history) the
+ * figure is listed in `clear` so the sheet blanks the cell instead of keeping last season's number (ab_qt_writeRow_).
+ * byPosition = the old column-counting rule (only to find the rows written by it - ab_rsGapRepair_). Labels that
+ * cannot be read also fall back to it.
+ */
+function ab_computeQuarterGrowth_(parsed, byPosition) {
   const out = {
     qoqRev: '', qoqNp: '', yoyRev: '', yoyNp: '',
     ttmEps: '', lastFyEps: '',
@@ -7247,11 +7257,11 @@ function ab_computeQuarterGrowth_(parsed) {
     // True when the company simply hasn't reported enough quarters yet
     // for a year-on-year comparison. Not a failure - the fetch worked
     // and the numbers are real, there just isn't a year of history.
-    shortHistory: false, quartersReported: 0
+    shortHistory: false, quartersReported: 0, clear: []
   };
   if (!parsed.ok) return out;
 
-  const rev = parsed.revenue, np = parsed.netProfit, qs = parsed.quarters;
+  const rev = parsed.revenue, np = parsed.netProfit, qs = parsed.quarters || [];
   // The newest column can be a not-yet-reported placeholder; anchor on
   // the last quarter that actually carries a revenue figure.
   let last = -1;
@@ -7262,26 +7272,63 @@ function ab_computeQuarterGrowth_(parsed) {
 
   out.latestQuarter = qs[last] || '';
   out.quartersReported = last + 1;
-  out.shortHistory = (last - 4 < 0); // no year-ago quarter to compare against
-  if (last - 1 >= 0) {
-    out.qoqRev = ab_pctChange_(rev[last], rev[last - 1]);
-    out.qoqNp = ab_pctChange_(np[last], np[last - 1]);
+  // the month number of each column's quarter ('Sep 2026' -> 2026*12+9); any unreadable label -> count columns
+  const mon = [];
+  let named = !byPosition;
+  for (let i = 0; named && i <= last; i++) {
+    mon[i] = ab_rsQuarterIndex_(qs[i]);
+    if (isNaN(mon[i]) || (i && mon[i] <= mon[i - 1])) named = false;
   }
-  if (last - 4 >= 0) {
-    out.yoyRev = ab_pctChange_(rev[last], rev[last - 4]);
-    out.yoyNp = ab_pctChange_(np[last], np[last - 4]);
-  }
+  // the column of the quarter `back` months before the newest one: -1 = not in the table, -2 = a gap (older ones are there)
+  const col = function (back) {
+    if (!named) return last - back / 3 >= 0 ? last - back / 3 : -1;
+    const want = mon[last] - back;
+    for (let i = last - 1; i >= 0; i--) {
+      if (mon[i] === want) return i;
+      if (mon[i] < want) return -2;
+    }
+    return -1;
+  };
+  const sum = function (arr, backs) {
+    let total = 0;
+    for (let k = 0; k < backs.length; k++) {
+      const i = backs[k] === 0 ? last : col(backs[k]);
+      if (i < 0) return i === -2 ? null : '';
+      if (i >= arr.length || isNaN(arr[i])) return '';
+      total += arr[i];
+    }
+    return Math.round(total * 100) / 100;
+  };
+  const q1 = col(3), q4 = col(12);
+  out.shortHistory = q4 === -1; // no year-ago quarter to compare against
+  if (q1 >= 0) {
+    out.qoqRev = ab_pctChange_(rev[last], rev[q1]);
+    out.qoqNp = ab_pctChange_(np[last], np[q1]);
+  } else if (q1 === -2) out.clear.push('qoqRev', 'qoqNp');
+  if (q4 >= 0) {
+    out.yoyRev = ab_pctChange_(rev[last], rev[q4]);
+    out.yoyNp = ab_pctChange_(np[last], np[q4]);
+  } else if (q4 === -2) out.clear.push('yoyRev', 'yoyNp');
 
-  // TTM EPS      = the last 4 reported quarters' EPS added up.
+  // TTM EPS      = the newest quarter's EPS + the 3 quarters before it.
   // Last FY EPS  = the 4 quarters immediately before those.
   // Together they give a like-for-like trailing-twelve-month comparison
   // (which is what makes TTM EPS Growth meaningful). Verified against
   // screener's own P&L "TTM" column for SBIN: 93.39.
   if (parsed.eps && parsed.eps.length) {
-    out.ttmEps = ab_sumQuarters_(parsed.eps, last, 4);
-    out.lastFyEps = ab_sumQuarters_(parsed.eps, last - 4, 4);
+    const ttm = sum(parsed.eps, [0, 3, 6, 9]), lfy = sum(parsed.eps, [12, 15, 18, 21]);
+    if (ttm === null) out.clear.push('ttmEps'); else out.ttmEps = ttm;
+    if (lfy === null) out.clear.push('lastFyEps'); else out.lastFyEps = lfy;
   }
   return out;
+}
+
+/** The growth figures from a bridge entry's stored quarters (`series`, the last 12 columns), or null. */
+function ab_qtGrowthFromSeries_(series, byPosition) {
+  if (!series || !Array.isArray(series.quarters) || !series.quarters.length) return null;
+  const num = function (a) { return (a || []).map(function (v) { return typeof v === 'number' && isFinite(v) ? v : NaN; }); };
+  return ab_computeQuarterGrowth_({ ok: true, basis: series.basis || '', quarters: series.quarters, revenue: num(series.revenue),
+                                    netProfit: num(series.netProfit), eps: num(series.eps), error: '' }, byPosition);
 }
 
 /**
@@ -8404,6 +8451,19 @@ function ab_qt_parseBoth_(html) {
 
   const tParsed = ab_tt_parse_(html);
   const tags = tParsed.ok ? ab_tt_tagsFrom_(tParsed) : null;
+  // OPM QoQ% against the quarter 3 months before (the tag rule takes the last two OPM figures - a quarter missing from
+  // screener.in's table would compare with an older one): same columns as the quarterly figures, matched by name
+  if (tags && qParsed.ok && Array.isArray(tParsed.quarterOpm) && tParsed.quarterOpm.length === qParsed.quarters.length) {
+    const qo = tParsed.quarterOpm;
+    let li = -1;
+    for (let i = qo.length - 1; i >= 0; i--) { if (!isNaN(qo[i])) { li = i; break; } }
+    const cur = li >= 0 ? ab_rsQuarterIndex_(qParsed.quarters[li]) : NaN;
+    if (!isNaN(cur)) {
+      let pi = -1;
+      for (let i = li - 1; i >= 0; i--) { if (ab_rsQuarterIndex_(qParsed.quarters[i]) === cur - 3) { pi = i; break; } }
+      tags.opmQoQ = pi >= 0 && !isNaN(qo[pi]) ? ab_tt_tagOpmPair_(qo[pi], qo[li]) : '';
+    }
+  }
 
   const quarterOpmCount = tParsed.ok
     ? tParsed.quarterOpm.filter(function (x) { return !isNaN(x); }).length
@@ -8507,6 +8567,12 @@ function ab_bridgeGet_(sym) {
 function ab_bridgeResult_(b) {
   const c = JSON.parse(JSON.stringify(b.combined));
   c.fromBridge = true;
+  // the growth figures worked out again from the stored quarters (matched by name since 03-Nov-2026 - pages stored
+  // before counted columns: a quarter missing from screener.in's table gave a wrong YoY / TTM EPS, e.g. ESDS)
+  if (c.quarterOk && c.series) {
+    const g = ab_qtGrowthFromSeries_(c.series);
+    if (g && g.latestQuarter) c.growth = g;
+  }
   return c;
 }
 
@@ -10181,6 +10247,13 @@ function ab_qt_writeRow_(layout, cols, rowIdx, combined) {
   }
   if (combined.quarterOk && combined.growth) {
     const g = combined.growth;
+    // figures a missing quarter in screener.in's table makes unknown: blanked, never last season's number left behind
+    // (OPM QoQ% too when the quarter before is the missing one - it compares with that quarter)
+    (g.clear || []).concat((g.clear || []).indexOf('qoqRev') >= 0 ? ['opmQoQ'] : []).forEach(function (k) {
+      const c = { qoqRev: layout.qoqRev, qoqNp: layout.qoqNp, yoyRev: layout.yoyRev, yoyNp: layout.yoyNp,
+                  ttmEps: layout.ttmEps, lastFyEps: layout.lastFyEps, opmQoQ: cols ? cols.opmQoQ : -1 }[k];
+      if (c !== undefined && c !== -1 && ab_cellText_(layout.data[rowIdx][c]) !== '') layout.sheet.getRange(row, c + 1).setValue('');
+    });
     put(layout.qoqRev, g.qoqRev);
     put(layout.qoqNp, g.qoqNp);
     put(layout.yoyRev, g.yoyRev);
