@@ -16,7 +16,7 @@
   var NAV = [
     ['overview', 'Overview'], ['watchlist', 'Watchlist'], ['lists', 'My Watchlists'], ['suggestions', 'Daily Suggestions'],
     ['industries', 'Industries & Sectors'], ['strategy', 'Strategy Settings'], ['signals', 'Patterns & FVG'],
-    ['excel', 'Excel Analysis'], ['results', 'Results & Events'], ['alerts', 'Alerts & Trades'],
+    ['excel', 'Excel Analysis'], ['results', 'Results & Events'], ['today', 'Results Today'], ['alerts', 'Alerts & Trades'],
     ['backtest', 'Backtesting'], ['markets', 'IPOs & Markets']
   ];
 
