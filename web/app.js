@@ -76,6 +76,9 @@
     // the latest Results Performance row of each stock (post-results strategy rules read s.rp)
     var rp = SB.strategy.rpIndex((data.resultsPerf || {}).table);
     stocks.forEach(function (s) { s.rp = rp[s.sym] || null; });
+    // the newest result flags of each stock (Results Tracker 'Flags') - shown in the stock drawer
+    var fl = SB.results && SB.results.flagIndex ? SB.results.flagIndex(ui.objRows(data.resultsTracker)) : {};
+    stocks.forEach(function (s) { s.rflags = fl[s.sym] || null; });
     // NSE end-of-day (PC bridge): Delivery % (latest day, 5-day average) and the 52-week high report
     var dl = SB.eod.delivery(data.delivery), hi = SB.eod.highs(data.high52);
     stocks.forEach(function (s) {
@@ -465,6 +468,9 @@
         ['Revenue YoY', ui.deltaHtml(s.yrev, 0)], ['Profit YoY', ui.deltaHtml(s.ynp, 0)], ['Promoter holding', esc(s.promo || '–')],
         ['FII activity', esc(s.fii || '–')], ['OPM YoY', esc(s.opmy || '–')], ['OPM QoQ', esc(s.opmq || '–')], ['Volume change', ui.deltaHtml(s.volchg, 0)]
       ];
+      if (s.rflags) {
+        kv.push(['Result flags', ui.flagPills(s.rflags.text) + ' <span class="sub">' + esc(s.rflags.quarter) + ' results</span>']);
+      }
       if (isNum(s.deliv)) {
         kv.push(['Delivery %', '<b>' + F.num(s.deliv, 1) + '%</b> on ' + F.date(s.delivDate) + (isNum(s.delivAvg) ? ' <span class="sub">· 5-day avg ' + F.num(s.delivAvg, 1) + '%</span>' : '')]);
       }

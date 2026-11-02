@@ -172,6 +172,15 @@
     if (p) p.textContent = p.getAttribute('data-mono') || '?';
   }, true);
 
+  // the result flags of the Results Tracker as pills (the email's names), the full text on hover / tap
+  function flagPills(text) {
+    var L = SB.results && SB.results.flagList ? SB.results.flagList(text) : [];
+    if (!L.length) return '';
+    return '<span class="tags flag-pills">' + L.map(function (f) {
+      return '<span class="badge s-' + f.tone + '" tabindex="0" data-tip="' + esc(f.text) + '">' + esc(f.label) + '</span>';
+    }).join('') + '</span>';
+  }
+
   function stockCell(sym, name, opts) {
     if (!sym) return '–';
     opts = opts || {};
@@ -766,7 +775,7 @@
 
   SB.ui = {
     $: $, esc: esc, isNum: isNum, objRows: objRows, parseDate: parseDate, iso: iso, dayDiff: dayDiff, F: F,
-    deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, logoUrls: logoUrls, stockCell: stockCell, stateBadge: stateBadge, leastFresh: leastFresh,
+    deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, logoUrls: logoUrls, flagPills: flagPills, stockCell: stockCell, stateBadge: stateBadge, leastFresh: leastFresh,
     Table: Table, bars: bars, lineChart: lineChart, tile: tile, card: card, chips: chips, bindChips: bindChips,
     textMatch: textMatch, skeleton: skeleton, store: store, toCsv: toCsv, download: download, loadScript: loadScript
   };
