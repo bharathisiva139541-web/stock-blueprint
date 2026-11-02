@@ -77,6 +77,7 @@ const AB_RS_RUNNING_STALE_MS = 8 * 60 * 1000;
 const AB_RS_KEEP_DAYS = 180;          // finished tracker rows older than this are pruned
 const AB_RS_UPCOMING_MAX_ROWS = 400;  // email size guard
 const AB_RS_MAX_HTML_CHARS = 150000;  // same MailApp body-size guard as Quality Watch
+const AB_RS_MAX_PARTS = 4;            // a heavy results day: the updated rows in at most 4 emails
 const AB_RS_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const AB_RS_HEADERS = ['Symbol', 'Company', 'Result Date', 'Quarter Expected', 'Status',
   'Screener Latest Quarter', 'Checks', 'First Checked', 'Last Checked', 'Updated At', 'Note', 'Source',
@@ -1043,7 +1044,7 @@ function ab_rsSendEmail_(ctx) {
     Logger.log('Results Day retry: nothing new got through - no email sent.');
     return { updatedToday: updatedToday.length, text: textSummary + ' Retry run - nothing new, no email sent.' };
   }
-  if (!updatedToday.length && !replaced.length && !waiting.length && !upcoming.length && !gaveUp.length) {
+  if (!updatedToday.length && !replaced.length && !gaveUp.length) {
     Logger.log('Results Day: nothing to report - no email sent.');
     return { updatedToday: 0, text: textSummary + ' Nothing to report - no email sent.' };
   }
@@ -1079,13 +1080,13 @@ function ab_rsSendEmail_(ctx) {
   // ---- look & feel: clean "fintech" cards (all inline CSS - Gmail strips <style>) ----
   const updWhen = reportKey === todayKey ? 'today' : 'on ' + ab_rsKeyToDmy_(reportKey);
   const FONT = '-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif';
-  const INK = '#0f172a', SLATE = '#64748b', FAINT = '#94a3b8', LINE = '#eef0f5', CARD_BORDER = '#e6e9f0';
+  const INK = '#0f172a', SLATE = '#64748b', FAINT = '#94a3b8', LINE = '#cbd5e1', CARD_BORDER = '#e6e9f0';   // LINE = the border between rows
   const small = 'style="color:' + FAINT + ';font-size:11px"';
   const th = 'style="text-align:left;padding:10px 9px;background:#f8fafc;border-bottom:1px solid ' + CARD_BORDER +
              ';font-size:10.5px;font-weight:600;color:' + FAINT + ';text-transform:uppercase;letter-spacing:.6px;white-space:nowrap"';
-  const td = 'style="padding:12px 9px;border-bottom:1px solid ' + LINE + ';font-size:13px;color:' + INK + ';vertical-align:top"';
-  const tdKpi = 'style="padding:12px 9px;border-bottom:1px solid ' + LINE + ';font-size:13px;color:' + INK +
-                ';vertical-align:top;text-align:right;background:#fafbfd"';
+  // font size / colour come from the table (tblOpen) - shorter rows, so more of them fit in one email
+  const td = 'style="padding:11px 8px;border-bottom:1px solid ' + LINE + ';vertical-align:top"';
+  const tdKpi = 'style="padding:11px 8px;border-bottom:1px solid ' + LINE + ';vertical-align:top;text-align:right;background:#fafbfd"';
   const thKpi = th.replace('text-align:left', 'text-align:right');
   const symLink = function (sym) {
     return '<a href="' + ab_chartUrl_(sym) + '" style="color:' + INK + ';font-weight:700;font-size:14px;text-decoration:none">' +
@@ -1110,7 +1111,7 @@ function ab_rsSendEmail_(ctx) {
   // "QoQ  +7%" / "YoY  +16%" - small grey label, coloured value
   const kv = function (label, valueHtml) {
     return '<div style="line-height:1.75;white-space:nowrap"><span style="display:inline-block;width:30px;color:' + FAINT +
-           ';font-size:11px">' + label + '</span>' + valueHtml + '</div>';
+           ';font-size:11px">' + label + '</span>' + valueHtml + '</div>';   // (kept: Gmail drops <style> classes)
   };
   const signalPill = function (v) {
     if (!v || /^#/.test(v)) return '<span style="color:' + FAINT + '">-</span>';
@@ -1197,9 +1198,10 @@ function ab_rsSendEmail_(ctx) {
       '<td ' + td + '>' + kv('Prom', tag('Promotor Holding', cell(s, cols.promoter))) + kv('FII', tag('FII Activity', cell(s, cols.fii))) + '</td>' +
       '<td ' + tdKpi + '>' + signalPill(cell(s, layout.ttmSignal)) + '</td>' +
       '<td ' + tdKpi + '>' + upsideCell(cell(s, layout.upsidePotential)) + '</td>' +
-      '</tr>' + (t.note ? '<tr><td colspan="9" style="padding:0 12px 8px 12px;font-size:11px;color:' + FAINT + ';border-bottom:1px solid ' + LINE + '">' + ab_rsEsc_(t.note) + '</td></tr>' : '');
+      '</tr>';                                             // no note line (owner, 02-Nov-2026: the tracker has it)
   };
-  const tblOpen = '<table role="presentation" style="width:100%;border-collapse:collapse;border:1px solid ' + CARD_BORDER + '">';
+  const tblOpen = '<table role="presentation" style="width:100%;border-collapse:collapse;border:1px solid ' + CARD_BORDER +
+    ';font-size:13px;color:' + INK + '">';
   const updatedHead = tblOpen +
     '<tr><th ' + th + '>Symbol</th><th ' + th + '>Company</th><th ' + th + '>Result</th><th ' + th + '>Revenue</th>' +
     '<th ' + th + '>Net Profit</th><th ' + th + '>OPM</th><th ' + th + '>Holdings</th>' +
@@ -1231,48 +1233,6 @@ function ab_rsSendEmail_(ctx) {
     return s;
   };
 
-  // --- waiting on screener ---
-  const buildWaiting = function (compact) {
-    if (!waiting.length) return '';
-    let s = h3('Results announced - screener not updated yet (auto re-check)', waiting.length, AB_C_WARN);
-    if (compact) {
-      // Heavy-day fallback: one line per result date instead of a full table.
-      const byDay = {}, days = [];
-      waiting.forEach(function (t) {
-        if (!byDay[t.rdKey]) { byDay[t.rdKey] = []; days.push(t.rdKey); }
-        byDay[t.rdKey].push(t);
-      });
-      days.forEach(function (k) {
-        s += '<div style="margin:6px 0 2px 0;font-size:13px;font-weight:700">Result ' + ab_rsKeyToDmy_(k) +
-             ' <span style="color:#888;font-weight:400">(' + byDay[k].length + ')</span></div>' +
-             '<div style="font-size:12px;line-height:1.6">' + byDay[k].map(function (t) {
-               return ab_rsEsc_(t.symbol) + ' <span style="color:#888">(' + ab_rsEsc_(t.latest || 'not checked') + ')</span>';
-             }).join(', ') + '</div>';
-      });
-    } else {
-      s += tblOpen +
-        '<tr><th ' + th + '>Symbol</th><th ' + th + '>Company</th><th ' + th + '>Result Date</th><th ' + th + '>Waiting For</th>' +
-        '<th ' + th + '>Screener Shows</th><th ' + th + ' align="right">Days</th><th ' + th + ' align="right">Checks</th></tr>';
-      waiting.forEach(function (t) {
-        const days = t.rdKey ? ab_rsDaysBetween_(t.rdKey, todayKey) : '';
-        const failed = /^Could not read|^Unrecognised/.test(t.note || '');
-        s += '<tr><td ' + td + '>' + symLink(t.symbol) + '</td>' +
-          '<td ' + td + '>' + ab_rsEsc_(t.company) + '</td>' +
-          '<td ' + td + '>' + ab_rsKeyToDmy_(t.rdKey) + '</td>' +
-          '<td ' + td + '><b>' + ab_rsEsc_(t.quarter) + '</b></td>' +
-          '<td ' + td + '>' + (failed ? '<span style="color:' + AB_C_NEG + '">' + ab_rsEsc_(t.note) + '</span>'
-                                      : ab_rsEsc_(t.latest || (t.checks ? '-' : 'not checked yet'))) + '</td>' +
-          '<td ' + td + ' align="right">' + days + '</td>' +
-          '<td ' + td + ' align="right">' + (t.checks || 0) + '</td></tr>';
-      });
-      s += '</table>';
-    }
-    return s + '<div style="color:#888;font-size:12px;margin-top:4px">Nothing is written to Main and ' +
-      'the Checkbox stays unticked until screener' + (ab_mcOn_() ? ' (or, first, moneycontrol - read by the PC program)' : '') +
-      ' shows the expected quarter. Re-checked every run for up to ' +
-      AB_RS_MAX_WAIT_DAYS + ' days after the result date.</div>';
-  };
-
   let gaveUpHtml = '';
   if (gaveUp.length) {
     gaveUpHtml = h3('Stopped checking (no update after ' + AB_RS_MAX_WAIT_DAYS + ' days)', gaveUp.length, AB_C_MUTED) +
@@ -1282,73 +1242,45 @@ function ab_rsSendEmail_(ctx) {
       }).join(', ') + '</div>';
   }
 
-  // --- upcoming ---
-  const buildUpcoming = function (compact) {
-    if (!upcoming.length) {
-      return h3('Upcoming results - next ' + AB_RS_UPCOMING_DAYS + ' days', 0, AB_C_INFO) +
-        '<div style="color:#888;font-size:13px">No watchlist companies in the Results calendar for this window.</div>';
-    }
-    const byDay = {};
-    const days = [];
-    upcoming.slice(0, AB_RS_UPCOMING_MAX_ROWS).forEach(function (c) {
-      if (!byDay[c.dayKey]) { byDay[c.dayKey] = []; days.push(c.dayKey); }
-      byDay[c.dayKey].push(c);
-    });
-    let s = h3('Upcoming results - next ' + AB_RS_UPCOMING_DAYS + ' days', upcoming.length, AB_C_INFO);
-    if (compact) {
-      days.forEach(function (k) {
-        s += '<div style="margin:8px 0 2px 0;font-size:13px;font-weight:700">' + ab_rsPrettyDay_(k) +
-             ' <span style="color:#888;font-weight:400">(' + byDay[k].length + ')</span></div>' +
-             '<div style="font-size:12px;line-height:1.6">' + byDay[k].map(function (c) {
-               return '<a href="' + ab_chartUrl_(c.symbol) + '" style="color:#1558d6;text-decoration:none">' + ab_rsEsc_(c.symbol) + '</a>';
-             }).join(', ') + '</div>';
-      });
-    } else {
-      s += tblOpen +
-        '<tr><th ' + th + '>Symbol</th><th ' + th + '>Company</th><th ' + th + '>Basic Industry</th><th ' + th + '>Purpose</th></tr>';
-      days.forEach(function (k) {
-        const n = ab_rsDaysBetween_(todayKey, k);
-        s += '<tr><td colspan="4" style="padding:10px 8px 4px 8px;font-size:13px;font-weight:700;background:#f8f9fb;border-bottom:1px solid #e3e3e3">' +
-             ab_rsPrettyDay_(k) + ' <span style="color:#888;font-weight:400">&middot; in ' + n + ' day' + (n === 1 ? '' : 's') +
-             ' &middot; ' + byDay[k].length + ' compan' + (byDay[k].length === 1 ? 'y' : 'ies') + '</span></td></tr>';
-        byDay[k].forEach(function (c) {
-          s += '<tr><td ' + td + '><a href="' + ab_chartUrl_(c.symbol) + '" style="color:#1558d6;font-weight:700;text-decoration:none">' +
-               ab_rsEsc_(c.symbol) + '</a></td><td ' + td + '>' + ab_rsEsc_(c.company || cell(c.symbol, layout.name)) + '</td>' +
-               '<td ' + td + '><span ' + small + '>' + ab_rsEsc_(cell(c.symbol, layout.basicIndustry)) + '</span></td>' +
-               '<td ' + td + '><span ' + small + '>' + ab_rsEsc_(c.purpose) + '</span></td></tr>';
-        });
-      });
-      s += '</table>';
-    }
-    const extra = [];
-    if (upcoming.length > AB_RS_UPCOMING_MAX_ROWS) extra.push('+' + (upcoming.length - AB_RS_UPCOMING_MAX_ROWS) + ' more not shown');
-    if (notInMain) extra.push(notInMain + ' other calendar entr' + (notInMain === 1 ? 'y is' : 'ies are') + ' not on your Main watchlist');
-    if (extra.length) s += '<div style="color:#888;font-size:12px;margin-top:4px">' + extra.join(' &middot; ') + '.</div>';
-    return s;
-  };
-
   const footer = '<div style="color:#94a3b8;font-size:12px;margin-top:24px;max-width:760px">Quarterly Results + Trend Tags ' +
     'are written to Main and the Checkbox ticked only once screener.in shows the quarter the result date is for. ' +
     'Full status per company: "' + AB_RS_TRACKER_SHEET + '" tab.</div>';
 
-  // Assemble, shrinking the two potentially-long sections if MailApp's
-  // body-size limit would otherwise be hit on a heavy results day.
-  const assemble = function (updLimit, compactUpcoming, compactWaiting) {
+  // Owner, 02-Nov-2026: no "waiting on screener" / "upcoming" lists (the tiles keep their counts) and EVERY updated
+  // row - when one email would pass MailApp's body-size limit, the rest go in part 2, 3 ... (at most AB_RS_MAX_PARTS).
+  const wrap = function (inner) {
     return '<div style="background:#f4f6fa;padding:16px 8px;font-family:' + FONT + '">' +
            '<div style="max-width:980px;margin:0 auto;background:#ffffff;border:1px solid ' + CARD_BORDER +
-           ';border-radius:14px;padding:22px 18px">' + head + buildReplaced() + buildUpdated(updLimit) +
-           buildWaiting(compactWaiting) + gaveUpHtml + buildUpcoming(compactUpcoming) + footer + '</div></div>';
+           ';border-radius:14px;padding:22px 18px">' + inner + '</div></div>';
   };
-  // Shrink order: upcoming list first, then the waiting list, then (last
-  // resort) trim the updated table - the figures you most want stay full.
-  let html = assemble(updatedShown.length, false, false);
-  if (html.length > AB_RS_MAX_HTML_CHARS) html = assemble(updatedShown.length, true, false);
-  if (html.length > AB_RS_MAX_HTML_CHARS) html = assemble(updatedShown.length, true, true);
-  let lim = updatedShown.length;
-  while (html.length > AB_RS_MAX_HTML_CHARS && lim > 10) {
-    lim = Math.floor(lim * 0.7);
-    html = assemble(lim, true, true);
+  const rowsHtml = updatedShown.map(updatedRow);
+  const parts = [];                                        // [[first row, end row)]
+  const first = head + buildReplaced();
+  // what each email holds besides the rows: frame, title, table head, the "+N more" line, the last part's footer
+  const fixed = wrap('').length + h3('Updated in Main ' + updWhen + ' - part 4 of 4', updatedShown.length, AB_C_POS).length +
+    updatedHead.length + '</table>'.length + gaveUpHtml.length + footer.length + 400;
+  let from = 0, size = fixed + first.length;
+  for (let i = 0; i < rowsHtml.length; i++) {
+    if (i > from && size + rowsHtml[i].length > AB_RS_MAX_HTML_CHARS) {
+      parts.push([from, i]);
+      from = i;
+      size = fixed + 400;                                  // part 2+: a short title instead of the tiles
+    }
+    size += rowsHtml[i].length;
   }
+  parts.push([from, rowsHtml.length]);
+  const nParts = Math.min(parts.length, AB_RS_MAX_PARTS);
+  const htmlOf = function (k) {
+    const p = parts[k], lastPart = k === nParts - 1;
+    const more = lastPart && parts.length > nParts ? rowsHtml.length - parts[nParts - 1][1] : 0;
+    let inner = k === 0 ? first : '<div style="font-size:18px;font-weight:700;color:' + INK + '">Results Day Update - part ' + (k + 1) +
+      ' of ' + nParts + '</div><div style="color:' + SLATE + ';font-size:12px;margin:4px 0 12px 0">' + ab_rsEsc_(ctx.slot) + ' &middot; ' + ts + ' IST</div>';
+    if (!updatedShown.length) return wrap(inner + buildUpdated(0) + gaveUpHtml + footer);
+    inner += h3('Updated in Main ' + updWhen + (nParts > 1 ? ' - part ' + (k + 1) + ' of ' + nParts : ''), updatedShown.length, AB_C_POS) +
+      updatedHead + rowsHtml.slice(p[0], p[1]).join('') + '</table>';
+    if (more) inner += '<div style="color:' + FAINT + ';font-size:12px;margin-top:6px">+' + more + ' more - see the "' + AB_RS_TRACKER_SHEET + '" tab.</div>';
+    return wrap(inner + (lastPart ? gaveUpHtml + footer : ''));
+  };
 
   // Plain-text version.
   let text = 'Results Day Update - ' + ctx.slot + ' - ' + ts + ' IST\n' + textSummary + '\n\n';
@@ -1369,32 +1301,27 @@ function ab_rsSendEmail_(ctx) {
     replaced.forEach(function (t) { text += textLine(t); });
     text += '\n';
   }
-  text += 'UPDATED IN MAIN TODAY (' + updatedShown.length + ')\n';
-  updatedShown.forEach(function (t) { text += textLine(t); });
-  if (waiting.length) {
-    text += '\nWAITING ON SCREENER (' + waiting.length + ')\n';
-    waiting.forEach(function (t) {
-      text += '  ' + t.symbol + ' - result ' + ab_rsKeyToDmy_(t.rdKey) + ', waiting for ' + t.quarter +
-              ', screener shows ' + (t.latest || '-') + '\n';
-    });
-  }
-  text += '\nUPCOMING - NEXT ' + AB_RS_UPCOMING_DAYS + ' DAYS (' + upcoming.length + ')\n';
-  let lastDay = '';
-  upcoming.slice(0, AB_RS_UPCOMING_MAX_ROWS).forEach(function (c) {
-    if (c.dayKey !== lastDay) { text += '  ' + ab_rsPrettyDay_(c.dayKey) + '\n'; lastDay = c.dayKey; }
-    text += '    ' + c.symbol + (c.company ? ' - ' + c.company : '') + '\n';
-  });
+  const textRows = function (k) {
+    const p = parts[k];
+    let out = 'UPDATED IN MAIN TODAY (' + updatedShown.length + (nParts > 1 ? ', part ' + (k + 1) + ' of ' + nParts : '') + ')\n';
+    updatedShown.slice(p[0], p[1]).forEach(function (t) { out += textLine(t); });
+    return out;
+  };
 
   const subject = 'Results Update - ' + updatedShown.length + ' updated in Main, ' +
     (replaced.length ? replaced.length + ' now with screener.in figures, ' : '') + waiting.length +
     ' awaiting screener, ' + upcoming.length + ' due in ' + AB_RS_UPCOMING_DAYS + 'd (' + ts + ')';
   try {
-    ab_sendMail_({ to: AB_EMAIL_TO, subject: subject, body: text, htmlBody: html });
+    for (let k = 0; k < nParts; k++) {
+      ab_sendMail_({ to: AB_EMAIL_TO, subject: subject + (nParts > 1 ? ' - part ' + (k + 1) + ' of ' + nParts : ''),
+                     body: (k === 0 ? text : 'Results Day Update - part ' + (k + 1) + ' of ' + nParts + ' - ' + ts + ' IST\n\n') + textRows(k),
+                     htmlBody: htmlOf(k) });
+    }
   } catch (e) {
     Logger.log('Results Day email failed: ' + e.message);
     return { updatedToday: updatedToday.length, text: textSummary + ' EMAIL FAILED: ' + e.message };
   }
-  return { updatedToday: updatedToday.length, text: textSummary + ' Email sent.' };
+  return { updatedToday: updatedToday.length, text: textSummary + ' Email sent' + (nParts > 1 ? ' (' + nParts + ' parts)' : '') + '.' };
 }
 
 /*****************************************************************

@@ -141,7 +141,7 @@ test('Results Day: moneycontrol first while screener.in is behind, then screener
   assert.strictEqual(e.mails.length, 1, JSON.stringify(p1) + e.logs.slice(-8).join('\n'));
   const html = e.mails[0][0].htmlBody;
   assert.strictEqual((html.match(/VIA MONEYCONTROL/g) || []).length, 2);
-  assert.match(html, /or, first, moneycontrol/);
+  assert.ok(!/Results announced - screener not updated yet|Upcoming results - next/.test(html), 'no waiting / upcoming lists (owner, 02-Nov-2026)');
 
   // next list: the moneycontrol rows still want screener.in pages, but no more moneycontrol
   const l2 = e.post({ token: TOKEN, action: 'list' });
