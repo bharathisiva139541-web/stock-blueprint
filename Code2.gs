@@ -716,6 +716,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
     }
     res.failed += queue.length;
   } finally {
+    try { res.gapFixed = ab_rsGapRepair_(tr, layout, cols, rowsBySym, season, touched, nowStr()); } catch (gErr) { Logger.log('Quarter-gap check skipped: ' + gErr.message); }
     try { ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey); } catch (fErr) { Logger.log('Result flags skipped: ' + fErr.message); }
     // Always save progress, even if something above threw part-way.
     ab_rsWriteTracker_(tr);
@@ -774,6 +775,9 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
     summary.text += ' moneycontrol: ' + cont.viaMc + ' filled first from moneycontrol, ' + cont.replacedMc + ' replaced by screener.in / NSE XBRL.';
   }
   if (cont.viaXbrl) summary.text += ' NSE XBRL: ' + cont.viaXbrl + ' filled from NSE XBRL.';
+  if (res.gapFixed && res.gapFixed.length) {
+    summary.text += ' Figures corrected (a quarter missing from screener.in\'s table): ' + res.gapFixed.join(', ') + '.';
+  }
   logRun_(Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm'), '', summary.updatedToday,
           'OK (results day - ' + cont.slot + ')', summary.text);
   return { continued: false, checked: cont.checked, summary: summary, throttled: res.throttled, retryAt: retryAt };
@@ -11725,7 +11729,7 @@ function ab_xbrlExceptional_(f) {
  * Stored screener.in quarters (bridge `series`) + the XBRL quarter -> an ab_qt_parseBoth_-shaped result, or { error }.
  * Only when the stored quarters end exactly one quarter before and XBRL has the same basis (consolidated / standalone).
  */
-function ab_xbrlCombined_(stored, xd) {
+function ab_xbrlCombined_(stored, xd, byPosition) {
   const s = stored && stored.series;
   if (!s || !Array.isArray(s.quarters) || !s.quarters.length) return { error: 'no screener.in quarters stored yet for this stock' };
   const basis = String(s.basis || '');
@@ -11741,7 +11745,7 @@ function ab_xbrlCombined_(stored, xd) {
   const arr = function (a, v) { return (a || []).slice(0, li + 1).map(function (x) { return typeof x === 'number' ? x : NaN; }).concat([v === null ? NaN : v]); };
   const parsed = { ok: true, basis: (cons ? 'Consolidated' : 'Standalone') + ' (NSE XBRL)', quarters: s.quarters.slice(0, li + 1).concat([xd.quarter]),
                    revenue: arr(s.revenue, f.revenue), netProfit: arr(s.netProfit, f.pat), eps: (s.eps || []).length ? arr(s.eps, f.eps) : [], error: '' };
-  const growth = ab_computeQuarterGrowth_(parsed);
+  const growth = ab_computeQuarterGrowth_(parsed, byPosition);
   const prevOpm = (s.opm || [])[li];
   const opmQoQ = typeof prevOpm === 'number' ? ab_tt_tagOpmPair_(prevOpm, ab_xbrlOpm_(f)) : '';
   return { combined: { quarterOk: true, growth: growth, quarterError: '', tagsOk: true,
@@ -11864,4 +11868,73 @@ function ab_rsScreenerDue_(kind, filed, b, rdAge, todayKey, now) {
 /** The NSE result filings store (Results_Announcements), or null when it cannot be read. */
 function ab_rsAnnStore_() {
   try { return ab_annLoad_(); } catch (e) { return null; }
+}
+
+/*****************************************************************
+ * QUARTER GAPS - figures written by the old column-counting rule (03-Nov-2026)
+ * -----------------------------------------------------------------
+ * Owner, 02-Nov-2026: the 20:56 Results Update email showed ESDS with YoY revenue +10% / profit +19%; screener.in's
+ * table (a new listing) has no Dec 2025 column, so "4 columns back" was Jun 2025 (138 / 125, 31 / 26) instead of
+ * Sep 2025 (+47% / +41%), and TTM EPS added Sep 2025 for the missing Dec 2025. Code.gs ab_computeQuarterGrowth_ now
+ * matches the quarters by name. This check (every Results Day run) corrects this season's rows already written the
+ * old way: an Updated row whose figures came from screener.in (its stored page) or NSE XBRL (+ the stored quarters),
+ * where the by-name figures differ from the column-counting ones and Main does not show them yet -> the six figures
+ * written again (a figure the gap makes unknown is blanked; OPM QoQ% too when the quarter before is the missing one),
+ * the flags worked out again, a note in the tracker. Nothing is touched once Main is right.
+ *****************************************************************/
+const AB_RS_GAP_FIELDS = ['qoqRev', 'qoqNp', 'yoyRev', 'yoyNp', 'ttmEps', 'lastFyEps'];
+
+/** The symbols whose figures were corrected (see above). */
+function ab_rsGapRepair_(tr, layout, cols, rowsBySym, season, touched, stamp) {
+  const out = [];
+  const colOf = { qoqRev: layout.qoqRev, qoqNp: layout.qoqNp, yoyRev: layout.yoyRev, yoyNp: layout.yoyNp,
+                  ttmEps: layout.ttmEps, lastFyEps: layout.lastFyEps };
+  const differs = function (a, b) {
+    return AB_RS_GAP_FIELDS.some(function (k) { return String(a[k]) !== String(b[k]); }) || (a.clear || []).length > 0;
+  };
+  // Main already shows the by-name figures (blank where the gap makes them unknown)
+  const shown = function (rowIdx, g) {
+    return AB_RS_GAP_FIELDS.every(function (k) {
+      const c = colOf[k];
+      if (c === undefined || c === -1) return true;
+      const cell = layout.data[rowIdx][c];
+      if ((g.clear || []).indexOf(k) >= 0) return ab_cellText_(cell) === '';
+      if (g[k] === '' || g[k] === null || g[k] === undefined) return true;     // not written either way
+      return ab_cellText_(cell) !== '' && Math.abs(Number(cell) - Number(g[k])) < 1e-9;
+    });
+  };
+  tr.list.forEach(function (t) {
+    if (t.status !== 'Updated' || ab_rsQuarterIndex_(t.quarter) !== ab_rsQuarterIndex_(season) || touched[t.symbol] || !rowsBySym[t.symbol]) return;
+    let neu = null, old = null;
+    if (t.source === 'screener.in') {
+      const b = ab_bridgeGet_(t.symbol);
+      const sr = b && b.combined && b.combined.quarterOk ? b.combined.series : null;
+      neu = ab_qtGrowthFromSeries_(sr);
+      old = ab_qtGrowthFromSeries_(sr, true);
+      if (!neu || ab_rsQuarterIndex_(neu.latestQuarter) !== ab_rsQuarterIndex_(t.quarter)) return;
+    } else if (t.source === AB_XBRL_SOURCE || t.source === AB_XBRL_SOURCE_DONE) {
+      const e = ab_xbrlGet_(t.symbol);
+      if (!e || ab_rsQuarterIndex_(e.data.quarter) !== ab_rsQuarterIndex_(t.quarter)) return;
+      const b = ab_bridgeGet_(t.symbol);
+      const n = ab_xbrlCombined_(b && b.combined, e.data), o = ab_xbrlCombined_(b && b.combined, e.data, true);
+      if (!n.combined || !o.combined) return;
+      neu = n.combined.growth;
+      old = o.combined.growth;
+    } else {
+      return;
+    }
+    if (!differs(neu, old)) return;
+    const rows = rowsBySym[t.symbol].filter(function (r) { return !shown(r, neu); });
+    if (!rows.length) return;
+    rows.forEach(function (rowIdx) {
+      ab_qt_writeRow_(layout, cols, rowIdx, { quarterOk: true, growth: neu, tagsOk: false, tags: null });
+    });
+    t.flags = ab_rsFlags_(neu, ab_xbrlFiguresFor_(t.symbol, t.quarter));
+    t.note = (t.note ? t.note + '; ' : '') + 'figures corrected on ' + stamp + ' (screener.in\'s table skips a quarter - ' +
+             'quarters now matched by name)';
+    touched[t.symbol] = true;
+    out.push(t.symbol);
+  });
+  if (out.length) Logger.log('Results Day: figures corrected (a quarter missing from screener.in\'s table): ' + out.join(', '));
+  return out;
 }
