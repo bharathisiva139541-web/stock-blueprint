@@ -97,28 +97,78 @@
   }
 
   // ---------- logos ----------
-  // Only verified mappings from web/data/logos.js (window.SB_LOGOS) are used.
-  // Otherwise a neutral monogram is shown - never a guessed logo.
+  // web/data/logos.js (tools/build_logos.js): the NSE symbols that have a logo in one pinned version of
+  // github.com/dharunashokkumar/indian-listed-company-logos (owner, 02-Nov-2026: "use the best free source") and the
+  // addresses that serve it - jsDelivr's CDN first, GitHub's raw files when that fails. A hand-checked entry in
+  // window.SB_LOGOS ('NSE:SYM' -> { url, verified: true }) wins. No logo / every address failed -> the monogram.
+  // Matching is by the NSE symbol only (TradingView's '_' for NSE's '-', the source's old tickers) - never by name.
   function monogram(sym) {
     var s = String(sym || '?').replace(/[^A-Z0-9]/gi, '');
     return esc(s.slice(0, 2).toUpperCase() || '?');
   }
-  function logoHtml(sym, size) {
+  var logoSet = null;
+  var logoHosts = [];       // per address: { ok, bad } loads seen this session - an address that only fails is skipped
+  function logoTicker(sym) {
+    if (!logoSet) {
+      logoSet = {};
+      String(window.SB_LOGO_TICKERS || '').split(' ').forEach(function (t) { if (t) logoSet[t] = true; });
+    }
+    var s = String(sym || '').toUpperCase();
+    if (!s) return '';
+    if (logoSet[s]) return s;
+    var u = s.replace(/-/g, '_');
+    if (logoSet[u]) return u;
+    var a = (window.SB_LOGO_ALIASES || {})[s];
+    return a && logoSet[a] ? a : '';
+  }
+  /** The addresses to try for a symbol's logo, best first ([] = none). */
+  function logoUrls(sym) {
     var m = window.SB_LOGOS && window.SB_LOGOS['NSE:' + sym];
+    if (m && m.url && m.verified) return [m.url];
+    var src = window.SB_LOGO_SOURCE, t = logoTicker(sym);
+    if (!t || !src || !src.urls) return [];
+    var file = encodeURIComponent('NSE_' + t + '.svg');
+    var out = [], skipped = [];
+    src.urls.forEach(function (base, i) {
+      var h = logoHosts[i] || {};
+      ((h.bad >= 3 && !h.ok) ? skipped : out).push(base + file);
+    });
+    return out.concat(skipped);           // an address that only failed so far: tried last
+  }
+  function logoHtml(sym, size) {
     var cls = 'logo' + (size === 'lg' ? ' lg' : '');
-    if (m && m.url && m.verified) {
-      return '<span class="' + cls + '" data-mono="' + monogram(sym) + '"><img class="logo-img" src="' + esc(m.url) +
-        '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>';
+    var urls = logoUrls(sym);
+    if (urls.length) {
+      return '<span class="' + cls + '" data-mono="' + monogram(sym) + '"><img class="logo-img" src="' + esc(urls[0]) +
+        '" data-alt="' + esc(urls.slice(1).join(' ')) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>';
     }
     return '<span class="' + cls + '" aria-hidden="true">' + monogram(sym) + '</span>';
   }
-  // broken logo image -> monogram
+  function logoHostOf(url) {
+    var urls = (window.SB_LOGO_SOURCE && window.SB_LOGO_SOURCE.urls) || [];
+    for (var i = 0; i < urls.length; i++) if (String(url).indexOf(urls[i]) === 0) return i;
+    return -1;
+  }
+  // a logo that loaded / failed: remember it per address; a failed one tries the next address, then the monogram
+  document.addEventListener('load', function (e) {
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('logo-img')) return;
+    var i = logoHostOf(t.getAttribute('src'));
+    if (i >= 0) (logoHosts[i] = logoHosts[i] || { ok: 0, bad: 0 }).ok++;
+  }, true);
   document.addEventListener('error', function (e) {
     var t = e.target;
-    if (t && t.classList && t.classList.contains('logo-img')) {
-      var p = t.parentNode;
-      if (p) p.textContent = p.getAttribute('data-mono') || '?';
+    if (!t || !t.classList || !t.classList.contains('logo-img')) return;
+    var i = logoHostOf(t.getAttribute('src'));
+    if (i >= 0) (logoHosts[i] = logoHosts[i] || { ok: 0, bad: 0 }).bad++;
+    var rest = String(t.getAttribute('data-alt') || '').split(' ').filter(Boolean);
+    if (rest.length) {
+      t.setAttribute('data-alt', rest.slice(1).join(' '));
+      t.setAttribute('src', rest[0]);
+      return;
     }
+    var p = t.parentNode;
+    if (p) p.textContent = p.getAttribute('data-mono') || '?';
   }, true);
 
   function stockCell(sym, name, opts) {
@@ -715,7 +765,7 @@
 
   SB.ui = {
     $: $, esc: esc, isNum: isNum, objRows: objRows, parseDate: parseDate, iso: iso, dayDiff: dayDiff, F: F,
-    deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, stockCell: stockCell, stateBadge: stateBadge, leastFresh: leastFresh,
+    deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, logoUrls: logoUrls, stockCell: stockCell, stateBadge: stateBadge, leastFresh: leastFresh,
     Table: Table, bars: bars, lineChart: lineChart, tile: tile, card: card, chips: chips, bindChips: bindChips,
     textMatch: textMatch, skeleton: skeleton, store: store, toCsv: toCsv, download: download, loadScript: loadScript
   };
