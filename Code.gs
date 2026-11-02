@@ -5280,6 +5280,13 @@ function ab_fetchOhlcBlocks_(symbols, lap) {
 
   const cut = new Date(); cut.setDate(cut.getDate() - 15);
   const cutKey = Utilities.formatDate(cut, AB_TZ, 'yyyyMMdd');
+  // Each day's text remembered: 900 stocks x 30 candles were ~54,000 Utilities.formatDate calls a part, and on
+  // 02-Nov-2026 part 2 of Phase 1 ran past Google's 6 minutes after the values were read (same cure as 30-Oct's scans).
+  const isoMemo = {}, keyMemo = {};
+  const dayText = function (d, memo, pattern) {
+    const t = d.getTime();
+    return memo[t] || (memo[t] = Utilities.formatDate(d, AB_TZ, pattern));
+  };
 
   const byTab = { Day4: [], ThirdDay: [], Yesterday: [], Today: [] };
   const outRows = [];
@@ -5299,14 +5306,14 @@ function ab_fetchOhlcBlocks_(symbols, lap) {
     if (!candles.length) { failed.push(symbol); return; }
     candles.slice(-30).forEach(c => {
       const d = ab_toJsDate_(c.date);
-      outRows.push([symbol, d ? Utilities.formatDate(d, AB_TZ, 'yyyy-MM-dd') : '',
+      outRows.push([symbol, d ? dayText(d, isoMemo, 'yyyy-MM-dd') : '',
                     c.Opn, c.High, c.Low, c.Cls, isNaN(c.Vol) ? '' : c.Vol]);
     });
 
     // 4-day tabs: only candles from the last 15 calendar days (same window as before)
     const recent = candles.filter(c => {
       const d = ab_toJsDate_(c.date);
-      return !d || Utilities.formatDate(d, AB_TZ, 'yyyyMMdd') >= cutKey;
+      return !d || dayText(d, keyMemo, 'yyyyMMdd') >= cutKey;
     });
     if (!recent.length) { failed.push(symbol); return; }
     const last4 = recent.slice(-4);
@@ -5316,12 +5323,13 @@ function ab_fetchOhlcBlocks_(symbols, lap) {
       if (tabsForThisSymbol[j] === 'Today' && c.date) {
         const d = ab_toJsDate_(c.date);
         if (d) {
-          const k = Utilities.formatDate(d, AB_TZ, 'yyyyMMdd');
-          if (k >= asOfKey) { asOfKey = k; asOfDate = Utilities.formatDate(d, AB_TZ, 'dd-MMM-yyyy'); }
+          const k = dayText(d, keyMemo, 'yyyyMMdd');
+          if (k > asOfKey) { asOfKey = k; asOfDate = Utilities.formatDate(d, AB_TZ, 'dd-MMM-yyyy'); }
         }
       }
     });
   });
+  lap('candles sorted (' + Object.keys(isoMemo).length + ' days)');
   scratch.clearContents();
   return { hist: outRows, ohlc: byTab, failed: failed, asOfKey: asOfKey, asOfDate: asOfDate };
 }

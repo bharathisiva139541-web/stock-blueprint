@@ -191,3 +191,28 @@ test('result flags: revenue up / profit down; an exceptional gain read after scr
   assert.strictEqual(fl({}, { pbt: 50, pbeit: 60, exceptional: -10 }), '', 'an exceptional loss');
   assert.strictEqual(fl({}, { pbt: 50, pbeit: null, exceptional: 30 }), 'Exceptional gain Rs 30.00 Cr = 60% of PBT');
 });
+
+test('Results Update email: no waiting / upcoming lists, no note line under a row, every updated row (in parts when big)', () => {
+  const syms = [];
+  for (let i = 0; i < 70; i++) syms.push('CO' + String(i).padStart(2, '0'));
+  const e = mock.loadCodeGs({ sheets: [
+    { name: 'Main', rows: [['Main watchlist'], HEAD].concat(syms.map((s) => [false, s + ' Ltd', s, RD, 1.2].concat(OLD))).concat([[false, 'Late Ltd', 'LATE', RD, 1].concat(OLD)]) },
+    { name: 'AutoFetch Log', rows: [['ts']] }
+  ] }, { props: { AB_BRIDGE_TOKEN: TOKEN, AB_RS_SEASON: 'Sep 2026' }, now: NOW });
+  const done = page(Q8.slice(1).concat(['Sep 2026']), shift(PARAS_OLD, { Sales: 151, 'OPM %': '29%', 'Net Profit': 31, 'EPS in Rs': 3.76 }));
+  e.post({ token: TOKEN, action: 'put', items: syms.map((s) => ({ sym: s, html: done })).concat([{ sym: 'LATE', html: page(Q8, PARAS_OLD) }]) });
+  e.post({ token: TOKEN, action: 'process' });
+  assert.ok(e.mails.length >= 2, 'more than one email: ' + e.mails.length);
+  const all = e.mails.map((m) => m[0]);
+  const rows = all.map((m) => (m.htmlBody.match(/symbol=NSE:CO\d\d"/g) || []).length);
+  assert.strictEqual(rows.reduce((a, b) => a + b, 0), 70, 'every updated row is mailed: ' + rows.join(' + '));
+  all.forEach((m) => assert.ok(m.htmlBody.length <= 150000, 'each under the size guard'));
+  assert.match(all[1].subject, / - part 2 of \d$/);
+  assert.match(all[1].htmlBody, /Results Day Update - part 2 of/);
+  const html = all.map((m) => m.htmlBody).join('');
+  assert.ok(!/Results announced - screener not updated yet|Upcoming results - next|auto re-check/.test(html), 'no waiting / upcoming lists');
+  assert.ok(!/colspan="9"/.test(html), 'no note line under the rows');
+  assert.match(html, /border-bottom:1px solid #cbd5e1/, 'a visible border between rows');
+  assert.match(all[0].htmlBody, /Waiting on screener/, 'the tiles keep the counts');
+  assert.ok(!/WAITING ON SCREENER|UPCOMING - NEXT/.test(all.map((m) => m.body).join('')), 'nor in the text part');
+});
