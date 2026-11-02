@@ -7326,6 +7326,24 @@ function ab_computeQuarterGrowth_(parsed, byPosition) {
   return out;
 }
 
+/**
+ * OPM Qtr YoY (owner, 03-Nov-2026): the newest quarter's OPM % against the same quarter a year before, matched by name
+ * ('Sep 2026' vs 'Sep 2025') - the OPM QoQ% words (ab_tt_tagOpmPair_); '' when that quarter is not in the table.
+ * quarters / opm = the same columns of screener.in's quarterly table (opm NaN / null = no figure).
+ */
+function ab_qtOpmQtrYoy_(quarters, opm) {
+  if (!Array.isArray(quarters) || !Array.isArray(opm) || opm.length !== quarters.length) return '';
+  const num = function (v) { return typeof v === 'number' && isFinite(v) ? v : NaN; };
+  let li = -1;
+  for (let i = opm.length - 1; i >= 0; i--) { if (!isNaN(num(opm[i]))) { li = i; break; } }
+  const cur = li >= 0 ? ab_rsQuarterIndex_(quarters[li]) : NaN;
+  if (isNaN(cur)) return '';
+  for (let i = li - 1; i >= 0; i--) {
+    if (ab_rsQuarterIndex_(quarters[i]) === cur - 12) return isNaN(num(opm[i])) ? '' : ab_tt_tagOpmPair_(num(opm[i]), num(opm[li]));
+  }
+  return '';
+}
+
 /** The growth figures from a bridge entry's stored quarters (`series`, the last 12 columns), or null. */
 function ab_qtGrowthFromSeries_(series, byPosition) {
   if (!series || !Array.isArray(series.quarters) || !series.quarters.length) return null;
@@ -8004,6 +8022,9 @@ const AB_TT_PROMOTER_HEADER = 'Promotor Holding';
 const AB_TT_FII_HEADER = 'FII Activity';
 const AB_TT_OPM_YOY_HEADER = 'OPM YoY%';
 const AB_TT_OPM_QOQ_HEADER = 'OPM QoQ%';
+// owner, 03-Nov-2026: this quarter's OPM vs the same quarter a year ago (Sep 2026 vs Sep 2025), the same words as OPM QoQ%;
+// the column is added at the end of Main by Code2.gs ab_ensureOpmQtrYoyCol_ (OPM YoY% stays the yearly FY vs FY one)
+const AB_TT_OPM_QYOY_HEADER = 'OPM Qtr YoY';
 
 
 // Its OWN cooldown key - independent of AB_QR_COOLDOWN_PROP.
@@ -8466,6 +8487,7 @@ function ab_qt_parseBoth_(html) {
       for (let i = li - 1; i >= 0; i--) { if (ab_rsQuarterIndex_(qParsed.quarters[i]) === cur - 3) { pi = i; break; } }
       tags.opmQoQ = pi >= 0 && !isNaN(qo[pi]) ? ab_tt_tagOpmPair_(qo[pi], qo[li]) : '';
     }
+    tags.opmQYoY = ab_qtOpmQtrYoy_(qParsed.quarters, qo);
   }
 
   const quarterOpmCount = tParsed.ok
@@ -8576,6 +8598,7 @@ function ab_bridgeResult_(b) {
   if (c.quarterOk && c.series) {
     const g = ab_qtGrowthFromSeries_(c.series);
     if (g && g.latestQuarter) c.growth = g;
+    if (c.tagsOk && c.tags && !c.tags.opmQYoY) c.tags.opmQYoY = ab_qtOpmQtrYoy_(c.series.quarters, c.series.opm);
   }
   return c;
 }
@@ -8649,7 +8672,8 @@ function ab_bridgeWanted_(opts) {
     promoter: ab_qt_findCol_(layout.header, AB_TT_PROMOTER_HEADER),
     fii: ab_qt_findCol_(layout.header, AB_TT_FII_HEADER),
     opmYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_YOY_HEADER),
-    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER)
+    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER),
+    opmQYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER)
   };
   const targetCols = [layout.qoqRev, layout.qoqNp, layout.yoyRev, layout.yoyNp,
                       layout.ttmEps, layout.lastFyEps,
@@ -9138,7 +9162,7 @@ const AB_SITE_MAIN_COLS = [
   ['qrev', 'QoQ[Revenue Growth%}', 'pct'], ['qnp', 'QoQ[NP Growth %]', 'pct'],
   ['yrev', 'YoY[Revenue Growth %]', 'pct'], ['ynp', 'YoY[NP Growth %]', 'pct'],
   ['promo', 'Promotor Holding', 'str'], ['fii', 'FII Activity', 'str'], ['opmy', 'OPM YoY%', 'str'],
-  ['opmq', 'OPM QoQ%', 'str'], ['pat', 'Pattern', 'str'], ['fvg', 'FVG', 'str'],
+  ['opmq', 'OPM QoQ%', 'str'], ['opmqy', 'OPM Qtr YoY', 'str'], ['pat', 'Pattern', 'str'], ['fvg', 'FVG', 'str'],
   ['e10', '10 EMA', 'str'], ['e21', '21 EMA', 'str'], ['zone', 'Zone', 'str'],
   ['volchg', '%vol Change', 'frac'], ['ipo', 'IPO Level', 'str']
 ];
@@ -9750,7 +9774,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 7;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'
+const AB_SITE_FEED_FORMAT = 8;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;
@@ -10253,9 +10277,12 @@ function ab_qt_writeRow_(layout, cols, rowIdx, combined) {
     const g = combined.growth;
     // figures a missing quarter in screener.in's table makes unknown: blanked, never last season's number left behind
     // (OPM QoQ% too when the quarter before is the missing one - it compares with that quarter)
-    (g.clear || []).concat((g.clear || []).indexOf('qoqRev') >= 0 ? ['opmQoQ'] : []).forEach(function (k) {
+    // (OPM Qtr YoY too when the year-ago quarter is the missing one)
+    (g.clear || []).concat((g.clear || []).indexOf('qoqRev') >= 0 ? ['opmQoQ'] : [])
+      .concat((g.clear || []).indexOf('yoyRev') >= 0 ? ['opmQYoY'] : []).forEach(function (k) {
       const c = { qoqRev: layout.qoqRev, qoqNp: layout.qoqNp, yoyRev: layout.yoyRev, yoyNp: layout.yoyNp,
-                  ttmEps: layout.ttmEps, lastFyEps: layout.lastFyEps, opmQoQ: cols ? cols.opmQoQ : -1 }[k];
+                  ttmEps: layout.ttmEps, lastFyEps: layout.lastFyEps, opmQoQ: cols ? cols.opmQoQ : -1,
+                  opmQYoY: cols && cols.opmQYoY !== undefined ? cols.opmQYoY : -1 }[k];
       if (c !== undefined && c !== -1 && ab_cellText_(layout.data[rowIdx][c]) !== '') layout.sheet.getRange(row, c + 1).setValue('');
     });
     put(layout.qoqRev, g.qoqRev);
@@ -10271,6 +10298,7 @@ function ab_qt_writeRow_(layout, cols, rowIdx, combined) {
     put(cols.fii, t.fii);
     put(cols.opmYoY, t.opmYoY);
     put(cols.opmQoQ, t.opmQoQ);
+    if (cols.opmQYoY !== undefined) put(cols.opmQYoY, t.opmQYoY);
   }
   return newlyFilled;
 }
@@ -10304,7 +10332,8 @@ function ab_qt_updateQuarterlyAndTrendTags_(mode) {
     promoter: ab_qt_findCol_(layout.header, AB_TT_PROMOTER_HEADER),
     fii: ab_qt_findCol_(layout.header, AB_TT_FII_HEADER),
     opmYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_YOY_HEADER),
-    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER)
+    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER),
+    opmQYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER)
   };
 
   const missingCols = [];
@@ -10509,7 +10538,8 @@ function ab_qt_refreshForSymbols_(symbols) {
     promoter: ab_qt_findCol_(layout.header, AB_TT_PROMOTER_HEADER),
     fii: ab_qt_findCol_(layout.header, AB_TT_FII_HEADER),
     opmYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_YOY_HEADER),
-    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER)
+    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER),
+    opmQYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER)
   };
   const wanted = {};
   (symbols || []).forEach(function (s) {

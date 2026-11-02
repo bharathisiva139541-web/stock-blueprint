@@ -59,6 +59,7 @@ MAIN_COLS = [
     ('fii', 'FII Activity', 'str'),
     ('opmy', 'OPM YoY%', 'str'),
     ('opmq', 'OPM QoQ%', 'str'),
+    ('opmqy', 'OPM Qtr YoY', 'str'),
     ('pat', 'Pattern', 'str'),
     ('fvg', 'FVG', 'str'),
     ('e10', '10 EMA', 'str'),

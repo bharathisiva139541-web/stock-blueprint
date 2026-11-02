@@ -240,5 +240,30 @@ sb.api = lambda cfg, action, payload=None, timeout=120, tries=3: {'ok': False, '
 del LOGS[:]
 assert sb.xbrl_step({}, {'PARAS': 'Sep 2026'}) == 0
 assert 'New version > Deploy' in LOGS[0], LOGS
+# ---------------------------------------------------------------- the file's comparison columns (owner, 03-Nov-2026)
+# a filing usually also carries the quarter before and the same quarter a year before: OPM QoQ% / OPM Qtr YoY within one file
+assert 'prev' not in x and 'ago' not in x, 'the PARAS test file has only the quarter + the half year'
+def ctx_xml(cid, a, b):
+    return ('<xbrli:context id="%s"><xbrli:entity><xbrli:identifier scheme="x">1</xbrli:identifier></xbrli:entity>'
+            '<xbrli:period><xbrli:startDate>%s</xbrli:startDate><xbrli:endDate>%s</xbrli:endDate></xbrli:period></xbrli:context>' % (cid, a, b))
+COLS = {'OneD': ('2026-07-01', '2026-09-30', 200, 150), 'TwoD': ('2026-04-01', '2026-06-30', 180, 140), 'ThreeD': ('2025-07-01', '2025-09-30', 160, 128),
+        'FourD': ('2026-04-01', '2026-09-30', 380, 290)}
+f3 = ''.join(ctx_xml(k, v[0], v[1]) for k, v in COLS.items())
+for k, v in COLS.items():
+    f3 += '<in-capmkt:RevenueFromOperations contextRef="%s" unitRef="INR" decimals="-5">%s</in-capmkt:RevenueFromOperations>' % (k, amt(v[2]))
+    f3 += '<in-capmkt:Expenses contextRef="%s" unitRef="INR" decimals="-5">%s</in-capmkt:Expenses>' % (k, amt(v[3]))
+    f3 += '<in-capmkt:ProfitLossForPeriod contextRef="%s" unitRef="INR" decimals="-5">%s</in-capmkt:ProfitLossForPeriod>' % (k, amt(v[2] - v[3]))
+X3 = ('<?xml version="1.0"?><xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:in-capmkt="http://www.sebi.gov.in/xbrl/in-capmkt">'
+      + f3 + '</xbrli:xbrl>').encode()
+x3 = sb.xbrl_parse(X3)
+assert x3['quarter'] == 'Sep 2026' and x3['prev']['quarter'] == 'Jun 2026' and x3['ago']['quarter'] == 'Sep 2025', x3
+assert abs(x3['prev']['q']['revenue'] / CR - 180) < 1e-6 and abs(x3['ago']['q']['expenses'] / CR - 128) < 1e-6
+assert x3['cum_months'] == 6, 'the half year is still the longer period'
+fig = sb.xbrl_figures(x3)
+assert (fig['revenue'], fig['prev']['quarter'], fig['prev']['revenue'], fig['ago']['quarter'], fig['ago']['expenses']) == (200.0, 'Jun 2026', 180.0, 'Sep 2025', 128.0), fig
+# OPM 25% now, 22.2% the quarter before, 20% a year before - XbrlCheck prints them
+assert sb.xbrl_opm(x3['q'])[0] == 25.0 and abs(sb.xbrl_opm(x3['prev']['q'])[0] - 22.2222) < 1e-3
+assert 'prev' not in sb.xbrl_figures(x), 'no comparison columns, nothing sent for them'
+
 srv.shutdown()
 print('OK')

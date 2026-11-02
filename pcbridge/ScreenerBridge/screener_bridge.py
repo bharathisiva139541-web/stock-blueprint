@@ -1953,6 +1953,14 @@ def xbrl_parse(raw):
     for name, names in XBRL_TEXTS:
         out[name] = next((t for n in names for _, t in facts.get(n.lower(), []) if t), '')
     out['numeric'] = [(k, _fnum(t)) for k, vals in sorted(facts.items()) for r, t in vals if r == qid and _fnum(t) is not None][:60]
+    # the file's comparison columns (owner, 03-Nov-2026: "XBRL itself has two quarters"): the quarter before ('prev') and
+    # the same quarter a year before ('ago') - each a {'quarter', 'end', 'q'} when the file has that 3-month period
+    for key, days in (('prev', 91), ('ago', 365)):
+        near = sorted((abs((_iso_days(e2, end) or 0) - days), e2, k2) for e2, k2 in quarters if e2 < end)
+        if near and near[0][0] <= 12:
+            e2, k2 = near[0][1], near[0][2]
+            out[key] = {'quarter': '%s %s' % (_MON[int(e2[5:7]) - 1].title(), e2[:4]), 'end': e2,
+                        'q': {name: num_of(names, k2) for name, names in XBRL_FACTS}}
     return out
 
 
@@ -2154,6 +2162,11 @@ def xbrl_check(cfg, args, out=print):
             nature = 'consolidated' if x['consolidated'] else 'standalone' if x['nature'] else '? (taken as standalone)'
             out('   %s: %s, %s, quarter %s (%s to %s)%s' % (name, x['company'] or sym, nature, x['quarter'], x['start'], x['end'],
                 ('; also %d months to %s' % (x['cum_months'], x['end'])) if x['cum_months'] else ''))
+            opm = lambda q: xbrl_opm(q)[0]
+            out('     quarters in this file: %s' % ', '.join(
+                '%s %s (OPM %s)' % (lab, o['quarter'], '-' if opm(o['q']) is None else '%.1f%%' % opm(o['q']))
+                for lab, o in (('this quarter', {'quarter': x['quarter'], 'q': x['q']}), ('quarter before', x.get('prev')),
+                               ('same quarter a year before', x.get('ago'))) if o))
             if not any(v is not None for v in x['q'].values()):
                 out('     none of the usual figures found - the quarter\'s numbers in the file: %s'
                     % ', '.join('%s=%g' % kv for kv in x['numeric'][:25]))
@@ -2187,13 +2200,19 @@ XBRL_STATE_PATH = os.path.join(HERE, 'xbrl_state.json')
 XBRL_FILES_PER_STOCK = 4
 
 
+def _xbrl_crore(q):
+    return {k: None if v is None else (v if k == 'eps' else round(v / CRORE, 4)) for k, v in q.items() if k != 'pat_owners'}
+
+
 def xbrl_figures(x):
-    """xbrl_parse's quarter -> the figures sent to the sheet: amounts in crore (4 decimals), EPS as filed."""
-    out = {}
-    for k, v in x['q'].items():
-        if k == 'pat_owners':
-            continue
-        out[k] = None if v is None else (v if k == 'eps' else round(v / CRORE, 4))
+    """xbrl_parse's quarter -> the figures sent to the sheet: amounts in crore (4 decimals), EPS as filed; with 'prev' /
+    'ago' = the same file's quarter before / same quarter a year before ({'quarter': 'Jun 2026', figures}) when filed -
+    the sheet's OPM QoQ% and OPM Qtr YoY compare within one file."""
+    out = _xbrl_crore(x['q'])
+    for key in ('prev', 'ago'):
+        o = x.get(key)
+        if o and any(v is not None for v in o['q'].values()):
+            out[key] = dict(_xbrl_crore(o['q']), quarter=o['quarter'])
     return out
 
 
