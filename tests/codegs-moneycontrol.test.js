@@ -18,11 +18,15 @@ HEAD.forEach((h, i) => { C[h] = i; });
 const OLD = [5, 6, 7, 8, 40, 30, 'Stable', 'Increasing', 'Increasing', 'Decreasing'];   // last season's figures and tags
 function mainRow(sym, name) { return [false, name, sym, RD, 1.2].concat(OLD); }
 
+// NSE's result filings (the PC's announcements step): BLOCKED's was not seen
+const FILED = (syms) => ({ name: 'Results_Announcements', rows: [['Symbol', 'Filed (IST)', 'Session', 'Subject', 'Received']]
+  .concat(syms.map((s) => [s, '2026-10-26 16:10:00', 'After market', 'Financial Results', ''])) });
 function workbook(extra) {
   return { sheets: [
     { name: 'Main', rows: [['Main watchlist'], HEAD, mainRow('ACUTAAS', 'Acutaas Chemicals'), mainRow('LATECO', 'Late Co'),
                            mainRow('SCRNOK', 'Screener First'), mainRow('BLOCKED', 'Blocked Co')] },
-    { name: 'AutoFetch Log', rows: [['ts']] }
+    { name: 'AutoFetch Log', rows: [['ts']] },
+    FILED(['ACUTAAS', 'LATECO', 'SCRNOK'])
   ].concat(extra || []) };
 }
 function env(extra) {
@@ -58,11 +62,16 @@ function main(e, sym) {
 }
 const figures = (e, sym) => main(e, sym).row.slice(C['QoQ Revenue Growth %'], C['OPM QoQ%'] + 1);
 
-test('list: Pending results are also offered for moneycontrol, with the quarter expected', () => {
+test('list: Pending results NSE shows the filing of are also offered for moneycontrol, with the quarter expected', () => {
   const e = env();
   const r = e.post({ token: TOKEN, action: 'list' });
   assert.deepStrictEqual(r.priority, ['ACUTAAS', 'LATECO', 'SCRNOK', 'BLOCKED']);
-  assert.deepStrictEqual(r.mc, { ACUTAAS: 'Sep 2026', LATECO: 'Sep 2026', SCRNOK: 'Sep 2026', BLOCKED: 'Sep 2026' });
+  // owner, 02-Nov-2026: moneycontrol only between NSE's filing and its XBRL - BLOCKED's filing was not seen
+  assert.deepStrictEqual(r.mc, { ACUTAAS: 'Sep 2026', LATECO: 'Sep 2026', SCRNOK: 'Sep 2026' });
+  // the 30-minute check: no screener.in pages at all
+  const q = e.post({ token: TOKEN, action: 'list', quick: true });
+  assert.deepStrictEqual([q.quick, q.priority, q.missing, q.h60], [true, undefined, undefined, undefined]);
+  assert.deepStrictEqual(q.mc, r.mc);
 });
 
 test('mcput: figures checked and stored in a hidden tab; bad items refused one by one', () => {
@@ -173,12 +182,12 @@ test('Results Day: moneycontrol first while screener.in is behind, then screener
   // ... and an email says so: the stock in its own section, with screener.in's figures
   assert.strictEqual(e.mails.length, 2, 'the replacement is emailed');
   const m3 = e.mails[1][0];
-  assert.match(m3.subject, /^Results Update - 0 updated in Main, 1 now with screener\.in figures, /);
+  assert.match(m3.subject, /^Results Update - 0 new in Main \(0 today\), 1 now with screener\.in figures, /);
   assert.match(m3.htmlBody, /Now with screener\.in figures \(they replace the moneycontrol ones\)/);
   assert.strictEqual((m3.htmlBody.match(/SCREENER\.IN FIGURES/g) || []).length, 1);
   assert.ok(m3.htmlBody.indexOf('ACUTAAS') > 0 && !/VIA MONEYCONTROL/.test(m3.htmlBody.split('Updated in Main')[0]), 'no moneycontrol pill on it any more');
   assert.match(m3.body, /NOW WITH SCREENER\.IN FIGURES - THEY REPLACE THE MONEYCONTROL ONES \(1\)\n {2}ACUTAAS \(result /);
-  assert.match(m3.body, /UPDATED IN MAIN TODAY \(0\)/);
+  assert.ok(!/UPDATED IN MAIN|NEW RESULTS IN MAIN/.test(m3.body), 'the PC\'s runs list only the new rows - none here');
   assert.ok(!e.post({ token: TOKEN, action: 'list' }).priority.includes('ACUTAAS'));
 });
 

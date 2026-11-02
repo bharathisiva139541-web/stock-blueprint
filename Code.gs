@@ -8567,7 +8567,13 @@ function ab_bridgeToken_(create) {
  *   missing  - never-attempted rows (all ten target columns blank),
  *              skipping the ones already parked/unfillable.
  */
-function ab_bridgeWanted_() {
+/**
+ * What the PC fetches. opts.quick = the PC's 30-minute results check (owner, 02-Nov-2026): no screener.in pages, only
+ * the NSE XBRL filings + moneycontrol look-ups of the FILED results still waiting. The full round's screener.in list
+ * follows Code2.gs ab_rsScreenerDue_ (pages only when they can help); `xbrlDaily` = the once-a-day XBRL look-ups.
+ */
+function ab_bridgeWanted_(opts) {
+  const quick = !!(opts && opts.quick);
   const layout = ab_getMainLayout_();
   const cols = {
     promoter: ab_qt_findCol_(layout.header, AB_TT_PROMOTER_HEADER),
@@ -8579,7 +8585,9 @@ function ab_bridgeWanted_() {
                       layout.ttmEps, layout.lastFyEps,
                       cols.promoter, cols.fii, cols.opmYoY, cols.opmQoQ];
   const todayKey = ab_rsDayKey_(new Date());
+  const now = Date.now();
   const tr = ab_rsReadTracker_();
+  const ann = ab_rsAnnStore_();   // NSE's result filings (the PC's announcements step)
   const unfillable = ab_qt_getUnfillable_();
   const tooNew = ab_qt_getTooNew_();
   const data = layout.data;
@@ -8589,8 +8597,8 @@ function ab_bridgeWanted_() {
   const mcOn = ab_mcOn_();
   // Companies whose NSE XBRL results of the quarter expected are not stored yet: symbol -> quarter (Code2.gs ab_xbrlWant_)
   let xbrl = {};
-  const xbrlBasis = {};
-  try { xbrl = ab_xbrlWant_(tr, todayKey, xbrlBasis); } catch (xErr) { xbrl = {}; }
+  const xbrlBasis = {}, xbrlDaily = {};
+  try { xbrl = ab_xbrlWant_(tr, todayKey, xbrlBasis, quick ? null : xbrlDaily, ann); } catch (xErr) { xbrl = {}; }
 
   for (let r = layout.headerRowIdx + 1; r < data.length; r++) {
     const sym = ab_cellText_(data[r][layout.symbol]).toUpperCase();
@@ -8601,17 +8609,24 @@ function ab_bridgeWanted_() {
     if (layout.resultDate !== -1) {
       const rd = ab_rsToDate_(data[r][layout.resultDate]);
       if (rd) {
-        const age = ab_rsDaysBetween_(ab_rsDayKey_(rd), todayKey);
+        const rdKey = ab_rsDayKey_(rd);
+        const age = ab_rsDaysBetween_(rdKey, todayKey);
         if (age >= 0 && age <= AB_RS_MAX_WAIT_DAYS) {
           const q = ab_rsExpectedQuarter_(rd);
           const t = tr.byKey[sym + '|' + q.toUpperCase()];
-          if (!t || t.status === 'Pending') {
-            priority.push(sym); seen[sym] = true;
-            if (mcOn) mc[sym] = q;
+          // moneycontrol figures in Main: screener.in is still wanted, to replace them; NSE XBRL figures: for the trend tags
+          const kind = !t || t.status === 'Pending' ? 'pending'
+            : t.status === 'Updated' && t.source === AB_MC_SOURCE ? 'mc'
+              : t.status === 'Updated' && t.source === AB_XBRL_SOURCE ? 'xbrl' : '';
+          if (kind) {
+            seen[sym] = true;
+            const filed = ann ? ab_annFor_(ann, sym, rdKey) : null;
+            // moneycontrol: only for the hours between NSE's result filing and its XBRL (owner, 02-Nov-2026)
+            // (the PC asks NSE XBRL first and moneycontrol only for those XBRL did not give)
+            if (kind === 'pending' && mcOn && filed) mc[sym] = q;
+            if (!quick && ab_rsScreenerDue_(kind, filed, ab_bridgeGet_(sym), age, todayKey, now)) priority.push(sym);
             continue;
           }
-          // moneycontrol figures in Main: screener.in is still wanted, to replace them; NSE XBRL figures: for the trend tags
-          if (t.status === 'Updated' && (t.source === AB_MC_SOURCE || t.source === AB_XBRL_SOURCE)) { priority.push(sym); seen[sym] = true; continue; }
         }
       }
     }
@@ -8620,29 +8635,38 @@ function ab_bridgeWanted_() {
     for (let k = 0; k < targetCols.length; k++) {
       if (targetCols[k] !== -1 && ab_cellText_(data[r][targetCols[k]]) !== '') { everWritten = true; break; }
     }
-    if (everWritten) continue;
+    if (everWritten || quick) continue;
     if ((unfillable[sym] || 0) >= AB_QT_SKIP_AFTER) continue;
     if (ab_qt_isParkedTooNew_(tooNew, sym)) continue;
     missing.push(sym); seen[sym] = true;
   }
-  return { priority: priority, missing: missing, mc: mc, xbrl: xbrl, xbrlBasis: xbrlBasis };
+  return { priority: priority, missing: missing, mc: mc, xbrl: xbrl, xbrlBasis: xbrlBasis, xbrlDaily: xbrlDaily };
 }
 
-/** Runs the two normal engines on whatever the PC delivered - no live fetches. */
-function ab_bridgeProcess_() {
+/**
+ * Runs the two normal engines on whatever the PC delivered - no live fetches. opts.quick = the PC's 30-minute results
+ * check: Results Day on the rows with new NSE XBRL / moneycontrol figures only, no never-attempted rows. The email of
+ * every PC run lists only the rows updated in that run (owner, 02-Nov-2026).
+ */
+function ab_bridgeProcess_(opts) {
+  const quick = !!(opts && opts.quick);
   const out = { results: '', missing: '', errors: [] };
   AB_BRIDGE_ONLY = true;
   try {
     try {
-      const r = ab_rsRun_('Retry (PC bridge)', false);
+      const r = ab_rsRun_(quick ? 'Quick check (PC bridge)' : 'Retry (PC bridge)', false, { quick: quick, onlyNew: true, quiet: true });
       out.results = !r ? 'done' : r.skipped ? 'skipped (another run is going)' :
         r.continued ? ('checked ' + r.checked + ', ' + r.remaining + ' to go') :
         (r.summary && r.summary.text ? r.summary.text : 'done');
     } catch (e) { out.errors.push('Results Day: ' + e.message); }
-    try {
-      const s = ab_qt_updateQuarterlyAndTrendTags_('missing');
-      out.missing = 'checked ' + s.requested + ', filled ' + s.updated + ', failed ' + s.failed;
-    } catch (e) { out.errors.push('Never-attempted rows: ' + e.message); }
+    if (quick) {
+      out.missing = 'not in the quick check';
+    } else {
+      try {
+        const s = ab_qt_updateQuarterlyAndTrendTags_('missing');
+        out.missing = 'checked ' + s.requested + ', filled ' + s.updated + ', failed ' + s.failed;
+      } catch (e) { out.errors.push('Never-attempted rows: ' + e.message); }
+    }
   } finally {
     AB_BRIDGE_ONLY = false;
   }
@@ -8830,10 +8854,12 @@ function doPost(e) {
   if (!lock.tryLock(120000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
   try {
     if (req.action === 'list') {
-      const w = ab_bridgeWanted_();
+      const w = ab_bridgeWanted_({ quick: !!req.quick });
+      if (req.quick) return ab_bridgeJson_({ ok: true, quick: true, mc: w.mc, xbrl: w.xbrl, xbrlBasis: w.xbrlBasis });
       let h60 = null;
       try { h60 = ab_h60Info_(); } catch (hErr) { h60 = { days: [], want: AB_H60_DAYS, error: hErr.message }; }
-      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, xbrl: w.xbrl, xbrlBasis: w.xbrlBasis, h60: h60 });
+      return ab_bridgeJson_({ ok: true, priority: w.priority, missing: w.missing, mc: w.mc, xbrl: w.xbrl, xbrlBasis: w.xbrlBasis,
+                              xbrlDaily: w.xbrlDaily, h60: h60 });
     }
     if (req.action === 'put') {
       const entries = [], details = [];
@@ -8862,7 +8888,7 @@ function doPost(e) {
       return ab_bridgeJson_({ ok: true, stored: entries.length, details: details });
     }
     if (req.action === 'process') {
-      return ab_bridgeJson_({ ok: true, result: ab_bridgeProcess_() });
+      return ab_bridgeJson_({ ok: true, result: ab_bridgeProcess_({ quick: !!req.quick }) });
     }
     if (req.action === 'pricebands') {
       return ab_bridgeJson_(ab_pbFromBridge_(req));

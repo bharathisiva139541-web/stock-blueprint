@@ -35,9 +35,16 @@ Results tab are added to it (the tab Main's Result Date reads).
 XbrlCheck.bat (test only, nothing sent): NSE's XBRL results files of the symbols
 you type, read and compared with screener.in.
 
+After you log in it stays in the background (no window) while the computer is on:
+every 30 minutes a quick results check (NSE's result filings -> the XBRL filings of
+the results filed -> moneycontrol for those without XBRL yet -> the sheet writes them
+and emails the new ones; no screener.in), and a full round at log-in, an hour later
+and then every 3 hours.
+
 Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py setup      one-time setup (address + secret code + schedule)
   python screener_bridge.py run        do one round of work (starts by itself after you log in, waits for the internet)
+  python screener_bridge.py quick      the 30-minute results check once now (NSE filings + XBRL + moneycontrol, no screener.in)
   python screener_bridge.py test       check the connection to the sheet, screener.in and NSE
   python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
@@ -100,6 +107,8 @@ DEFAULTS = {
     'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
     'moneycontrol': True,      # results not on screener.in yet: look on moneycontrol and send its figures first
     'max_moneycontrol_per_run': 40,
+    'quick_check_minutes': 30,    # while the computer is on: the results check (NSE XBRL first) this often; 0 = off
+    'full_round_every_hours': 3,  # ... and a full round (screener.in, IPOs, end-of-day ...) this often; 0 = only at log-in
 }
 
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -2223,10 +2232,12 @@ def xbrl_quarter(opener, sym, quarter, basis=''):
     return {'cons': got.get('cons'), 'stand': got.get('stand'), 'files': files}
 
 
-def xbrl_step(cfg, want, now=None, basis=None):
-    """Reads and sends the XBRL filings the sheet wants (basis: {SYM: 'C' | 'S'} - the one file needed). Returns how many
-    were sent; never raises."""
-    if cfg.get('xbrl') is False or not want:
+def xbrl_step(cfg, want, now=None, basis=None, daily=None, sent_syms=None):
+    """Reads and sends the XBRL filings the sheet wants (basis: {SYM: 'C' | 'S'} - the one file needed). `daily` (the full
+    round's list `xbrlDaily`: results without a filing seen, the exceptional-gain look-ups) - each at most once a day
+    (xbrl_state.json 'tried'), after the wanted ones. `sent_syms` (a list): the symbols sent are added. Returns how many were
+    sent; never raises."""
+    if cfg.get('xbrl') is False or not (want or daily):
         return 0
     try:
         now = now or datetime.now()
@@ -2237,7 +2248,13 @@ def xbrl_step(cfg, want, now=None, basis=None):
             st = {}
         cap = int(cfg.get('max_xbrl_per_run', 60))
         basis = basis or {}
-        todo = list(want.items())[:cap]
+        want = want or {}
+        today = now.strftime('%Y-%m-%d')
+        once = [(s, q) for s, q in (daily or {}).items()
+                if s not in want and not str((st.get(s) or {}).get('tried') or '').startswith(today)]
+        todo = (list(want.items()) + once)[:cap]
+        if not todo:
+            return 0
         opener = nse_session()
         items, waiting = [], []
         for sym, quarter in todo:
@@ -2262,10 +2279,14 @@ def xbrl_step(cfg, want, now=None, basis=None):
                 log('NSE XBRL: the sheet refused - %s' % err)
             else:
                 sent = res.get('stored', 0)
-        log('NSE XBRL: %d of %d stock(s) have their results filing on NSE%s%s%s.' % (
-            len(items), len(todo), (' - sent ' + ', '.join(i['sym'] for i in items[:15]) + (' ...' if len(items) > 15 else '')) if sent else '',
+                if sent_syms is not None:
+                    sent_syms.extend(d.get('sym') for d in res.get('details', []) if d.get('ok'))
+        n_once = len([1 for s, _ in todo if s not in want])
+        log('NSE XBRL: %d of %d stock(s) have their results filing on NSE%s%s%s%s.' % (
+            len(items), len(todo), (' (%d of them the once-a-day look-ups)' % n_once) if n_once else '',
+            (' - sent ' + ', '.join(i['sym'] for i in items[:15]) + (' ...' if len(items) > 15 else '')) if sent else '',
             ('; not filed yet: ' + ', '.join(waiting[:15]) + (' ...' if len(waiting) > 15 else '')) if waiting else '',
-            ('; %d more next round' % (len(want) - len(todo))) if len(want) > len(todo) else ''))
+            ('; %d more next round' % (len(want) + len(once) - len(todo))) if len(want) + len(once) > len(todo) else ''))
         try:
             with open(XBRL_STATE_PATH, 'w', encoding='utf-8') as f:
                 json.dump(st, f, indent=1, sort_keys=True)
@@ -3026,22 +3047,33 @@ def mc_behind(want, screener_latest):
     return out
 
 
-def mc_step(cfg, want, behind):
-    """want = {SYM: 'Sep 2026'} from the sheet; behind = the ones screener.in did not show yet. Returns how many were sent."""
+MC_RETRY_MIN = 60          # a result moneycontrol did not show yet: looked at again after this many minutes
+MC_NOFIGS_DAYS = 7         # moneycontrol has no quarterly figures for the company: left alone this many days
+
+
+def mc_step(cfg, want, behind, now=None):
+    """want = {SYM: 'Sep 2026'} from the sheet (filed results NSE has no XBRL figures of yet - owner, 02-Nov-2026);
+    behind = the ones still worth a look (screener.in / NSE XBRL did not give them). Skipped: a symbol looked at less than
+    MC_RETRY_MIN minutes ago, and for MC_NOFIGS_DAYS one moneycontrol shows no quarterly figures of (the 02-Nov-2026 log:
+    MOIL, RUPA, PURVA ... the same answer every round). Returns how many were sent."""
     if cfg.get('moneycontrol') is False or not want:
         return 0
+    now = time.time() if now is None else now
     codes = mc_codes_load()
     checked = codes.get('_checked') if isinstance(codes.get('_checked'), dict) else {}
+    nofigs = codes.get('_nofigs') if isinstance(codes.get('_nofigs'), dict) else {}
+    rest = [s for s in want if s in behind and now - float(nofigs.get(s, 0)) >= MC_NOFIGS_DAYS * 86400]
     # the ones looked at longest ago first, so a long list is covered over the next rounds
-    todo = sorted([s for s in want if s in behind], key=lambda s: float(checked.get(s, 0)))
+    todo = sorted([s for s in rest if now - float(checked.get(s, 0)) >= MC_RETRY_MIN * 60], key=lambda s: float(checked.get(s, 0)))
     syms = todo[:int(cfg.get('max_moneycontrol_per_run', 40))]
     if not syms:
         return 0
-    log('moneycontrol: looking up %d result(s) screener.in does not show yet%s ...'
-        % (len(syms), (' (%d more next round)' % (len(todo) - len(syms))) if len(todo) > len(syms) else ''))
+    log('moneycontrol: looking up %d result(s) filed on NSE, not in Main yet%s%s ...'
+        % (len(syms), (' (%d more next time)' % (len(todo) - len(syms))) if len(todo) > len(syms) else '',
+           (' (%d looked at in the last %d minutes)' % (len(rest) - len(todo), MC_RETRY_MIN)) if len(rest) > len(todo) else ''))
     opener, items, fails = mc_session(), [], 0
     for i, sym in enumerate(syms):
-        checked[sym] = time.time()
+        checked[sym] = now
         try:
             hit, note = mc_code_for(opener, sym, codes)
             if not hit:
@@ -3051,7 +3083,11 @@ def mc_step(cfg, want, behind):
             fails = 0
             if item:
                 items.append(item)
+                nofigs.pop(sym, None)
                 log('  moneycontrol %s: %s' % (sym, note))
+            elif note in ('no quarterly figures on moneycontrol', 'too few quarters on moneycontrol'):
+                nofigs[sym] = now
+                log('  moneycontrol %s: not yet - %s (left alone for %d days)' % (sym, note, MC_NOFIGS_DAYS))
             else:
                 log('  moneycontrol %s: not yet - %s' % (sym, note))
         except (OSError, urllib.error.URLError, socket.timeout) as e:
@@ -3062,8 +3098,9 @@ def mc_step(cfg, want, behind):
                 break
         if i < len(syms) - 1:
             time.sleep(random.uniform(MC_PAUSE, 2 * MC_PAUSE))
-    week = time.time() - 7 * 86400
+    week = now - 7 * 86400
     codes['_checked'] = {k: v for k, v in checked.items() if float(v) > week}
+    codes['_nofigs'] = {k: v for k, v in nofigs.items() if float(v) > now - MC_NOFIGS_DAYS * 86400}
     mc_codes_save(codes)
     if not items:
         return 0
@@ -3283,10 +3320,11 @@ def run_state_resume(cfg):
     return st if st.get('sent') or st.get('stage') == 'process' else None
 
 
-def ask_process(cfg):
-    """The sheet processes the pages it has (Results Day + never-attempted rows). True when it answered."""
+def ask_process(cfg, quick=False):
+    """The sheet processes the pages it has (Results Day + never-attempted rows). True when it answered. quick = the results
+    check: only the rows with new NSE XBRL / moneycontrol figures (an older web app does the whole thing)."""
     try:
-        res = api(cfg, 'process', timeout=420, tries=2)
+        res = api(cfg, 'process', {'quick': True} if quick else None, timeout=420, tries=2)
     except RuntimeError as e:
         log('Processing call failed (data is safe in the sheet, next run processes it): %s' % e)
         return False
@@ -3315,6 +3353,54 @@ def wait_for_sheet(cfg, minutes=4):
             time.sleep(30)
 
 
+def quick_check(cfg, daily=None, lock=True):
+    """The results check (owner, 02-Nov-2026: "constantly check the results due today from NSE XBRL every 30 minutes ...
+    after we get the results from NSE XBRL, then go for screener.in"): NSE's result filings -> the sheet; the XBRL filings
+    (official figures) of the FILED results the sheet still waits for; moneycontrol for the filed ones NSE gave no XBRL of
+    yet (provisional, until the XBRL comes); the sheet writes what came and emails the new results. No screener.in - that
+    is the full round's. `daily` = the full round's once-a-day XBRL look-ups; lock=False inside a round (it holds the
+    lock). Returns how many figures were sent; never raises."""
+    if not cfg.get('url') or not cfg.get('token'):
+        log('Not set up yet - run Setup.bat first.')
+        return 0
+    if lock and not acquire_lock(0):
+        log('Results check: a round is running - this check is skipped (the round does it too).')
+        return 0
+    try:
+        ann_step(cfg)
+        try:
+            ans = api(cfg, 'list', {'quick': True}, tries=2, timeout=120)
+        except RuntimeError as e:
+            log('Results check: %s' % e)
+            return 0
+        if not ans.get('ok'):
+            log('Results check: the sheet refused - %s' % ans.get('error'))
+            return 0
+        if not ans.get('quick'):
+            log('Results check: the sheet\'s web app is an older version - after pasting the new Code.gs + Code2.gs do the '
+                'New version deploy (see README).')
+        want, mc_want, xbrl_got = ans.get('xbrl') or {}, ans.get('mc') or {}, []
+        sent = xbrl_step(cfg, want, basis=ans.get('xbrlBasis') or {}, daily=daily, sent_syms=xbrl_got)
+        try:
+            sent_mc = mc_step(cfg, mc_want, set(mc_want) - set(xbrl_got))
+        except Exception as e:   # never let moneycontrol stop the check
+            log('moneycontrol: unexpected problem - %s' % e)
+            sent_mc = 0
+        if sent or sent_mc:
+            log('Results check: sent %d NSE XBRL filing(s) and %d moneycontrol result(s). Asking the sheet to write them...'
+                % (sent, sent_mc))
+            ask_process(cfg, quick=bool(ans.get('quick')))
+        elif not want and not mc_want and not daily:
+            log('Results check: no filed result is waiting for figures.')
+        return sent + sent_mc
+    except Exception as e:
+        log('Results check: unexpected problem - %s' % e)
+        return 0
+    finally:
+        if lock:
+            release_lock()
+
+
 def run_once(cfg):
     if not cfg.get('url') or not cfg.get('token'):
         log('Not set up yet - run Setup.bat first.')
@@ -3331,7 +3417,9 @@ def run_once(cfg):
         if not ans.get('ok'):
             log('Sheet refused: %s' % ans.get('error'))
             return 1
-        ann_step(cfg)              # first: the evening's Results Update email and the morning email use the times
+        # first the results check, the same as every 30 minutes: NSE's result filings (the evening's Results Update email
+        # and the morning email use the times), their XBRL figures, moneycontrol - before any screener.in page
+        quick_check(cfg, daily=ans.get('xbrlDaily'), lock=False)
         cal_step(cfg)              # once a day: result meetings missing from the Results tab (Main's Result Date)
         price_bands_step(cfg)
         ipo_step(cfg)
@@ -3348,15 +3436,16 @@ def run_once(cfg):
             run_state_save(state)
             if ask_process(cfg):
                 state['stage'] = 'screener'
-                try:
-                    again = api(cfg, 'list', tries=2, timeout=120)
-                    if again.get('ok'):
-                        ans = again
-                except RuntimeError as e:
-                    log('Could not ask the sheet again (%s) - going on with its first answer.' % e)
         else:
             state = {'started': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'ts': time.time(), 'sent': [], 'latest': {},
                      'stage': 'screener'}
+        # the screener.in list now: the results check above may have filled some from NSE XBRL
+        try:
+            again = api(cfg, 'list', tries=2, timeout=120)
+            if again.get('ok'):
+                ans = again
+        except RuntimeError as e:
+            log('Could not ask the sheet again (%s) - going on with its first answer.' % e)
         run_state_save(state)
         need_process = state['stage'] == 'process'          # the first processing call above did not get through
         already = set(state.get('sent', []))
@@ -3369,9 +3458,6 @@ def run_once(cfg):
             % (len(todo), len(priority), len(missing), len(ans.get('missing', [])),
                (' %d sent earlier in this round are skipped.' % len(already)) if already else ''))
         if not todo and not resumed:
-            if xbrl_step(cfg, ans.get('xbrl') or {}, basis=ans.get('xbrlBasis') or {}):
-                log('Asking the sheet to process the NSE XBRL filing(s)...')
-                ask_process(cfg)
             state['stage'] = 'done'
             run_state_save(state)
             return 0
@@ -3444,36 +3530,12 @@ def run_once(cfg):
             if i < len(todo) - 1:
                 polite_sleep(cfg)
 
-        # Results screener.in does not show yet: moneycontrol's figures first (the sheet decides).
-        state['stage'] = 'moneycontrol'
-        run_state_save(state)
-        mc_sent = 0
-        try:
-            want = ans.get('mc') or {}
-            if 'mc' not in ans and priority and cfg.get('moneycontrol') is not False:
-                log('moneycontrol: the sheet\'s web app does not ask for it yet - after pasting the new Code.gs, '
-                    'do the New version deploy (see README).')
-            mc_sent = mc_step(cfg, want, mc_behind(want, screener_latest))
-        except Exception as e:   # never let moneycontrol stop the run
-            log('moneycontrol: unexpected problem - %s' % e)
-
-        # NSE XBRL filings (official figures, the same day) of the results the sheet waits for
-        xbrl_sent = 0
-        try:
-            if 'xbrl' not in ans and priority and cfg.get('xbrl') is not False:
-                log('NSE XBRL: the sheet\'s web app does not ask for it yet - after pasting the new Code.gs + Code2.gs, '
-                    'do the New version deploy (see README).')
-            xbrl_sent = xbrl_step(cfg, ans.get('xbrl') or {}, basis=ans.get('xbrlBasis') or {})
-        except Exception as e:   # never let XBRL stop the run
-            log('NSE XBRL: unexpected problem - %s' % e)
-
+        # (moneycontrol and NSE XBRL: in the results check at the start of the round - owner, 02-Nov-2026)
         state['stage'] = 'process'
         run_state_save(state)
         processed = True
-        if posted or mc_sent or xbrl_sent or need_process:
-            log('Sent %d page(s)%s%s. Asking the sheet to process them...'
-                % (posted, (' and %d moneycontrol result(s)' % mc_sent) if mc_sent else '',
-                   (' and %d NSE XBRL filing(s)' % xbrl_sent) if xbrl_sent else ''))
+        if posted or need_process:
+            log('Sent %d page(s). Asking the sheet to process them...' % posted)
             processed = ask_process(cfg)
         if processed:
             state['stage'] = 'done'
@@ -3659,13 +3721,89 @@ def wait_for_internet(max_minutes=180):
     return True
 
 
+LOOP_PATH = os.path.join(HERE, 'bridge_loop.json')
+LOOP_TICK_S = 30            # the background program looks at the clock this often
+LOOP_STALE_S = 15 * 60      # bridge_loop.json not touched for this long = that program is gone
+
+
+def loop_sleep(seconds):
+    time.sleep(seconds)
+
+
+def loop_claim():
+    """One background program per log-in: False when another one is running (alive, since this computer started, its
+    bridge_loop.json touched in the last LOOP_STALE_S); else this one takes the file over and keeps it fresh."""
+    import threading
+    try:
+        with open(LOOP_PATH, 'r', encoding='utf-8') as f:
+            info = json.load(f)
+        pid, boot, now_boot = info.get('pid'), info.get('boot'), _boot_time()
+        same_boot = isinstance(boot, (int, float)) and bool(now_boot) and abs(boot - now_boot) <= 120
+        fresh = time.time() - os.path.getmtime(LOOP_PATH) < LOOP_STALE_S
+        if pid and str(pid) != str(os.getpid()) and same_boot and fresh and _pid_alive(pid):
+            return False
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    try:
+        with open(LOOP_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'pid': os.getpid(), 'boot': _boot_time(), 'started': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, f)
+    except OSError:
+        return True
+
+    def touch():
+        while True:
+            time.sleep(60)
+            try:
+                os.utime(LOOP_PATH, None)
+            except OSError:
+                pass
+    threading.Thread(target=touch, daemon=True).start()
+    return True
+
+
 def run_after_login(cfg):
-    """Started once at Windows log-in: round 1 when the internet is available, round 2 an hour later."""
-    if wait_for_internet():
-        run_once(cfg)
-    time.sleep(SECOND_RUN_AFTER_MIN * 60)
-    if wait_for_internet():
-        run_once(cfg)
+    """Started at every Windows log-in (the Startup folder) and stays in the background while the computer is on (owner,
+    02-Nov-2026: "no time limit"): a full round at once, another SECOND_RUN_AFTER_MIN later and then every
+    `full_round_every_hours` (0 = only those two, as before); in between the results check every `quick_check_minutes`
+    (0 = none). A computer that slept just carries on - what fell due meanwhile runs at once; no internet = tried again
+    at the next tick."""
+    if not loop_claim():
+        log('The background program is already running - this copy stops.')
+        return 0
+    quick_s = max(0.0, float(cfg.get('quick_check_minutes') or 0)) * 60
+    every_s = max(0.0, float(cfg.get('full_round_every_hours') or 0)) * 3600
+    fulls, next_full, next_quick, offline = 0, time.time(), None, False
+    if quick_s or every_s:
+        log('Background program started: a full round now%s%s.' % (
+            ', in %d minutes and then every %g hours' % (SECOND_RUN_AFTER_MIN, every_s / 3600) if every_s
+            else ' and in %d minutes' % SECOND_RUN_AFTER_MIN,
+            (', the results check every %g minutes' % (quick_s / 60)) if quick_s else ''))
+    while next_full is not None or next_quick is not None:
+        now = time.time()
+        due_full = next_full is not None and now >= next_full
+        due_quick = not due_full and next_quick is not None and now >= next_quick
+        if due_full or due_quick:
+            if not internet_ok():
+                if not offline:
+                    log('No internet - waiting for the network ...')
+                    offline = True
+            else:
+                if offline:
+                    log('Internet is back.')
+                    offline = False
+                try:
+                    if due_full:
+                        run_once(cfg)
+                    else:
+                        quick_check(cfg)
+                except Exception as e:     # the background program never stops on one bad round
+                    log('Unexpected problem: %s' % e)
+                if due_full:
+                    fulls += 1
+                    gap = SECOND_RUN_AFTER_MIN * 60 if fulls == 1 else every_s
+                    next_full = time.time() + gap if gap else None
+                next_quick = time.time() + quick_s if quick_s else None
+        loop_sleep(LOOP_TICK_S)
     return 0
 
 
@@ -3695,8 +3833,11 @@ def install_schedule():
                'sh.Run "%s", 0, False\r\n' % cmd)
         with open(os.path.join(startup, STARTUP_FILE), 'w', encoding='utf-8') as f:
             f.write(vbs)
-        print('   Set: after every Windows log-in -> wait 1 minute, then run as soon as the internet is connected,')
-        print('        and once more %d minutes after that run (again only when connected).' % SECOND_RUN_AFTER_MIN)
+        print('   Set: after every Windows log-in -> wait 1 minute, then a full round as soon as the internet is connected,')
+        print('        another %d minutes later and then every %g hours; in between the results check every %g minutes'
+              % (SECOND_RUN_AFTER_MIN, float(load_config().get('full_round_every_hours') or 0),
+                 float(load_config().get('quick_check_minutes') or 0)))
+        print('        (in the background, no window, while the computer is on).')
     except OSError as e:
         print('   Could not add the log-in start-up item: %s' % e)
 
@@ -3810,6 +3951,9 @@ def main(argv):
         return 0
     if cmd == 'login':
         return run_after_login(cfg)
+    if cmd == 'quick':
+        quick_check(cfg)
+        return 0
     if cmd == 'reschedule':
         install_schedule()
         return 0

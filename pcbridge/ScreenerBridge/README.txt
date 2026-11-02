@@ -7,10 +7,17 @@ SETUP (one time)
  2. In your sheet: Auto Bhavcopy > 3. Quarterly Results & Trend Tags > PC Bridge: setup info.
  3. Double-click Setup.bat here and paste the two values when asked.
 
-AFTER THAT it runs by itself every time you log in to Windows: 1 minute after log-in it waits until the internet is connected and then does a round;
-it does one more round 1 hour after that (again only with internet).
-Nothing runs continuously. If you stay logged in for days, use RunNow.bat when you want a fresh round.
- - RunNow.bat       do one round right now
+AFTER THAT it starts by itself every time you log in to Windows and stays in the background (no window) while the
+computer is on - no time limit:
+ - a FULL ROUND 1 minute after log-in (as soon as the internet is connected), another 1 hour later, then every 3 hours;
+ - in between, every 30 minutes, the RESULTS CHECK (a few minutes at most): NSE's result filings -> the XBRL figures of
+   the results filed (official, with EPS) -> moneycontrol for those NSE has no XBRL of yet -> the sheet writes them in
+   Main, ticks the Checkbox and emails the NEW results (a small email, only when something new came). No screener.in.
+ - A computer that slept carries on when it wakes; without internet it tries again a minute later.
+ - config.json: "quick_check_minutes": 30 (0 = no results check), "full_round_every_hours": 3 (0 = only the two
+   rounds after log-in, as before).
+ - RunNow.bat       do one full round right now
+ - QuickCheckNow.bat   do the results check once right now
  - Reschedule.bat   remove the old hourly schedule and use the log-in schedule (keeps your settings)
  - TestConnection.bat   check sheet + screener.in + NSE (price bands, IPO lists, end-of-day files, announcements, event calendar) + moneycontrol access
  - PriceBandsNow.bat    download NSE's price band changes and send them to the sheet right now
@@ -28,7 +35,7 @@ NSE PRICE BAND CHANGES (no more copy/paste)
 Every round also downloads NSE's "Price Band changes from next trade date (csv)"
 (NSE > All Reports > Equities & SME, file eq_band_changes_DDMMYYYY.csv) and sends it to the sheet.
 The sheet files it on the "Price Band Changes" tab and sends the usual email once for the day.
- - NSE publishes it in the evening. If it is not there yet, the next round (1 hour later) tries again;
+ - NSE publishes it in the evening. If it is not there yet, the next full round tries again;
    days missed while the PC was off are caught up (up to a week back, filed without an email).
  - pricebands_state.json   remembers the last day the sheet received.
  - bridge.log shows "Price bands dd-mm-yyyy: ..." for each day.
@@ -49,8 +56,8 @@ the sheet, with NSE's trading holidays and - for closed mainboard issues - NSE's
    fills the IPOs tab's LISTING PRICE (listing-day open), Main's Basic Industry / Sector / Industry and
    Main's INDICES (NIFTY IPO) when they are blank;
  - sends ONE email the first time each day: listings today / next trading day first, then all sections.
-The website's IPOs & Markets page shows the same tab. The PC runs only at log-in and an hour later:
-when it is off, nothing is added until its next round.
+The website's IPOs & Markets page shows the same tab. The IPO lists are read in the full rounds (log-in, an hour
+later, then every 3 hours): when the PC is off, nothing is added until its next round.
  - bridge.log shows "IPO lists: ..." for each round (and what was added).
  - ipo_state.json keeps NSE's holidays, quotes and listing-day candles. When NSE's quote gives no Basic
    Industry, bridge.log says "NSE quote gave no Basic Industry yet for ..." with what each link answered;
@@ -74,11 +81,26 @@ Watchlist and the stock details (Delivery %).
  - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
  - To switch it off: in config.json add  "eod": false
 
+RESULTS: NSE XBRL FIRST, SCREENER.IN AFTER (since 02-Nov-2026)
+A round used to take 40 minutes in the results season: screener.in lets about 12 pages through every 3 minutes, and
+it was asked every company whose results were due. Now:
+ - the 30-minute results check asks NSE only for companies that FILED their results (NSE's announcements) - XBRL first;
+ - the full round asks screener.in only when it can help:
+     * a company that filed and is not in Main yet: every full round (once a day after 3 days);
+     * a company NSE shows no filing of: not on its result day (the results check sees the filing), then once a day;
+     * a company already filled from NSE XBRL: once a day (only Promotor / FII / OPM YoY are still wanted);
+     * screener.in said "not found" (404): left alone for a week;
+ - moneycontrol: only for companies that filed but have no XBRL yet, each at most once an hour; a company
+   moneycontrol shows no quarterly figures of is left alone for a week (moneycontrol_codes.json remembers);
+ - NSE XBRL of a company without a filing seen, and the exceptional-gain look-ups: once a day (xbrl_state.json).
+The Results Update email of each check / round lists only the results that are NEW in it (the tiles still count the
+whole day). The sheet menu's "Re-send Results Update email (no fetch)" shows the whole day.
+
 IF THE COMPUTER GOES OFF IN THE MIDDLE OF A ROUND
 A round can take half an hour (screener.in asks it to slow down now and then). If the computer is shut
 down or the program is closed half-way, the next round CONTINUES it (within 12 hours): the sheet first
 processes the pages it already got (Results Day + the email), those pages are not fetched again, and then
-the rest of the round runs (the other pages, moneycontrol, processing).
+the rest of the round runs (the other pages, processing).
  - run_state.json   remembers what the current round has sent.
  - bridge.lock      shows a round is running. A lock left behind by a round that is gone (program closed,
    computer restarted) no longer blocks the next round; while a round really runs, a new one waits up
@@ -103,7 +125,7 @@ stocks). The sheet's FVG scans (FVG column, GapUpFVG, UnmitigatedFVG) and Result
  - To switch it off: in config.json add  "history60": false
 
 RESULT ANNOUNCEMENT TIMES (before / during / after market hours)
-Every round also reads NSE's corporate announcements of the last 4 days (one request) and sends the
+Every results check (30 minutes) and round reads NSE's corporate announcements of the last 4 days (one request) and sends the
 quarterly-result filings to the sheet with their exact time. The sheet shows:
  - Results Tracker, column "Announced": e.g. "29/10 17:05 After market".
  - Results Update email: a pill under the result date (AFTER MKT 17:05 /
@@ -143,7 +165,8 @@ Result Date (and so the Results Day check and the Upcoming Results email) then s
    "calendar": false in config.json.
 
 NSE XBRL RESULTS (official figures, the same day)
-Every round the program also reads, for the results the sheet waits for, the company's XBRL filing of that quarter
+Every results check (30 minutes) and round the program reads, for the FILED results the sheet waits for, the company's
+XBRL filing of that quarter
 on NSE ("Integrated Filing - Financials": consolidated and standalone) and sends its figures to the sheet. When
 screener.in does not show the quarter yet, Results Day takes NSE's figures + the earlier quarters already read from
 screener.in: QoQ / YoY, Net Profit, TTM EPS, Last FY EPS, OPM QoQ% - final figures (tracker Source "NSE XBRL").
@@ -153,8 +176,9 @@ Results Update email) marks: revenue up but profit down; profit growing at least
 an exceptional gain of 10% of the profit before tax or more.
  - bridge.log: "NSE XBRL: N of M stock(s) have their results filing on NSE - sent ...; not filed yet: ...".
  - Needs the latest Code.gs + Code2.gs AND the New version deploy.
- - Results waiting for figures come first; results already filled from screener.in are read only while they are
-   at most 3 days old (for the exceptional-gain flag), and only the file the sheet needs (consolidated / standalone).
+ - Results waiting for figures (and filed on NSE) come first; results already filled from screener.in are read once a
+   day while they are at most 3 days old (for the exceptional-gain flag), and only the file the sheet needs
+   (consolidated / standalone).
  - xbrl_state.json remembers what was tried. To switch it off: "xbrl": false in config.json
    ("max_xbrl_per_run": 60 = stocks a round).
 
@@ -171,9 +195,9 @@ step: type NSE symbols (e.g. PARAS TCS) or paste an XBRL link. For each it shows
 Nothing is sent to the sheet. The files are saved in the xbrl_check folder. Send the screen to Claude.
 
 MONEYCONTROL (first figures while screener.in is late)
-moneycontrol.com often shows new quarterly results before screener.in. Every round, for companies
-whose results are due and whose screener.in page does NOT show the new quarter yet, the program also
-reads moneycontrol and sends its figures to the sheet. If moneycontrol already has the quarter, the
+moneycontrol.com often shows new quarterly results before screener.in. In each results check, for companies
+that filed their results on NSE but have no NSE XBRL figures yet (the XBRL file comes a few hours after the
+results PDF), the program also reads moneycontrol and sends its figures to the sheet. If moneycontrol already has the quarter, the
 sheet writes those figures in Main and ticks the Checkbox (Results Tracker: Source = moneycontrol,
 email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace them by themselves.
  - Needs the latest Code.gs in the sheet AND its New version deploy (Deploy > Manage deployments >
@@ -181,8 +205,9 @@ email: "VIA MONEYCONTROL"). When screener.in catches up, its figures replace the
  - bridge.log shows "moneycontrol SYMBOL: ..." for each company it looked up.
  - moneycontrol_codes.json   remembers each company's moneycontrol code (found once by searching).
  - To switch it off: in config.json add  "moneycontrol": false   (or Control Panel > Results Season).
- - At most 40 companies a round (the ones looked at longest ago first, the rest next round);
-   change with  "max_moneycontrol_per_run": 40
+ - At most 40 companies at a time (the ones looked at longest ago first, the rest next time), each at most once an
+   hour; change with  "max_moneycontrol_per_run": 40
+ - A company moneycontrol shows no quarterly figures of is left alone for 7 days.
  - EPS (for TTM EPS) comes from moneycontrol's results page; when it cannot be used, bridge.log says why
    ("no EPS: ...") and TTM EPS waits for screener.in.
 Checks (they send nothing):

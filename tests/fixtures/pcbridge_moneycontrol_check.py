@@ -275,13 +275,16 @@ def fake_api(cfg, action, payload=None, timeout=120, tries=3):
 sb.api = fake_api
 sb.log = LOGS.append
 
-want = {'FIRSTCO': 'Sep 2026', 'STDONLY': 'Sep 2026', 'BEHINDCO': 'Sep 2026', 'NOTMC': 'Sep 2026', 'SCREENERHAS': 'Sep 2026'}
+want = {'FIRSTCO': 'Sep 2026', 'STDONLY': 'Sep 2026', 'BEHINDCO': 'Sep 2026', 'NOTMC': 'Sep 2026', 'SCREENERHAS': 'Sep 2026',
+        'NODATA': 'Sep 2026'}
 behind = sb.mc_behind(want, {'SCREENERHAS': 'Sep 2026', 'FIRSTCO': 'Jun 2026', 'STDONLY': ''})
-assert behind == {'FIRSTCO', 'STDONLY', 'BEHINDCO', 'NOTMC'}, behind
+assert behind == {'FIRSTCO', 'STDONLY', 'BEHINDCO', 'NOTMC', 'NODATA'}, behind
 assert sb.mc_behind({'A': 'Sep 2026'}, {'A': 'Dec 2026'}) == set() and sb.mc_behind({'A': 'Sep 2026'}, {'A': 'junk'}) == {'A'}
 
 del HITS[:]
-assert sb.mc_step({'moneycontrol': True}, want, behind) == 2
+T0 = 1793600000.0
+H = 3600
+assert sb.mc_step({'moneycontrol': True}, want, behind, now=T0) == 2
 assert [a for a, _ in SENT] == ['mcput'], SENT
 items = {it['sym']: it for it in SENT[0][1]['items']}
 assert sorted(items) == ['FIRSTCO', 'STDONLY'], items
@@ -292,7 +295,9 @@ o = items['STDONLY']
 assert (o['basis'], o['src']) == ('Standalone', 'standalone widget'), o
 assert o['quarters'] == ['Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026', 'Sep 2026'] and o['revenue'][-1] == 436 and o['eps'] == [None] * 5, o
 log = '\n'.join(LOGS)
-assert 'moneycontrol: looking up 4 result(s) screener.in does not show yet' in log, log
+assert 'moneycontrol: looking up 5 result(s) filed on NSE, not in Main yet' in log, log
+# moneycontrol has no quarterly figures of NODATA: left alone for a week (the 02-Nov-2026 log: the same answer every round)
+assert 'moneycontrol NODATA: not yet - no quarterly figures on moneycontrol (left alone for 7 days)' in log, log
 assert 'moneycontrol FIRSTCO: Consolidated Sep 2026 (consolidated widget + results page)' in log, log
 assert 'moneycontrol BEHINDCO: not yet - moneycontrol shows Jun 2026' in log, log
 assert ('moneycontrol STDONLY: Standalone Sep 2026 (standalone widget); no EPS: results page Sep 2026 shows revenue 486 / profit 123 '
@@ -302,22 +307,32 @@ assert 'moneycontrol: sent 2 to the sheet' in log, log
 assert '/suggest' in HITS and not any('screenerhas' in h.lower() for h in HITS), 'SCREENERHAS is not looked up'
 codes = json.load(open(sb.MC_CODES_PATH))
 assert codes['FIRSTCO']['code'] == 'FC01' and codes['NOTMC']['none'] is True, codes
+assert list(codes['_nofigs']) == ['NODATA'], codes
 
-# the next run uses the remembered codes (no search) and skips the "not on moneycontrol" one for a week
+# half an hour later (the next results check): everyone was looked at less than an hour ago - nothing asked
 del HITS[:], SENT[:], LOGS[:]
-sb.mc_step({}, want, behind)
+assert sb.mc_step({}, want, behind, now=T0 + H / 2) == 0 and not HITS and not SENT, (HITS, LOGS)
+# an hour later: the remembered codes (no search); the "not on moneycontrol" one skipped for a week, NODATA left alone
+del HITS[:], SENT[:], LOGS[:]
+sb.mc_step({}, want, behind, now=T0 + H + 60)
 assert '/suggest' not in HITS, HITS
 assert 'moneycontrol NOTMC: ' in '\n'.join(LOGS)
-# a long list: the ones looked at longest ago go first, the rest wait for the next round
+assert 'moneycontrol: looking up 4 result(s)' in LOGS[0] and 'NODATA' not in '\n'.join(LOGS), LOGS
+# a long list: the ones looked at longest ago go first, the rest wait for the next time
 del SENT[:], LOGS[:]
-assert sb.mc_step({'max_moneycontrol_per_run': 2}, want, behind) >= 0
+assert sb.mc_step({'max_moneycontrol_per_run': 2}, want, behind, now=T0 + 3 * H) >= 0
 first = [l.split(':')[0].split()[-1] for l in LOGS if l.startswith('  moneycontrol ')]
-assert 'moneycontrol: looking up 2 result(s) screener.in does not show yet (2 more next round)' in LOGS[0], LOGS
+assert 'moneycontrol: looking up 2 result(s) filed on NSE, not in Main yet (2 more next time)' in LOGS[0], LOGS
 del LOGS[:]
-sb.mc_step({'max_moneycontrol_per_run': 2}, want, behind)
+sb.mc_step({'max_moneycontrol_per_run': 2}, want, behind, now=T0 + 3 * H + 120)
 second = [l.split(':')[0].split()[-1] for l in LOGS if l.startswith('  moneycontrol ')]
-assert sorted(first + second) == sorted(behind), (first, second)
+assert sorted(first + second) == sorted(behind - {'NODATA'}), (first, second)
+assert 'looked at in the last 60 minutes' in LOGS[0], LOGS
 assert '_checked' in json.load(open(sb.MC_CODES_PATH))
+# a week later NODATA is looked at again
+del LOGS[:]
+sb.mc_step({}, {'NODATA': 'Sep 2026'}, {'NODATA'}, now=T0 + 8 * 86400)
+assert 'moneycontrol NODATA: not yet - no quarterly figures' in '\n'.join(LOGS), LOGS
 # switched off in config.json; nothing wanted
 del HITS[:], SENT[:]
 assert sb.mc_step({'moneycontrol': False}, want, behind) == 0 and sb.mc_step({}, {}, set()) == 0 and not HITS and not SENT
@@ -327,11 +342,17 @@ del LOGS[:]
 assert sb.mc_step({}, {'FIRSTCO': 'Sep 2026'}, {'FIRSTCO'}) == 0
 assert 'New version deploy' in '\n'.join(LOGS), LOGS
 
-# ---------------------------------------------------------------- a whole run: screener first, then moneycontrol, then process
+# ---------------------------------------------------------------- a whole run: the results check (NSE XBRL, moneycontrol,
+# process) first, then screener.in, then process (owner, 02-Nov-2026)
 REPLY.update(ok=True)
-CALLS = []
+os.remove(sb.MC_CODES_PATH)
+sb.RUN_STATE_PATH = os.path.join(tmp, 'run_state.json')
+CALLS, PAYLOADS, NEWAPP = [], [], [True]
 def run_api(cfg, action, payload=None, timeout=120, tries=3):
     CALLS.append(action)
+    PAYLOADS.append(payload)
+    if action == 'list':
+        return dict(LIST, quick=True) if (payload or {}).get('quick') and NEWAPP[0] else dict(LIST)
     if action == 'put':
         # the sheet answers with what screener.in showed: FIRSTCO still on Jun 2026, SCREENERHAS already on Sep 2026
         latest = {'FIRSTCO': 'Jun 2026', 'SCREENERHAS': 'Sep 2026'}
@@ -358,18 +379,26 @@ sb.wait_for_sheet = lambda cfg, minutes=4: dict(LIST)
 cfg = dict(sb.DEFAULTS, url='http://sheet.invalid/exec', token='t', abort_after_failures=5)
 del SENT[:], LOGS[:], HITS[:]
 assert sb.run_once(cfg) == 0
-assert CALLS == ['put', 'mcput', 'process'], CALLS
+assert CALLS == ['list', 'mcput', 'process', 'list', 'put', 'process'], CALLS
+assert PAYLOADS[0] == {'quick': True} and PAYLOADS[2] == {'quick': True} and PAYLOADS[5] is None, PAYLOADS
 assert sorted(it['sym'] for it in SENT[0][1]['items']) == ['FIRSTCO'], SENT
 log = '\n'.join(LOGS)
-assert 'moneycontrol: looking up 2 result(s) screener.in does not show yet' in log, log      # FIRSTCO + BLOCKEDCO
+assert 'moneycontrol: looking up 3 result(s) filed on NSE, not in Main yet' in log, log
 assert 'moneycontrol BLOCKEDCO: ' in log, log
-assert 'Sent 2 page(s) and 1 moneycontrol result(s). Asking the sheet to process them...' in log, log
+assert 'Results check: sent 0 NSE XBRL filing(s) and 1 moneycontrol result(s). Asking the sheet to write them...' in log, log
+assert 'Sent 2 page(s). Asking the sheet to process them...' in log, log
+assert 'older version' not in log, log
 
-# an older web app: no 'mc' in its list answer -> a hint, no moneycontrol requests
+# the results check on its own (every 30 minutes): no screener.in; nothing new -> no processing call
+del CALLS[:], PAYLOADS[:], LOGS[:], HITS[:]
+assert sb.quick_check(cfg) == 0
+assert CALLS == ['list'] and not HITS, (CALLS, HITS)       # moneycontrol was asked less than an hour ago
+# an older web app (no 'quick' in its answer, no 'mc'): a hint, no moneycontrol requests
 LIST.pop('mc')
+NEWAPP[0] = False
 del CALLS[:], LOGS[:], HITS[:]
 assert sb.run_once(cfg) == 0
-assert CALLS == ['put', 'process'], CALLS
+assert CALLS == ['list', 'list', 'put', 'process'], CALLS
 assert 'do the New version deploy' in '\n'.join(LOGS) and not HITS, LOGS
 
 srv.shutdown()

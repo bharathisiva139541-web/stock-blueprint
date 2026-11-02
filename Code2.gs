@@ -374,7 +374,7 @@ function ab_rsReadCalendar_() {
  * going) with a "running since" marker that goes stale after 8 minutes,
  * so a crashed run can never block the next one for long.
  */
-function ab_rsRun_(slotLabel, isContinuation) {
+function ab_rsRun_(slotLabel, isContinuation, opts) {
   if (!isContinuation) ab_ensureResultDateReal_();
   if (!AB_BRIDGE_ONLY && ab_screenerPauseMin_()) {
     Logger.log('Results Day check skipped - ' + ab_screenerPauseText_() + '.');
@@ -389,13 +389,20 @@ function ab_rsRun_(slotLabel, isContinuation) {
   }
   props.setProperty(AB_RS_RUNNING_PROP, String(Date.now()));
   try {
-    return ab_rsRunCore_(slotLabel, isContinuation);
+    return ab_rsRunCore_(slotLabel, isContinuation, opts);
   } finally {
     props.deleteProperty(AB_RS_RUNNING_PROP);
   }
 }
 
-function ab_rsRunCore_(slotLabel, isContinuation) {
+/**
+ * opts (the PC bridge's calls, Code.gs ab_bridgeProcess_): quick = the 30-minute results check - only the rows with NSE
+ * XBRL / moneycontrol figures stored since their last check (ab_rsQuickCand_), no Results Performance rebuild unless
+ * something was written; onlyNew = the email lists only the rows updated in this run (owner, 02-Nov-2026: a small email
+ * whenever new results come - the menu's "Re-send Results Update email" shows the whole day); quiet = no email unless
+ * something new got through.
+ */
+function ab_rsRunCore_(slotLabel, isContinuation, opts) {
   const startedAt = Date.now();
   const props = PropertiesService.getScriptProperties();
 
@@ -405,7 +412,8 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   }
   if (!cont) {
     props.deleteProperty(AB_RS_CONT_PROP);
-    cont = { runStart: startedAt, count: 0, slot: slotLabel || 'Manual run', checked: 0, failed: 0 };
+    cont = { runStart: startedAt, count: 0, slot: slotLabel || 'Manual run', checked: 0, failed: 0,
+             quick: !!(opts && opts.quick), onlyNew: !!(opts && opts.onlyNew), quiet: !!(opts && opts.quiet) };
   }
   const runStartFloor = Math.floor(cont.runStart / 60000) * 60000;
   const nowStr = function () { return Utilities.formatDate(new Date(), AB_TZ, AB_RS_TS_FMT); };
@@ -495,6 +503,7 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     // PC hasn't delivered it yet (screener.in page, or moneycontrol figures for a Pending row)
     if (AB_BRIDGE_ONLY && !ab_bridgeGet_(t.symbol) && (prov || !mcOn || !ab_mcGet_(t.symbol))) return false;
     if (t.rdKey && ab_rsDaysBetween_(t.rdKey, todayKey) < 0) return false;
+    if (cont.quick && !ab_rsQuickCand_(t)) return false;
     if (ab_rsParseTs_(t.last) < runStartFloor) return true;
     // A continuation also gives anything screener refused earlier in this
     // run one more go (continuations are capped, so this can't loop).
@@ -744,7 +753,10 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
   // a price-history hiccup must never cost you the results email.
   let perf = {};
   try {
-    perf = ab_rpRefresh_({ layout: layout, cols: cols, tracker: tr }).byKey;
+    // the 30-minute check: only when it wrote something (the tab is rebuilt by every other run)
+    if (!cont.quick || cont.checked && (res.updatedNow.length || (cont.replacedSyms || []).length)) {
+      perf = ab_rpRefresh_({ layout: layout, cols: cols, tracker: tr }).byKey;
+    }
   } catch (pErr) {
     Logger.log('Results Performance refresh failed: ' + pErr.message);
   }
@@ -755,7 +767,8 @@ function ab_rsRunCore_(slotLabel, isContinuation) {
     notChecked: notChecked, throttled: res.throttled, retryAt: retryAt, seasonReset: cont.seasonReset || null, perf: perf,
     startedAt: startedAt, replaced: cont.replacedSyms || [], replacedBy: cont.replacedBy || {},
     // An automatic retry only emails if it actually got something through.
-    quietUnlessUpdated: /^Retry/.test(cont.slot || '')
+    quietUnlessUpdated: /^Retry/.test(cont.slot || '') || !!cont.quiet,
+    onlyNew: !!cont.onlyNew
   });
   if (cont.viaMc || cont.replacedMc) {
     summary.text += ' moneycontrol: ' + cont.viaMc + ' filled first from moneycontrol, ' + cont.replacedMc + ' replaced by screener.in / NSE XBRL.';
@@ -1011,7 +1024,10 @@ function ab_rsSendEmail_(ctx) {
     return a.symbol < b.symbol ? -1 : 1;
   };
   const replaced = list.filter(function (t) { return replacedSet[t.symbol] && ctx.rowsBySym[t.symbol]; }).sort(byNewest);
-  const updatedShown = updatedToday.filter(function (t) { return !replacedSet[t.symbol]; });
+  // ctx.onlyNew (the PC bridge's runs - every 30 minutes, owner 02-Nov-2026): only the rows updated in this run
+  const updatedShown = updatedToday.filter(function (t) {
+    return !replacedSet[t.symbol] && (!ctx.onlyNew || ab_rsParseTs_(t.updatedAt) >= ctx.runStartFloor);
+  });
   const waiting = list.filter(function (t) { return t.status === 'Pending' && ctx.rowsBySym[t.symbol]; })
     .sort(function (a, b) { return a.rdKey < b.rdKey ? -1 : a.rdKey > b.rdKey ? 1 : (a.symbol < b.symbol ? -1 : 1); });
   const gaveUp = list.filter(function (t) { return t.status === 'Gave up' && ab_rsParseTs_(t.last) >= ctx.runStartFloor; });
@@ -1079,6 +1095,7 @@ function ab_rsSendEmail_(ctx) {
   };
   // ---- look & feel: clean "fintech" cards (all inline CSS - Gmail strips <style>) ----
   const updWhen = reportKey === todayKey ? 'today' : 'on ' + ab_rsKeyToDmy_(reportKey);
+  const updTitle = ctx.onlyNew ? 'New results in Main' : 'Updated in Main ' + updWhen;
   const FONT = '-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif';
   const INK = '#0f172a', SLATE = '#64748b', FAINT = '#94a3b8', LINE = '#cbd5e1', CARD_BORDER = '#e6e9f0';   // LINE = the border between rows
   const small = 'style="color:' + FAINT + ';font-size:11px"';
@@ -1219,11 +1236,12 @@ function ab_rsSendEmail_(ctx) {
   };
   const buildUpdated = function (limit) {
     if (!updatedShown.length) {
-      return h3('Updated in Main ' + updWhen, 0, AB_C_POS) +
+      if (ctx.onlyNew) return '';
+      return h3(updTitle, 0, AB_C_POS) +
         '<div style="color:' + FAINT + ';font-size:13px">None yet ' + updWhen + '.</div>';
     }
     const shown = updatedShown.slice(0, limit);
-    let s = h3('Updated in Main ' + updWhen, updatedShown.length, AB_C_POS) + updatedHead;
+    let s = h3(updTitle, updatedShown.length, AB_C_POS) + updatedHead;
     shown.forEach(function (t) { s += updatedRow(t); });
     s += '</table>';
     if (updatedShown.length > shown.length) {
@@ -1257,7 +1275,7 @@ function ab_rsSendEmail_(ctx) {
   const parts = [];                                        // [[first row, end row)]
   const first = head + buildReplaced();
   // what each email holds besides the rows: frame, title, table head, the "+N more" line, the last part's footer
-  const fixed = wrap('').length + h3('Updated in Main ' + updWhen + ' - part 4 of 4', updatedShown.length, AB_C_POS).length +
+  const fixed = wrap('').length + h3(updTitle + ' - part 4 of 4', updatedShown.length, AB_C_POS).length +
     updatedHead.length + '</table>'.length + gaveUpHtml.length + footer.length + 400;
   let from = 0, size = fixed + first.length;
   for (let i = 0; i < rowsHtml.length; i++) {
@@ -1276,7 +1294,7 @@ function ab_rsSendEmail_(ctx) {
     let inner = k === 0 ? first : '<div style="font-size:18px;font-weight:700;color:' + INK + '">Results Day Update - part ' + (k + 1) +
       ' of ' + nParts + '</div><div style="color:' + SLATE + ';font-size:12px;margin:4px 0 12px 0">' + ab_rsEsc_(ctx.slot) + ' &middot; ' + ts + ' IST</div>';
     if (!updatedShown.length) return wrap(inner + buildUpdated(0) + gaveUpHtml + footer);
-    inner += h3('Updated in Main ' + updWhen + (nParts > 1 ? ' - part ' + (k + 1) + ' of ' + nParts : ''), updatedShown.length, AB_C_POS) +
+    inner += h3(updTitle + (nParts > 1 ? ' - part ' + (k + 1) + ' of ' + nParts : ''), updatedShown.length, AB_C_POS) +
       updatedHead + rowsHtml.slice(p[0], p[1]).join('') + '</table>';
     if (more) inner += '<div style="color:' + FAINT + ';font-size:12px;margin-top:6px">+' + more + ' more - see the "' + AB_RS_TRACKER_SHEET + '" tab.</div>';
     return wrap(inner + (lastPart ? gaveUpHtml + footer : ''));
@@ -1303,12 +1321,14 @@ function ab_rsSendEmail_(ctx) {
   }
   const textRows = function (k) {
     const p = parts[k];
-    let out = 'UPDATED IN MAIN TODAY (' + updatedShown.length + (nParts > 1 ? ', part ' + (k + 1) + ' of ' + nParts : '') + ')\n';
+    if (ctx.onlyNew && !updatedShown.length) return '';
+    let out = updTitle.toUpperCase() + ' (' + updatedShown.length + (nParts > 1 ? ', part ' + (k + 1) + ' of ' + nParts : '') + ')\n';
     updatedShown.slice(p[0], p[1]).forEach(function (t) { out += textLine(t); });
     return out;
   };
 
-  const subject = 'Results Update - ' + updatedShown.length + ' updated in Main, ' +
+  const subject = 'Results Update - ' + (ctx.onlyNew ? updatedShown.length + ' new in Main (' + updatedToday.length + ' today), '
+    : updatedShown.length + ' updated in Main, ') +
     (replaced.length ? replaced.length + ' now with screener.in figures, ' : '') + waiting.length +
     ' awaiting screener, ' + upcoming.length + ' due in ' + AB_RS_UPCOMING_DAYS + 'd (' + ts + ')';
   try {
@@ -11598,31 +11618,43 @@ function ab_xbrlHas_(sym, quarter) {
 
 /**
  * `list` -> `xbrl`: { SYM: quarter } of the tracker rows whose XBRL figures are not stored yet (result date passed, not
- * given up): first the rows that need figures - Pending, or on moneycontrol's - within the wait window; then rows already
- * Updated from screener.in whose result date is at most AB_XBRL_FLAG_DAYS old, for the exceptional-gain flag (the
- * first live round, 02-Nov-2026, was asked 631 stocks - every result of 21 days - at 25 a round).
+ * given up) and that need figures - Pending, or on moneycontrol's - within the wait window, when NSE shows the result
+ * filing (Results_Announcements, ab_annFor_; moneycontrol rows always - moneycontrol has the quarter). Owner,
+ * 02-Nov-2026: XBRL first, every 30 minutes - a company that has not filed has no XBRL either.
+ * `daily` (filled in when given - the full round; the PC asks each at most once a day, xbrl_state.json): the Pending
+ * rows without a filing seen, from the day after the result date (a filing the announcements missed), and rows already
+ * Updated from screener.in whose result date is at most AB_XBRL_FLAG_DAYS old, for the exceptional-gain flag (the first
+ * live round, 02-Nov-2026, was asked 631 stocks - every result of 21 days - at 25 a round).
  * `basis` (filled in): { SYM: 'C' | 'S' } = which file the PC needs - the basis of screener.in's stored figures
  * (consolidated / standalone); a symbol without stored figures gets both.
+ * `ann`: the filings store (ab_annLoad_); left out = read here.
  */
-function ab_xbrlWant_(tr, todayKey, basis) {
-  const first = [], later = [];
+function ab_xbrlWant_(tr, todayKey, basis, daily, ann) {
+  if (ann === undefined) ann = ab_rsAnnStore_();
+  const first = [], unseen = [], flag = [];
   tr.list.forEach(function (t) {
     if (t.status === 'Gave up' || !t.rdKey || !t.quarter) return;
     const age = ab_rsDaysBetween_(t.rdKey, todayKey);
     if (age < 0 || age > AB_RS_MAX_WAIT_DAYS || ab_xbrlHas_(t.symbol, t.quarter)) return;
-    if (t.status === 'Pending' || t.source === AB_MC_SOURCE) first.push(t);
-    else if (age <= AB_XBRL_FLAG_DAYS) later.push(t);
+    const needs = t.status === 'Pending' || t.source === AB_MC_SOURCE;
+    if (needs && (t.source === AB_MC_SOURCE || (ann && ab_annFor_(ann, t.symbol, t.rdKey)))) first.push(t);
+    else if (needs) { if (age >= 1) unseen.push(t); }
+    else if (age <= AB_XBRL_FLAG_DAYS) flag.push(t);
   });
   const out = {};
-  first.concat(later).forEach(function (t) {
-    if (out[t.symbol]) return;
-    out[t.symbol] = t.quarter;
-    if (basis) {
-      const b = ab_bridgeGet_(t.symbol);
-      const sb = b && b.combined && b.combined.series ? String(b.combined.series.basis || '') : '';
-      if (sb) basis[t.symbol] = /standalone/i.test(sb) ? 'S' : 'C';
-    }
-  });
+  const add = function (into) {
+    return function (t) {
+      if (out[t.symbol] || (daily && daily[t.symbol])) return;
+      into[t.symbol] = t.quarter;
+      if (basis) {
+        const b = ab_bridgeGet_(t.symbol);
+        const sb = b && b.combined && b.combined.series ? String(b.combined.series.basis || '') : '';
+        if (sb) basis[t.symbol] = /standalone/i.test(sb) ? 'S' : 'C';
+      }
+    };
+  };
+  first.forEach(add(out));
+  if (daily) unseen.concat(flag).forEach(add(daily));
   return out;
 }
 
@@ -11776,4 +11808,60 @@ function ab_rsFlagPills_(flags, pill) {
   if (/Profit growing faster than revenue/.test(f)) out += '<br>' + pill('PROFIT &gt; REVENUE', '#15803d', '#e6f6ec');
   if (/Exceptional gain/.test(f)) out += '<br>' + pill('EXCEPTIONAL GAIN', '#a16207', '#fef3c7');
   return out;
+}
+
+/*****************************************************************
+ * RESULTS - WHAT THE PC ASKS FOR, AND WHEN (02-Nov-2026)
+ * -----------------------------------------------------------------
+ * Owner, 02-Nov-2026, after a 42-minute round (139 screener.in pages - screener.in lets ~12 pages through every
+ * 3 minutes, the rest of the time went on "slow down (429)" waits): "constantly check the results due today from NSE
+ * XBRL every 30 minutes ... after we get the results from NSE XBRL, then go for screener.in for the particular
+ * companies". Answers: an email whenever new results come (only the new rows), moneycontrol kept for the hours
+ * between the results PDF and the XBRL filing, no time limit for the checks.
+ *   - the PC's 30-minute check (screener_bridge.py quick_check): NSE's result filings -> list {quick: true} -> the XBRL
+ *     filings of the FILED results still waiting (ab_xbrlWant_) -> moneycontrol for the filed ones without XBRL
+ *     (ab_bridgeWanted_ mc) -> process {quick: true}: Results Day on the rows with figures stored since their last
+ *     check only (ab_rsQuickCand_); the email lists the new rows only.
+ *   - the full round (login, an hour later, then every few hours) asks screener.in only when it can help
+ *     (ab_rsScreenerDue_); XBRL of results without a filing seen + the exceptional-gain look-ups once a day (xbrlDaily).
+ *****************************************************************/
+const AB_RS_404_DAYS = 7;       // screener.in answered "not found" (404): the page is not asked again for this many days
+const AB_RS_SLOW_DAYS = 3;      // a filing older than this and screener.in still behind: its page once a day
+
+/** The IST midnight starting the day `todayKey` (yyyy-mm-dd), epoch ms. */
+function ab_rsDayStartMs_(todayKey) {
+  return Date.parse(String(todayKey) + 'T00:00:00+05:30');
+}
+
+/** The 30-minute check's Results Day candidates: rows with NSE XBRL / moneycontrol figures (or a page) stored since their last check. */
+function ab_rsQuickCand_(t) {
+  const last = ab_rsParseTs_(t.last);
+  const newer = function (e) { return !!e && Number(e.at) > last; };
+  return newer(ab_xbrlGet_(t.symbol)) || newer(ab_mcGet_(t.symbol)) || newer(ab_bridgeGet_(t.symbol));
+}
+
+/**
+ * Whether a full round should fetch this result's screener.in page.
+ *   kind: 'pending' (no figures yet) | 'mc' (moneycontrol's figures) | 'xbrl' (NSE XBRL figures, only the trend tags wait)
+ *   filed: the NSE result filing (ab_annFor_) or null; b: the stored page (ab_bridgeGet_) or null; rdAge: days since the result date.
+ * screener.in 404 within AB_RS_404_DAYS -> no; XBRL figures -> once a day (tags); a filing (or moneycontrol figures) ->
+ * every full round, once a day when the filing is more than AB_RS_SLOW_DAYS old; no filing seen -> not on the result day
+ * (the 30-minute check sees the filing), once a day after. "Once a day" = the stored page is from before today (IST).
+ */
+function ab_rsScreenerDue_(kind, filed, b, rdAge, todayKey, now) {
+  const at = b ? Number(b.at) || 0 : 0;
+  const err = b && b.combined ? String(b.combined.quarterError || '') : '';
+  if (at && /\(404\)/.test(err) && now - at < AB_RS_404_DAYS * 86400000) return false;
+  const fetchedToday = at >= ab_rsDayStartMs_(todayKey);
+  if (kind === 'xbrl') return !fetchedToday;
+  if (filed || kind === 'mc') {
+    const age = filed ? ab_rsDaysBetween_(filed.at.slice(0, 10), todayKey) : rdAge;
+    return age > AB_RS_SLOW_DAYS ? !fetchedToday : true;
+  }
+  return rdAge >= 1 && !fetchedToday;
+}
+
+/** The NSE result filings store (Results_Announcements), or null when it cannot be read. */
+function ab_rsAnnStore_() {
+  try { return ab_annLoad_(); } catch (e) { return null; }
 }
