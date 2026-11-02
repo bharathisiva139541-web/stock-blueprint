@@ -164,7 +164,7 @@ async function pageState(page) {
 
 const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
-  'strategy', 'signals', 'excel', 'results', 'alerts', 'backtest', 'markets'];
+  'strategy', 'signals', 'excel', 'results', 'today', 'alerts', 'backtest', 'markets'];
 let failures = 0;
 function check(name, fn) {
   return Promise.resolve().then(fn).then(() => console.log('  ✓ ' + name), (e) => { failures++; console.log('  ✗ ' + name + '\n    ' + e.message); });
@@ -528,6 +528,27 @@ function check(name, fn) {
           await page.fill('#rl-q', 'zzzz-no-such');
           await page.waitForFunction(() => /^0 of /.test(document.querySelector('#rl-count').textContent));
           await page.fill('#rl-q', '');
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
+        await check('results today: the stocks due on the copy\'s day, by status, tiles = chips = rows', async () => {
+          errors.length = 0;
+          await page.goto(base + '#today', { waitUntil: 'load' });
+          await page.waitForSelector('#td-count', { timeout: 15000 });
+          const r = await page.evaluate(() => ({
+            h1: document.querySelector('h1').textContent,
+            tiles: [...document.querySelectorAll('.tiles a.tile-link')].map((a) => [a.getAttribute('href'), a.querySelector('.value').textContent.trim()]),
+            count: document.querySelector('#td-count').textContent,
+            status: [...document.querySelectorAll('#td-t tbody tr')].map((tr) => tr.children[1].textContent.trim()),
+            tab: !!document.querySelector('.tabs a[data-tab="today"]')
+          }));
+          assert.match(r.h1, /^Results Today · 20 Oct 2026$/, 'the saved copy\'s day');
+          assert.deepStrictEqual(r.tiles.map((x) => x[0]), ['#today', '#today/final', '#today/provisional', '#today/filed', '#today/notfiled']);
+          assert.strictEqual(r.tiles[0][1], '4');
+          assert.strictEqual(r.count, '4 of 4 stocks');
+          assert.deepStrictEqual(r.status, ['Not filed yet', 'Not filed yet', 'Not filed yet', 'Not filed yet'], 'all pending, no filing time in this copy');
+          assert.ok(r.tab, 'a tab of its own');
+          await page.click('a.tile-link[href="#today/final"]');
+          await page.waitForFunction(() => location.hash === '#today/final' && /^0 of 0/.test(document.querySelector('#td-count').textContent), null, { timeout: 15000 });
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         await check('results: "fell after results, then back above" card (daily closes) and its lists', async () => {

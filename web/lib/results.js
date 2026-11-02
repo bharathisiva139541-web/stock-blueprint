@@ -20,6 +20,8 @@
      flagList(text)                 -> the Results Tracker 'Flags' text as [{ id, label, tone, text }] (the email's pills:
                                        REV ↑ PROFIT ↓ / PROFIT > REVENUE / EXCEPTIONAL GAIN / OTHER INCOME HIGH)
      flagIndex(trackerRows)         -> { 'SYM|Sep 2026': text, SYM: { text, quarter } of the newest result with flags }
+     TODAY                          -> the statuses of the Results Today page: [{ id, label, tone }]
+     todayRows(stocks, trackerRows, dayKey) -> the Main stocks whose Result Date is dayKey ('yyyy-mm-dd') with their status
    }
    pick / counts take the reclaim rows as a 3rd argument for the kinds reclaimed / reclaimslow / nearreclaim. */
 (function (root, factory) {
@@ -201,7 +203,43 @@
     return o;
   }
 
-  return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session,
+  // ---- Results Today (owner, 03-Nov-2026: "a separate dashboard for results due today alone and their status") ----
+  // From Main (Result Date, Checkbox, figures) + the Results Tracker row of that stock and day (Status, Source,
+  // Announced = NSE's filing time read by the PC, Updated At, Note, Flags):
+  //   final       = in Main from screener.in / NSE XBRL (or ticked without a tracker row)
+  //   provisional = in Main from moneycontrol (replaced by NSE XBRL / screener.in later)
+  //   filed       = NSE has the results filing, figures not in Main yet
+  //   notfiled    = no results filing seen on NSE yet
+  var TODAY = [
+    { id: 'final', label: 'In Main (final figures)', tone: 'good' },
+    { id: 'provisional', label: 'In Main (moneycontrol, provisional)', tone: 'warn' },
+    { id: 'filed', label: 'Filed on NSE, figures awaited', tone: 'info' },
+    { id: 'notfiled', label: 'Not filed yet', tone: '' }
+  ];
+  function todayRows(stocks, tracker, dayKey) {
+    var tr = {};
+    (tracker || []).forEach(function (r) { if (r.Symbol && dayOf(r['Result Date']) === dayKey) tr[r.Symbol] = r; });
+    var seen = {};
+    return (stocks || []).filter(function (st) {
+      if (!st.sym || seen[st.sym] || dayOf(st.rdate) !== dayKey) return false;
+      seen[st.sym] = true;
+      return true;
+    }).map(function (st) {
+      var t = tr[st.sym] || null, src = String(t && t.Source || ''), ann = String(t && t.Announced || '');
+      var status = t && t.Status === 'Updated' ? (/moneycontrol/i.test(src) ? 'provisional' : 'final')
+        : !t && st.done ? 'final' : ann ? 'filed' : 'notfiled';
+      var inMain = status === 'final' || status === 'provisional';
+      var m = /(\d{1,2}:\d{2})/.exec(ann);
+      return { sym: st.sym, name: st.name, ind: st.ind, status: status, announced: ann, annTime: m ? m[1] : '', session: t ? session(t) : '',
+               source: src || (inMain && !t ? 'screener.in' : ''), updatedAt: t && t['Updated At'] || '', note: t && t.Note || '',
+               checks: t && t.Checks != null && t.Checks !== '' ? +t.Checks : null, lastChecked: t && t['Last Checked'] || '', flags: t && t.Flags || '',
+               // last quarter's figures stay in Main until the new ones come: shown only once the result is in Main
+               qrev: inMain ? st.qrev : null, yrev: inMain ? st.yrev : null, qnp: inMain ? st.qnp : null, ynp: inMain ? st.ynp : null,
+               sig: inMain ? st.sig : null, price: st.price, chg: st.chg };
+    });
+  }
+
+  return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session, TODAY: TODAY, todayRows: todayRows,
            pick: pick, counts: counts, bySession: bySession, movers: movers, reclaim: reclaim, reclaimRows: reclaimRows, RECLAIM: RECLAIM,
            flagList: flagList, flagIndex: flagIndex };
 });
