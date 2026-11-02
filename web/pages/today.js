@@ -86,6 +86,7 @@
           { key: 'ynp', label: 'Profit YoY', type: 'pct', digits: 0 },
           { key: 'flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures',
             html: function (r) { return ui.flagPills(r.flags) || '<span class="sub">–</span>'; } },
+          { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge', title: 'This quarter\'s operating margin vs the same quarter a year ago' },
           { key: 'sig', label: 'TTM Signal', type: 'badge' },
           { key: 'price', label: 'Price', type: 'price' },
           { key: 'chg', label: 'Today', type: 'pct', digits: 2 },

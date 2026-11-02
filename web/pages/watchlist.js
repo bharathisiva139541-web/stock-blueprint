@@ -48,6 +48,7 @@
           { key: 'down52', label: 'From 52W high', type: 'pct' },
           { key: 'pevs', label: 'PE / Ind PE', type: 'num', title: 'PE ratio divided by industry PE' },
           { key: 'sig', label: 'TTM Signal', type: 'badge' },
+          { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge', title: 'This quarter\'s operating margin vs the same quarter a year ago (Main "OPM Qtr YoY")' },
           { key: 'strat', label: 'Strategy', title: cfg.name + ' v' + cfg.version + ' - ' + dsc.tag,
             get: function (r) { var x = strat && strat.bySym[r.sym]; return x ? x.statusLabel : null; },
             csv: function (r) { var x = strat && strat.bySym[r.sym]; return x ? x.statusLabel + ' (' + cfg.name + ' v' + cfg.version + (cfg.source === 'demo' ? ', DEMO' : SB.strategies.isConfirmed(cfg.id) ? '' : ', unconfirmed') + ')' : ''; },

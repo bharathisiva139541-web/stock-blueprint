@@ -235,7 +235,7 @@
                checks: t && t.Checks != null && t.Checks !== '' ? +t.Checks : null, lastChecked: t && t['Last Checked'] || '', flags: t && t.Flags || '',
                // last quarter's figures stay in Main until the new ones come: shown only once the result is in Main
                qrev: inMain ? st.qrev : null, yrev: inMain ? st.yrev : null, qnp: inMain ? st.qnp : null, ynp: inMain ? st.ynp : null,
-               sig: inMain ? st.sig : null, price: st.price, chg: st.chg };
+               sig: inMain ? st.sig : null, opmqy: inMain ? st.opmqy : null, price: st.price, chg: st.chg };
     });
   }
 

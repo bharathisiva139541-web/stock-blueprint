@@ -419,6 +419,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
   const nowStr = function () { return Utilities.formatDate(new Date(), AB_TZ, AB_RS_TS_FMT); };
   const todayKey = ab_rsDayKey_(new Date());
 
+  try { ab_ensureOpmQtrYoyCol_(); } catch (cErr) { Logger.log('OPM Qtr YoY column not added: ' + cErr.message); }
   const layout = ab_getMainLayout_();
   if (layout.resultDate === -1) throw new Error('Main has no "Result Date" column.');
   if (layout.qrCheckbox === -1) throw new Error('Main has no "Checkbox" column to tick.');
@@ -426,7 +427,8 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
     promoter: ab_qt_findCol_(layout.header, AB_TT_PROMOTER_HEADER),
     fii: ab_qt_findCol_(layout.header, AB_TT_FII_HEADER),
     opmYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_YOY_HEADER),
-    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER)
+    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER),
+    opmQYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER)
   };
 
   // Every Main row per symbol (a symbol can sit on more than one row).
@@ -552,8 +554,10 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
         const tg = combined.tagsOk && combined.tags ? combined.tags : null;
         if (tg) {
           rowsBySym[t.symbol].forEach(function (rowIdx) {
+            // OPM QoQ% / OPM Qtr YoY stay the XBRL ones; screener.in's OPM Qtr YoY only where XBRL could not tell
+            const qyBlank = cols.opmQYoY !== undefined && cols.opmQYoY !== -1 && ab_cellText_(layout.data[rowIdx][cols.opmQYoY]) === '';
             ab_qt_writeRow_(layout, cols, rowIdx, { quarterOk: false, tagsOk: true,
-              tags: { promoter: tg.promoter, fii: tg.fii, opmYoY: tg.opmYoY, opmQoQ: '' } });
+              tags: { promoter: tg.promoter, fii: tg.fii, opmYoY: tg.opmYoY, opmQoQ: '', opmQYoY: qyBlank ? tg.opmQYoY : '' } });
           });
         }
         t.source = AB_XBRL_SOURCE_DONE;
@@ -717,6 +721,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
     res.failed += queue.length;
   } finally {
     try { res.gapFixed = ab_rsGapRepair_(tr, layout, cols, rowsBySym, season, touched, nowStr()); } catch (gErr) { Logger.log('Quarter-gap check skipped: ' + gErr.message); }
+    try { res.qyFilled = ab_opmQtrYoyBackfill_(layout, cols, touched); } catch (bErr) { Logger.log('OPM Qtr YoY fill skipped: ' + bErr.message); }
     try { ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey); } catch (fErr) { Logger.log('Result flags skipped: ' + fErr.message); }
     // Always save progress, even if something above threw part-way.
     ab_rsWriteTracker_(tr);
@@ -901,7 +906,8 @@ function runResultsEmailResend() {
       promoter: ab_qt_findCol_(layout.header, AB_TT_PROMOTER_HEADER),
       fii: ab_qt_findCol_(layout.header, AB_TT_FII_HEADER),
       opmYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_YOY_HEADER),
-      opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER)
+      opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER),
+      opmQYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER)
     };
     const rowsBySym = {};
     for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
@@ -1742,7 +1748,8 @@ function ab_rpRefresh_(opts) {
   const layout = ab_getMainLayout_();
   const cols = opts.cols || {
     opmYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_YOY_HEADER),
-    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER)
+    opmQoQ: ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER),
+    opmQYoY: ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER)
   };
   const tr = opts.tracker || ab_rsReadTracker_();
   const sh = ab_getOrCreateSheet_(AB_RP_SHEET);
@@ -11667,15 +11674,25 @@ function ab_xbrlWant_(tr, todayKey, basis, daily, ann) {
   return out;
 }
 
-/** One posted file's figures -> { figure: number|null }, or null when it has neither revenue nor profit. */
-function ab_xbrlCleanFigs_(f) {
+/** One posted file's figures -> { figure: number|null }, or null when it has neither revenue nor profit. `prev` / `ago`
+ *  (PC from 03-Nov-2026): the same file's figures of the quarter before and of the same quarter a year before
+ *  ({ quarter: 'Jun 2026', figures... }) - kept when their quarter is exactly 3 / 12 months back. */
+function ab_xbrlCleanFigs_(f, quarter) {
   if (!f || typeof f !== 'object') return null;
   const out = {};
   AB_XBRL_FIGS.forEach(function (k) {
     const v = f[k];
     out[k] = typeof v === 'number' && isFinite(v) ? v : null;
   });
-  return out.revenue === null && out.pat === null ? null : out;
+  if (out.revenue === null && out.pat === null) return null;
+  const qi = ab_rsQuarterIndex_(quarter);
+  [['prev', 3], ['ago', 12]].forEach(function (p) {
+    const sub = f[p[0]];
+    if (!sub || typeof sub !== 'object' || isNaN(qi) || ab_rsQuarterIndex_(sub.quarter) !== qi - p[1]) return;
+    const o = ab_xbrlCleanFigs_(Object.assign({}, sub, { prev: null, ago: null }), sub.quarter);
+    if (o) { o.quarter = String(sub.quarter); out[p[0]] = o; }
+  });
+  return out;
 }
 
 /** doPost action 'xbrlput': { items: [{ sym, quarter: 'Sep 2026', cons: {figures}|null, stand: {figures}|null, files: [] }] }. */
@@ -11684,7 +11701,7 @@ function ab_xbrlFromBridge_(req) {
   (Array.isArray(req.items) ? req.items : []).slice(0, 300).forEach(function (it) {
     const sym = String(it && it.sym || '').trim().toUpperCase();
     const quarter = String(it && it.quarter || '').trim();
-    const cons = ab_xbrlCleanFigs_(it && it.cons), stand = ab_xbrlCleanFigs_(it && it.stand);
+    const cons = ab_xbrlCleanFigs_(it && it.cons, quarter), stand = ab_xbrlCleanFigs_(it && it.stand, quarter);
     if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym) || isNaN(ab_rsQuarterIndex_(quarter)) || (!cons && !stand)) {
       details.push({ sym: sym, ok: false, error: 'bad item' });
       return;
@@ -11715,12 +11732,42 @@ function ab_xbrlFromBridge_(req) {
 
 /** OPM % of XBRL figures the way screener.in shows it: (Revenue - Expenses + Interest + Depreciation) / Revenue, whole %. */
 function ab_xbrlOpm_(f) {
+  const v = ab_xbrlOpmRaw_(f);
+  return isNaN(v) ? NaN : Math.round(v);
+}
+
+/** The same OPM % unrounded - two quarters of the same XBRL file are compared like this (no rounding mixed in). */
+function ab_xbrlOpmRaw_(f) {
   if (!f || !f.revenue) return NaN;
   let op;
-  if (f.expenses !== null) op = f.revenue - f.expenses + (f.finance_costs || 0) + (f.depreciation || 0);
-  else if (f.pbt !== null) op = f.pbt + (f.finance_costs || 0) + (f.depreciation || 0) - (f.other_income || 0) - ab_xbrlExceptional_(f);
+  if (f.expenses !== null && f.expenses !== undefined) op = f.revenue - f.expenses + (f.finance_costs || 0) + (f.depreciation || 0);
+  else if (f.pbt !== null && f.pbt !== undefined) op = f.pbt + (f.finance_costs || 0) + (f.depreciation || 0) - (f.other_income || 0) - ab_xbrlExceptional_(f);
   else return NaN;
-  return Math.round(op / f.revenue * 100);
+  return op / f.revenue * 100;
+}
+
+/**
+ * The OPM words of an XBRL quarter (owner, 03-Nov-2026: "XBRL itself has two quarters ... why don't you compare OPM QoQ
+ * from there itself"): OPM QoQ% = this quarter vs the quarter before IN THE SAME FILE, else vs screener.in's stored OPM
+ * of that quarter (whole %, like screener's); OPM Qtr YoY = vs the same quarter a year before, the same way.
+ * s = screener.in's stored series ({quarters, opm}) or null. -> { opmQoQ, opmQYoY } ('' = not known).
+ */
+function ab_xbrlOpmTags_(f, quarter, s) {
+  const qi = ab_rsQuarterIndex_(quarter);
+  const fromScreener = function (back) {
+    if (!s || !Array.isArray(s.quarters) || !Array.isArray(s.opm)) return NaN;
+    for (let i = 0; i < s.quarters.length; i++) {
+      if (ab_rsQuarterIndex_(s.quarters[i]) === qi - back) return typeof s.opm[i] === 'number' ? s.opm[i] : NaN;
+    }
+    return NaN;
+  };
+  const tag = function (sub, back) {
+    const a = sub ? ab_xbrlOpmRaw_(sub) : NaN, b = ab_xbrlOpmRaw_(f);
+    if (!isNaN(a) && !isNaN(b)) return ab_tt_tagOpmPair_(a, b);
+    const scr = fromScreener(back), mine = ab_xbrlOpm_(f);
+    return !isNaN(scr) && !isNaN(mine) ? ab_tt_tagOpmPair_(scr, mine) : '';
+  };
+  return { opmQoQ: tag(f && f.prev, 3), opmQYoY: tag(f && f.ago, 12) };
 }
 
 /** The exceptional items in the profit (gain > 0): PBT - PBT before exceptional items, else the exceptional figure itself. */
@@ -11751,10 +11798,10 @@ function ab_xbrlCombined_(stored, xd, byPosition) {
   const parsed = { ok: true, basis: (cons ? 'Consolidated' : 'Standalone') + ' (NSE XBRL)', quarters: s.quarters.slice(0, li + 1).concat([xd.quarter]),
                    revenue: arr(s.revenue, f.revenue), netProfit: arr(s.netProfit, f.pat), eps: (s.eps || []).length ? arr(s.eps, f.eps) : [], error: '' };
   const growth = ab_computeQuarterGrowth_(parsed, byPosition);
-  const prevOpm = (s.opm || [])[li];
-  const opmQoQ = typeof prevOpm === 'number' ? ab_tt_tagOpmPair_(prevOpm, ab_xbrlOpm_(f)) : '';
+  const opm = ab_xbrlOpmTags_(f, xd.quarter, s);
   return { combined: { quarterOk: true, growth: growth, quarterError: '', tagsOk: true,
-                       tags: { opmQoQ: opmQoQ, opmYoY: '', promoter: '', fii: '' }, tagsError: '', quarterOpmCount: 0, score: 0, fromXbrl: true },
+                       tags: { opmQoQ: opm.opmQoQ, opmYoY: '', promoter: '', fii: '', opmQYoY: opm.opmQYoY }, tagsError: '', quarterOpmCount: 0, score: 0,
+                       fromXbrl: true },
            figures: f, consolidated: cons };
 }
 
@@ -11983,4 +12030,59 @@ function ab_rsGapRepair_(tr, layout, cols, rowsBySym, season, touched, stamp) {
   });
   if (out.length) Logger.log('Results Day: figures corrected (a quarter missing from screener.in\'s table): ' + out.join(', '));
   return out;
+}
+
+/*****************************************************************
+ * OPM QTR YOY - this quarter's OPM vs the same quarter a year ago (03-Nov-2026)
+ * -----------------------------------------------------------------
+ * Owner, 03-Nov-2026: "introduce new columns to the sheet and website regarding comparing OPM of this quarter and last
+ * year same quarter (Sep 2026 vs Sep 2025) ... only 1 column is enough ... add yourself" (OPM YoY% stays the yearly
+ * FY vs FY one). Main column 'OPM Qtr YoY' (Code.gs AB_TT_OPM_QYOY_HEADER), the OPM QoQ% words. Filled with every
+ * write of a quarter's figures (screener.in: Code.gs ab_qt_parseBoth_ / ab_qtOpmQtrYoy_; NSE XBRL: ab_xbrlOpmTags_ -
+ * the same file's year-ago quarter, else screener.in's stored OPM of it), and blank cells from the stored screener.in
+ * pages (ab_opmQtrYoyBackfill_, every Results Day run, one write of the column).
+ *****************************************************************/
+
+/** Adds the 'OPM Qtr YoY' column after Main's last column (nothing else moves), formatted like 'OPM QoQ%'. true = added. */
+function ab_ensureOpmQtrYoyCol_() {
+  const layout = ab_getMainLayout_();
+  if (ab_qt_findCol_(layout.header, AB_TT_OPM_QYOY_HEADER) !== -1) return false;
+  const qc = ab_qt_findCol_(layout.header, AB_TT_OPM_QOQ_HEADER);
+  if (qc === -1) return false;                       // no OPM columns in this sheet: left alone
+  const sh = layout.sheet, hdr = layout.headerRowIdx + 1, last = sh.getLastColumn();
+  if (sh.getMaxColumns() <= last) sh.insertColumnsAfter(last, 1);
+  const cell = sh.getRange(hdr, last + 1);
+  const CPT = SpreadsheetApp.CopyPasteType;
+  try {
+    if (CPT) {
+      sh.getRange(hdr, qc + 1).copyTo(cell, CPT.PASTE_FORMAT, false);
+      const n = sh.getLastRow() - hdr;
+      if (n > 0) sh.getRange(hdr + 1, qc + 1, n, 1).copyTo(sh.getRange(hdr + 1, last + 1, n, 1), CPT.PASTE_FORMAT, false);
+    }
+  } catch (e) { /* formatting is cosmetic */ }
+  cell.setValue(AB_TT_OPM_QYOY_HEADER);
+  Logger.log('Main: column "' + AB_TT_OPM_QYOY_HEADER + '" added after the last column (' + (last + 1) + ').');
+  return true;
+}
+
+/** Blank 'OPM Qtr YoY' cells of Main filled from the stored screener.in pages (rows written in this run excepted). -> how many. */
+function ab_opmQtrYoyBackfill_(layout, cols, touched) {
+  const c = cols && cols.opmQYoY !== undefined ? cols.opmQYoY : -1;
+  if (c === -1) return 0;
+  const data = layout.data, first = layout.headerRowIdx + 1;
+  const vals = [];
+  let n = 0;
+  for (let r = first; r < data.length; r++) {
+    let v = data[r][c];
+    const sym = ab_cellText_(data[r][layout.symbol]).toUpperCase();
+    if (ab_cellText_(v) === '' && sym && !(touched && touched[sym])) {
+      const b = ab_bridgeGet_(sym);
+      const s = b && b.combined && b.combined.quarterOk ? b.combined.series : null;
+      const tag = s ? ab_qtOpmQtrYoy_(s.quarters, s.opm) : '';
+      if (tag) { v = tag; n++; }
+    }
+    vals.push([v === null || v === undefined ? '' : v]);
+  }
+  if (n && vals.length) layout.sheet.getRange(first + 1, c + 1, vals.length, 1).setValues(vals);
+  return n;
 }

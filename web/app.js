@@ -466,7 +466,8 @@
         ['TTM PEG', F.num(s.peg)], ['TTM EPS growth', F.num(s.epsg)], ['Target price', F.price(s.tgt)], ['Upside', ui.deltaHtml(s.up, 0)],
         ['Result date', F.date(s.rdate) + (s.done ? ' ✓' : '')], ['Revenue QoQ', ui.deltaHtml(s.qrev, 0)], ['Profit QoQ', ui.deltaHtml(s.qnp, 0)],
         ['Revenue YoY', ui.deltaHtml(s.yrev, 0)], ['Profit YoY', ui.deltaHtml(s.ynp, 0)], ['Promoter holding', esc(s.promo || '–')],
-        ['FII activity', esc(s.fii || '–')], ['OPM YoY', esc(s.opmy || '–')], ['OPM QoQ', esc(s.opmq || '–')], ['Volume change', ui.deltaHtml(s.volchg, 0)]
+        ['FII activity', esc(s.fii || '–')], ['OPM YoY', esc(s.opmy || '–')], ['OPM QoQ', esc(s.opmq || '–')],
+        ['OPM Qtr YoY', esc(s.opmqy || '–')], ['Volume change', ui.deltaHtml(s.volchg, 0)]
       ];
       if (s.rflags) {
         kv.push(['Result flags', ui.flagPills(s.rflags.text) + ' <span class="sub">' + esc(s.rflags.quarter) + ' results</span>']);

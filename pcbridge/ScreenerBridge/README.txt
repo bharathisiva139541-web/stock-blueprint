@@ -179,6 +179,9 @@ an exceptional gain of 10% of the profit before tax or more.
  - Results waiting for figures (and filed on NSE) come first; results already filled from screener.in are read once a
    day while they are at most 3 days old (for the exceptional-gain flag), and only the file the sheet needs
    (consolidated / standalone).
+ - From the same filing it also reads the quarter before and the same quarter a year before (the results table's
+   comparison columns): the sheet's OPM QoQ% compares within the one file, and the new Main column "OPM Qtr YoY" (this
+   quarter's OPM vs the same quarter last year) too. XbrlCheck.bat shows "quarters in this file: ..." with their OPM.
  - xbrl_state.json remembers what was tried. To switch it off: "xbrl": false in config.json
    ("max_xbrl_per_run": 60 = stocks a round).
 
