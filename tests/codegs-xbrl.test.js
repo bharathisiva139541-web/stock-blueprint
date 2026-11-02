@@ -17,10 +17,14 @@ const C = {};
 HEAD.forEach((h, i) => { C[h] = i; });
 const OLD = [5, 6, 7, 8, 40, 30, 'Stable', 'Increasing', 'Increasing', 'Decreasing'];
 const SYMS = ['PARAS', 'MCXB', 'STAND', 'GAPCO', 'SCRF', 'DOWNCO'];
-function env() {
+// NSE's result filings (the PC's announcements step) - XBRL is asked for filed results (owner, 02-Nov-2026)
+const FILED = (syms, at) => ({ name: 'Results_Announcements', rows: [['Symbol', 'Filed (IST)', 'Session', 'Subject', 'Received']]
+  .concat(syms.map((s) => [s, at || '2026-10-29 16:10:00', 'After market', 'Financial Results', ''])) });
+function env(filed) {
   return mock.loadCodeGs({ sheets: [
     { name: 'Main', rows: [['Main watchlist'], HEAD].concat(SYMS.map((s) => [false, s + ' Ltd', s, RD, 1.2].concat(OLD))) },
-    { name: 'AutoFetch Log', rows: [['ts']] }
+    { name: 'AutoFetch Log', rows: [['ts']] },
+    FILED(filed || SYMS)
   ] }, { props: { AB_BRIDGE_TOKEN: TOKEN, AB_RS_SEASON: 'Sep 2026' }, now: NOW });
 }
 
@@ -75,7 +79,7 @@ test('xbrlput: figures checked and stored in a hidden tab; list asks for the qua
   assert.deepStrictEqual(e.post({ token: 'nope', action: 'xbrlput', items: [] }), { ok: false, error: 'bad token' });
 });
 
-test('list -> xbrl: rows needing figures first; Updated rows only while the result is 3 days old; the file needed', () => {
+test('list -> xbrl: filed rows needing figures; once a day: no filing seen, Updated rows while 3 days old; the file needed', () => {
   const e = env();
   e.post({ token: TOKEN, action: 'put', items: [{ sym: 'PARAS', html: page(Q8, PARAS_OLD) },
     { sym: 'STAND', html: page(Q8, PARAS_OLD, { basis: 'Standalone' }) }] });
@@ -89,10 +93,17 @@ test('list -> xbrl: rows needing figures first; Updated rows only while the resu
     { symbol: 'GONE', status: 'Gave up', source: '', rdKey: '2026-10-25', quarter: 'Sep 2026' },
     { symbol: 'XDONE', status: 'Updated', source: 'NSE XBRL', rdKey: '2026-10-29', quarter: 'Sep 2026' }] };
   e.post({ token: TOKEN, action: 'xbrlput', items: [{ sym: 'XDONE', quarter: 'Sep 2026', cons: PARAS_X }] });
-  const basis = {};
-  const want = e.call('ab_xbrlWant_', tr, '2026-10-30', basis);
-  assert.deepStrictEqual(Object.keys(want), ['PARAS', 'STAND', 'MCROW', 'NEWUPD']);
+  const basis = {}, daily = {};
+  // PARAS' filing (29-Oct) is not near its result date (12-Oct): no filing seen -> once a day; MCROW: moneycontrol has it
+  const want = e.call('ab_xbrlWant_', tr, '2026-10-30', basis, daily);
+  assert.deepStrictEqual(Object.keys(want), ['STAND', 'MCROW']);
+  assert.deepStrictEqual(Object.keys(daily), ['PARAS', 'NEWUPD']);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(basis)), { PARAS: 'C', STAND: 'S' }, 'no stored screener.in figures: both files');
+  assert.deepStrictEqual(Object.keys(e.call('ab_xbrlWant_', tr, '2026-10-30', null, null)), ['STAND', 'MCROW'], 'the quick check: no daily ones');
+  // a Pending row without a filing on its result day: not asked at all (the 30-minute check sees the filing)
+  const today = { list: [{ symbol: 'TODAYCO', status: 'Pending', source: '', rdKey: '2026-10-30', quarter: 'Sep 2026' }] };
+  const d2 = {};
+  assert.deepStrictEqual([Object.keys(e.call('ab_xbrlWant_', today, '2026-10-30', null, d2)), Object.keys(d2)], [[], []]);
   const l = e.post({ token: TOKEN, action: 'list' });
   assert.ok(l.xbrlBasis && typeof l.xbrlBasis === 'object', 'list sends the basis too');
 });
@@ -114,11 +125,12 @@ test('Results Day: NSE XBRL figures while screener.in is behind (final), then on
   const html = e.mails[0][0].htmlBody;
   assert.ok(/VIA NSE XBRL/.test(html) && /PROFIT &gt; REVENUE/.test(html), 'pills in the email');
   assert.match(e.mails[0][0].body, /\| via NSE XBRL \| Flags: Profit growing faster than revenue/);
-  // still wanted from screener.in for the tags
-  assert.ok(e.post({ token: TOKEN, action: 'list' }).priority.includes('PARAS'));
+  // screener.in for the tags: once a day - its page was read today already
+  assert.ok(!e.post({ token: TOKEN, action: 'list' }).priority.includes('PARAS'));
 
   // next day screener.in shows Sep 2026 (rounded crores, other tags): the figures stay XBRL's, the three tags come
   e.setNow(NOW + 864e5);
+  assert.ok(e.post({ token: TOKEN, action: 'list' }).priority.includes('PARAS'), 'wanted again the next day');
   e.post({ token: TOKEN, action: 'put', items: [{ sym: 'PARAS', html: page(Q8.slice(1).concat(['Sep 2026']),
     shift(PARAS_OLD, { Sales: 151, 'OPM %': '29%', 'Net Profit': 31, 'EPS in Rs': 3.76 }),
     { prom: [60, 60, 58, 52], fii: [5, 6, 7, 9], annualOpm: [20, 26, 27] }) }] });

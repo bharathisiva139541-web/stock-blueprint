@@ -215,6 +215,23 @@ assert not any('1749103' in h for h in HITS), HITS
 del HITS[:], SENT[:]
 assert sb.xbrl_step({}, {'PARAS': 'Sep 2026'}, basis={'PARAS': 'S'}) == 1
 assert SENT[0]['items'][0]['cons'] is None and SENT[0]['items'][0]['stand']['revenue'] == 140.0
+# the full round's once-a-day look-ups (no filing seen / the exceptional-gain flag): after the wanted ones, each at most
+# once a day (xbrl_state.json 'tried'); the symbols sent are handed back (the results check leaves them out of moneycontrol)
+from datetime import datetime as _dt, timedelta as _td
+def api_ok(cfg, action, payload=None, timeout=120, tries=3):
+    SENT.append(payload)
+    return {'ok': True, 'stored': len(payload['items']), 'details': [{'sym': it['sym'], 'ok': True} for it in payload['items']]}
+sb.api = api_ok
+del HITS[:], SENT[:], LOGS[:]
+when, gotten = _dt(2026, 10, 30, 19, 0), []
+assert sb.xbrl_step({}, {}, now=when, daily={'PARAS': 'Sep 2026', 'LATECO': 'Sep 2026'}, sent_syms=gotten) == 1
+assert gotten == ['PARAS'] and '(2 of them the once-a-day look-ups)' in LOGS[-1], (gotten, LOGS)
+del HITS[:]
+assert sb.xbrl_step({}, {}, now=when.replace(hour=22), daily={'PARAS': 'Sep 2026', 'LATECO': 'Sep 2026'}) == 0 and HITS == [], 'asked today'
+assert sb.xbrl_step({}, {'LATECO': 'Sep 2026'}, now=when.replace(hour=22), daily={'PARAS': 'Sep 2026'}) == 0 and HITS, 'a wanted one: always'
+del HITS[:]
+assert sb.xbrl_step({}, {}, now=when + _td(days=1), daily={'LATECO': 'Sep 2026'}) == 0 and HITS, 'the next day again'
+sb.api = fake_api
 # nothing wanted / switched off: no request at all
 del HITS[:], SENT[:]
 assert sb.xbrl_step({}, {}) == 0 and sb.xbrl_step({'xbrl': False}, {'PARAS': 'Sep 2026'}) == 0 and HITS == [] and SENT == []

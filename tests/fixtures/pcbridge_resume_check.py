@@ -124,9 +124,10 @@ CFG = dict(sb.DEFAULTS, url='x', token='y')
 write_log(ROUND)
 del LOGS[:]
 assert sb.run_once(CFG) == 0
-assert CALLS == ['list', 'process', 'list', 'put', 'process'], CALLS
+# the results check first (its own 'list'; nothing to send), the stopped round processed, the list again, the rest
+assert CALLS == ['list', 'list', 'process', 'list', 'put', 'process'], CALLS
 assert FETCHED == ['S8', 'S9', 'N1'], 'the 7 pages of the stopped round are not fetched again: %s' % FETCHED
-assert MC == [({'S2': 'Sep 2026', 'S7': 'Sep 2026', 'S8': 'Sep 2026'}, ['S2', 'S7'])], MC   # S8: screener has it now
+assert MC == [({'S2': 'Sep 2026', 'S7': 'Sep 2026', 'S8': 'Sep 2026'}, ['S2', 'S7', 'S8'])], MC   # before any screener.in page
 log = '\n'.join(LOGS)
 assert 'Continuing the round of %s that stopped half-way' % T(40)[:16] in log and '7 page(s) were already sent' in log, log
 assert '7 sent earlier in this round are skipped.' in log, log
@@ -147,10 +148,10 @@ assert not os.path.exists(sb.LOCK_PATH), 'the lock goes with the program (a shut
 BOOM.clear()
 del CALLS[:], FETCHED[:]
 sb.run_once(CFG)
-assert CALLS[:2] == ['list', 'process'] and FETCHED == ['A%d' % i for i in range(5, 12)], (CALLS, FETCHED)
+assert CALLS[:3] == ['list', 'list', 'process'] and FETCHED == ['A%d' % i for i in range(5, 12)], (CALLS, FETCHED)
 assert sb.run_state_load()['stage'] == 'done'
 # and the round after that is an ordinary one again
 del CALLS[:], FETCHED[:]
 sb.run_once(CFG)
-assert CALLS[:2] == ['list', 'put'] and len(FETCHED) == 12, (CALLS, FETCHED)
+assert CALLS[:4] == ['list', 'list', 'list', 'put'] and len(FETCHED) == 12, (CALLS, FETCHED)
 print('OK')

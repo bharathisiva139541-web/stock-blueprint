@@ -10,6 +10,9 @@ pcbridge/ScreenerBridge/eod_state.json
 pcbridge/ScreenerBridge/history_state.json
 pcbridge/ScreenerBridge/calendar_state.json
 pcbridge/ScreenerBridge/run_state.json
+pcbridge/ScreenerBridge/ipo_state.json
+pcbridge/ScreenerBridge/xbrl_state.json
+pcbridge/ScreenerBridge/bridge_loop.json
 .clasprc.json
 *.token
 .env
