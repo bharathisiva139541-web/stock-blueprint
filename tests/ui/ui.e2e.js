@@ -59,6 +59,15 @@ LIVE_MAIN.generated = READ_AT;
 LIVE_MAIN.source = 'Google Sheet (live feed)';
 const SENT_SYM = LIVE_MAIN.main.rows[0][LIVE_MAIN.main.cols.indexOf('sym')];
 LIVE_MAIN.main.rows[0][LIVE_MAIN.main.cols.indexOf('price')] = SENTINEL;
+// result flags (the Results Tracker's 'Flags' column, feed format 7) on one stock that is also in Results Performance and Main
+const FLAGS_TEXT = 'Revenue up, profit down (YoY revenue +12.0%, profit -8.0%); Other income high: Rs 6.00 Cr = 30% of PBT';
+const TRK = LIVE_MAIN.resultsTracker;
+const IN_PERF = new Set(LIVE_MAIN.resultsPerf.table.rows.map((r) => r[0] + '|' + r[3]));
+const IN_MAIN = new Set(LIVE_MAIN.main.rows.map((r) => r[LIVE_MAIN.main.cols.indexOf('sym')]));
+const FLAG_ROW = TRK.rows.find((r) => r[TRK.cols.indexOf('Status')] === 'Updated' && IN_MAIN.has(r[0]) && IN_PERF.has(r[0] + '|' + r[TRK.cols.indexOf('Quarter Expected')]));
+const FLAG_SYM = FLAG_ROW[0];
+TRK.cols.push('Flags');
+TRK.rows.forEach((r) => r.push(r === FLAG_ROW ? FLAGS_TEXT : ''));
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -645,6 +654,37 @@ function check(name, fn) {
     assert.ok(calls.some((u) => /\/api\/site\?part=history60$/.test(u)), 'the older days are asked for too');
     assert.ok(H.older && H.older.days === 5 && H.days === HIST.dates.length + 5 && !H.reason60, 'History60\'s older days in front: ' + JSON.stringify(H));
     assert.ok(calls.every((u) => u.indexOf(new URL(base).origin) === 0), 'same-origin API only');
+  });
+
+  await check('result flags: pills in the Results tables and the stock drawer (live feed with the tracker\'s Flags)', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), []);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#results', { waitUntil: 'load' });
+    await p.waitForSelector('#rp-q', { timeout: 15000 });
+    await p.fill('#rp-q', FLAG_SYM);
+    await p.waitForTimeout(400);
+    const rp = await p.$$eval('#rp-table .flag-pills .badge', (b) => b.map((x) => [x.textContent, x.getAttribute('data-tip'), x.className]));
+    const heads = await p.$$eval('#rs-table th', (t) => t.map((x) => x.textContent.trim()));
+    await p.goto(base + '#results/tracked', { waitUntil: 'load' });
+    await p.waitForSelector('#rl-q', { timeout: 15000 });
+    await p.fill('#rl-q', FLAG_SYM);
+    await p.waitForTimeout(400);
+    const list = await p.$$eval('#rl-t .flag-pills .badge', (b) => b.map((x) => x.textContent));
+    const drawer = await p.evaluate((sym) => {
+      window.SB.openStock(sym);
+      const dt = [...document.querySelectorAll('#drawer-body dt')].find((x) => x.textContent === 'Result flags');
+      return dt ? dt.nextElementSibling.textContent : null;
+    }, FLAG_SYM);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.deepStrictEqual(rp.map((x) => x[0]), ['REV \u2191 PROFIT \u2193', 'OTHER INCOME HIGH'], 'Results performance row');
+    assert.strictEqual(rp[0][1], 'Revenue up, profit down (YoY revenue +12.0%, profit -8.0%)', 'the figures on hover');
+    assert.ok(/s-bad/.test(rp[0][2]) && /s-warn/.test(rp[1][2]), 'colours like the email');
+    assert.ok(heads.indexOf('Flags') > 0, 'tracker table column: ' + heads);
+    assert.deepStrictEqual(list, ['REV \u2191 PROFIT \u2193', 'OTHER INCOME HIGH'], 'the lists');
+    assert.ok(drawer && /REV \u2191 PROFIT \u2193/.test(drawer) && /OTHER INCOME HIGH/.test(drawer) && /results$/.test(drawer), 'drawer: ' + drawer);
   });
 
   await check('Firebase copy: remote API from web/config.js, EOD pill, no overflow at 360 px', async () => {

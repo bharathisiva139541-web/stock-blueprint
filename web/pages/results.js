@@ -4,6 +4,11 @@
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, R = SB.results;
   var RS = { status: 'all' }, RL = { q: '' };
+  // the tracker's result flags on Results Performance rows (same stock + quarter)
+  function withFlags(rows, D) {
+    var ix = R.flagIndex(ui.objRows(D.resultsTracker));
+    return rows.map(function (r) { if (r.Flags === undefined) r.Flags = ix[r.Symbol + '|' + r.Quarter] || ''; return r; });
+  }
 
   function linkTile(kind, label, value, note) {
     return '<a class="tile tile-link" href="#results/' + kind + '"><div class="label">' + esc(label) + '</div><div class="value">' + value + '</div>' +
@@ -57,6 +62,7 @@
       { key: 'trend', label: 'Trend', type: 'badge', title: 'Rising = the latest close is within 2% of its highest close since it climbed back; Holding = still above the pre-result close but pulled back from that high' },
       { key: 'sessions', label: 'Sessions since', type: 'num' },
       { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
+      { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
       { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
       { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 }
     ] : K.src === 'perf' ? [
@@ -66,6 +72,7 @@
       { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session' },
       { key: 'Result Day %', label: 'Result day', type: 'pct', title: 'The first session that could react vs the close before it' },
       { key: '% Since Results', label: 'Since results', type: 'pct' },
+      { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
       { key: 'Max Gain %', label: 'Max gain', type: 'pct' },
       { key: 'Max Drawdown %', label: 'Max drawdown', type: 'pct' },
       { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
@@ -80,12 +87,14 @@
       { key: 'Quarter Expected', label: 'Expected' },
       { key: 'Screener Latest Quarter', label: 'Screener shows' },
       { key: 'Status', label: 'Status', type: 'badge' },
+      { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
       { key: 'Checks', label: 'Checks', type: 'num', get: function (r) { return r.Checks == null ? null : +r.Checks; } },
       { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
       { key: 'Note', label: 'Note', wrap: true }
     ];
     var t = new ui.Table({ id: 'results-list-' + K.src, rows: [], pageSize: 50, sort: K.sort, empty: 'No stocks in this list', columns: cols }).mount($('#rl-t', el));
     var list = R.pick(kind, pRows, tRows, rc);
+    if (K.src !== 'tracker') withFlags(list, ctx.D);
     function apply() {
       var rows = list.filter(function (r) { return ui.textMatch(RL.q, [r.Symbol, r.Company, r['Basic Industry']]); });
       $('#rl-count', el).textContent = F.int(rows.length) + ' of ' + F.int(list.length) + ' stock' + (list.length === 1 ? '' : 's');
@@ -210,7 +219,7 @@
       }).mount($('#up-t', el));
 
       // FII trend and TTM EPS growth are not in the Results Performance tab: take them from Main
-      var perfRows = ui.objRows(perf.table).map(function (r) {
+      var perfRows = withFlags(ui.objRows(perf.table), D).map(function (r) {
         var s = ctx.bySym[r.Symbol];
         r.fiiTrend = s ? s.fii : null;
         r.epsGrowth = s ? s.epsg : null;
@@ -226,6 +235,7 @@
           { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session - read by your PC program. Filed after 15:30: the reaction day is the next session.' },
           { key: 'Result Day %', label: 'Result day', type: 'pct', title: 'The first session that could react vs the close before it' },
           { key: '% Since Results', label: 'Since results', type: 'pct' },
+          { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
           { key: 'Max Gain %', label: 'Max gain', type: 'pct' },
           { key: 'Max Drawdown %', label: 'Max drawdown', type: 'pct' },
           { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
@@ -255,6 +265,7 @@
           { key: 'Quarter Expected', label: 'Expected' },
           { key: 'Screener Latest Quarter', label: 'Screener shows' },
           { key: 'Status', label: 'Status', type: 'badge' },
+          { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
           { key: 'Checks', label: 'Checks', type: 'num', get: function (r) { return r.Checks == null ? null : +r.Checks; } },
           { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
           { key: 'Note', label: 'Note', wrap: true }

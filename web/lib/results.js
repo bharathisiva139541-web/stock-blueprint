@@ -17,6 +17,9 @@
                                        from the daily closes (see RECLAIM below), or null without candles
      reclaimRows(perfRows, history) -> the rows with .reclaim set (those with candles)
      RECLAIM                        -> the thresholds
+     flagList(text)                 -> the Results Tracker 'Flags' text as [{ id, label, tone, text }] (the email's pills:
+                                       REV ↑ PROFIT ↓ / PROFIT > REVENUE / EXCEPTIONAL GAIN / OTHER INCOME HIGH)
+     flagIndex(trackerRows)         -> { 'SYM|Sep 2026': text, SYM: { text, quarter } of the newest result with flags }
    }
    pick / counts take the reclaim rows as a 3rd argument for the kinds reclaimed / reclaimslow / nearreclaim. */
 (function (root, factory) {
@@ -172,6 +175,33 @@
              worst: up.slice().reverse().slice(0, n).filter(function (r) { return since(r) < 0; }) };
   }
 
+  // ---- result flags (Code2.gs ab_rsFlags_ writes the tracker's 'Flags' text, '; ' between; ab_rsFlagPills_ = the email's pills)
+  var FLAGS = [
+    { id: 'revdown', re: /^Revenue up, profit down/, label: 'REV \u2191 PROFIT \u2193', tone: 'bad' },
+    { id: 'profitfaster', re: /^Profit growing faster than revenue/, label: 'PROFIT > REVENUE', tone: 'good' },
+    { id: 'exceptional', re: /^Exceptional gain/, label: 'EXCEPTIONAL GAIN', tone: 'warn' },
+    { id: 'otherincome', re: /^Other income high/, label: 'OTHER INCOME HIGH', tone: 'warn' }
+  ];
+  function flagList(text) {
+    return String(text || '').split(/;\s*/).map(function (t) { return t.trim(); }).filter(Boolean).map(function (t) {
+      var f = FLAGS.filter(function (x) { return x.re.test(t); })[0];
+      return f ? { id: f.id, label: f.label, tone: f.tone, text: t } : { id: 'other', label: 'FLAG', tone: 'info', text: t };
+    });
+  }
+  function flagIndex(tracker) {
+    var o = {};
+    (tracker || []).forEach(function (r) {
+      var t = String(r.Flags || '').trim();
+      if (!r.Symbol || !t) return;
+      o[r.Symbol + '|' + r['Quarter Expected']] = t;
+      var cur = o[r.Symbol];
+      var d = String(r['Result Date'] || '');
+      if (!cur || d > cur.date) o[r.Symbol] = { text: t, quarter: String(r['Quarter Expected'] || ''), date: d };
+    });
+    return o;
+  }
+
   return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session,
-           pick: pick, counts: counts, bySession: bySession, movers: movers, reclaim: reclaim, reclaimRows: reclaimRows, RECLAIM: RECLAIM };
+           pick: pick, counts: counts, bySession: bySession, movers: movers, reclaim: reclaim, reclaimRows: reclaimRows, RECLAIM: RECLAIM,
+           flagList: flagList, flagIndex: flagIndex };
 });
