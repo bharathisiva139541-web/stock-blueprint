@@ -9,6 +9,19 @@
   // page) on rows of the newest season; a tracker row not Updated yet shows nothing (Main still holds last quarter's)
   var OPMQY = { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge',
     title: 'This quarter\'s operating margin vs the same quarter a year ago (Main "OPM Qtr YoY")' };
+  // Main's TTM Signal of the stock (owner, 03-Nov-2026: "add TTM signal column in all tables") - the stock's current signal
+  var SIG = { key: 'ttmsig', label: 'TTM Signal', type: 'badge', title: 'The stock\'s TTM Signal now (Main tab, follows the price shown)',
+    get: function (r) { var s = SB.ctx.bySym[r.Symbol]; return s ? s.sig || null : null; } };
+  // owner, 03-Nov-2026: "add daily % to the left of result day, and use intraday movement as result day % - VRL Logistics
+  // should show 14.5% instead of 6%": Daily % = where the result day closed (the sheet's Result Day %), Result day = its
+  // high or low vs the close before the results, whichever went further (the sheet's Result Day Move %; a feed without
+  // that column: the close)
+  var DAILY = { key: 'Result Day %', label: 'Daily %', type: 'pct',
+    title: 'The result day\'s close vs the close before the results - that day\'s % change (the first session that could react)' };
+  var RDAY = { key: 'rdMove', label: 'Result day', type: 'pct',
+    get: function (r) { var v = r['Result Day Move %']; return ui.isNum(v) ? v : r['Result Day %']; },
+    title: 'The intraday move on the result day: its high or its low vs the close before the results, whichever went further ' +
+      '(during that session: the prices seen so far). Daily % = where it closed.' };
   function withOpm(rows, ctx, season, qKey) {
     rows.forEach(function (r) {
       var s = ctx.bySym[r.Symbol];
@@ -75,6 +88,7 @@
       { key: 'sessions', label: 'Sessions since', type: 'num' },
       { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
       { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+      SIG,
       { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
       { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 },
       OPMQY
@@ -83,9 +97,11 @@
       { key: 'Basic Industry', label: 'Industry', wrap: true },
       { key: 'Result Date', label: 'Result date', type: 'date' },
       { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session' },
-      { key: 'Result Day %', label: 'Result day', type: 'pct', title: 'The first session that could react vs the close before it' },
+      DAILY,
+      RDAY,
       { key: '% Since Results', label: 'Since results', type: 'pct' },
       { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+      SIG,
       { key: 'Max Gain %', label: 'Max gain', type: 'pct' },
       { key: 'Max Drawdown %', label: 'Max drawdown', type: 'pct' },
       { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
@@ -102,6 +118,7 @@
       { key: 'Screener Latest Quarter', label: 'Screener shows' },
       { key: 'Status', label: 'Status', type: 'badge' },
       { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+      SIG,
       OPMQY,
       { key: 'Checks', label: 'Checks', type: 'num', get: function (r) { return r.Checks == null ? null : +r.Checks; } },
       { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
@@ -216,6 +233,7 @@
             { key: 'Result Date', label: 'Result date', type: 'date' },
             { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
             { key: '% Since Results', label: 'Since results', type: 'pct' },
+            SIG,
             OPMQY
           ]
         }).mount($(m[0], el));
@@ -243,17 +261,22 @@
         r.epsGrowth = s ? s.epsg : null;
         return r;
       });
+      // legacyKeys: the columns before 03-Nov-2026 - the viewer's saved sort & filter of this table are kept
       var pt = new ui.Table({
-        rows: perfRows, pageSize: 25, sort: { key: '% Since Results', dir: -1 },
+        rows: perfRows, pageSize: 25, sort: { key: '% Since Results', dir: -1 }, id: 'results-performance',
+        legacyKeys: ['Symbol', 'Basic Industry', 'Quarter', 'Result Date', 'Announced', 'Result Day %', '% Since Results', 'Flags', 'Max Gain %',
+          'Max Drawdown %', 'Rev YoY %', 'NP YoY %', 'Rev QoQ %', 'NP QoQ %', 'OPM QoQ', 'OPM YoY', 'opmqy', 'fiiTrend', 'epsGrowth', 'Results Verdict', 'Market Reaction'],
         columns: [
           { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
           { key: 'Basic Industry', label: 'Industry', wrap: true },
           { key: 'Quarter', label: 'Quarter' },
           { key: 'Result Date', label: 'Result date', type: 'date' },
           { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session - read by your PC program. Filed after 15:30: the reaction day is the next session.' },
-          { key: 'Result Day %', label: 'Result day', type: 'pct', title: 'The first session that could react vs the close before it' },
+          DAILY,
+          RDAY,
           { key: '% Since Results', label: 'Since results', type: 'pct' },
           { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+          SIG,
           { key: 'Max Gain %', label: 'Max gain', type: 'pct' },
           { key: 'Max Drawdown %', label: 'Max drawdown', type: 'pct' },
           { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
@@ -276,7 +299,8 @@
       $('#rp-csv', el).addEventListener('click', function () { ui.download('results-performance.csv', ui.toCsv(pt.toCsvRows())); });
 
       var rt = new ui.Table({
-        rows: [], pageSize: 25, sort: { key: 'Result Date', dir: -1 },
+        rows: [], pageSize: 25, sort: { key: 'Result Date', dir: -1 }, id: 'results-tracker',
+        legacyKeys: ['Symbol', 'Result Date', 'Announced', 'Quarter Expected', 'Screener Latest Quarter', 'Status', 'Flags', 'opmqy', 'Checks', 'Last Checked', 'Note'],
         columns: [
           { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
           { key: 'Result Date', label: 'Result date', type: 'date' },
@@ -285,6 +309,7 @@
           { key: 'Screener Latest Quarter', label: 'Screener shows' },
           { key: 'Status', label: 'Status', type: 'badge' },
           { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+          SIG,
           OPMQY,
           { key: 'Checks', label: 'Checks', type: 'num', get: function (r) { return r.Checks == null ? null : +r.Checks; } },
           { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
