@@ -1664,6 +1664,21 @@ const AB_RP_COLS = ['Symbol', 'Company', 'Basic Industry', 'Quarter', 'Result Da
   'Rev QoQ %', 'Rev YoY %', 'NP QoQ %', 'NP YoY %', 'OPM QoQ', 'OPM YoY',
   'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since', 'Reaction From', 'Last Refreshed'];
 
+// While the market is open (owner, 03-Nov-2026: VRLLOG's results came on 02/11 after the close and the tab showed Result
+// day blank / Since results +0.1% until 7:55 PM - the PC was off 08:43-19:45, and the tab was rebuilt only by Results Day
+// runs): the website feed trigger (every 30 min) rebuilds the tab about once an hour from AB_RP_MKT_FROM to AB_RP_MKT_TO
+// on trading days, and once more after AB_RP_CLOSE_HHMM with the closing prices (ab_rpMarketRefresh_); Phase 4 rebuilds
+// it after Phase 1's candles (ab_rpEveningRefresh_). On the reaction session itself Result Day % / Next Day % = Main's
+// price so far (GOOGLEFINANCE ~20 min late, so from AB_RP_LIVE_FROM); the day's candle replaces it after Phase 1.
+const AB_RP_BUILT_PROP = 'AB_RP_BUILT_MS';               // when ab_rpRefresh_ last wrote the tab
+const AB_RP_BUILDING_PROP = 'AB_RP_BUILDING_SINCE';      // a market-hours / evening rebuild is writing the tab
+const AB_RP_BUILDING_STALE_MS = 5 * 60 * 1000;           // a flag older than this = that execution died
+const AB_RP_WAIT_MS = 90 * 1000;                          // a Results Day run waits at most this long for it
+const AB_RP_MKT_FROM = 935, AB_RP_MKT_TO = 1630;          // IST HHmm window of the market-hours rebuilds
+const AB_RP_CLOSE_HHMM = 1550;                            // one rebuild from here on: the day's closing prices
+const AB_RP_MKT_EVERY_MS = 55 * 60 * 1000;                // about once an hour (the trigger runs every 30 min)
+const AB_RP_LIVE_FROM = 935;                              // Main's price has moved since the 09:15 open
+
 function ab_rpNum_(v) {
   if (v === '' || v === null || v === undefined) return NaN;
   return typeof v === 'number' ? v : ab_toNum_(v);
@@ -1740,6 +1755,15 @@ function ab_rpSignal_(verdict, reaction) {
  */
 function ab_rpRefresh_(opts) {
   opts = opts || {};
+  // a market-hours / evening rebuild (ab_rpGuarded_) is writing the tab: wait for it rather than write over it
+  if (!opts.guarded) {
+    const bp = PropertiesService.getScriptProperties();
+    for (let i = 0; i < AB_RP_WAIT_MS / 3000; i++) {           // counted, not timed: at most AB_RP_WAIT_MS of 3 s naps
+      const b = Number(bp.getProperty(AB_RP_BUILDING_PROP) || 0);
+      if (!b || Date.now() - b >= AB_RP_BUILDING_STALE_MS) break;
+      Utilities.sleep(3000);
+    }
+  }
   // Always a FRESH read of Main: the Results Day run writes this
   // quarter's figures with setValue(), which doesn't update the layout
   // it read at the start - snapshotting from that would capture LAST
@@ -1759,6 +1783,15 @@ function ab_rpRefresh_(opts) {
   try { annStore = ab_annLoad_(); } catch (e) { annStore = null; }
   const todayKey = ab_rsDayKey_(new Date());
   const nowDate = new Date();
+  // today's session, for the reaction day's price so far (NSE's holidays: the list the PC sends for the IPO workflow)
+  let holidays = [];
+  try { holidays = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_IPOT_HOLIDAYS_PROP) || '[]'); } catch (hErr) { holidays = []; }
+  if (!Array.isArray(holidays)) holidays = [];
+  const isSession = function (iso) {
+    const p = iso.split('-'), wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    return wd !== 0 && wd !== 6 && holidays.indexOf(iso) < 0;
+  };
+  const priceMoved = isSession(todayKey) && Number(Utilities.formatDate(nowDate, AB_TZ, 'HHmm')) >= AB_RP_LIVE_FROM;
 
   // First Main row per symbol, plus display values for today's % Change.
   const data = layout.data;
@@ -1837,7 +1870,17 @@ function ab_rpRefresh_(opts) {
     if (isNaN(cur) && candles.length) cur = candles[candles.length - 1].Cls;
     row.cur = cur;
     row.days = ab_rsDaysBetween_(rdKey, todayKey);
-    if (!isNaN(cur) && row.days >= 0) {
+    // the session that could first react, and whether today's session is it (or the one after it) - its candle comes
+    // with Phase 1 in the evening; until then Main's price is that session's price so far
+    const reactDay = (!rx.strict && isSession(rx.from)) ? rx.from : ab_ipoTradingDayAfter_(rx.from, 1, holidays);
+    let live = '';
+    if (priceMoved && !isNaN(cur)) {
+      if (!post.length && reactDay === todayKey) live = 'rd';
+      else if (post.length === 1 && post[0].k < todayKey && ab_ipoTradingDayAfter_(post[0].k, 1, holidays) === todayKey) live = 'next';
+    }
+    // the price joins the highs / lows only once the market could react (not a price from before the open)
+    const started = post.length > 0 || todayKey > reactDay || (todayKey === reactDay && priceMoved);
+    if (!isNaN(cur) && row.days >= 0 && started) {
       row.hi = isNaN(row.hi) ? cur : Math.max(row.hi, cur);
       row.lo = isNaN(row.lo) ? cur : Math.min(row.lo, cur);
     }
@@ -1848,8 +1891,8 @@ function ab_rpRefresh_(opts) {
     row.todayPct = (dayTxt && !/^#/.test(dayTxt) && !isNaN(dayN)) ? dayN / 100 : NaN;
 
     row.sincePct = ab_rpPct_(cur, row.base);
-    row.rdPct = ab_rpPct_(row.rdClose, row.base);
-    row.nextPct = ab_rpPct_(row.nextClose, row.rdClose);
+    row.rdPct = ab_rpPct_(live === 'rd' ? cur : row.rdClose, row.base);          // the close columns stay empty until the candle
+    row.nextPct = ab_rpPct_(live === 'next' ? cur : row.nextClose, row.rdClose);
     row.maxGain = ab_rpPct_(row.hi, row.base);
     row.maxDD = ab_rpPct_(row.lo, row.base);
     row.verdict = ab_rpVerdict_(row);
@@ -1863,10 +1906,61 @@ function ab_rpRefresh_(opts) {
   });
 
   ab_rpWriteSheet_(sh, list, nowDate);
+  PropertiesService.getScriptProperties().setProperty(AB_RP_BUILT_PROP, String(nowDate.getTime()));
 
   const byKey = {};
   list.forEach(function (x) { byKey[x.symbol + '|' + String(x.quarter).toUpperCase()] = x; });
   return { byKey: byKey, count: list.length };
+}
+
+/** ab_rpRefresh_ outside a Results Day run. A run in progress (AB_RS_RUNNING_PROP) = skipped - it rebuilds the tab
+ *  itself, or the next try does. Its own flag AB_RP_BUILDING_PROP, NOT the run's: a PC results check arriving meanwhile
+ *  must still run (the PC does not ask again for what it already sent); the run's own rebuild waits for this one
+ *  (ab_rpRefresh_). -> {ran, count, busy, error} */
+function ab_rpGuarded_() {
+  const props = PropertiesService.getScriptProperties();
+  const now = Date.now();
+  const run = Number(props.getProperty(AB_RS_RUNNING_PROP) || 0);
+  const other = Number(props.getProperty(AB_RP_BUILDING_PROP) || 0);
+  if ((run && now - run < AB_RS_RUNNING_STALE_MS) || (other && now - other < AB_RP_BUILDING_STALE_MS)) return { ran: false, busy: true };
+  props.setProperty(AB_RP_BUILDING_PROP, String(now));
+  try {
+    return { ran: true, count: ab_rpRefresh_({ guarded: true }).count };
+  } catch (e) {
+    Logger.log('Results Performance refresh failed: ' + e.message);
+    return { ran: false, error: e.message };
+  } finally {
+    props.deleteProperty(AB_RP_BUILDING_PROP);
+  }
+}
+
+/** Phase 4 (~7:20 PM, Code.gs ab_dailyPhase4Work_): after Phase 1 brought the day's candles - Result day / Next day final. */
+function ab_rpEveningRefresh_() {
+  const r = ab_rpGuarded_();
+  if (r.busy) { Logger.log('Results Performance: a Results Day run is going - not rebuilt now.'); return ' Results Performance: skipped (a Results Day run was going).'; }
+  if (r.error) return ' Results Performance refresh failed: ' + r.error + '.';
+  return ' Results Performance rebuilt (' + r.count + ' rows, with today\'s candles).';
+}
+
+/** The website feed trigger (Code.gs ab_siteFeedTrigger_, every 30 min): on a trading day between AB_RP_MKT_FROM and
+ *  AB_RP_MKT_TO, rebuild the tab when the last build is AB_RP_MKT_EVERY_MS old, and once after AB_RP_CLOSE_HHMM (the
+ *  closing prices) - so Since results / the reaction day follow the market without the PC. true = rebuilt. */
+function ab_rpMarketRefresh_(nowMs) {
+  const now = new Date(nowMs || Date.now());
+  const w = Utilities.formatDate(now, AB_TZ, 'u HHmm yyyy-MM-dd').split(' ');
+  const dow = Number(w[0]), hm = Number(w[1]), day = w[2];
+  if (dow > 5 || hm < AB_RP_MKT_FROM || hm > AB_RP_MKT_TO) return false;
+  const props = PropertiesService.getScriptProperties();
+  let holidays = [];
+  try { holidays = JSON.parse(props.getProperty(AB_IPOT_HOLIDAYS_PROP) || '[]'); } catch (e) { holidays = []; }
+  if (Array.isArray(holidays) && holidays.indexOf(day) >= 0) return false;
+  const last = Number(props.getProperty(AB_RP_BUILT_PROP) || 0);
+  const lastAt = last ? Utilities.formatDate(new Date(last), AB_TZ, 'yyyy-MM-dd HHmm') : '';
+  const closeDue = hm >= AB_RP_CLOSE_HHMM && !(lastAt.slice(0, 10) === day && Number(lastAt.slice(11)) >= AB_RP_CLOSE_HHMM);
+  if (!closeDue && last && now.getTime() - last >= 0 && now.getTime() - last < AB_RP_MKT_EVERY_MS) return false;
+  const r = ab_rpGuarded_();
+  if (r.ran) Logger.log('Results Performance rebuilt (market hours' + (closeDue ? ', closing prices' : '') + '): ' + r.count + ' rows.');
+  return !!r.ran;
 }
 
 function ab_rpWriteSheet_(sh, list, nowDate) {
@@ -1909,7 +2003,8 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
   sh.getRange(1, 1).setValue('Results Performance - how stocks moved after their results')
     .setFontSize(15).setFontWeight('bold').setFontColor('#1f3a5f');
   sh.getRange(2, 1).setValue('Baseline = last close before the market could react (results filed after 15:30 IST: that day\'s close - NSE filing times via your PC, column Announced). "% Since Results" = current price vs that baseline. ' +
-    'Refreshed on every Results Day run · last refreshed ' + Utilities.formatDate(nowDate, AB_TZ, 'dd/MM/yyyy HH:mm') + ' IST')
+    'Refreshed by every Results Day run, about every hour while the market is open (and after the close) and after the evening candles (Phase 4); ' +
+    'on the reaction session itself Result Day % / Next Day % = the price so far · last refreshed ' + Utilities.formatDate(nowDate, AB_TZ, 'dd/MM/yyyy HH:mm') + ' IST')
     .setFontColor('#777777').setFontSize(10);
 
   // KPI tiles (A4:F5)
