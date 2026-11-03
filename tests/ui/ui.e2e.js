@@ -606,6 +606,32 @@ function check(name, fn) {
           });
           assert.ok(r.chip && r.chip.indexOf('(' + r.q + ')') > 0, 'chip shows ' + r.q);
           assert.ok(r.cards === Math.min(20, r.q) || (r.q === 0 && r.cards === 0), 'cards ' + r.cards);
+          // the redesign (owner, 03-Nov-2026): headline number, three steps, where every stock landed, list help, ranked cards
+          const d = await page.evaluate(() => ({
+            big: document.querySelector('#sg-big .sg-big-n').textContent, steps: document.querySelectorAll('.sg-step').length,
+            seg: [...document.querySelectorAll('[data-funnel]')].map((b) => b.getAttribute('data-funnel') + ':' + b.querySelector('b').textContent),
+            help: document.querySelector('#sg-help').textContent, rank: (document.querySelector('.sugg-item .sg-rank') || {}).textContent,
+            opts: [...document.querySelectorAll('#sg-strat option')].map((o) => o.value)
+          }));
+          assert.strictEqual(d.big.replace(/,/g, ''), String(r.q), 'headline = qualified');
+          assert.strictEqual(d.steps, 3);
+          assert.ok(d.seg.indexOf('qualified:' + r.q.toLocaleString('en-IN')) >= 0, 'bar: ' + d.seg);
+          assert.match(d.help, /^Qualified: Every rule/);
+          assert.ok(!r.q || d.rank === '#1', 'rank badge');
+          assert.ok(d.opts.indexOf('resultPerformance') >= 0, 'the new strategy is offered: ' + d.opts);
+          // a click on the Watch part of the bar opens that list; switching the strategy here re-runs it
+          if (d.seg.some((x) => /^watch:/.test(x))) {
+            await page.click('[data-funnel="watch"]');
+            assert.strictEqual(await page.getAttribute('[data-chip="sgl"][data-v="watch"]', 'aria-pressed'), 'true');
+          }
+          errors.length = 0;
+          await page.selectOption('#sg-strat', 'resultPerformance');
+          await page.waitForFunction(() => window.SB.strategies.lastRun() && window.SB.strategies.lastRun().config.id === 'resultPerformance' && !/…/.test(document.querySelector('#sg-big').textContent), null, { timeout: 15000 });
+          const rp = await page.evaluate(() => ({ active: window.SB.strategies.activeId(), mode: window.SB.strategies.lastRun().config.mode, text: document.querySelector('#sg-big').textContent }));
+          assert.deepStrictEqual([rp.active, rp.mode], ['resultPerformance', 'screen']);
+          assert.match(rp.text, /stocks match the screen/);
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+          await page.evaluate(() => window.SB.strategies.setActive('sheet'));
         });
         await check('theme picker: 8 themes, choice applies at once and persists (default light)', async () => {
           const c2 = await browser.newContext({ viewport: vp });       // no init script: real persistence
