@@ -51,6 +51,41 @@ information and says intraday is not supported by the daily data.
   Max gain. Stop / target (2 × ATR, +10%) are the usual placeholders, not your rules.
 - **DEMO - EMA trend pullback** - a generic test strategy, always labelled DEMO.
 
+## Strategy settings page (redesigned 03-Nov-2026)
+
+Owner: "my friend opened this page - it would take 2 days to understand ... once a
+strategy is set in one browser it should not be deleted when reloaded. Swing,
+positional, long-term". `web/pages/strategy.js`, three steps on one page:
+
+1. **How do you trade?** Swing (days to a few weeks), Positional (weeks to months),
+   Long-term (months to years) or All - the strategy cards follow the choice (kept in
+   `sb:strategy-page:style`; first visit = the style of the strategy in use).
+2. **Pick a strategy** - a card per strategy: style, "Find entry points" (setup) or
+   "List matching stocks" (screen), source, confirmed or not, today's count (the saved
+   version, `SB.strategies.runActive`), "Use for Daily Suggestions", "Open & edit".
+   **New strategy**: name + style, from a ready-made starter for that style
+   (`STARTERS` in the page - common starting values, listed as assumptions, NOT the
+   owner's rules) or a copy of the open one.
+3. **Fine-tune** - the name (editable title), "In plain words" (looks at / skips / buy
+   signal / must also be true / exit plan, follows every change), "Are these your
+   rules?" confirmation + what was assumed, "How it works" (style + mode), the rules as
+   cards with an on/off switch, a one-line explanation (`EXPLAIN`) and their numbers,
+   "Add a ..." picker (search, grouped by topic), the exit plan with a worked ₹100
+   example, More settings (stocks to look at, description, assumptions, minimum
+   candles) and Change history & backup (Export / Import JSON). A **live preview**
+   (sticky on the right, on top on phones) runs the changed rules on today's data
+   (`SB.strategy.run`, ~10-300 ms) - count, where every stock landed, top 5.
+
+Saving is automatic: a valid change is saved 0.7 s after the last edit (and at once
+when the tab is hidden / closed); the first save of a visit makes a new version, later
+saves in that visit amend it (`SB.strategies.save(cfg, note, { amend, base })` - the
+history line lists every change of the visit). A change that is not valid yet is kept
+in `sb:strategy-page:drafts` and shown as "Not saved yet - fix ...", so a reload never
+loses it. Undo steps back through the visit's changes; viewer-made strategies can be
+deleted (`SB.strategies.remove`), presets reset to the original. Everything stays in
+this browser (localStorage of that site address - the Vercel and Firebase copies are
+different addresses); Export / Import moves a strategy to another device.
+
 ## Assumptions that need your confirmation
 
 The sheet does not say how these signals become an "entry", so the site

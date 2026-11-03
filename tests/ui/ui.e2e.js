@@ -603,6 +603,79 @@ function check(name, fn) {
           await page.waitForTimeout(800);
           assert.ok(/Post-results opportunities/.test(await page.$eval('#app', (x) => x.innerText)));
         });
+        // owner, 03-Nov-2026: "strategy settings page is not user friendly ... once a strategy is set in one browser it should not
+        // be deleted when reloaded. Swing, positional, long-term" - style -> strategy -> fine-tune, every change saved by itself
+        await check('strategy settings: styles, plain-words recipe, autosave that survives a reload, live preview, new / undo / delete', async () => {
+          errors.length = 0;
+          await page.goto(base + '#strategy/sheet', { waitUntil: 'load' });
+          await page.waitForSelector('#st-live-n', { timeout: 20000 });
+          const s0 = await page.evaluate(() => ({
+            styles: [...document.querySelectorAll('.ss-style')].map((b) => b.getAttribute('data-style') + ':' + b.getAttribute('aria-pressed')),
+            cards: [...document.querySelectorAll('.ss-card')].map((c) => c.querySelector('h3').textContent), recipe: document.querySelectorAll('.ss-recipe > li').length,
+            v: window.SB.strategies.get('sheet').version, live: document.querySelector('#st-live-n').textContent,
+            q: window.SB.strategy.run(window.SB.strategies.get('sheet'), window.SB.ctx.stocks, window.SB.strategies.candles(), { usePrice: true,
+              latestDate: window.SB.ctx.history.dates[window.SB.ctx.history.dates.length - 1], refDate: window.SB.ui.iso(window.SB.ctx.refDate) }).counts.qualified
+          }));
+          assert.deepStrictEqual(s0.styles, ['swing:true', 'positional:false', 'long-term:false', 'all:false'], 'the style of the strategy in use');
+          assert.ok(s0.cards.some((n) => /Post-results opportunities/.test(n)) && !s0.cards.some((n) => /Quality Growth/.test(n)), 'swing strategies only: ' + s0.cards);
+          assert.strictEqual(s0.recipe, 5, 'looks at / skips / buy signal / must also be true / exit plan');
+          assert.strictEqual(s0.live.replace(/,/g, ''), String(s0.q), 'the preview = the engine run');
+          await page.waitForFunction(() => /\d/.test((document.querySelector('[data-count="sheet"]') || {}).textContent || ''), null, { timeout: 15000 });
+          // a switch: saved by itself (a new version), the preview follows
+          await page.click('label.ss-switch:has(#on-filters-1)');
+          await page.waitForFunction((v) => window.SB.strategies.get('sheet').version === v + 1 && /Saved in this browser/.test(document.querySelector('#st-saved').textContent), s0.v, { timeout: 5000 });
+          // a second change in the same visit updates that version (no version per keystroke)
+          await page.fill('#r-triggers-0-min', '2');
+          await page.waitForFunction(() => window.SB.strategies.get('sheet').triggers[0].params.min === 2, null, { timeout: 5000 });
+          assert.strictEqual(await page.evaluate(() => window.SB.strategies.get('sheet').version), s0.v + 1);
+          await page.waitForFunction((n) => document.querySelector('#st-live-n').textContent !== n, s0.live, { timeout: 5000 });
+          // not valid yet: not saved, but kept over a reload
+          await page.fill('#r-triggers-0-min', '9');
+          await page.waitForFunction(() => /Not saved yet/.test(document.querySelector('#st-saved').textContent), null, { timeout: 5000 });
+          await page.reload({ waitUntil: 'load' });
+          await page.waitForSelector('#st-live-n', { timeout: 20000 });
+          assert.strictEqual(await page.$eval('#r-triggers-0-min', (x) => x.value), '9', 'the change not saved yet survives a reload');
+          assert.strictEqual(await page.$eval('#on-filters-1', (x) => x.checked), false, 'the saved change too');
+          assert.match(await page.$eval('#st-saved', (x) => x.textContent), /Not saved yet - fix 1 thing/);
+          await page.fill('#r-triggers-0-min', '4');
+          await page.waitForFunction((v) => window.SB.strategies.get('sheet').triggers[0].params.min === 4 && window.SB.strategies.get('sheet').version === v + 2, s0.v, { timeout: 5000 });
+          // a new long-term strategy from the starter, a rule from the picker, undo, delete
+          await page.click('[data-act="new"]');
+          await page.fill('#st-new-name', 'My long-term test');
+          await page.check('input[name="st-new-style"][value="long-term"]');
+          await page.click('[data-act="create"]');
+          await page.waitForFunction(() => document.querySelector('#st-name') && document.querySelector('#st-name').value === 'My long-term test', null, { timeout: 5000 });
+          const nw = await page.evaluate(() => ({ style: document.querySelector('.ss-style[aria-pressed="true"]').getAttribute('data-style'),
+            cards: [...document.querySelectorAll('.ss-card h3')].map((h) => h.textContent), id: location.hash.replace('#strategy/', ''),
+            rules: document.querySelectorAll('#sec-confirms .ss-rule').length }));
+          assert.strictEqual(nw.style, 'long-term');
+          assert.ok(nw.cards.indexOf('My long-term test') >= 0, 'listed: ' + nw.cards);
+          assert.ok(nw.rules >= 5, 'the starter\'s conditions');
+          await page.click('#add-confirms > summary');
+          await page.fill('[data-pick-q="confirms"]', 'ema');
+          const pick = await page.$$eval('#add-confirms .ss-pick-i:not([hidden])', (a) => a.map((x) => x.getAttribute('data-c')));
+          assert.deepStrictEqual(pick.sort(), ['closeAboveEma', 'emaTrend'], 'the picker search');
+          await page.click('#add-confirms .ss-pick-i[data-c="closeAboveEma"]');
+          await page.waitForFunction((n) => document.querySelectorAll('#sec-confirms .ss-rule').length === n + 1, nw.rules);
+          await page.click('#st-undo');
+          await page.waitForFunction((n) => document.querySelectorAll('#sec-confirms .ss-rule').length === n, nw.rules);
+          await page.waitForFunction((id) => window.SB.strategies.get(id).confirms.length === 6 && /Saved in this browser/.test(document.querySelector('#st-saved').textContent), nw.id, { timeout: 5000 });
+          await page.reload({ waitUntil: 'load' });
+          await page.waitForSelector('#st-live-n', { timeout: 20000 });
+          assert.strictEqual(await page.$eval('#st-name', (x) => x.value), 'My long-term test', 'still there after a reload');
+          await page.click('.ss-menu > summary');
+          await page.click('[data-act="delete"]');
+          await page.click('#st-del-yes');
+          await page.waitForFunction((id) => !window.SB.strategies.get(id), nw.id);
+          // back to the original for the checks after this one
+          await page.goto(base + '#strategy/sheet', { waitUntil: 'load' });
+          await page.waitForSelector('#st-live-n', { timeout: 20000 });
+          await page.click('.ss-menu > summary');
+          await page.click('[data-act="reset"]');
+          await page.click('#st-reset-yes');
+          assert.strictEqual(await page.evaluate(() => window.SB.strategies.get('sheet').version), 1);
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
         await check('daily suggestions match the engine run', async () => {
           await page.goto(base + '#suggestions', { waitUntil: 'load' });
           await page.waitForTimeout(3000);
