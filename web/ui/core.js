@@ -229,6 +229,10 @@
     date: [['onafter', 'on or after'], ['onbefore', 'on or before'], ['between', 'between'], ['blank', 'is empty'], ['notblank', 'is not empty']],
     text: [['is', 'is'], ['isnot', 'is not'], ['contains', 'contains'], ['blank', 'is empty'], ['notblank', 'is not empty']]
   };
+  function textParts(a) {
+    var qs = String(a).split(',').map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
+    return qs.length ? qs : [String(a).trim().toLowerCase()];
+  }
   function colKind(c) { return /^(num|pct|price)$/.test(c.type) ? 'num' : /^(date|datetime)$/.test(c.type) ? 'date' : 'text'; }
   function strHash(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
   function Table(opts) {
@@ -285,10 +289,11 @@
       if (f.op === 'between') return (a === '' || d >= (b === '' || a <= b ? a : b)) && (b === '' || d <= (a === '' || a <= b ? b : a));
       return true;
     }
-    var s = String(v).toLowerCase(), q = a.toLowerCase();
-    if (f.op === 'is') return s === q;
-    if (f.op === 'isnot') return s !== q;
-    return s.indexOf(q) >= 0;
+    // several values typed with a comma between (owner, 03-Nov-2026: Announced "after, closed"): any of them
+    var s = String(v).toLowerCase(), qs = textParts(a);
+    if (f.op === 'is') return qs.some(function (q) { return s === q; });
+    if (f.op === 'isnot') return qs.every(function (q) { return s !== q; });
+    return qs.some(function (q) { return s.indexOf(q) >= 0; });
   };
   Table.prototype.filtered = function () {
     var self = this, fs = this.filters.filter(function (f) { return self.col(f.key); });
@@ -529,7 +534,8 @@
     if (fs.length) {
       parts.push(fs.map(function (f) {
         var op = (OPS[colKind(self.col(f.key))].filter(function (o) { return o[0] === f.op; })[0] || ['', f.op])[1];
-        var a = Array.isArray(f.a) ? f.a.join(f.op === 'isnot' ? ', ' : ' or ') : f.a;
+        var a = Array.isArray(f.a) ? f.a.join(f.op === 'isnot' ? ', ' : ' or ')
+          : colKind(self.col(f.key)) === 'text' && /,/.test(String(f.a || '')) ? textParts(f.a).join(f.op === 'isnot' ? ', ' : ' or ') : f.a;
         return name(f.key) + ' ' + op + (f.op === 'blank' || f.op === 'notblank' ? '' : ' ' + (a || '…') + (f.op === 'between' ? ' and ' + (f.b || '…') : ''));
       }).join(' · '));
     }
@@ -586,7 +592,8 @@
         }
         var type = k === 'num' ? 'number' : k === 'date' ? 'date' : 'text';
         return '<input class="search tbl-val" type="' + type + '"' + (type === 'number' ? ' step="any"' : '') + ' data-tp="f:' + i + ':' + which + '" value="' + esc(val) + '"' +
-          ' aria-label="' + esc(c.label) + (which === 'b' ? ' (to)' : ' value') + '" placeholder="' + (k === 'num' ? (c.type === 'pct' ? 'e.g. 10 (= 10%)' : 'number') : 'value') + '">';
+          ' aria-label="' + esc(c.label) + (which === 'b' ? ' (to)' : ' value') + '" placeholder="' + (k === 'num' ? (c.type === 'pct' ? 'e.g. 10 (= 10%)' : 'number') : 'one or more, comma between') + '"' +
+          (k === 'text' ? ' title="Several values with a comma between = any of them (e.g. after, closed)"' : '') + '>';
       };
       h += '<div class="tbl-row"><span class="tbl-n">' + (i ? 'and' : '') + '</span>' + colSel('f:' + i + ':key', f.key) +
         '<select class="sel" data-tp="f:' + i + ':op" aria-label="Condition">' + ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === f.op ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +

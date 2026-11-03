@@ -30,7 +30,8 @@
     'Bullish Harami + Inverted Hammer (confirmed)'];
   var OPM_UP = ['increasing', 'aggressive increase', 'slightly increasing'];
   var UP3 = ['Aggressive Increase', 'Increasing', 'Slightly Increasing'];
-  var FIELD_LABEL = { opmq: 'OPM QoQ%', opmy: 'OPM YoY%', promo: 'Promoter holding', fii: 'FII activity', sig: 'TTM Signal',
+  var UP4 = UP3.concat(['Stagnant']);
+  var FIELD_LABEL = { opmq: 'OPM QoQ%', opmy: 'OPM YoY%', opmqy: 'OPM Qtr YoY', promo: 'Promoter holding', fii: 'FII activity', sig: 'TTM Signal',
     up: 'Upside %', pevs: 'PE vs Industry PE', down52: '% from 52W high', epsg: 'TTM EPS growth %', qrev: 'QoQ revenue growth %',
     volchg: 'Volume change %', chg: 'Day %', d10: '10-day %', d30: '30-day %' };
 
@@ -181,7 +182,7 @@
     } });
   def('fieldIn', { label: '{field} is one of {values}', kind: 'sheet', setGroup: 'confirm', pit: false,
     ref: 'Smart Dashboard tag filters (exact, case-insensitive; blank fails)',
-    params: [{ key: 'field', label: 'Main column', def: 'opmq', options: ['opmq', 'opmy', 'promo', 'fii', 'sig'] }, { key: 'values', label: 'Allowed values', def: ['Increasing'] }],
+    params: [{ key: 'field', label: 'Main column', def: 'opmq', options: ['opmq', 'opmy', 'opmqy', 'promo', 'fii', 'sig'] }, { key: 'values', label: 'Allowed values', def: ['Increasing'] }],
     eval: function (x, p) {
       var raw = p.field === 'sig' ? ttmSignal(x.stock, x.price) : x.stock[p.field];
       var v = String(raw == null ? '' : raw).trim().toLowerCase();
@@ -264,6 +265,38 @@
       var sp = rpSupport(x.stock || {});
       if (!sp.n) return { pass: false, detail: 'no quarterly figures' };
       return { pass: sp.pct >= p.min, value: sp.pct, detail: sp.pos + ' of ' + sp.n + ' positive (' + Math.round(sp.pct) + '%): ' + supportText(sp) };
+    } });
+
+  // ---------- results announced when the market could not react yet (owner, 03-Nov-2026) ----------
+  // "stocks that posted their quarterly results after market hours or market closed time (Saturday, Sunday, holidays) -
+  // the market has not reacted to them yet". stock.rp.announced = the Results Performance 'Announced' text from NSE's
+  // filing time ('02/11 17:39 After market', 'Market closed' on Saturday / Sunday; your PC reads it).
+  var ANN_SESSIONS = ['After market', 'Market closed', 'Before market', 'Market hours'];
+  /** Trading days (Mon-Fri) after day a up to and including day b ('YYYY-MM-DD'); b before a = negative. */
+  function weekdaysAfter(a, b) {
+    var pa = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(a || '')), pb = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(b || ''));
+    if (!pa || !pb) return null;
+    var t = Date.UTC(+pa[1], +pa[2] - 1, +pa[3]), end = Date.UTC(+pb[1], +pb[2] - 1, +pb[3]);
+    if (end < t) return -1;
+    var n = 0;
+    for (var guard = 0; t < end && guard < 400; guard++) { t += 864e5; var wd = new Date(t).getUTCDay(); if (wd !== 0 && wd !== 6) n++; }
+    return n;
+  }
+  def('resultAnnounced', { label: 'Results announced {sessions}, result date at most {days} trading day(s) before today', kind: 'std', setGroup: 'confirm', pit: false,
+    ref: 'Results Performance: Announced (NSE filing time read by your PC) and Result Date',
+    params: [{ key: 'sessions', label: 'Results announced', def: ['After market', 'Market closed'], options: ANN_SESSIONS },
+      { key: 'days', label: 'Result date at most this many trading days before today (0 = today, 1 = yesterday; Friday to Monday = 1)', def: 1 }],
+    eval: function (x, p) {
+      var rp = (x.stock || {}).rp;
+      if (!rp) return { pass: false, detail: 'no Results Performance record (no result in Main this season yet)' };
+      var ann = String(rp.announced || ''), low = ann.toLowerCase();
+      var sess = ANN_SESSIONS.filter(function (s) { return low.indexOf(s.toLowerCase()) >= 0; })[0] || '';
+      var rd = String(rp.resultDate || '').slice(0, 10), ago = weekdaysAfter(rd, x.refDate);
+      var when = ago == null ? '' : ago < 0 ? ' (in the future)' : ago === 0 ? ' (today)' : ' (' + ago + ' trading day' + (ago === 1 ? '' : 's') + ' ago)';
+      if (!sess) return { pass: false, value: ago, detail: 'no NSE filing time for the result of ' + (rd || '?') + when };
+      var okS = (p.sessions || []).some(function (s) { return String(s).toLowerCase() === sess.toLowerCase(); });
+      var okD = ago != null && ago >= 0 && ago <= p.days;
+      return { pass: okS && okD, value: ago, detail: 'announced ' + ann + ' · result date ' + rd + when };
     } });
 
   // standard rules (not in the sheet)
@@ -376,6 +409,24 @@
         'All percentages are editable below. Nothing here predicts a move - it sorts stocks into the four set-ups you described.'
       ]
     },
+    resultPerformance: {
+      id: 'resultPerformance', name: 'Result Performance Strategy (your rules)', version: 1, source: 'request', mode: 'screen', style: 'swing', timeframe: '1d',
+      description: 'Your rule: stocks whose quarterly results came AFTER MARKET HOURS or while the MARKET WAS CLOSED (Saturday / Sunday) - the market has not ' +
+        'reacted to them yet - with the result date yesterday (or the number of trading days you set), then filtered by the quarter\'s OPM QoQ, OPM YoY, ' +
+        'OPM Qtr YoY, FII and TTM EPS growth. A research screen, not a buy list.',
+      universe: { categories: [], minBars: 0 }, filters: [], triggers: [],
+      confirms: [{ id: 'resultAnnounced', params: { sessions: ['After market', 'Market closed'], days: 1 } },
+        { id: 'fieldIn', params: { field: 'opmq', values: UP4 } }, { id: 'fieldIn', params: { field: 'opmy', values: UP4 } },
+        { id: 'fieldIn', params: { field: 'opmqy', values: UP4 } }, { id: 'fieldIn', params: { field: 'fii', values: ['Increasing', 'Stagnant'] } },
+        { id: 'fieldRange', params: { field: 'epsg', min: 0, max: '' } }],
+      qualify: { minTriggers: 0 }, exits: { stop: { method: 'atr', mult: 2 }, target: { method: 'pct', pct: 10 }, minRR: 0 }, events: { warnDays: 7 },
+      assumptions: [
+        'Announced = NSE\'s filing time of the results (your PC reads it; Results Performance column Announced): After market = filed at or after 15:30 IST, Market closed = filed on a Saturday or Sunday. A weekday exchange holiday counts by its clock time.',
+        'Result date at most 1 trading day before today (1 = yesterday; a Friday or weekend result counts as 1 on Monday). Only stocks whose new results are already in Main (Results Performance rows) are checked.',
+        'OPM QoQ, OPM YoY (yearly) and OPM Qtr YoY: Aggressive Increase, Increasing, Slightly Increasing or Stagnant. FII: Increasing or Stagnant. TTM EPS growth: 0% or more. These defaults are assumptions - change or switch off any rule below.',
+        'A screen: it lists stocks, it does not time an entry (no stop / target).'
+      ]
+    },
     demo: {
       id: 'demo', name: 'DEMO - EMA trend pullback (for testing only)', version: 1, source: 'demo', mode: 'setup', style: 'swing', timeframe: '1d',
       description: 'A generic example strategy to test the engine. It is NOT your strategy and its signals are not recommendations.',
@@ -458,7 +509,7 @@
       var v = rule.params[k];
       if (k === 'minTurnover') v = (v / 1e5) + ' lakh';
       if (k === 'field') v = FIELD_LABEL[v] || v;
-      if (k === 'values' && Array.isArray(v)) v = v.join(' / ');
+      if ((k === 'values' || k === 'sessions') && Array.isArray(v)) v = v.join(' / ');
       if ((k === 'min' || k === 'max') && rule.id === 'fieldRange' && (v === '' || v == null)) v = k === 'min' ? '−∞' : '∞';
       s = s.replace('{' + k + '}', Array.isArray(v) ? v.length + ' selected' : v);
     });
@@ -617,7 +668,8 @@
       if (out[sym] && out[sym].resultDate >= rd) return;
       out[sym] = { quarter: g(r, 'Quarter'), resultDate: rd, resultDay: n(r, 'Result Day %'), since: n(r, '% Since Results'), maxGain: n(r, 'Max Gain %'),
         maxDD: n(r, 'Max Drawdown %'), verdict: g(r, 'Results Verdict'), reaction: g(r, 'Market Reaction'), revQoQ: n(r, 'Rev QoQ %'), revYoY: n(r, 'Rev YoY %'),
-        npQoQ: n(r, 'NP QoQ %'), npYoY: n(r, 'NP YoY %'), opmQoQ: g(r, 'OPM QoQ'), opmYoY: g(r, 'OPM YoY') };
+        npQoQ: n(r, 'NP QoQ %'), npYoY: n(r, 'NP YoY %'), opmQoQ: g(r, 'OPM QoQ'), opmYoY: g(r, 'OPM YoY'),
+        announced: g(r, 'Announced'), reactFrom: g(r, 'Reaction From') };
     });
     return out;
   }
@@ -648,6 +700,6 @@
   return {
     CONDITIONS: C, PRESETS: PRESETS, BULLISH_PATTERNS: BULLISH_PATTERNS, buildContext: buildContext, evaluate: evaluate, run: run,
     validate: validate, diff: diff, label: label, ttmSignal: ttmSignal, positionWarnings: positionWarnings, clone: clone,
-    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES
+    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES, ANN_SESSIONS: ANN_SESSIONS, weekdaysAfter: weekdaysAfter
   };
 });

@@ -37,7 +37,7 @@
   var TARGET_LABEL = { pct: 'Target % above entry', rr: 'Target in R (multiples of the risk)' };
   // readable names of the Main columns used by fieldIn / fieldRange (strategy.js keeps its own copy private)
   var FIELD_NAMES = {
-    opmq: 'OPM QoQ%', opmy: 'OPM YoY%', promo: 'Promoter holding', fii: 'FII activity', sig: 'TTM Signal (recomputed with the current price)',
+    opmq: 'OPM QoQ%', opmy: 'OPM YoY%', opmqy: 'OPM Qtr YoY', promo: 'Promoter holding', fii: 'FII activity', sig: 'TTM Signal (recomputed with the current price)',
     up: 'Upside %', pevs: 'PE vs Industry PE', down52: '% from 52W high', epsg: 'TTM EPS growth %', qrev: 'QoQ revenue growth %',
     volchg: 'Volume change %', chg: 'Day %', d10: '10-day %', d30: '30-day %'
   };
@@ -48,6 +48,7 @@
     'liquidity.minTurnover': [0, 1e11],
     'minPrice.min': [0, 1e6],
     'resultsNotWithin.days': [0, 365, true],
+    'resultAnnounced.days': [0, 30, true],
     'fvgFirstTouch.maxAge': [0, 3, true],
     'fvgConfirmed.maxAge': [0, 3, true],
     'fvgSpring.maxAge': [0, 3, true],
