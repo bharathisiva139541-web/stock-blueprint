@@ -73,10 +73,12 @@ TRK.rows.forEach((r) => r.push(r === FLAG_ROW ? FLAGS_TEXT : ''));
 // Main's 'OPM Qtr YoY' (site feed format 8, key opmqy) for the same stock
 LIVE_MAIN.main.cols.push('opmqy');
 LIVE_MAIN.main.rows.forEach((r) => r.push(r[LIVE_MAIN.main.cols.indexOf('sym')] === FLAG_SYM ? 'Aggressive Increase' : null));
-// the sheet's 'Result Day Move %' (owner, 03-Nov-2026: the result day's intraday move - VRLLOG 14.5% where it closed +6%)
+// the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
-RPT.cols.push('Result Day Move %');
-RPT.rows.forEach((r) => r.push(r[0] === FLAG_SYM ? 14.5 : null));
+const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
+RP_ROW[RPT.cols.indexOf('Result Day %')] = 14.5;
+RP_ROW[RPT.cols.indexOf('Pre-Result Close')] = 100;
+RP_ROW[RPT.cols.indexOf('Result Day Close')] = 106;
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -484,7 +486,7 @@ function check(name, fn) {
           assert.strictEqual(a.n, a.want, 'both conditions apply');
           assert.ok(a.ordered, 'second sort level orders rows with the same verdict');
           assert.strictEqual(a.sorts, 'Results Verdict1,NP YoY %-1');
-          assert.match(a.sum, /Daily % ≥ 5 · Verdict is Strong/);   // 'Result Day %' = the result day's close, labelled Daily % since 03-Nov-2026
+          assert.match(a.sum, /Result day ≥ 5 · Verdict is Strong/);
           // a second tick: "is" = any of the ticked values; "is not" = none of them
           const other = await page.$$eval('#rp-table [data-tp="f:1:m"]', (x) => x.map((e) => e.value).filter((v) => v !== 'Strong')[0]);
           await page.check('#rp-table [data-tp="f:1:m"][value=' + JSON.stringify(other) + ']');
@@ -774,6 +776,7 @@ function check(name, fn) {
     assert.ok(listSig, 'TTM Signal in the lists');
     assert.ok(sig.daily > 0 && sig.rday === sig.daily + 1, 'Daily % just left of Result day: ' + JSON.stringify(sig));
     assert.strictEqual(sig.move, '+14.5%', 'Result day = the intraday move');
+    assert.strictEqual(sig.close, '+6.0%', 'Daily % = where it closed');
     assert.ok(hidden1.indexOf('Industry') < 0 && hidden1.indexOf('Stock') === 0, 'Industry hidden: ' + hidden1);
     assert.match(btn, /Columns \(1 hidden\)/);
     assert.ok(hidden2.indexOf('Industry') < 0, 'still hidden after a reload');

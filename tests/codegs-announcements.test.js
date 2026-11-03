@@ -85,7 +85,8 @@ test('Results Performance: an after-market filing moves the reaction day to the 
   };
   const before = rp();
   assert.strictEqual(before['Pre-Result Close'], 100, 'without a filing time: the close before the result date');
-  assert.ok(Math.abs(before['Result Day %'] - (98.76 / 100 - 1)) < 1e-9, before['Result Day %']);
+  // Result Day % = the intraday move (owner, 03-Nov-2026): the 29-Oct low 98.76 x 0.99 went further than its high
+  assert.ok(Math.abs(before['Result Day %'] - (98.76 * 0.99 / 100 - 1)) < 1e-9, before['Result Day %']);
   assert.strictEqual(before['Reaction From'], 'from 2026-10-29');
   assert.strictEqual(before['Announced'], '');
   post(e, ANN);
@@ -93,7 +94,7 @@ test('Results Performance: an after-market filing moves the reaction day to the 
   assert.strictEqual(after['Announced'], '29/10 17:05 After market');
   assert.strictEqual(after['Reaction From'], 'after 2026-10-29');
   assert.strictEqual(after['Pre-Result Close'], 98.76, 'filed after the close: that day\'s close is the baseline');
-  assert.ok(Math.abs(after['Result Day %'] - (118.5 / 98.76 - 1)) < 1e-9, after['Result Day %']);
+  assert.ok(Math.abs(after['Result Day %'] - (118.5 * 1.01 / 98.76 - 1)) < 1e-9, 'the 30-Oct high: ' + after['Result Day %']);
   assert.strictEqual(after['Result Day Close'], 118.5);
   assert.match(String(e.sheet('Results Performance').rows[1][0]), /filed after 15:30 IST: that day's close/);
 });
