@@ -5,6 +5,18 @@
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, R = SB.results;
   var RS = { status: 'all' }, RL = { q: '' };
   // the tracker's result flags on Results Performance rows (same stock + quarter)
+  // Main's 'OPM Qtr YoY' (this quarter's OPM vs the same quarter a year ago - owner, 03-Nov-2026: in every table of the
+  // page) on rows of the newest season; a tracker row not Updated yet shows nothing (Main still holds last quarter's)
+  var OPMQY = { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge',
+    title: 'This quarter\'s operating margin vs the same quarter a year ago (Main "OPM Qtr YoY")' };
+  function withOpm(rows, ctx, season, qKey) {
+    rows.forEach(function (r) {
+      var s = ctx.bySym[r.Symbol];
+      var ok = s && (!season || String(r[qKey]) === season) && (qKey !== 'Quarter Expected' || r.Status === 'Updated');
+      r.opmqy = ok ? s.opmqy || null : null;
+    });
+    return rows;
+  }
   function withFlags(rows, D) {
     var ix = R.flagIndex(ui.objRows(D.resultsTracker));
     return rows.map(function (r) { if (r.Flags === undefined) r.Flags = ix[r.Symbol + '|' + r.Quarter] || ''; return r; });
@@ -64,7 +76,8 @@
       { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
       { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
       { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
-      { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 }
+      { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 },
+      OPMQY
     ] : K.src === 'perf' ? [
       { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
       { key: 'Basic Industry', label: 'Industry', wrap: true },
@@ -79,7 +92,8 @@
       { key: 'Market Reaction', label: 'Reaction', type: 'badge' },
       { key: 'Signal', label: 'Signal', wrap: true },
       { key: 'Rev YoY %', label: 'Rev YoY', type: 'pct', digits: 0 },
-      { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 }
+      { key: 'NP YoY %', label: 'Profit YoY', type: 'pct', digits: 0 },
+      OPMQY
     ] : [
       { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
       { key: 'Result Date', label: 'Result date', type: 'date' },
@@ -88,6 +102,7 @@
       { key: 'Screener Latest Quarter', label: 'Screener shows' },
       { key: 'Status', label: 'Status', type: 'badge' },
       { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+      OPMQY,
       { key: 'Checks', label: 'Checks', type: 'num', get: function (r) { return r.Checks == null ? null : +r.Checks; } },
       { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
       { key: 'Note', label: 'Note', wrap: true }
@@ -111,12 +126,13 @@
       var D = ctx.D, perf = D.resultsPerf || {};
       var season = (perf.seasons || [])[0];
       var seasonName = R.seasonOf(perf);
-      var pRows = R.perfRows(perf, seasonName), tRows = R.trackerRows(D.resultsTracker, seasonName);
+      var pRows = withOpm(R.perfRows(perf, seasonName), ctx, seasonName, 'Quarter');
+      var tRows = withOpm(R.trackerRows(D.resultsTracker, seasonName), ctx, seasonName, 'Quarter Expected');
       if (params && params[0] && R.KINDS.some(function (k) { return k.id === params[0]; })) {
         renderList(el, ctx, params[0], perf, pRows, tRows, seasonName);
         return;
       }
-      var tracker = ui.objRows(D.resultsTracker);
+      var tracker = withOpm(ui.objRows(D.resultsTracker), ctx, seasonName, 'Quarter Expected');
       var seasonRows = season ? tracker.filter(function (r) { return r['Quarter Expected'] === season.season; }) : tracker;
       var tc = { Updated: 0, Pending: 0, 'Gave up': 0 };
       seasonRows.forEach(function (r) { if (r.Status in tc) tc[r.Status]++; });
@@ -199,7 +215,8 @@
             { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
             { key: 'Result Date', label: 'Result date', type: 'date' },
             { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
-            { key: '% Since Results', label: 'Since results', type: 'pct' }
+            { key: '% Since Results', label: 'Since results', type: 'pct' },
+            OPMQY
           ]
         }).mount($(m[0], el));
       });
@@ -214,12 +231,13 @@
           { key: 'chg', label: 'Today', type: 'pct', digits: 2 },
           { key: 'sig', label: 'TTM Signal', type: 'badge' },
           { key: 'qrev', label: 'Last Rev QoQ', type: 'pct', digits: 0 },
-          { key: 'qnp', label: 'Last Profit QoQ', type: 'pct', digits: 0 }
+          { key: 'qnp', label: 'Last Profit QoQ', type: 'pct', digits: 0 },
+          { key: 'opmqy', label: 'Last OPM Qtr YoY', type: 'badge', title: 'The last reported quarter\'s operating margin vs the same quarter a year before (Main "OPM Qtr YoY")' }
         ]
       }).mount($('#up-t', el));
 
       // FII trend and TTM EPS growth are not in the Results Performance tab: take them from Main
-      var perfRows = withFlags(ui.objRows(perf.table), D).map(function (r) {
+      var perfRows = withOpm(withFlags(ui.objRows(perf.table), D), ctx, seasonName, 'Quarter').map(function (r) {
         var s = ctx.bySym[r.Symbol];
         r.fiiTrend = s ? s.fii : null;
         r.epsGrowth = s ? s.epsg : null;
@@ -243,7 +261,8 @@
           { key: 'Rev QoQ %', label: 'Rev QoQ', type: 'pct', digits: 0 },
           { key: 'NP QoQ %', label: 'Profit QoQ', type: 'pct', digits: 0 },
           { key: 'OPM QoQ', label: 'OPM QoQ', type: 'badge', title: 'Operating profit margin trend vs the previous quarter' },
-          { key: 'OPM YoY', label: 'OPM YoY', type: 'badge', title: 'Operating profit margin trend vs the same quarter last year' },
+          { key: 'OPM YoY', label: 'OPM YoY', type: 'badge', title: 'Operating profit margin trend, yearly: the last financial year vs the one before (Main "OPM YoY%")' },
+          OPMQY,
           { key: 'fiiTrend', label: 'FII', type: 'badge', title: 'FII holding trend (Main tab "FII Activity")' },
           { key: 'epsGrowth', label: 'EPS growth', type: 'pct', digits: 0, title: 'TTM EPS growth % (Main tab)' },
           { key: 'Results Verdict', label: 'Verdict', type: 'badge' },
@@ -266,6 +285,7 @@
           { key: 'Screener Latest Quarter', label: 'Screener shows' },
           { key: 'Status', label: 'Status', type: 'badge' },
           { key: 'Flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures', get: function (r) { return r.Flags || ''; }, html: function (r) { return ui.flagPills(r.Flags) || '<span class="sub">–</span>'; } },
+          OPMQY,
           { key: 'Checks', label: 'Checks', type: 'num', get: function (r) { return r.Checks == null ? null : +r.Checks; } },
           { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
           { key: 'Note', label: 'Note', wrap: true }

@@ -64,10 +64,15 @@ const FLAGS_TEXT = 'Revenue up, profit down (YoY revenue +12.0%, profit -8.0%); 
 const TRK = LIVE_MAIN.resultsTracker;
 const IN_PERF = new Set(LIVE_MAIN.resultsPerf.table.rows.map((r) => r[0] + '|' + r[3]));
 const IN_MAIN = new Set(LIVE_MAIN.main.rows.map((r) => r[LIVE_MAIN.main.cols.indexOf('sym')]));
-const FLAG_ROW = TRK.rows.find((r) => r[TRK.cols.indexOf('Status')] === 'Updated' && IN_MAIN.has(r[0]) && IN_PERF.has(r[0] + '|' + r[TRK.cols.indexOf('Quarter Expected')]));
+const SEASON = LIVE_MAIN.resultsPerf.seasons[0].season;
+const FLAG_ROW = TRK.rows.find((r) => r[TRK.cols.indexOf('Status')] === 'Updated' && IN_MAIN.has(r[0]) && IN_PERF.has(r[0] + '|' + r[TRK.cols.indexOf('Quarter Expected')]) &&
+  r[TRK.cols.indexOf('Quarter Expected')] === SEASON);
 const FLAG_SYM = FLAG_ROW[0];
 TRK.cols.push('Flags');
 TRK.rows.forEach((r) => r.push(r === FLAG_ROW ? FLAGS_TEXT : ''));
+// Main's 'OPM Qtr YoY' (site feed format 8, key opmqy) for the same stock
+LIVE_MAIN.main.cols.push('opmqy');
+LIVE_MAIN.main.rows.forEach((r) => r.push(r[LIVE_MAIN.main.cols.indexOf('sym')] === FLAG_SYM ? 'Aggressive Increase' : null));
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -688,6 +693,17 @@ function check(name, fn) {
     await p.waitForTimeout(400);
     const rp = await p.$$eval('#rp-table .flag-pills .badge', (b) => b.map((x) => [x.textContent, x.getAttribute('data-tip'), x.className]));
     const heads = await p.$$eval('#rs-table th', (t) => t.map((x) => x.textContent.trim()));
+    // OPM Qtr YoY in every table of the page (owner, 03-Nov-2026)
+    const opm = await p.evaluate(() => {
+      const col = (sel) => {
+        const t = document.querySelector(sel + ' table');
+        if (!t) return null;
+        const hs = [...t.querySelectorAll('th')].map((x) => x.textContent.trim());
+        const i = hs.findIndex((h) => /OPM Qtr YoY/.test(h));
+        return { i, cells: i < 0 ? [] : [...t.querySelectorAll('tbody tr')].map((tr) => (tr.children[i] || {}).textContent) };
+      };
+      return { rp: col('#rp-table'), rs: col('#rs-table'), best: col('#mv-best'), worst: col('#mv-worst'), up: col('#up-t') };
+    });
     await p.goto(base + '#results/tracked', { waitUntil: 'load' });
     await p.waitForSelector('#rl-q', { timeout: 15000 });
     await p.fill('#rl-q', FLAG_SYM);
@@ -704,6 +720,8 @@ function check(name, fn) {
     assert.strictEqual(rp[0][1], 'Revenue up, profit down (YoY revenue +12.0%, profit -8.0%)', 'the figures on hover');
     assert.ok(/s-bad/.test(rp[0][2]) && /s-warn/.test(rp[1][2]), 'colours like the email');
     assert.ok(heads.indexOf('Flags') > 0, 'tracker table column: ' + heads);
+    Object.keys(opm).forEach((k) => assert.ok(opm[k] && opm[k].i > 0, 'OPM Qtr YoY column in ' + k + ': ' + JSON.stringify(opm[k])));
+    assert.ok(opm.rp.cells.some((c) => /Aggressive Increase/.test(c)), 'the value from Main in Results performance');
     assert.deepStrictEqual(list, ['REV \u2191 PROFIT \u2193', 'OTHER INCOME HIGH'], 'the lists');
     assert.ok(drawer && /REV \u2191 PROFIT \u2193/.test(drawer) && /OTHER INCOME HIGH/.test(drawer) && /results$/.test(drawer), 'drawer: ' + drawer);
   });
