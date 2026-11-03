@@ -23,9 +23,22 @@ test('matches the reference pair and tags it', () => {
   assert.ok(tags.indexOf(CONFIRMED) < 0);
 });
 
-test('the wick only has to reach candle 1 open (equal is enough)', () => {
-  assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 100, 90.0, 93.2))), 'high = open 1');
-  assert.ok(!P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 99.9, 90.0, 93.2))), 'high just below open 1');
+test('the wick only has to reach the middle of candle 1 body (owner, 03-Nov-2026; before: candle 1 open)', () => {
+  // RED: body 100 -> 90, middle 95
+  assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 95, 90.0, 91.4))), 'high = the middle of body 1');
+  assert.ok(!P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 94.9, 90.0, 91.4))), 'high just below the middle');
+  assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 100, 90.0, 93.2))), 'reaching open 1 still counts');
+});
+
+test('the owner\'s chart of 03-Nov-2026: a small green body (~19% of the red one) at the red close, the wick ~70% up the red body', () => {
+  const R = c(130.5, 132.4, 114.9, 115.8), G = c(115.8, 126.2, 115.8, 118.6);
+  assert.ok(P.isHaramiInvHammerPair(sheetC(R), sheetC(G)));
+  const tags = P.patternsAt([c(134, 135, 130, 131), R, G], 2);
+  assert.ok(tags.indexOf(TAG) >= 0, tags.join(', '));
+  const conf = P.patternsAt([R, G, c(119, 127.5, 118.5, 127.1)], 2);
+  assert.ok(conf.indexOf(CONFIRMED) >= 0, 'confirmed by the next close above its high (126.2)');
+  // the same pair under the old limits (body >= 25%, wick to the red open) did not count
+  assert.ok((G.c - G.o) / (R.o - R.c) < 0.25 && G.h < R.o);
 });
 
 test('the wick may poke a little above candle 1 high (up to 15% of its body)', () => {
@@ -39,12 +52,12 @@ test('each rule is enforced', () => {
   const bad = {
     'candle 1 green': [c(90, 101, 89.5, 100), GREEN],
     'candle 1 body under 65% of its range': [c(100, 104, 86, 90), GREEN],
-    'body 2 under 25% of body 1': [RED, c(90.2, 100.8, 90.0, 92.4)],
+    'body 2 under 10% of body 1': [RED, c(90.2, 100.8, 90.0, 91.1)],
     'body 2 over 50% of body 1': [RED, c(90.2, 100.8, 90.0, 95.4)],
     'opens more than 0.5% away from close 1': [RED, c(91, 100.8, 90.9, 94.2)],
     'closes above the middle of body 1': [c(100, 101, 89.5, 90), c(90.2, 100.9, 90.0, 95.1)],
     'upper wick under 1.5 x body': [c(100, 103, 89.5, 90), c(90.2, 100.1, 90.0, 94.2)],
-    'high below open 1': [RED, c(90.2, 99.9, 90.0, 93.2)],
+    'high below the middle of body 1': [RED, c(90.2, 94.9, 90.0, 91.4)],
     'high more than 15% of body 1 above high 1': [RED, c(90.2, 102.6, 90.0, 94.2)],
     'lower wick over 10% of range': [c(100, 101, 88, 90), c(90.2, 100.8, 88.9, 94.2)],
     'low below candle 1 low': [c(100, 101, 90, 90), c(90.2, 100.8, 89.95, 94.2)],
@@ -99,6 +112,12 @@ test('Code.gs and the JS port give identical tags (fuzz + crafted cases)', () =>
       const body1 = o1 - cl1, o2 = +(cl1 * (1 + (r() - 0.5) * 0.012)).toFixed(2);
       const cl2 = +(o2 + body1 * (0.2 + r() * 0.35)).toFixed(2);
       set[3] = c(o2, +(o1 + (h1 - o1) * (r() * 1.4 - 0.2)).toFixed(2), +(o2 - body1 * r() * 0.08).toFixed(2), cl2);
+    } else if (k % 5 === 1) {    // the owner's 03-Nov-2026 type: a smaller green body, the wick ending inside the red body
+      const o1 = set[2].o, cl1 = +(o1 * 0.9).toFixed(2), h1 = +(o1 * (1 + r() * 0.02)).toFixed(2);
+      set[2] = c(o1, h1, +(cl1 * (1 - r() * 0.01)).toFixed(2), cl1);
+      const body1 = o1 - cl1, o2 = +(cl1 * (1 + (r() - 0.5) * 0.008)).toFixed(2);
+      const cl2 = +(o2 + body1 * (0.05 + r() * 0.3)).toFixed(2);
+      set[3] = c(o2, +(cl1 + body1 * (0.35 + r() * 0.7)).toFixed(2), +(o2 - body1 * r() * 0.05).toFixed(2), cl2);
     }
     sets.push(set);
   }
@@ -109,15 +128,16 @@ test('Code.gs and the JS port give identical tags (fuzz + crafted cases)', () =>
   const env = mock.loadCodeGs({ sheets: [pd].concat(tabs) });
   env.call('updateAllCandlestickPatterns');
   const grid = env.sheet('PatternData').rows;
-  let hits = 0, confirmed = 0;
+  let hits = 0, confirmed = 0, shortWick = 0;
   const bad = [];
   sets.forEach((s, i) => {
     const sheet = String((grid[i + 1] || [])[22] || '');
     const js = P.patternsAt(s, 3).join(', ');
     if (sheet.indexOf(TAG) >= 0) hits++;
+    if ((', ' + sheet + ',').indexOf(', ' + TAG + ',') >= 0 && s[3].c > s[3].o && s[3].h < s[2].o) shortWick++;   // the 03-Nov-2026 type
     if (sheet.indexOf(CONFIRMED) >= 0) confirmed++;
     if (sheet !== js) bad.push(syms[i] + ': sheet="' + sheet + '" js="' + js + '"');
   });
   assert.deepStrictEqual(bad.slice(0, 10), [], bad.length + ' mismatches');
-  assert.ok(hits >= 3 && confirmed >= 1, 'the fuzz must exercise the rule: ' + hits + ' tags, ' + confirmed + ' confirmed');
+  assert.ok(hits >= 3 && confirmed >= 1 && shortWick >= 3, 'the fuzz must exercise the rule: ' + hits + ' tags, ' + confirmed + ' confirmed, ' + shortWick + ' with the wick inside the red body');
 });

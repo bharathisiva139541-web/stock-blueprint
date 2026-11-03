@@ -9993,11 +9993,13 @@ function logRun_(ts, dateUsed, rowCount, status, notes) {
  * BULLISH HARAMI + INVERTED HAMMER (2 candles; c1 = red, c2 = green or red)
  * -----------------------------------------------------------------
  * c1: big red body, at least AB_HIH_C1_BODY_MIN of its High-Low range.
- * c2: small green body (25-50% of c1's body) opening at c1's close
+ * c2: small green body (10-50% of c1's body) opening at c1's close
  *     (within AB_HIH_OPEN_TOL) and staying in the lower half of c1's
  *     body; a long upper wick (>= 1.5 x its body) reaching at least
- *     c1's open and at most a little above c1's high (15% of c1's body); almost no lower wick (<= 10% of
- *     its range) and its low never below c1's low (owner's strict rule).
+ *     the MIDDLE of c1's body (AB_HIH_REACH_MIN) and at most a little above c1's high (15% of c1's body);
+ *     almost no lower wick (<= 10% of its range) and its low never below c1's low (owner's strict rule).
+ *     Owner, 03-Nov-2026 ("add this type of candle also", a chart: green body ~19% of the red one at its close,
+ *     the wick ~70% up the red body): the body minimum was 25% and the wick had to reach c1's open.
  *     Selling is fading but sellers still capped the high,
  *     so it is a watch signal on its own - the "(confirmed)" tag needs
  *     the NEXT close above c2's high.
@@ -10012,7 +10014,8 @@ function logRun_(ts, dateUsed, rowCount, status, notes) {
  * Candles are {Opn, High, Low, Cls}. Ported 1:1 to web/lib/patterns.js.
  *****************************************************************/
 const AB_HIH_C1_BODY_MIN = 0.65;
-const AB_HIH_BODY_MIN = 0.25;
+const AB_HIH_BODY_MIN = 0.10;          // green c2: body at least this x c1's body (0.25 before 03-Nov-2026)
+const AB_HIH_REACH_MIN = 0.5;          // green c2: its high at least this far up c1's body (1 = c1's open, before 03-Nov-2026)
 const AB_HIH_BODY_MAX = 0.50;
 const AB_HIH_OPEN_TOL = 0.005;
 const AB_HIH_UPPER_WICK_MIN = 1.5;
@@ -10045,7 +10048,7 @@ function ab_isHaramiInvHammerPair_(c1, c2) {
     (Math.abs(c2.Opn - c1.Cls) <= AB_HIH_OPEN_TOL * c1.Cls) &&
     (c2.Cls <= (c1.Opn + c1.Cls) / 2) &&
     (c2.High - c2.Cls >= AB_HIH_UPPER_WICK_MIN * c2Body) &&
-    (c2.High >= c1.Opn) && (c2.High <= c1.High + AB_HIH_HIGH_OVER_MAX * c1Body) &&
+    (c2.High >= c1.Cls + AB_HIH_REACH_MIN * c1Body) && (c2.High <= c1.High + AB_HIH_HIGH_OVER_MAX * c1Body) &&
     (c2.Opn - c2.Low <= AB_HIH_LOWER_WICK_MAX * c2Range) &&
     (c2.Low >= c1.Low);
 }
