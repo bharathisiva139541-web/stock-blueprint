@@ -25,7 +25,8 @@
     'Three Day Low Rejection', 'Morningstar', 'Trio', 'FVG 1234', 'FVG 123', 'FVG 123 Type 2', 'FVGTouch',
     'Bullish Harami + Inverted Hammer', 'Bullish Harami + Inverted Hammer (confirmed)', 'Twin Star Bottom', 'Twin Star Bottom (confirmed)'];
   // Code.gs AB_HIH_* (Bullish Harami + Inverted Hammer; red* = the red inverted hammer)
-  var HIH = { c1BodyMin: 0.65, bodyMin: 0.25, bodyMax: 0.50, openTol: 0.005, upperWickMin: 1.5, lowerWickMax: 0.10, highOverMax: 0.15,
+  // (owner, 03-Nov-2026: a green c2 with body >= 10% of c1's and a wick reaching the middle of c1's body counts too)
+  var HIH = { c1BodyMin: 0.65, bodyMin: 0.10, reachMin: 0.5, bodyMax: 0.50, openTol: 0.005, upperWickMin: 1.5, lowerWickMax: 0.10, highOverMax: 0.15,
     redBodyMin: 0.10, redOpenTol: 0.01, redLowerWickMax: 0.20 };
   // Code.gs AB_TSB_* (Twin Star Bottom)
   var TSB = { c1BodyMinPct: 1, starBodyMax: 0.35, starTopMax: 0.25, lowTolPct: 1 };
@@ -56,8 +57,8 @@
       (c2.High <= c1.Low + (cfg.reclaimMax / 100) * c1Range);
   }
 
-  /** ab_isHaramiInvHammerPair_: c1 big red, c2 small green inside c1's lower body half
-   *  with a long upper wick reaching at least c1's open (at most 15% of c1's body above c1's high), almost no lower wick and
+  /** ab_isHaramiInvHammerPair_: c1 big red, c2 small green (body 10-50% of c1's) inside c1's lower body half
+   *  with a long upper wick reaching at least the middle of c1's body (at most 15% of c1's body above c1's high), almost no lower wick and
    *  its low never below c1's low - or c2 a red inverted hammer (body 10-50% of c1's, opening within 1% of c1's close,
    *  lower wick <= 20% of its range, same upper-wick rules). Candles {Opn,High,Low,Cls}. */
   function isHaramiInvHammerPair(c1, c2) {
@@ -83,7 +84,7 @@
       (Math.abs(c2.Opn - c1.Cls) <= HIH.openTol * c1.Cls) &&
       (c2.Cls <= (c1.Opn + c1.Cls) / 2) &&
       (c2.High - c2.Cls >= HIH.upperWickMin * c2Body) &&
-      (c2.High >= c1.Opn) && (c2.High <= c1.High + HIH.highOverMax * c1Body) &&
+      (c2.High >= c1.Cls + HIH.reachMin * c1Body) && (c2.High <= c1.High + HIH.highOverMax * c1Body) &&
       (c2.Opn - c2.Low <= HIH.lowerWickMax * c2Range) &&
       (c2.Low >= c1.Low);
   }
