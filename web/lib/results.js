@@ -21,7 +21,10 @@
                                        REV ↑ PROFIT ↓ / PROFIT > REVENUE / EXCEPTIONAL GAIN / OTHER INCOME HIGH)
      flagIndex(trackerRows)         -> { 'SYM|Sep 2026': text, SYM: { text, quarter } of the newest result with flags }
      TODAY                          -> the statuses of the Results Today page: [{ id, label, tone }]
-     todayRows(stocks, trackerRows, dayKey) -> the Main stocks whose Result Date is dayKey ('yyyy-mm-dd') with their status
+     todayRows(stocks, trackerRows, dayKey, perfRows) -> the Main stocks whose Result Date is dayKey ('yyyy-mm-dd') with their
+                                       status, plus the Results Performance row of that stock and day (perfRows, optional)
+     dailyPct(perfRow)              -> where the result day closed vs the close before the results (during that session: the
+                                       price now) - the Results tables' "Daily %"
    }
    pick / counts take the reclaim rows as a 3rd argument for the kinds reclaimed / reclaimslow / nearreclaim. */
 (function (root, factory) {
@@ -216,9 +219,20 @@
     { id: 'filed', label: 'Filed on NSE, figures awaited', tone: 'info' },
     { id: 'notfiled', label: 'Not filed yet', tone: '' }
   ];
-  function todayRows(stocks, tracker, dayKey) {
-    var tr = {};
+  /** "Daily %": Result Day Close vs Pre-Result Close; the session still on (Result Day Close empty, Result Day % set) = the price now. */
+  function dailyPct(r) {
+    if (!r) return null;
+    var base = r['Pre-Result Close'], cl = r['Result Day Close'];
+    if (!isNum(cl) && isNum(r[DAY])) cl = r['Current Price'];
+    return isNum(base) && base > 0 && isNum(cl) ? (cl / base - 1) * 100 : null;
+  }
+  function num(v) { return isNum(v) ? v : null; }
+
+  function todayRows(stocks, tracker, dayKey, perf) {
+    var tr = {}, rp = {};
     (tracker || []).forEach(function (r) { if (r.Symbol && dayOf(r['Result Date']) === dayKey) tr[r.Symbol] = r; });
+    // owner, 03-Nov-2026: the Results Performance table's columns here too (the tab has a row once the result is in Main)
+    (perf || []).forEach(function (r) { if (r.Symbol && dayOf(r['Result Date']) === dayKey) rp[r.Symbol] = r; });
     var seen = {};
     return (stocks || []).filter(function (st) {
       if (!st.sym || seen[st.sym] || dayOf(st.rdate) !== dayKey) return false;
@@ -229,17 +243,24 @@
       var status = t && t.Status === 'Updated' ? (/moneycontrol/i.test(src) ? 'provisional' : 'final')
         : !t && st.done ? 'final' : ann ? 'filed' : 'notfiled';
       var inMain = status === 'final' || status === 'provisional';
+      var p = inMain ? rp[st.sym] || null : null;
       var m = /(\d{1,2}:\d{2})/.exec(ann);
       return { sym: st.sym, name: st.name, ind: st.ind, status: status, announced: ann, annTime: m ? m[1] : '', session: t ? session(t) : '',
+               rdate: dayKey, quarter: String(p && p.Quarter || t && t['Quarter Expected'] || ''),
                source: src || (inMain && !t ? 'screener.in' : ''), updatedAt: t && t['Updated At'] || '', note: t && t.Note || '',
                checks: t && t.Checks != null && t.Checks !== '' ? +t.Checks : null, lastChecked: t && t['Last Checked'] || '', flags: t && t.Flags || '',
                // last quarter's figures stay in Main until the new ones come: shown only once the result is in Main
                qrev: inMain ? st.qrev : null, yrev: inMain ? st.yrev : null, qnp: inMain ? st.qnp : null, ynp: inMain ? st.ynp : null,
-               sig: inMain ? st.sig : null, opmqy: inMain ? st.opmqy : null, price: st.price, chg: st.chg };
+               sig: inMain ? st.sig : null, opmqy: inMain ? st.opmqy : null, opmq: inMain ? st.opmq || null : null,
+               opmy: inMain ? st.opmy || null : null, fii: inMain ? st.fii || null : null, epsg: inMain ? num(st.epsg) : null,
+               // from the Results Performance tab (rebuilt about hourly while the market is open)
+               dailyPct: dailyPct(p), rdayPct: num(p && p[DAY]), since: num(p && p[SINCE]), maxGain: num(p && p['Max Gain %']),
+               maxDd: num(p && p['Max Drawdown %']), verdict: p && p['Results Verdict'] || null, reaction: p && p['Market Reaction'] || null,
+               price: st.price, chg: st.chg };
     });
   }
 
-  return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session, TODAY: TODAY, todayRows: todayRows,
+  return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session, TODAY: TODAY, todayRows: todayRows, dailyPct: dailyPct,
            pick: pick, counts: counts, bySession: bySession, movers: movers, reclaim: reclaim, reclaimRows: reclaimRows, RECLAIM: RECLAIM,
            flagList: flagList, flagIndex: flagIndex };
 });

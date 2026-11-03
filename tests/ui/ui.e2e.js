@@ -550,8 +550,15 @@ function check(name, fn) {
             tiles: [...document.querySelectorAll('.tiles a.tile-link')].map((a) => [a.getAttribute('href'), a.querySelector('.value').textContent.trim()]),
             count: document.querySelector('#td-count').textContent,
             status: [...document.querySelectorAll('#td-t tbody tr')].map((tr) => tr.children[1].textContent.trim()),
+            heads: [...document.querySelectorAll('#td-t thead th')].map((th) => th.textContent.replace(/[▲▼↕\d]/g, '').trim()),
             tab: !!document.querySelector('.tabs a[data-tab="today"]')
           }));
+          // owner, 03-Nov-2026: the Results Performance table's columns, no Price
+          for (const h of ['Industry', 'Quarter', 'Result date', 'Announced', 'Daily %', 'Result day', 'Since results', 'Flags', 'TTM Signal', 'Max gain',
+            'Max drawdown', 'Rev YoY', 'Profit YoY', 'Rev QoQ', 'Profit QoQ', 'OPM QoQ', 'OPM YoY', 'OPM Qtr YoY', 'FII', 'EPS growth', 'Verdict', 'Reaction']) {
+            assert.ok(r.heads.includes(h), 'Results Today column ' + h + ' (' + r.heads.join(' | ') + ')');
+          }
+          assert.ok(!r.heads.includes('Price'), 'no Price column');
           assert.match(r.h1, /^Results Today · 20 Oct 2026$/, 'the saved copy\'s day');
           assert.deepStrictEqual(r.tiles.map((x) => x[0]), ['#today', '#today/final', '#today/provisional', '#today/filed', '#today/notfiled']);
           assert.strictEqual(r.tiles[0][1], '4');
