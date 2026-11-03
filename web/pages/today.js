@@ -24,7 +24,7 @@
       var live = !!(ctx.site && ctx.site.live);
       // the live site: the real day; a saved copy: the day it was saved
       var dayDate = live ? new Date() : ctx.refDate, day = ui.iso(dayDate);
-      var all = R.todayRows(ctx.stocks, ui.objRows(ctx.D.resultsTracker), day).sort(function (a, b) {
+      var all = R.todayRows(ctx.stocks, ui.objRows(ctx.D.resultsTracker), day, ui.objRows((ctx.D.resultsPerf || {}).table)).sort(function (a, b) {
         return ORDER[a.status] - ORDER[b.status] || (a.annTime < b.annTime ? -1 : a.annTime > b.annTime ? 1 : 0) || (a.sym < b.sym ? -1 : 1);
       });
       var pick = statusOf(params && params[0]) ? params[0] : 'all';
@@ -68,8 +68,10 @@
         }).join('') + '</nav>' +
         '<div class="controls"><input class="search" id="td-q" type="search" placeholder="Search symbol, company or industry" aria-label="Search today\'s results" value="' + esc(ST.q) + '">' +
         '<span class="count" id="td-count"></span></div><div id="td-t"></div>' +
-        '<p class="sub" style="margin-top:8px">Revenue / profit figures, flags and TTM Signal show once the result is in Main (until then Main still holds last quarter\'s). ' +
-        'Announced = when NSE got the results (after 3:30 PM: the market reacts the next session).</p></section>';
+        '<p class="sub" style="margin-top:8px">Revenue / profit figures, OPM, FII, EPS growth, flags and TTM Signal show once the result is in Main (until then Main still holds last quarter\'s). ' +
+        'Daily % / Result day / Since results / Max gain / Max drawdown / Verdict / Reaction: from the Results Performance tab, as on the Results page ' +
+        '(rebuilt about every hour while the market is open). Announced = when NSE got the results (after 3:30 PM: the market reacts the next session). ' +
+        'Hide the columns you do not need with ▦ Columns.</p></section>';
       el.innerHTML = h;
 
       var t = new ui.Table({
@@ -77,19 +79,37 @@
         columns: [
           { key: 'sym', label: 'Stock', type: 'sym', name: 'name' },
           { key: 'status', label: 'Status', get: function (r) { var s = statusOf(r.status); return s ? s.label : ''; }, html: function (r) { return statusBadge(r.status); } },
-          { key: 'announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session - read by your PC program' },
-          { key: 'source', label: 'Figures from' },
-          { key: 'updatedAt', label: 'In Main at', type: 'datetime', title: 'When the figures were written to Main' },
-          { key: 'qrev', label: 'Rev QoQ', type: 'pct', digits: 0 },
-          { key: 'yrev', label: 'Rev YoY', type: 'pct', digits: 0 },
-          { key: 'qnp', label: 'Profit QoQ', type: 'pct', digits: 0 },
-          { key: 'ynp', label: 'Profit YoY', type: 'pct', digits: 0 },
+          // owner, 03-Nov-2026: "add all columns same as in the results performance table - price is not necessary"
+          { key: 'ind', label: 'Industry', wrap: true },
+          { key: 'quarter', label: 'Quarter' },
+          { key: 'rdate', label: 'Result date', type: 'date' },
+          { key: 'announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session - read by your PC program. Filed after 15:30: the reaction day is the next session.' },
+          { key: 'dailyPct', label: 'Daily %', type: 'pct',
+            title: 'Where the result day closed vs the close before the results - that day\'s % change (during that session: the price now)' },
+          { key: 'rdayPct', label: 'Result day', type: 'pct',
+            title: 'The intraday move on the result day (the first session that could react): its high or its low vs the close before the results, ' +
+              'whichever went further (during that session: so far). Daily % = where it closed.' },
+          { key: 'since', label: 'Since results', type: 'pct' },
           { key: 'flags', label: 'Flags', title: 'Result flags (as in the Results Update email); hover or tap a pill for the figures',
             html: function (r) { return ui.flagPills(r.flags) || '<span class="sub">–</span>'; } },
-          { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge', title: 'This quarter\'s operating margin vs the same quarter a year ago' },
           { key: 'sig', label: 'TTM Signal', type: 'badge' },
-          { key: 'price', label: 'Price', type: 'price' },
-          { key: 'chg', label: 'Today', type: 'pct', digits: 2 },
+          { key: 'maxGain', label: 'Max gain', type: 'pct' },
+          { key: 'maxDd', label: 'Max drawdown', type: 'pct' },
+          { key: 'yrev', label: 'Rev YoY', type: 'pct', digits: 0 },
+          { key: 'ynp', label: 'Profit YoY', type: 'pct', digits: 0 },
+          { key: 'qrev', label: 'Rev QoQ', type: 'pct', digits: 0 },
+          { key: 'qnp', label: 'Profit QoQ', type: 'pct', digits: 0 },
+          { key: 'opmq', label: 'OPM QoQ', type: 'badge', title: 'Operating profit margin trend vs the previous quarter' },
+          { key: 'opmy', label: 'OPM YoY', type: 'badge', title: 'Operating profit margin trend, yearly: the last financial year vs the one before (Main "OPM YoY%")' },
+          { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge', title: 'This quarter\'s operating margin vs the same quarter a year ago (Main "OPM Qtr YoY")' },
+          { key: 'fii', label: 'FII', type: 'badge', title: 'FII holding trend (Main tab "FII Activity")' },
+          { key: 'epsg', label: 'EPS growth', type: 'pct', digits: 0, title: 'TTM EPS growth % (Main tab)' },
+          { key: 'verdict', label: 'Verdict', type: 'badge' },
+          { key: 'reaction', label: 'Reaction', type: 'badge' },
+          // the page's own: where each result stands
+          { key: 'source', label: 'Figures from' },
+          { key: 'updatedAt', label: 'In Main at', type: 'datetime', title: 'When the figures were written to Main' },
+          { key: 'chg', label: 'Today', type: 'pct', digits: 2, title: 'Today\'s % change (Main tab)' },
           { key: 'checks', label: 'Checks', type: 'num', title: 'How many times the results check looked at it' },
           { key: 'note', label: 'Note', wrap: true }
         ]

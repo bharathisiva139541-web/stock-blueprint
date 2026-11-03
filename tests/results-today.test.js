@@ -39,3 +39,28 @@ test('statuses: final (NSE XBRL / screener.in / ticked), provisional (moneycontr
   assert.deepStrictEqual(R.TODAY.map((s) => s.id), ['final', 'provisional', 'filed', 'notfiled']);
   assert.deepStrictEqual(R.todayRows(stocks, tracker, '2026-11-05'), []);
 });
+
+test('the Results Performance columns (owner: "same as in the results performance table") once the result is in Main', () => {
+  const st = stocks.map((s) => Object.assign({}, s, { opmq: 'Increasing', opmy: 'Stagnant', fii: 'Increasing', epsg: 37, ind: 'Cement' }));
+  const perf = [
+    { Symbol: 'MCCO', Quarter: 'Sep 2026', 'Result Date': DAY + ' 12:00', 'Pre-Result Close': 50, 'Result Day %': 6.4, 'Result Day Close': '',
+      'Current Price': 52, '% Since Results': 4, 'Max Gain %': 6.4, 'Max Drawdown %': -1.2, 'Results Verdict': 'Strong', 'Market Reaction': 'Rallied' },
+    { Symbol: 'XBRLCO', Quarter: 'Sep 2026', 'Result Date': DAY, 'Pre-Result Close': 100, 'Result Day %': 14.5, 'Result Day Close': 106,
+      'Current Price': 108, '% Since Results': 8, 'Max Gain %': 14.5, 'Max Drawdown %': 0, 'Results Verdict': 'Strong', 'Market Reaction': 'Rallied' },
+    { Symbol: 'XBRLCO', Quarter: 'Jun 2026', 'Result Date': '2026-08-04', 'Result Day %': -3 },
+    { Symbol: 'FILEDCO', Quarter: 'Sep 2026', 'Result Date': DAY, 'Result Day %': 9 }
+  ];
+  const rows = R.todayRows(st, tracker, DAY, perf), by = {};
+  rows.forEach((r) => { by[r.sym] = r; });
+  const x = by.XBRLCO;
+  assert.deepStrictEqual([x.quarter, x.rdate, x.rdayPct, x.since, x.maxGain, x.maxDd, x.verdict, x.reaction, x.ind],
+    ['Sep 2026', DAY, 14.5, 8, 14.5, 0, 'Strong', 'Rallied', 'Cement'], 'the row of today, not an older quarter\'s');
+  assert.ok(Math.abs(x.dailyPct - 6) < 1e-9, 'Daily % = where the result day closed');
+  assert.ok(Math.abs(by.MCCO.dailyPct - 4) < 1e-9, 'the session still on: the price now');
+  assert.deepStrictEqual([x.opmq, x.opmy, x.fii, x.epsg], ['Increasing', 'Stagnant', 'Increasing', 37]);
+  const f = by.FILEDCO;
+  assert.deepStrictEqual([f.rdayPct, f.verdict, f.opmq, f.fii, f.epsg, f.quarter], [null, null, null, null, null, ''],
+    'not in Main yet: nothing from last quarter / a stray row');
+  assert.strictEqual(R.todayRows(st, tracker, DAY)[0].rdayPct, null, 'without the tab: empty');
+  assert.strictEqual(R.dailyPct({ 'Pre-Result Close': 0, 'Result Day Close': 5 }), null);
+});

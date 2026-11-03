@@ -18,11 +18,7 @@
   // Day Close vs Pre-Result Close (during the session, Result Day Close still empty: the price now)
   var DAILY = { key: 'dailyPct', label: 'Daily %', type: 'pct',
     title: 'Where the result day closed vs the close before the results - that day\'s % change (during that session: the price now)',
-    get: function (r) {
-      var base = r['Pre-Result Close'], cl = r['Result Day Close'];
-      if (!ui.isNum(cl) && ui.isNum(r['Result Day %'])) cl = r['Current Price'];      // the session is still on
-      return ui.isNum(base) && base > 0 && ui.isNum(cl) ? (cl / base - 1) * 100 : null;
-    } };
+    get: function (r) { return R.dailyPct(r); } };
   var RDAY = { key: 'Result Day %', label: 'Result day', type: 'pct',
     title: 'The intraday move on the result day (the first session that could react): its high or its low vs the close before the results, ' +
       'whichever went further (during that session: so far). Daily % = where it closed.' };
