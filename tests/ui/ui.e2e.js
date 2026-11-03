@@ -73,6 +73,10 @@ TRK.rows.forEach((r) => r.push(r === FLAG_ROW ? FLAGS_TEXT : ''));
 // Main's 'OPM Qtr YoY' (site feed format 8, key opmqy) for the same stock
 LIVE_MAIN.main.cols.push('opmqy');
 LIVE_MAIN.main.rows.forEach((r) => r.push(r[LIVE_MAIN.main.cols.indexOf('sym')] === FLAG_SYM ? 'Aggressive Increase' : null));
+// the sheet's 'Result Day Move %' (owner, 03-Nov-2026: the result day's intraday move - VRLLOG 14.5% where it closed +6%)
+const RPT = LIVE_MAIN.resultsPerf.table;
+RPT.cols.push('Result Day Move %');
+RPT.rows.forEach((r) => r.push(r[0] === FLAG_SYM ? 14.5 : null));
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -459,7 +463,7 @@ function check(name, fn) {
           errors.length = 0;
           await page.goto(base + '#results', { waitUntil: 'load' });
           await page.waitForSelector('#rp-table .tbl-tbtn', { timeout: 15000 });
-          await page.click('#rp-table .tbl-tbtn');
+          await page.click('#rp-table [data-tt="toggle"]');
           await page.click('#rp-table [data-tt="addfilter"]');
           await page.selectOption('#rp-table [data-tp="f:0:key"]', 'Result Day %');
           await page.fill('#rp-table [data-tp="f:0:a"]', '5');
@@ -480,7 +484,7 @@ function check(name, fn) {
           assert.strictEqual(a.n, a.want, 'both conditions apply');
           assert.ok(a.ordered, 'second sort level orders rows with the same verdict');
           assert.strictEqual(a.sorts, 'Results Verdict1,NP YoY %-1');
-          assert.match(a.sum, /Result day ≥ 5 · Verdict is Strong/);
+          assert.match(a.sum, /Daily % ≥ 5 · Verdict is Strong/);   // 'Result Day %' = the result day's close, labelled Daily % since 03-Nov-2026
           // a second tick: "is" = any of the ticked values; "is not" = none of them
           const other = await page.$$eval('#rp-table [data-tp="f:1:m"]', (x) => x.map((e) => e.value).filter((v) => v !== 'Strong')[0]);
           await page.check('#rp-table [data-tp="f:1:m"][value=' + JSON.stringify(other) + ']');
@@ -724,11 +728,35 @@ function check(name, fn) {
       };
       return { rp: col('#rp-table'), rs: col('#rs-table'), best: col('#mv-best'), worst: col('#mv-worst'), up: col('#up-t') };
     });
+    // TTM Signal in every table (owner, 03-Nov-2026); Daily % left of Result day, Result day = the intraday move
+    const sig = await p.evaluate(() => {
+      const has = (sel) => { const t = document.querySelector(sel + ' table'); return !!t && [...t.querySelectorAll('th')].some((x) => /^TTM Signal/.test(x.textContent.trim())); };
+      const hs = [...document.querySelectorAll('#rp-table th')].map((x) => x.textContent.trim());
+      const row = document.querySelector('#rp-table tbody tr');
+      const cell = (h) => row && row.children[hs.indexOf(h)] ? row.children[hs.indexOf(h)].textContent.trim() : null;
+      return { tables: ['#rp-table', '#rs-table', '#mv-best', '#mv-worst', '#up-t'].filter((x) => !has(x)), daily: hs.indexOf('Daily %'), rday: hs.indexOf('Result day'),
+        move: cell('Result day'), close: cell('Daily %') };
+    });
+    // Columns: untick one, it stays hidden after a reload, Show all brings it back
+    await p.click('#rp-table [data-tt="cols"]');
+    await p.uncheck('#rp-table .tbl-cols input[data-tc="Basic Industry"]');
+    const hidden1 = await p.$$eval('#rp-table th', (t) => t.map((x) => x.textContent.trim()));
+    const btn = await p.textContent('#rp-table [data-tt="cols"]');
+    await p.reload({ waitUntil: 'load' });
+    await p.waitForSelector('#rp-table th', { timeout: 15000 });
+    const hidden2 = await p.$$eval('#rp-table th', (t) => t.map((x) => x.textContent.trim()));
+    await p.click('#rp-table [data-tt="cols"]');
+    const firstLocked = await p.$eval('#rp-table .tbl-cols input[data-tc="Symbol"]', (x) => x.disabled);
+    await p.click('#rp-table [data-tt="colsall"]');
+    const shownAgain = await p.$$eval('#rp-table th', (t) => t.map((x) => x.textContent.trim()));
+    await p.fill('#rp-q', FLAG_SYM);
+    await p.waitForTimeout(300);
     await p.goto(base + '#results/tracked', { waitUntil: 'load' });
     await p.waitForSelector('#rl-q', { timeout: 15000 });
     await p.fill('#rl-q', FLAG_SYM);
     await p.waitForTimeout(400);
     const list = await p.$$eval('#rl-t .flag-pills .badge', (b) => b.map((x) => x.textContent));
+    const listSig = await p.$$eval('#rl-t th', (t) => t.some((x) => /^TTM Signal/.test(x.textContent.trim())));
     const drawer = await p.evaluate((sym) => {
       window.SB.openStock(sym);
       const dt = [...document.querySelectorAll('#drawer-body dt')].find((x) => x.textContent === 'Result flags');
@@ -742,6 +770,15 @@ function check(name, fn) {
     assert.ok(heads.indexOf('Flags') > 0, 'tracker table column: ' + heads);
     Object.keys(opm).forEach((k) => assert.ok(opm[k] && opm[k].i > 0, 'OPM Qtr YoY column in ' + k + ': ' + JSON.stringify(opm[k])));
     assert.ok(opm.rp.cells.some((c) => /Aggressive Increase/.test(c)), 'the value from Main in Results performance');
+    assert.deepStrictEqual(sig.tables, [], 'TTM Signal missing in ' + sig.tables);
+    assert.ok(listSig, 'TTM Signal in the lists');
+    assert.ok(sig.daily > 0 && sig.rday === sig.daily + 1, 'Daily % just left of Result day: ' + JSON.stringify(sig));
+    assert.strictEqual(sig.move, '+14.5%', 'Result day = the intraday move');
+    assert.ok(hidden1.indexOf('Industry') < 0 && hidden1.indexOf('Stock') === 0, 'Industry hidden: ' + hidden1);
+    assert.match(btn, /Columns \(1 hidden\)/);
+    assert.ok(hidden2.indexOf('Industry') < 0, 'still hidden after a reload');
+    assert.strictEqual(firstLocked, true, 'the stock column always stays');
+    assert.ok(shownAgain.indexOf('Industry') === 1, 'Show all: ' + shownAgain);
     assert.deepStrictEqual(list, ['REV \u2191 PROFIT \u2193', 'OTHER INCOME HIGH'], 'the lists');
     assert.ok(drawer && /REV \u2191 PROFIT \u2193/.test(drawer) && /OTHER INCOME HIGH/.test(drawer) && /results$/.test(drawer), 'drawer: ' + drawer);
   });

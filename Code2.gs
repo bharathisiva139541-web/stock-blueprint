@@ -1658,11 +1658,15 @@ function runUpcomingResultsEmailNow() {
 const AB_RP_SHEET = 'Results Performance';
 const AB_RP_MOVE_PCT = ab_setting_('AB_RP_MOVE_PCT', 5);
 const AB_RP_HEADER_ROW = 10;
+// 'Result Day Move %' (owner, 03-Nov-2026: "use intraday movement as result day % - VRL Logistics should show 14.5%
+// instead of 6%"): the reaction session's high or low vs the baseline, whichever went further ('Result Day %' stays the
+// close); 'Result Day High' / 'Result Day Low' = that session's candle (during the session: the prices seen so far).
 const AB_RP_COLS = ['Symbol', 'Company', 'Basic Industry', 'Quarter', 'Result Date', 'Announced', 'Days Since',
-  'Pre-Result Close', 'Result Day %', 'Next Day %', 'Current Price', 'Today %', '% Since Results',
+  'Pre-Result Close', 'Result Day %', 'Result Day Move %', 'Next Day %', 'Current Price', 'Today %', '% Since Results',
   'Max Gain %', 'Max Drawdown %', 'Results Verdict', 'Market Reaction', 'Signal',
   'Rev QoQ %', 'Rev YoY %', 'NP QoQ %', 'NP YoY %', 'OPM QoQ', 'OPM YoY',
-  'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since', 'Reaction From', 'Last Refreshed'];
+  'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since', 'Reaction From', 'Result Day High', 'Result Day Low',
+  'Last Refreshed'];
 
 // While the market is open (owner, 03-Nov-2026: VRLLOG's results came on 02/11 after the close and the tab showed Result
 // day blank / Since results +0.1% until 7:55 PM - the PC was off 08:43-19:45, and the tab was rebuilt only by Results Day
@@ -1711,6 +1715,7 @@ function ab_rpReadExisting_(sh) {
       quarter: q, rd: ab_rsToDate_(g('Result Date')),
       base: ab_rpNum_(g('Pre-Result Close')), rdClose: ab_rpNum_(g('Result Day Close')),
       nextClose: ab_rpNum_(g('Next Day Close')), hi: ab_rpNum_(g('Highest Since')), lo: ab_rpNum_(g('Lowest Since')),
+      rdHigh: ab_rpNum_(g('Result Day High')), rdLow: ab_rpNum_(g('Result Day Low')),
       revQoQ: ab_rpNum_(g('Rev QoQ %')), revYoY: ab_rpNum_(g('Rev YoY %')),
       npQoQ: ab_rpNum_(g('NP QoQ %')), npYoY: ab_rpNum_(g('NP YoY %')),
       opmQoQ: String(g('OPM QoQ') || ''), opmYoY: String(g('OPM YoY') || ''),
@@ -1826,7 +1831,7 @@ function ab_rpRefresh_(opts) {
       symbol: t.symbol, company: t.company || mainText(r, layout.name),
       basicIndustry: mainText(r, layout.basicIndustry), quarter: t.quarter,
       rd: ab_rsMakeDate_(p[0], p[1] - 1, p[2]),
-      base: NaN, rdClose: NaN, nextClose: NaN, hi: NaN, lo: NaN, annText: '', reactFrom: '',
+      base: NaN, rdClose: NaN, nextClose: NaN, hi: NaN, lo: NaN, rdHigh: NaN, rdLow: NaN, annText: '', reactFrom: '',
       revQoQ: mainNum(r, layout.qoqRev) / 100, revYoY: mainNum(r, layout.yoyRev) / 100,
       npQoQ: mainNum(r, layout.qoqNp) / 100, npYoY: mainNum(r, layout.yoyNp) / 100,
       opmQoQ: mainText(r, cols.opmQoQ), opmYoY: mainText(r, cols.opmYoY)
@@ -1854,11 +1859,14 @@ function ab_rpRefresh_(opts) {
     const pre = candles.filter(function (c) { return rx.strict ? c.k <= rx.from : c.k < rx.from; });
     if ((row.reactFrom || 'from ' + rdKey) !== rx.text && pre.length) {
       row.base = NaN; row.rdClose = NaN; row.nextClose = NaN; row.hi = NaN; row.lo = NaN;   // worked out again on the new basis
+      row.rdHigh = NaN; row.rdLow = NaN;
     }
     if (pre.length || !row.reactFrom) row.reactFrom = rx.text;
     if (isNaN(row.base) && pre.length) row.base = pre[pre.length - 1].Cls;
     const post = candles.filter(function (c) { return rx.strict ? c.k > rx.from : c.k >= rx.from; });
     if (isNaN(row.rdClose) && post.length >= 1) row.rdClose = post[0].Cls;
+    if (post.length >= 1 && isNaN(row.rdHigh) && !isNaN(post[0].High)) row.rdHigh = post[0].High;
+    if (post.length >= 1 && isNaN(row.rdLow) && !isNaN(post[0].Low)) row.rdLow = post[0].Low;
     if (isNaN(row.nextClose) && post.length >= 2) row.nextClose = post[1].Cls;
     post.forEach(function (c) {
       if (!isNaN(c.High)) row.hi = isNaN(row.hi) ? c.High : Math.max(row.hi, c.High);
@@ -1892,6 +1900,10 @@ function ab_rpRefresh_(opts) {
 
     row.sincePct = ab_rpPct_(cur, row.base);
     row.rdPct = ab_rpPct_(live === 'rd' ? cur : row.rdClose, row.base);          // the close columns stay empty until the candle
+    // the intraday move: the session's high or low vs the baseline, whichever went further (during it: the prices seen so far)
+    const dHi = live === 'rd' ? row.hi : row.rdHigh, dLo = live === 'rd' ? row.lo : row.rdLow;
+    const up = ab_rpPct_(dHi, row.base), dn = ab_rpPct_(dLo, row.base);
+    row.rdMove = isNaN(up) && isNaN(dn) ? row.rdPct : isNaN(dn) ? up : isNaN(up) ? dn : (Math.abs(dn) > Math.abs(up) ? dn : up);
     row.nextPct = ab_rpPct_(live === 'next' ? cur : row.nextClose, row.rdClose);
     row.maxGain = ab_rpPct_(row.hi, row.base);
     row.maxDD = ab_rpPct_(row.lo, row.base);
@@ -2064,9 +2076,9 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
     sh.getRange(H + 1, ci('Result Date'), n, 1).setNumberFormat('dd/mm/yyyy');
     sh.getRange(H + 1, ci('Last Refreshed'), n, 1).setNumberFormat('dd/mm/yyyy hh:mm');
     sh.getRange(H + 1, ci('Days Since'), n, 1).setNumberFormat('0');
-    ['Pre-Result Close', 'Current Price', 'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since']
+    ['Pre-Result Close', 'Current Price', 'Result Day Close', 'Next Day Close', 'Highest Since', 'Lowest Since', 'Result Day High', 'Result Day Low']
       .forEach(function (c) { sh.getRange(H + 1, ci(c), n, 1).setNumberFormat('#,##0.00'); });
-    ['Result Day %', 'Next Day %', 'Today %', '% Since Results', 'Max Gain %', 'Max Drawdown %']
+    ['Result Day %', 'Result Day Move %', 'Next Day %', 'Today %', '% Since Results', 'Max Gain %', 'Max Drawdown %']
       .forEach(function (c) { sh.getRange(H + 1, ci(c), n, 1).setNumberFormat(pctFmt); });
     ['Rev QoQ %', 'Rev YoY %', 'NP QoQ %', 'NP YoY %']
       .forEach(function (c) { sh.getRange(H + 1, ci(c), n, 1).setNumberFormat('+0%;-0%;0%'); });
@@ -2075,10 +2087,10 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
       return [
         '=HYPERLINK("' + ab_chartUrl_(x.symbol) + '","' + x.symbol + '")',
         x.company, x.basicIndustry, x.quarter, x.rd, x.annText || '', blank(x.days),
-        blank(x.base), blank(x.rdPct), blank(x.nextPct), blank(x.cur), blank(x.todayPct), blank(x.sincePct),
+        blank(x.base), blank(x.rdPct), blank(x.rdMove), blank(x.nextPct), blank(x.cur), blank(x.todayPct), blank(x.sincePct),
         blank(x.maxGain), blank(x.maxDD), x.verdict, x.reaction, x.signal,
         blank(x.revQoQ), blank(x.revYoY), blank(x.npQoQ), blank(x.npYoY), x.opmQoQ, x.opmYoY,
-        blank(x.rdClose), blank(x.nextClose), blank(x.hi), blank(x.lo), x.reactFrom || '', nowDate
+        blank(x.rdClose), blank(x.nextClose), blank(x.hi), blank(x.lo), x.reactFrom || '', blank(x.rdHigh), blank(x.rdLow), nowDate
       ];
     });
     body.setValues(out);
@@ -2086,7 +2098,7 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
     sh.getRange(H + 1, 1, n, 1).setFontWeight('bold');
     sh.getRange(H + 1, ci('% Since Results'), n, 1).setFontWeight('bold');
     // Light grey for the raw reference columns on the far right.
-    sh.getRange(H + 1, ci('Result Day Close'), n, 6).setFontColor('#888888');
+    sh.getRange(H + 1, ci('Result Day Close'), n, W - ci('Result Day Close') + 1).setFontColor('#888888');
     sh.getRange(H + 1, ci('Announced'), n, 1).setNumberFormat('@');
     sh.getRange(H, 1, n + 1, W).setBorder(null, null, true, null, null, true, '#e3e3e3', SpreadsheetApp.BorderStyle.SOLID);
     sh.getRange(H, 1, n + 1, W).createFilter();
@@ -2099,7 +2111,7 @@ function ab_rpWriteSheet_(sh, list, nowDate) {
       .setGradientMidpointWithValue('#ffffff', SpreadsheetApp.InterpolationType.NUMBER, '0')
       .setGradientMaxpointWithValue('#57bb8a', SpreadsheetApp.InterpolationType.NUMBER, '0.15')
       .setRanges([R('% Since Results')]).build());
-    const signed = ['Result Day %', 'Next Day %', 'Today %', 'Max Gain %', 'Max Drawdown %',
+    const signed = ['Result Day %', 'Result Day Move %', 'Next Day %', 'Today %', 'Max Gain %', 'Max Drawdown %',
                     'Rev QoQ %', 'Rev YoY %', 'NP QoQ %', 'NP YoY %'].map(R)
       .concat([sh.getRange(5, 3, 1, 2), sh.getRange(5, 10, 3, 1), sh.getRange(5, 12, 3, 1)]);
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(0).setFontColor(AB_C_POS).setRanges(signed).build());

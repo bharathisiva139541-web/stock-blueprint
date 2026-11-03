@@ -215,6 +215,9 @@
   // ---------- generic sortable / filterable / paged table ----------
   // columns: {key, label, type: text|num|pct|price|date|datetime|badge|sym, get(row), html(row), wrap, digits, name, title}
   // Click a heading = sort by that column; Shift+click = add it as the next sort level.
+  // "▦ Columns" (owner, 03-Nov-2026: "hide unhide column in a simplest way"): tick / untick columns; the first column
+  // (the stock) always stays; hidden columns are left out of the CSV too; kept with the sort & filter (store 'h').
+  // opts.legacyKeys: the column keys the table had before (its saved sort / filter / columns are read once from there).
   // "Sort & filter" (above the table): several sort levels and several conditions
   // ("Result day ≥ 10" AND "Verdict is Strong"...). A text column with few values
   // (Verdict, OPM QoQ...) offers them as ticks: "is" = any ticked value, "is not" =
@@ -236,9 +239,12 @@
     this.sorts = opts.sort ? [{ key: opts.sort.key, dir: opts.sort.dir }] : [];
     this.sort = this.sorts[0] || null;          // the first level (kept for older callers)
     this.filters = [];                          // [{ key, op, a, b }]
+    this.hidden = [];                           // keys of the columns the viewer hid
     this.id = 't' + (++tableSeq);
     this.open = false;
+    this.colsOpen = false;
   }
+  Table.prototype.isHidden = function (c) { return this.hidden.indexOf(c.key) >= 0; };
   Table.prototype.val = function (c, r) { return c.get ? c.get(r) : r[c.key]; };
   Table.prototype.col = function (k) { return this.o.columns.filter(function (x) { return x.key === k; })[0] || null; };
   Table.prototype.shown = function () { return this.o.columns.filter(function (c) { return !c.csvOnly && c.label; }); };
@@ -321,13 +327,15 @@
     }
   };
   // ----- saved sort & filter (per table, this browser) -----
-  Table.prototype.storeKey = function () {
+  Table.prototype.storeKey = function (keys) {
     var page = String(location.hash || '#').replace(/^#/, '').split('/')[0] || 'overview';
+    if (keys) return 'tbl:' + page + '|' + strHash(keys.join(','));
     return 'tbl:' + (this.o.id || page + '|' + strHash(this.o.columns.map(function (c) { return c.key; }).join(',')));
   };
   Table.prototype.load = function () {
     if (this.o.tools === false) return;
     var self = this, st = store.get(this.storeKey(), null);
+    if ((!st || typeof st !== 'object') && this.o.legacyKeys) st = store.get(this.storeKey(this.o.legacyKeys), null);
     if (!st || typeof st !== 'object') return;
     var ok = function (k) { var c = self.col(k); return c && !c.csvOnly && c.label; };
     if (Array.isArray(st.s) && st.s.length) {
@@ -341,20 +349,26 @@
           return { key: x.key, op: x.op, a: a, b: x.b == null ? '' : String(x.b) };
         });
     }
+    if (Array.isArray(st.h)) {
+      var first = this.shown()[0];
+      this.hidden = st.h.filter(function (k) { return ok(k) && (!first || k !== first.key); });
+    }
     this.sort = this.sorts[0] || null;
   };
   Table.prototype.save = function () {
     this.sort = this.sorts[0] || null;
     if (this.o.tools === false) return;
-    store.set(this.storeKey(), { s: this.sorts, f: this.filters });
+    store.set(this.storeKey(), { s: this.sorts, f: this.filters, h: this.hidden });
   };
   Table.prototype.mount = function (host) {
     this.host = host;
     var self = this;
     host.__sbTable = this;                       // re-mounting on the same host: only the newest table reacts
-    host.innerHTML = '<div class="tbl-tools"></div><div class="tbl-panel" id="' + this.id + '-panel" hidden></div><div class="tbl-body"></div>';
+    host.innerHTML = '<div class="tbl-tools"></div><div class="tbl-panel" id="' + this.id + '-panel" hidden></div>' +
+      '<div class="tbl-panel tbl-cols" id="' + this.id + '-cols" hidden></div><div class="tbl-body"></div>';
     this.toolsEl = host.querySelector('.tbl-tools');
     this.panelEl = host.querySelector('.tbl-panel');
+    this.colsEl = host.querySelector('.tbl-cols');
     this.bodyEl = host.querySelector('.tbl-body');
     this.load();
     host.addEventListener('click', function (e) {
@@ -380,6 +394,15 @@
     });
     host.addEventListener('change', function (e) {
       if (host.__sbTable !== self) return;
+      var tc = e.target.closest('[data-tc]');
+      if (tc) {                                   // a column ticked / unticked in "Columns"
+        var k = tc.getAttribute('data-tc');
+        self.hidden = self.hidden.filter(function (x) { return x !== k; });
+        if (!tc.checked) self.hidden.push(k);
+        self.save();
+        self.draw();
+        return;
+      }
       var x = e.target.closest('[data-tp]');
       if (!x) return;
       var p = x.getAttribute('data-tp').split(':'), i = +p[1], f = p[2];   // s:<i>:key|dir  f:<i>:key|op|a|b
@@ -444,6 +467,21 @@
   };
   Table.prototype.tool = function (what) {
     var cols = this.shown();
+    if (what === 'cols' || what === 'colsdone') {
+      this.colsOpen = what === 'cols' ? !this.colsOpen : false;
+      this.drawCols();
+      this.drawTools();
+      var cf = this.colsOpen ? this.colsEl.querySelector('input:not([disabled])') : this.toolsEl.querySelector('[data-tt="cols"]');
+      if (cf) cf.focus();
+      return;
+    }
+    if (what === 'colsall') {
+      this.hidden = [];
+      this.save();
+      this.drawCols();
+      this.draw();
+      return;
+    }
     if (what === 'toggle') {
       this.open = !this.open;
       this.drawPanel();
@@ -501,9 +539,12 @@
     if (!this.toolsEl) return;
     var sm = this.summary(), n = this.filtered().length;
     var active = this.sorts.length > 1 || sm.filters > 0;
-    if (this.o.tools === false || (!active && !this.open && this.rows.length <= 5)) { this.toolsEl.innerHTML = ''; return; }
+    var many = this.shown().length > 6, nh = this.hidden.length;
+    if (this.o.tools === false || (!active && !this.open && !this.colsOpen && !nh && !many && this.rows.length <= 5)) { this.toolsEl.innerHTML = ''; return; }
     this.toolsEl.innerHTML = '<button type="button" class="chip tbl-tbtn" data-tt="toggle" aria-expanded="' + this.open + '" aria-controls="' + this.id + '-panel"' +
       (active ? ' aria-pressed="true"' : '') + '>⇅ Sort &amp; filter' + (sm.filters ? ' (' + sm.filters + ')' : '') + '</button>' +
+      (many || nh ? '<button type="button" class="chip tbl-tbtn" data-tt="cols" aria-expanded="' + this.colsOpen + '" aria-controls="' + this.id + '-cols"' +
+        (nh ? ' aria-pressed="true"' : '') + ' title="Show or hide columns">▦ Columns' + (nh ? ' (' + nh + ' hidden)' : '') + '</button>' : '') +
       (active ? '<span class="tbl-sum">' + esc(sm.text) + (sm.filters ? ' · <b>' + n.toLocaleString('en-IN') + ' of ' + this.rows.length.toLocaleString('en-IN') + ' rows</b>' : '') +
         ' <button type="button" class="linkish tbl-clear" data-tt="clear">Clear</button></span>' : '');
   };
@@ -559,9 +600,23 @@
     this.panelEl.hidden = false;
     if (focusTp) { var el = this.panelEl.querySelector('[data-tp="' + focusTp + '"]'); if (el) el.focus(); }
   };
+  /** The "Columns" panel: a tick per column (the first one always shown), Show all, Done. */
+  Table.prototype.drawCols = function () {
+    if (!this.colsEl) return;
+    if (!this.colsOpen) { this.colsEl.hidden = true; this.colsEl.innerHTML = ''; return; }
+    var self = this, cols = this.shown();
+    this.colsEl.innerHTML = '<div class="tbl-sec"><div class="tbl-h">Columns <span class="sub">(untick to hide)</span></div>' +
+      '<div class="tbl-multi" role="group" aria-label="Columns shown">' + cols.map(function (c, i) {
+        return '<label' + (c.title ? ' title="' + esc(c.title) + '"' : '') + '><input type="checkbox" data-tc="' + esc(c.key) + '"' +
+          (self.isHidden(c) ? '' : ' checked') + (i === 0 ? ' disabled' : '') + '> ' + esc(c.label) + '</label>';
+      }).join('') + '</div></div>' +
+      '<div class="tbl-row tbl-end"><button type="button" class="btn" data-tt="colsall">Show all</button>' +
+      '<button type="button" class="btn primary" data-tt="colsdone">Done</button><span class="sub">Saved for this table in this browser.</span></div>';
+    this.colsEl.hidden = false;
+  };
   Table.prototype.visibleRows = function () { return this.sorted(); };
   Table.prototype.toCsvRows = function () {
-    var self = this, cols = this.o.columns.filter(function (c) { return !c.noExport; });
+    var self = this, cols = this.o.columns.filter(function (c) { return !c.noExport && !self.isHidden(c); });
     var out = [cols.map(function (c) { return c.label; })];
     this.sorted().forEach(function (r) {
       out.push(cols.map(function (c) { var v = c.csv ? c.csv(r) : self.val(c, r); return v == null ? '' : v; }));
@@ -571,7 +626,7 @@
   Table.prototype.draw = function () {
     if (!this.host) return;
     var self = this, rows = this.sorted();
-    var cols = this.o.columns.filter(function (c) { return !c.csvOnly; });   // csvOnly columns are export-only
+    var cols = this.o.columns.filter(function (c) { return !c.csvOnly && !self.isHidden(c); });   // csvOnly columns are export-only
     var pages = Math.max(1, Math.ceil(rows.length / this.size));
     if (this.page >= pages) this.page = pages - 1;
     if (this.page < 0) this.page = 0;
