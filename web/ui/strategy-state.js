@@ -4,8 +4,12 @@
      each save bumps the version and records what changed.
    - runActive() loads the daily candles once and caches the run per
      strategy version + data date, so pages share one result.
-   API: SB.strategies = { list, get, activeId, setActive, save, resetToPreset, confirm,
+   API: SB.strategies = { list, get, activeId, setActive, save, resetToPreset, remove, confirm,
                           isConfirmed, history, exportJson, importJson, runActive, lastRun, candles, describe }
+   save(cfg, note, opts): opts.amend = the version to update in place (Strategy settings saves every change
+   automatically - owner, 03-Nov-2026: "once a strategy is set in one browser it should not be lost when reloaded";
+   one visit of the page = one new version, later changes in that visit amend it), opts.base = the config before
+   that visit (the history entry then lists every change of the visit). remove(id): a viewer-made strategy only.
         SB.strategyResults(ctx) -> last run of the active strategy or null (sync) */
 (function () {
   'use strict';
@@ -40,8 +44,9 @@
   function activeId() { var st = load(); return get(st.active) ? st.active : 'sheet'; }
   function setActive(id) { var st = load(); if (get(id)) { st.active = id; persist(st); } }
 
-  /** Save an edited config: validates, bumps version, records the diff. */
-  function save(cfg, note) {
+  /** Save an edited config: validates, bumps version (or amends opts.amend), records the diff. */
+  function save(cfg, note, opts) {
+    opts = opts || {};
     var v = S.validate(cfg);
     if (!v.ok) return v;
     var st = load(), prev = get(cfg.id);
@@ -49,6 +54,19 @@
     delete next.__valid;
     var changes = prev ? S.diff(norm(prev), next) : ['created'];
     if (prev && !changes.length) return { ok: true, errors: [], config: prev, unchanged: true };
+    var h0 = (st.history[next.id] || [])[0];
+    if (opts.amend && prev && st.custom[next.id] && prev.version === opts.amend && h0 && h0.version === opts.amend) {
+      next.version = prev.version;
+      next.updatedAt = istNow();
+      if (next.source === 'discovered') next.source = 'discovered-edited';
+      var all = (opts.base ? S.diff(norm(opts.base), next) : changes).filter(function (c) { return !/^source:/.test(c); });
+      st.custom[next.id] = next;
+      st.history[next.id][0] = { version: next.version, at: next.updatedAt, note: note || h0.note || '', changes: all.length ? all : ['all changes of this version undone'] };
+      delete st.confirmed[next.id];
+      persist(st);
+      drop(next.id);
+      return { ok: true, errors: [], config: next, changes: all, amended: true, prevAt: h0.at };
+    }
     next.version = Math.max(prev ? prev.version : 0, st.versions[next.id] || 0) + 1;   // never reused, even after a reset
     st.versions[next.id] = next.version;
     next.updatedAt = istNow();
@@ -69,6 +87,16 @@
     delete st.confirmed[id];
     persist(st);
     drop(id);
+  }
+  /** Delete a viewer-made strategy (presets can only be reset). The active one falls back to the sheet's. */
+  function remove(id) {
+    var st = load();
+    if (S.PRESETS[id] || !st.custom[id]) return false;
+    delete st.custom[id]; delete st.history[id]; delete st.confirmed[id];
+    if (st.active === id) st.active = 'sheet';
+    persist(st);
+    drop(id);
+    return true;
   }
   function confirm(id, yes) {
     var st = load(), c = get(id);
@@ -153,7 +181,7 @@
 
   SB.strategies = {
     describe: describe,
-    list: list, get: get, activeId: activeId, setActive: setActive, save: save, resetToPreset: resetToPreset,
+    list: list, get: get, activeId: activeId, setActive: setActive, save: save, resetToPreset: resetToPreset, remove: remove,
     confirm: confirm, isConfirmed: isConfirmed, history: history, exportJson: exportJson, importJson: importJson,
     runActive: runActive, lastRun: lastRun, candles: candles
   };

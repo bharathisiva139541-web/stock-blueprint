@@ -505,6 +505,12 @@
 
   function label(rule) {
     var d = C[rule.id], s = d.label;
+    // a range with one open end reads as "at least" / "at most" (Strategy settings in plain words)
+    if (rule.id === 'fieldRange' && rule.params) {
+      var lo = rule.params.min, hi = rule.params.max, open = function (v) { return v === '' || v == null; };
+      if (open(hi) && !open(lo)) s = '{field} at least {min}';
+      else if (open(lo) && !open(hi)) s = '{field} at most {max}';
+    }
     Object.keys(rule.params || {}).forEach(function (k) {
       var v = rule.params[k];
       if (k === 'minTurnover') v = (v / 1e5) + ' lakh';

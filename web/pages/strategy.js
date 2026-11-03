@@ -1,40 +1,59 @@
-/* Strategy settings: view, configure, version and confirm the strategy that
-   drives Daily Suggestions.
-   - Strategies come from SB.strategies (ui/strategy-state.js): the presets read
-     from the sheet, the DEMO preset and the viewer's own copies.
-   - Edits stay in an in-memory draft (this tab only) until saved. A save
-     validates, bumps the version, records the changes and clears the
-     confirmation, so every version is confirmed on its own.
-   - Everything the viewer changes is stored only in this browser
-     (localStorage through SB.strategies); export / import as JSON files.
-     Nothing is sent anywhere. */
+/* Strategy settings ("Strategy Studio") - owner, 03-Nov-2026: "strategy settings page is not user friendly - my friend
+   opened this page, it would take 2 days to understand ... upgrade this page to peak level. Also once a strategy is set in
+   one browser it should not be deleted when reloaded. Swing, positional, long-term."
+   Three steps on one page:
+     1. How do you trade?  Swing / Positional / Long-term (or all) - the strategies of that style.
+     2. Pick a strategy     cards with today's count, "Use for Daily Suggestions", "+ New strategy" (a ready-made starter
+                            for the style, or a copy).
+     3. Fine-tune it        the rules in plain words (recipe), each rule a card with a switch + a one-line explanation,
+                            an "Add a rule" picker, the exit plan with a worked example, and a LIVE PREVIEW of today's
+                            matches that follows every change.
+   SAVING: every change is saved automatically in this browser (SB.strategies, localStorage) - one visit of the page =
+   one new version, later changes of that visit update it (save opts.amend); a change that is not valid yet is kept as a
+   draft in localStorage (DRAFT_KEY) and saved once it is fixed, so a reload never loses anything. Undo steps back
+   through this visit's changes. Nothing is sent anywhere; Export / Import JSON moves a strategy to another device. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, isNum = ui.isNum, $ = ui.$;
 
   var GROUPS = [
-    { key: 'filters', set: 'filter', title: 'Filters', one: 'filter',
-      help: 'Must all pass. A stock that fails any filter is marked Avoid.' },
-    { key: 'triggers', set: 'trigger', title: 'Triggers', one: 'trigger',
-      help: 'Signal types checked on the latest daily candle. A stock needs the minimum number of firing triggers (set below) to qualify. Watch-only triggers can only produce Watch.' },
-    { key: 'confirms', set: 'confirm', title: 'Requirements', one: 'requirement',
-      help: 'Must all pass. In setup mode a stock whose trigger fired but a requirement failed is shown as Watch; in screen mode every requirement must pass for a match.' }
+    { key: 'filters', set: 'filter', title: 'Skip stocks that fail these', one: 'safety check', icon: 'shield',
+      help: 'Every one must pass. A stock that fails any of them is skipped (shown as Avoid).' },
+    { key: 'triggers', set: 'trigger', title: 'Buy signals - when to act', one: 'signal', icon: 'bolt',
+      help: 'Checked on the latest daily candle. A stock needs at least the number of signals set below. A signal set to "only watch" puts a stock on the Watch list - never in Qualified.' },
+    { key: 'confirms', set: 'confirm', title: 'Must also be true', one: 'condition', icon: 'check',
+      help: 'Every one must pass. When a buy signal fired but one of these fails, the stock goes on the Watch list.',
+      helpScreen: 'Every one must pass for a stock to be listed.' }
   ];
-  var MODES = { setup: 'Setup - entry timing with stop-loss and target', screen: 'Screen - fundamental screen, no entry timing' };
+  var MODES = {
+    setup: ['Find entry points', 'Waits for a buy signal on the daily chart, then gives the entry, stop-loss and target.'],
+    screen: ['List matching stocks', 'Lists every stock that meets the conditions today - you time the entry yourself.']
+  };
   var STYLES = [
     ['swing', 'Swing', 'days to a few weeks'],
     ['positional', 'Positional', 'weeks to months'],
     ['long-term', 'Long-term', 'months to years'],
     ['intraday', 'Intraday', 'not supported - the data is daily end-of-day']
   ];
-  var STOPS = [['atr', 'ATR multiple below entry'], ['pct', 'Percent below entry'], ['swing', 'Below the recent swing low'], ['zone', 'Below the FVG zone (from a zone trigger)']];
-  var TARGETS = [['pct', 'Percent above entry'], ['rr', 'Multiple of the risk (R)']];
+  // step 1: the trading styles, in plain words
+  var STYLE_CARDS = [
+    { id: 'swing', name: 'Swing', hold: 'Hold for days to a few weeks', icon: 'swing',
+      looks: 'Chart signals: candle patterns, FVG zones, EMA bounces, breakouts and the reaction to results.' },
+    { id: 'positional', name: 'Positional', hold: 'Hold for weeks to months', icon: 'positional',
+      looks: 'Improving businesses: rising margins, FII buying, growth with a Buy signal.' },
+    { id: 'long-term', name: 'Long-term', hold: 'Hold for months to years', icon: 'longterm',
+      looks: 'Value and quality: cheaper than the industry, upside to the TTM target, steady growth.' },
+    { id: 'all', name: 'All styles', hold: 'Every strategy in one place', icon: 'all', looks: 'Your own, the ones from your sheet and the examples.' }
+  ];
+  var STOPS = [['atr', 'ATR based', 'N × the stock\'s normal daily move (ATR14) below the entry'], ['pct', 'Fixed %', 'a fixed percent below the entry'],
+    ['swing', 'Recent low', 'just below the lowest low of the last N days'], ['zone', 'Below the FVG zone', 'just below the gap the signal found (needs an FVG signal)']];
+  var TARGETS = [['pct', 'Fixed %', 'a fixed percent above the entry'], ['rr', 'Multiple of the risk', 'N × (entry − stop-loss) above the entry']];
   var STOP_KEY = { atr: 'mult', pct: 'pct', swing: 'bars', zone: null };
   var STOP_DEF = { atr: { mult: 2 }, pct: { pct: 5 }, swing: { bars: 10 }, zone: {} };
-  var STOP_LABEL = { atr: 'ATR multiple (stop = entry − N × ATR14)', pct: 'Stop % below entry (above 0, below 50)', swing: 'Swing-low lookback (bars)' };
+  var STOP_LABEL = { atr: 'How many ATRs below the entry', pct: 'Percent below the entry', swing: 'Lowest low of the last … days' };
   var TARGET_KEY = { pct: 'pct', rr: 'rr' };
   var TARGET_DEF = { pct: { pct: 10 }, rr: { rr: 2 } };
-  var TARGET_LABEL = { pct: 'Target % above entry', rr: 'Target in R (multiples of the risk)' };
+  var TARGET_LABEL = { pct: 'Percent above the entry', rr: 'Times the risk (R)' };
   // readable names of the Main columns used by fieldIn / fieldRange (strategy.js keeps its own copy private)
   var FIELD_NAMES = {
     opmq: 'OPM QoQ%', opmy: 'OPM YoY%', opmqy: 'OPM Qtr YoY', promo: 'Promoter holding', fii: 'FII activity', sig: 'TTM Signal (recomputed with the current price)',
@@ -43,6 +62,83 @@
   };
   var VALUE_ORDER = ['aggressive increase', 'increasing', 'slightly increasing', 'stagnant', 'slightly decreasing', 'decreasing',
     'aggressive decrease', 'volatile', 'buy', 'avoid'];
+  // every rule in one plain sentence (the rule cards and the "Add a rule" picker)
+  var EXPLAIN = {
+    liquidity: 'Skips thinly traded stocks: the average daily turnover (price × volume) must be at least this much.',
+    notCircuitLocked: 'Skips a stock stuck at its upper or lower price band on the latest day (no real trading).',
+    minPrice: 'Skips very low-priced stocks.',
+    resultsNotWithin: 'Skips a stock whose quarterly results are due within these days - results can move the price sharply.',
+    pattern: 'A bullish candlestick pattern (e.g. Hammer, Bullish Engulfing) on the latest daily candle - your sheet\'s Pattern column.',
+    fvgFirstTouch: 'The price came back to a fair value gap (FVG - an untouched price gap) for the first time in the last few days.',
+    fvgConfirmed: 'Like FVG first touch, and the next candle closed higher - the gap held as support.',
+    fvgSpring: 'A Spring (a dip below support that recovers at once) inside a fair value gap that still holds.',
+    zoneApproach: 'The price is at or just above an untouched FVG zone - a possible support area. Usually "only watch".',
+    emaSupport: 'The price dipped to this moving average (EMA) and held above it - a bounce off support.',
+    ttmBuy: 'Main\'s TTM Signal is Buy: the TTM target is above today\'s price, EPS growth is not negative and EPS is positive.',
+    qualityWatch: 'TTM Buy, EPS not negative, and the operating margin (OPM) rising both quarter-on-quarter and year-on-year.',
+    sheetConfluence: 'How many of 4 signals your Pattern Dashboard shows today: candle pattern, FVG, 10 EMA support, 21 EMA support. More = stronger.',
+    fieldIn: 'A Main column must show one of the ticked words (for example OPM QoQ = Increasing).',
+    fieldRange: 'A Main column\'s number must be within the limits - leave a box empty for no limit.',
+    postResults: 'Your post-results set-ups from the Results Performance tab: Immediate rally, Delayed reaction, Second opportunity, Rally gains eroded.',
+    resultsSupport: 'Enough of the quarter\'s figures are positive: revenue, profit, margins, EPS growth, FII.',
+    resultAnnounced: 'The results came when the market could not react yet (after 3:30 PM, or on a closed day), and recently.',
+    breakout: 'Today\'s close is above the highest high of the previous days, with more volume than usual.',
+    closeAboveEma: 'Today\'s close is above this moving average - the trend is up.',
+    emaTrend: 'The faster moving average is above the slower one - an uptrend.',
+    rsiRange: 'RSI (a 0-100 momentum gauge) is inside this range - not too weak, not overheated.',
+    macdBull: 'MACD (a momentum indicator) is above its signal line - momentum turning up.',
+    relVolume: 'Today\'s volume is at least this many times its 20-day average.',
+    pullbackToEma: 'In an uptrend, the price dipped close to this moving average - a pullback entry.',
+    upsideMin: 'The TTM target price is at least this much above today\'s price.',
+    peVsIndustryMax: 'The stock\'s PE is at most this many times its industry\'s PE (1 = not more expensive than the industry).'
+  };
+  var TOPICS = [['safety', 'Liquidity & safety'], ['chart', 'Chart signals'], ['trend', 'Trend & momentum'], ['fund', 'Business & valuation'], ['results', 'Quarterly results']];
+  var TOPIC = {
+    liquidity: 'safety', notCircuitLocked: 'safety', minPrice: 'safety', resultsNotWithin: 'safety',
+    pattern: 'chart', fvgFirstTouch: 'chart', fvgConfirmed: 'chart', fvgSpring: 'chart', zoneApproach: 'chart', emaSupport: 'chart',
+    sheetConfluence: 'chart', breakout: 'chart', pullbackToEma: 'chart',
+    closeAboveEma: 'trend', emaTrend: 'trend', rsiRange: 'trend', macdBull: 'trend', relVolume: 'trend',
+    ttmBuy: 'fund', qualityWatch: 'fund', fieldIn: 'fund', fieldRange: 'fund', upsideMin: 'fund', peVsIndustryMax: 'fund',
+    postResults: 'results', resultsSupport: 'results', resultAnnounced: 'results'
+  };
+  var UP3 = ['Aggressive Increase', 'Increasing', 'Slightly Increasing'];
+  // "+ New strategy": a ready-made starting point per style. The numbers are common starting values, NOT the owner's
+  // rules - each starter lists them as assumptions and every one can be changed or switched off.
+  var STARTERS = {
+    swing: {
+      mode: 'setup', style: 'swing', universe: { categories: [], minBars: 22 },
+      description: 'A swing starter: liquid stocks without results in the next 3 days, a chart signal today (candle pattern, FVG first touch, 21 EMA bounce or a breakout) in an uptrend with healthy momentum.',
+      filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }, { id: 'notCircuitLocked' }, { id: 'resultsNotWithin', params: { days: 3 } }],
+      triggers: [{ id: 'pattern' }, { id: 'fvgFirstTouch', params: { maxAge: 1 } }, { id: 'emaSupport', params: { length: 21, maxAge: 1, touchPct: 0.5 } },
+        { id: 'breakout', params: { length: 20, minRelVol: 1.5 } }],
+      confirms: [{ id: 'emaTrend', params: { fast: 10, slow: 21 } }, { id: 'rsiRange', params: { min: 40, max: 70 } }],
+      qualify: { minTriggers: 1 }, exits: { stop: { method: 'atr', mult: 2 }, target: { method: 'rr', rr: 2 }, minRR: 1.5 }, events: { warnDays: 7 },
+      assumptions: ['A starting point, not your rules: turnover ≥ ₹50 lakh, no results within 3 days, any one chart signal, 10 EMA above 21 EMA, RSI 40-70.',
+        'Stop-loss 2 × ATR below the entry, target 2 × the risk, only when reward:risk is at least 1:1.5. Change any of it below.']
+    },
+    positional: {
+      mode: 'screen', style: 'positional', universe: { categories: [], minBars: 0 },
+      description: 'A positional starter: an improving business with a Buy signal - margins rising, FII buying or steady, EPS and revenue growing.',
+      filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }], triggers: [],
+      confirms: [{ id: 'ttmBuy' }, { id: 'fieldIn', params: { field: 'opmq', values: UP3 } }, { id: 'fieldIn', params: { field: 'opmy', values: UP3 } },
+        { id: 'fieldIn', params: { field: 'fii', values: ['Increasing', 'Stagnant'] } }, { id: 'fieldRange', params: { field: 'epsg', min: 10, max: '' } },
+        { id: 'fieldRange', params: { field: 'qrev', min: 5, max: '' } }],
+      qualify: { minTriggers: 0 }, exits: { stop: { method: 'pct', pct: 8 }, target: { method: 'pct', pct: 25 }, minRR: 0 }, events: { warnDays: 7 },
+      assumptions: ['A starting point, not your rules: TTM Buy, OPM QoQ and YoY rising, FII increasing or stagnant, TTM EPS growth ≥ 10%, QoQ revenue growth ≥ 5%, turnover ≥ ₹50 lakh.',
+        'It lists stocks; the stop-loss (8%) and target (+25%) are shown for reference only.']
+    },
+    'long-term': {
+      mode: 'screen', style: 'long-term', universe: { categories: [], minBars: 0 },
+      description: 'A long-term starter: quality at a fair price - a Buy signal, at least 25% upside to the TTM target, not more expensive than its industry, promoters not selling, growing earnings.',
+      filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }], triggers: [],
+      confirms: [{ id: 'ttmBuy' }, { id: 'upsideMin', params: { pct: 25 } }, { id: 'peVsIndustryMax', params: { max: 1 } },
+        { id: 'fieldIn', params: { field: 'promo', values: ['Increasing', 'Stagnant'] } }, { id: 'fieldRange', params: { field: 'epsg', min: 0, max: '' } },
+        { id: 'fieldIn', params: { field: 'opmy', values: UP3.concat(['Stagnant']) } }],
+      qualify: { minTriggers: 0 }, exits: { stop: { method: 'pct', pct: 15 }, target: { method: 'pct', pct: 50 }, minRR: 0 }, events: { warnDays: 7 },
+      assumptions: ['A starting point, not your rules: TTM Buy, upside ≥ 25%, PE at most the industry\'s, promoter holding increasing or stagnant, TTM EPS growth ≥ 0%, yearly OPM not falling, turnover ≥ ₹50 lakh.',
+        'It lists stocks; the stop-loss (15%) and target (+50%) are shown for reference only.']
+    }
+  };
   // allowed parameter ranges: [min, max, wholeNumber, minExclusive]
   var RANGE = {
     'liquidity.minTurnover': [0, 1e11],
@@ -70,17 +166,35 @@
     'upsideMin.pct': [-100, 1000],
     'peVsIndustryMax.max': [0, 100, false, true]
   };
-  var AGE_HINT = 'The sheet only tags the last 4 candles, so 0-3.';
+  var AGE_HINT = '0 = today only. The sheet tags the last 4 candles, so 0-3.';
+  var ICONS = {
+    swing: '<path d="M2 15c2.5 0 3-7 5.5-7S10 17 12.5 17 15 6 17.5 6 20 12 22 12"/>',
+    positional: '<path d="M3 20h4v-5h4v-4h4V7h6"/><path d="M17 3h4v4"/>',
+    longterm: '<path d="M2 20l7-11 4 6 3-4 6 9z"/><path d="M9 9V4l4 2-4 2"/>',
+    all: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    check: '<path d="M4 12.5l5 5L20 6.5"/>',
+    exit: '<path d="M4 20V4"/><path d="M4 5h12l-2 4 2 4H4"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    x: '<path d="M6 6l12 12M18 6L6 18"/>'
+  };
+  function icon(id) { return ICONS[id] ? '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + ICONS[id] + '</svg>' : ''; }
 
-  // ---------- page state (this tab only - nothing here is persisted) ----------
-  var ST = { sel: null, resetAsk: false, catsOpen: false, pendOpen: false };
-  var DRAFTS = {};     // id -> working copy with unsaved edits
-  var NOTES = {};      // id -> change note being typed
-  var TESTS = {};      // id -> { version, result } | { version, error }
-  var TESTING = {};    // id -> true while a test runs
-  var FLASH = null;    // one-off message: { where: 'top'|'top-detail'|'confirm'|'save'|'test', cls, html }
-  // plain-language change lists per saved version, for the history table (this browser only)
-  var CH_KEY = 'strategy-page:changes';
+  // ---------- page state ----------
+  var ST = { sel: null, style: null, resetAsk: false, delAsk: false, newOpen: false, catsOpen: false, addOpen: null };
+  var DRAFTS = {};     // id -> working copy (changes not saved yet: waiting for the autosave, or not valid yet)
+  var SESSION = {};    // id -> { version, base } the version this visit created (later changes amend it) + the config before it
+  var UNDO = {};       // id -> earlier drafts of this visit (Undo)
+  var LAST_EDIT = {};  // id -> time of the last edit (an Undo step per pause in typing)
+  var SAVE = {};       // id -> { state: 'saving' | 'saved' | 'invalid' | 'failed', list }
+  var COUNTS = {};     // id -> { key, run } today's result of the saved version (strategy cards)
+  var LIVE = { key: null, run: null, busy: false };
+  var FLASH = null;    // one-off message: { where: 'top' | 'work', cls, html }
+  var SAVE_T = null, LIVE_T = null, COUNT_RUN = false, HOOKED = false;
+  var CH_KEY = 'strategy-page:changes', DRAFT_KEY = 'strategy-page:drafts', STYLE_KEY = 'strategy-page:style';
 
   // ---------- small helpers ----------
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
@@ -112,22 +226,20 @@
     if (!cats || !cats.length) return ctx.stocks.length;
     return ctx.stocks.filter(function (s) { return cats.indexOf(s.cat) >= 0; }).length;
   }
-  function styleText(s) {
-    for (var i = 0; i < STYLES.length; i++) if (STYLES[i][0] === s) return STYLES[i][1] + ' (' + STYLES[i][2] + ')';
-    return s || '–';
-  }
+  function styleOf(id) { return STYLES.filter(function (s) { return s[0] === id; })[0]; }
+  function styleName(id) { var s = styleOf(id); return s ? s[1] : id || '–'; }
   function stopText(s) {
     s = s || {};
-    if (s.method === 'atr') return s.mult + ' × ATR14 below entry';
-    if (s.method === 'pct') return s.pct + '% below entry';
-    if (s.method === 'swing') return 'below the ' + (s.bars || 10) + '-bar low';
-    if (s.method === 'zone') return 'below the FVG zone';
+    if (s.method === 'atr') return s.mult + ' × ATR below the entry';
+    if (s.method === 'pct') return s.pct + '% below the entry';
+    if (s.method === 'swing') return 'below the lowest low of the last ' + (s.bars || 10) + ' days';
+    if (s.method === 'zone') return 'just below the FVG zone';
     return String(s.method || '–');
   }
   function targetText(t) {
     t = t || {};
-    if (t.method === 'pct') return '+' + t.pct + '% from entry';
-    if (t.method === 'rr') return t.rr + ' R';
+    if (t.method === 'pct') return '+' + t.pct + '% above the entry';
+    if (t.method === 'rr') return t.rr + ' × the risk above the entry';
     return String(t.method || '–');
   }
   function fmtVal(v) {
@@ -137,6 +249,11 @@
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
   }
+  function firstSentence(s) {
+    s = String(s || '').trim();
+    var m = /^(.{20,220}?[.!?])(\s|$)/.exec(s);
+    return m ? m[1] : s.length > 220 ? s.slice(0, 217) + '…' : s;
+  }
   function errP(id) { return '<p class="sub down ferr" id="' + id + '-err" data-for="' + id + '" hidden></p>'; }
   function parseInput(t) {
     if (t.validity && t.validity.badInput) return 'invalid';
@@ -144,6 +261,10 @@
     if (s === '') return '';
     var n = Number(s);
     return isFinite(n) ? n : s;
+  }
+  function runOpts(ctx) {
+    var H = ctx.history;
+    return { usePrice: true, latestDate: H && H.dates && H.dates.length ? H.dates[H.dates.length - 1] : null, refDate: ui.iso(ctx.refDate) };
   }
 
   // ---------- config shape ----------
@@ -216,12 +337,12 @@
     var a = canon(aCfg), b = canon(bCfg), out = [];
     function cmp(x, y, fn) { if (!same(x, y)) out.push(fn(x, y)); }
     cmp(a.name, b.name, function (x, y) { return 'Name: "' + x + '" → "' + y + '"'; });
-    cmp(a.mode, b.mode, function (x, y) { return 'Mode: ' + x + ' → ' + y; });
-    cmp(a.style, b.style, function (x, y) { return 'Style: ' + x + ' → ' + y; });
+    cmp(a.mode, b.mode, function (x, y) { return 'How it works: ' + MODES[x][0] + ' → ' + MODES[y][0]; });
+    cmp(a.style, b.style, function (x, y) { return 'Trading style: ' + styleName(x) + ' → ' + styleName(y); });
     cmp(a.description, b.description, function () { return 'Description edited'; });
     cmp(a.assumptions, b.assumptions, function (x, y) { return 'Assumptions edited (' + x.length + ' → ' + y.length + ' lines)'; });
     cmp(a.universe.categories, b.universe.categories, function (x, y) { return 'Categories: ' + catText(x) + ' → ' + catText(y); });
-    cmp(a.universe.minBars, b.universe.minBars, function (x, y) { return 'Minimum daily bars: ' + fmtVal(x) + ' → ' + fmtVal(y); });
+    cmp(a.universe.minBars, b.universe.minBars, function (x, y) { return 'Minimum daily candles: ' + fmtVal(x) + ' → ' + fmtVal(y); });
     GROUPS.forEach(function (g) {
       function keyed(list) {
         var map = {}, keys = [], seen = {};
@@ -235,7 +356,7 @@
         if (!ra) { out.push('Added ' + g.one + ': ' + safeLabel(rb)); return; }
         if (!rb) { out.push('Removed ' + g.one + ': ' + safeLabel(ra)); return; }
         if (ra.enabled !== rb.enabled) out.push((rb.enabled ? 'Turned on ' : 'Turned off ') + g.one + ': ' + safeLabel(rb));
-        if (!!ra.watchOnly !== !!rb.watchOnly) out.push(cap(g.one) + ' "' + safeLabel(rb) + '": watch only ' + (rb.watchOnly ? 'on' : 'off'));
+        if (!!ra.watchOnly !== !!rb.watchOnly) out.push(cap(g.one) + ' "' + safeLabel(rb) + '": only watch ' + (rb.watchOnly ? 'on' : 'off'));
         Object.keys(Object.assign({}, ra.params, rb.params)).forEach(function (pk) {
           if (!same(ra.params[pk], rb.params[pk])) {
             out.push(cap(g.one) + ' "' + safeLabel(ra) + '": ' + paramLabel(rb.id, pk) + ' ' + fmtVal(ra.params[pk]) + ' → ' + fmtVal(rb.params[pk]));
@@ -244,7 +365,7 @@
       });
     });
     if (a.mode === 'setup' && b.mode === 'setup') {
-      cmp(a.qualify.minTriggers, b.qualify.minTriggers, function (x, y) { return 'Minimum firing triggers: ' + fmtVal(x) + ' → ' + fmtVal(y); });
+      cmp(a.qualify.minTriggers, b.qualify.minTriggers, function (x, y) { return 'Signals needed: ' + fmtVal(x) + ' → ' + fmtVal(y); });
     }
     cmp(a.exits.stop, b.exits.stop, function (x, y) { return 'Stop-loss: ' + stopText(x) + ' → ' + stopText(y); });
     cmp(a.exits.target, b.exits.target, function (x, y) { return 'Target: ' + targetText(x) + ' → ' + targetText(y); });
@@ -255,7 +376,7 @@
     return out;
   }
 
-  // ---------- validation (before save, shown inline) ----------
+  // ---------- validation (shown next to each field; nothing invalid is saved) ----------
   function checkNum(v, r) {
     if (v === '' || v == null || typeof v !== 'number' || !isFinite(v)) return 'Enter a number';
     if (r) {
@@ -276,15 +397,16 @@
     else if (name.length > 80) err('st-name', 'Keep the name to 80 characters or fewer', 'Name');
     if (String(d.description || '').length > 1000) err('st-desc', 'Keep the description to 1000 characters or fewer', 'Description');
     if (d.assumptions.length > 30) err('st-assump', 'Keep it to 30 lines or fewer', 'Assumptions');
-    if (d.style === 'intraday') err('st-style', 'Intraday is not supported - the data is daily end-of-day. Choose swing, positional or long-term.', 'Style');
+    if (d.style === 'intraday') err('st-style', 'Intraday is not supported - the data is daily end-of-day. Choose Swing, Positional or Long-term.', 'Trading style');
     m = checkNum(d.universe.minBars, [2, 250, true]);
-    if (m) err('st-minbars', m, 'Minimum daily bars');
+    if (m) err('st-minbars', m, 'Minimum daily candles');
     else if (bars && d.universe.minBars > bars) warn('st-minbars', 'the history file has only ' + bars + ' daily candles, so every stock would be "Insufficient data".');
     d.universe.categories.forEach(function (c) {
-      if (!SB.classify.categoryById(c)) err('st-cats', 'Unknown category "' + c + '" - untick it', 'Universe');
+      if (!SB.classify.categoryById(c)) err('st-cats', 'Unknown category "' + c + '" - untick it', 'Stocks to look at');
     });
     GROUPS.forEach(function (g) {
       d[g.key].forEach(function (r, i) {
+        if (r.enabled === false) return;            // a switched-off rule hides its boxes and is not checked
         var where = cap(g.one) + ' ' + (i + 1), p = r.params || {};
         paramDefs(r.id).forEach(function (pp) {
           var id = fid(g.key, i, pp.key), v = p[pp.key], msg = '';
@@ -307,12 +429,12 @@
     });
     var trig = d.triggers.filter(function (r) { return r.enabled !== false && !r.watchOnly; }).length;
     if (d.mode !== 'screen') {
-      if (!trig) err('sec-triggers', 'Setup mode needs at least one trigger that is on and not watch-only.', 'Triggers');
+      if (!trig) err('sec-triggers', '"Find entry points" needs at least one buy signal that is on (and not "only watch").', 'Buy signals');
       m = checkNum(d.qualify.minTriggers, [1, 20, true]);
-      if (m) err('st-mintrig', m, 'Minimum firing triggers');
-      else if (trig && d.qualify.minTriggers > trig) err('st-mintrig', 'only ' + plural(trig, 'trigger is', 'triggers are') + ' on, so nothing could ever qualify - use ' + trig + ' or fewer', 'Minimum firing triggers');
+      if (m) err('st-mintrig', m, 'Signals needed');
+      else if (trig && d.qualify.minTriggers > trig) err('st-mintrig', 'only ' + plural(trig, 'signal is', 'signals are') + ' on, so nothing could ever qualify - use ' + trig + ' or fewer', 'Signals needed');
     } else if (!d.confirms.filter(function (r) { return r.enabled !== false; }).length && !d.filters.length) {
-      err('sec-confirms', 'A screen needs at least one requirement that is on (or a filter).', 'Requirements');
+      err('sec-confirms', '"List matching stocks" needs at least one condition that is on (or a safety check).', 'Must also be true');
     }
     var st = d.exits.stop, tg = d.exits.target;
     if (st.method === 'atr') { m = checkNum(st.mult, [0, 10, false, true]); if (m) err('st-stopv', m, 'Stop-loss'); }
@@ -338,13 +460,12 @@
   // ---------- badges ----------
   function sourceBadges(STR, c) {
     var conf = STR.isConfirmed(c.id), h = '';
-    if (c.source === 'demo') return ui.badge('DEMO', 's-warn');
-    if (c.source === 'discovered') h = conf ? ui.badge('From your sheet', 's-info') : ui.badge('From your sheet (unconfirmed)', 's-warn');
-    else if (c.source === 'discovered-edited') h = ui.badge('Edited from your sheet', 's-info');
-    else if (c.source === 'request') h = ui.badge('From your description', 's-info');
-    else h = ui.badge('Custom', '');
-    if (conf) h += ui.badge('Confirmed v' + c.version, 's-good');
-    else if (c.source !== 'discovered') h += ui.badge('Not confirmed', 's-warn');
+    if (c.source === 'demo') return ui.badge('Example only', 's-warn');
+    if (c.source === 'discovered') h = ui.badge('From your sheet', 's-info');
+    else if (c.source === 'discovered-edited') h = ui.badge('From your sheet, edited', 's-info');
+    else if (c.source === 'request') h = ui.badge('Your rules', 's-info');
+    else h = ui.badge('Made by you', 's-info');
+    h += conf ? ui.badge('Confirmed ✓', 's-good') : ui.badge('Not confirmed', 's-warn');
     return h;
   }
 
@@ -359,15 +480,6 @@
   }
   function numField(id, label, f, value, hint) {
     return fieldWrap(id, label, numInput(id, 'data-f="' + f + '"', value), hint ? '<p class="sub">' + hint + '</p>' : '');
-  }
-  function selectField(id, label, f, opts, cur, hint) {
-    var known = opts.some(function (o) { return o[0] === cur; });
-    var h = '<select class="sel" id="' + id + '" data-f="' + f + '" style="width:100%" aria-describedby="' + id + '-err">' +
-      (known ? '' : '<option value="" selected>Choose…</option>') +
-      opts.map(function (o) {
-        return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + (o[2] && o[0] !== cur ? ' disabled' : '') + '>' + esc(o[1]) + '</option>';
-      }).join('') + '</select>';
-    return fieldWrap(id, label, h, hint ? '<p class="sub">' + hint + '</p>' : '');
   }
 
   // values seen in the sheet for a fieldIn column (exact match, case-insensitive)
@@ -389,15 +501,14 @@
     (cur || []).forEach(function (v) { var k = String(v).toLowerCase(); if (!spellAll[k]) spellAll[k] = String(v); });
     function rank(k) { var i = VALUE_ORDER.indexOf(k); return i < 0 ? 100 : i; }
     return Object.keys(spellAll).sort(function (x, y) { return rank(x) - rank(y) || x.localeCompare(y); }).map(function (k) {
-      var n = memo.counts[k] || 0;
-      return { value: spellAll[k], label: spellAll[k] + ' · ' + plural(n, 'stock') };
+      return { value: spellAll[k], label: spellAll[k], n: memo.counts[k] || 0 };
     });
   }
   function rangeHint(P, field) {
     var key = 'range:' + field;
     if (!(key in P.memo)) {
       var v = P.ctx.stocks.map(function (s) { return s[field]; }).filter(isNum).sort(function (a, b) { return a - b; });
-      P.memo[key] = v.length ? 'In your sheet: ' + F.num(v[0], 1) + ' to ' + F.num(v[v.length - 1], 1) + ', median ' + F.num(v[Math.floor(v.length / 2)], 1) + ' (' + plural(v.length, 'stock') + ' with a value).' : 'No values in your sheet for this column.';
+      P.memo[key] = v.length ? 'In your sheet: ' + F.num(v[0], 1) + ' to ' + F.num(v[v.length - 1], 1) + ', middle value ' + F.num(v[Math.floor(v.length / 2)], 1) + ' (' + plural(v.length, 'stock') + ' with a value).' : 'No values in your sheet for this column.';
     }
     return P.memo[key];
   }
@@ -411,20 +522,20 @@
       if (opts) {
         var cur = (v || []).map(function (x) { return String(x).toLowerCase(); });
         return '<div class="field" style="grid-column:1/-1" role="group" aria-labelledby="' + id + '-l" id="' + id + '"><span id="' + id + '-l">' + esc(pp.label) +
-          (r.id === 'fieldIn' ? ' (counts = stocks in your sheet now)' : '') + '</span><div style="display:flex;flex-wrap:wrap;gap:4px 16px">' +
+          (r.id === 'fieldIn' ? ' <span class="sub">(number = stocks in your sheet with it now)</span>' : '') + '</span><div class="ss-opts">' +
           opts.map(function (o) {
-            return '<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" ' + data + ' data-pt="opt" value="' + esc(o.value) + '"' +
-              (cur.indexOf(String(o.value).toLowerCase()) >= 0 ? ' checked' : '') + '> ' + esc(o.label) + '</label>';
+            return '<label class="ss-chk"><input type="checkbox" ' + data + ' data-pt="opt" value="' + esc(o.value) + '"' +
+              (cur.indexOf(String(o.value).toLowerCase()) >= 0 ? ' checked' : '') + '><span>' + esc(o.label) + (o.n != null ? ' <i>' + F.int(o.n) + '</i>' : '') + '</span></label>';
           }).join('') + '</div>' + errP(id) + '</div>';
       }
-      return fieldWrap(id, pp.label + ' (comma separated)', '<input class="inp" type="text" id="' + id + '" ' + data + ' data-pt="list" style="width:100%" value="' +
+      return fieldWrap(id, pp.label + ' (comma between)', '<input class="inp" type="text" id="' + id + '" ' + data + ' data-pt="list" style="width:100%" value="' +
         esc((v || []).join(', ')) + '" aria-describedby="' + id + '-err">', '', true);
     }
     if (typeof pp.def === 'number') {
       var hint = '';
       if (pp.key === 'maxAge') hint = AGE_HINT;
       else if (range) hint = 'Allowed: ' + (range[3] ? 'above ' : '') + F.num(range[0]) + ' to ' + F.num(range[1]) + (range[2] ? ', whole numbers' : '');
-      if (pp.key === 'minTurnover') hint = '₹50,00,000 = ₹50 lakh. The sheet uses ₹50 lakh.';
+      if (pp.key === 'minTurnover') hint = '50,00,000 = ₹50 lakh (the sheet uses ₹50 lakh).';
       return fieldWrap(id, pp.label, numInput(id, data + ' data-pt="num"', v), hint ? '<p class="sub">' + esc(hint) + '</p>' : '');
     }
     if (pp.options) {
@@ -437,132 +548,312 @@
     return fieldWrap(id, pp.label, numInput(id, data + ' data-pt="numblank" placeholder="no limit"', v));
   }
 
-  function ruleHtml(P, g, r, i) {
+  // ---------- step 1 + 2: style and strategy cards ----------
+  function styleCards(P) {
+    var all = P.STR.list();
+    return '<section class="card ss-step-card"><div class="card-head"><div><h2><span class="ss-n">1</span> How do you trade?</h2>' +
+      '<p>Pick your style - the strategies below follow it. The data is end-of-day (one candle a day), so intraday trading is not covered.</p></div></div>' +
+      '<div class="ss-styles" role="group" aria-label="Trading style">' + STYLE_CARDS.map(function (s) {
+        var n = all.filter(function (c) { return s.id === 'all' || c.style === s.id; }).length, on = ST.style === s.id;
+        return '<button type="button" class="ss-style' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-act="style" data-style="' + s.id + '">' +
+          '<span class="ss-style-i">' + icon(s.icon) + '</span><b>' + esc(s.name) + '</b><span class="ss-style-h">' + esc(s.hold) + '</span>' +
+          '<span class="ss-style-l">' + esc(s.looks) + '</span><span class="ss-style-c">' + plural(n, 'strategy', 'strategies') + '</span></button>';
+      }).join('') + '</div></section>';
+  }
+
+  function countHtml(P, c) {
+    var k = COUNTS[c.id], mode = c.mode === 'screen' ? 'screen' : 'setup';
+    if (!k || k.key !== countKey(c)) return '<span class="sub">' + (P.ctx.history ? 'Checking today\'s stocks…' : 'Loading the daily candles…') + '</span>';
+    if (k.error) return '<span class="sub">Could not check today: ' + esc(k.error) + '</span>';
+    var q = k.run.counts.qualified || 0, w = k.run.counts.watch || 0;
+    return '<b>' + F.int(q) + '</b> ' + (mode === 'screen' ? (q === 1 ? 'stock matches' : 'stocks match') : 'qualified') + ' today' +
+      (mode === 'setup' && w ? ' <span class="sub">· ' + F.int(w) + ' on watch</span>' : '');
+  }
+  // the rules themselves (an automatic save in the same minute keeps the version and the time)
+  function countKey(c) { return c.id + '@' + JSON.stringify(canon(c)) + '@' + (SB.ctx.market.asOf || '') + '@' + (SB.ctx.market.state || ''); }
+
+  function stratCards(P) {
+    var STR = P.STR, active = STR.activeId();
+    var list = STR.list().filter(function (c) { return ST.style === 'all' || c.style === ST.style; });
+    var h = '<div class="ss-cards">';
+    list.forEach(function (c) {
+      var sel = c.id === ST.sel, on = c.id === active;
+      h += '<article class="ss-card' + (sel ? ' sel' : '') + (on ? ' active' : '') + '"' + (sel ? ' aria-current="true"' : '') + '>' +
+        '<div class="ss-card-t"><span class="ss-pill">' + icon(c.style === 'positional' ? 'positional' : c.style === 'long-term' ? 'longterm' : 'swing') + esc(styleName(c.style)) + '</span>' +
+        '<span class="ss-pill">' + esc(MODES[c.mode === 'screen' ? 'screen' : 'setup'][0]) + '</span>' + (on ? '<span class="badge s-good ss-inuse">In use</span>' : '') + '</div>' +
+        '<h3><button type="button" class="ss-card-name" data-act="open" data-id="' + esc(c.id) + '">' + esc(c.name || c.id) + '</button></h3>' +
+        '<p class="ss-card-d">' + esc(firstSentence(c.description) || 'No description.') + '</p>' +
+        '<div class="tags">' + sourceBadges(STR, c) + (isDirty(STR, c.id) ? ui.badge('Changes not saved yet', 's-warn') : '') + '</div>' +
+        '<div class="ss-card-n" data-count="' + esc(c.id) + '">' + countHtml(P, c) + '</div>' +
+        '<div class="ss-card-a">' + (on ? '<span class="sub">Drives Daily Suggestions</span>' :
+          '<button type="button" class="btn" data-act="use" data-id="' + esc(c.id) + '">Use for Daily Suggestions</button>') +
+        '<button type="button" class="btn' + (sel ? '' : ' primary') + '" data-act="open" data-id="' + esc(c.id) + '"' + (sel ? ' aria-pressed="true"' : '') + '>' +
+        (sel ? 'Open below ↓' : 'Open &amp; edit') + '</button></div></article>';
+    });
+    if (!list.length) h += '<p class="empty">No strategy of this style yet - make one with “New strategy”.</p>';
+    return h + '</div>';
+  }
+
+  function newForm(P) {
+    var style = ST.style === 'all' ? 'swing' : ST.style, cur = P.STR.get(ST.sel);
+    return '<div class="ss-new" id="st-new"><h3>New strategy</h3><div class="form-grid">' +
+      fieldWrap('st-new-name', 'Name', '<input class="inp" type="text" id="st-new-name" maxlength="80" placeholder="e.g. My swing setup" style="width:100%">') +
+      '<div class="field"><span>Trading style</span><div class="ss-segs" role="radiogroup" aria-label="Trading style of the new strategy">' +
+      STYLES.slice(0, 3).map(function (s) {
+        return '<label class="ss-seg"><input type="radio" name="st-new-style" value="' + s[0] + '"' + (s[0] === style ? ' checked' : '') + '><span>' + esc(s[1]) + '</span></label>';
+      }).join('') + '</div></div></div>' +
+      '<div class="field" style="margin-top:12px"><span>Start from</span><div class="ss-from">' +
+      '<label class="ss-opt"><input type="radio" name="st-new-from" value="starter" checked><span><b>A ready-made starter</b><small id="st-new-starter">' + esc(STARTERS[style].description) + '</small></span></label>' +
+      (cur ? '<label class="ss-opt"><input type="radio" name="st-new-from" value="copy"><span><b>A copy of “' + esc(cur.name) + '”</b><small>All its rules, as saved' +
+        (isDirty(P.STR, cur.id) ? ' plus the changes not saved yet' : '') + '.</small></span></label>' : '') +
+      '</div></div><p class="sub down" id="st-new-msg" role="alert" hidden></p>' +
+      '<div class="ss-row"><button type="button" class="btn primary" data-act="create">Create</button><button type="button" class="btn" data-act="new-cancel">Cancel</button></div></div>';
+  }
+
+  function pickCard(P) {
+    var sc = STYLE_CARDS.filter(function (s) { return s.id === ST.style; })[0] || STYLE_CARDS[3];
+    return '<section class="card ss-step-card" id="st-pickcard"><div class="card-head"><div><h2><span class="ss-n">2</span> Pick a strategy <span class="sub">· ' + esc(sc.name) + '</span></h2>' +
+      '<p>“In use” = the one Daily Suggestions follows. Open any strategy to see its rules in plain words and change them.</p></div>' +
+      '<button type="button" class="btn" data-act="new" aria-expanded="' + ST.newOpen + '">' + icon('plus') + ' New strategy</button></div>' +
+      (ST.newOpen ? newForm(P) : '') + '<div id="st-cards">' + stratCards(P) + '</div>' + flashHtml('top') + '</section>';
+  }
+
+  // ---------- step 3: the selected strategy ----------
+  function recipeHtml(P, d) {
+    var on = function (k) { return d[k].filter(function (r) { return r.enabled !== false; }); };
+    var li = function (rules, extra) {
+      return '<ul class="ss-rl">' + rules.map(function (r) { return '<li>' + esc(safeLabel(r)) + (extra ? extra(r) : '') + '</li>'; }).join('') + '</ul>';
+    };
+    var steps = [];
+    steps.push(['eye', 'Looks at', esc(cap(catText(d.universe.categories))) + ' - ' + plural(universeCount(P.ctx, d.universe.categories), 'stock') + ' of your watchlist.']);
+    var f = on('filters');
+    steps.push(['shield', 'Skips', f.length ? 'a stock that fails any of these:' + li(f) : 'nothing - every stock is checked.']);
+    if (d.mode !== 'screen') {
+      var t = on('triggers'), buy = t.filter(function (r) { return !r.watchOnly; }), wo = t.filter(function (r) { return r.watchOnly; });
+      var need = d.qualify.minTriggers;
+      steps.push(['bolt', 'Buy signal', (buy.length ? (buy.length === 1 ? 'when this happens on the latest daily candle:' : need > 1 ? 'when at least ' + need + ' of these happen on the latest daily candle:' :
+        'when any one of these happens on the latest daily candle:') + li(buy) : '<span class="down">none switched on - add one below.</span>') +
+        (wo.length ? '<p class="sub">Only watch (the Watch list, never Qualified): ' + wo.map(function (r) { return esc(safeLabel(r)); }).join(' · ') + '</p>' : '')]);
+    }
+    var c = on('confirms');
+    steps.push(['check', d.mode === 'screen' ? 'Lists a stock when' : 'Must also be true', c.length ? 'all of these are true:' + li(c) : d.mode === 'screen' ? '<span class="down">no condition switched on - add one below.</span>' : 'nothing more - a buy signal is enough.']);
+    steps.push(['exit', 'Exit plan', d.mode === 'screen' ? 'none - it lists stocks and you time the entry. For reference: stop-loss ' + esc(stopText(d.exits.stop)) + ', target ' + esc(targetText(d.exits.target)) + '.' :
+      'entry = the latest close; stop-loss ' + esc(stopText(d.exits.stop)) + '; target ' + esc(targetText(d.exits.target)) + (d.exits.minRR > 0 ? '; only when the reward is at least ' + F.num(d.exits.minRR) + ' × the risk' : '') + '.']);
+    return '<ol class="ss-recipe">' + steps.map(function (s, i) {
+      return '<li><span class="ss-rn">' + icon(s[0]) + '</span><div><b>' + (i + 1) + '. ' + esc(s[1]) + '</b><div class="ss-rt">' + s[2] + '</div></div></li>';
+    }).join('') + '</ol>';
+  }
+
+  function confirmHtml(P, saved) {
+    var STR = P.STR, conf = STR.isConfirmed(saved.id), demo = saved.source === 'demo', items = Array.isArray(saved.assumptions) ? saved.assumptions : [];
+    var h = '<div class="ss-confirm ' + (demo ? 'warn' : conf ? 'good' : 'warn') + '">';
+    if (demo) {
+      h += '<p><strong>An example for testing the website - not a recommendation.</strong> Make your own from it: “⋯ More” → Duplicate, or “New strategy”.</p>';
+    } else {
+      h += '<label class="ss-confirm-l"><input type="checkbox" id="st-confirm"' + (conf ? ' checked' : '') + '><span><strong>' +
+        (conf ? 'You confirmed these rules (version ' + saved.version + ')' : 'Are these your rules? Tick to confirm') + '</strong>' +
+        '<small>' + (conf ? 'Any change asks you to confirm again.' : 'Until then Daily Suggestions marks this strategy “not confirmed”.') + '</small></span></label>';
+    }
+    if (items.length) {
+      h += '<details class="ss-assume"><summary>What was assumed (' + items.length + ')</summary><ul>' + items.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul>' +
+        (saved.source === 'request' ? '<p class="sub">Written from your own description: where it said "about" or "relatively", the numbers are assumptions - change them below.</p>' : '') +
+        (saved.source === 'discovered' || saved.source === 'discovered-edited' ? '<p class="sub">Found in your sheet (Code.gs and your dashboards); how the rules combine into a suggestion is not written there.</p>' : '') +
+        '</details>';
+    }
+    return h + '</div>';
+  }
+
+  function savedHtml(P) {
+    var STR = P.STR, id = ST.sel, saved = STR.get(id), s = SAVE[id] || {}, dirty = isDirty(STR, id);
+    var when = saved.updatedAt ? ' · ' + esc(String(saved.updatedAt).replace(/^\d{4}-\d{2}-\d{2} /, '')) : '';
+    if (dirty && s.state === 'invalid') {
+      return '<span class="ss-st bad">⚠ Not saved yet - fix ' + plural(s.list.length, 'thing') + ': ' + esc(s.list[0].msg) + '</span>' +
+        '<button type="button" class="btn ss-sm" data-act="show-err">Show</button><button type="button" class="btn ss-sm" data-act="discard">Go back to the saved version</button>';
+    }
+    if (s.state === 'failed') return '<span class="ss-st bad">⚠ This browser did not keep it - its storage is blocked or full (for example a private window). Your changes stay on this page until you leave it.</span>';
+    if (dirty || s.state === 'saving') return '<span class="ss-st">Saving…</span>';
+    return '<span class="ss-st good">✓ Saved in this browser · version ' + saved.version + when + '</span>';
+  }
+
+  function ruleHtml(P, g, r, i, screen) {
     var def = SB.strategy.CONDITIONS[r.id], on = r.enabled !== false, lbl = safeLabel(r);
     var data = 'data-g="' + g.key + '" data-i="' + i + '"';
     var params = paramDefs(r.id);
-    return '<li style="padding:12px 0"><div class="grow">' +
-      '<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between">' +
-      '<b id="lbl-' + g.key + '-' + i + '" style="min-width:0;overflow-wrap:anywhere">' + esc(lbl) + '</b>' +
-      '<span class="tags">' + (def.kind === 'sheet' ? ui.badge('From your sheet', 's-info') : ui.badge('Standard rule', '')) +
-      (r.watchOnly ? ui.badge('Watch only', 's-info') : '') + (on ? '' : ui.badge('Off - not checked', '')) + '</span></div>' +
-      (def.kind === 'sheet' && def.ref ? '<p class="sub" style="overflow-wrap:anywhere">Source: ' + esc(def.ref) + '</p>' : '') +
-      (def.pit === false ? '<p class="sub">Uses today\'s fundamentals from the sheet (left out of backtests).</p>' : '') +
-      (params.length ? '<div class="form-grid" style="margin-top:8px">' + params.map(function (pp) { return paramHtml(P, g, i, r, pp); }).join('') + '</div>' : '') +
-      '<div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-top:8px">' +
-      '<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="on-' + g.key + '-' + i + '" ' + data + ' data-r="enabled"' + (on ? ' checked' : '') + '> Rule on</label>' +
-      (g.key === 'triggers' ? '<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="wo-' + g.key + '-' + i + '" ' + data + ' data-r="watchOnly"' + (r.watchOnly ? ' checked' : '') + '> Watch only</label>' : '') +
-      '<button type="button" class="btn danger" id="rm-' + g.key + '-' + i + '" ' + data + ' data-act="remove" style="margin-left:auto" aria-label="Remove ' + esc(g.one) + ': ' + esc(lbl) + '">Remove</button>' +
-      '</div></div></li>';
+    return '<li class="ss-rule' + (on ? '' : ' off') + '">' +
+      '<div class="ss-rule-h"><label class="ss-switch" title="' + (on ? 'On - checked' : 'Off - not checked') + '"><input type="checkbox" role="switch" id="on-' + g.key + '-' + i + '" ' + data + ' data-r="enabled"' + (on ? ' checked' : '') +
+      ' aria-label="' + esc(cap(g.one)) + ' on: ' + esc(lbl) + '"><span aria-hidden="true"></span></label>' +
+      '<div class="ss-rule-t"><b id="lbl-' + g.key + '-' + i + '">' + esc(lbl) + '</b>' +
+      '<p>' + esc(EXPLAIN[r.id] || '') + (def.kind === 'sheet' ? ' <span class="ss-src">from your sheet</span>' : '') + (def.pit === false && !screen ? ' <span class="ss-src">uses today\'s fundamentals</span>' : '') + '</p></div>' +
+      '<button type="button" class="ss-x" id="rm-' + g.key + '-' + i + '" ' + data + ' data-act="remove" aria-label="Remove ' + esc(g.one) + ': ' + esc(lbl) + '" title="Remove">' + icon('x') + '</button></div>' +
+      (params.length && on ? '<div class="form-grid ss-params">' + params.map(function (pp) { return paramHtml(P, g, i, r, pp); }).join('') + '</div>' : '') +
+      (g.key === 'triggers' && on ? '<label class="ss-wo"><input type="checkbox" id="wo-' + g.key + '-' + i + '" ' + data + ' data-r="watchOnly"' + (r.watchOnly ? ' checked' : '') +
+        '> Only watch - puts the stock on the Watch list, never makes it qualify</label>' : '') + '</li>';
   }
 
-  function addHtml(g, d) {
+  function pickerHtml(g, d) {
     var C = SB.strategy.CONDITIONS, used = {};
     d[g.key].forEach(function (r) { used[r.id] = true; });
     var ids = Object.keys(C).filter(function (k) { return C[k].setGroup === g.set; });
-    function opt(k) {
-      return '<option value="' + esc(k) + '">' + esc(safeLabel({ id: k, params: defaults(k) })) + (used[k] ? ' (already added)' : '') + '</option>';
-    }
-    var sheet = ids.filter(function (k) { return C[k].kind === 'sheet'; }), std = ids.filter(function (k) { return C[k].kind !== 'sheet'; });
-    return '<div class="controls" style="margin:12px 0 0">' +
-      '<label class="sr-only" for="add-' + g.key + '">Add a ' + g.one + ' from the catalogue</label>' +
-      '<select class="sel" id="add-' + g.key + '" style="flex:1 1 240px;min-width:0"><option value="">Add a ' + g.one + ' from the catalogue…</option>' +
-      (sheet.length ? '<optgroup label="From your sheet">' + sheet.map(opt).join('') + '</optgroup>' : '') +
-      (std.length ? '<optgroup label="Standard rules">' + std.map(opt).join('') + '</optgroup>' : '') + '</select>' +
-      '<button type="button" class="btn" id="add-btn-' + g.key + '" data-act="add" data-g="' + g.key + '">Add ' + g.one + '</button></div>' +
-      '<p class="sub down" id="add-' + g.key + '-msg" role="alert" hidden></p>';
+    var open = ST.addOpen === g.key;
+    var h = '<details class="ss-add" id="add-' + g.key + '"' + (open ? ' open' : '') + '><summary class="btn">' + icon('plus') + ' Add a ' + esc(g.one) + '</summary>' +
+      '<div class="ss-pick"><input class="inp" type="search" data-pick-q="' + g.key + '" placeholder="Search, e.g. EMA, volume, OPM" aria-label="Search the ' + esc(g.one) + 's">';
+    TOPICS.forEach(function (tp) {
+      var inTopic = ids.filter(function (k) { return (TOPIC[k] || 'fund') === tp[0]; });
+      if (!inTopic.length) return;
+      h += '<div class="ss-pick-g"><h4>' + esc(tp[1]) + '</h4>' + inTopic.map(function (k) {
+        var lbl = safeLabel({ id: k, params: defaults(k) });
+        return '<button type="button" class="ss-pick-i" data-act="add" data-g="' + g.key + '" data-c="' + esc(k) + '" data-q="' + esc((lbl + ' ' + (EXPLAIN[k] || '')).toLowerCase()) + '">' +
+          '<b>' + esc(lbl) + '</b><span>' + esc(EXPLAIN[k] || '') + '</span>' + (used[k] ? '<em>already added - adds another</em>' : '') + '</button>';
+      }).join('') + '</div>';
+    });
+    return h + '</div></details>';
   }
 
   function groupCard(P, g, d) {
     var rules = d[g.key], on = rules.filter(function (r) { return r.enabled !== false; }).length, screen = d.mode === 'screen';
-    var empty = {
-      filters: 'No filters - every stock in the universe is checked.',
-      triggers: screen ? 'No triggers (not used in screen mode).' : 'No triggers yet. Setup mode needs at least one - add one below.',
-      confirms: screen ? 'No requirements yet - a screen needs at least one.' : 'No requirements - after the filters, a firing trigger is enough to qualify.'
-    }[g.key];
-    var h = '<section class="card" id="sec-' + g.key + '"><div class="card-head"><div><h2>' + esc(g.title) + ' <span class="sub">· ' + on + ' of ' + rules.length + ' on</span></h2>' +
-      '<p>' + esc(g.help) + '</p></div></div>';
-    if (g.key === 'triggers' && screen) h += '<div class="note">Screen mode: triggers are not used - a stock matches when every filter and requirement passes. Switch the mode to Setup to use them.</div>';
-    h += errP('sec-' + g.key);
-    h += rules.length ? '<ul class="list">' + rules.map(function (r, i) { return ruleHtml(P, g, r, i); }).join('') + '</ul>' : '<p class="empty">' + esc(empty) + '</p>';
-    h += addHtml(g, d);
-    if (g.key === 'triggers' && !screen) {
-      h += '<div class="form-grid" style="margin-top:14px">' +
-        fieldWrap('st-mintrig', 'Minimum firing triggers to qualify', numInput('st-mintrig', 'data-f="minTriggers"', d.qualify.minTriggers), '<p class="sub" id="st-trig-count"></p>') + '</div>';
+    if (g.key === 'triggers' && screen) {
+      return '<section class="card ss-group" id="sec-triggers"><div class="card-head"><div><h2>' + icon(g.icon) + ' ' + esc(g.title) + '</h2>' +
+        '<p>This strategy lists stocks - it does not wait for a buy signal.' + (rules.length ? ' Its ' + plural(rules.length, 'signal') + ' are kept but not used.' : '') + '</p></div>' +
+        '<button type="button" class="btn" data-act="mode-setup">Use buy signals instead</button></div>' + errP('sec-triggers') + '</section>';
     }
+    var empty = {
+      filters: 'No safety checks - every stock is looked at.',
+      triggers: 'No buy signals yet - add one, or this strategy finds nothing.',
+      confirms: screen ? 'No conditions yet - add at least one.' : 'No extra conditions - after the safety checks a buy signal is enough.'
+    }[g.key];
+    var h = '<section class="card ss-group" id="sec-' + g.key + '"><div class="card-head"><div><h2>' + icon(g.icon) + ' ' + esc(g.title) + ' <span class="sub">· ' + on + ' of ' + rules.length + ' on</span></h2>' +
+      '<p>' + esc(screen && g.helpScreen ? g.helpScreen : g.help) + '</p></div></div>';
+    h += errP('sec-' + g.key);
+    h += rules.length ? '<ul class="ss-rules">' + rules.map(function (r, i) { return ruleHtml(P, g, r, i, screen); }).join('') + '</ul>' : '<p class="empty">' + esc(empty) + '</p>';
+    if (g.key === 'triggers') {
+      h += '<div class="ss-need">' + fieldWrap('st-mintrig', 'Signals needed at the same time', numInput('st-mintrig', 'data-f="minTriggers" min="1" max="20"', d.qualify.minTriggers),
+        '<p class="sub" id="st-trig-count"></p>') + '</div>';
+    }
+    h += pickerHtml(g, d);
     return h + '</section>';
   }
 
-  function detailsCard(d) {
-    var styles = STYLES.map(function (s) { return [s[0], s[1] + ' - ' + s[2], s[0] === 'intraday']; });
-    return '<section class="card"><div class="card-head"><div><h2>Name, mode &amp; style</h2><p>The data is daily end-of-day (one candle per session), so every rule is checked on the latest daily candle.</p></div></div>' +
-      '<div class="form-grid">' +
-      fieldWrap('st-name', 'Name', '<input class="inp" type="text" id="st-name" data-f="name" maxlength="120" style="width:100%" value="' + esc(d.name) + '" aria-describedby="st-name-err">') +
-      selectField('st-mode', 'Mode', 'mode', [['setup', 'Setup (entry timing, stop & target)'], ['screen', 'Screen (fundamentals, no timing)']], d.mode) +
-      selectField('st-style', 'Style', 'style', styles, d.style, 'Intraday is not available: there are no intraday candles.') +
-      fieldWrap('st-desc', 'Description', '<textarea class="inp" id="st-desc" data-f="description" rows="3" aria-describedby="st-desc-err">' + esc(d.description) + '</textarea>', '', true) +
-      fieldWrap('st-assump', 'Assumptions (one per line - shown in the confirmation box)', '<textarea class="inp" id="st-assump" data-f="assumptions" rows="4" aria-describedby="st-assump-err">' +
-        esc(d.assumptions.join('\n')) + '</textarea>', '', true) +
-      '</div></section>';
+  function exampleHtml(d) {
+    var st = d.exits.stop, tg = d.exits.target, e = 100, stop = null, note = '';
+    if (st.method === 'pct' && isNum(st.pct)) stop = e * (1 - st.pct / 100);
+    else if (st.method === 'atr' && isNum(st.mult)) { stop = e - st.mult * 3; note = ' (if its ATR is ₹3, a stock moving about 3% a day)'; }
+    else if (st.method === 'swing') note = 'the lowest low of the last ' + (st.bars || 10) + ' days';
+    else if (st.method === 'zone') note = 'just below the gap the signal found';
+    var tgt = null;
+    if (tg.method === 'pct' && isNum(tg.pct)) tgt = e * (1 + tg.pct / 100);
+    else if (tg.method === 'rr' && isNum(tg.rr) && stop != null) tgt = e + tg.rr * (e - stop);
+    var rr = stop != null && tgt != null && e > stop ? (tgt - e) / (e - stop) : null;
+    return '<div class="ss-example"><b>Example - a stock at ₹100:</b> stop-loss ' + (stop != null ? '<b class="down">₹' + F.num(stop, 2) + '</b>' + esc(note) : esc(note || '–')) +
+      ' · target ' + (tgt != null ? '<b class="up">₹' + F.num(tgt, 2) + '</b>' : tg.method === 'rr' ? esc(tg.rr + ' × the risk') : '–') +
+      (rr != null ? ' · reward:risk <b>1:' + F.num(rr, 2) + '</b>' : '') + '</div>';
   }
 
-  function universeCard(P, d) {
+  function exitsCard(d) {
+    var st = d.exits.stop, tg = d.exits.target, sk = STOP_KEY[st.method], tk = TARGET_KEY[tg.method], screen = d.mode === 'screen';
+    function opts(name, f, list, cur) {
+      return '<div class="ss-from" role="radiogroup" aria-label="' + esc(name) + '">' + list.map(function (o) {
+        return '<label class="ss-opt"><input type="radio" name="' + f + '" data-f="' + f + '" value="' + o[0] + '"' + (o[0] === cur ? ' checked' : '') + '><span><b>' + esc(o[1]) + '</b><small>' + esc(o[2]) + '</small></span></label>';
+      }).join('') + '</div>';
+    }
+    var h = '<section class="card ss-group" id="sec-exits"><div class="card-head"><div><h2>' + icon('exit') + ' Exit plan</h2><p>' +
+      (screen ? 'This strategy lists stocks, so these are shown for reference only - they do not change which stocks are listed.' :
+        'Measured from the entry = the latest daily close. A set-up without a valid stop-loss below the entry, or with too little reward for the risk, goes on the Watch list.') +
+      '</p></div></div>';
+    h += '<div class="ss-exits"><div><h3>Stop-loss</h3>' + opts('Stop-loss method', 'stopMethod', STOPS, st.method) + errP('st-stopm') +
+      (sk ? '<div class="form-grid" style="margin-top:8px">' + numField('st-stopv', STOP_LABEL[st.method], 'stopVal', st[sk]) + '</div>' : '') + '</div>' +
+      '<div><h3>Target</h3>' + opts('Target method', 'targetMethod', TARGETS, tg.method) + errP('st-tgtm') +
+      (tk ? '<div class="form-grid" style="margin-top:8px">' + numField('st-tgtv', TARGET_LABEL[tg.method], 'targetVal', tg[tk]) + '</div>' : '') + '</div></div>';
+    h += '<div id="st-example">' + exampleHtml(d) + '</div>';
+    h += '<div class="form-grid" style="margin-top:12px">' +
+      numField('st-minrr', 'Minimum reward:risk (0 = no minimum)', 'minRR', d.exits.minRR, '2 = the target must be at least 2 × the risk.') +
+      numField('st-warn', 'Warn when results are due within (days, 0 = off)', 'warnDays', d.events.warnDays, 'Adds a warning to the suggestion; it does not remove it.') +
+      '</div>';
+    return h + '</section>';
+  }
+
+  function howCard(d) {
+    var known = STYLES.slice(0, 3).some(function (s) { return s[0] === d.style; });
+    return '<section class="card ss-group" id="sec-how"><div class="card-head"><div><h2>How it works</h2><p>Your trading style, and whether it times an entry or just lists stocks.</p></div></div>' +
+      '<div class="field"><span>Trading style</span><div class="ss-segs" role="radiogroup" aria-label="Trading style" id="st-style">' +
+      STYLES.slice(0, 3).map(function (s) {
+        return '<label class="ss-seg"><input type="radio" name="st-style" data-f="style" value="' + s[0] + '"' + (s[0] === d.style ? ' checked' : '') + '><span>' + esc(s[1]) + ' <small>' + esc(s[2]) + '</small></span></label>';
+      }).join('') + '</div>' + (known ? '' : '<p class="sub down">Saved as “' + esc(styleName(d.style)) + '” - pick one of the three.</p>') + errP('st-style') + '</div>' +
+      '<div class="field" style="margin-top:12px"><span>What it does</span><div class="ss-from ss-from2" role="radiogroup" aria-label="What it does">' +
+      ['setup', 'screen'].map(function (m) {
+        return '<label class="ss-opt"><input type="radio" name="st-mode" data-f="mode" value="' + m + '"' + (d.mode === m ? ' checked' : '') + '><span><b>' + esc(MODES[m][0]) + '</b><small>' + esc(MODES[m][1]) + '</small></span></label>';
+      }).join('') + '</div></div></section>';
+  }
+
+  function moreCard(P, d) {
     var counts = {}, unc = 0, sel = d.universe.categories;
     P.ctx.stocks.forEach(function (s) { if (s.cat) counts[s.cat] = (counts[s.cat] || 0) + 1; else unc++; });
     var cats = SB.classify.CATEGORIES.slice();
     sel.forEach(function (id) { if (!SB.classify.categoryById(id)) cats.push({ id: id, name: id + ' (unknown category)' }); });
     var boxes = cats.map(function (c) {
-      return '<label style="display:flex;gap:6px;align-items:center;min-width:0"><input type="checkbox" data-f="cat" value="' + esc(c.id) + '"' +
-        (sel.indexOf(c.id) >= 0 ? ' checked' : '') + '> <span style="min-width:0;overflow-wrap:anywhere">' + esc(c.name) + ' <span class="sub">' + F.int(counts[c.id] || 0) + '</span></span></label>';
+      return '<label class="ss-chk"><input type="checkbox" data-f="cat" value="' + esc(c.id) + '"' + (sel.indexOf(c.id) >= 0 ? ' checked' : '') + '><span>' + esc(c.name) + ' <i>' + F.int(counts[c.id] || 0) + '</i></span></label>';
     }).join('');
-    return '<section class="card"><div class="card-head"><div><h2>Universe</h2><p>Which stocks of your watchlist the strategy looks at.</p></div></div>' +
-      '<details id="st-cats-d"' + (ST.catsOpen ? ' open' : '') + '><summary style="cursor:pointer">Categories: <b id="st-cats-sum"></b></summary>' +
-      '<p class="sub" style="margin:8px 0">Tick none to use all categories. Unclassified stocks (' + F.int(unc) + ') are only included when none is ticked.</p>' +
-      '<div class="form-grid" role="group" aria-label="Categories" id="st-cats">' + boxes + '</div>' +
-      '<div style="margin-top:10px"><button type="button" class="btn" id="st-cats-clear" data-act="cats-clear">Untick all (use all categories)</button></div></details>' + errP('st-cats') +
-      '<div class="form-grid" style="margin-top:12px">' +
-      numField('st-minbars', 'Minimum daily candles per stock', 'minBars', d.universe.minBars, 'Stocks with fewer candles are shown as Insufficient data. <span id="st-bars-hint"></span>') +
-      '</div></section>';
+    return '<details class="card ss-more" id="st-more"' + (ST.moreOpen ? ' open' : '') + '><summary><h2>More settings</h2><span class="sub">Which stocks to look at, description, assumptions, minimum candles</span></summary>' +
+      '<div class="ss-more-b"><div class="field"><span>Stocks to look at: <b id="st-cats-sum"></b></span>' +
+      '<p class="sub">Tick none to look at every category. Stocks without a category (' + F.int(unc) + ') are only included when none is ticked.</p>' +
+      '<div class="ss-opts" role="group" aria-label="Categories" id="st-cats">' + boxes + '</div>' +
+      '<div style="margin-top:8px"><button type="button" class="btn ss-sm" data-act="cats-clear">Untick all (every category)</button></div>' + errP('st-cats') + '</div>' +
+      '<div class="form-grid" style="margin-top:14px">' +
+      fieldWrap('st-desc', 'Description', '<textarea class="inp" id="st-desc" data-f="description" rows="3" aria-describedby="st-desc-err">' + esc(d.description) + '</textarea>', '', true) +
+      fieldWrap('st-assump', 'Assumptions (one per line - shown under “What was assumed”)', '<textarea class="inp" id="st-assump" data-f="assumptions" rows="4" aria-describedby="st-assump-err">' +
+        esc(d.assumptions.join('\n')) + '</textarea>', '', true) +
+      numField('st-minbars', 'Minimum daily candles per stock', 'minBars', d.universe.minBars, 'Fewer = shown as Insufficient data. <span id="st-bars-hint"></span>') +
+      '</div></div></details>';
   }
 
-  function exitsCard(d) {
-    var st = d.exits.stop, tg = d.exits.target, sk = STOP_KEY[st.method], tk = TARGET_KEY[tg.method];
-    var h = '<section class="card"><div class="card-head"><div><h2>Exits &amp; events</h2><p>Stop-loss and target are measured from the entry reference = the latest daily close. ' +
-      (d.mode === 'screen' ? 'In screen mode they are shown for reference only and do not change whether a stock matches.' : 'A setup without a valid stop below the entry, or with reward:risk below the minimum, is shown as Watch.') +
-      '</p></div></div><div class="form-grid">';
-    h += selectField('st-stopm', 'Stop-loss method', 'stopMethod', STOPS, st.method);
-    h += sk ? numField('st-stopv', STOP_LABEL[st.method], 'stopVal', st[sk]) :
-      (st.method === 'zone' ? '<div class="field"><span>Stop level</span><p class="sub">Just below the bottom of the FVG zone found by a zone trigger; 2 × ATR14 when no zone is found.</p></div>' : '');
-    h += selectField('st-tgtm', 'Target method', 'targetMethod', TARGETS, tg.method);
-    if (tk) h += numField('st-tgtv', TARGET_LABEL[tg.method], 'targetVal', tg[tk]);
-    h += numField('st-minrr', 'Minimum reward:risk (0 = no minimum)', 'minRR', d.exits.minRR, '2 means the target must be at least 2 × the risk.');
-    h += numField('st-warn', 'Warn when results are due within (days, 0 = off)', 'warnDays', d.events.warnDays, 'Adds a warning to the suggestion; it does not block it.');
-    return h + '</div></section>';
+  function historyCard() {
+    return '<details class="card ss-more" id="st-histd"' + (ST.histOpen ? ' open' : '') + '><summary><h2>Change history &amp; backup</h2><span class="sub">Every version saved in this browser · export / import a file to move it to another device</span></summary>' +
+      '<div class="ss-more-b"><div class="ss-row" style="margin-bottom:10px"><button type="button" class="btn" data-act="export">Export this strategy (JSON file)</button>' +
+      '<button type="button" class="btn" data-act="import">Import a strategy file</button></div><div id="st-hist"></div></div></details>';
   }
 
-  function saveBar(P, saved) {
-    var id = saved.id;
-    return '<section class="card" id="st-savebar">' +
-      '<div class="controls" style="margin-bottom:6px">' +
-      '<label class="sr-only" for="st-note">Change note</label>' +
-      '<input class="inp" type="text" id="st-note" maxlength="200" style="flex:1 1 240px;min-width:0" placeholder="Change note (optional), e.g. raised the turnover filter" value="' + esc(NOTES[id] || '') + '">' +
-      '<button type="button" class="btn primary" id="st-save" data-act="save">Save</button>' +
-      '<button type="button" class="btn" id="st-discard" data-act="discard">Discard edits</button></div>' +
-      '<p class="sub" id="st-dirty" aria-live="polite"></p>' +
-      '<details id="st-pend-d"' + (ST.pendOpen ? ' open' : '') + ' hidden><summary class="sub" style="cursor:pointer">Show the changes</summary><ul class="checks" id="st-pending"></ul></details>' +
-      flashHtml('save') + '</section>';
+  function liveCard() {
+    return '<section class="card ss-live" id="st-live" aria-live="polite"><span class="sg-eyebrow">Live preview · today</span><div id="st-live-b">' + ui.skeleton(3) + '</div></section>';
+  }
+
+  function workHead(P, saved, d) {
+    var STR = P.STR, id = saved.id, active = STR.activeId() === id, preset = !!SB.strategy.PRESETS[id];
+    var edited = preset && !same(saved, SB.strategy.PRESETS[id]);
+    var h = '<div class="ss-head"><div class="ss-head-l"><span class="ss-n">3</span><div class="ss-head-name">' +
+      '<label class="sg-eyebrow" for="st-name">Fine-tune - the name</label><input class="ss-name" type="text" id="st-name" data-f="name" maxlength="120" value="' + esc(d.name) + '" aria-describedby="st-name-err">' +
+      errP('st-name') + '<div class="tags" id="st-badges">' + sourceBadges(STR, saved) + '</div></div></div>' +
+      '<div class="ss-head-r"><p class="ss-saved" id="st-saved" aria-live="polite">' + savedHtml(P) + '</p><div class="ss-row">' +
+      '<button type="button" class="btn" id="st-undo" data-act="undo"' + ((UNDO[id] || []).length ? '' : ' disabled') + ' title="Undo the last change">' + icon('undo') + ' Undo</button>' +
+      (active ? '<span class="btn ss-inuse-b" aria-disabled="true">✓ In use for Daily Suggestions</span>' : '<button type="button" class="btn primary" id="st-use" data-act="use" data-id="' + esc(id) + '">Use for Daily Suggestions</button>') +
+      '<details class="ss-menu"><summary class="btn">⋯ More</summary><div class="ss-menu-b">' +
+      '<button type="button" class="btn" data-act="dup">Duplicate as my own copy</button>' +
+      '<button type="button" class="btn" data-act="export">Export (JSON file)</button>' +
+      (preset ? '<button type="button" class="btn" data-act="reset"' + (edited ? '' : ' disabled title="Already the original"') + '>Reset to the original</button>' :
+        '<button type="button" class="btn danger" data-act="delete">Delete this strategy</button>') +
+      '</div></details></div></div></div>';
+    if (ST.resetAsk && preset) {
+      h += '<div class="note warn" style="margin-top:12px"><strong>Reset “' + esc(saved.name) + '” to the original?</strong> Your saved versions of it (now version ' + saved.version +
+        '), any change not saved yet and its confirmation are removed from this browser. The history keeps a “reset” line.' +
+        '<div class="ss-row" style="margin-top:8px"><button type="button" class="btn danger" id="st-reset-yes" data-act="reset-yes">Yes, reset</button>' +
+        '<button type="button" class="btn" data-act="ask-no">Cancel</button></div></div>';
+    }
+    if (ST.delAsk && !preset) {
+      h += '<div class="note bad" style="margin-top:12px"><strong>Delete “' + esc(saved.name) + '” from this browser?</strong> Its rules and history are removed' +
+        (active ? ' and Daily Suggestions goes back to “' + esc((STR.get('sheet') || {}).name || 'sheet') + '”' : '') + '. Export it first if you may want it back.' +
+        '<div class="ss-row" style="margin-top:8px"><button type="button" class="btn danger" id="st-del-yes" data-act="delete-yes">Yes, delete</button>' +
+        '<button type="button" class="btn" data-act="ask-no">Cancel</button></div></div>';
+    }
+    return h;
   }
 
   function flashHtml(where) {
     if (!FLASH || FLASH.where !== where) return '';
-    return '<div class="note' + (FLASH.cls ? ' ' + FLASH.cls : '') + '" id="st-flash-' + where + '" tabindex="-1" role="status" style="margin-top:10px' +
-      (where === 'save' && FLASH.cls === 'bad' ? ';max-height:40vh;overflow:auto' : '') + '">' + FLASH.html + '</div>';
+    return '<div class="note' + (FLASH.cls ? ' ' + FLASH.cls : '') + '" id="st-flash-' + where + '" tabindex="-1" role="status" style="margin-top:12px">' + FLASH.html + '</div>';
   }
   function chKey(id, version, at) { return id + '|' + version + '|' + at; }
-  function noteChanges(id, version, at, lines) {
-    if (!lines || !lines.length) return;
+  function noteChanges(id, version, at, lines, oldAt) {
     var all = ui.store.get(CH_KEY, {}) || {};
-    all[chKey(id, version, at)] = lines.slice(0, 40);
+    if (oldAt) delete all[chKey(id, version, oldAt)];
+    if (lines && lines.length) all[chKey(id, version, at)] = lines.slice(0, 40);
     var keys = Object.keys(all);
     if (keys.length > 300) keys.slice(0, keys.length - 300).forEach(function (k) { delete all[k]; });
     ui.store.set(CH_KEY, all);
@@ -570,91 +861,6 @@
   function listHtml(items) {
     return '<ul style="margin:6px 0 0;padding-left:18px">' + items.map(function (s) { return '<li style="overflow-wrap:anywhere">' + esc(s) + '</li>'; }).join('') + '</ul>';
   }
-
-  // ---------- page sections ----------
-  function listCard(P, list, active) {
-    var h = '<section class="card"><div class="card-head"><div><h2>Strategies</h2><p>Pick one to view, test or edit. The active one drives Daily Suggestions.</p></div></div><ul class="list" aria-label="Strategies">';
-    list.forEach(function (c, k) {
-      h += '<li><input type="radio" name="st-pick" id="pick-' + k + '" value="' + esc(c.id) + '"' + (c.id === ST.sel ? ' checked' : '') + '>' +
-        '<label for="pick-' + k + '" class="grow" style="cursor:pointer"><b style="display:block;overflow-wrap:anywhere">' + esc(c.name || c.id) + '</b>' +
-        '<span class="tags" style="margin-top:4px">' + sourceBadges(P.STR, c) + ui.badge('v' + c.version, '') + ui.badge(c.mode === 'screen' ? 'Screen' : 'Setup', '') +
-        (c.id === active ? ui.badge('Active · drives Daily Suggestions', 's-info') : '') +
-        '<span data-unsaved="' + esc(c.id) + '">' + (isDirty(P.STR, c.id) ? ui.badge('Unsaved edits', 's-warn') : '') + '</span></span></label></li>';
-    });
-    return h + '</ul></section>';
-  }
-
-  function detailCard(P, saved, dirty) {
-    var STR = P.STR, id = saved.id, active = STR.activeId() === id, preset = !!SB.strategy.PRESETS[id];
-    var edited = preset && !same(saved, SB.strategy.PRESETS[id]);
-    var c = ensureShape(saved);
-    var onCount = function (g) { return c[g].filter(function (r) { return r.enabled; }).length; };
-    var h = '<section class="card" id="st-detail"><div class="card-head"><div><h2 style="overflow-wrap:anywhere">' + esc(saved.name || id) + '</h2>' +
-      '<p>Version ' + saved.version + ' · ' + (saved.updatedAt ? 'saved ' + F.dateTime(saved.updatedAt) + ' IST in this browser' : preset ? 'original preset' : 'saved in this browser') + ' · id ' + esc(id) + '</p></div>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-      (active ? '<button type="button" class="btn" disabled>✓ In use for Daily Suggestions</button>' : '<button type="button" class="btn primary" id="st-use" data-act="use">Use this strategy</button>') +
-      '<button type="button" class="btn" id="st-dup" data-act="dup">Duplicate as custom</button>' +
-      (preset ? '<button type="button" class="btn" id="st-reset" data-act="reset"' + (edited ? '' : ' disabled title="Already the original preset"') + '>Reset to original</button>' : '') +
-      '<button type="button" class="btn" id="st-export" data-act="export">Export JSON</button></div></div>';
-    h += '<div class="tags">' + sourceBadges(STR, saved) + (active ? ui.badge('Active · drives Daily Suggestions', 's-info') : '') +
-      '<span data-unsaved="' + esc(id) + '">' + (dirty ? ui.badge('Unsaved edits', 's-warn') : '') + '</span></div>';
-    if (ST.resetAsk && preset) {
-      h += '<div class="note warn" style="margin-top:12px"><strong>Reset “' + esc(saved.name) + '” to the original preset?</strong> Your saved versions of it (now version ' + saved.version +
-        '), any unsaved edits and its confirmation are removed from this browser. The change history keeps a “reset” entry.' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn danger" id="st-reset-yes" data-act="reset-yes">Yes, reset</button>' +
-        '<button type="button" class="btn" id="st-reset-no" data-act="reset-no">Cancel</button></div></div>';
-    }
-    h += '<dl class="kv">' +
-      '<div><dt>Mode</dt><dd>' + esc(MODES[c.mode]) + '</dd></div>' +
-      '<div><dt>Style</dt><dd>' + esc(styleText(c.style)) + '</dd></div>' +
-      '<div><dt>Timeframe</dt><dd>' + (c.timeframe === '1d' ? 'Daily candles (end-of-day)' : esc(c.timeframe)) + '</dd></div>' +
-      '<div><dt>Universe</dt><dd>' + esc(cap(catText(c.universe.categories))) + ' · ' + plural(universeCount(P.ctx, c.universe.categories), 'stock') + ' · ≥ ' + c.universe.minBars + ' candles</dd></div>' +
-      '<div><dt>Rules on</dt><dd>' + plural(onCount('filters'), 'filter') + ' · ' + plural(onCount('triggers'), 'trigger') + ' · ' + plural(onCount('confirms'), 'requirement') + '</dd></div>' +
-      '<div><dt>Exits</dt><dd>Stop ' + esc(stopText(c.exits.stop)) + ' · target ' + esc(targetText(c.exits.target)) + (c.exits.minRR > 0 ? ' · min reward:risk ' + F.num(c.exits.minRR) : '') + '</dd></div>' +
-      '</dl>';
-    if (saved.description) h += '<p style="margin-top:12px;overflow-wrap:anywhere">' + esc(saved.description) + '</p>';
-    if (c.style === 'intraday') h += '<div class="note warn" style="margin-top:12px">This strategy is marked intraday, but the dashboard only has daily end-of-day candles - intraday timing is not supported. Its rules are checked on the daily candle. Change the style in the editor.</div>';
-    else h += '<p class="sub" style="margin-top:8px">The data is daily end-of-day, so intraday strategies are not supported.</p>';
-    h += confirmBox(P, saved, dirty);
-    h += flashHtml('top-detail');
-    return h + '</section>';
-  }
-
-  function confirmBox(P, saved, dirty) {
-    var STR = P.STR, conf = STR.isConfirmed(saved.id), demo = saved.source === 'demo', items = Array.isArray(saved.assumptions) ? saved.assumptions : [];
-    var h = '<div class="note ' + (conf ? 'good' : 'warn') + '" id="st-assume" style="margin-top:12px">';
-    h += '<strong>' + (demo ? 'DEMO strategy - assumptions' : conf ? 'Assumptions you confirmed (version ' + saved.version + ')' : 'Assumptions - please check before confirming') + '</strong>';
-    h += items.length ? listHtml(items) : '<p style="margin-top:4px">No extra assumptions are listed for this strategy - check every rule in the editor below before confirming.</p>';
-    if (saved.source === 'request') {
-      h += '<p style="margin-top:8px">These rules were written from your own description. Where it said “substantially”, “approximately half” or “relatively stable”, the percentages above are my assumptions - ' +
-        'change them in the editor below if they are not what you meant. Until you confirm, Daily Suggestions marks this strategy “not confirmed”.</p>';
-    }
-    if (saved.source === 'discovered' || saved.source === 'discovered-edited') {
-      h += '<p style="margin-top:8px">These rules were found in your sheet (Code.gs and your dashboards), but how they combine into a suggestion is not written there. ' +
-        'Until you confirm, Daily Suggestions marks this strategy “unconfirmed”.</p>';
-    }
-    if (demo) {
-      h += '<p style="margin-top:8px"><strong>DEMO strategies can never be confirmed.</strong> They are generic examples for testing the engine, not your rules, and their signals are not recommendations. ' +
-        'Use “Duplicate as custom” to make your own editable copy.</p>';
-    } else {
-      h += '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="st-confirm" style="margin-top:3px"' + (conf ? ' checked' : '') + (dirty ? ' disabled' : '') + '>' +
-        '<span><strong>I confirm these rules are mine (version ' + saved.version + ')</strong></span></label>' +
-        '<p id="st-confirm-hint" style="margin-top:4px"' + (dirty ? '' : ' hidden') + '>You have unsaved edits - save or discard them first. Only a saved version can be confirmed.</p>' +
-        '<p style="margin-top:4px">Saving a new version clears the confirmation, so each version is confirmed on its own.</p>';
-    }
-    return h + flashHtml('confirm') + '</div>';
-  }
-
-  function testCard(P, saved) {
-    return '<section class="card" id="st-test"><div class="card-head"><div><h2>Test on today\'s data</h2><p id="st-test-intro"></p></div>' +
-      '<button type="button" class="btn" id="st-test-btn" data-act="test">Test on today\'s data</button></div>' +
-      '<div id="st-test-out"></div>' + flashHtml('test') + '</section>';
-  }
-
-  function historyCard() {
-    return '<section class="card"><div class="card-head"><div><h2>Change history</h2><p>Saved versions of this strategy in this browser, newest first (the last 50 are kept). Times are IST.</p></div></div><div id="st-hist"></div></section>';
-  }
-
   function changesHtml(list) {
     if (!list || !list.length) return '<span class="sub">–</span>';
     return '<ul class="checks" style="margin:0">' + list.map(function (s) {
@@ -666,141 +872,33 @@
     }).join('') + '</ul>';
   }
 
-  // ---------- test results ----------
-  function drawTest(P) {
-    var el = P.el, out = $('#st-test-out', el), btn = $('#st-test-btn', el);
-    if (!out) return;
-    var id = ST.sel, saved = P.STR.get(id), t = TESTS[id], ctx = P.ctx;
-    if (btn) { btn.disabled = !!TESTING[id]; btn.textContent = TESTING[id] ? 'Testing…' : t && !t.error && t.key === testKey(saved) ? 'Test again' : 'Test on today\'s data'; }
-    if (TESTING[id]) { out.innerHTML = ui.skeleton(4) + '<p class="sub" style="margin-top:8px">Checking version ' + saved.version + ' against every stock…</p>'; return; }
-    if (!t) { out.innerHTML = '<p class="empty">Not tested yet. The test shows how many stocks match the saved rules on the latest daily candle.</p>'; return; }
-    if (t.key !== testKey(saved)) { out.innerHTML = '<div class="note">The last test was for version ' + t.version + '. Press “Test on today\'s data” to test version ' + saved.version + '.</div>'; return; }
-    if (t.error) { out.innerHTML = '<div class="note bad">The test could not run: ' + esc(t.error) + '</div>'; return; }
-    var r = t.result, mode = r.config && r.config.mode === 'screen' ? 'screen' : 'setup', n = r.results.length, H = ctx.history || {};
-    var conf = P.STR.isConfirmed(id), demo = saved.source === 'demo', active = P.STR.activeId() === id;
-    var labels = mode === 'screen' ?
-      [['qualified', 'Matches screen'], ['avoid', 'Avoid'], ['none', 'Does not match'], ['insufficient', 'Insufficient data']] :
-      [['qualified', 'Qualified'], ['watch', 'Watch'], ['avoid', 'Avoid'], ['none', 'No signal'], ['insufficient', 'Insufficient data']];
-    var why = { avoid: ' - a filter failed', insufficient: ' - too few or stale candles', none: mode === 'screen' ? ' - a requirement failed' : ' - no trigger fired', watch: ' - partly matched' };
-    if (mode === 'screen' && r.counts.watch) labels.splice(1, 0, ['watch', 'Watch']);
-    var h = '<div class="tags">' + (demo ? ui.badge('DEMO results - not your strategy', 's-warn') : conf ? ui.badge('Confirmed version ' + saved.version, 's-good') : ui.badge('Unconfirmed rules', 's-warn')) +
-      ui.badge('Version ' + saved.version, '') + '</div>';
-    h += '<p class="sub" style="margin-top:8px">Daily candles ' + ui.stateBadge(SB.candleState(H), r.dataAsOf, r.dataSource || H.source) + ' newest candle ' + F.date(r.dataAsOf) +
-      ' · Prices ' + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + ' · tested ' + esc(F.dateTime(r.ranAt)) + ' IST</p>';
-    if (r.errors && r.errors.length) h += '<div class="note bad" style="margin-top:8px"><strong>The engine reported problems with this version:</strong>' + listHtml(r.errors) + '</div>';
-    var q = r.counts.qualified || 0;
-    h += '<p style="margin-top:10px"><strong>' + F.int(q) + '</strong> of ' + plural(n, 'stock') + ' ' + (mode === 'screen' ? 'match the screen' : 'qualified') +
-      (mode === 'setup' ? ', ' + F.int(r.counts.watch || 0) + ' on Watch' : '') + '.</p>';
-    h += '<p class="sub" style="margin-top:4px">' + (mode === 'screen' ? 'Avoid = a filter failed · Does not match = a requirement failed' :
-      'Avoid = a filter failed · Watch = partly matched (watch-only trigger, partial confluence or a failed requirement) · No signal = no trigger fired') +
-      ' · Insufficient data = too few or stale daily candles.</p>';
-    h += '<div style="margin-top:8px">' + ui.bars(labels.map(function (l) {
-      var v = r.counts[l[0]] || 0;
-      return { label: l[1], value: v, tip: l[1] + (why[l[0]] || '') + ': ' + plural(v, 'stock') + ' (' + F.num(n ? v / n * 100 : 0, 1) + '% of ' + F.int(n) + ')' };
-    }), { fmt: function (v) { return F.int(v); } }) + '</div>';
-    h += '<h3 style="margin-top:14px">Top 5 ' + (mode === 'screen' ? 'matches' : 'qualified') + ' by score</h3>';
-    if (q) h += '<div id="st-test-top" style="margin-top:8px"></div>';
-    else {
-      h += '<p class="empty">No stock ' + (mode === 'screen' ? 'matches the screen' : 'qualified') + ' on ' + F.date(r.dataAsOf) + '.' +
-        (r.counts.watch ? ' ' + plural(r.counts.watch, 'stock is', 'stocks are') + ' on Watch.' : '') +
-        ' Loosen a rule, or check the Insufficient data count.</p>';
-    }
-    h += '<p class="sub" style="margin-top:8px">Score = share of the requirements met. ' + (mode === 'screen' ? 'Matches screen' : 'Qualified') +
-      ' means every rule passed on the latest daily candle - it is a research shortlist, not a buy recommendation, and says nothing about future returns.</p>';
-    h += '<p style="margin-top:8px">' + (active ? '<a href="#suggestions">Open Daily Suggestions for the full list →</a>' :
-      '<span class="sub">This strategy is not the active one. Press “Use this strategy” to see its full list in Daily Suggestions.</span>') + '</p>';
-    out.innerHTML = h;
-    if (!q) return;
-    var cols = [
-      { key: 'sym', label: 'Stock', type: 'sym', get: function (x) { return x.sym; }, html: function (x) { var s = ctx.bySym[x.sym]; return ui.stockCell(x.sym, s && s.name); } },
-      { key: 'score', label: 'Score', type: 'num', get: function (x) { return x.score; },
-        html: function (x) { return '<b>' + F.int(x.score) + '</b> <span class="sub">' + esc(x.scoreNote || '') + '</span>'; } }
-    ];
-    if (mode === 'setup') {
-      cols.push(
-        { key: 'setup', label: 'Signal type', get: function (x) { return (x.setupTypes || []).join(', '); },
-          html: function (x) { return (x.setupTypes || []).length ? x.setupTypes.map(function (s) { return ui.badge(s, ''); }).join(' ') : '<span class="sub">–</span>'; } },
-        { key: 'entry', label: 'Entry ref.', type: 'price' },
-        { key: 'stop', label: 'Stop', type: 'price' },
-        { key: 'target', label: 'Target', type: 'price' },
-        { key: 'rr', label: 'Reward:risk', type: 'num', html: function (x) { return isNum(x.rr) ? '1:' + F.num(x.rr, 2) : '–'; } }
-      );
-    } else {
-      cols.push({ key: 'cat', label: 'Category', wrap: true, get: function (x) { var s = ctx.bySym[x.sym]; return s ? s.catName : null; } });
-    }
-    cols.push({ key: 'warnings', label: 'Notes', wrap: true, get: function (x) { return (x.warnings || []).join('; ') || null; } });
-    new ui.Table({ rows: r.lists.qualified.slice(0, 5), pageSize: 5, columns: cols, empty: 'Nothing qualified' }).mount($('#st-test-top', el));
-  }
-
-  function runTest(P) {
-    var STR = P.STR, id = ST.sel, saved = STR.get(id);
-    if (!saved || TESTING[id]) return;
-    TESTING[id] = true;
-    drawTest(P);
-    setTimeout(function () {                      // let the "Testing…" state paint before the run blocks
-      var p;
-      try { p = STR.runActive(id); } catch (e) { p = Promise.reject(e); }
-      p.then(function (r) {
-        TESTS[id] = { version: saved.version, key: testKey(saved), result: r };
-      }, function (e) {
-        TESTS[id] = { version: saved.version, key: testKey(saved), error: (e && e.message) || String(e) };
-      }).then(function () {
-        TESTING[id] = false;
-        if (P.el.isConnected && ST.sel === id) {
-          drawTest(P);
-          var out = $('#st-test-out', P.el);
-          if (out) { out.setAttribute('tabindex', '-1'); out.focus({ preventScroll: true }); }
-        }
-      });
-    }, 30);
-  }
-
   // ---------- drawing ----------
   function draw(P, focusId) {
     var el = P.el, STR = P.STR;
     var prev = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
     P.memo = P.memo || {};
-    var list = STR.list(), active = STR.activeId();
-    if (!STR.get(ST.sel)) ST.sel = active;
-    var id = ST.sel, saved = STR.get(id), d = draftOf(STR, id), dirty = isDirty(STR, id);
+    if (!STR.get(ST.sel)) ST.sel = STR.activeId();
+    var id = ST.sel, saved = STR.get(id), d = draftOf(STR, id);
 
     var h = '<div class="page-head"><div><h1>Strategy settings</h1>' +
-      '<p>Choose, edit, version and confirm the rules behind Daily Suggestions. Your edits, versions and confirmations are saved <strong>only in this browser</strong> ' +
-      '(localStorage) - nothing is uploaded or shared. Use Export JSON to back them up or move them to another device.</p></div>' +
-      '<div class="actions"><button type="button" class="btn" id="st-import" data-act="import">Import JSON</button>' +
+      '<p>Choose how you trade, pick a strategy, then fine-tune it in plain words - the preview shows today\'s matches as you change it. ' +
+      '<strong>Every change is saved automatically in this browser</strong> (nothing is uploaded); a reload keeps it. To use it on another device: Export / Import.</p></div>' +
+      '<div class="actions"><button type="button" class="btn" data-act="import">Import a strategy file</button>' +
       '<input type="file" id="st-file" accept=".json,application/json" hidden>' +
-      '<a class="btn" href="#suggestions">Daily Suggestions</a></div></div>';
-    h += flashHtml('top');
-    h += listCard(P, list, active);
-    h += detailCard(P, saved, dirty);
-    h += testCard(P, saved);
-    h += '<div class="grid" id="st-editor"><div><h2 style="font-size:18px">Edit “' + esc(saved.name || id) + '”</h2>' +
-      '<p class="sub" style="margin-top:2px">Changes stay a draft in this tab until you press Save.' + (saved.source === 'demo' ? ' Edits to the DEMO strategy stay labelled DEMO - duplicate it as custom to make it yours.' : '') + '</p></div>' +
-      '<div class="grid g2">' + detailsCard(d) + universeCard(P, d) + '</div>' +
-      GROUPS.map(function (g) { return groupCard(P, g, d); }).join('') +
-      exitsCard(d) + saveBar(P, saved) + '</div>';
-    h += historyCard();
+      '<a class="btn" href="#suggestions">Daily Suggestions →</a></div></div>';
+    h += styleCards(P);
+    h += pickCard(P);
+    h += '<section class="ss-work" id="st-editor" aria-label="Fine-tune ' + esc(saved.name || id) + '">' + workHead(P, saved, d) + flashHtml('work') +
+      '<div class="ss-cols"><div class="ss-main">' +
+      '<section class="card ss-group"><div class="card-head"><div><h2>In plain words</h2><p>What “' + esc(saved.name || id) + '” does, step by step - it follows your changes.</p></div></div>' +
+      '<div id="st-recipe">' + recipeHtml(P, d) + '</div><div id="st-confirmbox">' + confirmHtml(P, saved) + '</div></section>' +
+      howCard(d) + GROUPS.map(function (g) { return groupCard(P, g, d); }).join('') + exitsCard(d) + moreCard(P, d) + historyCard() +
+      '</div><aside class="ss-side">' + liveCard() + '</aside></div></section>';
     el.innerHTML = h;
-
-    var humanStore = ui.store.get(CH_KEY, {}) || {}, hist = STR.history(id);
-    if (!hist.length) {
-      $('#st-hist', el).innerHTML = '<p class="empty">' + (SB.strategy.PRESETS[id] ? 'No saved versions yet - this is the original preset. Saving an edit creates version ' + (saved.version + 1) + '.' : 'No history recorded.') + '</p>';
-    } else new ui.Table({
-      rows: hist, pageSize: 10,
-      columns: [
-        { key: 'version', label: 'Version', type: 'num', digits: 0 },
-        { key: 'at', label: 'Saved (IST)', type: 'datetime' },
-        { key: 'note', label: 'Note', wrap: true },
-        { key: 'changes', label: 'Changes', wrap: true, get: function (r) { return (r.changes || []).join('; '); },
-          html: function (r) {
-            var human = humanStore[chKey(id, r.version, r.at)];
-            if (!human) return changesHtml(r.changes);
-            return changesHtml(human) + ((r.changes || []).length ? '<details style="margin-top:4px"><summary class="sub" style="cursor:pointer">Technical log</summary>' + changesHtml(r.changes) + '</details>' : '');
-          } }
-      ]
-    }).mount($('#st-hist', el));
-    drawTest(P);
+    drawHistory(P);
     refresh(P);
+    drawLive(P);
+    loadCounts(P);
 
     var flashEl = FLASH ? $('#st-flash-' + FLASH.where, el) : null;
     FLASH = null;
@@ -808,9 +906,44 @@
     if (target && el.contains(target)) target.focus({ preventScroll: focusId !== 'flash' });
   }
 
+  function drawHistory(P) {
+    var el = P.el, STR = P.STR, id = ST.sel, saved = STR.get(id), box = $('#st-hist', el);
+    if (!box) return;
+    var humanStore = ui.store.get(CH_KEY, {}) || {}, hist = STR.history(id);
+    if (!hist.length) {
+      box.innerHTML = '<p class="empty">' + (SB.strategy.PRESETS[id] ? 'No saved versions yet - this is the original. Your first change becomes version ' + (saved.version + 1) + '.' : 'No history recorded.') + '</p>';
+      return;
+    }
+    new ui.Table({
+      rows: hist, pageSize: 10, tools: false,
+      columns: [
+        { key: 'version', label: 'Version', type: 'num', digits: 0 },
+        { key: 'at', label: 'Saved (IST)', type: 'datetime' },
+        { key: 'changes', label: 'What changed', wrap: true, get: function (r) { return (r.changes || []).join('; '); },
+          html: function (r) {
+            var human = humanStore[chKey(id, r.version, r.at)];
+            var note = r.note ? '<p class="sub" style="margin-bottom:4px">' + esc(r.note) + '</p>' : '';
+            if (!human) return note + changesHtml(r.changes);
+            return note + changesHtml(human) + ((r.changes || []).length ? '<details style="margin-top:4px"><summary class="sub" style="cursor:pointer">Technical log</summary>' + changesHtml(r.changes) + '</details>' : '');
+          } }
+      ]
+    }).mount(box);
+  }
+
+  /** The parts that follow a saved change, without touching the inputs (typing keeps its place). */
+  function partial(P) {
+    var el = P.el, STR = P.STR, saved = STR.get(ST.sel);
+    var cards = $('#st-cards', el); if (cards) cards.innerHTML = stratCards(P);
+    var cb = $('#st-confirmbox', el); if (cb) cb.innerHTML = confirmHtml(P, saved);
+    var bd = $('#st-badges', el); if (bd) bd.innerHTML = sourceBadges(STR, saved);
+    drawHistory(P);
+    refresh(P);
+    loadCounts(P);
+  }
+
   /** In-place update after a value edit (no re-render, so typing keeps focus). */
   function refresh(P) {
-    var el = P.el, STR = P.STR, ctx = P.ctx, id = ST.sel, saved = STR.get(id), d = draftOf(STR, id);
+    var el = P.el, STR = P.STR, ctx = P.ctx, id = ST.sel, d = draftOf(STR, id);
     var bars = barsCount(ctx), v = validateDraft(d, bars);
     el.querySelectorAll('.ferr').forEach(function (p) {
       var f = p.getAttribute('data-for'), msg = v.E[f] || '', w = !msg && v.W[f] ? v.W[f] : '';
@@ -820,127 +953,297 @@
       var inp = document.getElementById(f);
       if (inp) { if (msg) inp.setAttribute('aria-invalid', 'true'); else inp.removeAttribute('aria-invalid'); }
     });
-    var dirty = isDirty(STR, id), ch = dirty ? humanChanges(saved, d) : [];
-    var dt = $('#st-dirty', el);
-    if (dt) {
-      dt.textContent = dirty ? (ch.length ? plural(ch.length, 'unsaved change') : 'Unsaved edits - some values are not valid yet') +
-        (v.list.length ? ' · ' + plural(v.list.length, 'problem') + ' to fix before saving' : '') +
-        (STR.isConfirmed(id) ? ' · saving clears your confirmation of version ' + saved.version : '') :
-        'No unsaved edits - this is saved version ' + saved.version + '. Saving stores a new version in this browser only and clears the confirmation; you then confirm the new version in the box above.';
-    }
-    var pend = $('#st-pending', el), pd = $('#st-pend-d', el);
-    if (pd) pd.hidden = !ch.length;
-    if (pend) {
-      pend.innerHTML = ch.map(function (s) { return '<li style="overflow-wrap:anywhere">• ' + esc(s) + '</li>'; }).join('');
-    }
-    var sv = $('#st-save', el), ds = $('#st-discard', el), bar = $('#st-savebar', el);
-    if (sv) { sv.disabled = !dirty; sv.textContent = 'Save as version ' + (saved.version + 1); }
-    if (ds) ds.disabled = !dirty;
-    if (bar) { bar.style.position = dirty ? 'sticky' : ''; bar.style.bottom = dirty ? '0' : ''; bar.style.zIndex = dirty ? '5' : ''; }
-    var cb = $('#st-confirm', el), hint = $('#st-confirm-hint', el);
-    if (cb) cb.disabled = dirty;
-    if (hint) hint.hidden = !dirty;
-    el.querySelectorAll('[data-unsaved]').forEach(function (s) {
-      var sid = s.getAttribute('data-unsaved');
-      s.innerHTML = isDirty(STR, sid) ? ui.badge('Unsaved edits', 's-warn') : '';
-    });
+    if (v.list.length && isDirty(STR, id)) SAVE[id] = { state: 'invalid', list: v.list };
+    else if (SAVE[id] && SAVE[id].state === 'invalid') SAVE[id] = { state: isDirty(STR, id) ? 'saving' : 'saved' };
+    var sv = $('#st-saved', el); if (sv) sv.innerHTML = savedHtml(P);
+    var un = $('#st-undo', el); if (un) un.disabled = !(UNDO[id] || []).length;
+    var rc = $('#st-recipe', el); if (rc) rc.innerHTML = recipeHtml(P, d);
+    var ex = $('#st-example', el); if (ex) ex.innerHTML = exampleHtml(d);
     var cs = $('#st-cats-sum', el);
     if (cs) cs.textContent = cap(catText(d.universe.categories)) + ' · ' + plural(universeCount(ctx, d.universe.categories), 'stock');
     var tc = $('#st-trig-count', el);
     if (tc) {
       var on = d.triggers.filter(function (r) { return r.enabled !== false && !r.watchOnly; }).length;
-      tc.textContent = plural(on, 'trigger') + ' on and not watch-only. With 1, any one firing trigger is enough.';
+      tc.textContent = plural(on, 'signal') + ' on. 1 = any one of them is enough; 2 = two must happen together (stronger, fewer stocks).';
     }
     var bh = $('#st-bars-hint', el);
     if (bh) bh.textContent = bars ? 'The history file has up to ' + bars + ' daily candles per stock.' : '';
-    var ti = $('#st-test-intro', el);
-    if (ti) {
-      var H = ctx.history;
-      var sc = ensureShape(saved).universe.categories;
-      ti.textContent = 'Runs the saved version ' + saved.version + ' over ' + plural(universeCount(ctx, sc), 'stock') + ' (' + catText(sc) + ') with the daily candles in the history file' +
-        (H && H.dates && H.dates.length ? ' (latest session ' + F.date(H.dates[H.dates.length - 1]) + ')' : '') + '. Nothing is saved or sent anywhere.' +
-        (dirty ? ' Your unsaved edits are not included - save them first to test them.' : '');
+  }
+
+  // ---------- live preview (the draft, on today's data) ----------
+  function liveKey(P) { return JSON.stringify(canon(draftOf(P.STR, ST.sel))) + '@' + (SB.ctx.market.asOf || '') + '@' + barsCount(P.ctx); }
+  function schedulePreview(P) {
+    clearTimeout(LIVE_T);
+    LIVE_T = setTimeout(function () { LIVE_T = null; if (P.el.isConnected) drawLive(P); }, 450);
+  }
+  function drawLive(P) {
+    var el = P.el, box = $('#st-live-b', el), ctx = P.ctx, STR = P.STR;
+    if (!box) return;
+    if (!ctx.history) {
+      box.innerHTML = ui.skeleton(3) + '<p class="sub">Loading the daily candles…</p>';
+      if (SB.loadHistory) SB.loadHistory().then(function () { if (el.isConnected) drawLive(P); }, function (e) {
+        if (el.isConnected) box.innerHTML = '<p class="sub down">The daily candles could not be loaded: ' + esc(e && e.message || e) + '</p>';
+      });
+      return;
     }
+    var id = ST.sel, d = draftOf(STR, id), v = validateDraft(d, barsCount(ctx)), useSaved = !!v.list.length;
+    var key = useSaved ? 'saved@' + countKey(STR.get(id)) : liveKey(P);
+    if (LIVE.key !== key) {
+      try {
+        var cfg = useSaved ? STR.get(id) : clone(d);
+        LIVE = { key: key, run: SB.strategy.run(cfg, ctx.stocks, STR.candles() || {}, runOpts(ctx)), saved: useSaved };
+      } catch (e) { LIVE = { key: key, error: (e && e.message) || String(e) }; }
+    }
+    if (LIVE.error) { box.innerHTML = '<p class="sub down">The preview could not run: ' + esc(LIVE.error) + '</p>'; return; }
+    var r = LIVE.run, screen = r.config.mode === 'screen', n = r.results.length, q = r.counts.qualified || 0, active = STR.activeId() === id;
+    var parts = screen ? [['qualified', 'Match', 's-good'], ['avoid', 'Skipped by a safety check', 's-bad'], ['none', 'A condition failed', 's-none'], ['insufficient', 'Not enough data', 's-muted']]
+      : [['qualified', 'Qualified', 's-good'], ['watch', 'Watch', 's-warn'], ['avoid', 'Skipped by a safety check', 's-bad'], ['none', 'No buy signal', 's-none'], ['insufficient', 'Not enough data', 's-muted']];
+    if (screen && r.counts.watch) parts.splice(1, 0, ['watch', 'Watch', 's-warn']);
+    var h = (LIVE.saved ? '<p class="ss-live-w">Showing the saved version - fix the marked field to see your change.</p>' : '') +
+      '<div class="ss-live-n"><b class="sg-big-n" id="st-live-n">' + F.int(q) + '</b><span>' + (screen ? (q === 1 ? 'stock matches' : 'stocks match') : 'qualified') + '</span></div>' +
+      '<p class="sub">of ' + plural(n, 'stock') + ' checked · newest candle ' + F.date(r.latestDate) + '</p>' +
+      '<div class="ss-dist">' + parts.map(function (p) {
+        var c = r.counts[p[0]] || 0;
+        return '<div class="ss-dist-r"><span>' + esc(p[1]) + '</span><i class="' + p[2] + '"><em style="width:' + (n ? Math.max(c ? 2 : 0, c / n * 100) : 0).toFixed(1) + '%"></em></i><b>' + F.int(c) + '</b></div>';
+      }).join('') + '</div>';
+    var top = r.lists.qualified.slice(0, 5);
+    h += '<h3 class="ss-live-t">' + (top.length ? 'Top ' + top.length + ' by score' : 'Nothing ' + (screen ? 'matches' : 'qualified') + ' today') + '</h3>';
+    if (top.length) {
+      h += '<ol class="ss-top">' + top.map(function (x) {
+        var s = ctx.bySym[x.sym];
+        return '<li>' + ui.stockCell(x.sym, s && s.name) + '<span class="ss-sc" title="' + esc(x.scoreNote || '') + '">' + F.int(x.score) + '</span></li>';
+      }).join('') + '</ol>';
+    } else {
+      h += '<p class="sub">' + (r.counts.watch ? plural(r.counts.watch, 'stock is', 'stocks are') + ' on the Watch list. ' : '') + 'Switch off or loosen a rule to see more.</p>';
+    }
+    h += '<p class="sub" style="margin-top:10px">' + (active ? '<a href="#suggestions">See every one in Daily Suggestions →</a>' :
+      'Press “Use for Daily Suggestions” to see every one there.') + '</p>' +
+      '<p class="sub">A research shortlist from your rules - not a buy recommendation.</p>';
+    box.innerHTML = h;
+  }
+
+  // today's count on every strategy card (the saved versions, one after another so the page stays responsive)
+  function loadCounts(P) {
+    if (!P.ctx.history) { if (SB.loadHistory) SB.loadHistory().then(function () { if (P.el.isConnected) loadCounts(P); }, function () { /* the cards say so */ }); return; }
+    if (COUNT_RUN) return;
+    var todo = P.STR.list().filter(function (c) { return (ST.style === 'all' || c.style === ST.style) && !(COUNTS[c.id] && COUNTS[c.id].key === countKey(c)); });
+    if (!todo.length) return;
+    COUNT_RUN = true;
+    var c = todo[0];
+    setTimeout(function () {
+      P.STR.runActive(c.id).then(function (run) { COUNTS[c.id] = { key: countKey(c), run: run }; }, function (e) { COUNTS[c.id] = { key: countKey(c), error: (e && e.message) || String(e) }; })
+        .then(function () {
+          COUNT_RUN = false;
+          var p2 = P.el.isConnected ? P : CUR.P;               // the page may have been drawn again meanwhile
+          if (!p2 || !p2.el.isConnected) return;
+          var box = p2.el.querySelector('[data-count="' + c.id + '"]');
+          if (box) box.innerHTML = countHtml(p2, c);
+          loadCounts(p2);
+        });
+    }, 20);
+  }
+
+  // ---------- saving: automatic ----------
+  function persistDrafts(STR) {
+    var out = {}, any = false;
+    Object.keys(DRAFTS).forEach(function (id) {
+      var saved = STR.get(id);
+      if (saved && isDirty(STR, id)) { out[id] = { v: saved.version, at: saved.updatedAt || '', d: DRAFTS[id] }; any = true; }
+    });
+    if (any) ui.store.set(DRAFT_KEY, out); else ui.store.del(DRAFT_KEY);
+  }
+  function restoreDrafts(STR) {
+    var all = ui.store.get(DRAFT_KEY, null);
+    if (!all || typeof all !== 'object') return;
+    Object.keys(all).forEach(function (id) {
+      var x = all[id], saved = STR.get(id);
+      if (!DRAFTS[id] && x && x.d && saved && saved.version === x.v && (saved.updatedAt || '') === (x.at || '')) DRAFTS[id] = ensureShape(x.d);
+    });
+  }
+  function scheduleSave(P) {
+    var id = ST.sel;
+    persistDrafts(P.STR);                       // a reload from now on keeps the change, even before it is saved
+    if (!SAVE[id] || SAVE[id].state !== 'invalid') SAVE[id] = { state: 'saving' };
+    clearTimeout(SAVE_T);
+    SAVE_T = setTimeout(function () { SAVE_T = null; autoSave(P, id); }, 700);
+  }
+  function flushSave(P) {
+    if (!SAVE_T) return;
+    clearTimeout(SAVE_T); SAVE_T = null;
+    autoSave(P, ST.sel);
+  }
+  function persisted(STR, id, c) { var g = STR.get(id); return !!(g && g.version === c.version && same(canon(g), canon(c))); }
+  function autoSave(P, id) {
+    var STR = P.STR, saved = STR.get(id), d = DRAFTS[id];
+    if (!saved || !d || !isDirty(STR, id)) {
+      SAVE[id] = { state: 'saved' };
+      persistDrafts(STR);
+      if (P.el.isConnected && ST.sel === id) refresh(P);
+      return;
+    }
+    var v = validateDraft(d, barsCount(P.ctx));
+    if (v.list.length) { SAVE[id] = { state: 'invalid', list: v.list }; if (P.el.isConnected && ST.sel === id) refresh(P); return; }
+    var sess = SESSION[id];
+    var res = STR.save(clone(d), '', sess ? { amend: sess.version, base: sess.base } : {});
+    if (!res.ok) {
+      SAVE[id] = { state: 'invalid', list: (res.errors || ['not valid']).map(function (m) { return { id: '', msg: m }; }) };
+      if (P.el.isConnected && ST.sel === id) refresh(P);
+      return;
+    }
+    if (res.unchanged) { delete DRAFTS[id]; persistDrafts(STR); SAVE[id] = { state: 'saved' }; if (P.el.isConnected && ST.sel === id) refresh(P); return; }
+    var c = res.config;
+    if (!persisted(STR, id, c)) { SAVE[id] = { state: 'failed' }; if (P.el.isConnected && ST.sel === id) refresh(P); return; }
+    if (!res.amended) SESSION[id] = { version: c.version, base: saved };
+    noteChanges(id, c.version, c.updatedAt, humanChanges(SESSION[id].base, c), res.amended ? res.prevAt : null);
+    // the draft stays the working copy only if it differs (it does not: it was just saved)
+    delete DRAFTS[id];
+    persistDrafts(STR);
+    SAVE[id] = { state: 'saved' };
+    if (P.el.isConnected && ST.sel === id) partial(P);
   }
 
   // ---------- actions ----------
   function setFlash(where, cls, html) { FLASH = { where: where, cls: cls, html: html }; }
-  var STORAGE_MSG = 'This browser did not keep it - local storage is blocked or full (for example in a private window), so the change is lost when you leave the page.';
-  function persisted(STR, id, version) { var g = STR.get(id); return !!(g && g.version === version); }
-  function testKey(cfg) { return cfg.version + '|' + (cfg.updatedAt || ''); }
+  var STORAGE_MSG = 'This browser did not keep it - its storage is blocked or full (for example a private window).';
 
-  function doUse(P) {
-    var STR = P.STR, id = ST.sel, saved = STR.get(id), dirty = isDirty(STR, id);
+  function select(P, id) {
+    flushSave(P);
+    ST.sel = id; ST.resetAsk = false; ST.delAsk = false; FLASH = null;
+    selectHash(id);
+    draw(P);
+    var ed = $('#st-editor', P.el);
+    if (ed && ed.scrollIntoView) ed.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function doUse(P, id) {
+    var STR = P.STR, c = STR.get(id);
+    if (!c) return;
+    flushSave(P);
     STR.setActive(id);
-    var notes = [];
-    if (saved.source === 'demo') notes.push('It is a DEMO strategy: its suggestions are labelled DEMO and are not your rules.');
-    else if (!STR.isConfirmed(id)) notes.push('It is not confirmed yet, so its suggestions are marked unconfirmed until you confirm it below.');
-    if (dirty) notes.push('Your unsaved edits are not used until you save them.');
-    setFlash('top-detail', saved.source === 'demo' ? 'warn' : 'good', '<strong>' + esc(saved.name) + ' (version ' + saved.version + ') now drives Daily Suggestions.</strong>' +
-      (notes.length ? ' ' + esc(notes.join(' ')) : '') + ' <a href="#suggestions">Open Daily Suggestions →</a>');
+    var note = c.source === 'demo' ? ' It is an example only - its suggestions are labelled DEMO.' : !STR.isConfirmed(id) ? ' Tick “Are these your rules?” below when they are right.' : '';
+    setFlash(ST.sel === id ? 'work' : 'top', 'good', '<strong>“' + esc(c.name) + '” now drives Daily Suggestions.</strong>' + esc(note) + ' <a href="#suggestions">Open Daily Suggestions →</a>');
     draw(P, 'flash');
   }
 
   function doConfirm(P, yes) {
-    var STR = P.STR, id = ST.sel, saved = STR.get(id);
-    if (saved.source === 'demo' || isDirty(STR, id)) { draw(P); return; }
+    var STR = P.STR, id = ST.sel;
+    flushSave(P);
+    var saved = STR.get(id);
+    if (saved.source === 'demo') { draw(P); return; }
+    if (isDirty(STR, id)) {
+      setFlash('work', 'warn', 'Fix the marked field first - only saved rules can be confirmed.');
+      draw(P, 'flash');
+      return;
+    }
     STR.confirm(id, yes);
-    setFlash('confirm', '', yes ? 'Confirmed version ' + saved.version + ' as your rules. Saving a new version will ask you to confirm again.' :
-      'Confirmation removed - this strategy is marked unconfirmed again.');
-    draw(P, 'st-confirm');
+    partial(P);
+    var cb = $('#st-confirm', P.el); if (cb) cb.focus();
+  }
+
+  function pushUndo(P, id, force) {
+    var now = Date.now();
+    if (force || now - (LAST_EDIT[id] || 0) > 1200) {
+      var st = UNDO[id] = UNDO[id] || [];
+      st.push(clone(draftOf(P.STR, id)));               // the draft, or the saved version right after an automatic save
+      if (st.length > 40) st.shift();
+    }
+    LAST_EDIT[id] = force ? 0 : now;
+  }
+  function doUndo(P) {
+    var id = ST.sel, st = UNDO[id] || [];
+    if (!st.length) return;
+    DRAFTS[id] = ensureShape(st.pop());
+    LAST_EDIT[id] = 0;
+    draw(P, 'st-undo');
+    scheduleSave(P);
+    schedulePreview(P);
   }
 
   function doReset(P) {
     var STR = P.STR, id = ST.sel, name = STR.get(id).name;
+    clearTimeout(SAVE_T); SAVE_T = null;
     STR.resetToPreset(id);
-    delete DRAFTS[id]; delete NOTES[id]; delete TESTS[id];
+    delete DRAFTS[id]; delete SESSION[id]; delete UNDO[id]; delete SAVE[id];
+    persistDrafts(STR);
     ST.resetAsk = false;
-    var p = STR.get(id);
-    setFlash('top-detail', 'good', '<strong>' + esc(name) + '</strong> was reset to the original preset (version ' + p.version + '). Its confirmation was cleared; the change history keeps a “reset” entry.');
+    setFlash('work', 'good', '<strong>' + esc(name) + '</strong> is back to the original. Its confirmation was cleared; the history keeps a “reset” line.');
     draw(P, 'flash');
+  }
+
+  function doDelete(P) {
+    var STR = P.STR, id = ST.sel, name = STR.get(id).name;
+    clearTimeout(SAVE_T); SAVE_T = null;
+    if (!STR.remove(id)) { setFlash('work', 'bad', 'Not deleted.'); draw(P, 'flash'); return; }
+    delete DRAFTS[id]; delete SESSION[id]; delete UNDO[id]; delete SAVE[id]; delete COUNTS[id];
+    persistDrafts(STR);
+    ST.delAsk = false;
+    ST.sel = STR.activeId();
+    setFlash('top', 'good', '<strong>“' + esc(name) + '” was deleted</strong> from this browser.');
+    draw(P, 'flash');
+  }
+
+  function newId() { return 'custom-' + Date.now(); }
+  function createFrom(P, src, name, style, note) {
+    var STR = P.STR, c = clone(src), nid = newId();
+    c.id = nid; c.source = 'custom'; c.name = name; c.style = style || c.style;
+    delete c.version; delete c.updatedAt;
+    var res = STR.save(c, note);
+    if (!res.ok) return { error: (res.errors || ['unknown error']).join('; ') };
+    if (!STR.get(nid)) return { error: STORAGE_MSG };
+    return { id: nid, config: res.config };
   }
 
   function doDuplicate(P) {
     var STR = P.STR, id = ST.sel, saved = STR.get(id), dirty = isDirty(STR, id);
-    var src = dirty ? DRAFTS[id] : ensureShape(saved);
+    flushSave(P);
+    dirty = isDirty(STR, id);
+    var src = dirty ? DRAFTS[id] : ensureShape(STR.get(id));
     if (dirty) {
       var v = validateDraft(src, barsCount(P.ctx));
       if (v.list.length) {
-        setFlash('top-detail', 'bad', '<strong>Not duplicated.</strong> Your unsaved edits have ' + plural(v.list.length, 'problem') + ' - fix them in the editor or discard them first.' + listHtml(v.list.map(function (x) { return x.msg; })));
+        setFlash('work', 'bad', '<strong>Not duplicated.</strong> Fix the marked field first:' + listHtml(v.list.map(function (x) { return x.msg; })));
         draw(P, 'flash');
         return;
       }
     }
-    var c = clone(src), nid = 'custom-' + Date.now();
-    c.id = nid;
-    c.source = 'custom';
-    c.name = String(saved.name || 'Strategy').slice(0, 72) + ' (copy)';
-    if (dirty && src.name && src.name !== saved.name) c.name = String(src.name).slice(0, 72) + ' (copy)';
-    delete c.version; delete c.updatedAt;
-    var res = STR.save(c, 'duplicated from ' + saved.name + ' v' + saved.version + (dirty ? ' (with unsaved edits)' : ''));
-    if (!res.ok) {
-      setFlash('top-detail', 'bad', '<strong>Not duplicated:</strong>' + listHtml(res.errors || ['unknown error']));
-      draw(P, 'flash');
-      return;
-    }
-    if (!STR.get(nid)) {
-      setFlash('top-detail', 'bad', '<strong>Not duplicated.</strong> ' + esc(STORAGE_MSG));
-      draw(P, 'flash');
-      return;
-    }
-    if (dirty) { delete DRAFTS[id]; delete NOTES[id]; }
-    ST.sel = nid; ST.resetAsk = false;
-    setFlash('top', 'good', '<strong>Created “' + esc(res.config.name) + '”</strong> - your own custom strategy, version 1, not confirmed yet.' +
-      (dirty ? ' Your unsaved edits were moved into the copy; “' + esc(saved.name) + '” keeps its saved version ' + saved.version + '.' : '') +
-      (saved.source === 'demo' ? ' It started from the DEMO strategy: rename it and check every rule before you confirm it as yours.' : ''));
+    var out = createFrom(P, src, String(saved.name || 'Strategy').slice(0, 72) + ' (my copy)', null, 'copied from ' + saved.name + ' v' + saved.version);
+    if (out.error) { setFlash('work', 'bad', '<strong>Not duplicated:</strong> ' + esc(out.error)); draw(P, 'flash'); return; }
+    ST.sel = out.id; ST.resetAsk = false; ST.delAsk = false;
+    if (ST.style !== 'all' && out.config.style !== ST.style) ST.style = out.config.style;
+    setFlash('work', 'good', '<strong>Created “' + esc(out.config.name) + '”</strong> - your own copy. Rename it above and change any rule; it saves by itself.' +
+      (saved.source === 'demo' ? ' It started from the example strategy: check every rule before you confirm it as yours.' : ''));
     draw(P, 'flash');
   }
 
+  function doCreate(P) {
+    var el = P.el, STR = P.STR, nm = $('#st-new-name', el), msg = $('#st-new-msg', el);
+    var name = String(nm && nm.value || '').trim();
+    var style = (el.querySelector('input[name="st-new-style"]:checked') || {}).value || 'swing';
+    var from = (el.querySelector('input[name="st-new-from"]:checked') || {}).value || 'starter';
+    if (!name) { if (msg) { msg.textContent = 'Give the new strategy a name.'; msg.hidden = false; } if (nm) nm.focus(); return; }
+    if (name.length > 80) { if (msg) { msg.textContent = 'Keep the name to 80 characters or fewer.'; msg.hidden = false; } if (nm) nm.focus(); return; }
+    flushSave(P);
+    var src;
+    if (from === 'copy' && STR.get(ST.sel)) {
+      src = isDirty(STR, ST.sel) ? DRAFTS[ST.sel] : ensureShape(STR.get(ST.sel));
+      if (validateDraft(src, barsCount(P.ctx)).list.length) src = ensureShape(STR.get(ST.sel));
+    } else src = Object.assign({}, clone(STARTERS[style]), { timeframe: '1d' });
+    var out = createFrom(P, src, name, style, from === 'copy' ? 'copied from ' + STR.get(ST.sel).name : 'new ' + styleName(style) + ' strategy from the starter');
+    if (out.error) { if (msg) { msg.textContent = 'Not created: ' + out.error; msg.hidden = false; } return; }
+    ST.sel = out.id; ST.newOpen = false; ST.style = style;
+    selectHash(out.id);
+    setFlash('work', 'good', '<strong>Created “' + esc(name) + '”</strong> (' + esc(styleName(style)) + '). Below are its rules in plain words - switch rules on or off, change the numbers; the preview on the right follows every change and it saves by itself.');
+    draw(P, 'flash');
+    var ed = $('#st-editor', el);
+    if (ed && ed.scrollIntoView) ed.scrollIntoView({ block: 'start' });
+  }
+
   function doExport(P) {
-    var STR = P.STR, id = ST.sel, saved = STR.get(id), name = id + '-v' + saved.version + '.json';
+    var STR = P.STR, id = ST.sel;
+    flushSave(P);
+    var saved = STR.get(id), name = id + '-v' + saved.version + '.json';
     ui.download(name, STR.exportJson(id), 'application/json;charset=utf-8');
-    setFlash('top-detail', '', 'Downloaded <strong>' + esc(name) + '</strong> - saved version ' + saved.version + ' only' + (isDirty(STR, id) ? ' (your unsaved edits are not in the file)' : '') +
-      '. Import it on another device with “Import JSON”.');
+    setFlash('work', '', 'Downloaded <strong>' + esc(name) + '</strong> (version ' + saved.version + '). On the other device: Strategy settings → “Import a strategy file”.');
     draw(P, 'flash');
   }
 
@@ -964,6 +1267,7 @@
       draw(P, 'flash');
       return;
     }
+    flushSave(P);
     var fr = new FileReader();
     fr.onload = function () {
       var prep = prepImport(String(fr.result || ''), STR);
@@ -974,14 +1278,16 @@
         setFlash('top', 'bad', '<strong>Not imported from ' + esc(file.name) + ':</strong>' + listHtml((res && res.errors) || ['unknown error']));
       } else {
         var c = res.config;
-        delete DRAFTS[c.id]; delete NOTES[c.id]; delete TESTS[c.id];
-        ST.sel = c.id; ST.resetAsk = false;
-        if (!res.unchanged && !persisted(STR, c.id, c.version)) setFlash('top', 'bad', '<strong>Not imported.</strong> ' + esc(STORAGE_MSG));
-        else if (res.unchanged) setFlash('top', '', '“' + esc(c.name) + '” in ' + esc(file.name) + ' is identical to the saved version ' + c.version + ' - nothing changed.');
+        delete DRAFTS[c.id]; delete SESSION[c.id]; delete UNDO[c.id];
+        persistDrafts(STR);
+        ST.sel = c.id; ST.resetAsk = false; ST.delAsk = false;
+        if (ST.style !== 'all' && c.style !== ST.style) ST.style = STYLES.some(function (s) { return s[0] === c.style; }) ? c.style : 'all';
+        if (!res.unchanged && !persisted(STR, c.id, c)) setFlash('top', 'bad', '<strong>Not imported.</strong> ' + esc(STORAGE_MSG));
+        else if (res.unchanged) setFlash('top', '', '“' + esc(c.name) + '” in ' + esc(file.name) + ' is the same as the saved version ' + c.version + ' - nothing changed.');
         else {
           setFlash('top', 'good', '<strong>Imported “' + esc(c.name) + '” as version ' + c.version + '</strong>' +
-            (prep.existed ? ' - it updated the strategy with the same id; older versions stay in its change history.' : ' - a new strategy.') +
-            ' Imported rules are not confirmed: check them and confirm below.' + (c.source === 'demo' ? ' It is the DEMO strategy and stays labelled DEMO.' : ''));
+            (prep.existed ? ' - it updated the strategy with the same id; older versions stay in its history.' : ' - a new strategy.') +
+            ' Check its rules and confirm them below.' + (c.source === 'demo' ? ' It is the example strategy and stays labelled DEMO.' : ''));
         }
       }
       if (P.el.isConnected) draw(P, 'flash');
@@ -993,50 +1299,15 @@
     fr.readAsText(file);
   }
 
-  function doSave(P) {
-    var STR = P.STR, id = ST.sel, saved = STR.get(id), d = draftOf(STR, id);
-    var v = validateDraft(d, barsCount(P.ctx));
-    if (v.list.length) {
-      setFlash('save', 'bad', '<strong>Not saved - fix ' + plural(v.list.length, 'problem') + ' first:</strong>' + listHtml(v.list.map(function (x) { return x.msg; })));
-      var firstId = v.list[0].id;
-      draw(P, 'flash');
-      var f = document.getElementById(firstId);
-      if (f && f.scrollIntoView) f.scrollIntoView({ block: 'center' });
-      return;
-    }
-    if (!isDirty(STR, id)) { setFlash('save', '', 'Nothing changed - no new version saved.'); draw(P, 'flash'); return; }
-    var wasConfirmed = STR.isConfirmed(id), wasActive = STR.activeId() === id, human = humanChanges(saved, d);
-    var res = STR.save(clone(d), String(NOTES[id] || '').trim());
-    if (!res.ok) {
-      setFlash('save', 'bad', '<strong>Not saved - the engine rejected it:</strong>' + listHtml(res.errors || ['unknown error']));
-      draw(P, 'flash');
-      return;
-    }
-    if (res.unchanged) { delete DRAFTS[id]; setFlash('save', '', 'Nothing changed - no new version saved.'); draw(P, 'flash'); return; }
-    var c = res.config;
-    if (!persisted(STR, id, c.version)) {
-      setFlash('save', 'bad', '<strong>Version ' + c.version + ' could not be saved.</strong> ' + esc(STORAGE_MSG) + ' Your edits are still in the editor.');
-      draw(P, 'flash');
-      return;
-    }
-    delete DRAFTS[id]; delete NOTES[id]; delete TESTS[id];
-    noteChanges(id, c.version, c.updatedAt, human);
-    setFlash('save', 'good', '<strong>Saved version ' + c.version + ' of “' + esc(c.name) + '” in this browser.</strong> What changed:' + listHtml(human.length ? human : res.changes || []) +
-      ((res.changes || []).length ? '<details style="margin-top:6px"><summary style="cursor:pointer">Technical change log (as recorded in the history)</summary>' + listHtml(res.changes) + '</details>' : '') +
-      '<p style="margin-top:6px">' + (c.source === 'demo' ? 'DEMO strategies are never confirmed.' : wasConfirmed ?
-        'Your confirmation was for version ' + saved.version + ', so it was cleared - confirm version ' + c.version + ' in the box above when the rules are right.' :
-        'Version ' + c.version + ' is not confirmed yet - confirm it in the box above when the rules are right.') +
-      (wasActive ? ' Daily Suggestions uses version ' + c.version + ' from now on.' : '') + '</p>' +
-      '<div style="margin-top:8px"><button type="button" class="btn" id="st-test-new" data-act="test-new">Test version ' + c.version + ' on today\'s data</button></div>');
-    draw(P, 'flash');
-  }
-
   function onEdit(P, t, type) {
-    var STR = P.STR, id = ST.sel, d = draftOf(STR, id), el = P.el;
+    var STR = P.STR, id = ST.sel, el = P.el;
     var isText = t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && /^(text|number|search)$/.test(t.type));
     if (isText ? type !== 'input' : type !== 'change') return;
-    if (t.id === 'st-note') { NOTES[id] = t.value; return; }
-    var f = t.getAttribute('data-f'), g = t.getAttribute('data-g'), structural = false, saved = STR.get(id);
+    if (t.hasAttribute('data-pick-q') || /^st-new-/.test(t.id || '') || /^st-new-/.test(t.name || '')) return;
+    var f = t.getAttribute('data-f'), g = t.getAttribute('data-g');
+    if (!f && !(g && t.getAttribute('data-i') != null)) return;
+    var d = draftOf(STR, id), saved = STR.get(id), structural = false;
+    pushUndo(P, id, !isText);
     if (f) {
       switch (f) {
         case 'name': d.name = t.value; break;
@@ -1046,7 +1317,7 @@
           d.mode = t.value === 'screen' ? 'screen' : 'setup';
           if (d.mode === 'setup' && !(d.qualify.minTriggers >= 1)) d.qualify.minTriggers = 1;
           structural = true; break;
-        case 'style': d.style = t.value; structural = true; break;
+        case 'style': d.style = t.value; if (ST.style !== 'all') ST.style = t.value; structural = true; break;
         case 'minBars': d.universe.minBars = parseInput(t); break;
         case 'cat':
           d.universe.categories = [].filter.call(el.querySelectorAll('input[data-f="cat"]'), function (x) { return x.checked; }).map(function (x) { return x.value; });
@@ -1068,8 +1339,8 @@
         case 'warnDays': d.events.warnDays = parseInput(t); break;
         default: return;
       }
-    } else if (g && d[g]) {
-      var i = +t.getAttribute('data-i'), r = d[g][i];
+    } else {
+      var i = +t.getAttribute('data-i'), r = d[g] && d[g][i];
       if (!r) return;
       var rk = t.getAttribute('data-r'), pk = t.getAttribute('data-p'), pt = t.getAttribute('data-pt');
       if (rk === 'enabled') { r.enabled = t.checked; structural = true; }
@@ -1092,8 +1363,10 @@
         var lb = $('#lbl-' + g + '-' + i, el);
         if (lb) lb.textContent = safeLabel(r);
       } else return;
-    } else return;
+    }
     if (structural) draw(P); else refresh(P);
+    scheduleSave(P);
+    schedulePreview(P);
   }
 
   function bind(P) {
@@ -1102,58 +1375,106 @@
       var b = e.target.closest('[data-act]');
       if (!b || !el.contains(b) || b.disabled) return;
       var act = b.getAttribute('data-act'), STR = P.STR, id = ST.sel;
-      if (act === 'use') doUse(P);
+      var menu = b.closest('details.ss-menu');
+      if (menu) menu.open = false;
+      if (act === 'style') {
+        ST.style = b.getAttribute('data-style'); ui.store.set(STYLE_KEY, ST.style); ST.newOpen = false;
+        var list = STR.list().filter(function (c) { return ST.style === 'all' || c.style === ST.style; });
+        if (list.length && !list.some(function (c) { return c.id === ST.sel; })) {
+          flushSave(P);
+          ST.sel = (list.filter(function (c) { return c.id === STR.activeId(); })[0] || list[0]).id;
+          selectHash(ST.sel);
+        }
+        draw(P, b.id ? b.id : null);
+        var nb = el.querySelector('[data-act="style"][data-style="' + ST.style + '"]'); if (nb) nb.focus();
+      } else if (act === 'open') select(P, b.getAttribute('data-id'));
+      else if (act === 'use') doUse(P, b.getAttribute('data-id') || id);
+      else if (act === 'new') { ST.newOpen = !ST.newOpen; draw(P); var nn = $('#st-new-name', el); if (nn) nn.focus(); }
+      else if (act === 'new-cancel') { ST.newOpen = false; draw(P); }
+      else if (act === 'create') doCreate(P);
       else if (act === 'dup') doDuplicate(P);
-      else if (act === 'reset') { ST.resetAsk = true; draw(P, 'st-reset-yes'); }
-      else if (act === 'reset-no') { ST.resetAsk = false; draw(P, 'st-reset'); }
+      else if (act === 'reset') { ST.resetAsk = true; ST.delAsk = false; draw(P, 'st-reset-yes'); }
+      else if (act === 'delete') { ST.delAsk = true; ST.resetAsk = false; draw(P, 'st-del-yes'); }
+      else if (act === 'ask-no') { ST.resetAsk = false; ST.delAsk = false; draw(P); }
       else if (act === 'reset-yes') doReset(P);
+      else if (act === 'delete-yes') doDelete(P);
       else if (act === 'export') doExport(P);
       else if (act === 'import') { var fi = $('#st-file', el); if (fi) fi.click(); }
-      else if (act === 'save') doSave(P);
+      else if (act === 'undo') doUndo(P);
       else if (act === 'discard') {
-        delete DRAFTS[id];
-        setFlash('save', '', 'Edits discarded - back to saved version ' + STR.get(id).version + '.');
+        clearTimeout(SAVE_T); SAVE_T = null;
+        delete DRAFTS[id]; delete SAVE[id]; UNDO[id] = [];
+        persistDrafts(STR);
+        setFlash('work', '', 'Back to the saved version ' + STR.get(id).version + '.');
         draw(P, 'flash');
-      } else if (act === 'test') runTest(P);
-      else if (act === 'test-new') {
-        var card = $('#st-test', el);
-        if (card && card.scrollIntoView) card.scrollIntoView({ block: 'start' });
-        runTest(P);
+      } else if (act === 'show-err') {
+        var s = SAVE[id], fe = s && s.list && s.list[0] ? document.getElementById(s.list[0].id) : null;
+        if (fe) { if (fe.scrollIntoView) fe.scrollIntoView({ block: 'center' }); if (fe.focus) fe.focus(); }
+      } else if (act === 'mode-setup') {
+        pushUndo(P, id, true);
+        var dm = draftOf(STR, id);
+        dm.mode = 'setup';
+        if (!(dm.qualify.minTriggers >= 1)) dm.qualify.minTriggers = 1;
+        draw(P, 'sec-triggers');
+        scheduleSave(P); schedulePreview(P);
       } else if (act === 'cats-clear') {
+        pushUndo(P, id, true);
         draftOf(STR, id).universe.categories = [];
         el.querySelectorAll('input[data-f="cat"]').forEach(function (x) { x.checked = false; });
-        refresh(P);
+        refresh(P); scheduleSave(P); schedulePreview(P);
       } else if (act === 'add') {
-        var g = b.getAttribute('data-g'), sel = $('#add-' + g, el), msg = $('#add-' + g + '-msg', el), cid = sel ? sel.value : '';
-        if (!cid || !SB.strategy.CONDITIONS[cid]) {
-          if (msg) { msg.textContent = 'Pick a rule from the list first.'; msg.hidden = false; }
-          if (sel) sel.focus();
-          return;
-        }
+        var g = b.getAttribute('data-g'), cid = b.getAttribute('data-c');
+        if (!cid || !SB.strategy.CONDITIONS[cid]) return;
+        pushUndo(P, id, true);
         var d = draftOf(STR, id);
         d[g].push({ id: cid, params: defaults(cid), enabled: true });
         var ni = d[g].length - 1;
+        ST.addOpen = null;
         draw(P, 'on-' + g + '-' + ni);
         var li = $('#on-' + g + '-' + ni, el);
         if (li && li.scrollIntoView) li.scrollIntoView({ block: 'center' });
+        scheduleSave(P); schedulePreview(P);
       } else if (act === 'remove') {
         var rg = b.getAttribute('data-g'), ri = +b.getAttribute('data-i'), dd = draftOf(STR, id);
+        pushUndo(P, id, true);
         if (dd[rg] && dd[rg][ri]) dd[rg].splice(ri, 1);
-        draw(P, 'add-' + rg);
+        draw(P, 'sec-' + rg);
+        scheduleSave(P); schedulePreview(P);
       }
     });
     el.addEventListener('change', function (e) {
       var t = e.target;
-      if (t.name === 'st-pick') { ST.sel = t.value; ST.resetAsk = false; FLASH = null; selectHash(t.value); draw(P); return; }
       if (t.id === 'st-file') { var file = t.files && t.files[0]; t.value = ''; doImport(P, file); return; }
       if (t.id === 'st-confirm') { doConfirm(P, t.checked); return; }
-      if (t.id && /^add-/.test(t.id)) { var m = $('#' + t.id + '-msg', el); if (m) m.hidden = true; return; }
+      if (t.name === 'st-new-style') {
+        var sx = $('#st-new-starter', P.el); if (sx && STARTERS[t.value]) sx.textContent = STARTERS[t.value].description;
+        return;
+      }
       onEdit(P, t, 'change');
     });
-    el.addEventListener('input', function (e) { onEdit(P, e.target, 'input'); });
+    el.addEventListener('input', function (e) {
+      var t = e.target, q = t.getAttribute && t.getAttribute('data-pick-q');
+      if (q) {
+        var words = String(t.value || '').toLowerCase().split(/\s+/).filter(Boolean);
+        var box = t.closest('.ss-pick');
+        box.querySelectorAll('.ss-pick-i').forEach(function (it) {
+          var txt = it.getAttribute('data-q') || '';
+          it.hidden = !words.every(function (w) { return txt.indexOf(w) >= 0; });
+        });
+        box.querySelectorAll('.ss-pick-g').forEach(function (gr) { gr.hidden = !gr.querySelector('.ss-pick-i:not([hidden])'); });
+        return;
+      }
+      onEdit(P, t, 'input');
+    });
     el.addEventListener('toggle', function (e) {
-      if (e.target && e.target.id === 'st-cats-d') ST.catsOpen = e.target.open;
-      if (e.target && e.target.id === 'st-pend-d') ST.pendOpen = e.target.open;
+      var t = e.target;
+      if (!t || !t.id) return;
+      if (t.id === 'st-more') ST.moreOpen = t.open;
+      if (t.id === 'st-histd') ST.histOpen = t.open;
+      if (/^add-/.test(t.id)) {
+        ST.addOpen = t.open ? t.id.slice(4) : ST.addOpen === t.id.slice(4) ? null : ST.addOpen;
+        if (t.open) { var qi = t.querySelector('[data-pick-q]'); if (qi) qi.focus({ preventScroll: true }); }
+      }
     }, true);
   }
 
@@ -1165,16 +1486,31 @@
     render: function (el, params, ctx) {
       var STR = SB.strategies;
       if (!STR || !SB.strategy) { el.innerHTML = '<div class="note bad">The strategy engine did not load, so strategies cannot be shown.</div>'; return; }
+      restoreDrafts(STR);
       if (params && params[0] && STR.get(params[0])) ST.sel = params[0];
       if (!ST.sel || !STR.get(ST.sel)) ST.sel = STR.activeId();
-      ST.resetAsk = false;
+      if (!ST.style) {         // the style picked last time, else the style of the strategy in use
+        var keep = ui.store.get(STYLE_KEY, null);
+        ST.style = STYLE_CARDS.some(function (s) { return s.id === keep; }) ? keep : (STR.get(STR.activeId()) || {}).style || 'all';
+        if (!STYLE_CARDS.some(function (s) { return s.id === ST.style; })) ST.style = 'all';
+      }
+      var selStyle = (STR.get(ST.sel) || {}).style;
+      if (ST.style !== 'all' && selStyle !== ST.style) ST.style = STYLES.slice(0, 3).some(function (s) { return s[0] === selStyle; }) ? selStyle : 'all';
+      ST.resetAsk = false; ST.delAsk = false;
       var P = { el: el, ctx: ctx, STR: STR, memo: {} };
       bind(P);
       draw(P);
-      // candle history (for bar-count hints and the test) - loaded in the background
+      if (!HOOKED) {        // leaving the page or the tab: a change waiting for its autosave is saved at once
+        HOOKED = true;
+        window.addEventListener('pagehide', function () { if (SAVE_T && CUR.P) flushSave(CUR.P); });
+        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden' && SAVE_T && CUR.P) flushSave(CUR.P); });
+      }
+      CUR.P = P;
+      // candle history (the preview and the counts) - loaded in the background
       if (!ctx.history && SB.loadHistory) {
-        SB.loadHistory().then(function () { if (el.isConnected) refresh(P); }, function () { /* the test reports it */ });
+        SB.loadHistory().then(function () { if (el.isConnected) { refresh(P); drawLive(P); loadCounts(P); } }, function () { /* the preview says so */ });
       }
     }
   });
+  var CUR = { P: null };
 })();
