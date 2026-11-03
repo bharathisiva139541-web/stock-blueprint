@@ -23,10 +23,11 @@ test('matches the reference pair and tags it', () => {
   assert.ok(tags.indexOf(CONFIRMED) < 0);
 });
 
-test('the wick only has to reach the middle of candle 1 body (owner, 03-Nov-2026; before: candle 1 open)', () => {
-  // RED: body 100 -> 90, middle 95
-  assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 95, 90.0, 91.4))), 'high = the middle of body 1');
-  assert.ok(!P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 94.9, 90.0, 91.4))), 'high just below the middle');
+test('the wick has to reach at least 60% up candle 1 body (owner, 03-Nov-2026; before: candle 1 open)', () => {
+  // RED: body 100 -> 90, 60% up = 96
+  assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 96, 90.0, 91.4))), 'high = 60% up body 1');
+  assert.ok(!P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 95.9, 90.0, 91.4))), 'high just below 60%');
+  assert.ok(!P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 95, 90.0, 91.4))), 'the middle (50%) is not enough');
   assert.ok(P.isHaramiInvHammerPair(sheetC(RED), sheetC(c(90.2, 100, 90.0, 93.2))), 'reaching open 1 still counts');
 });
 
@@ -57,7 +58,7 @@ test('each rule is enforced', () => {
     'opens more than 0.5% away from close 1': [RED, c(91, 100.8, 90.9, 94.2)],
     'closes above the middle of body 1': [c(100, 101, 89.5, 90), c(90.2, 100.9, 90.0, 95.1)],
     'upper wick under 1.5 x body': [c(100, 103, 89.5, 90), c(90.2, 100.1, 90.0, 94.2)],
-    'high below the middle of body 1': [RED, c(90.2, 94.9, 90.0, 91.4)],
+    'high below 60% up body 1': [RED, c(90.2, 95.9, 90.0, 91.4)],
     'high more than 15% of body 1 above high 1': [RED, c(90.2, 102.6, 90.0, 94.2)],
     'lower wick over 10% of range': [c(100, 101, 88, 90), c(90.2, 100.8, 88.9, 94.2)],
     'low below candle 1 low': [c(100, 101, 90, 90), c(90.2, 100.8, 89.95, 94.2)],
