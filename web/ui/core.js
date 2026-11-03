@@ -636,6 +636,9 @@
 
   // ---------- SVG line chart with hover crosshair ----------
   // series: [{name, points:[{x:'YYYY-MM-DD', y:number}], color}], opts: {height, fmt, zeroLine}
+  // The first series gets a soft gradient area (down to the zero line when there is one); lines draw in
+  // when the chart appears (CSS, only when the viewer allows motion); hovering shows a dot on every line.
+  var chartSeq = 0;
   function lineChart(host, series, opts) {
     opts = opts || {};
     // drawn at the container's width so labels keep their size on phones
@@ -652,7 +655,10 @@
     var fmt = opts.fmt || function (v) { return F.num(v, 0); };
     function X(i) { return P.l + (xs.length < 2 ? 0 : i * (W - P.l - P.r) / (xs.length - 1)); }
     function Y(v) { return P.t + (ymax - v) * (H - P.t - P.b) / (ymax - ymin); }
-    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.label || 'Line chart') + '">';
+    var gid = 'sbg' + (++chartSeq), c0 = series[0].color || 'var(--bar)';
+    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.label || 'Line chart') + '">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:' + c0 + ';stop-opacity:0.26"/>' +
+      '<stop offset="1" style="stop-color:' + c0 + ';stop-opacity:0"/></linearGradient></defs>';
     for (var g = 0; g <= 4; g++) {
       var v = ymin + (ymax - ymin) * g / 4, y = Y(v);
       svg += '<line class="grid-line" x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/>' +
@@ -664,29 +670,51 @@
       svg += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (t === ticks - 1 && ticks > 1 ? 'end' : t === 0 && P.l < 30 ? 'start' : 'middle') + '">' + esc(F.date(xs[i]).replace(/ \d{4}$/, '')) + '</text>';
     }
     if (opts.zeroLine) svg += '<line class="axis" x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '"/>';
-    series.forEach(function (s) {
-      var d = '';
-      s.points.forEach(function (p, i) { if (isNum(p.y)) d += (d ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.y).toFixed(1); });
-      svg += '<path d="' + d + '" fill="none" stroke="' + (s.color || 'var(--bar)') + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    series.forEach(function (s, si) {
+      var d = '', first = null, last = null;
+      s.points.forEach(function (p, i) {
+        if (!isNum(p.y)) return;
+        d += (d ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.y).toFixed(1);
+        if (first === null) first = i;
+        last = i;
+      });
+      if (!d) return;
+      if (si === 0 && last > first) {
+        var base = (opts.zeroLine ? Y(0) : H - P.b).toFixed(1);
+        svg += '<path class="area" d="' + d + 'L' + X(last).toFixed(1) + ' ' + base + 'L' + X(first).toFixed(1) + ' ' + base + 'Z" fill="url(#' + gid + ')" stroke="none"/>';
+      }
+      svg += '<path class="ln draw" pathLength="1" d="' + d + '" fill="none" stroke="' + (s.color || 'var(--bar)') + '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
     });
-    svg += '<line class="xhair" x1="0" x2="0" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--border-strong)" visibility="hidden"/>';
+    svg += '<line class="xhair" x1="0" x2="0" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--border-strong)" stroke-dasharray="3 3" visibility="hidden"/>';
+    series.forEach(function (s, si) {
+      svg += '<circle class="xdot" data-si="' + si + '" r="4" fill="' + (s.color || 'var(--bar)') + '" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>';
+    });
     svg += '<rect x="' + P.l + '" y="' + P.t + '" width="' + (W - P.l - P.r) + '" height="' + (H - P.t - P.b) + '" fill="transparent" class="hit"/></svg>';
     var legend = series.length > 1 ? '<div class="legend">' + series.map(function (s) {
       return '<span><i style="background:' + (s.color || 'var(--bar)') + '"></i>' + esc(s.name) + '</span>';
     }).join('') + '</div>' : '';
     host.innerHTML = svg + legend;
     var el = host.querySelector('svg'), hit = host.querySelector('.hit'), xh = host.querySelector('.xhair'), tip = $('#tip');
+    var dots = host.querySelectorAll('.xdot');
     hit.addEventListener('pointermove', function (e) {
       var r = el.getBoundingClientRect();
       var px = (e.clientX - r.left) * W / r.width;
       var i = Math.max(0, Math.min(xs.length - 1, Math.round((px - P.l) * (xs.length - 1) / (W - P.l - P.r))));
       xh.setAttribute('x1', X(i)); xh.setAttribute('x2', X(i)); xh.setAttribute('visibility', 'visible');
+      Array.prototype.forEach.call(dots, function (c) {
+        var p = series[+c.getAttribute('data-si')].points[i];
+        if (p && isNum(p.y)) { c.setAttribute('cx', X(i)); c.setAttribute('cy', Y(p.y)); c.setAttribute('visibility', 'visible'); } else c.setAttribute('visibility', 'hidden');
+      });
       tip.textContent = F.date(xs[i]) + ' · ' + series.map(function (s) { var p = s.points[i]; return s.name + ': ' + (p && isNum(p.y) ? fmt(p.y) : '–'); }).join(' · ');
       tip.hidden = false;
       tip.style.left = Math.min(window.innerWidth - 290, e.clientX + 12) + 'px';
       tip.style.top = (e.clientY - 40) + 'px';
     });
-    hit.addEventListener('pointerleave', function () { xh.setAttribute('visibility', 'hidden'); tip.hidden = true; });
+    hit.addEventListener('pointerleave', function () {
+      xh.setAttribute('visibility', 'hidden');
+      Array.prototype.forEach.call(dots, function (c) { c.setAttribute('visibility', 'hidden'); });
+      tip.hidden = true;
+    });
   }
 
   function tile(label, value, note, cls) {

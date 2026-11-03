@@ -20,6 +20,25 @@
     ['backtest', 'Backtesting'], ['markets', 'IPOs & Markets']
   ];
 
+  // section icons (16 px line drawings, currentColor) - drawn for this site
+  var ICONS = {
+    overview: '<rect x="3" y="3" width="7" height="9" rx="1.6"/><rect x="14" y="3" width="7" height="5" rx="1.6"/><rect x="14" y="12" width="7" height="9" rx="1.6"/><rect x="3" y="16" width="7" height="5" rx="1.6"/>',
+    watchlist: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    lists: '<path d="M12 3.2l2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z"/>',
+    suggestions: '<path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+    industries: '<path d="M3 21h18"/><path d="M5 21V8.5L11 5v16"/><path d="M11 21V9.5l8 3V21"/><path d="M8 10.5v.01M8 14v.01M8 17.5v.01M15 15v.01M15 18v.01"/>',
+    strategy: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+    signals: '<path d="M7 3v4M7 15v6M17 3v3M17 14v7"/><rect x="5" y="7" width="4" height="8" rx="1"/><rect x="15" y="6" width="4" height="8" rx="1"/>',
+    excel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 14.5h18M9 4v16"/>',
+    results: '<path d="M14 3H6.5A2.5 2.5 0 0 0 4 5.5v13A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V9z"/><path d="M14 3v6h6"/><path d="M8.5 17v-3M12 17v-5M15.5 17v-2"/>',
+    today: '<path d="M13 2.5L4.5 13.5H11L10 21.5l8.5-11H12z"/>',
+    alerts: '<path d="M6 9a6 6 0 0 1 12 0c0 6.5 2.5 8.5 2.5 8.5h-17S6 15.5 6 9"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/>',
+    backtest: '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/><path d="M12 7.5V12l3 2"/>',
+    markets: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9M12 3c-2.6 2.6-3.8 5.6-3.8 9s1.2 6.4 3.8 9"/>',
+    palette: '<path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.3-1-1.7-1-3 0-1.1.9-2 2-2h2.2A3.8 3.8 0 0 0 21 10.2C21 6.2 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.1"/><circle cx="10" cy="7" r="1.1"/><circle cx="14.5" cy="7" r="1.1"/>'
+  };
+  function icon(id) { return ICONS[id] ? '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + ICONS[id] + '</svg>' : ''; }
+
   // api/site waits up to 25 s for the sheet and Vercel stops it at 30 s (maxDuration): wait
   // longer than both, so its answer (the last good copy, or a clear reason) always arrives
   var SITE_TIMEOUT_MS = 32000;
@@ -288,7 +307,8 @@
     if (a && a.closest && a.closest('#app') && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return;
     if (!$('#drawer').hidden) return;
     var y = window.scrollY;
-    route();
+    route(true);
+    renderTicker();
     window.scrollTo(0, y);
   }
 
@@ -385,7 +405,8 @@
     var parts = h.split('/').map(function (p) { try { return decodeURIComponent(p); } catch (e) { return p; } });
     return { id: parts[0] || 'overview', params: parts.slice(1) };
   }
-  function route() {
+  // quiet: redraw in place (new prices) - no fade-in
+  function route(quiet) {
     if (!ctx.D) return;                         // still loading: boot routes later
     var r = parseHash();
     if (!PAGES[r.id]) r = { id: 'overview', params: [] };
@@ -394,7 +415,7 @@
     });
     var app = $('#app');
     var host = document.createElement('div');   // fresh element per visit: no listener build-up
-    host.className = 'page';
+    host.className = quiet === true ? 'page' : 'page enter';
     app.replaceChildren(host);
     try {
       PAGES[r.id].render(host, r.params, ctx);
@@ -534,7 +555,7 @@
 
   // ---------- boot ----------
   function buildNav() {
-    $('.tabs').innerHTML = NAV.map(function (n) { return '<a href="#' + n[0] + '" data-tab="' + n[0] + '">' + esc(n[1]) + '</a>'; }).join('');
+    $('.tabs').innerHTML = NAV.map(function (n) { return '<a href="#' + n[0] + '" data-tab="' + n[0] + '">' + icon(n[0]) + '<span>' + esc(n[1]) + '</span></a>'; }).join('');
   }
 
   document.addEventListener('click', function (e) {
@@ -558,21 +579,143 @@
     else location.hash = '#overview/data';
   });
 
+  // ---------- themes (web/style.css: one token block per theme; light = no data-theme) ----------
+  var THEMES = [
+    ['light', 'Light', 'light'], ['dark', 'Dark', 'dark'], ['midnight', 'Midnight Blue', 'dark'], ['neon', 'Cyber Neon', 'dark'],
+    ['emerald', 'Emerald Finance', 'dark'], ['aurora', 'Aurora', 'dark'], ['graphite', 'Graphite', 'dark'], ['gold', 'Premium Gold', 'dark']
+  ];
+  SB.THEMES = THEMES;
+  function themeOk(t) { return THEMES.some(function (x) { return x[0] === t; }); }
   function initTheme() {
-    var root = document.documentElement, btn = $('#theme');
-    function apply(t) {
-      if (t === 'dark') root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
-      btn.setAttribute('aria-pressed', String(t === 'dark'));
+    var root = document.documentElement, btn = $('#theme'), pop = null, animT = 0;
+    btn.innerHTML = icon('palette') + '<span class="theme-dot" aria-hidden="true"></span>';
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-expanded', 'false');
+    function current() { var t = root.getAttribute('data-theme'); return themeOk(t) ? t : 'light'; }
+    function apply(t, glide) {
+      if (!themeOk(t)) t = 'light';
+      if (glide && window.matchMedia && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        root.classList.add('theme-anim');
+        clearTimeout(animT);
+        animT = setTimeout(function () { root.classList.remove('theme-anim'); }, 420);
+      }
+      if (t === 'light') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+      var name = THEMES.filter(function (x) { return x[0] === t; })[0][1];
+      btn.setAttribute('title', 'Theme: ' + name);
+      btn.setAttribute('aria-label', 'Choose theme (now ' + name + ')');
       var meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute('content', t === 'dark' ? '#0f1115' : '#ffffff');
+      var page = getComputedStyle(root).getPropertyValue('--page').trim();
+      if (meta && page) meta.setAttribute('content', page);
+      if (pop) pop.querySelectorAll('[data-theme-id]').forEach(function (b) { b.setAttribute('aria-checked', String(b.getAttribute('data-theme-id') === t)); });
+    }
+    function place() {
+      if (!pop) return;
+      var r = btn.getBoundingClientRect(), w = pop.offsetWidth;
+      pop.style.top = Math.round(r.bottom + 8) + 'px';
+      pop.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w))) + 'px';
+    }
+    function close(focusBtn) {
+      if (!pop) return;
+      pop.remove();
+      pop = null;
+      btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('resize', place);
+      if (focusBtn) btn.focus();
+    }
+    function outside(e) { if (pop && !pop.contains(e.target) && !btn.contains(e.target)) close(false); }
+    function open() {
+      var cur = current();
+      pop = document.createElement('div');
+      pop.className = 'theme-pop';
+      pop.id = 'theme-pop';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Theme');
+      pop.innerHTML = '<div class="theme-pop-h"><div><h2>Theme</h2><span class="sub">Saved in this browser</span></div>' +
+        '<button type="button" class="icon-btn" data-theme-x aria-label="Close">✕</button></div>' +
+        '<div class="theme-grid" role="radiogroup" aria-label="Theme">' + THEMES.map(function (x) {
+          return '<button type="button" class="theme-opt" role="radio" data-theme-id="' + x[0] + '" aria-checked="' + (x[0] === cur) + '"' +
+            ' tabindex="' + (x[0] === cur ? '0' : '-1') + '">' +
+            '<span class="theme-sw" data-theme="' + x[0] + '" aria-hidden="true"><i class="sw-card"></i><i class="sw-line"></i><i class="sw-line2"></i>' +
+            '<i class="sw-spark"></i><i class="sw-acc"></i><i class="sw-up"></i><i class="sw-down"></i></span>' +
+            '<span class="theme-opt-t"><span>' + esc(x[1]) + '</span><span class="sub">' + x[2] + '</span></span></button>';
+        }).join('') + '</div>';
+      document.body.appendChild(pop);
+      btn.setAttribute('aria-controls', 'theme-pop');
+      btn.setAttribute('aria-expanded', 'true');
+      place();
+      pop.addEventListener('click', function (e) {
+        if (e.target.closest('[data-theme-x]')) { close(true); return; }
+        var b = e.target.closest('[data-theme-id]');
+        if (!b) return;
+        choose(b.getAttribute('data-theme-id'));
+      });
+      pop.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.stopPropagation(); close(true); return; }
+        var b = e.target.closest('[data-theme-id]');
+        if (!b) return;
+        var k = { ArrowRight: 1, ArrowDown: 2, ArrowLeft: -1, ArrowUp: -2 }[e.key];
+        if (!k) return;
+        e.preventDefault();
+        var all = [].slice.call(pop.querySelectorAll('[data-theme-id]')), i = all.indexOf(b);
+        var nx = all[(i + k + all.length) % all.length];
+        choose(nx.getAttribute('data-theme-id'));
+        nx.focus();
+      });
+      document.addEventListener('pointerdown', outside, true);
+      window.addEventListener('resize', place);
+      var on = pop.querySelector('[aria-checked="true"]');
+      if (on) on.focus();
+    }
+    function choose(t) {
+      ui.store.set('theme', t);
+      apply(t, true);
+      if (pop) pop.querySelectorAll('[data-theme-id]').forEach(function (b) { b.setAttribute('tabindex', b.getAttribute('aria-checked') === 'true' ? '0' : '-1'); });
     }
     apply(ui.store.get('theme', 'light'));
-    btn.addEventListener('click', function () {
-      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      ui.store.set('theme', next);
-      apply(next);
-    });
+    btn.addEventListener('click', function () { if (pop) close(false); else open(); });
+    SB.setTheme = function (t) { choose(themeOk(t) ? t : 'light'); };
   }
+
+  // web fonts (Inter + Space Grotesk) after the page has loaded, so they never hold up the first view;
+  // the system font stays until they arrive (offline copies simply keep it)
+  function loadFonts() {
+    if (location.protocol === 'file:' || document.getElementById('sb-fonts')) return;
+    var l = document.createElement('link');
+    l.id = 'sb-fonts';
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap';
+    document.head.appendChild(l);
+  }
+
+  // ---------- market pulse ticker: the Main stocks that moved most today (sheet prices - DELAYED / EOD / CACHED) ----------
+  function renderTicker() {
+    var el = $('#ticker');
+    if (!el) return;
+    var adv = 0, dec = 0;                         // counted like the Overview's Breadth tile
+    ctx.stocks.forEach(function (s) { if (isNum(s.chg)) { if (s.chg > 0) adv++; else if (s.chg < 0) dec++; } });
+    var priced = ctx.stocks.filter(function (s) { return isNum(s.chg) && isNum(s.price) && s.price > 0; });
+    if (priced.length < 4) { el.hidden = true; el.innerHTML = ''; return; }
+    var top = priced.slice().sort(function (a, b) { return Math.abs(b.chg) - Math.abs(a.chg) || (a.sym < b.sym ? -1 : 1); }).slice(0, 24);
+    function run(copy) {
+      return '<div class="ticker-run"' + (copy ? ' aria-hidden="true"' : '') + '>' + top.map(function (s, i) {
+        return (i ? '<span class="tick-sep" aria-hidden="true"></span>' : '') +
+          '<button type="button" class="tick" data-tsym="' + esc(s.sym) + '"' + (copy ? ' tabindex="-1"' : '') +
+          ' title="' + esc((s.name || s.sym) + ' · ' + F.pct(s.chg, 2) + ' today') + '"><b>' + esc(s.sym) + '</b><span class="tp">' + F.price(s.price) + '</span>' +
+          '<span class="' + (s.chg > 0 ? 'up' : s.chg < 0 ? 'down' : '') + '">' + F.pct(s.chg, 2) + '</span></button>';
+      }).join('') + '</div>';
+    }
+    el.innerHTML = '<div class="ticker-in" role="region" aria-label="Biggest movers among your Main stocks today">' +
+      '<span class="ticker-lbl"><i class="pulse" aria-hidden="true"></i>Top movers<span class="ticker-ad" title="Advancing / declining Main stocks">' +
+      '<span class="up">▲ ' + F.int(adv) + '</span><span class="down">▼ ' + F.int(dec) + '</span></span></span>' +
+      '<div class="ticker-track">' + run(false) + run(true) + '</div></div>';
+    el.style.setProperty('--tape-s', Math.max(40, top.length * 3.2).toFixed(0) + 's');
+    el.hidden = false;
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[data-tsym]');
+    if (t) { e.preventDefault(); openStock(t.getAttribute('data-tsym'), t); }
+  });
 
   // Data: live feed first (api/site?part=main) when this host has an API, else / on
   // any failure the saved copy - inlined (single-file preview) or data/dashboard.js.
@@ -590,6 +733,7 @@
     initSearch();
     setStatus();
     setBanner();
+    renderTicker();
     route();
     window.setInterval(checkExpiry, 30000);
     initMarket();
@@ -623,4 +767,5 @@
   initTheme();
   initTip();
   boot();
+  if (document.readyState === 'complete') loadFonts(); else window.addEventListener('load', loadFonts);
 })();

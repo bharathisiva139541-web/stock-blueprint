@@ -1,8 +1,8 @@
 'use strict';
 // Browser tests (Playwright + Chromium). Run: npm run test:ui
 // Starts its own static server for web/, so nothing else needs to run.
-// Checks: every page renders without errors in light and dark themes, no
-// horizontal page scroll at 360 px, theme tokens apply, the industry page
+// Checks: every page renders without errors in light and dark themes (the main
+// pages in the six other themes too), no horizontal page scroll at 360 px, theme tokens apply, the industry page
 // only lists its own category, and Daily Suggestions matches the engine.
 // Live site feed: api/site, api/market-status and api/quotes are MOCKED with
 // page routes (same-origin Vercel, the Firebase copy's remote API, failures);
@@ -601,22 +601,42 @@ function check(name, fn) {
           assert.ok(r.chip && r.chip.indexOf('(' + r.q + ')') > 0, 'chip shows ' + r.q);
           assert.ok(r.cards === Math.min(20, r.q) || (r.q === 0 && r.cards === 0), 'cards ' + r.cards);
         });
-        await check('theme toggle switches and persists (default light)', async () => {
+        await check('theme picker: 8 themes, choice applies at once and persists (default light)', async () => {
           const c2 = await browser.newContext({ viewport: vp });       // no init script: real persistence
           const p2 = await c2.newPage();
+          const theme = () => p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
           await p2.goto(base + '#overview', { waitUntil: 'load' });
-          const t0 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          const t0 = await theme();
           await p2.click('#theme');
-          const t1 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          const opts = await p2.$$eval('#theme-pop [data-theme-id]', (b) => b.map((x) => x.getAttribute('data-theme-id') + ':' + x.getAttribute('aria-checked')));
+          const expanded = await p2.getAttribute('#theme', 'aria-expanded');
+          await p2.click('#theme-pop [data-theme-id="dark"]');
+          const t1 = await theme();
+          await p2.keyboard.press('Escape');
+          const closed = await p2.evaluate(() => !document.querySelector('#theme-pop'));
           await p2.reload({ waitUntil: 'load' });
-          const t2 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          const t2 = await theme();
           await p2.click('#theme');
-          const t3 = await p2.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          await p2.keyboard.press('ArrowRight');                      // keyboard: the next theme
+          const t3 = await theme();
+          const meta = await p2.evaluate(() => [document.querySelector('meta[name="theme-color"]').content, getComputedStyle(document.documentElement).getPropertyValue('--page').trim()]);
+          await p2.click('#theme-pop [data-theme-id="light"]');
+          const t4 = await theme();
+          await p2.mouse.click(5, 400);                                // a click outside closes it
+          const closed2 = await p2.evaluate(() => !document.querySelector('#theme-pop'));
+          const stored = await p2.evaluate(() => localStorage.getItem('sb:theme'));
           await c2.close();
           assert.strictEqual(t0, null, 'starts light');
+          assert.deepStrictEqual(opts, ['light:true', 'dark:false', 'midnight:false', 'neon:false', 'emerald:false', 'aurora:false', 'graphite:false', 'gold:false']);
+          assert.strictEqual(expanded, 'true');
           assert.strictEqual(t1, 'dark');
+          assert.ok(closed, 'Escape closes the picker');
           assert.strictEqual(t2, 'dark', 'persists after reload');
-          assert.strictEqual(t3, null, 'back to light');
+          assert.strictEqual(t3, 'midnight', 'arrow key picks the next theme');
+          assert.strictEqual(meta[0], meta[1], 'browser bar colour = the theme page colour');
+          assert.strictEqual(t4, null, 'back to light');
+          assert.ok(closed2, 'a click outside closes the picker');
+          assert.strictEqual(stored, '"light"');
         });
       }
       await ctx.close();
@@ -724,6 +744,47 @@ function check(name, fn) {
     assert.ok(opm.rp.cells.some((c) => /Aggressive Increase/.test(c)), 'the value from Main in Results performance');
     assert.deepStrictEqual(list, ['REV \u2191 PROFIT \u2193', 'OTHER INCOME HIGH'], 'the lists');
     assert.ok(drawer && /REV \u2191 PROFIT \u2193/.test(drawer) && /OTHER INCOME HIGH/.test(drawer) && /results$/.test(drawer), 'drawer: ' + drawer);
+  });
+
+  // the other six themes (owner, 03-Nov-2026): the main pages render with their own tokens, no overflow
+  const accents = {};
+  for (const theme of ['midnight', 'neon', 'emerald', 'aurora', 'graphite', 'gold']) {
+    for (const vp of [{ width: 1366, height: 900 }, { width: 360, height: 780 }]) {
+      await check('theme ' + theme + ' ' + vp.width + 'px: overview, watchlist, results, today, markets', async () => {
+        const c = await browser.newContext({ viewport: vp });
+        await c.addInitScript((t) => { try { localStorage.setItem('sb:theme', JSON.stringify(t)); } catch (e) { /* ignore */ } }, theme);
+        const p = await c.newPage(), errors = watchErrors(p);
+        const out = [];
+        for (const pg of ['overview', 'watchlist', 'results', 'today', 'markets']) {
+          await p.goto(base + '#' + pg, { waitUntil: 'load' });
+          await p.waitForFunction(dataReady, null, { timeout: 15000 });
+          await p.waitForTimeout(400);
+          out.push(await p.evaluate(() => ({
+            theme: document.documentElement.getAttribute('data-theme'),
+            bg: getComputedStyle(document.body).backgroundColor,
+            accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+            overflow: document.documentElement.scrollWidth - window.innerWidth,
+            text: document.querySelector('#app').innerText.length,
+            ticker: !document.querySelector('#ticker').hidden && document.querySelectorAll('#ticker .tick').length
+          })));
+        }
+        await c.close();
+        assert.deepStrictEqual(errors, [], 'console/page errors');
+        out.forEach((o) => {
+          assert.strictEqual(o.theme, theme);
+          assert.notStrictEqual(o.bg, 'rgb(255, 255, 255)', 'a dark page');
+          assert.ok(o.overflow <= 0, 'horizontal page overflow ' + o.overflow + 'px');
+          assert.ok(o.text > 200, 'page has content');
+          assert.ok(o.ticker >= 8, 'movers ticker shown: ' + o.ticker);
+        });
+        accents[theme] = out[0].accent;
+      });
+    }
+  }
+  await check('every theme has its own accent colour', async () => {
+    const vals = Object.values(accents);
+    assert.strictEqual(vals.length, 6);
+    assert.strictEqual(new Set(vals.concat(['#2563eb', '#4c95ef'])).size, 8, JSON.stringify(accents));
   });
 
   await check('Firebase copy: remote API from web/config.js, EOD pill, no overflow at 360 px', async () => {
