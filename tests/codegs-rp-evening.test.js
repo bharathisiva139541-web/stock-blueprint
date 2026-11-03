@@ -2,8 +2,10 @@
 // Results Performance rebuilt every evening (owner, 03-Nov-2026: "why result day column is blank and since results % is
 // incorrect?"). VRLLOG filed its results on 02/11 at 16:25, after the close, so the 3 Nov session is the reaction day. The
 // tab was last built at 08:09 on 3 Nov - before that session traded: Result day blank, Since results +0.1% (the price
-// before the open) while the stock closed +6.1%. Phase 4 (~7:20 PM, after Phase 1 brought the day's candles) now rebuilds
-// the tab, unless a Results Day run is writing it at that moment.
+// before the open) while the stock closed +6.1% - the PC was off 08:43-19:45 and nothing else rebuilt the tab. Now Phase 4
+// (~7:20 PM, after Phase 1 brought the day's candles) rebuilds it, and so does the website feed trigger about every hour
+// while the market is open (+ once with the closing prices), with the reaction session's price so far - never while a
+// Results Day run is writing it.
 const test = require('node:test');
 const assert = require('node:assert');
 const mock = require('./fixtures/apps-script-mock.js');
@@ -69,6 +71,7 @@ test('the 08:09 build: the reaction session has not traded yet - Result day blan
   assert.strictEqual(m['Pre-Result Close'], BASE);
   assert.strictEqual(m['Result Day %'], '');
   assert.ok(Math.abs(m['% Since Results'] - (279.1 / BASE - 1)) < 1e-9, m['% Since Results']);
+  assert.strictEqual(m['Max Gain %'], '', 'a price from before the open is not a high / low after the results');
   assert.match(m.note, /last refreshed 03\/11\/2026 08:09 IST/);
 });
 
@@ -83,7 +86,23 @@ test('Phase 4 rebuilds Results Performance with the day\'s candle: Result day an
   assert.ok(Math.abs(m['% Since Results'] - (CLOSE / BASE - 1)) < 1e-9, 'Since results: ' + m['% Since Results']);
   assert.ok(Math.abs(m['Max Gain %'] - (299 / BASE - 1)) < 1e-9, 'Max gain from the day\'s high: ' + m['Max Gain %']);
   assert.match(m.note, /last refreshed 03\/11\/2026 19:20 IST/);
-  assert.strictEqual(e.props.getProperty('AB_RS_RUNNING_SINCE'), null, 'the run flag is given back');
+  assert.strictEqual(e.props.getProperty('AB_RP_BUILDING_SINCE'), null, 'its flag is given back');
+});
+
+test('while it rebuilds, a PC results check still runs (only its own flag is held); a Results Day rebuild waits for it', () => {
+  const e = setup();
+  evening(e);
+  e.run(`(function () { var real = ab_rpRefresh_; this.__seen = [];
+    ab_rpRefresh_ = function (o) { __seen.push([!!(o && o.guarded), PropertiesService.getScriptProperties().getProperty('AB_RS_RUNNING_SINCE'),
+      !!PropertiesService.getScriptProperties().getProperty('AB_RP_BUILDING_SINCE')]); return real(o); }; })()`);
+  e.call('ab_dailyPhase4Work_');
+  assert.strictEqual(e.run('JSON.stringify(__seen)'), '[[true,null,true]]', 'guarded build, the Results Day run flag left free');
+  // a Results Day run's own rebuild while another one holds the tab: it waits (then goes on when that one died)
+  e.props.setProperty('AB_RP_BUILDING_SINCE', String(e.now() - 1000));
+  e.run(`(function () { var c = this.__sleeps = { n: 0 }; var U = Utilities; Utilities = new Proxy(U, { get: function (t, k) {
+    if (k === 'sleep') return function () { c.n++; }; return t[k]; } }); })()`);
+  e.call('ab_rpRefresh_', {});
+  assert.strictEqual(e.run('__sleeps.n'), 30, 'waited for the other build (at most 90 s), then went on');
 });
 
 test('a Results Day run writing the tab at that moment: Phase 4 leaves it alone', () => {
@@ -95,7 +114,84 @@ test('a Results Day run writing the tab at that moment: Phase 4 leaves it alone'
   assert.match(note, /Results Performance: skipped \(a Results Day run was going\)/);
   assert.strictEqual(rpRow(e)['Result Day %'], '', 'not rebuilt');
   assert.strictEqual(e.props.getProperty('AB_RS_RUNNING_SINCE'), since, 'the run\'s own flag is kept');
+  assert.strictEqual(e.props.getProperty('AB_RP_BUILDING_SINCE'), null);
   // a flag left by a run that died long ago does not block it
   e.props.setProperty('AB_RS_RUNNING_SINCE', String(EVENING - 20 * 60000));
   assert.match(e.call('ab_dailyPhase4Work_'), /Results Performance rebuilt/);
+});
+
+const at = (iso, hhmm) => Date.parse(iso + 'T' + hhmm.slice(0, 2) + ':' + hhmm.slice(2) + ':00+05:30');
+const price = (e, p, chg) => e.run(`SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Main').getRange(3, 5, 1, 2).setValues([[${p}, ${chg}]])`);
+
+test('market hours, the reaction session: Result day = the price so far, the close column stays empty until the candle', () => {
+  const e = setup();
+  e.setNow(at('2026-11-03', '1100'));
+  price(e, 290, 3.9);
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), true, '08:09 build is old: rebuilt');
+  let m = rpRow(e);
+  assert.ok(Math.abs(m['Result Day %'] - (290 / BASE - 1)) < 1e-9, 'Result day so far: ' + m['Result Day %']);
+  assert.strictEqual(m['Result Day Close'], '', 'no close yet');
+  assert.ok(Math.abs(m['% Since Results'] - (290 / BASE - 1)) < 1e-9);
+  assert.ok(Math.abs(m['Max Gain %'] - (290 / BASE - 1)) < 1e-9, 'the price since the open counts');
+  // 20 minutes later: not again (about once an hour)
+  e.setNow(at('2026-11-03', '1120'));
+  price(e, 292, 4.7);
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), false);
+  // 15:48 hourly, then 16:18 once more with the closing price although only 30 minutes passed
+  e.setNow(at('2026-11-03', '1548'));
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), true);
+  e.setNow(at('2026-11-03', '1618'));
+  price(e, CLOSE, 6.1);
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), true, 'closing prices');
+  m = rpRow(e);
+  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9, 'Result day at the close: ' + m['Result Day %']);
+  assert.match(m.note, /last refreshed 03\/11\/2026 16:18 IST/);
+  e.setNow(at('2026-11-03', '1628'));
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), false, 'the close build is done');
+  // the evening candle makes it final
+  evening(e);
+  e.call('ab_dailyPhase4Work_');
+  m = rpRow(e);
+  assert.strictEqual(m['Result Day Close'], CLOSE);
+  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9);
+});
+
+test('the next session: Next day = the price so far vs the reaction day\'s close', () => {
+  const e = setup();
+  evening(e);
+  e.call('ab_dailyPhase4Work_');
+  e.setNow(at('2026-11-04', '1130'));
+  price(e, 301.7, 2.0);
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), true);
+  const m = rpRow(e);
+  assert.ok(Math.abs(m['Next Day %'] - (301.7 / CLOSE - 1)) < 1e-9, 'Next day so far: ' + m['Next Day %']);
+  assert.strictEqual(m['Next Day Close'], '');
+  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9, 'Result day from the candle');
+});
+
+test('no market-hours rebuild before 09:35, after 16:30, at weekends or on an NSE holiday', () => {
+  const e = setup();
+  [at('2026-11-03', '0920'), at('2026-11-03', '1645'), at('2026-11-07', '1100')].forEach((t) => {
+    e.setNow(t);
+    assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), false, new Date(t).toISOString());
+  });
+  e.props.setProperty('AB_NSE_HOLIDAYS', JSON.stringify(['2026-11-10']));
+  e.setNow(at('2026-11-10', '1100'));
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), false, 'holiday');
+  e.setNow(at('2026-11-09', '1100'));
+  assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), true, 'a normal Monday');
+});
+
+test('the website feed trigger rebuilds the tab in market hours and then sends the main part', () => {
+  const e = setup();
+  e.setNow(at('2026-11-03', '1048'));
+  e.run(`ab_siteFeedDue_ = function () { return false; }; ab_siteBuildRunning_ = function () { return false; };
+    ab_siteBuild_ = function (due) { this.__built = due.slice(); };`);
+  e.call('ab_siteFeedTrigger_', {});
+  assert.strictEqual(e.run('JSON.stringify(__built)'), '["main"]');
+  assert.match(rpRow(e).note, /last refreshed 03\/11\/2026 10:48 IST/);
+  e.run('__built = null');
+  e.setNow(at('2026-11-03', '1118'));
+  e.call('ab_siteFeedTrigger_', {});
+  assert.strictEqual(e.run('__built'), null, 'nothing due, nothing rebuilt');
 });

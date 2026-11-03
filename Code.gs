@@ -1994,31 +1994,6 @@ function ab_dailyPhase4Work_() {
   return note;
 }
 
-/** Phase 4: Results Performance rebuilt once the day's candles are in (Phase 1, ~6:45 PM). Owner, 03-Nov-2026 (VRLLOG,
- *  results 02/11 16:25 after market): at 8:22 PM the tab still showed its 08:09 build - "Result day" blank (the 3 Nov
- *  session had not traded yet) and "Since results" +0.1% (the price before the open) while the stock was +6.1%. The tab
- *  is otherwise rebuilt only by Results Day runs, and the 6 PM run comes before Phase 1's candles. Takes the Results Day
- *  run flag (Code2.gs AB_RS_RUNNING_PROP) so the two never write the tab at once; a run in progress = skipped (the
- *  PC's next check runs again). */
-function ab_rpEveningRefresh_() {
-  const props = PropertiesService.getScriptProperties();
-  const since = Number(props.getProperty(AB_RS_RUNNING_PROP) || 0);
-  if (since && Date.now() - since < AB_RS_RUNNING_STALE_MS) {
-    Logger.log('Results Performance: a Results Day run is going - not rebuilt now.');
-    return ' Results Performance: skipped (a Results Day run was going).';
-  }
-  props.setProperty(AB_RS_RUNNING_PROP, String(Date.now()));
-  try {
-    const r = ab_rpRefresh_();
-    return ' Results Performance rebuilt (' + r.count + ' rows, with today\'s candles).';
-  } catch (rpErr) {
-    Logger.log('Results Performance refresh failed: ' + rpErr.message);
-    return ' Results Performance refresh failed: ' + rpErr.message + '.';
-  } finally {
-    props.deleteProperty(AB_RS_RUNNING_PROP);
-  }
-}
-
 /** Phase 4 (~7:20 PM): Quality Watch email + IPO Base Watch email, on their own 6-minute budget. */
 function ab_dailyPhase4Extras_(e) {
   if (ab_skipWeekendTrigger_(e, 'Phase 4 (Quality Watch / IPO base)')) return;
@@ -10061,7 +10036,10 @@ function ab_siteEveningMin_() {
  */
 function ab_siteFeedTrigger_(e) {
   const t0 = Date.now();
-  const due = AB_SITE_FEED_PARTS.filter(function (p) { return ab_siteFeedDue_(p, ab_siteFeedMeta_(p), t0); });
+  // Results Performance about every hour while the market is open (Code2.gs ab_rpMarketRefresh_) - the feed then takes it
+  let rp = false;
+  try { rp = ab_rpMarketRefresh_(t0); } catch (rpErr) { Logger.log('Results Performance (market hours) failed: ' + rpErr.message); }
+  const due = AB_SITE_FEED_PARTS.filter(function (p) { return (rp && p === 'main') || ab_siteFeedDue_(p, ab_siteFeedMeta_(p), t0); });
   if (!due.length || ab_siteBuildRunning_()) return;
   ab_siteBuild_(due, 'auto', { deadline: t0 + AB_SITE_BUDGET_MS });
 }

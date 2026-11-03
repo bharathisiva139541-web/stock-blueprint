@@ -574,6 +574,8 @@ test('e2e stored copy: the refresh trigger stores the feed; api/site gets it at 
   const s = setup('2026-10-21 10:30');
   s.app.gs.call('ab_siteFeedTrigger_');                    // the 30-minute refresh: nothing stored yet, builds both parts
   const fresh = setup('2026-10-21 10:30');                 // the same sheet read on demand in the same minute
+  // market hours: the trigger rebuilt Results Performance first (Code2.gs ab_rpMarketRefresh_) - the same sheet here
+  assert.equal(fresh.app.gs.call('ab_rpMarketRefresh_'), true);
   const onDemand = { main: (await site(fresh, 'main')).body, history: (await site(fresh, 'history')).body };
   assert.equal(JSON.parse(fresh.app.replies[0]).stored, false, 'on-demand path');
 
