@@ -13,15 +13,19 @@
   var SIG = { key: 'ttmsig', label: 'TTM Signal', type: 'badge', title: 'The stock\'s TTM Signal now (Main tab, follows the price shown)',
     get: function (r) { var s = SB.ctx.bySym[r.Symbol]; return s ? s.sig || null : null; } };
   // owner, 03-Nov-2026: "add daily % to the left of result day, and use intraday movement as result day % - VRL Logistics
-  // should show 14.5% instead of 6%": Daily % = where the result day closed (the sheet's Result Day %), Result day = its
-  // high or low vs the close before the results, whichever went further (the sheet's Result Day Move %; a feed without
-  // that column: the close)
-  var DAILY = { key: 'Result Day %', label: 'Daily %', type: 'pct',
-    title: 'The result day\'s close vs the close before the results - that day\'s % change (the first session that could react)' };
-  var RDAY = { key: 'rdMove', label: 'Result day', type: 'pct',
-    get: function (r) { var v = r['Result Day Move %']; return ui.isNum(v) ? v : r['Result Day %']; },
-    title: 'The intraday move on the result day: its high or its low vs the close before the results, whichever went further ' +
-      '(during that session: the prices seen so far). Daily % = where it closed.' };
+  // should show 14.5% instead of 6%" (no new sheet columns): Result day = the sheet's Result Day % (the reaction session's
+  // high or low vs the close before the results, whichever went further); Daily % = where that session closed = Result
+  // Day Close vs Pre-Result Close (during the session, Result Day Close still empty: the price now)
+  var DAILY = { key: 'dailyPct', label: 'Daily %', type: 'pct',
+    title: 'Where the result day closed vs the close before the results - that day\'s % change (during that session: the price now)',
+    get: function (r) {
+      var base = r['Pre-Result Close'], cl = r['Result Day Close'];
+      if (!ui.isNum(cl) && ui.isNum(r['Result Day %'])) cl = r['Current Price'];      // the session is still on
+      return ui.isNum(base) && base > 0 && ui.isNum(cl) ? (cl / base - 1) * 100 : null;
+    } };
+  var RDAY = { key: 'Result Day %', label: 'Result day', type: 'pct',
+    title: 'The intraday move on the result day (the first session that could react): its high or its low vs the close before the results, ' +
+      'whichever went further (during that session: so far). Daily % = where it closed.' };
   function withOpm(rows, ctx, season, qKey) {
     rows.forEach(function (r) {
       var s = ctx.bySym[r.Symbol];
@@ -193,7 +197,7 @@
             return { label: x.label, value: x.count, href: sHref(x),
                      tip: x.label + ': ' + F.int(x.count) + ' stocks · first session ' + (x.avgDay == null ? '–' : F.pct(x.avgDay, 2)) + ' · since results ' + (x.avgSince == null ? '–' : F.pct(x.avgSince, 2)) };
           })) : '<p class="empty">Filing times show here after your PC program sends NSE\'s announcements and the sheet refreshes Results Performance.</p>') +
-        ui.card('First-session move, by announcement time', 'Average "Result day %": the first session that could react vs the close before it',
+        ui.card('First-session move, by announcement time', 'Average "Result day": the intraday move of the first session that could react - its high or low vs the close before it, whichever went further',
           known ? ui.bars(ses.filter(function (x) { return x.count && x.avgDay != null; }).map(function (x) {
             return { label: x.label, value: x.avgDay, href: sHref(x), tip: x.label + ': avg ' + F.pct(x.avgDay, 2) + ' on the first session (' + F.int(x.count) + ' stocks)' };
           }), { diverging: true, fmt: function (v) { return F.pct(v, 2); } }) : '<p class="empty">Shows once the filing times are known.</p>') +

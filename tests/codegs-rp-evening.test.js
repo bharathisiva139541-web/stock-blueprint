@@ -81,13 +81,12 @@ test('Phase 4 rebuilds Results Performance with the day\'s candle: Result day an
   const note = e.call('ab_dailyPhase4Work_');
   assert.match(note, /Results Performance rebuilt \(1 rows, with today's candles\)/);
   const m = rpRow(e);
-  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9, 'Result day: ' + m['Result Day %']);
-  assert.strictEqual(m['Result Day Close'], CLOSE);
+  // owner: "use intraday movement as result day % - VRL Logistics should show 14.5% instead of 6%": the day's high here
+  assert.ok(Math.abs(m['Result Day %'] - (299 / BASE - 1)) < 1e-9, 'Result day = the intraday move: ' + m['Result Day %']);
+  assert.strictEqual(m['Result Day Close'], CLOSE, 'where it closed stays in Result Day Close');
   assert.ok(Math.abs(m['% Since Results'] - (CLOSE / BASE - 1)) < 1e-9, 'Since results: ' + m['% Since Results']);
   assert.ok(Math.abs(m['Max Gain %'] - (299 / BASE - 1)) < 1e-9, 'Max gain from the day\'s high: ' + m['Max Gain %']);
-  // the intraday move (owner: "VRL Logistics should show 14.5% instead of 6%"): the day's high vs the baseline
-  assert.ok(Math.abs(m['Result Day Move %'] - (299 / BASE - 1)) < 1e-9, 'Result day move: ' + m['Result Day Move %']);
-  assert.deepStrictEqual([m['Result Day High'], m['Result Day Low']], [299, 279.5]);
+  assert.ok(!('Result Day Move %' in m) && !('Result Day High' in m), 'no extra columns (owner: "don\'t add this columns")');
   assert.match(m.note, /last refreshed 03\/11\/2026 19:20 IST/);
   assert.strictEqual(e.props.getProperty('AB_RP_BUILDING_SINCE'), null, 'its flag is given back');
 });
@@ -136,8 +135,6 @@ test('market hours, the reaction session: Result day = the price so far, the clo
   assert.strictEqual(m['Result Day Close'], '', 'no close yet');
   assert.ok(Math.abs(m['% Since Results'] - (290 / BASE - 1)) < 1e-9);
   assert.ok(Math.abs(m['Max Gain %'] - (290 / BASE - 1)) < 1e-9, 'the price since the open counts');
-  assert.ok(Math.abs(m['Result Day Move %'] - (290 / BASE - 1)) < 1e-9, 'the move so far');
-  assert.strictEqual(m['Result Day High'], '', 'no candle yet');
   // 20 minutes later: not again (about once an hour)
   e.setNow(at('2026-11-03', '1120'));
   price(e, 292, 4.7);
@@ -149,7 +146,7 @@ test('market hours, the reaction session: Result day = the price so far, the clo
   price(e, CLOSE, 6.1);
   assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), true, 'closing prices');
   m = rpRow(e);
-  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9, 'Result day at the close: ' + m['Result Day %']);
+  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9, 'the highest price seen today (the close here): ' + m['Result Day %']);
   assert.match(m.note, /last refreshed 03\/11\/2026 16:18 IST/);
   e.setNow(at('2026-11-03', '1628'));
   assert.strictEqual(e.call('ab_rpMarketRefresh_', e.now()), false, 'the close build is done');
@@ -158,19 +155,31 @@ test('market hours, the reaction session: Result day = the price so far, the clo
   e.call('ab_dailyPhase4Work_');
   m = rpRow(e);
   assert.strictEqual(m['Result Day Close'], CLOSE);
-  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9);
-  assert.ok(Math.abs(m['Result Day Move %'] - (299 / BASE - 1)) < 1e-9, 'the candle\'s high once it is in');
+  assert.ok(Math.abs(m['Result Day %'] - (299 / BASE - 1)) < 1e-9, 'the candle\'s high once it is in');
 });
 
-test('Result Day Move %: a fall that went further than the rise is shown as the fall', () => {
+test('Result Day %: a fall that went further than the rise is shown as the fall', () => {
   const e = setup();
   evening(e);
   e.run(`(function () { var h = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('History30');
     h.getRange(h.getLastRow(), 3, 1, 4).setValues([[276, 281, 250.9, 268]]); })()`);
   e.call('ab_dailyPhase4Work_');
   const m = rpRow(e);
-  assert.ok(Math.abs(m['Result Day Move %'] - (250.9 / BASE - 1)) < 1e-9, 'low -10% beats high +0.8%: ' + m['Result Day Move %']);
-  assert.ok(Math.abs(m['Result Day %'] - (268 / BASE - 1)) < 1e-9, 'the close stays in Result Day %');
+  assert.ok(Math.abs(m['Result Day %'] - (250.9 / BASE - 1)) < 1e-9, 'low -10% beats high +0.8%: ' + m['Result Day %']);
+  assert.strictEqual(m['Result Day Close'], 268);
+});
+
+test('Result Day %: a reaction session older than the history kept keeps the value on the tab', () => {
+  const e = setup();
+  evening(e);
+  e.call('ab_dailyPhase4Work_');
+  // weeks later its candle is no longer in History30 / History60
+  e.setNow(at('2026-12-10', '1900'));
+  e.run(`(function () { var h = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('History30');
+    h.getRange(5, 1, 1, 7).setValues([['', '', '', '', '', '', '']]); })()`);
+  e.call('ab_rpRefresh_', {});
+  const m = rpRow(e);
+  assert.ok(Math.abs(m['Result Day %'] - (299 / BASE - 1)) < 1e-9, 'kept: ' + m['Result Day %']);
 });
 
 test('the next session: Next day = the price so far vs the reaction day\'s close', () => {
@@ -183,7 +192,7 @@ test('the next session: Next day = the price so far vs the reaction day\'s close
   const m = rpRow(e);
   assert.ok(Math.abs(m['Next Day %'] - (301.7 / CLOSE - 1)) < 1e-9, 'Next day so far: ' + m['Next Day %']);
   assert.strictEqual(m['Next Day Close'], '');
-  assert.ok(Math.abs(m['Result Day %'] - (CLOSE / BASE - 1)) < 1e-9, 'Result day from the candle');
+  assert.ok(Math.abs(m['Result Day %'] - (299 / BASE - 1)) < 1e-9, 'Result day from the candle (its high)');
 });
 
 test('no market-hours rebuild before 09:35, after 16:30, at weekends or on an NSE holiday', () => {
