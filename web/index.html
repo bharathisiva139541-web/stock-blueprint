@@ -7,11 +7,16 @@
 <meta name="theme-color" content="#ffffff">
 <title>Stock Blueprint</title>
 <meta name="description" content="Stock Blueprint - NSE watchlist research dashboard: strategy-based daily suggestions, industries, patterns & FVG, results season, alerts, backtesting and workbook analysis.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f6fd1'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="style.css">
 <script>
-  // apply the viewer's saved theme before first paint (default: light)
-  try { if (localStorage.getItem('sb:theme') === '"dark"') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+  // apply the viewer's saved theme before first paint (default: light; the list = web/app.js THEMES)
+  try {
+    var sbT = JSON.parse(localStorage.getItem('sb:theme') || 'null');
+    if (/^(dark|midnight|neon|emerald|aurora|graphite|gold)$/.test(sbT)) document.documentElement.setAttribute('data-theme', sbT);
+  } catch (e) {}
 </script>
 </head>
 <body>
@@ -27,10 +32,11 @@
       <div id="gsearch-results" class="search-results" role="listbox" hidden></div>
     </div>
     <button id="status" class="status-pill" type="button" aria-label="Data status">Loading…</button>
-    <button id="theme" class="icon-btn" type="button" aria-label="Switch light / dark theme" title="Light / dark theme"></button>
+    <button id="theme" class="icon-btn" type="button" aria-label="Choose theme" title="Theme"></button>
   </div>
   <nav class="tabs" aria-label="Sections"></nav>
 </header>
+<div id="ticker" class="ticker" hidden></div>
 <div id="site-banner" class="site-banner" role="status" hidden></div>
 
 <main id="app" tabindex="-1">
