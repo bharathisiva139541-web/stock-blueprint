@@ -38,7 +38,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '06-11-2026', session: '2026-11-06' },               // a bad candle time
     { sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-09-01', session: '2026-09-01', low: 1, close: 2 }   // older than 30 days
   ]));
-  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, replaced: 0, tfs: null, slots: {} });
+  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.match(rows[0][0], /^Spring and Spring in FVG from Zerodha Kite candles .* Last scan: session 2026-11-06 \(2026-11-06 19:00\)\. Kept 30 days\./);
   assert.deepStrictEqual(rows[1], ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close', 'FVG Bottom', 'FVG Top', 'Found', 'FVG Detail']);
@@ -54,7 +54,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
   e.setNow(Date.UTC(2026, 10, 9, 12, 0));
   const r2 = e.post(put([PARA, { sym: 'FLAT', tf: '15m', pattern: 'Spring in FVG', candle: '2026-11-09 10:30', session: '2026-11-09', low: 100, close: 101,
     zone: [99.5, 100.5, '2026-11-05 11:00'] }], { upto: '2026-11-09' }));
-  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, replaced: 0, tfs: null, slots: {} });
+  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {} });
   const rows2 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows2[2].slice(0, 5), ['2026-11-09', 'FLAT', 'Flat Co', '15m', 'Spring in FVG']);
   assert.strictEqual(rows2.find((x) => x[1] === 'PARAGMILK')[12], '2026-11-06 19:00');
@@ -71,7 +71,7 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   assert.strictEqual(e.sheet('Intraday Patterns').rows.length, 5);
   const r = e.post(put([{ sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-11-06', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '30m', pattern: 'Spring in FVG', candle: '2026-11-06 11:15', session: '2026-11-06', low: 99, close: 100 }], { tfs: ['4H', 'D', 'W', 'M', 'nope'] }));
-  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, replaced: 0, tfs: ['M', 'W', 'D', '4H'], slots: {} });
+  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, replaced: 0, removed: 0, tfs: ['M', 'W', 'D', '4H'], slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows.slice(2).map((x) => x[1] + ' ' + x[3]), ['FLAT D', 'PARAGMILK 4H'], 'the 15m and 1H rows are gone, the 30m one was not added');
   assert.match(rows[0][0], /candles \(your PC program\): 4H, D, W, M \(4H = 09:15-13:15 \/ 13:15-15:30\) - the sheet's/);
@@ -82,7 +82,7 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   const r3 = e.post(put([{ sym: 'FLAT', tf: '4H', pattern: 'Spring in FVG', candle: '2026-11-06 09:15', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '2026-11-06 13:15', session: '2026-11-06', low: 99, close: 100 }],
   { tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'], D: ['10:00'], bad: ['13:15'], '1H': ['x'] } }));
-  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, replaced: 0, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] } });
+  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, replaced: 0, removed: 0, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] } });
   const rows3 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows3.slice(2).map((x) => x[1] + ' ' + x[3] + ' ' + x[5]), ['FLAT D 2026-11-06', 'FLAT 4H 2026-11-06 13:15', 'PARAGMILK 4H 2026-10-30 13:15'],
     'the 09:15 4H rows are gone, the 13:15 ones and the daily one stay');
@@ -116,7 +116,21 @@ test('intraday: FVG+Spring detail, the 4H FVG patterns on every candle, a rescan
   assert.ok(by('FLAT', '4H', 'Twin Star Bottom + FVG'));
   assert.ok(!by('PARAGMILK', '4H', 'Spring in FVG') && !by('FLAT', 'D', 'Spring in FVG'), 'the old rule\'s rows after since are gone');
   assert.ok(by('FLAT', 'D', 'Spring'), 'a session before since stays');
-  assert.match(rows[0][0], /TOP of an FVG \/ Gap-up zone on its 1st or 2nd touch, or on its BOTTOM line/);
+  assert.match(rows[0][0], /anywhere on an FVG \/ Gap-up zone or under its bottom line, closing above the bottom, no earlier close under the Spring low/);
+});
+
+test('intraday: a Spring in FVG a later candle closed below is taken off (owner, 08-Nov-2026); FVG Detail "middle"', () => {
+  const e = env();
+  const SL = { tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'] } };
+  e.post(put([PARA, { sym: 'FLAT', tf: 'D', pattern: 'Spring in FVG', candle: '2026-10-28', session: '2026-10-28', low: 1, close: 2,
+    zone: [0.5, 3, '2026-10-01', 'FVG', 'middle', 3] }, { sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-10-29', session: '2026-10-29', low: 1, close: 2 }], SL));
+  assert.strictEqual(e.sheet('Intraday Patterns').rows.find((x) => x[1] === 'FLAT' && x[4] === 'Spring in FVG')[13], 'FVG middle (touch 3)');
+  const r = e.post(put([{ sym: 'PARAGMILK', tf: '4H', pattern: 'Spring in FVG', candle: '2026-10-30 13:15', session: '2026-10-30', low: 1, close: 2 }],
+    Object.assign({ since: '2026-11-05', first: true, upto: '2026-11-06',
+      invalid: [{ sym: 'PARAGMILK', tf: '4H', candle: '2026-10-30 13:15' }, { sym: 'FLAT', tf: 'D', candle: '2026-10-29' }, { tf: 'D' }] }, SL)));
+  assert.deepStrictEqual([r.removed, r.added, r.skipped], [1, 0, 1], JSON.stringify(r));
+  const rows = e.sheet('Intraday Patterns').rows.slice(2).map((x) => x[1] + ' ' + x[3] + ' ' + x[4]);
+  assert.deepStrictEqual(rows, ['FLAT D Spring', 'FLAT D Spring in FVG'], 'PARAGMILK gone and not added again; a plain Spring stays');
 });
 
 const PRICES = { PARAGMILK: 240, 'M&M': 3050, FLAT: 101 };

@@ -3,7 +3,8 @@
 // timeframe a Spring candlestick pattern formed in an FVG; due to lack of intraday data I missed this opportunity".
 // 1. the offline checks (candles of every timeframe, sessions, login, download, a whole scan): tests/fixtures/pcbridge_intraday_check.py
 // 2. the Python copy of the rules = the website's (= Code.gs): Spring (web/lib/patterns.js isSpringPair / patternsAt),
-//    Spring in FVG (owner's 08-Nov-2026 rule: web/lib/fvg.js longFvgDetail 'fvg-spring' events with zone / where / touch),
+//    Spring in FVG (owner's 08-Nov-2026 rule: web/lib/fvg.js longFvgDetail 'fvg-spring' events with zone / where / touch /
+//    broken),
 //    FVG First Touch / Confirmed / Twin Star + FVG, the unmitigated FVG and the Gap-up zones, on random candles.
 //    Skipped without python3.
 const test = require('node:test');
@@ -65,7 +66,7 @@ test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and 
     const ev = (type) => det.events.filter((e) => e.type === type).map((e) => e.i);
     return {
       springs: cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf('Spring') >= 0),
-      fvg: det.events.filter((e) => e.type === 'fvg-spring').map((e) => [e.i, e.zone, e.where, e.touch, e.formedIdx, e.bottom, e.top]),
+      fvg: det.events.filter((e) => e.type === 'fvg-spring').map((e) => [e.i, e.zone, e.where, e.touch, e.formedIdx, e.bottom, e.top, e.broken]),
       ft: ev('first-touch'), conf: ev('confirmed'), twin: ev('fvg-twinstar'),
       unmit: zoneOf(det.unmitigated),
       gapups: FVG.gapUpFvgs(cs).map((g) => [g.bottom, g.top, g.formedIdx, g.pct])
@@ -81,7 +82,8 @@ test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and 
     '    fs = K.fvg_spring(cs)',
     '    assert sorted(fs) == sorted(d["spring"]), "fvg_spring = fvg_detail spring"',
     '    out.append({"springs": K.springs(cs),',
-    '                "fvg": [[i, z["kind"], z["where"], z["touch"], z["f"], z["bottom"], z["top"]] for i, z in sorted(fs.items())],',
+    '                "fvg": [[i, z["kind"], z["where"], z["touch"], z["f"], z["bottom"], z["top"], -1 if z["broken"] is None else z["broken"]]',
+    '                        for i, z in sorted(fs.items())],',
     '                "ft": sorted(d["ft"]), "conf": sorted(d["conf"]), "twin": sorted(d["twin"]),',
     '                "unmit": [d["unmit"]["bottom"], d["unmit"]["top"], d["unmit"]["f"]] if d["unmit"] else None,',
     '                "gapups": [[z["bottom"], z["top"], z["f"], z["pct"]] for z in d["gapups"]]})',
@@ -92,15 +94,16 @@ test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and 
   assert.strictEqual(r.status, 0, r.stderr);
   const pyOut = JSON.parse(r.stdout);
   let springs = 0, ft = 0, gapups = 0;
-  const fvg = { top: 0, bottom: 0, 'Gap-up': 0, touch2: 0 };
+  const fvg = { top: 0, middle: 0, bottom: 0, 'Gap-up': 0, touch3: 0, broken: 0 };
   js.forEach((j, k) => {
     ['springs', 'fvg', 'ft', 'conf', 'twin', 'unmit', 'gapups'].forEach((key) => {
       assert.deepStrictEqual(pyOut[k][key], j[key], key + ', series ' + k);
     });
     springs += j.springs.length; ft += j.ft.length; gapups += j.gapups.length;
-    j.fvg.forEach((e) => { fvg[e[2]]++; if (e[1] === 'Gap-up') fvg['Gap-up']++; if (e[3] === 2) fvg.touch2++; });
+    j.fvg.forEach((e) => { fvg[e[2]]++; if (e[1] === 'Gap-up') fvg['Gap-up']++; if (e[3] >= 3) fvg.touch3++; if (e[7] >= 0) fvg.broken++; });
   });
   const twin = js.reduce((a, j) => a + j.twin.length, 0), conf = js.reduce((a, j) => a + j.conf.length, 0);
-  assert.ok(springs > 150 && fvg.top > 5 && fvg.bottom > 3 && fvg['Gap-up'] >= 1 && fvg.touch2 >= 1 && ft > 20 && gapups > 5 && twin > 5 && conf > 20,
+  assert.ok(springs > 150 && fvg.top > 5 && fvg.middle > 5 && fvg.bottom > 3 && fvg['Gap-up'] >= 1 && fvg.touch3 >= 1 && fvg.broken > 5 &&
+    ft > 20 && gapups > 5 && twin > 5 && conf > 20,
     'the random candles exercise every rule: ' + JSON.stringify({ springs: springs, fvg: fvg, ft: ft, gapups: gapups, twin: twin, conf: conf }));
 });

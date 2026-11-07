@@ -52,11 +52,12 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     report only Spring in FVG) and sends them to the sheet's "Intraday Patterns" tab (kept 30 days; the Chart column
     opens TradingView at that timeframe). The website's Patterns & FVG page lists them too (no prices - Kite's data is
     for your own use).
-    "Spring in FVG" (your rule of 08-Nov-2026, the same as the sheet's FVG+Spring and the website's): the Spring
-    candle sits on a 3-candle FVG or a Gap-up zone (3-5 %) that still holds (no close under its bottom before the
-    Spring) - either on the TOP (its low comes into the zone's upper half and it closes above the zone top, on the
-    zone's 1st or 2nd touch) or on the BOTTOM LINE (its low reaches the bottom, at most 1 % under it, and it closes
-    above it - any touch). The column "FVG Detail" says which ("FVG top (touch 2)", "Gap-up bottom (touch 4)").
+    "Spring in FVG" (your rule of 08-Nov-2026, checked on a picture; the same as the sheet's FVG+Spring and the
+    website's): the Spring candle sits on a 3-candle FVG or a Gap-up zone (3-5 %) that still holds (no close under its
+    bottom before the Spring): its low anywhere in the zone or under the bottom line (any depth), its close above the
+    bottom line, and NO candle since the zone formed closed under the Spring candle's low (the red candle excepted).
+    The column "FVG Detail" says where its low sat ("FVG top (touch 2)", "FVG middle (touch 3)", "Gap-up bottom
+    (touch 4)"). When a LATER candle closes under the Spring low, the next scan takes that row off the sheet.
     Not on the monthly chart (M: the plain Spring only).
  4. On 4H it also finds the other FVG patterns of the sheet's FVG column - FVG First Touch, FVG First Touch Confirmed
     and Twin Star Bottom + FVG (on every 4H candle) - and sends the 4H FVG ZONES still untouched (the latest 3-candle
@@ -65,7 +66,8 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     "Mitigated FVG" email at most once an hour, together with the daily zones.
  5. BACKTEST: after each scan it tests every Spring in FVG of 4H (13:15 candle), D and W on all the candles stored here
     (4H ~6 months, D and W ~5 years): buy at the Spring candle's close, stop just under its low, WIN = the target
-    (2 x the risk) reached before the stop within 20 candles (a candle that does both = a loss). The win rates go to
+    (2 x the risk) reached before the stop within 20 candles (a candle that does both = a loss); top / middle / bottom
+    and every Spring are counted too. The win rates go to
     the sheet's "Spring Backtest" + "Spring Backtest Trades" tabs and the website (Patterns & FVG > FVG+Spring win
     rate); bridge.log shows one line per timeframe ("Kite backtest ..."). BacktestNow.bat runs only the backtest, on
     the candles already here - no Kite login needed.

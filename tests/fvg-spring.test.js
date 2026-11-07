@@ -1,8 +1,8 @@
 'use strict';
-// FVG+Spring (owner, 08-Nov-2026): a Spring candle pair whose 2nd candle sits on the TOP of a 3-candle FVG or Gap-up
-// zone (low in its upper half, close above the top, the zone's 1st or 2nd touch) or on its BOTTOM line (low at most 1%
-// under it, close above it), the zone still holding. Checks the rule (web/lib/fvg.js) and parity with Code.gs
-// ab_longFvgDetail_ run in the Apps Script mock.
+// FVG+Spring (owner, 08-Nov-2026, checked on a picture): a Spring candle pair whose 2nd candle's low is anywhere on a
+// 3-candle FVG or Gap-up zone or under its bottom line, closing above the bottom, the zone still holding and no earlier
+// close under the Spring low; a later close under it takes the tag off. Checks the rule (web/lib/fvg.js) and parity with
+// Code.gs ab_longFvgDetail_ run in the Apps Script mock.
 const test = require('node:test');
 const assert = require('node:assert');
 const FVG = require('../web/lib/fvg.js');
@@ -26,9 +26,10 @@ function base() {
 const springEv = (s, cfg) => FVG.longFvgDetail(s, cfg).events.filter((e) => e.type === 'fvg-spring')
   .map((e) => ({ i: e.i, zone: e.zone, where: e.where, touch: e.touch, bottom: e.bottom, top: e.top }));
 
-// Owner's rule (08-Nov-2026): TOP = low into the zone's upper half (middle 102.5 .. top 104), close above the top, on
-// the zone's 1st or 2nd touch; BOTTOM = low at the bottom line (101), at most 1% under it, close above the bottom.
-test('top: the Spring candle dips into the upper half and closes above the top (1st touch)', () => {
+// Owner's rule (08-Nov-2026, checked on a picture): the Spring candle's low anywhere in the zone (bottom 101 .. top 104,
+// middle 102.5) or under the bottom (any depth), its close above the bottom, any touch, and NO candle from the zone's
+// formation to the red candle closed below the Spring low. A later close below the Spring low takes the tag off.
+test('top: the Spring candle dips into the upper half (1st touch)', () => {
   const s = base().concat([c(108, 108.5, 104.2, 104.5), c(104.4, 105, 103.0, 104.3)]);
   assert.deepStrictEqual(spring(FVG.longFvgDetail(s).tags), ['FVG+Spring (Today)']);
   assert.deepStrictEqual(springEv(s), [{ i: 20, zone: 'FVG', where: 'top', touch: 1, bottom: 101, top: 104 }]);
@@ -36,53 +37,59 @@ test('top: the Spring candle dips into the upper half and closes above the top (
   assert.deepStrictEqual(spring(older), ['FVG+Spring (1d ago)']);
 });
 
-test('top: the 2nd touch counts, the 3rd does not', () => {
-  const touch = c(108.5, 108.8, 103.5, 106);      // low 103.5 under the top 104, closes inside / above: a touch
-  const away = c(106, 107.5, 105.5, 107);          // back above the zone
+test('any touch counts: the 3rd touch too, while no earlier close went below the Spring low', () => {
+  const touch = c(108.5, 108.8, 103.5, 106);      // low 103.5 under the top 104: a touch, closes above 103
+  const away = c(106, 107.5, 105.5, 107);
   const pair = [c(108, 108.5, 104.2, 104.5), c(104.4, 105, 103.0, 104.3)];
-  const s2 = base(); s2[18] = touch;
-  assert.deepStrictEqual(springEv(s2.concat([away]).concat(pair)).map((e) => e.touch), [2]);
   const s3 = base(); s3[18] = touch;
   const third = s3.concat([away, c(107, 107.2, 103.8, 105.5), c(105.5, 108, 105.2, 107.8)]).concat(pair);
-  assert.deepStrictEqual(springEv(third), [], 'the 3rd touch at the top is not FVG+Spring');
+  assert.deepStrictEqual(springEv(third).map((e) => e.where + ' ' + e.touch), ['top 3']);
 });
 
-test('the lower half of the zone is neither top nor bottom', () => {
+test('middle: the lower half of the zone counts too (like PARAGMILK), the close may stay inside the zone', () => {
   const s = base().concat([c(106, 106.5, 102.4, 102.6), c(102.5, 103, 101.8, 102.55)]);
-  assert.deepStrictEqual(springEv(s), []);
+  assert.deepStrictEqual(springEv(s), [{ i: 20, zone: 'FVG', where: 'middle', touch: 1, bottom: 101, top: 104 }]);
 });
 
-test('top: the close must be above the zone top', () => {
-  const s = base().concat([c(108, 108.5, 104.2, 104.5), c(104.4, 104.6, 103.0, 103.9)]);
-  assert.deepStrictEqual(springEv(s), []);
+test('an earlier candle that closed below the Spring low makes it not valid (the red candle is excepted)', () => {
+  const s = base();
+  s[18] = c(108.5, 108.8, 101.5, 101.7);          // closed at 101.7: inside the zone, above the bottom (the zone holds)
+  const pair = [c(104, 104.5, 102.4, 102.6), c(102.5, 103, 101.8, 102.55)];   // Spring low 101.8 > that close
+  assert.deepStrictEqual(springEv(s.concat([c(101.7, 104.5, 101.6, 104.2)]).concat(pair)), []);
+  // the same Spring with that earlier close at 101.9 (above the Spring low): valid
+  const t = base();
+  t[18] = c(108.5, 108.8, 101.5, 101.9);
+  assert.deepStrictEqual(springEv(t.concat([c(101.9, 104.5, 101.6, 104.2)]).concat(pair)).map((e) => e.where), ['middle']);
 });
 
-test('bottom: the low reaches the bottom line (up to 1% under it), close above it - any touch', () => {
+test('bottom: the low under the bottom line by any amount, the close back above it', () => {
   const s = base().concat([c(106, 106.5, 101.6, 101.8), c(101.7, 102.4, 100.5, 101.75)]);
   assert.deepStrictEqual(springEv(s), [{ i: 20, zone: 'FVG', where: 'bottom', touch: 1, bottom: 101, top: 104 }]);
-  // after 3 earlier touches the bottom still counts
-  const t = base(); t[18] = c(108.5, 108.8, 103.5, 106);
-  const many = t.concat([c(106, 107.5, 105.5, 107), c(107, 107.2, 103.8, 105.5), c(105.5, 108, 105.2, 107.8),
-    c(106, 106.5, 101.6, 101.8), c(101.7, 102.4, 100.5, 101.75)]);
-  assert.deepStrictEqual(springEv(many).map((e) => e.where + ' ' + e.touch), ['bottom 3']);
-  // more than 1% under the bottom (101 x 0.99 = 99.99): no
-  const deep = base().concat([c(106, 106.5, 101.6, 101.8), c(101.7, 102.4, 99.9, 101.75)]);
-  assert.deepStrictEqual(springEv(deep), []);
-});
-
-test('bottom: the Spring candle must close above the bottom line', () => {
-  const s = base().concat([c(106, 106.5, 100.3, 100.5), c(100.6, 101.0, 99.95, 100.8)]);
-  assert.deepStrictEqual(springEv(s), []);
-  // the red candle may close under the bottom (a fake breakdown) when the Spring closes back above it
-  const reclaim = base().concat([c(106, 106.5, 100.3, 100.5), c(100.6, 101.4, 100.0, 101.2)]);
+  const deep = base().concat([c(106, 106.5, 99.0, 99.3), c(99.4, 101.6, 97.0, 101.3)]);     // 4 % under the bottom
+  assert.deepStrictEqual(springEv(deep).map((e) => e.where), ['bottom']);
+  // the close must be above the bottom line
+  const below = base().concat([c(106, 106.5, 100.3, 100.5), c(100.6, 101.0, 99.95, 100.8)]);
+  assert.deepStrictEqual(springEv(below), []);
+  const reclaim = base().concat([c(106, 106.5, 100.3, 100.5), c(100.6, 101.4, 100.0, 101.2)]);   // the red candle closed under it
   assert.deepStrictEqual(springEv(reclaim).map((e) => e.where), ['bottom']);
 });
 
 test('a close below the zone bottom before the pair cancels the zone', () => {
   const s = base();
   s[18] = c(108.5, 108.8, 100, 100.5);          // closed below the bottom (101): zone broken
-  const tags = FVG.longFvgDetail(s.concat([c(100.5, 108.6, 100.4, 108), c(106, 106.5, 101.6, 101.8), c(101.7, 102.4, 100.5, 101.75)])).tags;
+  const tags = FVG.longFvgDetail(s.concat([c(100.5, 108.6, 100.4, 108), c(106, 106.5, 101.6, 101.8), c(101.7, 102.4, 99.5, 101.75)])).tags;
   assert.deepStrictEqual(spring(tags), [], tags.join(', '));
+});
+
+test('a later close below the Spring low takes the tag off (the event keeps it with `broken`)', () => {
+  const s = base().concat([c(108, 108.5, 104.2, 104.5), c(104.4, 105, 103.0, 104.3)]);
+  const held = s.concat([c(104.3, 104.6, 103.1, 103.2)]);          // closes 103.2, above the Spring low 103.0
+  assert.deepStrictEqual(spring(FVG.longFvgDetail(held).tags), ['FVG+Spring (1d ago)']);
+  const broke = s.concat([c(104.3, 104.6, 102.5, 102.9)]);         // closes 102.9 < 103.0
+  assert.deepStrictEqual(spring(FVG.longFvgDetail(broke).tags), []);
+  const ev = FVG.longFvgDetail(broke).events.filter((e) => e.type === 'fvg-spring');
+  assert.deepStrictEqual(ev.map((e) => [e.i, e.broken]), [[20, 21]]);
+  assert.strictEqual(FVG.longFvgDetail(held).events.filter((e) => e.type === 'fvg-spring')[0].broken, -1);
 });
 
 test('a Gap-up zone counts too', () => {
@@ -93,8 +100,8 @@ test('a Gap-up zone counts too', () => {
   g.push(c(113, 115, 111, 114));                 // 19 (also a 3-candle FVG 104 - 111, formed later)
   const pair = [c(114, 114.5, 107.5, 107.8), c(108.0, 108.8, 106.5, 108.4)];   // low 106.5 in the upper half (>= 106.1)
   assert.deepStrictEqual(springEv(g.concat(pair)), [{ i: 21, zone: 'Gap-up', where: 'top', touch: 1, bottom: 104, top: 108.2 }]);
-  // with AB_GAPUP_MAX_PCT 3 the gap is too big to be a zone; the later FVG (104 - 111, middle 107.5) does not take it
-  assert.deepStrictEqual(springEv(g.concat(pair), { AB_GAPUP_MAX_PCT: 3 }), []);
+  // with AB_GAPUP_MAX_PCT 3 the gap is no zone; the later FVG (104 - 111) takes it, in its lower half
+  assert.deepStrictEqual(springEv(g.concat(pair), { AB_GAPUP_MAX_PCT: 3 }).map((e) => e.zone + ' ' + e.where), ['FVG middle']);
 });
 
 test('an older gap still counts after a newer one formed', () => {

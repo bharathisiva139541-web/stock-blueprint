@@ -360,6 +360,7 @@ assert not [it for it in items if it['tf'] in ('15m', '30m') and it['pattern'] =
 assert not [it for it in items if it['sym'] == 'NOPE'] and any('not on Kite: NOPE' in m for m in LOGS), LOGS[-4:]
 assert K.state_load()['scanned'] == '2026-11-06' and K.state_load()['rules'] == K.RULES_VERSION
 assert put['first'] is True and put['rules'] == K.RULES_VERSION, 'the first post replaces the rows of the sessions it covers'
+assert isinstance(put['invalid'], list) and all(p.get('invalid') == [] for p in POSTS if p['op'] == 'put' and not p.get('first'))
 spring_fvg = [it for it in items if it['pattern'] == 'Spring in FVG' and it['sym'] == 'PARAGMILK' and it['tf'] == '4H']
 assert spring_fvg and spring_fvg[0]['zone'][3:5] == ['FVG', 'bottom'] and spring_fvg[0]['zone'][5] >= 1, spring_fvg
 assert not [it for it in items if it['tf'] == 'M' and it['pattern'] == 'Spring in FVG'], 'the monthly chart: the plain Spring only'
@@ -372,7 +373,7 @@ assert all(m['candle'][:10] > '2026-10-23' for m in zp[0]['mitigated']), zp[0]['
 bp = [p for p in POSTS if p['op'] == 'backtest']
 assert len(bp) == 1 and bp[0]['horizon'] == 20 and bp[0]['rr'] == 2.0, bp
 groups = {(r['tf'], r['group']) for r in bp[0]['rows']}
-assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 12, groups
+assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 15, groups
 tr = [t for t in bp[0]['trades'] if t['sym'] == 'PARAGMILK' and t['candle'] == '2026-10-30 13:15']
 assert tr and tr[0]['result'] == 'win' and tr[0]['where'] == 'bottom' and tr[0]['r'] == 2.0, tr
 assert all(set(t) == {'sym', 'tf', 'candle', 'session', 'zone', 'where', 'touch', 'result', 'r', 'bars'} for t in bp[0]['trades'])
@@ -453,7 +454,38 @@ assert r4['FVG+Spring - zone top']['winRate'] == 100.0 and r4['FVG+Spring - zone
 assert r4['FVG+Spring']['from'] == '2026-10-01 13:15' and r4['FVG+Spring']['to'] == '2026-10-09 13:15'
 rd = {r['group']: r for r in rows if r['tf'] == 'D'}
 assert rd['Spring (every one, for comparison)']['open'] == 1 and rd['Spring (every one, for comparison)']['winRate'] is None
-assert rd['FVG+Spring']['signals'] == 0 and len(rows) == 12
+assert rd['FVG+Spring']['signals'] == 0 and len(rows) == 15
+
+# owner, 08-Nov-2026: a Spring in FVG stops counting once a LATER candle closes below its low - not reported, and the
+# sheet is told to take its row off ('invalid', the last KEEP_DAYS)
+def H4(day, half, o, h, l, c):
+    return {'t': day + (' 09:15' if half == 0 else ' 13:15'), 'day': day, 'o': o, 'h': h, 'l': l, 'c': c, 'v': 1}
+
+
+bars = [H4('2026-09-%02d' % (1 + k // 2), k % 2, 100, 101, 99, 100.2) for k in range(15)]
+bars += [H4('2026-09-09', 0, 101, 106, 100.5, 105.5), H4('2026-09-09', 1, 106, 108, 104, 107.5), H4('2026-09-10', 0, 107.5, 109, 106.5, 108.5),
+         H4('2026-09-10', 1, 108.5, 109.5, 107.5, 108), H4('2026-09-11', 0, 108, 108.5, 104.2, 104.5), H4('2026-09-11', 1, 104.4, 105, 103.0, 104.3)]
+d1 = K.fvg_detail(bars)
+assert d1['spring'][20]['where'] == 'top' and d1['spring'][20]['broken'] is None, d1['spring']
+d2 = K.fvg_detail(bars + [H4('2026-09-14', 0, 104.3, 104.6, 102.5, 102.9)])
+assert d2['spring'][20]['broken'] == 21, 'the next candle closed 102.9 < the Spring low 103.0'
+
+
+orig_tc = K.timeframe_candles
+K.timeframe_candles = lambda store, tf: store['bars'] if tf == '4H' else []
+try:
+    ok = K.analyse({'bars': bars, 'day': []}, '2026-09-10', d('2026-09-11'), HOL, ['4H'], (), slots={'4H': ['13:15']})
+    assert [(i['pattern'], i['candle']) for i in ok['items'] if 'Spring' in i['pattern']] == [('Spring in FVG', '2026-09-11 13:15')], ok['items']
+    assert ok['invalid'] == []
+    gone = K.analyse({'bars': bars + [H4('2026-09-14', 0, 104.3, 104.6, 102.5, 102.9)], 'day': []}, '2026-09-10', d('2026-09-14'), HOL,
+                     ['4H'], (), slots={'4H': ['13:15']})
+    assert not [i for i in gone['items'] if i['pattern'] == 'Spring in FVG'], 'broken: not reported'
+    assert gone['invalid'] == [{'tf': '4H', 'candle': '2026-09-11 13:15'}], gone['invalid']
+    old = K.analyse({'bars': bars + [H4('2026-09-14', 0, 104.3, 104.6, 102.5, 102.9)], 'day': []}, '2026-09-10', d('2026-11-06'), HOL,
+                    ['4H'], (), slots={'4H': ['13:15']})
+    assert old['invalid'] == [], 'older than the 30 days the sheet keeps: nothing to take off'
+finally:
+    K.timeframe_candles = orig_tc
 
 # BacktestNow.bat: the stored candles only - no Kite login, no download
 CALLS.clear()

@@ -274,9 +274,9 @@
     var sub = 'Spring and <b>Spring in FVG</b> found by your PC program on Zerodha Kite candles - ' + esc(tfText) +
       (tfText.indexOf('4H') !== -1 ? (rows.every(function (r) { return r.Timeframe !== '4H' || ITD_SPRINGS.indexOf(r.Pattern) === -1 || /13:15$/.test(String(r.Candle || '')); })
         ? ' (4H Spring: only the day\'s 2nd candle, 13:15-15:30)' : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') +
-      ' - with the same rules as your sheet, once a trading day after the close. <b>Spring in FVG</b> = the Spring candle on the <b>top</b> of an FVG or ' +
-      'Gap-up zone (its low in the zone\'s upper half, close above the top, the zone\'s 1st or 2nd touch) or on its <b>bottom line</b> (low at most 1% under it, ' +
-      'close above it) - not on the monthly chart. On 4H also FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' +
+      ' - with the same rules as your sheet, once a trading day after the close. <b>Spring in FVG</b> = the Spring candle anywhere on an FVG or ' +
+      'Gap-up zone or below its bottom line, closing above the bottom, with <b>no earlier candle closed below the Spring low</b>; it is taken off when a later candle ' +
+      'closes below that low - not on the monthly chart. On 4H also FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' +
       'The button opens TradingView\'s own chart at that timeframe. ' + (it && it.note ? '<span class="sub">' + esc(String(it.note).replace(/^.*?(Last scan:[^.]*\.?).*$/, '$1')) + '</span>' : '');
     var body;
     if (!rows.length) {
@@ -306,7 +306,7 @@
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
         { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
         { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },
-        { key: 'FVG Detail', label: 'Where', title: 'Spring in FVG: on the top (with the touch number) or the bottom line of an FVG / Gap-up zone; the other FVG patterns: the zone kind' },
+        { key: 'FVG Detail', label: 'Where', title: 'Spring in FVG: where its low sat - top (upper half) / middle / bottom (at or under the bottom line) of an FVG / Gap-up zone, with the touch number; the other FVG patterns: the zone kind' },
         { key: 'FVG Formed', label: 'Zone formed', title: 'When the zone formed (same timeframe)' },
         { key: 'chart', label: 'Chart', get: function () { return null; },
           html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
@@ -384,7 +384,7 @@
   var SBT_TFS = [['4H', '4 hour (13:15 candle)'], ['D', 'Daily'], ['W', 'Weekly']];
   function sbtSectionHtml(ctx) {
     var b = ctx.D.springBacktest || {}, sum = ui.objRows(b.summary), trades = ui.objRows(b.trades);
-    var sub = 'Every <b>FVG+Spring</b> (the Spring candle on the top of an FVG / Gap-up zone on its 1st or 2nd touch, or on its bottom line) tested on your PC\'s ' +
+    var sub = 'Every <b>FVG+Spring</b> (the Spring candle anywhere on an FVG / Gap-up zone or below its bottom line, no earlier close below the Spring low) tested on your PC\'s ' +
       'Zerodha candles: <b>buy at the Spring candle\'s close, stop just under its low; a win = the target (2 × the risk) reached before the stop, within 20 candles</b>. ' +
       'A candle that touches both counts as a loss. Win rate = wins ÷ (wins + losses); with a 2R target, about 33% is break-even (before costs). ' +
       'Past results are research, not a promise.';
@@ -396,11 +396,11 @@
       sum.forEach(function (r) { (by[r.Timeframe] = by[r.Timeframe] || {})[r.Group] = r; });
       var tiles = SBT_TFS.map(function (tf) {
         var g = by[tf[0]] || {}, f = g['FVG+Spring'] || {}, sp = g['Spring (every one, for comparison)'] || {};
-        var top = g['FVG+Spring - zone top'] || {}, bot = g['FVG+Spring - zone bottom'] || {};
+        var top = g['FVG+Spring - zone top'] || {}, mid = g['FVG+Spring - zone middle'] || {}, bot = g['FVG+Spring - zone bottom'] || {};
         var rate = function (r) { return isNum(r['Win Rate %']) ? F.num(r['Win Rate %'], 1) + '%' : '–'; };
         return '<div class="tile" data-sbt="' + esc(tf[0]) + '"><div class="label">' + esc(tf[1]) + ' - FVG+Spring</div><div class="value">' + rate(f) + '</div>' +
           '<div class="note2">' + F.int(f.Signals) + ' signals · ' + F.int(f.Wins) + ' won · ' + F.int(f.Losses) + ' lost · avg ' + (isNum(f['Avg R']) ? F.num(f['Avg R'], 2) + 'R' : '–') +
-          '<br>top ' + rate(top) + ' · bottom ' + rate(bot) + ' · every Spring ' + rate(sp) + '</div></div>';
+          '<br>top ' + rate(top) + ' · middle ' + rate(mid) + ' · bottom ' + rate(bot) + ' · every Spring ' + rate(sp) + '</div></div>';
       }).join('');
       body = '<div class="tiles">' + tiles + '</div><div id="sg-sbt-sum" style="margin-top:14px"></div>' +
         '<h3 style="margin:18px 0 8px">Newest FVG+Spring trades</h3>' +
@@ -470,7 +470,7 @@
       '<li><b>Timeframe:</b> daily candles only - the FVG rules look up to 60 sessions back (History30 tab + History60\'s older days from NSE via your PC); the 10 / 21 EMA support tags use the last 30 (History30), like the sheet.</li>' +
       '<li><b>Bullish 3-candle FVG</b> on day i: Low[i] &gt; High[i−2], and the gap (Low[i] − High[i−2]) is at least 0.7 × the average High−Low range of the 14 days ending on day i. Zone = High[i−2] (bottom) to Low[i] (top). Needs 17+ candles.</li>' +
       '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 10% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT, Control Panel). Zone = High[i−1] to Low[i]. It is dropped once a later candle trades down to the zone top (Low ≤ top).</li>' +
-      '<li><b>First touch:</b> a candle\'s low crosses below the zone top after the previous low was at or above it. <b>Confirmed:</b> after a touch, a close crosses back above the high of the touch candle. <b>FVG+Spring</b> (your rule of 08-Nov-2026): a Spring candle pair (big red candle, then a small candle that dips below its low and closes back above it) whose 2nd candle sits on a 3-candle FVG or a Gap-up zone formed before the pair that still holds (no close below its bottom before the pair) - either on the <b>top</b> (its low comes into the zone\'s upper half and it closes above the zone top, on the zone\'s 1st or 2nd touch) or on the <b>bottom line</b> (its low reaches the bottom, at most 1% under it, and it closes above it - any touch). <b>Twin Star Bottom + FVG:</b> a red candle, then two small candles whose lows are within 1% of each other (the Twin Star Bottom pattern), with the stars reaching into an FVG formed before the red candle that still holds (both stars close at or above its bottom). These tags are reported for the last 4 candles.</li>' +
+      '<li><b>First touch:</b> a candle\'s low crosses below the zone top after the previous low was at or above it. <b>Confirmed:</b> after a touch, a close crosses back above the high of the touch candle. <b>FVG+Spring</b> (your rule of 08-Nov-2026): a Spring candle pair (big red candle, then a small candle that dips below its low and closes back above it) whose 2nd candle sits on a 3-candle FVG or a Gap-up zone formed before the pair that still holds (no close below its bottom before the pair): its low anywhere in the zone or below the bottom line (any depth), its close above the bottom line, and <b>no candle since the zone formed closed below the Spring candle\'s low</b> (the red candle excepted) - any touch. A later close below the Spring low takes the tag off. <b>Twin Star Bottom + FVG:</b> a red candle, then two small candles whose lows are within 1% of each other (the Twin Star Bottom pattern), with the stars reaching into an FVG formed before the red candle that still holds (both stars close at or above its bottom). These tags are reported for the last 4 candles.</li>' +
       '<li><b>Unmitigated:</b> the latest 3-candle FVG has not been touched since it formed. <b>Mitigated:</b> the price reached the zone - the sheet logs it (Mitigated FVG Log) and judges the next candle (held / swept / closed inside / broke below…).</li>' +
       '<li><b>Circuit-lock filter:</b> a candle whose High−Low range is ≤ 0.05% of its low is treated as locked at a price band; such candles cannot form a gap-up FVG and do not count as touches.</li>' +
       '<li><b>Turnover filter:</b> stocks whose average daily turnover ((High+Low)/2 × volume, locked candles excluded) is below ₹50 lakh (AB_FVG_MIN_AVG_TURNOVER) are not watched.</li>' +
