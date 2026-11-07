@@ -53,6 +53,14 @@ def at(kind):
     return [round((t - T0) / 60) for k, t in EVENTS if k == kind]
 
 
+class FakeRunner:
+    """The Kite scan: started from the loop's first tick, before the full round (owner, 08-Nov-2026)."""
+    def maybe_start(self, cfg, api, holidays, online=None):
+        EVENTS.append(('kite', CLOCK[0]))
+        return False
+
+
+sb.itd.Runner = FakeRunner
 sb.run_once = lambda cfg: EVENTS.append(('full', CLOCK[0])) or 0
 sb.quick_check = lambda cfg, daily=None, lock=True: EVENTS.append(('quick', CLOCK[0])) or 0
 sb.internet_ok = lambda: ONLINE[0]
@@ -64,6 +72,8 @@ cfg = dict(sb.DEFAULTS)
 assert cfg['quick_check_minutes'] == 30 and cfg['full_round_every_hours'] == 3
 run_for(cfg, 8)
 assert at('full') == [0, 60, 240, 420], at('full')
+assert EVENTS[0][0] == 'kite' and EVENTS[1][0] == 'full' and EVENTS[0][1] == EVENTS[1][1], ('the Kite scan is started before the first full round', EVENTS[:3])
+assert len(at('kite')) > 100, 'looked at on every tick'
 q = at('quick')
 # (a full round does the check too - the next one is 30 minutes after it)
 assert q == [30, 90, 120, 150, 180, 210, 270, 300, 330, 360, 390, 450, 480], q

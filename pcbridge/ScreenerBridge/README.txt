@@ -42,7 +42,8 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     (= this computer; the login page hands the day's permission to this program and to nothing else).
  2. Every trading day after 3:40 PM - or the next time this computer is on - the background program opens the Zerodha
     login page once (Zerodha's rule: one manual login a day; the permission ends at 6 AM). Log in and close the tab;
-    it then reads the candles by itself (~20-30 minutes in the background for ~1,800 stocks the first time, less after).
+    it then reads the candles by itself (~20-30 minutes in the background for ~1,800 stocks the first time, less after),
+    alongside the usual rounds (it does not wait for them). bridge.log shows its progress on lines starting with "Kite:".
     Not logged in within 45 minutes: it asks again 2 hours later (at most 4 times a day) - or double-click IntradayNow.bat.
     If the page says "This site can't be reached" after you log in, the program had stopped waiting: IntradayNow.bat.
  3. It finds the sheet's Spring pattern and "Spring in FVG" (a Spring dipping into a 3-candle FVG that still holds - the

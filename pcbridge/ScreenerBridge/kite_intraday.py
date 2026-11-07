@@ -953,11 +953,12 @@ class Runner:
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
 
-    def maybe_start(self, cfg, api, holidays):
+    def maybe_start(self, cfg, api, holidays, online=None):
+        """Starts the scan when it is due (and, with `online`, only while the internet works - checked only then)."""
         if self.busy():
             return False
         ok, _ = due(cfg, holidays)
-        if not ok:
+        if not ok or (online and not online()):
             return False
         self.thread = threading.Thread(target=intraday_step, args=(cfg, api, holidays), daemon=True)
         self.thread.start()

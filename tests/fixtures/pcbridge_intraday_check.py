@@ -357,4 +357,10 @@ assert any('permission ended' in m or 'next login' in m for m in LOGS[-3:]), LOG
 STATE['expired'] = False
 assert 'logged in today' in K.status_line(CFG) and 'not set up' in K.status_line({})
 
+# the background program's runner: due and online -> a thread; offline -> not started (the internet is checked only when due)
+K.state_save({})
+R = K.Runner()
+assert R.maybe_start(CFG, fake_api, HOL, online=lambda: False) is False and not R.busy()
+assert R.maybe_start(dict(CFG, kite_api_key=''), fake_api, HOL, online=lambda: 1 / 0) is False, 'not due: the internet is not even checked'
+
 print('OK')
