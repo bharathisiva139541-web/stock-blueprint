@@ -31,6 +31,7 @@ computer is on - no time limit:
  - KiteSetup.bat           one time: your Zerodha Kite Connect app's API key + secret, then the first Kite login
  - IntradayNow.bat         the Kite intraday / weekly / monthly pattern scan right now (opens the login page if needed)
  - IntradayCheck.bat       one stock's Spring check on Kite's candles, e.g. PARAGMILK 4H (sends nothing)
+ - BacktestNow.bat         the FVG+Spring win rate on the Kite candles already on this computer -> the sheet (no login)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
@@ -46,12 +47,28 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     alongside the usual rounds (it does not wait for them). bridge.log shows its progress on lines starting with "Kite:".
     Not logged in within 45 minutes: it asks again 2 hours later (at most 4 times a day) - or double-click IntradayNow.bat.
     If the page says "This site can't be reached" after you log in, the program had stopped waiting: IntradayNow.bat.
- 3. It finds the sheet's Spring pattern and "Spring in FVG" (a Spring dipping into a 3-candle FVG that still holds - the
-    sheet's FVG+Spring rule) on 4H (only the day's 2nd 4H candle, 13:15-15:30), D, W and M (your choice, 08-Nov-2026;
-    config "intraday_timeframes" can list others,
-    15m, 30m, 1H, 2H - 15m and 30m report only Spring in FVG) and sends them to the sheet's
-    "Intraday Patterns" tab (kept 30 days; the Chart column opens TradingView at that timeframe). The website's
-    Patterns & FVG page lists them too (no prices - Kite's data is for your own use).
+ 3. It finds the sheet's Spring pattern and "Spring in FVG" on 4H (only the day's 2nd 4H candle, 13:15-15:30), D, W
+    and M (your choice, 08-Nov-2026; config "intraday_timeframes" can list others, 15m, 30m, 1H, 2H - 15m and 30m
+    report only Spring in FVG) and sends them to the sheet's "Intraday Patterns" tab (kept 30 days; the Chart column
+    opens TradingView at that timeframe). The website's Patterns & FVG page lists them too (no prices - Kite's data is
+    for your own use).
+    "Spring in FVG" (your rule of 08-Nov-2026, the same as the sheet's FVG+Spring and the website's): the Spring
+    candle sits on a 3-candle FVG or a Gap-up zone (3-5 %) that still holds (no close under its bottom before the
+    Spring) - either on the TOP (its low comes into the zone's upper half and it closes above the zone top, on the
+    zone's 1st or 2nd touch) or on the BOTTOM LINE (its low reaches the bottom, at most 1 % under it, and it closes
+    above it - any touch). The column "FVG Detail" says which ("FVG top (touch 2)", "Gap-up bottom (touch 4)").
+    Not on the monthly chart (M: the plain Spring only).
+ 4. On 4H it also finds the other FVG patterns of the sheet's FVG column - FVG First Touch, FVG First Touch Confirmed
+    and Twin Star Bottom + FVG (on every 4H candle) - and sends the 4H FVG ZONES still untouched (the latest 3-candle
+    FVG when never touched + every untouched Gap-up of 3-5 %, liquid stocks only) to the sheet's "4H FVG Zones" tab.
+    During market hours the sheet watches them: price at or under a zone top = mitigated -> one combined
+    "Mitigated FVG" email at most once an hour, together with the daily zones.
+ 5. BACKTEST: after each scan it tests every Spring in FVG of 4H (13:15 candle), D and W on all the candles stored here
+    (4H ~6 months, D and W ~5 years): buy at the Spring candle's close, stop just under its low, WIN = the target
+    (2 x the risk) reached before the stop within 20 candles (a candle that does both = a loss). The win rates go to
+    the sheet's "Spring Backtest" + "Spring Backtest Trades" tabs and the website (Patterns & FVG > FVG+Spring win
+    rate); bridge.log shows one line per timeframe ("Kite backtest ..."). BacktestNow.bat runs only the backtest, on
+    the candles already here - no Kite login needed.
  - The candles are kept in the folder intraday_data (only the new days are read after the first time); the day's
    Kite permission in kite_session.json. Both stay on this computer.
  - 4H candles = 09:15-13:15 and 13:15-15:30 (like TradingView); a week / month only once it has finished.

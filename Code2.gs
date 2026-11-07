@@ -5683,6 +5683,19 @@ function checkIntradayAlerts_() {
     } catch (gmErr) {
       Logger.log('Gap-up FVG mitigated-alert pass failed: ' + gmErr.message);
     }
+    // 4H zones from the PC (Zerodha) - market hours only, like the two above
+    try {
+      ab_itdZoneCheck_();
+    } catch (zErr) {
+      Logger.log('4H FVG zone check failed: ' + zErr.message);
+    }
+    // ONE combined mitigated email at most every AB_MIT_MAIL_EVERY_MIN minutes (owner, 08-Nov-2026) - also after the
+    // close, for the last hour's zones and the evening's EOD catches
+    try {
+      ab_mitMailFlush_(false);
+    } catch (fErr) {
+      Logger.log('Mitigated FVG email failed: ' + fErr.message);
+    }
   } finally {
     lock.releaseLock();
   }
@@ -6028,7 +6041,7 @@ function ab_msBackfillFromMitigatedLog_(bySymbol) {
   mlog.getRange(2, 1, mlog.getLastRow() - 1, 4).getValues().forEach(function (r) {
     const dk = ab_msDateKey_(r[0]);
     const sym = String(r[3] || '').trim().toUpperCase();
-    if (!dk || dk < cutKey || !sym) return;
+    if (!dk || dk < cutKey || !sym || ab_mitIs4h_(r[2])) return;
     const key = dk + '|' + sym + '|Mitigated FVG';
     if (have[key]) return;
     have[key] = true;
@@ -6212,7 +6225,7 @@ function ab_btZoneIndex_() {
   sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues().forEach(function (r) {
     const dk = ab_msDateKey_(r[0]);
     const sym = String(r[3] || '').trim().toUpperCase();
-    if (!dk || !sym) return;
+    if (!dk || !sym || ab_mitIs4h_(r[2])) return;
     const key = dk + '|' + sym;
     if (idx[key]) return;
     idx[key] = { type: String(r[2] || ''), bottom: ab_toNum_(r[4]), top: ab_toNum_(r[5]), pct: ab_toNum_(r[6]) };
@@ -7509,7 +7522,7 @@ function ab_mitigatedToday_(dayStr) {
   const rows = sh.getDataRange().getValues();
   rows.shift();
   return rows
-    .filter(function (r) { return ab_msDateKey_(r[0]) === ab_msDateKey_(todayStr); })
+    .filter(function (r) { return ab_msDateKey_(r[0]) === ab_msDateKey_(todayStr) && !ab_mitIs4h_(r[2]); })
     .map(function (r) {
       return { date: r[0], time: r[1], type: r[2], symbol: String(r[3] || '').trim().toUpperCase(),
                bottom: r[4], top: r[5], pct: r[6], priceSource: r[7] };
@@ -12213,9 +12226,13 @@ function ab_opmQtrYoyBackfill_(layout, cols, touched) {
 // only (Code.gs ab_site_itd_) - no Kite prices: Kite's data is for the owner's own use.
 const AB_ITD_SHEET = 'Intraday Patterns';
 const AB_ITD_HEADERS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close',
-  'FVG Bottom', 'FVG Top', 'Found'];
+  'FVG Bottom', 'FVG Top', 'Found', 'FVG Detail'];
 const AB_ITD_TFS = ['M', 'W', 'D', '4H', '2H', '1H', '30m', '15m'];          // the tab's order: the biggest timeframe first
-const AB_ITD_PATTERNS = ['Spring in FVG', 'Spring'];
+// owner, 08-Nov-2026: FVG+Spring = the Spring on the TOP of an FVG / Gap-up zone (1st or 2nd touch) or on its BOTTOM
+// line ('FVG Detail' says which); on 4H also the other FVG patterns of col X (they count on every 4H candle - the
+// 13:15 rule is for the Spring patterns only)
+const AB_ITD_PATTERNS = ['Spring in FVG', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
+const AB_ITD_SPRINGS = ['Spring in FVG', 'Spring'];
 const AB_ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
 const AB_ITD_KEEP_DAYS = 30;
 const AB_ITD_MAX_ITEMS = 2000;            // per post (the PC sends 400 at a time)
@@ -12259,12 +12276,26 @@ function ab_itdRead_(sh) {
   const txt = function (v) { return v === null || v === undefined ? '' : String(v).trim(); };
   return vals.filter(function (v) { return txt(v[1]); }).map(function (v) {
     return { session: txt(v[0]), sym: txt(v[1]).toUpperCase(), company: txt(v[2]), tf: txt(v[3]), pattern: txt(v[4]), candle: txt(v[5]),
-             formed: txt(v[6]), low: v[8], close: v[9], bottom: v[10], top: v[11], found: txt(v[12]) };
+             formed: txt(v[6]), low: v[8], close: v[9], bottom: v[10], top: v[11], found: txt(v[12]), detail: txt(v[13]) };
   });
+}
+
+/** 'FVG top (touch 2)' / 'Gap-up bottom (touch 4)' for a Spring in FVG, the zone kind for the other FVG patterns: the
+ *  PC's zone = [bottom, top, formed, kind, where, touch] (an older PC sends only the first three). */
+function ab_itdDetail_(z) {
+  if (!z || z.length < 4) return '';
+  const kind = String(z[3]) === 'Gap-up' ? 'Gap-up' : String(z[3]) === 'FVG' ? 'FVG' : '';
+  if (!kind) return '';
+  const where = String(z[4] || '');
+  const touch = Number(z[5]);
+  if (where !== 'top' && where !== 'bottom') return kind;
+  return kind + ' ' + where + (touch >= 1 && touch < 1000 ? ' (touch ' + Math.round(touch) + ')' : '');
 }
 
 function ab_itdFromBridge_(req) {
   if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_() };
+  if (req.op === 'zones') return ab_itdZonesFromBridge_(req);
+  if (req.op === 'backtest') return ab_btFromBridge_(req);
   if (req.op !== 'put') return { ok: false, error: 'unknown intraday request - update screener_bridge.py + kite_intraday.py on the PC' };
   const items = Array.isArray(req.items) ? req.items : null;
   if (!items) return { ok: false, error: 'items missing' };
@@ -12280,29 +12311,37 @@ function ab_itdFromBridge_(req) {
       if (AB_ITD_TV[tf] && /m$|H$/.test(tf) && times.length) { slots[tf] = times; hasSlots = true; }
     });
   }
-  const keepTf = function (tf, candle) {
+  const keepTf = function (tf, candle, pattern) {
     if (tfs && tfs.length && tfs.indexOf(tf) === -1) return false;
-    return !slots[tf] || slots[tf].indexOf(String(candle || '').slice(11, 16)) !== -1;
+    return !slots[tf] || AB_ITD_SPRINGS.indexOf(pattern) === -1 || slots[tf].indexOf(String(candle || '').slice(11, 16)) !== -1;
   };
+  // the first post of a scan replaces the rows of the sessions it covers (a rescan after new rules drops the old ones)
+  const since = /^\d{4}-\d{2}-\d{2}$/.test(String(req.since || '')) ? String(req.since) : '';
+  const replaceAfter = req.first === true && since ? since : '';
   const want = {};
   ab_p1Symbols_().forEach(function (s) { want[s] = true; });
   const found = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
   const sh = ab_getOrCreateSheet_(AB_ITD_SHEET);
   const byKey = {};
   const key = function (r) { return r.sym + '|' + r.tf + '|' + r.pattern + '|' + r.candle; };
-  ab_itdRead_(sh).forEach(function (r) { byKey[key(r)] = r; });
+  let replaced = 0;
+  ab_itdRead_(sh).forEach(function (r) {
+    if (replaceAfter && r.session > replaceAfter) { replaced++; return; }
+    byKey[key(r)] = r;
+  });
   const names = items.length ? ab_itdNames_() : {};
   let added = 0, skipped = 0;
   items.forEach(function (it) {
     const sym = String(it && it.sym || '').trim().toUpperCase();
     const tf = String(it && it.tf || ''), pattern = String(it && it.pattern || '');
     const candle = String(it && it.candle || ''), session = String(it && it.session || '');
-    if (!want[sym] || !AB_ITD_TV[tf] || !keepTf(tf, candle) || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
+    if (!want[sym] || !AB_ITD_TV[tf] || !keepTf(tf, candle, pattern) || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
         !/^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(candle) || !/^\d{4}-\d{2}-\d{2}$/.test(session)) { skipped++; return; }
     const z = Array.isArray(it.zone) ? it.zone : null;
     const r = { session: session, sym: sym, company: names[sym] || '', tf: tf, pattern: pattern, candle: candle,
                 formed: z && /^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(String(z[2])) ? String(z[2]) : '',
-                low: ab_itdNum_(it.low), close: ab_itdNum_(it.close), bottom: z ? ab_itdNum_(z[0]) : '', top: z ? ab_itdNum_(z[1]) : '', found: found };
+                low: ab_itdNum_(it.low), close: ab_itdNum_(it.close), bottom: z ? ab_itdNum_(z[0]) : '', top: z ? ab_itdNum_(z[1]) : '', found: found,
+                detail: ab_itdDetail_(z) };
     const k = key(r);
     if (byKey[k]) r.found = byKey[k].found || found;
     else added++;
@@ -12311,8 +12350,8 @@ function ab_itdFromBridge_(req) {
   const cutoff = Utilities.formatDate(new Date(Date.now() - AB_ITD_KEEP_DAYS * 86400000), AB_TZ, 'yyyy-MM-dd');
   let dropped = 0;
   const rows = Object.keys(byKey).map(function (k) { return byKey[k]; }).filter(function (r) {
-    if (r.session >= cutoff && keepTf(r.tf, r.candle)) return true;
-    if (!keepTf(r.tf, r.candle)) dropped++;
+    if (r.session >= cutoff && keepTf(r.tf, r.candle, r.pattern) && AB_ITD_PATTERNS.indexOf(r.pattern) !== -1) return true;
+    if (!keepTf(r.tf, r.candle, r.pattern)) dropped++;
     return false;
   });
   rows.sort(function (a, b) {
@@ -12328,24 +12367,371 @@ function ab_itdFromBridge_(req) {
   const tfText = tfs && tfs.length ? AB_ITD_TFS.slice().reverse().filter(function (t) { return tfs.indexOf(t) !== -1; }).join(', ')
     : '15m and 30m (Spring in FVG only), 1H, 2H, 4H, D, W, M';
   const note = 'Spring and Spring in FVG from Zerodha Kite candles (your PC program): ' + tfText +
-    (!tfs || tfs.indexOf('4H') !== -1 ? (slots['4H'] && slots['4H'].join() === '13:15' ? ' (4H: only the day\'s 2nd candle, 13:15-15:30)'
-      : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') + ' - the sheet\'s Spring and FVG+Spring rules. ' +
+    (!tfs || tfs.indexOf('4H') !== -1 ? (slots['4H'] && slots['4H'].join() === '13:15' ? ' (4H Spring: only the day\'s 2nd candle, 13:15-15:30)'
+      : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') + ' - the sheet\'s Spring and FVG+Spring rules (Spring in FVG = the Spring candle ' +
+    'on the TOP of an FVG / Gap-up zone on its 1st or 2nd touch, or on its BOTTOM line - FVG Detail; not on the monthly chart). ' +
+    (!tfs || tfs.indexOf('4H') !== -1 ? '4H also: FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' : '') +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {
     return [r.session, r.sym, r.company, r.tf, r.pattern, r.candle, r.formed,
-      '=HYPERLINK("' + ab_itdTvUrl_(r.sym, r.tf) + '","' + r.tf + ' chart")', r.low, r.close, r.bottom, r.top, r.found];
+      '=HYPERLINK("' + ab_itdTvUrl_(r.sym, r.tf) + '","' + r.tf + ' chart")', r.low, r.close, r.bottom, r.top, r.found, r.detail || ''];
   });
   sh.clearContents();
   sh.getRange(1, 1).setValue(note);
   sh.getRange(2, 1, 1, AB_ITD_HEADERS.length).setValues([AB_ITD_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
   if (out.length) {
     const n = out.length;
-    [1, 2, 3, 4, 5, 6, 7, 13].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
+    [1, 2, 3, 4, 5, 6, 7, 13, 14].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
     sh.getRange(3, 9, n, 4).setNumberFormat('0.00');
     sh.getRange(3, 1, n, AB_ITD_HEADERS.length).setValues(out);
   }
   sh.setFrozenRows(2);
-  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length, dropped: dropped, tfs: tfs,
-           slots: hasSlots ? slots : {} };
+  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length, dropped: dropped, replaced: replaced,
+           tfs: tfs, slots: hasSlots ? slots : {} };
+}
+
+// =====================================================================================================================
+// MITIGATED FVG - ONE COMBINED EMAIL AN HOUR (owner, 08-Nov-2026: "too many emails ... I have only 50 email per day
+// limit, so optimize our email system. Need mitigated FVG alerts" - "both [daily zones and 4H] but 1 combined mail for
+// 1 hour during market time"). Every mitigation is written to the Mitigated FVG Log as before (ab_logMitigation_: the
+// live 5-minute check, the evening rebuild's 'EOD' catches, and the 4H zones below); the log rows not emailed yet go out
+// together, at most once every AB_MIT_MAIL_EVERY_MIN (60) minutes. Property AB_MIT_MAIL = {row: the first log row not
+// emailed yet, at: when the last email went}. The menu's "check now" items send at once.
+// =====================================================================================================================
+const AB_MIT_MAIL_PROP = 'AB_MIT_MAIL';
+const AB_MIT_MAIL_EVERY_MIN = ab_setting_('AB_MIT_MAIL_EVERY_MIN', 60);
+const AB_MIT_MAIL_MAX_ROWS = 60;          // rows listed in one email (the rest: "+N more - see the tab")
+const AB_MIT_MAIL_READ = 500;             // log rows read at most
+const AB_MIT_MAIL_TYPES = ['Unmitigated FVG', 'Gap-up FVG', '4H FVG', '4H Gap-up FVG'];
+
+/** A Mitigated FVG Log row of a 4H zone (Zerodha, the PC)? The daily readers - the Signal Watchlist backfill, the FVG
+ *  Backtest's zone index and the EOD summary's "mitigated today" - judge zones on daily candles, so they leave these out
+ *  (the hourly mitigated email lists them). */
+function ab_mitIs4h_(type) { return /^4H /.test(String(type || '')); }
+
+function ab_mitMailState_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_MIT_MAIL_PROP) || '{}') || {}; } catch (e) { return {}; }
+}
+
+/** Sends the Mitigated FVG Log rows not emailed yet as ONE email - only when the last one went at least
+ *  AB_MIT_MAIL_EVERY_MIN minutes ago (or `force`). -> the number of zones emailed. */
+function ab_mitMailFlush_(force) {
+  const props = PropertiesService.getScriptProperties();
+  const st = ab_mitMailState_();
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MITIGATED_LOG_SHEET);
+  if (!sh) return 0;
+  const last = sh.getLastRow();
+  if (!(Number(st.row) >= 2)) {               // the first run of this version: only what this execution logged
+    st.row = Math.max(2, last + 1 - AB_MIT_LOGGED_RUN_);
+    props.setProperty(AB_MIT_MAIL_PROP, JSON.stringify(st));
+  }
+  if (st.row > last + 1) {                    // rows were deleted from the log
+    st.row = last + 1;
+    props.setProperty(AB_MIT_MAIL_PROP, JSON.stringify(st));
+  }
+  if (st.row > last) return 0;
+  const now = Date.now();
+  if (!force && Number(st.at) > 0 && now - Number(st.at) < AB_MIT_MAIL_EVERY_MIN * 60000) return 0;   // the hour is not up yet
+  const from = Math.max(st.row, last - AB_MIT_MAIL_READ + 1);
+  const vals = sh.getRange(from, 1, last - from + 1, 8).getValues();
+  const seen = {};
+  const items = [];
+  vals.forEach(function (r) {
+    const sym = String(r[3] || '').trim().toUpperCase();
+    const type = String(r[2] || '').trim();
+    if (!sym || !type) return;
+    const k = type + '|' + sym + '|' + r[4] + '|' + r[5];
+    if (seen[k]) return;                      // a live catch and the evening's EOD catch of the same zone
+    seen[k] = true;
+    items.push({ day: r[0] instanceof Date ? Utilities.formatDate(r[0], AB_TZ, 'dd-MMM') : String(r[0] || '').slice(0, 6),
+                 time: r[1] instanceof Date ? Utilities.formatDate(r[1], AB_TZ, 'HH:mm') : String(r[1] || ''),
+                 type: type, sym: sym, bottom: ab_toNum_(r[4]), top: ab_toNum_(r[5]), pct: ab_toNum_(r[6]), src: String(r[7] || '') });
+  });
+  if (items.length) {
+    try {
+      ab_mitMailSend_(items);
+    } catch (e) {
+      Logger.log('Mitigated FVG email failed (tried again next time): ' + e.message);
+      return 0;
+    }
+  }
+  st.row = last + 1;
+  st.at = now;
+  props.setProperty(AB_MIT_MAIL_PROP, JSON.stringify(st));
+  Logger.log('Mitigated FVG email: ' + items.length + ' zone(s)' + (force ? ' (sent at once)' : '') + '.');
+  return items.length;
+}
+
+/** The combined email (compact rows, grouped by kind: daily FVG, Gap-up, 4H FVG, 4H Gap-up) + one push. */
+function ab_mitMailSend_(items) {
+  const names = ab_itdNames_();
+  const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
+  const order = function (t) { const i = AB_MIT_MAIL_TYPES.indexOf(t); return i === -1 ? 99 : i; };
+  const list = items.slice().sort(function (a, b) { return order(a.type) - order(b.type); });
+  const shown = list.slice(0, AB_MIT_MAIL_MAX_ROWS);
+  const syms = [];
+  list.forEach(function (f) { if (syms.indexOf(f.sym) === -1) syms.push(f.sym); });
+  const chart = function (f) { return /^4H/.test(f.type) ? ab_itdTvUrl_(f.sym, '4H') : ab_chartUrl_(f.sym); };
+  const td = 'style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:12px;vertical-align:top"';
+  let html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px">' +
+    '<h2 style="margin:0 0 2px;font-size:18px">Mitigated FVG - ' + list.length + ' zone' + (list.length === 1 ? '' : 's') + '</h2>' +
+    '<p style="margin:0 0 10px;color:#5f6368;font-size:12px">' + ts + ' IST - every zone mitigated since the last email ' +
+    '(price touched or went through the zone top). One email at most every ' + AB_MIT_MAIL_EVERY_MIN + ' minutes.</p>' +
+    '<table style="width:100%;border-collapse:collapse">';
+  let group = '';
+  shown.forEach(function (f) {
+    if (f.type !== group) {
+      group = f.type;
+      html += '<tr><td colspan="4" style="padding:8px 8px 4px;font-size:11px;font-weight:700;letter-spacing:.4px;color:' + AB_C_NEG +
+        ';border-bottom:2px solid ' + AB_C_NEG + '">' + group.toUpperCase() + (/^4H/.test(group) ? ' (ZERODHA, YOUR PC)' : '') + '</td></tr>';
+    }
+    html += '<tr><td ' + td + '><b>' + f.sym + '</b><br><span style="color:#6b7280">' + (names[f.sym] || '') + '</span></td>' +
+      '<td ' + td + '>' + ab_num2_(f.bottom) + ' - ' + ab_num2_(f.top) + (isNaN(f.pct) ? '' : ' (' + ab_num2_(f.pct) + '%)') + '</td>' +
+      '<td ' + td + '>' + f.src + '<br><span style="color:#6b7280">' + f.day + ' ' + f.time + '</span></td>' +
+      '<td ' + td + '><a href="' + chart(f) + '">Chart</a></td></tr>';
+  });
+  html += '</table>' + (list.length > shown.length ? '<p style="font-size:12px;color:#5f6368">+' + (list.length - shown.length) +
+    ' more - see the "' + AB_MITIGATED_LOG_SHEET + '" tab.</p>' : '') + '</div>';
+  let text = 'Mitigated FVG - ' + list.length + ' zone(s) (' + ts + ')\n\n';
+  shown.forEach(function (f) {
+    text += '[' + f.type + '] ' + f.sym + (names[f.sym] ? ' (' + names[f.sym] + ')' : '') + ': zone ' + ab_num2_(f.bottom) + ' - ' +
+      ab_num2_(f.top) + ', ' + f.src + ', ' + f.day + ' ' + f.time + '\n';
+  });
+  if (list.length > shown.length) text += '+' + (list.length - shown.length) + ' more - see the ' + AB_MITIGATED_LOG_SHEET + ' tab.\n';
+  const subject = 'Mitigated FVG - ' + list.length + ': ' + syms.slice(0, 8).join(', ') + (syms.length > 8 ? ' +' + (syms.length - 8) : '') +
+    ' (' + ts + ')';
+  ab_sendMail_({ to: AB_EMAIL_TO, subject: subject, body: text, htmlBody: html });
+  try { ab_sendPushbullet_('Mitigated FVG - ' + list.length, text.slice(0, 1500)); } catch (pe) { Logger.log('Mitigated push failed: ' + pe.message); }
+}
+
+// =====================================================================================================================
+// 4H FVG ZONES (owner, 08-Nov-2026: "I want FVG to be tracked in 4hr timeframe also ... need mitigated FVG alerts").
+// The PC (kite_intraday.py, after each day's scan) sends the 4H zones still untouched - the latest 3-candle FVG when
+// never touched (like col X's "FVG Unmitigated") and every untouched Gap-up of AB_GAPUP-like size (3-5 %), liquid
+// stocks only - plus the zones first touched since its last scan. Tab "4H FVG Zones": row 1 note, row 2 headers. During
+// market hours checkIntradayAlerts_ (every 5 min) compares Main's MKT Price with each zone top (ab_itdZoneCheck_): price
+// at / under the top = mitigated -> Mitigated FVG Log ('4H FVG' / '4H Gap-up FVG', Live) + the hourly combined email.
+// A zone the PC reports touched that the live check missed is logged as 'EOD' then. Kite's prices stay on the sheet; the
+// website gets Symbol / Company / Kind / Zone % / Formed / Distance % only.
+// =====================================================================================================================
+const AB_ITDZ_SHEET = '4H FVG Zones';
+const AB_ITDZ_HEADERS = ['Symbol', 'Company', 'Kind', 'Zone Bottom', 'Zone Top', 'Zone %', 'Formed', 'Distance %', 'Chart',
+  'Mitigated Alerted', 'Mitigated At', 'Updated'];
+const AB_ITDZ_MAX = 6000;
+const AB_ITDZ_KINDS = { FVG: '4H FVG', 'Gap-up': '4H Gap-up FVG' };
+
+function ab_itdzRead_(sh) {
+  if (!sh || sh.getLastRow() < 3) return [];
+  const vals = sh.getRange(3, 1, sh.getLastRow() - 2, AB_ITDZ_HEADERS.length).getValues();
+  const txt = function (v) { return v === null || v === undefined ? '' : String(v).trim(); };
+  return vals.filter(function (v) { return txt(v[0]); }).map(function (v) {
+    return { sym: txt(v[0]).toUpperCase(), company: txt(v[1]), kind: txt(v[2]), bottom: ab_toNum_(v[3]), top: ab_toNum_(v[4]),
+             pct: ab_toNum_(v[5]), formed: txt(v[6]), dist: v[7], alerted: txt(v[9]).toUpperCase() === 'Y', at: txt(v[10]), updated: txt(v[11]) };
+  });
+}
+
+function ab_itdzKey_(sym, kind, formed) { return sym + '|' + kind + '|' + formed; }
+
+/** Main's MKT Price by symbol (first row of a symbol; headers found by name in the first 10 rows). */
+function ab_itdMainPrices_() {
+  const out = {};
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MAIN_SHEET);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const head = sh.getRange(1, 1, Math.min(10, sh.getLastRow()), sh.getLastColumn()).getValues();
+  let hr = -1, si = -1, pi = -1;
+  for (let r = 0; r < head.length && hr === -1; r++) {
+    const row = head[r].map(function (v) { return String(v).trim(); });
+    if (row.indexOf('SYMBOL') !== -1 && row.indexOf('MKT Price') !== -1) { hr = r; si = row.indexOf('SYMBOL'); pi = row.indexOf('MKT Price'); }
+  }
+  if (hr === -1 || sh.getLastRow() <= hr + 1) return out;
+  sh.getRange(hr + 2, 1, sh.getLastRow() - hr - 1, Math.max(si, pi) + 1).getValues().forEach(function (v) {
+    const sym = ab_cellText_(v[si]).toUpperCase();
+    const p = ab_toNum_(v[pi]);
+    if (sym && out[sym] === undefined && !isNaN(p) && p > 0) out[sym] = p;
+  });
+  return out;
+}
+
+function ab_itdzWrite_(sh, rows, note) {
+  sh.clearContents();
+  sh.getRange(1, 1).setValue(note);
+  sh.getRange(2, 1, 1, AB_ITDZ_HEADERS.length).setValues([AB_ITDZ_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  if (rows.length) {
+    const n = rows.length;
+    [1, 2, 3, 7, 10, 11, 12].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
+    sh.getRange(3, 4, n, 3).setNumberFormat('0.00');
+    sh.getRange(3, 8, n, 1).setNumberFormat('0.00');
+    sh.getRange(3, 1, n, AB_ITDZ_HEADERS.length).setValues(rows.map(function (r) {
+      return [r.sym, r.company, r.kind, r.bottom, r.top, r.pct, r.formed, r.dist === undefined ? '' : r.dist,
+        '=HYPERLINK("' + ab_itdTvUrl_(r.sym, '4H') + '","4H chart")', r.alerted ? 'Y' : '', r.at || '', r.updated || ''];
+    }));
+  }
+  sh.setFrozenRows(2);
+}
+
+function ab_itdzDistance_(price, top) {
+  return price > 0 && top > 0 ? Math.round((price - top) / top * 10000) / 100 : '';
+}
+
+/** doPost action 'intraday' {op: 'zones', upto, since, tf: '4H', zones: [{sym, zone: [bottom, top, formed, kind], pct}],
+ *  mitigated: [{sym, zone, candle, low}]} from the PC. */
+function ab_itdZonesFromBridge_(req) {
+  const zones = Array.isArray(req.zones) ? req.zones : null;
+  if (!zones) return { ok: false, error: 'zones missing' };
+  if (zones.length > AB_ITDZ_MAX) return { ok: false, error: 'too many zones in one post (at most ' + AB_ITDZ_MAX + ')' };
+  const want = {};
+  ab_p1Symbols_().forEach(function (x) { want[x] = true; });
+  const sh = ab_getOrCreateSheet_(AB_ITDZ_SHEET);
+  const old = {};
+  ab_itdzRead_(sh).forEach(function (r) { old[ab_itdzKey_(r.sym, r.kind, r.formed)] = r; });
+  const okFormed = function (f) { return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(f); };
+  const kindOf = function (k) { return k === 'FVG' || k === 'Gap-up' ? k : ''; };
+  // zones the sheet watched that the PC saw touched since its last scan and the live check did not catch -> the log
+  let logged = 0;
+  (Array.isArray(req.mitigated) ? req.mitigated : []).forEach(function (m) {
+    const z = m && Array.isArray(m.zone) ? m.zone : null;
+    const sym = String(m && m.sym || '').trim().toUpperCase();
+    if (!z || !sym) return;
+    const o = old[ab_itdzKey_(sym, kindOf(String(z[3])), String(z[2]))];
+    if (!o || o.alerted) return;
+    const candle = String(m.candle || '');
+    let day = null;
+    try { day = /^\d{4}-\d{2}-\d{2}/.test(candle) ? Utilities.parseDate(candle.slice(0, 10), AB_TZ, 'yyyy-MM-dd') : null; } catch (e) { day = null; }
+    ab_logMitigation_(AB_ITDZ_KINDS[o.kind], sym, o.bottom, o.top, o.pct, ab_toNum_(m.low), 'EOD, 4H candle ' + candle.slice(11, 16), day);
+    logged++;
+  });
+  const names = ab_itdNames_();
+  const prices = ab_itdMainPrices_();
+  const updated = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  const seen = {};
+  let skipped = 0;
+  const rows = [];
+  zones.forEach(function (it) {
+    const sym = String(it && it.sym || '').trim().toUpperCase();
+    const z = it && Array.isArray(it.zone) ? it.zone : null;
+    const bottom = z ? ab_itdNum_(z[0]) : '', top = z ? ab_itdNum_(z[1]) : '';
+    const formed = z ? String(z[2]) : '', kind = z ? kindOf(String(z[3])) : '';
+    if (!want[sym] || !kind || !okFormed(formed) || bottom === '' || top === '' || !(top > bottom)) { skipped++; return; }
+    const k = ab_itdzKey_(sym, kind, formed);
+    if (seen[k]) return;
+    seen[k] = true;
+    const o = old[k];
+    rows.push({ sym: sym, company: names[sym] || '', kind: kind, bottom: bottom, top: top,
+                pct: Math.round((top - bottom) / bottom * 10000) / 100, formed: formed, dist: ab_itdzDistance_(prices[sym], top),
+                alerted: !!(o && o.alerted), at: o ? o.at : '', updated: updated });
+  });
+  rows.sort(function (a, b) {
+    if (a.sym !== b.sym) return a.sym < b.sym ? -1 : 1;
+    return a.formed < b.formed ? 1 : a.formed > b.formed ? -1 : 0;
+  });
+  const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
+  const note = '4H FVG zones still untouched, from Zerodha Kite 4H candles (your PC program' + (upto ? ', session ' + upto : '') +
+    '): the latest 3-candle FVG when never touched and every untouched Gap-up of ' + AB_GAPUP_MIN_PCT + '-5 %; stocks with an ' +
+    'average daily turnover under Rs ' + Math.round(AB_FVG_MIN_AVG_TURNOVER / 100000) + ' lakh left out. During market hours ' +
+    'Main\'s MKT Price at or under a zone top = mitigated -> the Mitigated FVG Log and the hourly combined email. ' +
+    'Distance % = MKT Price vs the zone top (delayed price). Updated ' + updated + '.';
+  ab_itdzWrite_(sh, rows, note);
+  if (logged) ab_mitMailFlush_(false);
+  return { ok: true, received: zones.length, kept: rows.length, skipped: skipped, logged: logged };
+}
+
+/** Live 4H zone check (checkIntradayAlerts_, every 5 min, market hours only): Main's MKT Price at or under a zone top =
+ *  mitigated -> the Mitigated FVG Log ('Live') and 'Mitigated Alerted' = Y; Distance % refreshed. -> the zones mitigated. */
+function ab_itdZoneCheck_() {
+  if (!ab_isMarketHours_()) return [];
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_ITDZ_SHEET);
+  if (!sh || sh.getLastRow() < 3) return [];
+  const rows = ab_itdzRead_(sh);
+  if (!rows.length) return [];
+  const prices = ab_itdMainPrices_();
+  const hits = rows.filter(function (r) { const p = prices[r.sym]; return !r.alerted && p > 0 && r.top > 0 && p <= r.top; });
+  let locked = {};
+  if (hits.length) {
+    try { locked = ab_todaysCircuitLockedSymbols_(); } catch (e) { Logger.log('4H zones: circuit-lock check skipped - ' + e.message); }
+  }
+  const at = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  const fired = [];
+  hits.forEach(function (r) {
+    if (locked[r.sym]) return;                // a frozen circuit print is not a real fill
+    ab_logMitigation_(AB_ITDZ_KINDS[r.kind] || '4H FVG', r.sym, r.bottom, r.top, r.pct, prices[r.sym], 'Live');
+    r.alerted = true;
+    r.at = at;
+    fired.push(r);
+  });
+  const lr = 2 + rows.length;
+  if (sh.getLastRow() >= lr) {
+    sh.getRange(3, 8, rows.length, 1).setValues(rows.map(function (r) { return [ab_itdzDistance_(prices[r.sym], r.top)]; }));
+    if (fired.length) sh.getRange(3, 10, rows.length, 2).setValues(rows.map(function (r) { return [r.alerted ? 'Y' : '', r.at || '']; }));
+  }
+  if (fired.length) Logger.log('4H FVG zones mitigated: ' + fired.map(function (r) { return r.sym; }).join(', '));
+  return fired;
+}
+
+// =====================================================================================================================
+// FVG+SPRING BACKTEST (owner, 08-Nov-2026: "backtest it and show the winrate"; choice "2R target"): the PC tests every
+// FVG+Spring of 4H (the 13:15 candle) / D / W on all its stored Kite candles - buy at the Spring candle's close, stop just
+// under its low, WIN = the target (2 x risk) reached before the stop within 20 candles (a candle doing both = a loss) - and
+// sends the counts per timeframe (FVG+Spring, at the zone top, at the bottom line, and every Spring for comparison) plus
+// the newest trades. Tabs "Spring Backtest" (summary) and "Spring Backtest Trades" (no prices - R multiples only).
+// =====================================================================================================================
+const AB_BT_SHEET = 'Spring Backtest';
+const AB_BT_TRADES_SHEET = 'Spring Backtest Trades';
+const AB_BT_HEADERS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %',
+  'Avg R', 'From', 'To'];
+const AB_BT_TRADE_HEADERS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles', 'Chart'];
+const AB_BT_MAX_TRADES = 1000;
+
+function ab_btFromBridge_(req) {
+  const rows = Array.isArray(req.rows) ? req.rows : null;
+  if (!rows) return { ok: false, error: 'rows missing' };
+  const trades = Array.isArray(req.trades) ? req.trades.slice(0, AB_BT_MAX_TRADES) : [];
+  const tfOk = function (t) { return ['4H', 'D', 'W'].indexOf(String(t)) !== -1; };
+  const num = function (v) { const n = Number(v); return v !== null && v !== '' && v !== undefined && isFinite(n) ? n : ''; };
+  const when = function (v) { return /^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(String(v || '')) ? String(v) : ''; };
+  const sumRows = rows.filter(function (r) { return r && tfOk(r.tf) && String(r.group || '').length < 80; }).map(function (r) {
+    return [String(r.tf), String(r.group), num(r.signals), num(r.wins), num(r.losses), num(r.timeouts), num(r.open), num(r.winRate),
+      num(r.avgR), when(r.from), when(r.to)];
+  });
+  const names = ab_itdNames_();
+  const tRows = trades.filter(function (t) {
+    return t && tfOk(t.tf) && /^[A-Z0-9&_.-]{1,30}$/.test(String(t.sym || '').toUpperCase()) && when(t.candle) &&
+      ['win', 'loss', 'timeout', 'open'].indexOf(String(t.result)) !== -1;
+  }).map(function (t) {
+    const sym = String(t.sym).toUpperCase();
+    const res = { win: 'Win', loss: 'Loss', timeout: 'No result', open: 'Open' }[String(t.result)];
+    return [when(t.candle), sym, names[sym] || '', String(t.tf), String(t.zone) === 'Gap-up' ? 'Gap-up' : 'FVG',
+      String(t.where) === 'bottom' ? 'Bottom' : 'Top', num(t.touch), res, num(t.r), num(t.bars),
+      '=HYPERLINK("' + ab_itdTvUrl_(sym, String(t.tf)) + '","' + t.tf + ' chart")'];
+  });
+  const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
+  const at = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  const horizon = Number(req.horizon) > 0 ? Math.round(Number(req.horizon)) : 20;
+  const note = 'FVG+Spring backtest on Zerodha Kite candles (your PC program, candles up to ' + (upto || '?') + ', ' + at + '): ' +
+    'buy at the Spring candle\'s close, stop just under its low; WIN = the target (2 x the risk) reached before the stop within ' +
+    horizon + ' candles - a candle that touches both counts as a loss; Win Rate = wins / (wins + losses); Avg R = the average result ' +
+    'in risk units (no-result trades at their ' + horizon + 'th close). FVG+Spring = the Spring candle on the TOP of an FVG / Gap-up ' +
+    'zone (1st or 2nd touch) or on its BOTTOM line. 4H: only the day\'s 2nd candle (13:15); 4H covers ~6 months, D and W ~5 years. ' +
+    'Research only - past results do not promise future ones.';
+  const sh = ab_getOrCreateSheet_(AB_BT_SHEET);
+  sh.clearContents();
+  sh.getRange(1, 1).setValue(note);
+  sh.getRange(2, 1, 1, AB_BT_HEADERS.length).setValues([AB_BT_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  if (sumRows.length) {
+    sh.getRange(3, 10, sumRows.length, 2).setNumberFormat('@');
+    sh.getRange(3, 1, sumRows.length, AB_BT_HEADERS.length).setValues(sumRows);
+  }
+  sh.setFrozenRows(2);
+  const tsh = ab_getOrCreateSheet_(AB_BT_TRADES_SHEET);
+  tsh.clearContents();
+  tsh.getRange(1, 1).setValue('The newest FVG+Spring trades of the backtest (' + tRows.length + ' of ' + (num(req.total) || tRows.length) +
+    '; see "' + AB_BT_SHEET + '" for the rules). R = the result in risk units: Win = +2, Loss = -1, No result = where it closed ' +
+    'after ' + horizon + ' candles. No prices - Kite\'s data stays on your PC.');
+  tsh.getRange(2, 1, 1, AB_BT_TRADE_HEADERS.length).setValues([AB_BT_TRADE_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  if (tRows.length) {
+    tsh.getRange(3, 1, tRows.length, 1).setNumberFormat('@');
+    tsh.getRange(3, 1, tRows.length, AB_BT_TRADE_HEADERS.length).setValues(tRows);
+  }
+  tsh.setFrozenRows(2);
+  return { ok: true, rows: sumRows.length, trades: tRows.length };
 }

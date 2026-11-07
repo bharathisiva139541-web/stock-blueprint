@@ -107,7 +107,8 @@ def sessions(first, last):
 
 def four_hour_path(days):
     """4H candles (two a session): a slow base, a jump that leaves a 3-candle FVG (late August), a drift down into it
-    without a close under its bottom, then a red candle and a Spring candle in the gap on 30-Oct 13:15."""
+    without a close under its bottom, then a red candle and a Spring candle on the gap's bottom line on 30-Oct 13:15
+    (FVG+Spring, owner's rule of 08-Nov-2026: zone top on the 1st / 2nd touch, or the bottom line)."""
     out, px = [], 205.0
     for i, day in enumerate(days):
         for half in (0, 1):
@@ -123,7 +124,7 @@ def four_hour_path(days):
             elif day < '2026-10-01':
                 o, c = px, px + (1.2 if k % 2 else -1.0)
             elif day < '2026-10-30':
-                o, c = px, px - 0.45 if px > 238 else px + 0.3
+                o, c = px, px - 1.0 if px > 252 else px + 0.3
             elif day == '2026-10-30' and half == 0:
                 o, c = px, px - 6.0              # the red candle 1
             elif day == '2026-10-30' and half == 1:
@@ -131,7 +132,7 @@ def four_hour_path(days):
             else:
                 o, c = px, px + 2.5
             if day == '2026-10-30' and half == 1:
-                h, lo = c + 1.2, o - 3.5
+                h, lo = c + 1.2, o - 2.0         # its low: on the gap's bottom line (at most 1 % under it)
             elif day == '2026-08-21' and half == 1:
                 h, lo = c + 0.5, o - 0.5
             elif day == '2026-08-24' and half == 0:
@@ -186,8 +187,8 @@ sp = K.fvg_spring(four[-K.WINDOW['4H']:])
 cs4 = four[-K.WINDOW['4H']:]
 hits = [cs4[i]['t'] for i in sp]
 assert '2026-10-30 13:15' in hits, ('the PARAGMILK-like 4H Spring in FVG', hits, [cs4[i]['t'] for i in K.springs(cs4)])
-gi = sp[[i for i in sp if cs4[i]['t'] == '2026-10-30 13:15'][0]][0]
-assert cs4[gi]['t'].startswith('2026-08-2'), ('the August gap', cs4[gi]['t'])
+hit = sp[[i for i in sp if cs4[i]['t'] == '2026-10-30 13:15'][0]]
+assert cs4[hit['f']]['t'].startswith('2026-08-2') and hit['where'] == 'bottom' and hit['kind'] == 'FVG', ('the August gap', hit)
 
 # a 4H Spring on the day's first candle is not reported, one on the second candle is (owner, 08-Nov-2026)
 flat = [(dd, hf, 100.0, 100.2, 99.8, 100.0) for dd in sessions('2026-09-01', '2026-11-06') for hf in (0, 1)]
@@ -202,9 +203,12 @@ for k, (dd, hf, *_r) in enumerate(flat):
         flat[k] = (dd, hf, 97.2, 97.8, 96.5, 97.5)            # Spring on the 13:15 candle
 two = {'m15': to_m15(flat), 'day': []}
 both = K.scan(two, '2026-10-20', d('2026-11-06'), HOL, ['4H'], slots={})
-assert [f['candle'] for f in both] == ['2026-10-27 09:15', '2026-10-29 13:15'], both
+assert [f['candle'] for f in both if f['pattern'] == 'Spring'] == ['2026-10-27 09:15', '2026-10-29 13:15'], both
 only = K.scan(two, '2026-10-20', d('2026-11-06'), HOL, ['4H'], slots=K.chosen_slots({}))
-assert [f['candle'] for f in only] == ['2026-10-29 13:15'], only
+assert [f['candle'] for f in only if f['pattern'] == 'Spring'] == ['2026-10-29 13:15'], only
+# the candle-time rule is for the Spring patterns only: the 4H FVG patterns count on every candle
+assert [(f['candle'], f['pattern']) for f in only if f['pattern'] not in K.SPRING_PATTERNS] == \
+    [('2026-10-29 09:15', 'FVG First Touch')], only
 assert K.chosen_slots({'intraday_slots': {}}) == {} and K.chosen_slots({'intraday_timeframes': ['D']}) == {}
 
 # ------------------------------------------------------------------ 5. pretend Kite
@@ -270,7 +274,10 @@ def press_login(token='req1', status='success'):
 PAGES = []
 assert K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'a finished session not scanned yet'
 assert not K.due(dict(CFG, kite_api_secret=''), HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'not set up'
-assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M'], 'slots': {'4H': ['13:15']}})[0]
+assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M'], 'slots': {'4H': ['13:15']},
+                                                                    'rules': K.RULES_VERSION})[0]
+assert K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M'], 'slots': {'4H': ['13:15']}})[0], \
+    'new pattern rules: the last sessions are scanned again'
 s = K.login(CFG, wait_s=20, ready=press_login)
 assert s and s['access_token'] == 'at-req1' and s['user'] == 'Owner', s
 assert 'Kite login received' in PAGES[0]
@@ -327,6 +334,10 @@ def fake_api(cfg, action, payload=None, timeout=120, tries=3):
     POSTS.append(payload)
     if payload['op'] == 'syms':
         return {'ok': True, 'syms': ['PARAGMILK', 'FLAT', 'BEONLY', 'NOPE']}
+    if payload['op'] == 'zones':
+        return {'ok': True, 'kept': len(payload['zones']), 'logged': 0}
+    if payload['op'] == 'backtest':
+        return {'ok': True, 'rows': len(payload['rows'])}
     return {'ok': True, 'added': len(payload['items'])}
 
 
@@ -347,7 +358,27 @@ assert put['slots'] == {'4H': ['13:15']} and all(it['candle'].endswith('13:15') 
 assert all(it['session'] > '2026-10-23' for it in items)
 assert not [it for it in items if it['tf'] in ('15m', '30m') and it['pattern'] == 'Spring'], '15m / 30m: Spring in FVG only'
 assert not [it for it in items if it['sym'] == 'NOPE'] and any('not on Kite: NOPE' in m for m in LOGS), LOGS[-4:]
-assert K.state_load()['scanned'] == '2026-11-06'
+assert K.state_load()['scanned'] == '2026-11-06' and K.state_load()['rules'] == K.RULES_VERSION
+assert put['first'] is True and put['rules'] == K.RULES_VERSION, 'the first post replaces the rows of the sessions it covers'
+spring_fvg = [it for it in items if it['pattern'] == 'Spring in FVG' and it['sym'] == 'PARAGMILK' and it['tf'] == '4H']
+assert spring_fvg and spring_fvg[0]['zone'][3:5] == ['FVG', 'bottom'] and spring_fvg[0]['zone'][5] >= 1, spring_fvg
+assert not [it for it in items if it['tf'] == 'M' and it['pattern'] == 'Spring in FVG'], 'the monthly chart: the plain Spring only'
+# 4H FVG zones: the untouched ones + those first touched in the sessions scanned, every 4H candle time
+zp = [p for p in POSTS if p['op'] == 'zones']
+assert len(zp) == 1 and zp[0]['tf'] == '4H' and zp[0]['since'] == '2026-10-23', zp
+assert all(z['tf'] == '4H' and len(z['zone']) == 4 and z['zone'][3] in ('FVG', 'Gap-up') for z in zp[0]['zones']), zp[0]['zones'][:3]
+assert all(m['candle'][:10] > '2026-10-23' for m in zp[0]['mitigated']), zp[0]['mitigated']
+# the backtest: every FVG+Spring of 4H / D / W on all stored candles, 2R before the stop within 20 candles
+bp = [p for p in POSTS if p['op'] == 'backtest']
+assert len(bp) == 1 and bp[0]['horizon'] == 20 and bp[0]['rr'] == 2.0, bp
+groups = {(r['tf'], r['group']) for r in bp[0]['rows']}
+assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 12, groups
+tr = [t for t in bp[0]['trades'] if t['sym'] == 'PARAGMILK' and t['candle'] == '2026-10-30 13:15']
+assert tr and tr[0]['result'] == 'win' and tr[0]['where'] == 'bottom' and tr[0]['r'] == 2.0, tr
+assert all(set(t) == {'sym', 'tf', 'candle', 'session', 'zone', 'where', 'touch', 'result', 'r', 'bars'} for t in bp[0]['trades'])
+row = [r for r in bp[0]['rows'] if r['tf'] == '4H' and r['group'] == 'FVG+Spring'][0]
+assert row['signals'] >= 1 and row['wins'] >= 1 and row['winRate'] is not None, row
+assert any('Kite backtest' in m and '4H FVG+Spring' in m for m in LOGS), LOGS[-6:]
 POSTS.clear()
 assert K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 6, 19, 0)) == 0 and not POSTS, 'already scanned'
 assert not K.due(CFG, HOL, now=datetime(2026, 11, 7, 10, 0))[0], 'Saturday: nothing new'
@@ -362,7 +393,7 @@ put = [p for p in POSTS if p['op'] == 'put'][0]
 assert put['tfs'] == ['4H', 'D'] and put['since'] == '2026-10-23' and {it['tf'] for it in put['items']} <= {'4H', 'D'}, put['tfs']
 assert not [c for c in CALLS if c[1].startswith('/instruments/historical/')], 'everything was up to date: nothing read from Kite'
 assert any('the timeframes are now 4H, D' in m for m in LOGS), LOGS[-4:]
-assert any('older version' in m for m in LOGS[-3:]), 'the pretend sheet does not echo tfs: the hint'
+assert any('older version' in m for m in LOGS[-12:]), 'the pretend sheet does not echo tfs: the hint'
 K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 7, 10, 5))           # back to the four
 
 # the next session: only the new candles are read and only their patterns are sent
@@ -396,5 +427,40 @@ K.state_save({})
 R = K.Runner()
 assert R.maybe_start(CFG, fake_api, HOL, online=lambda: False) is False and not R.busy()
 assert R.maybe_start(dict(CFG, kite_api_key=''), fake_api, HOL, online=lambda: 1 / 0) is False, 'not due: the internet is not even checked'
+
+# ------------------------------------------------------------------ 10. the 2R rule and the summary
+def C(o, h, l, c):
+    return {'t': 'x', 'day': 'x', 'o': o, 'h': h, 'l': l, 'c': c, 'v': 1}
+
+
+sig = [C(100, 101, 95, 96), C(96, 97, 94, 96.5)]           # entry 96.5, stop under 94, risk 2.5, target 101.5
+assert K.trade_2r(sig + [C(96.5, 99, 95, 98), C(98, 101.6, 97, 101)], 1) == ('win', 2.0, 2)
+assert K.trade_2r(sig + [C(96.5, 97, 93.9, 95)], 1) == ('loss', -1.0, 1), 'under the Spring candle\'s low = stopped'
+assert K.trade_2r(sig + [C(96.5, 94.1, 94.0, 94.0)], 1) is not None and K.trade_2r(sig + [C(96.5, 97, 94.0, 96)], 1)[0] == 'open', \
+    'touching the low exactly is not under it'
+assert K.trade_2r(sig + [C(96.5, 102, 93, 100)], 1)[0] == 'loss', 'stop and target in one candle: counted as a loss'
+flat = sig + [C(96.5, 97.5, 95.5, 97)] * 20
+assert K.trade_2r(flat, 1) == ('timeout', 0.2, 20), K.trade_2r(flat, 1)
+assert K.trade_2r(sig + [C(96.5, 97.5, 95.5, 97)] * 5, 1) == ('open', None, 5)
+assert K.trade_2r([C(100, 101, 95, 96), C(96, 97, 96, 96)], 1) is None, 'no risk'
+rows = K.bt_summary([{'tf': '4H', 'candle': '2026-10-01 13:15', 'where': 'top', 'result': 'win', 'r': 2.0, 'bars': 3},
+                     {'tf': '4H', 'candle': '2026-10-05 13:15', 'where': 'bottom', 'result': 'loss', 'r': -1.0, 'bars': 1},
+                     {'tf': '4H', 'candle': '2026-10-09 13:15', 'where': 'top', 'result': 'timeout', 'r': 0.5, 'bars': 20}],
+                    [('4H', '2026-10-01 13:15', ('win', 2.0, 3)), ('D', '2026-09-01', ('open', None, 2))])
+r4 = {r['group']: r for r in rows if r['tf'] == '4H'}
+assert r4['FVG+Spring']['signals'] == 3 and r4['FVG+Spring']['winRate'] == 50.0 and r4['FVG+Spring']['avgR'] == 0.5, r4
+assert r4['FVG+Spring - zone top']['winRate'] == 100.0 and r4['FVG+Spring - zone bottom']['winRate'] == 0.0
+assert r4['FVG+Spring']['from'] == '2026-10-01 13:15' and r4['FVG+Spring']['to'] == '2026-10-09 13:15'
+rd = {r['group']: r for r in rows if r['tf'] == 'D'}
+assert rd['Spring (every one, for comparison)']['open'] == 1 and rd['Spring (every one, for comparison)']['winRate'] is None
+assert rd['FVG+Spring']['signals'] == 0 and len(rows) == 12
+
+# BacktestNow.bat: the stored candles only - no Kite login, no download
+CALLS.clear()
+POSTS.clear()
+OUT = []
+assert K.backtest_now(CFG, fake_api, HOL, out=OUT.append) == 0
+assert not CALLS and [p['op'] for p in POSTS] == ['backtest'], (CALLS[:3], POSTS[:1])
+assert any('PARAGMILK' == t['sym'] for t in POSTS[0]['trades']) and any('4H FVG+Spring' in o for o in OUT), OUT
 
 print('OK')

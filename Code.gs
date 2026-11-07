@@ -221,6 +221,10 @@ const AB_CP_SECTIONS_ = [
       help: 'Alert when price comes within this % of the zone top.' },
     { key: 'AB_UNMIT_MIN_AGE_DAYS', label: 'Unmitigated FVG: ignore zones younger than (days)', def: 1, type: 'number',
       help: 'Skips zones that only formed today.' },
+    { key: 'AB_UNMIT_APPROACH_EMAIL', label: 'Unmitigated FVG: send the "approaching" email (1 = yes, 0 = no)', def: 0, type: 'number',
+      help: 'Off since 08-Nov-2026 (too many emails - Gmail allows about 50 a day). Approaching zones still show in the EOD summary. Gap-up "approaching" emails are not affected.' },
+    { key: 'AB_MIT_MAIL_EVERY_MIN', label: 'Mitigated FVG email: at most one every (minutes)', def: 60, type: 'number',
+      help: 'Every mitigated zone - daily FVG, Gap-up FVG and the 4H zones from your PC (Zerodha) - goes into ONE combined email, at most once in this many minutes.' },
     { key: 'AB_GAPUP_MIN_PCT', label: 'Gap-up FVG: smallest gap to track (%)', def: 3, type: 'number', help: 'Overnight gap-up size.' },
     { key: 'AB_GAPUP_MAX_PCT', label: 'Gap-up FVG: largest gap still treated as an imbalance (%)', def: 10, type: 'number',
       help: 'Bigger gaps are usually news-driven and are not tracked. (Was 5 - raised so strong-trend gaps such as 7% are not missed.)' },
@@ -5369,15 +5373,22 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * Both are 2/3-state machines that reset once they fire, exactly
  * mirroring the Pine Script's `var ..._current_state` logic.
  *
- * FVG+Spring (custom, your own definition): a 'Spring' candle pair -
- * the same test and Control Panel thresholds as the Spring pattern
- * (ab_isSpringPair_: a big red candle, then a small candle that fakes
- * a breakdown below its low and closes back above it) - whose 2nd
- * candle dips into ANY bullish gap formed earlier in the 30-day
- * window, touched before (mitigated) or not (unmitigated), while that
- * gap still holds: no close below the gap's bottom between the gap and
- * the pair, the Spring candle's low reaches the gap top or lower, and
- * it closes back at or above the gap bottom.
+ * FVG+Spring (owner, 08-Nov-2026: "spring pattern forming on the top of
+ * FVG or gapup zone in the first or second touch, or at the bottom line
+ * of the FVG zone"): a 'Spring' candle pair - the same test and Control
+ * Panel thresholds as the Spring pattern (ab_isSpringPair_: a big red
+ * candle, then a small candle that fakes a breakdown below its low and
+ * closes back above it) - whose 2nd candle sits on a 3-candle FVG or a
+ * Gap-up zone (AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT, no circuit-locked
+ * candle) formed before the pair that still holds (no close below its
+ * bottom before the pair): TOP = its low comes into the zone's upper
+ * half (middle <= low <= top) and it closes above the top, on the zone's
+ * 1st or 2nd touch (a touch starts when a low reaches the top after the
+ * previous candle's low stayed above it); BOTTOM = its low reaches the
+ * bottom line, at most AB_FVG_SPRING_BOTTOM_TOL_PCT (1 %) under it, and
+ * it closes above the bottom - any touch. The oldest such zone counts
+ * (ab_fvgSpringZones_ / ab_fvgSpringZone_ = web/lib/fvg.js springZones /
+ * springZone = kite_intraday.py, compared on random candles).
  *
  * Twin Star Bottom + FVG (owner, 30-Oct-2026): the Twin Star Bottom
  * pattern (ab_isTwinStarBottom_, Code2.gs: a red candle, then two small
@@ -5394,6 +5405,49 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * it's a still-true-as-of-today state check, so it stays tagged for
  * as long as the gap remains untouched.
  *****************************************************************/
+const AB_FVG_SPRING_BOTTOM_TOL_PCT = 1;   // FVG+Spring at the zone bottom: the low may go this far under the bottom line
+const AB_FVG_SPRING_TOP_TOUCHES = 2;     // FVG+Spring at the zone top: only on the zone's 1st or 2nd touch
+
+/** The zones a Spring can sit on (FVG+Spring): 3-candle FVGs (isFVGUp[g]: [High[g-2], Low[g]]) and Gap-ups (Low[j] >
+ *  High[j-1] by AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT %, neither candle circuit-locked: [High[j-1], Low[j]]), oldest first,
+ *  an FVG before a Gap-up of the same candle. = web/lib/fvg.js springZones. */
+function ab_fvgSpringZones_(candles, isFVGUp) {
+  const out = [];
+  for (let f = 1; f < candles.length; f++) {
+    if (f >= 2 && isFVGUp[f]) out.push({ kind: 'FVG', f: f, bottom: candles[f - 2].High, top: candles[f].Low });
+    const a = candles[f - 1], b = candles[f];
+    if (ab_isCircuitLocked_(a) || ab_isCircuitLocked_(b) || isNaN(a.High) || isNaN(b.Low) || !(a.High > 0) || !(b.Low > a.High)) continue;
+    const pct = (b.Low - a.High) / a.High * 100;
+    if (pct >= AB_GAPUP_MIN_PCT && pct <= AB_GAPUP_MAX_PCT) out.push({ kind: 'Gap-up', f: f, bottom: a.High, top: b.Low });
+  }
+  return out;
+}
+
+/** FVG+Spring for the Spring pair (i-1, i): the oldest zone formed before the pair (f <= i-2) that still holds (no close
+ *  below its bottom from f+1 to i-2) where candle i sits on the TOP (zone middle <= low <= top, close > top, the zone's
+ *  1st or 2nd touch) or the BOTTOM (bottom x (1 - 1 %) <= low <= bottom, close > bottom). -> {kind, f, bottom, top, where,
+ *  touch} or null. = web/lib/fvg.js springZone. */
+function ab_fvgSpringZone_(candles, i, zones) {
+  const c2 = candles[i];
+  for (let z = 0; z < zones.length; z++) {
+    const Z = zones[z];
+    if (Z.f > i - 2) break;
+    const top = Z.top, bottom = Z.bottom;
+    let where = null;
+    if (c2.Low <= top && c2.Low >= (bottom + top) / 2 && c2.Cls > top) where = 'top';
+    else if (c2.Low <= bottom && c2.Low >= bottom * (1 - AB_FVG_SPRING_BOTTOM_TOL_PCT / 100) && c2.Cls > bottom) where = 'bottom';
+    if (!where) continue;
+    let holds = true;
+    for (let k = Z.f + 1; k <= i - 2; k++) if (candles[k].Cls < bottom) { holds = false; break; }
+    if (!holds) continue;
+    let touch = 0;
+    for (let k = Z.f + 1; k <= i; k++) if (candles[k].Low <= top && (k === Z.f + 1 || candles[k - 1].Low > top)) touch++;
+    if (where === 'top' && touch > AB_FVG_SPRING_TOP_TOUCHES) continue;
+    return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch };
+  }
+  return null;
+}
+
 function ab_longFvgDetail_(candles) {
   const n = (candles || []).length;
   // Not enough bars for a reliable 14-bar average range + gap + touch.
@@ -5447,23 +5501,14 @@ function ab_longFvgDetail_(candles) {
     }
   }
 
-  // FVG+Spring: a Spring pair (c1 = i-1, c2 = i) whose c2 dips into any
-  // gap formed before c1 that still holds (see the header above).
+  // FVG+Spring: a Spring pair (c1 = i-1, c2 = i) on the top / bottom of an
+  // FVG or Gap-up zone formed before c1 that still holds (see the header above).
   const springCfg = ab_springCfg_();
+  const springZones = ab_fvgSpringZones_(candles, isFVGUp);
   const springSignal = new Array(n).fill(false);
   for (let i = 3; i < n; i++) {
     if (!ab_isSpringPair_(candles[i - 1], candles[i], springCfg)) continue;
-    const c2 = candles[i];
-    for (let g = 2; g <= i - 2 && !springSignal[i]; g++) {
-      if (!isFVGUp[g]) continue;
-      const top = candles[g].Low, bottom = candles[g - 2].High;
-      if (!(c2.Low <= top && c2.Cls >= bottom)) continue;
-      let holds = true;
-      for (let k = g + 1; k <= i - 2; k++) {
-        if (candles[k].Cls < bottom) { holds = false; break; }
-      }
-      if (holds) springSignal[i] = true;
-    }
+    if (ab_fvgSpringZone_(candles, i, springZones)) springSignal[i] = true;
   }
 
   // Twin Star Bottom + FVG: c1 = i-2 (red), stars i-1 and i, dipping into a gap formed before c1 that still holds
@@ -6138,10 +6183,16 @@ function checkUnmitigatedAlerts_() {
   return ab_checkZoneAlerts_(AB_UNMIT_SHEET, AB_UNMIT_NEAR_PCT, 'Unmitigated FVG', AB_UNMIT_MIN_AGE_DAYS);
 }
 
-/** Email + push for gap-up approaches. Plain text mirrors the email. */
-function ab_sendZoneAlerts_(fired) {
+/** Email + push for gap-up approaches. Plain text mirrors the email. Unmitigated FVG approaches are emailed only with
+ *  Control Panel AB_UNMIT_APPROACH_EMAIL = 1 (owner, 08-Nov-2026) or `force` (the menu). */
+function ab_sendZoneAlerts_(fired, force) {
   if (!fired || !fired.length) return;
   const label = fired[0].label || 'Gap-up FVG';
+  if (label === 'Unmitigated FVG' && !force && !AB_UNMIT_APPROACH_EMAIL) {
+    Logger.log('Unmitigated FVG approaching (no email - Control Panel AB_UNMIT_APPROACH_EMAIL = 0): ' +
+               fired.map(function (f) { return f.symbol; }).join(', '));
+    return;
+  }
   const nearPct = fired[0].nearPct || AB_GAPUP_NEAR_PCT;
   const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
 
@@ -6266,6 +6317,10 @@ function resetGapUpAlerts() {
  *****************************************************************/
 const AB_UNMIT_SHEET = 'UnmitigatedFVG';
 const AB_UNMIT_NEAR_PCT = ab_setting_('AB_UNMIT_NEAR_PCT', 0.5); // how close above the zone top counts as approaching
+// Owner, 08-Nov-2026: "I don't want email alert for unmitigated FVG approaching - too many emails, I have only 50 email
+// per day". The check still runs (it marks Alerted = 'Y', which the EOD summary's "approaching" list reads); only the
+// email is off. The menu's "Check Approaches Now" still emails. Gap-up FVG approaching emails are unchanged.
+const AB_UNMIT_APPROACH_EMAIL = ab_setting_('AB_UNMIT_APPROACH_EMAIL', 0);
 
 // A zone must be at least this many sessions old before it goes on the
 // watch list. A gap formed TODAY is useless to watch: the third candle
@@ -6430,7 +6485,7 @@ function runUnmitigatedAlertsNow() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   try {
     const fired = checkUnmitigatedAlerts_();
-    ab_sendZoneAlerts_(fired);
+    ab_sendZoneAlerts_(fired, true);
     ss.toast(fired.length
       ? fired.length + ' alert(s) sent: ' + fired.map(f => f.symbol).join(', ')
       : 'No unmitigated-FVG approaches right now.', 'Unmitigated FVG', 10);
@@ -6482,6 +6537,7 @@ function ab_firstFillCandle_(candles, top, sinceKey) {
  *  by the 5-minute during-market-hours check) or 'EOD' (only confirmed
  *  once the nightly rebuild compared the day's actual Low against the
  *  zone top - see computeGapUpFvgs_ / computeUnmitigatedFvgs_). */
+let AB_MIT_LOGGED_RUN_ = 0;   // rows this execution added to the log (ab_mitMailFlush_'s first run starts at them)
 function ab_logMitigation_(label, symbol, bottom, top, pct, price, source, candleDate) {
   try {
     const sh = ab_getOrCreateSheet_(AB_MITIGATED_LOG_SHEET);
@@ -6505,6 +6561,7 @@ function ab_logMitigation_(label, symbol, bottom, top, pct, price, source, candl
       Utilities.formatDate(now, AB_TZ, 'HH:mm'),
       label, symbol, bottom, top, pct, ab_num2_(price) + ' (' + source + ')'
     ]);
+    AB_MIT_LOGGED_RUN_++;
   } catch (e) {
     Logger.log('Mitigated FVG Log write failed for ' + symbol + ' - ' + e.message);
   }
@@ -6637,69 +6694,12 @@ function checkGapUpMitigatedAlerts_() {
   return ab_checkZoneMitigatedAlerts_(AB_GAPUP_SHEET, 'Gap-up FVG');
 }
 
-/** Email + push: a zone just got mitigated (price touched/crossed the top). */
-function ab_sendZoneMitigatedAlerts_(fired) {
+/** A zone just got mitigated (price touched / crossed the top). ab_checkZoneMitigatedAlerts_ already logged it in the
+ *  Mitigated FVG Log; the log goes out as ONE combined email at most once an hour (owner, 08-Nov-2026: "1 combined mail
+ *  for 1 hour during market time" - Code2.gs ab_mitMailFlush_). `force` (the menu) sends at once. */
+function ab_sendZoneMitigatedAlerts_(fired, force) {
   if (!fired || !fired.length) return;
-  const label = fired[0].label || 'FVG';
-  const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
-
-  const td = 'style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px"';
-  let html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:620px">';
-  html += '<h2 style="margin:0 0 2px">' + label + ' - ' + fired.length + ' mitigated</h2>';
-  html += '<p style="margin:0 0 16px;color:#5f6368;font-size:13px">' + ts + ' IST</p>';
-
-  fired.forEach(function (f) {
-    html += '<div style="border:1px solid #e2e2e2;border-radius:10px;overflow:hidden;margin-bottom:14px">';
-    html += '<div style="background:#fdeaea;padding:12px 14px;border-left:5px solid ' + AB_C_NEG + '">';
-    html += '<div style="font-size:11px;letter-spacing:0.5px;font-weight:700;color:' +
-            AB_C_NEG + '">MITIGATED</div>';
-    html += '<div style="font-size:18px;font-weight:700;color:#111">' + f.symbol + '</div>';
-    html += '<div style="font-size:13px;color:#555">' + (f.name || '') + '</div>';
-    html += '</div><table style="width:100%;border-collapse:collapse">';
-    html += '<tr><td ' + td + ' >Price now</td><td ' + td +
-            ' align="right"><b>' + ab_num2_(f.price) + '</b></td></tr>';
-    html += '<tr><td ' + td + ' >Zone top (touched)</td><td ' + td +
-            ' align="right"><span style="color:' + AB_C_NEG + ';font-weight:bold">' +
-            ab_num2_(f.top) + '</span></td></tr>';
-    html += '<tr><td ' + td + ' >Zone bottom</td><td ' + td +
-            ' align="right">' + ab_num2_(f.bottom) + '</td></tr>';
-    html += '<tr><td ' + td + ' >Zone size</td><td ' + td +
-            ' align="right">' + ab_num2_(f.pct) + '%</td></tr>';
-    html += '</table>';
-    html += '<div style="padding:10px 14px;background:#fafafa;border-top:1px solid #eee">';
-    html += '<a href="' + f.chartUrl + '" style="display:inline-block;margin-right:8px;padding:7px 12px;background:' +
-            AB_C_NEG + ';color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">View Chart</a>';
-    html += '<a href="' + f.screenerUrl + '" style="display:inline-block;padding:7px 12px;background:#333;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">Screener.in</a>';
-    html += '</div></div>';
-  });
-  html += '<p style="margin:8px 0 0;color:#5f6368;font-size:11px">' +
-          'Price touched or closed through the zone top during market hours - the zone is ' +
-          'no longer unmitigated. Independent of the "approaching" alert; fires once per zone.</p></div>';
-
-  let text = label + ' - ' + fired.length + ' mitigated (' + ts + ')\n\n';
-  fired.forEach(function (f) {
-    text += f.symbol + (f.name ? ' (' + f.name + ')' : '') + '\n';
-    text += '  Price ' + ab_num2_(f.price) + ', zone top ' + ab_num2_(f.top) +
-            ', zone bottom ' + ab_num2_(f.bottom) + ' (' + ab_num2_(f.pct) + '%)\n';
-    text += '  Chart: ' + f.chartUrl + '\n\n';
-  });
-
-  try {
-    ab_sendMail_({
-      to: AB_EMAIL_TO,
-      subject: label + ' - ' + fired.map(function (f) { return f.symbol; }).join(', ') +
-               ' mitigated (' + ts + ')',
-      body: text,
-      htmlBody: html
-    });
-  } catch (e) {
-    Logger.log(label + ' mitigated email failed: ' + e.message);
-  }
-  try {
-    ab_sendPushbullet_(label + ' - ' + fired.length + ' mitigated', text);
-  } catch (pe) {
-    Logger.log(label + ' mitigated push failed: ' + pe.message);
-  }
+  ab_mitMailFlush_(!!force);
 }
 
 /**
@@ -6723,86 +6723,11 @@ function ab_sendZoneMitigatedAlerts_(fired) {
  * a blank name rather than blocking the alert if Main can't be read.
  */
 function ab_sendEodMitigatedAlerts_(zones) {
+  // Each zone is in the Mitigated FVG Log already (computeGapUpFvgs_ / computeUnmitigatedFvgs_ log them with source
+  // 'EOD'); since 08-Nov-2026 they go out with the hourly combined mitigated email (Code2.gs ab_mitMailFlush_) - no
+  // separate "mitigated today (missed live)" email any more.
   if (!zones || !zones.length) return;
-
-  const nameBySym = {};
-  try {
-    const layout = ab_getMainLayout_();
-    const data = layout.data;
-    for (let r = layout.headerRowIdx + 1; r < data.length; r++) {
-      const sym = String(data[r][layout.symbol] || '').trim().toUpperCase();
-      const nm = String(data[r][layout.name] || '').trim();
-      if (!sym && !nm) break;
-      if (sym && nm) nameBySym[sym] = nm;
-    }
-  } catch (e) {
-    Logger.log('EOD-mitigated alert: Main name lookup skipped - ' + e.message);
-  }
-
-  // One email can cover a mix of Gap-up and Unmitigated zones, so each
-  // card is labelled individually rather than assuming one label for all.
-  const ts = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
-  const td = 'style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px"';
-  let html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:620px">';
-  html += '<h2 style="margin:0 0 2px">' + zones.length + ' mitigated today - missed by the live check</h2>';
-  html += '<p style="margin:0 0 16px;color:#5f6368;font-size:13px">' + ts + ' IST</p>';
-  html += '<p style="margin:0 0 16px;color:#5f6368;font-size:12px">Confirmed from today\'s actual Low ' +
-          '(History30), not the delayed live quote - likely a fast mitigate-and-bounce that happened ' +
-          'between 5-minute checks.</p>';
-
-  zones.forEach(function (f) {
-    html += '<div style="border:1px solid #e2e2e2;border-radius:10px;overflow:hidden;margin-bottom:14px">';
-    html += '<div style="background:#fdeaea;padding:12px 14px;border-left:5px solid ' + AB_C_NEG + '">';
-    html += '<div style="font-size:11px;letter-spacing:0.5px;font-weight:700;color:' +
-            AB_C_NEG + '">' + (f.label || 'FVG') + ' - MITIGATED (EOD)</div>';
-    html += '<div style="font-size:18px;font-weight:700;color:#111">' + f.symbol + '</div>';
-    html += '<div style="font-size:13px;color:#555">' + (nameBySym[f.symbol] || '') + '</div>';
-    html += '</div><table style="width:100%;border-collapse:collapse">';
-    html += '<tr><td ' + td + ' >Day\'s Low (touched)</td><td ' + td +
-            ' align="right"><span style="color:' + AB_C_NEG + ';font-weight:bold">' +
-            ab_num2_(f.low) + '</span></td></tr>';
-    html += '<tr><td ' + td + ' >Close</td><td ' + td +
-            ' align="right"><b>' + ab_num2_(f.close) + '</b></td></tr>';
-    html += '<tr><td ' + td + ' >Zone top</td><td ' + td +
-            ' align="right">' + ab_num2_(f.top) + '</td></tr>';
-    html += '<tr><td ' + td + ' >Zone bottom</td><td ' + td +
-            ' align="right">' + ab_num2_(f.bottom) + '</td></tr>';
-    html += '<tr><td ' + td + ' >Zone size</td><td ' + td +
-            ' align="right">' + ab_num2_(f.pct) + '%</td></tr>';
-    html += '</table>';
-    html += '<div style="padding:10px 14px;background:#fafafa;border-top:1px solid #eee">';
-    html += '<a href="' + f.chartUrl + '" style="display:inline-block;margin-right:8px;padding:7px 12px;background:' +
-            AB_C_NEG + ';color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">View Chart</a>';
-    html += '<a href="' + f.screenerUrl + '" style="display:inline-block;padding:7px 12px;background:#333;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">Screener.in</a>';
-    html += '</div></div>';
-  });
-  html += '</div>';
-
-  let text = zones.length + ' mitigated today, missed by the live check (' + ts + ')\n\n';
-  zones.forEach(function (f) {
-    const nm = nameBySym[f.symbol] || '';
-    text += '[' + (f.label || 'FVG') + '] ' + f.symbol + (nm ? ' (' + nm + ')' : '') + '\n';
-    text += '  Low ' + ab_num2_(f.low) + ', close ' + ab_num2_(f.close) + ', zone ' +
-            ab_num2_(f.bottom) + ' - ' + ab_num2_(f.top) + ' (' + ab_num2_(f.pct) + '%)\n';
-    text += '  Chart: ' + f.chartUrl + '\n\n';
-  });
-
-  try {
-    ab_sendMail_({
-      to: AB_EMAIL_TO,
-      subject: zones.length + ' mitigated today (missed live) - ' +
-               zones.map(function (f) { return f.symbol; }).join(', ') + ' (' + ts + ')',
-      body: text,
-      htmlBody: html
-    });
-  } catch (e) {
-    Logger.log('EOD-mitigated email failed: ' + e.message);
-  }
-  try {
-    ab_sendPushbullet_(zones.length + ' mitigated today (missed live)', text);
-  } catch (pe) {
-    Logger.log('EOD-mitigated push failed: ' + pe.message);
-  }
+  ab_mitMailFlush_(false);
 }
 
 /** Menu: run the Unmitigated-FVG mitigation check right now (still
@@ -6812,7 +6737,7 @@ function runUnmitigatedMitigatedAlertsNow() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   try {
     const fired = checkUnmitigatedMitigatedAlerts_();
-    ab_sendZoneMitigatedAlerts_(fired);
+    ab_sendZoneMitigatedAlerts_(fired, true);
     ss.toast(fired.length
       ? fired.length + ' mitigation alert(s) sent: ' + fired.map(f => f.symbol).join(', ')
       : (ab_isMarketHours_()
@@ -6841,7 +6766,7 @@ function runGapUpMitigatedAlertsNow() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   try {
     const fired = checkGapUpMitigatedAlerts_();
-    ab_sendZoneMitigatedAlerts_(fired);
+    ab_sendZoneMitigatedAlerts_(fired, true);
     ss.toast(fired.length
       ? fired.length + ' mitigation alert(s) sent: ' + fired.map(f => f.symbol).join(', ')
       : (ab_isMarketHours_()
@@ -9258,7 +9183,7 @@ function ab_site_main_(cx, readAt) {
   const bt = ab_site_tab_(cx, 'FVG Backtest');
   if (bt) data.fvgBacktest = ab_site_table_(cx, bt, 'Flagged On', { stopBlank: false });
   const ml = ab_site_tab_(cx, 'Mitigated FVG Log');
-  if (ml) data.mitigatedLog = ab_site_table_(cx, ml, 'Date', { stopBlank: false });
+  if (ml) data.mitigatedLog = ab_site_noKite_(ab_site_table_(cx, ml, 'Date', { stopBlank: false }));
 
   // Alerts: watch-level alerts only (see ab_site_alerts_)
   data.alerts = ab_site_alerts_(cx, ab_site_tab_(cx, 'Alert Log'), priv);
@@ -9282,11 +9207,45 @@ function ab_site_main_(cx, readAt) {
   // Zerodha Kite patterns (PC bridge): which pattern formed when - no prices (Kite's data is for the owner's own use)
   const itd = ab_site_tab_(cx, 'Intraday Patterns');
   if (itd) data.intraday = ab_site_itd_(cx, itd);
+  // 4H FVG zones + the FVG+Spring backtest (PC bridge, 08-Nov-2026): no Kite prices - zone size / distance % and R only
+  const z4 = ab_site_tab_(cx, '4H FVG Zones');
+  if (z4) data.zones4h = ab_site_pick_(ab_site_noteTable_(cx, z4, 'Symbol', { stopBlank: false, kinds: { Formed: 'str' } }), AB_SITE_Z4_COLS, AB_SITE_Z4_MAX);
+  const sbt = ab_site_tab_(cx, 'Spring Backtest');
+  if (sbt) {
+    const btT = ab_site_tab_(cx, 'Spring Backtest Trades');
+    data.springBacktest = {
+      summary: ab_site_pick_(ab_site_noteTable_(cx, sbt, 'Timeframe', { stopBlank: false, kinds: { From: 'str', To: 'str' } }), AB_SITE_BT_COLS, 100),
+      trades: btT ? ab_site_pick_(ab_site_noteTable_(cx, btT, 'Candle', { stopBlank: false, kinds: { Candle: 'str' } }), AB_SITE_BTT_COLS, AB_SITE_BTT_MAX)
+        : { note: '', cols: AB_SITE_BTT_COLS.slice(), rows: [] }
+    };
+  }
   return data;
 }
 
+// export_xlsx.py Z4_COLS / BT_COLS / BTT_COLS + pick(): the only columns of those tabs the website gets
+const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'];
+const AB_SITE_Z4_MAX = 6000;
+const AB_SITE_BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To'];
+const AB_SITE_BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'];
+const AB_SITE_BTT_MAX = 1000;
+
+/** The Mitigated FVG Log without its 4H rows (zones from Zerodha Kite candles - Kite's prices stay on the sheet) =
+ *  export_xlsx.py no_kite(). */
+function ab_site_noKite_(t) {
+  const ti = t && t.cols ? t.cols.indexOf('Type') : -1;
+  if (ti === -1) return t;
+  t.rows = t.rows.filter(function (r) { return !/^4H /.test(String(r[ti] === null || r[ti] === undefined ? '' : r[ti])); });
+  return t;
+}
+
+/** {note, cols, rows} -> the same with only `cols` (in that order; a missing column = null), at most `max` rows. */
+function ab_site_pick_(t, cols, max) {
+  const idx = cols.map(function (c) { return t.cols.indexOf(c); });
+  return { note: t.note, cols: cols.slice(), rows: t.rows.slice(0, max).map(function (r) { return idx.map(function (i) { return i === -1 ? null : r[i]; }); }) };
+}
+
 // export_xlsx.py INTRADAY_COLS / intraday_patterns(): the columns the website may show and how much of the tab
-const AB_SITE_ITD_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed'];
+const AB_SITE_ITD_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail'];
 const AB_SITE_ITD_SESSIONS = 10;
 const AB_SITE_ITD_MAX = 4000;
 
@@ -9800,7 +9759,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 9;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 10;   // 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

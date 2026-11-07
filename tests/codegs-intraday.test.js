@@ -38,15 +38,15 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '06-11-2026', session: '2026-11-06' },               // a bad candle time
     { sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-09-01', session: '2026-09-01', low: 1, close: 2 }   // older than 30 days
   ]));
-  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, tfs: null, slots: {} });
+  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, replaced: 0, tfs: null, slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.match(rows[0][0], /^Spring and Spring in FVG from Zerodha Kite candles .* Last scan: session 2026-11-06 \(2026-11-06 19:00\)\. Kept 30 days\./);
-  assert.deepStrictEqual(rows[1], ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close', 'FVG Bottom', 'FVG Top', 'Found']);
+  assert.deepStrictEqual(rows[1], ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close', 'FVG Bottom', 'FVG Top', 'Found', 'FVG Detail']);
   assert.deepStrictEqual(rows.slice(2).map((x) => [x[0], x[1], x[3], x[4]]), [
     ['2026-11-06', 'FLAT', 'W', 'Spring'], ['2026-11-06', 'M&M', '1H', 'Spring'],
     ['2026-10-30', 'FLAT', 'M', 'Spring in FVG'], ['2026-10-30', 'PARAGMILK', '4H', 'Spring in FVG']], 'newest session, then the biggest timeframe');
   assert.deepStrictEqual(rows[5], ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15',
-    '=HYPERLINK("https://www.tradingview.com/chart/?symbol=NSE%3APARAGMILK&interval=240","4H chart")', 228.05, 233.7, 232.1, 246, '2026-11-06 19:00']);
+    '=HYPERLINK("https://www.tradingview.com/chart/?symbol=NSE%3APARAGMILK&interval=240","4H chart")', 228.05, 233.7, 232.1, 246, '2026-11-06 19:00', '']);
   assert.strictEqual(rows[3][7], '=HYPERLINK("https://www.tradingview.com/chart/?symbol=NSE%3AM%26M&interval=60","1H chart")');
   assert.deepStrictEqual(rows[3].slice(8, 12), [3000, 3010.5, '', ''], 'no zone for a plain Spring');
 
@@ -54,7 +54,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
   e.setNow(Date.UTC(2026, 10, 9, 12, 0));
   const r2 = e.post(put([PARA, { sym: 'FLAT', tf: '15m', pattern: 'Spring in FVG', candle: '2026-11-09 10:30', session: '2026-11-09', low: 100, close: 101,
     zone: [99.5, 100.5, '2026-11-05 11:00'] }], { upto: '2026-11-09' }));
-  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, tfs: null, slots: {} });
+  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, replaced: 0, tfs: null, slots: {} });
   const rows2 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows2[2].slice(0, 5), ['2026-11-09', 'FLAT', 'Flat Co', '15m', 'Spring in FVG']);
   assert.strictEqual(rows2.find((x) => x[1] === 'PARAGMILK')[12], '2026-11-06 19:00');
@@ -71,7 +71,7 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   assert.strictEqual(e.sheet('Intraday Patterns').rows.length, 5);
   const r = e.post(put([{ sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-11-06', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '30m', pattern: 'Spring in FVG', candle: '2026-11-06 11:15', session: '2026-11-06', low: 99, close: 100 }], { tfs: ['4H', 'D', 'W', 'M', 'nope'] }));
-  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, tfs: ['M', 'W', 'D', '4H'], slots: {} });
+  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, replaced: 0, tfs: ['M', 'W', 'D', '4H'], slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows.slice(2).map((x) => x[1] + ' ' + x[3]), ['FLAT D', 'PARAGMILK 4H'], 'the 15m and 1H rows are gone, the 30m one was not added');
   assert.match(rows[0][0], /candles \(your PC program\): 4H, D, W, M \(4H = 09:15-13:15 \/ 13:15-15:30\) - the sheet's/);
@@ -82,11 +82,161 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   const r3 = e.post(put([{ sym: 'FLAT', tf: '4H', pattern: 'Spring in FVG', candle: '2026-11-06 09:15', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '2026-11-06 13:15', session: '2026-11-06', low: 99, close: 100 }],
   { tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'], D: ['10:00'], bad: ['13:15'], '1H': ['x'] } }));
-  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] } });
+  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, replaced: 0, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] } });
   const rows3 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows3.slice(2).map((x) => x[1] + ' ' + x[3] + ' ' + x[5]), ['FLAT D 2026-11-06', 'FLAT 4H 2026-11-06 13:15', 'PARAGMILK 4H 2026-10-30 13:15'],
     'the 09:15 4H rows are gone, the 13:15 ones and the daily one stay');
-  assert.match(rows3[0][0], /4H, D, W, M \(4H: only the day's 2nd candle, 13:15-15:30\)/);
+  assert.match(rows3[0][0], /4H, D, W, M \(4H Spring: only the day's 2nd candle, 13:15-15:30\)/);
+});
+
+test('intraday: FVG+Spring detail, the 4H FVG patterns on every candle, a rescan replaces its sessions (owner, 08-Nov-2026)', () => {
+  const e = env();
+  const SL = { tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'] } };
+  e.post(put([PARA, { sym: 'FLAT', tf: 'D', pattern: 'Spring in FVG', candle: '2026-10-28', session: '2026-10-28', low: 1, close: 2, zone: [1, 2, '2026-10-01'] },
+    { sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-10-20', session: '2026-10-20', low: 1, close: 2 }], SL));
+  assert.strictEqual(e.sheet('Intraday Patterns').rows.length, 5);
+  // the PC's first post after the new rules: rows of sessions after `since` are replaced, older ones stay
+  const r = e.post(put([
+    { sym: 'M&M', tf: '4H', pattern: 'Spring in FVG', candle: '2026-11-05 13:15', session: '2026-11-05', low: 3000, close: 3020,
+      zone: [2990, 3010, '2026-10-20 09:15', 'FVG', 'top', 2] },
+    { sym: 'FLAT', tf: 'W', pattern: 'Spring in FVG', candle: '2026-11-02', session: '2026-11-06', low: 99, close: 100,
+      zone: [99.5, 104, '2026-09-07', 'Gap-up', 'bottom', 5] },
+    { sym: 'FLAT', tf: '4H', pattern: 'FVG First Touch', candle: '2026-11-06 09:15', session: '2026-11-06', low: 99, close: 100,
+      zone: [98, 99.5, '2026-11-02 13:15', 'FVG'] },
+    { sym: 'FLAT', tf: '4H', pattern: 'Twin Star Bottom + FVG', candle: '2026-11-04 09:15', session: '2026-11-04', low: 99, close: 100,
+      zone: [98, 99.5, '2026-11-02 13:15', 'FVG'] },
+    { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '2026-11-04 09:15', session: '2026-11-04', low: 99, close: 100 }      // 09:15 Spring: no
+  ], Object.assign({ since: '2026-10-24', first: true }, SL)));
+  assert.deepStrictEqual([r.added, r.skipped, r.replaced, r.kept], [4, 1, 2, 5], JSON.stringify(r));
+  const rows = e.sheet('Intraday Patterns').rows;
+  const by = (sym, tf, pat) => rows.find((x) => x[1] === sym && x[3] === tf && x[4] === pat);
+  assert.strictEqual(by('M&M', '4H', 'Spring in FVG')[13], 'FVG top (touch 2)');
+  assert.strictEqual(by('FLAT', 'W', 'Spring in FVG')[13], 'Gap-up bottom (touch 5)');
+  assert.strictEqual(by('FLAT', '4H', 'FVG First Touch')[13], 'FVG', 'the 4H FVG patterns count on the 09:15 candle too');
+  assert.ok(by('FLAT', '4H', 'Twin Star Bottom + FVG'));
+  assert.ok(!by('PARAGMILK', '4H', 'Spring in FVG') && !by('FLAT', 'D', 'Spring in FVG'), 'the old rule\'s rows after since are gone');
+  assert.ok(by('FLAT', 'D', 'Spring'), 'a session before since stays');
+  assert.match(rows[0][0], /TOP of an FVG \/ Gap-up zone on its 1st or 2nd touch, or on its BOTTOM line/);
+});
+
+const PRICES = { PARAGMILK: 240, 'M&M': 3050, FLAT: 101 };
+function zoneBook() {
+  const b = workbook();
+  b.sheets[0].rows[1] = ['Checkbox', 'StockName', 'SYMBOL', 'MKT Price'];
+  for (let i = 2; i < b.sheets[0].rows.length; i++) b.sheets[0].rows[i].push(PRICES[b.sheets[0].rows[i][2]]);
+  return b;
+}
+const zput = (zones, mitigated, extra) => Object.assign({ token: TOKEN, action: 'intraday', op: 'zones', upto: '2026-11-06', since: '2026-11-05', tf: '4H',
+  zones: zones, mitigated: mitigated || [] }, extra || {});
+
+test('4H FVG zones: the tab, the live check in market hours, the PC\'s touched zones, one combined mitigated email an hour', () => {
+  const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
+  const r = e.post(zput([
+    { sym: 'PARAGMILK', tf: '4H', zone: [229.9, 238, '2026-10-20 13:15', 'FVG'], pct: 3.52 },
+    { sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], pct: 3.05 },
+    { sym: 'FLAT', tf: '4H', zone: [90, 95, '2026-10-01 13:15', 'FVG'] },
+    { sym: 'OTHER', tf: '4H', zone: [1, 2, '2026-10-01 13:15', 'FVG'] },                 // not on PatternData
+    { sym: 'FLAT', tf: '4H', zone: [96, 95, '2026-10-02 13:15', 'FVG'] }                 // top under the bottom
+  ]));
+  assert.deepStrictEqual(r, { ok: true, received: 5, kept: 3, skipped: 2, logged: 0 });
+  const t = e.sheet('4H FVG Zones').rows;
+  assert.match(t[0][0], /^4H FVG zones still untouched, from Zerodha Kite 4H candles \(your PC program, session 2026-11-06\)/);
+  assert.deepStrictEqual(t[1], ['Symbol', 'Company', 'Kind', 'Zone Bottom', 'Zone Top', 'Zone %', 'Formed', 'Distance %', 'Chart',
+    'Mitigated Alerted', 'Mitigated At', 'Updated']);
+  assert.deepStrictEqual(t.slice(2).map((x) => x.slice(0, 8)), [
+    ['FLAT', 'Flat Co', 'FVG', 90, 95, 5.56, '2026-10-01 13:15', 6.32],
+    ['M&M', 'Mahindra & Mahindra', 'Gap-up', 2950, 3040, 3.05, '2026-11-03 09:15', 0.33],
+    ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 229.9, 238, 3.52, '2026-10-20 13:15', 0.84]]);
+  assert.strictEqual(t[3][8], '=HYPERLINK("https://www.tradingview.com/chart/?symbol=NSE%3AM%26M&interval=240","4H chart")');
+
+  // outside market hours (Fri 19:00) the live check does nothing
+  assert.deepStrictEqual(e.run('ab_itdZoneCheck_().length'), 0);
+  // Mon 09-Nov 11:00 IST: M&M at 3035 is under its zone top 3040 = mitigated
+  e.setNow(Date.UTC(2026, 10, 9, 5, 30));
+  e.sheet('Main').rows[3][3] = 3035;
+  const mails0 = e.mails.length;
+  assert.deepStrictEqual(JSON.parse(e.run('JSON.stringify(ab_itdZoneCheck_().map(function (r) { return r.sym; }))')), ['M&M']);
+  const z2 = e.sheet('4H FVG Zones').rows;
+  assert.deepStrictEqual(z2[3].slice(9, 11), ['Y', '2026-11-09 11:00']);
+  assert.strictEqual(z2[3][7], -0.16);
+  const log = e.sheet('Mitigated FVG Log').rows;
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(log[log.length - 1].slice(2, 8))), ['4H Gap-up FVG', 'M&M', 2950, 3040, 3.05, '3035 (Live)']);
+  // a second check: no new log row (alerted once)
+  e.run('ab_itdZoneCheck_()');
+  assert.strictEqual(e.sheet('Mitigated FVG Log').rows.length, log.length);
+  // the hourly email: the first one goes at once, with every zone not emailed yet
+  assert.strictEqual(e.run('ab_mitMailFlush_(false)'), 1);
+  assert.strictEqual(e.mails.length, mails0 + 1);
+  const m = e.mails[e.mails.length - 1][0];
+  assert.match(m.subject, /^Mitigated FVG - 1: M&M \(09-Nov-2026 11:00\)$/);
+  assert.match(m.htmlBody, /4H GAP-UP FVG \(ZERODHA, YOUR PC\)/);
+  assert.match(m.htmlBody, /interval=240/);
+  // the PC's next scan: PARAGMILK's zone was touched by a 4H candle the live check missed -> logged as EOD, the email waits
+  // for the hour; FLAT's zone is still untouched; M&M (alerted) gone
+  e.setNow(Date.UTC(2026, 10, 9, 5, 50));
+  const r2 = e.post(zput([{ sym: 'FLAT', tf: '4H', zone: [90, 95, '2026-10-01 13:15', 'FVG'] }],
+    [{ sym: 'PARAGMILK', tf: '4H', zone: [229.9, 238, '2026-10-20 13:15', 'FVG'], candle: '2026-11-09 09:15', low: 237.5 },
+     { sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], candle: '2026-11-09 09:15', low: 3030 },
+     { sym: 'FLAT', tf: '4H', zone: [80, 85, '2026-09-01 13:15', 'FVG'], candle: '2026-11-09 09:15', low: 84 }], { upto: '2026-11-09', since: '2026-11-06' }));
+  assert.deepStrictEqual(r2, { ok: true, received: 1, kept: 1, skipped: 0, logged: 1 });
+  const log2 = e.sheet('Mitigated FVG Log').rows;
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(log2[log2.length - 1].slice(0, 8))), ['09-Nov-2026', '11:20', '4H FVG', 'PARAGMILK', 229.9, 238, 3.52, '237.5 (EOD, 4H candle 09:15)']);
+  assert.strictEqual(e.mails.length, mails0 + 1, 'the hour since the last mitigated email is not up yet');
+  e.setNow(Date.UTC(2026, 10, 9, 6, 31));
+  assert.strictEqual(e.run('ab_mitMailFlush_(false)'), 1);
+  assert.match(e.mails[e.mails.length - 1][0].subject, /^Mitigated FVG - 1: PARAGMILK/);
+  assert.strictEqual(e.run('ab_mitMailFlush_(true)'), 0, 'nothing new');
+});
+
+test('mitigated email: daily zones + 4H together, at most one an hour; Unmitigated FVG approaching: no email (owner, 08-Nov-2026)', () => {
+  const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: Date.UTC(2026, 10, 9, 4, 0) });   // Mon 09:30 IST
+  e.run('ab_logMitigation_("Unmitigated FVG", "FLAT", 99, 100.5, 1.5, 100.2, "Live")');
+  e.run('ab_logMitigation_("Gap-up FVG", "M&M", 2900, 3000, 3.4, 2998, "Live")');
+  e.run('ab_logMitigation_("4H FVG", "PARAGMILK", 229.9, 238, 3.52, 237, "Live")');
+  e.run('ab_logMitigation_("Unmitigated FVG", "FLAT", 99, 100.5, 1.5, 99.9, "EOD")');      // the same zone again: listed once
+  assert.strictEqual(e.run('ab_mitMailFlush_(false)'), 3);
+  const m = e.mails[e.mails.length - 1][0];
+  assert.match(m.subject, /^Mitigated FVG - 3: FLAT, M&M, PARAGMILK \(09-Nov-2026 09:30\)$/);
+  const at = (txt) => m.htmlBody.indexOf(txt);
+  assert.ok(at('UNMITIGATED FVG') < at('GAP-UP FVG') && at('GAP-UP FVG') < at('4H FVG'), 'grouped: daily FVG, Gap-up, 4H');
+  e.setNow(Date.UTC(2026, 10, 9, 4, 30));
+  e.run('ab_logMitigation_("Gap-up FVG", "FLAT", 90, 93, 3.3, 92, "Live")');
+  const n = e.mails.length;
+  assert.strictEqual(e.run('ab_sendZoneMitigatedAlerts_([{ symbol: "FLAT" }])'), undefined);
+  assert.strictEqual(e.mails.length, n, 'within the hour: waits');
+  e.run('ab_sendZoneMitigatedAlerts_([{ symbol: "FLAT" }], true)');
+  assert.strictEqual(e.mails.length, n + 1, 'the menu sends at once');
+  // Unmitigated FVG approaching: logged, not emailed; Gap-up approaching still emailed
+  const before = e.mails.length;
+  e.run('ab_sendZoneAlerts_([{ symbol: "FLAT", label: "Unmitigated FVG", price: 101, bottom: 99, top: 100.5, pct: 1.5, distancePct: 0.5, chartUrl: "", screenerUrl: "" }])');
+  assert.strictEqual(e.mails.length, before);
+  e.run('ab_sendZoneAlerts_([{ symbol: "FLAT", label: "Unmitigated FVG", price: 101, bottom: 99, top: 100.5, pct: 1.5, distancePct: 0.5, chartUrl: "", screenerUrl: "" }], true)');
+  assert.strictEqual(e.mails.length, before + 1, 'the menu\'s Check Approaches Now still emails');
+  e.run('ab_sendZoneAlerts_([{ symbol: "M&M", label: "Gap-up FVG", price: 3001, bottom: 2900, top: 3000, pct: 3.4, distancePct: 0.03, chartUrl: "", screenerUrl: "" }])');
+  assert.strictEqual(e.mails.length, before + 2, 'Gap-up FVG approaching emails go on');
+});
+
+test('the FVG+Spring backtest tabs from the PC', () => {
+  const e = env();
+  const rows = [
+    { tf: '4H', group: 'FVG+Spring', signals: 40, wins: 15, losses: 20, timeouts: 4, open: 1, winRate: 42.9, avgR: 0.31, from: '2026-05-12 13:15', to: '2026-11-06 13:15' },
+    { tf: 'D', group: 'FVG+Spring - zone top', signals: 0, wins: 0, losses: 0, timeouts: 0, open: 0, winRate: null, avgR: null, from: '', to: '' },
+    { tf: 'X', group: 'nope' }];
+  const trades = [{ sym: 'PARAGMILK', tf: '4H', candle: '2026-10-30 13:15', session: '2026-10-30', zone: 'FVG', where: 'bottom', touch: 3, result: 'win', r: 2, bars: 4 },
+    { sym: 'FLAT', tf: 'W', candle: '2026-09-07', session: '2026-09-11', zone: 'Gap-up', where: 'top', touch: 1, result: 'timeout', r: 0.4, bars: 20 },
+    { sym: 'bad sym!', tf: 'D', candle: '2026-01-01', result: 'win' }];
+  assert.deepStrictEqual(e.post({ token: TOKEN, action: 'intraday', op: 'backtest', upto: '2026-11-06', rows: rows, trades: trades, horizon: 20, rr: 2, total: 812 }),
+    { ok: true, rows: 2, trades: 2 });
+  const b = e.sheet('Spring Backtest').rows;
+  assert.match(b[0][0], /^FVG\+Spring backtest on Zerodha Kite candles .* WIN = the target \(2 x the risk\) reached before the stop within 20 candles/);
+  assert.deepStrictEqual(b[1], ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To']);
+  assert.deepStrictEqual(b[2], ['4H', 'FVG+Spring', 40, 15, 20, 4, 1, 42.9, 0.31, '2026-05-12 13:15', '2026-11-06 13:15']);
+  assert.deepStrictEqual(b[3].slice(7, 9), ['', '']);
+  const t = e.sheet('Spring Backtest Trades').rows;
+  assert.match(t[0][0], /\(2 of 812;/);
+  assert.deepStrictEqual(t[2].slice(0, 10), ['2026-10-30 13:15', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'FVG', 'Bottom', 3, 'Win', 2, 4]);
+  assert.deepStrictEqual(t[3].slice(4, 8), ['Gap-up', 'Top', 1, 'No result']);
+  assert.strictEqual(e.post({ token: TOKEN, action: 'intraday', op: 'backtest' }).ok, false);
 });
 
 test('site feed part "intraday": the allowed columns only (no prices), newest 10 sessions = export_xlsx.py', () => {
@@ -101,14 +251,14 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
   const it = data.intraday;
-  assert.deepStrictEqual(it.cols, ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed']);
+  assert.deepStrictEqual(it.cols, ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail']);
   assert.match(it.note, /^Spring and Spring in FVG from Zerodha Kite/);
   const days = [...new Set(it.rows.map((r) => r[0]))];
   assert.strictEqual(days.length, 10);
   assert.deepStrictEqual([days[0], days[9]], ['2026-10-30', '2026-10-14'], 'the newest 10 sessions');
-  assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15']);
+  assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null]);
   assert.ok(!JSON.stringify(it).includes('228.05') && !JSON.stringify(it).includes('tradingview'), 'no Kite prices, no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 9);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 10);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
@@ -120,4 +270,38 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'tools', 'export_xlsx.py')], { input: JSON.stringify(tab), encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.deepStrictEqual(JSON.parse(r.stdout), it);
+});
+
+test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py', () => {
+  const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
+  e.post(zput([{ sym: 'PARAGMILK', tf: '4H', zone: [229.9, 238, '2026-10-20 13:15', 'FVG'] }, { sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'] }]));
+  e.post({ token: TOKEN, action: 'intraday', op: 'backtest', upto: '2026-11-06', horizon: 20, total: 1,
+    rows: [{ tf: '4H', group: 'FVG+Spring', signals: 1, wins: 1, losses: 0, timeouts: 0, open: 0, winRate: 100, avgR: 2, from: '2026-10-30 13:15', to: '2026-10-30 13:15' }],
+    trades: [{ sym: 'PARAGMILK', tf: '4H', candle: '2026-10-30 13:15', zone: 'FVG', where: 'bottom', touch: 3, result: 'win', r: 2, bars: 4 }] });
+  e.run('ab_logMitigation_("Gap-up FVG", "M&M", 2900, 3000, 3.4, 2998, "Live")');
+  e.run('ab_logMitigation_("4H FVG", "PARAGMILK", 229.9, 238, 3.52, 237, "Live")');
+  const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
+    ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
+  assert.deepStrictEqual(data.zones4h.cols, ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted']);
+  assert.deepStrictEqual(data.zones4h.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 3.52, '2026-10-20 13:15', 0.84, null]);
+  assert.deepStrictEqual(data.springBacktest.summary.rows[0], ['4H', 'FVG+Spring', 1, 1, 0, 0, 0, 100, 2, '2026-10-30 13:15', '2026-10-30 13:15']);
+  assert.deepStrictEqual(data.springBacktest.trades.rows[0], ['2026-10-30 13:15', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'FVG', 'Bottom', 3, 'Win', 2, 4]);
+  assert.deepStrictEqual(data.mitigatedLog.rows.map((r) => r[2] + ' ' + r[3]), ['Gap-up FVG M&M'], 'the 4H rows (Kite prices) stay on the sheet');
+  const txt = JSON.stringify([data.zones4h, data.springBacktest, data.mitigatedLog]);
+  assert.ok(!/229\.9|238|2950|3040|tradingview/.test(txt), 'no zone prices, no chart formula');
+
+  const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
+  if (!py) return;
+  const tab = (name) => e.sheet(name).rows.map((r) => r.map((v) => (typeof v === 'string' && v.startsWith('=HYPERLINK') ? '4H chart' : v === '' ? null : v)));
+  const code = ['import importlib.util, json, sys', 'spec = importlib.util.spec_from_file_location("ex", sys.argv[1])',
+    'ex = importlib.util.module_from_spec(spec); spec.loader.exec_module(ex)', 'd = json.load(sys.stdin)',
+    'print(json.dumps({"z": ex.zones_4h(ex.Rows(d["z"])), "b": ex.spring_backtest(ex.Rows(d["b"]), ex.Rows(d["t"])),',
+    '                  "m": ex.no_kite(ex.table(ex.Rows(d["m"]), "Date", stop_blank=False))}))'].join('\n');
+  const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'tools', 'export_xlsx.py')],
+    { input: JSON.stringify({ z: tab('4H FVG Zones'), b: tab('Spring Backtest'), t: tab('Spring Backtest Trades'), m: tab('Mitigated FVG Log') }), encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepStrictEqual(out.z, data.zones4h);
+  assert.deepStrictEqual(out.b, data.springBacktest);
+  assert.deepStrictEqual(out.m.rows.map((r) => r[3]), data.mitigatedLog.rows.map((r) => r[3]));
 });

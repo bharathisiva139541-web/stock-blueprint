@@ -2,8 +2,10 @@
 // PC bridge, Zerodha Kite (pcbridge/ScreenerBridge/kite_intraday.py): owner, 07-Nov-2026 - "PARAGMILK, in the 4 hour
 // timeframe a Spring candlestick pattern formed in an FVG; due to lack of intraday data I missed this opportunity".
 // 1. the offline checks (candles of every timeframe, sessions, login, download, a whole scan): tests/fixtures/pcbridge_intraday_check.py
-// 2. the Python copy of the rules = the website's (= Code.gs): Spring (web/lib/patterns.js isSpringPair / patternsAt) and
-//    Spring in FVG (web/lib/fvg.js longFvgDetail 'fvg-spring' events) on random candles. Skipped without python3.
+// 2. the Python copy of the rules = the website's (= Code.gs): Spring (web/lib/patterns.js isSpringPair / patternsAt),
+//    Spring in FVG (owner's 08-Nov-2026 rule: web/lib/fvg.js longFvgDetail 'fvg-spring' events with zone / where / touch),
+//    FVG First Touch / Confirmed / Twin Star + FVG, the unmitigated FVG and the Gap-up zones, on random candles.
+//    Skipped without python3.
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
@@ -28,7 +30,11 @@ function series(seed, n) {
   for (let i = 0; i < n; i++) {
     const r = rnd();
     let o, c, h, l;
-    if (r < 0.07) {                                   // a jump: leaves a 3-candle gap now and then
+    if (r < 0.035 && out.length) {                    // a gap-up of 3 - 5.5 % (Gap-up zones)
+      const prevHigh = out[out.length - 1].h;
+      l = prevHigh * (1.03 + rnd() * 0.025); o = l * (1 + rnd() * 0.004); c = o * (1 + (rnd() - 0.3) * 0.02);
+      h = Math.max(o, c) * (1 + rnd() * 0.004);
+    } else if (r < 0.07) {                            // a jump: leaves a 3-candle gap now and then
       o = px * (1 + rnd() * 0.01); c = o * (1.04 + rnd() * 0.08);
       h = c * (1 + rnd() * 0.004); l = o * (1 - rnd() * 0.004);
     } else if (r < 0.2 && out.length) {               // a red candle then a Spring-like candle
@@ -50,31 +56,51 @@ function series(seed, n) {
   return out;
 }
 
-test('the Python Spring / Spring in FVG = the website\'s (and the sheet\'s) rules, on random candles', { skip: !py && 'python3 not installed' }, () => {
+test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and the sheet\'s) rules, on random candles', { skip: !py && 'python3 not installed' }, () => {
   const all = [];
   for (let k = 0; k < 60; k++) all.push(series(1000 + k * 7919, 120 + (k % 5) * 40));
-  const js = all.map((cs) => ({
-    springs: cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf('Spring') >= 0),
-    fvg: FVG.longFvgDetail(cs).events.filter((e) => e.type === 'fvg-spring').map((e) => e.i)
-  }));
+  const zoneOf = (z) => z ? [z.bottom, z.top, z.formedIdx] : null;
+  const js = all.map((cs) => {
+    const det = FVG.longFvgDetail(cs);
+    const ev = (type) => det.events.filter((e) => e.type === type).map((e) => e.i);
+    return {
+      springs: cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf('Spring') >= 0),
+      fvg: det.events.filter((e) => e.type === 'fvg-spring').map((e) => [e.i, e.zone, e.where, e.touch, e.formedIdx, e.bottom, e.top]),
+      ft: ev('first-touch'), conf: ev('confirmed'), twin: ev('fvg-twinstar'),
+      unmit: zoneOf(det.unmitigated),
+      gapups: FVG.gapUpFvgs(cs).map((g) => [g.bottom, g.top, g.formedIdx, g.pct])
+    };
+  });
   const code = [
     'import importlib.util, json, sys',
     'spec = importlib.util.spec_from_file_location("k", sys.argv[1])',
     'K = importlib.util.module_from_spec(spec); spec.loader.exec_module(K)',
     'out = []',
     'for cs in json.load(sys.stdin):',
-    '    out.append({"springs": K.springs(cs), "fvg": sorted(K.fvg_spring(cs))})',
+    '    d = K.fvg_detail(cs)',
+    '    fs = K.fvg_spring(cs)',
+    '    assert sorted(fs) == sorted(d["spring"]), "fvg_spring = fvg_detail spring"',
+    '    out.append({"springs": K.springs(cs),',
+    '                "fvg": [[i, z["kind"], z["where"], z["touch"], z["f"], z["bottom"], z["top"]] for i, z in sorted(fs.items())],',
+    '                "ft": sorted(d["ft"]), "conf": sorted(d["conf"]), "twin": sorted(d["twin"]),',
+    '                "unmit": [d["unmit"]["bottom"], d["unmit"]["top"], d["unmit"]["f"]] if d["unmit"] else None,',
+    '                "gapups": [[z["bottom"], z["top"], z["f"], z["pct"]] for z in d["gapups"]]})',
     'print(json.dumps(out))'
   ].join('\n');
   const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'kite_intraday.py')],
     { input: JSON.stringify(all), encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 26 });
   assert.strictEqual(r.status, 0, r.stderr);
   const pyOut = JSON.parse(r.stdout);
-  let springs = 0, fvg = 0;
+  let springs = 0, ft = 0, gapups = 0;
+  const fvg = { top: 0, bottom: 0, 'Gap-up': 0, touch2: 0 };
   js.forEach((j, k) => {
-    assert.deepStrictEqual(pyOut[k].springs, j.springs, 'Spring, series ' + k);
-    assert.deepStrictEqual(pyOut[k].fvg, j.fvg, 'Spring in FVG, series ' + k);
-    springs += j.springs.length; fvg += j.fvg.length;
+    ['springs', 'fvg', 'ft', 'conf', 'twin', 'unmit', 'gapups'].forEach((key) => {
+      assert.deepStrictEqual(pyOut[k][key], j[key], key + ', series ' + k);
+    });
+    springs += j.springs.length; ft += j.ft.length; gapups += j.gapups.length;
+    j.fvg.forEach((e) => { fvg[e[2]]++; if (e[1] === 'Gap-up') fvg['Gap-up']++; if (e[3] === 2) fvg.touch2++; });
   });
-  assert.ok(springs > 150 && fvg > 15, 'the random candles exercise both rules: ' + springs + ' Springs, ' + fvg + ' in an FVG');
+  const twin = js.reduce((a, j) => a + j.twin.length, 0), conf = js.reduce((a, j) => a + j.conf.length, 0);
+  assert.ok(springs > 150 && fvg.top > 5 && fvg.bottom > 3 && fvg['Gap-up'] >= 1 && fvg.touch2 >= 1 && ft > 20 && gapups > 5 && twin > 5 && conf > 20,
+    'the random candles exercise every rule: ' + JSON.stringify({ springs: springs, fvg: fvg, ft: ft, gapups: gapups, twin: twin, conf: conf }));
 });

@@ -10,10 +10,18 @@
      14-bar average (High-Low) range ending at bar i. Zone = [High[i-2], Low[i]].
    - Touch: Low crosses under the active gap top (Low[i-1] >= top && Low[i] < top).
    - Confirm: Close crosses back above the High of the latest touch candle.
-   - FVG+Spring: a Spring pair (patterns.js isSpringPair, the Spring pattern's
-     thresholds) whose 2nd candle dips into ANY gap formed before the pair
-     (touched or not) that still holds: no close below its bottom in between,
-     Low <= top and Close >= bottom.
+   - FVG+Spring (owner, 08-Nov-2026): a Spring pair (patterns.js isSpringPair,
+     the Spring pattern's thresholds) whose 2nd candle sits on a 3-candle FVG
+     or a Gap-up zone formed before the pair that still holds (no close below
+     its bottom before the pair), in one of two places (springZone):
+       TOP    - its low comes into the zone's upper half (zone middle <= low
+                <= top) and it closes above the top, on the zone's 1st or 2nd
+                touch (a touch starts when a low reaches the top after the
+                previous candle's low stayed above it);
+       BOTTOM - its low reaches the bottom line, at most SPRING_BOTTOM_TOL_PCT
+                (1 %) under it, and it closes above the bottom - any touch.
+     The oldest such zone is taken (an FVG before a Gap-up formed on the
+     same candle).
    - Twin Star Bottom + FVG: patterns.js isTwinStarBottom (red c1, two small
      candles holding the same low) whose stars reach into any gap formed before
      c1 that still holds (lowest star low <= top, both star closes >= bottom).
@@ -39,6 +47,8 @@
     AB_GAPUP_MIN_AGE_DAYS: 1,
     AB_UNMIT_MIN_AGE_DAYS: 1
   };
+  var SPRING_BOTTOM_TOL_PCT = 1;     // FVG+Spring at the zone bottom: the low may go this far under the bottom line
+  var SPRING_TOP_TOUCHES = 2;        // FVG+Spring at the zone top: only on the zone's 1st or 2nd touch
   function cfgOf(cfg) {
     var o = {};
     Object.keys(DEFAULTS).forEach(function (k) { o[k] = cfg && cfg[k] != null ? cfg[k] : DEFAULTS[k]; });
@@ -64,6 +74,47 @@
       n++;
     });
     return n ? sum / n : NaN;
+  }
+
+  /** The zones a Spring can sit on: 3-candle FVGs (isFVGUp[g]: [High[g-2], Low[g]]) and Gap-ups (Low[j] > High[j-1]
+   *  by AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT %, neither candle circuit-locked: [High[j-1], Low[j]]), oldest first, an FVG
+   *  before a Gap-up of the same candle. Sheet candles {Opn, High, Low, Cls}. */
+  function springZones(candles, isFVGUp, cfg) {
+    var out = [], n = candles.length;
+    for (var f = 1; f < n; f++) {
+      if (f >= 2 && isFVGUp[f]) out.push({ kind: 'FVG', f: f, bottom: candles[f - 2].High, top: candles[f].Low });
+      var a = candles[f - 1], b = candles[f];
+      var lockA = !isNaN(a.High) && !isNaN(a.Low) && a.Low > 0 && (a.High - a.Low) / a.Low * 100 <= cfg.AB_CIRCUIT_LOCK_RANGE_PCT;
+      var lockB = !isNaN(b.High) && !isNaN(b.Low) && b.Low > 0 && (b.High - b.Low) / b.Low * 100 <= cfg.AB_CIRCUIT_LOCK_RANGE_PCT;
+      if (lockA || lockB || isNaN(a.High) || isNaN(b.Low) || !(a.High > 0) || !(b.Low > a.High)) continue;
+      var pct = (b.Low - a.High) / a.High * 100;
+      if (pct >= cfg.AB_GAPUP_MIN_PCT && pct <= cfg.AB_GAPUP_MAX_PCT) out.push({ kind: 'Gap-up', f: f, bottom: a.High, top: b.Low });
+    }
+    return out;
+  }
+
+  /** FVG+Spring for the Spring pair (i-1, i): the oldest zone formed before the pair (f <= i-2) that still holds (no
+   *  close below its bottom from f+1 to i-2) where candle i sits on the TOP (zone middle <= low <= top, close > top, the
+   *  zone's 1st or 2nd touch) or the BOTTOM (bottom x (1 - 1 %) <= low <= bottom, close > bottom).
+   *  -> {kind, f, bottom, top, where: 'top'|'bottom', touch} or null. */
+  function springZone(candles, i, zones) {
+    var c2 = candles[i];
+    for (var z = 0; z < zones.length; z++) {
+      var Z = zones[z];
+      if (Z.f > i - 2) break;
+      var top = Z.top, bottom = Z.bottom, where = null;
+      if (c2.Low <= top && c2.Low >= (bottom + top) / 2 && c2.Cls > top) where = 'top';
+      else if (c2.Low <= bottom && c2.Low >= bottom * (1 - SPRING_BOTTOM_TOL_PCT / 100) && c2.Cls > bottom) where = 'bottom';
+      if (!where) continue;
+      var holds = true, k;
+      for (k = Z.f + 1; k <= i - 2; k++) if (candles[k].Cls < bottom) { holds = false; break; }
+      if (!holds) continue;
+      var touch = 0;
+      for (k = Z.f + 1; k <= i; k++) if (candles[k].Low <= top && (k === Z.f + 1 || candles[k - 1].Low > top)) touch++;
+      if (where === 'top' && touch > SPRING_TOP_TOUCHES) continue;
+      return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch };
+    }
+    return null;
   }
 
   /** ab_longFvgDetail_ -> { tags, unmitigated, events }. cfg: Spring keys of patterns.js DEFAULTS. */
@@ -99,7 +150,7 @@
     for (i = 1; i < n; i++) {
       if (!isNaN(cont2High[i - 1]) && !isNaN(cont2High[i]) && candles[i - 1].Cls <= cont2High[i - 1] && candles[i].Cls > cont2High[i]) longCont2Conf[i] = true;
     }
-    // FVG+Spring (ab_longFvgDetail_): Spring pair i-1 -> i dipping into a gap formed before it that still holds
+    // FVG+Spring (ab_longFvgDetail_): Spring pair i-1 -> i on the top / bottom of an FVG or Gap-up zone formed before it
     var sc = cfgIn || {}, D = P.DEFAULTS;
     var springCfg = {
       bodyMin: sc.AB_SPRING_BODY_MIN_PCT != null ? sc.AB_SPRING_BODY_MIN_PCT : D.AB_SPRING_BODY_MIN_PCT,
@@ -107,18 +158,12 @@
       undercut: sc.AB_SPRING_UNDERCUT_PCT != null ? sc.AB_SPRING_UNDERCUT_PCT : D.AB_SPRING_UNDERCUT_PCT,
       reclaimMax: sc.AB_SPRING_RECLAIM_MAX_PCT != null ? sc.AB_SPRING_RECLAIM_MAX_PCT : D.AB_SPRING_RECLAIM_MAX_PCT
     };
-    var springSignal = new Array(n).fill(false);
+    var zones = springZones(candles, isFVGUp, cfgOf(cfgIn));
+    var springSignal = new Array(n).fill(false), springAt = {};
     for (i = 3; i < n; i++) {
       if (!P.isSpringPair(candles[i - 1], candles[i], springCfg)) continue;
-      var c2 = candles[i];
-      for (var g = 2; g <= i - 2 && !springSignal[i]; g++) {
-        if (!isFVGUp[g]) continue;
-        var gTop = candles[g].Low, gBottom = candles[g - 2].High;
-        if (!(c2.Low <= gTop && c2.Cls >= gBottom)) continue;
-        var holds = true;
-        for (k = g + 1; k <= i - 2; k++) if (candles[k].Cls < gBottom) { holds = false; break; }
-        if (holds) springSignal[i] = true;
-      }
+      var hit = springZone(candles, i, zones);
+      if (hit) { springSignal[i] = true; springAt[i] = hit; }
     }
     // Twin Star Bottom + FVG (ab_longFvgDetail_): c1 = i-2, stars i-1 and i, into a gap formed before c1 that still holds
     var twinSignal = new Array(n).fill(false);
@@ -186,7 +231,11 @@
       if (isFVGUp[i]) events.push({ i: i, t: candles[i].t, type: 'gap', top: candles[i].Low, bottom: candles[i - 2].High });
       if (ftSignal[i]) events.push({ i: i, t: candles[i].t, type: 'first-touch', top: fvgTop[i] });
       if (ftcSignal[i]) events.push({ i: i, t: candles[i].t, type: 'confirmed' });
-      if (springSignal[i]) events.push({ i: i, t: candles[i].t, type: 'fvg-spring' });
+      if (springSignal[i]) {
+        var sz = springAt[i];
+        events.push({ i: i, t: candles[i].t, type: 'fvg-spring', zone: sz.kind, where: sz.where, touch: sz.touch,
+          bottom: sz.bottom, top: sz.top, formedIdx: sz.f, formed: candles[sz.f].t });
+      }
       if (twinSignal[i]) events.push({ i: i, t: candles[i].t, type: 'fvg-twinstar' });
     }
     return { tags: tags, unmitigated: zone, events: events };
@@ -222,7 +271,7 @@
 
   /** Main/PatternData 'FVG' column text for the latest bar (col X). */
   function columnTags(candles, cfg) {
-    return longFvgDetail(candles).tags.concat(gapUpTags(candles, cfg)).join(', ');
+    return longFvgDetail(candles, cfg).tags.concat(gapUpTags(candles, cfg)).join(', ');
   }
 
   /** Watch zones as the GapUpFVG / UnmitigatedFVG tabs build them: liquidity
@@ -297,7 +346,8 @@
   }
 
   return {
-    DEFAULTS: DEFAULTS, isCircuitLocked: isCircuitLocked, avgTurnover: avgTurnover, longFvgDetail: longFvgDetail,
+    DEFAULTS: DEFAULTS, SPRING_BOTTOM_TOL_PCT: SPRING_BOTTOM_TOL_PCT, SPRING_TOP_TOUCHES: SPRING_TOP_TOUCHES,
+    isCircuitLocked: isCircuitLocked, avgTurnover: avgTurnover, longFvgDetail: longFvgDetail, springZones: springZones, springZone: springZone,
     gapUpFvgs: gapUpFvgs, gapUpTags: gapUpTags, columnTags: columnTags, watchZones: watchZones,
     approachState: approachState, classifyMitigation: classifyMitigation, MIT_LABELS: MIT_LABELS,
     fillState: fillState, bearishGaps: bearishGaps
