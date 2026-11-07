@@ -12199,3 +12199,128 @@ function ab_opmQtrYoyBackfill_(layout, cols, touched) {
   if (n && vals.length) layout.sheet.getRange(first + 1, c + 1, vals.length, 1).setValues(vals);
   return n;
 }
+
+// ---------------------------------------------------------------------
+// INTRADAY / WEEKLY / MONTHLY PATTERNS - Zerodha Kite via the PC bridge (owner, 07-Nov-2026: "PARAGMILK - in the 4 hour
+// timeframe a Spring candlestick pattern formed in an FVG; due to lack of this intraday data I missed this opportunity").
+// The PC program (kite_intraday.py) reads Kite's 15-minute + daily candles of PatternData's stocks once a trading day
+// after the close (the owner logs in to Kite once a day), builds 15m / 30m / 1H / 2H / 4H / D / W / M candles and finds
+// the Spring pattern and "Spring in FVG" (the sheet's ab_isSpringPair_ / FVG+Spring rules; 15m / 30m: Spring in FVG only).
+// doPost action 'intraday': {op: 'syms'} -> PatternData's symbols; {op: 'put', upto, since, items: [{sym, tf, pattern,
+// candle, session, low, close, zone: [bottom, top, formed] | null}]} -> tab "Intraday Patterns": row 1 note, row 2
+// headers, one row per stock | timeframe | pattern | candle, newest session first, kept AB_ITD_KEEP_DAYS days; Chart =
+// TradingView at that timeframe. The website gets Session / Symbol / Company / Timeframe / Pattern / Candle / FVG Formed
+// only (Code.gs ab_site_itd_) - no Kite prices: Kite's data is for the owner's own use.
+const AB_ITD_SHEET = 'Intraday Patterns';
+const AB_ITD_HEADERS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close',
+  'FVG Bottom', 'FVG Top', 'Found'];
+const AB_ITD_TFS = ['M', 'W', 'D', '4H', '2H', '1H', '30m', '15m'];          // the tab's order: the biggest timeframe first
+const AB_ITD_PATTERNS = ['Spring in FVG', 'Spring'];
+const AB_ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
+const AB_ITD_KEEP_DAYS = 30;
+const AB_ITD_MAX_ITEMS = 2000;            // per post (the PC sends 400 at a time)
+
+/** TradingView's chart of the stock at that timeframe. */
+function ab_itdTvUrl_(sym, tf) {
+  return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '&interval=' + AB_ITD_TV[tf];
+}
+
+/** Main's company names by symbol (first row of a symbol). */
+function ab_itdNames_() {
+  const out = {};
+  try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MAIN_SHEET);
+    if (!sh || sh.getLastRow() < 2) return out;
+    const head = sh.getRange(1, 1, Math.min(10, sh.getLastRow()), sh.getLastColumn()).getValues();
+    let hr = -1, ni = -1, si = -1;
+    for (let r = 0; r < head.length && hr === -1; r++) {
+      const row = head[r].map(function (v) { return String(v).trim(); });
+      if (row.indexOf('StockName') !== -1 && row.indexOf('SYMBOL') !== -1) { hr = r; ni = row.indexOf('StockName'); si = row.indexOf('SYMBOL'); }
+    }
+    if (hr === -1 || sh.getLastRow() <= hr + 1) return out;
+    const vals = sh.getRange(hr + 2, 1, sh.getLastRow() - hr - 1, Math.max(ni, si) + 1).getValues();   // only up to those two columns
+    vals.forEach(function (v) {
+      const sym = ab_cellText_(v[si]).toUpperCase();
+      if (sym && out[sym] === undefined) out[sym] = ab_cellText_(v[ni]);
+    });
+  } catch (e) { Logger.log('Intraday Patterns: Main names not read - ' + e.message); }
+  return out;
+}
+
+function ab_itdNum_(v) {
+  const n = Number(v);
+  return v !== null && v !== '' && isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : '';
+}
+
+/** The tab's rows as objects (row 3 on). */
+function ab_itdRead_(sh) {
+  if (sh.getLastRow() < 3) return [];
+  const vals = sh.getRange(3, 1, sh.getLastRow() - 2, AB_ITD_HEADERS.length).getValues();
+  const txt = function (v) { return v === null || v === undefined ? '' : String(v).trim(); };
+  return vals.filter(function (v) { return txt(v[1]); }).map(function (v) {
+    return { session: txt(v[0]), sym: txt(v[1]).toUpperCase(), company: txt(v[2]), tf: txt(v[3]), pattern: txt(v[4]), candle: txt(v[5]),
+             formed: txt(v[6]), low: v[8], close: v[9], bottom: v[10], top: v[11], found: txt(v[12]) };
+  });
+}
+
+function ab_itdFromBridge_(req) {
+  if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_() };
+  if (req.op !== 'put') return { ok: false, error: 'unknown intraday request - update screener_bridge.py + kite_intraday.py on the PC' };
+  const items = Array.isArray(req.items) ? req.items : null;
+  if (!items) return { ok: false, error: 'items missing' };
+  if (items.length > AB_ITD_MAX_ITEMS) return { ok: false, error: 'too many patterns in one post (at most ' + AB_ITD_MAX_ITEMS + ')' };
+  const want = {};
+  ab_p1Symbols_().forEach(function (s) { want[s] = true; });
+  const found = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  const sh = ab_getOrCreateSheet_(AB_ITD_SHEET);
+  const byKey = {};
+  const key = function (r) { return r.sym + '|' + r.tf + '|' + r.pattern + '|' + r.candle; };
+  ab_itdRead_(sh).forEach(function (r) { byKey[key(r)] = r; });
+  const names = items.length ? ab_itdNames_() : {};
+  let added = 0, skipped = 0;
+  items.forEach(function (it) {
+    const sym = String(it && it.sym || '').trim().toUpperCase();
+    const tf = String(it && it.tf || ''), pattern = String(it && it.pattern || '');
+    const candle = String(it && it.candle || ''), session = String(it && it.session || '');
+    if (!want[sym] || !AB_ITD_TV[tf] || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
+        !/^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(candle) || !/^\d{4}-\d{2}-\d{2}$/.test(session)) { skipped++; return; }
+    const z = Array.isArray(it.zone) ? it.zone : null;
+    const r = { session: session, sym: sym, company: names[sym] || '', tf: tf, pattern: pattern, candle: candle,
+                formed: z && /^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(String(z[2])) ? String(z[2]) : '',
+                low: ab_itdNum_(it.low), close: ab_itdNum_(it.close), bottom: z ? ab_itdNum_(z[0]) : '', top: z ? ab_itdNum_(z[1]) : '', found: found };
+    const k = key(r);
+    if (byKey[k]) r.found = byKey[k].found || found;
+    else added++;
+    byKey[k] = r;
+  });
+  const cutoff = Utilities.formatDate(new Date(Date.now() - AB_ITD_KEEP_DAYS * 86400000), AB_TZ, 'yyyy-MM-dd');
+  const rows = Object.keys(byKey).map(function (k) { return byKey[k]; }).filter(function (r) { return r.session >= cutoff; });
+  rows.sort(function (a, b) {
+    if (a.session !== b.session) return a.session < b.session ? 1 : -1;
+    const t = AB_ITD_TFS.indexOf(a.tf) - AB_ITD_TFS.indexOf(b.tf);
+    if (t) return t;
+    const p = AB_ITD_PATTERNS.indexOf(a.pattern) - AB_ITD_PATTERNS.indexOf(b.pattern);
+    if (p) return p;
+    if (a.candle !== b.candle) return a.candle < b.candle ? 1 : -1;
+    return a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0;
+  });
+  const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
+  const note = 'Spring and Spring in FVG from Zerodha Kite candles (your PC program): 15m and 30m (Spring in FVG only), 1H, 2H, 4H ' +
+    '(09:15-13:15 / 13:15-15:30), D, W, M - the sheet\'s Spring and FVG+Spring rules. ' + (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
+    'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
+  const out = rows.map(function (r) {
+    return [r.session, r.sym, r.company, r.tf, r.pattern, r.candle, r.formed,
+      '=HYPERLINK("' + ab_itdTvUrl_(r.sym, r.tf) + '","' + r.tf + ' chart")', r.low, r.close, r.bottom, r.top, r.found];
+  });
+  sh.clearContents();
+  sh.getRange(1, 1).setValue(note);
+  sh.getRange(2, 1, 1, AB_ITD_HEADERS.length).setValues([AB_ITD_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  if (out.length) {
+    const n = out.length;
+    [1, 2, 3, 4, 5, 6, 7, 13].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
+    sh.getRange(3, 9, n, 4).setNumberFormat('0.00');
+    sh.getRange(3, 1, n, AB_ITD_HEADERS.length).setValues(out);
+  }
+  sh.setFrozenRows(2);
+  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length };
+}

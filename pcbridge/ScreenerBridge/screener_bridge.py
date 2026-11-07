@@ -35,6 +35,11 @@ Results tab are added to it (the tab Main's Result Date reads).
 XbrlCheck.bat (test only, nothing sent): NSE's XBRL results files of the symbols
 you type, read and compared with screener.in.
 
+And, with your Zerodha Kite Connect app (KiteSetup.bat; kite_intraday.py): once a trading
+day after the close, the 15-minute and daily candles of the sheet's stocks -> Spring and
+"Spring in FVG" on 15m / 30m / 1H / 2H / 4H / D / W / M -> the "Intraday Patterns" tab.
+It asks you to log in to Kite once a day (Zerodha's rule) by opening the login page.
+
 After you log in it stays in the background (no window) while the computer is on:
 every 30 minutes a quick results check (NSE's result filings -> the XBRL filings of
 the results filed -> moneycontrol for those without XBRL yet -> the sheet writes them
@@ -54,6 +59,9 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py calendar   add NSE's forthcoming result meetings missing from the Results tab now
   python screener_bridge.py moneycontrol SYMBOL   show moneycontrol's latest quarterly results (test, nothing sent)
   python screener_bridge.py xbrl SYMBOL   read NSE's XBRL results files and compare them with screener.in (test, nothing sent)
+  python screener_bridge.py kitesetup  your Kite Connect API key + secret, then the first Kite login
+  python screener_bridge.py intraday   the Kite intraday / weekly / monthly pattern scan now (asks for the login if needed)
+  python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -109,6 +117,9 @@ DEFAULTS = {
     'max_moneycontrol_per_run': 40,
     'quick_check_minutes': 30,    # while the computer is on: the results check (NSE XBRL first) this often; 0 = off
     'full_round_every_hours': 3,  # ... and a full round (screener.in, IPOs, end-of-day ...) this often; 0 = only at log-in
+    'intraday': True,          # Kite candles -> Spring / Spring in FVG on 15m-30m-1H-2H-4H-D-W-M (needs KiteSetup.bat)
+    'kite_api_key': '',        # your Kite Connect app (developers.kite.trade) - KiteSetup.bat fills these two
+    'kite_api_secret': '',
 }
 
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -132,6 +143,22 @@ def log(msg):
             f.write(line + '\n')
     except Exception:
         pass
+
+
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import kite_intraday as itd   # noqa: E402  (Zerodha Kite: intraday / weekly / monthly patterns)
+itd.log = log
+
+
+def nse_holidays():
+    """NSE's trading holidays saved by the IPO step (ipo_state.json), as a set of 'yyyy-mm-dd'."""
+    try:
+        with open(IPO_STATE_PATH, 'r', encoding='utf-8') as f:
+            h = (json.load(f).get('holidays') or {}).get('days') or []
+        return set(str(d) for d in h)
+    except (OSError, ValueError, AttributeError):
+        return set()
 
 
 def load_config():
@@ -3703,6 +3730,7 @@ def cmd_test(cfg):
         print('   (nothing was sent)')
     except Exception as e:
         print('   PROBLEM - %s' % e)
+    print('9) Zerodha Kite (intraday patterns): ' + itd.status_line(cfg))
     return 0 if ok else 1
 
 
@@ -3792,6 +3820,10 @@ def run_after_login(cfg):
     quick_s = max(0.0, float(cfg.get('quick_check_minutes') or 0)) * 60
     every_s = max(0.0, float(cfg.get('full_round_every_hours') or 0)) * 3600
     fulls, next_full, next_quick, offline = 0, time.time(), None, False
+    runner = itd.Runner()       # the Kite scan, once a trading day after the close, in its own thread
+    if itd.configured(cfg) and cfg.get('intraday', True):
+        log('Kite intraday patterns: on - after each trading day\'s close (or the next time this computer is on) the '
+            'program asks you to log in to Kite once and then scans the candles.')
     if quick_s or every_s:
         log('Background program started: a full round now%s%s.' % (
             ', in %d minutes and then every %g hours' % (SECOND_RUN_AFTER_MIN, every_s / 3600) if every_s
@@ -3822,6 +3854,10 @@ def run_after_login(cfg):
                     gap = SECOND_RUN_AFTER_MIN * 60 if fulls == 1 else every_s
                     next_full = time.time() + gap if gap else None
                 next_quick = time.time() + quick_s if quick_s else None
+        try:
+            runner.maybe_start(cfg, api, nse_holidays())
+        except Exception as e:
+            log('Kite: could not start the scan - %s' % e)
         loop_sleep(LOOP_TICK_S)
     return 0
 
@@ -3968,6 +4004,21 @@ def main(argv):
             return 1
         price_bands_step(dict(cfg, price_bands=True))
         return 0
+    if cmd == 'kitesetup':
+        return itd.setup(cfg, save_config)
+    if cmd == 'intraday':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        n = itd.intraday_step(dict(cfg, intraday=True), api, nse_holidays(), force=True)
+        return 0 if n is not None else 1
+    if cmd == 'intradaycheck':
+        print('Kite candle check - Spring / Spring in FVG of one stock (nothing is sent to the sheet)')
+        try:
+            return itd.check(cfg, argv[2:], nse_holidays())
+        except (itd.KiteError, itd.NeedLogin) as e:
+            print('PROBLEM - %s' % e)
+            return 1
     if cmd == 'login':
         return run_after_login(cfg)
     if cmd == 'quick':

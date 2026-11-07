@@ -28,8 +28,33 @@ computer is on - no time limit:
  - CalendarNow.bat        add NSE's forthcoming result meetings missing from the Results tab right now
  - MoneycontrolCheck.bat   show the latest quarterly results moneycontrol has for the symbols you type (sends nothing)
  - XbrlCheck.bat           read NSE's XBRL results files for the symbols you type and compare them with screener.in (sends nothing)
+ - KiteSetup.bat           one time: your Zerodha Kite Connect app's API key + secret, then the first Kite login
+ - IntradayNow.bat         the Kite intraday / weekly / monthly pattern scan right now (opens the login page if needed)
+ - IntradayCheck.bat       one stock's Spring check on Kite's candles, e.g. PARAGMILK 4H (sends nothing)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
+
+ZERODHA KITE - INTRADAY / WEEKLY / MONTHLY PATTERNS (kite_intraday.py)
+The sheet only has daily candles. With your Kite Connect app (developers.kite.trade, the paid "Connect" plan,
+Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1H / 2H / 4H / D / W / M candles:
+ 1. One time: double-click KiteSetup.bat, paste the app's API key and API secret (the secret stays hidden while you
+    paste), then log in on the Zerodha page that opens. The app's Redirect URL must be  http://127.0.0.1:8765/kite
+    (= this computer; the login page hands the day's permission to this program and to nothing else).
+ 2. Every trading day after 3:40 PM - or the next time this computer is on - the background program opens the Zerodha
+    login page once (Zerodha's rule: one manual login a day; the permission ends at 6 AM). Log in and close the tab;
+    it then reads the candles by itself (~20-30 minutes in the background for ~1,800 stocks the first time, less after).
+    Not logged in within 45 minutes: it asks again 2 hours later (at most 4 times a day) - or double-click IntradayNow.bat.
+    If the page says "This site can't be reached" after you log in, the program had stopped waiting: IntradayNow.bat.
+ 3. It finds the sheet's Spring pattern and "Spring in FVG" (a Spring dipping into a 3-candle FVG that still holds - the
+    sheet's FVG+Spring rule) on every timeframe (15m and 30m: only Spring in FVG) and sends them to the sheet's
+    "Intraday Patterns" tab (kept 30 days; the Chart column opens TradingView at that timeframe). The website's
+    Patterns & FVG page lists them too (no prices - Kite's data is for your own use).
+ - The candles are kept in the folder intraday_data (only the new days are read after the first time); the day's
+   Kite permission in kite_session.json. Both stay on this computer.
+ - 4H candles = 09:15-13:15 and 13:15-15:30 (like TradingView); a week / month only once it has finished.
+ - IntradayCheck.bat PARAGMILK 4H 2026-10-30 shows every Spring in Kite's candles of that stock and, for each pair of
+   that day, which part of the Spring rule passed or failed (sends nothing).
+ - To switch it off: in config.json  "intraday": false
 
 NSE PRICE BAND CHANGES (no more copy/paste)
 Every round also downloads NSE's "Price Band changes from next trade date (csv)"

@@ -79,6 +79,12 @@ const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
 RP_ROW[RPT.cols.indexOf('Result Day %')] = 14.5;
 RP_ROW[RPT.cols.indexOf('Pre-Result Close')] = 100;
 RP_ROW[RPT.cols.indexOf('Result Day Close')] = 106;
+// Zerodha Kite patterns (site feed format 9, part 'intraday' - the PC program's "Intraday Patterns" tab, no prices)
+LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles (your PC program) ... Last scan: session 2026-10-20 (2026-10-20 19:05). Kept 30 days.',
+  cols: ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed'],
+  rows: [['2026-10-20', FLAG_SYM, 'Flag Co', '4H', 'Spring in FVG', '2026-10-20 13:15', '2026-08-24 09:15'],
+    ['2026-10-20', FLAG_SYM, 'Flag Co', '1H', 'Spring', '2026-10-20 14:15', null],
+    ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null]] };
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -814,6 +820,32 @@ function check(name, fn) {
     assert.ok(calls.every((u) => u.indexOf(new URL(base).origin) === 0), 'same-origin API only');
   });
 
+  await check('Patterns & FVG: Zerodha intraday / weekly patterns from the live feed, timeframe chips, TradingView buttons', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), []);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#signals', { waitUntil: 'load' });
+    await p.waitForSelector('#sg-itd-t table', { timeout: 15000 });
+    const r = await p.evaluate(() => ({
+      count: document.querySelector('#sg-itd-count').textContent,
+      chips: [...document.querySelectorAll('[data-chip="sgitdtf"]')].map((b) => b.textContent),
+      links: [...document.querySelectorAll('#sg-itd-t a.btn')].map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target')]),
+      note: document.querySelector('#sg-itd .card-head p').textContent,
+      jump: !!document.querySelector('[data-jump="sg-itd"]')
+    }));
+    assert.strictEqual(r.count, '3 of 3');
+    assert.deepStrictEqual(r.chips, ['All timeframes (3)', '1H (1)', '4H (1)', 'W (1)']);
+    assert.ok(r.links.some((l) => l[0] === 'TradingView 4H ↗' && l[1] === 'https://www.tradingview.com/chart/?symbol=NSE%3A' + encodeURIComponent(FLAG_SYM) + '&interval=240' && l[2] === '_blank'), JSON.stringify(r.links));
+    assert.match(r.note, /Last scan: session 2026-10-20/);
+    assert.ok(r.jump, 'in the page\'s jump chips');
+    await p.click('[data-chip="sgitdtf"][data-v="4H"]');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 3');
+    await p.click('[data-chip="sgitdp"][data-v="Spring"]');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 3');
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    await c.close();
+  });
   await check('result flags: pills in the Results tables and the stock drawer (live feed with the tracker\'s Flags)', async () => {
     const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
     await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
