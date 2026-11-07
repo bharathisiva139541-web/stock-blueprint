@@ -13,6 +13,10 @@ pcbridge/ScreenerBridge/run_state.json
 pcbridge/ScreenerBridge/ipo_state.json
 pcbridge/ScreenerBridge/xbrl_state.json
 pcbridge/ScreenerBridge/bridge_loop.json
+pcbridge/ScreenerBridge/kite_session.json
+pcbridge/ScreenerBridge/kite_instruments.json
+pcbridge/ScreenerBridge/intraday_state.json
+pcbridge/ScreenerBridge/intraday_data/
 .clasprc.json
 *.token
 .env

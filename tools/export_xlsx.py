@@ -195,6 +195,27 @@ def note_table(rows, first_header, **kw):
     return {'note': str(first).strip() if first != '' else '', 'cols': t['cols'], 'rows': t['rows']}
 
 
+# Code.gs AB_SITE_ITD_COLS / ab_site_itd_(): the Intraday Patterns tab (Zerodha Kite via the PC bridge) - which pattern
+# formed when, no prices; the newest INTRADAY_SESSIONS sessions, at most INTRADAY_MAX rows
+INTRADAY_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed']
+INTRADAY_SESSIONS = 10
+INTRADAY_MAX = 4000
+
+
+def intraday_patterns(rows):
+    t = note_table(rows, 'Session', stop_blank=False, kinds={'Session': 'str', 'Candle': 'str', 'FVG Formed': 'str'})
+    idx = [t['cols'].index(c) if c in t['cols'] else -1 for c in INTRADAY_COLS]
+    si = idx[0]
+    days = []
+    for r in t['rows']:
+        d = r[si] if si != -1 else None
+        if d and d not in days:
+            days.append(d)
+    keep = sorted(days, reverse=True)[:INTRADAY_SESSIONS]
+    out = [[(r[i] if i != -1 else None) for i in idx] for r in t['rows'] if si != -1 and r[si] in keep][:INTRADAY_MAX]
+    return {'note': t['note'], 'cols': list(INTRADAY_COLS), 'rows': out}
+
+
 IPO_SECTIONS = {'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming', 'listed recently': 'listed'}
 
 
@@ -358,6 +379,8 @@ def export(path):
         data['high52'] = note_table(rows_of(wb['52 Week High']), 'Symbol', stop_blank=False)
     if 'Delivery %' in wb.sheetnames:
         data['delivery'] = table(rows_of(wb['Delivery %']), 'Symbol', stop_blank=False)
+    if 'Intraday Patterns' in wb.sheetnames:
+        data['intraday'] = intraday_patterns(rows_of(wb['Intraday Patterns']))
 
     export_history(wb, data.get('asOf'))
     export_history60(wb)

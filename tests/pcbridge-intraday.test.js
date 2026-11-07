@@ -1,0 +1,80 @@
+'use strict';
+// PC bridge, Zerodha Kite (pcbridge/ScreenerBridge/kite_intraday.py): owner, 07-Nov-2026 - "PARAGMILK, in the 4 hour
+// timeframe a Spring candlestick pattern formed in an FVG; due to lack of intraday data I missed this opportunity".
+// 1. the offline checks (candles of every timeframe, sessions, login, download, a whole scan): tests/fixtures/pcbridge_intraday_check.py
+// 2. the Python copy of the rules = the website's (= Code.gs): Spring (web/lib/patterns.js isSpringPair / patternsAt) and
+//    Spring in FVG (web/lib/fvg.js longFvgDetail 'fvg-spring' events) on random candles. Skipped without python3.
+const test = require('node:test');
+const assert = require('node:assert');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const P = require('../web/lib/patterns.js');
+const FVG = require('../web/lib/fvg.js');
+
+const py = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).status === 0);
+
+test('PC bridge Kite intraday (python, offline)', { skip: !py && 'python3 not installed' }, () => {
+  const r = spawnSync(py, [path.join(__dirname, 'fixtures', 'pcbridge_intraday_check.py')], { encoding: 'utf8', timeout: 120000 });
+  assert.strictEqual(r.status, 0, (r.stdout || '').slice(-1500) + (r.stderr || '').slice(-1500));
+  assert.ok(/(^|\n)OK\s*$/.test(r.stdout), r.stdout.slice(-500));
+});
+
+/** Random candles with many gaps and Spring-like pairs (seeded). */
+function series(seed, n) {
+  let s = seed;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  const out = [];
+  let px = 100 + rnd() * 400;
+  for (let i = 0; i < n; i++) {
+    const r = rnd();
+    let o, c, h, l;
+    if (r < 0.07) {                                   // a jump: leaves a 3-candle gap now and then
+      o = px * (1 + rnd() * 0.01); c = o * (1.04 + rnd() * 0.08);
+      h = c * (1 + rnd() * 0.004); l = o * (1 - rnd() * 0.004);
+    } else if (r < 0.2 && out.length) {               // a red candle then a Spring-like candle
+      o = px; c = o * (1 - 0.004 - rnd() * 0.03); h = o * (1 + rnd() * 0.004); l = c * (1 - rnd() * 0.004);
+      out.push({ t: 'x' + out.length, o: o, h: h, l: l, c: c, v: 1000 });
+      const under = l * (1 - (rnd() < 0.85 ? 0.0012 + rnd() * 0.02 : rnd() * 0.001));
+      const close = l + (o - l) * (rnd() * 0.4) * (rnd() < 0.9 ? 1 : -1);
+      const open2 = close + (o - c) * (rnd() * 0.4 - 0.2);
+      o = open2; c = close; l = Math.min(under, o, c); h = Math.max(o, c) + (rnd() < 0.8 ? 0 : (h - l) * rnd());
+      i++;
+    } else {
+      o = px; c = px * (1 + (rnd() - 0.5) * 0.03);
+      h = Math.max(o, c) * (1 + rnd() * 0.01); l = Math.min(o, c) * (1 - rnd() * 0.01);
+    }
+    const r2 = (x) => Math.round(x * 100) / 100;
+    out.push({ t: 'x' + out.length, o: r2(o), h: r2(Math.max(h, o, c)), l: r2(Math.min(l, o, c)), c: r2(c), v: 1000 });
+    px = c;
+  }
+  return out;
+}
+
+test('the Python Spring / Spring in FVG = the website\'s (and the sheet\'s) rules, on random candles', { skip: !py && 'python3 not installed' }, () => {
+  const all = [];
+  for (let k = 0; k < 60; k++) all.push(series(1000 + k * 7919, 120 + (k % 5) * 40));
+  const js = all.map((cs) => ({
+    springs: cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf('Spring') >= 0),
+    fvg: FVG.longFvgDetail(cs).events.filter((e) => e.type === 'fvg-spring').map((e) => e.i)
+  }));
+  const code = [
+    'import importlib.util, json, sys',
+    'spec = importlib.util.spec_from_file_location("k", sys.argv[1])',
+    'K = importlib.util.module_from_spec(spec); spec.loader.exec_module(K)',
+    'out = []',
+    'for cs in json.load(sys.stdin):',
+    '    out.append({"springs": K.springs(cs), "fvg": sorted(K.fvg_spring(cs))})',
+    'print(json.dumps(out))'
+  ].join('\n');
+  const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'kite_intraday.py')],
+    { input: JSON.stringify(all), encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 26 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const pyOut = JSON.parse(r.stdout);
+  let springs = 0, fvg = 0;
+  js.forEach((j, k) => {
+    assert.deepStrictEqual(pyOut[k].springs, j.springs, 'Spring, series ' + k);
+    assert.deepStrictEqual(pyOut[k].fvg, j.fvg, 'Spring in FVG, series ' + k);
+    springs += j.springs.length; fvg += j.fvg.length;
+  });
+  assert.ok(springs > 150 && fvg > 15, 'the random candles exercise both rules: ' + springs + ' Springs, ' + fvg + ' in an FVG');
+});

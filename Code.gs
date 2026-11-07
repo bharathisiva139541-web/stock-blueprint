@@ -9009,6 +9009,9 @@ function doPost(e) {
     if (req.action === 'calendar') {
       return ab_bridgeJson_(ab_calFromBridge_(req));
     }
+    if (req.action === 'intraday') {
+      return ab_bridgeJson_(ab_itdFromBridge_(req));      // Zerodha Kite patterns (Code2.gs)
+    }
     return ab_bridgeJson_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return ab_bridgeJson_({ ok: false, error: err.message });
@@ -9276,7 +9279,29 @@ function ab_site_main_(cx, readAt) {
   if (hi) data.high52 = ab_site_noteTable_(cx, hi, 'Symbol', { stopBlank: false });
   const dl = ab_site_tab_(cx, 'Delivery %');
   if (dl) data.delivery = ab_site_table_(cx, dl, 'Symbol', { stopBlank: false });
+  // Zerodha Kite patterns (PC bridge): which pattern formed when - no prices (Kite's data is for the owner's own use)
+  const itd = ab_site_tab_(cx, 'Intraday Patterns');
+  if (itd) data.intraday = ab_site_itd_(cx, itd);
   return data;
+}
+
+// export_xlsx.py INTRADAY_COLS / intraday_patterns(): the columns the website may show and how much of the tab
+const AB_SITE_ITD_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed'];
+const AB_SITE_ITD_SESSIONS = 10;
+const AB_SITE_ITD_MAX = 4000;
+
+/** The "Intraday Patterns" tab -> {note, cols, rows}: the allowed columns, the newest AB_SITE_ITD_SESSIONS sessions. */
+function ab_site_itd_(cx, tab) {
+  const t = ab_site_noteTable_(cx, tab, 'Session', { stopBlank: false, kinds: { Session: 'str', Candle: 'str', 'FVG Formed': 'str' } });
+  const idx = AB_SITE_ITD_COLS.map(function (c) { return t.cols.indexOf(c); });
+  const si = idx[0];
+  const days = [];
+  t.rows.forEach(function (r) { const d = si === -1 ? null : r[si]; if (d && days.indexOf(d) === -1) days.push(d); });
+  days.sort().reverse();
+  const keep = days.slice(0, AB_SITE_ITD_SESSIONS);
+  const rows = t.rows.filter(function (r) { return si !== -1 && keep.indexOf(r[si]) !== -1; }).slice(0, AB_SITE_ITD_MAX)
+    .map(function (r) { return idx.map(function (i) { return i === -1 ? null : r[i]; }); });
+  return { note: t.note, cols: AB_SITE_ITD_COLS.slice(), rows: rows };
 }
 
 /** export_xlsx.py note_table(): a table plus the tab's first cell as its note. */
@@ -9775,7 +9800,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 8;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy)
+const AB_SITE_FEED_FORMAT = 9;   // 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

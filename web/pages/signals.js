@@ -20,8 +20,14 @@
     pdQ: '', pdF: 'all',
     btMin: 4, btType: 'all', btCat: '', btQ: '',
     mlQ: '', mlType: 'all',
-    wlQ: '', wlSrc: 'all'
+    wlQ: '', wlSrc: 'all',
+    itdQ: '', itdTf: 'all', itdPat: 'all'
   };
+  // Zerodha Kite patterns (owner, 07-Nov-2026: the 4H Spring in FVG of PARAGMILK missed for lack of intraday candles):
+  // the sheet's "Intraday Patterns" tab, filled by the PC program once a trading day after the close (feed part 'intraday')
+  var ITD_TFS = ['15m', '30m', '1H', '2H', '4H', 'D', 'W', 'M'];
+  var ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
+  function tvUrl(sym, tf) { return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '&interval=' + (ITD_TV[tf] || 'D'); }
   var CACHE = null;               // candle-derived results, computed once per history file
 
   var FVG_KINDS = [['all', 'Any FVG state'], ['ft', 'First Touch'], ['conf', 'Confirmed'], ['unmit', 'Unmitigated'], ['gap', 'Gap-up'], ['spring', 'FVG+Spring'], ['twin', 'Twin Star + FVG']];
@@ -153,9 +159,12 @@
         'The top sections are recomputed in your browser from the daily candles with the same rules as your sheet; the lower sections are snapshots of the sheet\'s own tabs. ' +
         'These are chart conditions to research, not buy recommendations.</p></div></div>';
       h += '<nav class="chips" aria-label="On this page">' + [
-        ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
+        ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
         ['sg-tabs', 'Sheet FVG tabs'], ['sg-bt', 'FVG backtest'], ['sg-ml', 'Mitigated log'], ['sg-wl', 'Signal log']
       ].map(function (j) { return '<button type="button" class="chip" data-jump="' + j[0] + '">' + esc(j[1]) + '</button>'; }).join('') + '</nav>';
+
+      // 0. Zerodha Kite: intraday / weekly / monthly patterns found by the PC program
+      h += itdSectionHtml(ctx);
 
       // 1. live recompute
       h += sectionHtml('sg-live', 'Live recompute from candles',
@@ -225,6 +234,7 @@
         window.scrollTo(0, Math.max(0, y));
       });
 
+      drawItd(el, ctx);
       drawSnapshot(el, ctx);
       drawBacktest(el, ctx);
       drawLogs(el, ctx);
@@ -247,6 +257,60 @@
       });
     }
   });
+
+  function itdRows(ctx) { return ui.objRows(ctx.D.intraday); }
+  function itdSectionHtml(ctx) {
+    var it = ctx.D.intraday, rows = itdRows(ctx);
+    var sub = 'Spring and <b>Spring in FVG</b> found by your PC program on Zerodha Kite candles - 15m and 30m (Spring in FVG only), 1H, 2H, ' +
+      '4H (09:15-13:15 / 13:15-15:30), D, W, M - with the same rules as your sheet, once a trading day after the close. ' +
+      'The button opens TradingView\'s own chart at that timeframe. ' + (it && it.note ? '<span class="sub">' + esc(String(it.note).replace(/^.*?(Last scan:[^.]*\.?).*$/, '$1')) + '</span>' : '');
+    var body;
+    if (!rows.length) {
+      body = '<p class="empty">Nothing yet. These come from your PC program\'s daily Zerodha Kite scan: double-click <b>KiteSetup.bat</b> in the ScreenerBridge folder once, ' +
+        'then log in to Kite when the program opens the login page after the close.</p>';
+    } else {
+      var tfN = {}, patN = {};
+      rows.forEach(function (r) { tfN[r.Timeframe] = (tfN[r.Timeframe] || 0) + 1; patN[r.Pattern] = (patN[r.Pattern] || 0) + 1; });
+      body = '<div class="controls"><input class="search" id="sg-itd-q" type="search" placeholder="Search symbol or company" aria-label="Search intraday patterns" value="' + esc(ST.itdQ) + '">' +
+        '<span class="count" id="sg-itd-count"></span></div>' +
+        '<div class="controls">' + ui.chips('sgitdtf', [['all', 'All timeframes (' + F.int(rows.length) + ')']].concat(ITD_TFS.filter(function (t) { return tfN[t]; })
+          .map(function (t) { return [t, t + ' (' + F.int(tfN[t]) + ')']; })), ST.itdTf) + '</div>' +
+        '<div class="controls">' + ui.chips('sgitdp', [['all', 'Both patterns'], ['Spring in FVG', 'Spring in FVG (' + F.int(patN['Spring in FVG'] || 0) + ')'],
+          ['Spring', 'Spring (' + F.int(patN.Spring || 0) + ')']], ST.itdPat) + '</div><div id="sg-itd-t"></div>';
+    }
+    return sectionHtml('sg-itd', 'Intraday, weekly & monthly patterns (Zerodha)', sub, body);
+  }
+  function drawItd(el, ctx) {
+    var box = $('#sg-itd-t', el);
+    if (!box) return;
+    var all = itdRows(ctx);
+    var t = new ui.Table({
+      rows: [], pageSize: 25, id: 'signals-intraday', empty: 'No pattern with these filters',
+      columns: [
+        { key: 'Session', label: 'Session', type: 'date' },
+        { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
+        { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
+        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' ? 's-good' : ''); } },
+        { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },
+        { key: 'FVG Formed', label: 'FVG formed', title: 'When the fair value gap the Spring dipped into formed (same timeframe)' },
+        { key: 'chart', label: 'Chart', get: function () { return null; },
+          html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
+      ]
+    }).mount(box);
+    function apply() {
+      var rows = all.filter(function (r) {
+        return (ST.itdTf === 'all' || r.Timeframe === ST.itdTf) && (ST.itdPat === 'all' || r.Pattern === ST.itdPat) && ui.textMatch(ST.itdQ, [r.Symbol, r.Company]);
+      });
+      var c = $('#sg-itd-count', el);
+      if (c) c.textContent = F.int(rows.length) + ' of ' + F.int(all.length);
+      t.setRows(rows);
+    }
+    ui.bindChips(el, 'sgitdtf', function (v) { ST.itdTf = v; apply(); });
+    ui.bindChips(el, 'sgitdp', function (v) { ST.itdPat = v; apply(); });
+    var q = $('#sg-itd-q', el), timer;
+    if (q) q.addEventListener('input', function (e) { clearTimeout(timer); timer = setTimeout(function () { ST.itdQ = e.target.value.trim(); apply(); }, 120); });
+    apply();
+  }
 
   function defsHtml() {
     return '<details style="margin-top:14px"><summary style="cursor:pointer"><b>How these FVG rules work</b> <span class="sub">(definitions from your sheet\'s Code.gs)</span></summary>' +
