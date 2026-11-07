@@ -70,6 +70,10 @@ TIMEFRAMES = ('15m', '30m', '1H', '2H', '4H', 'D', 'W', 'M')       # all it can 
 # the timeframes the daily scan reports (owner, 08-Nov-2026, after the first scan found ~680 patterns a day: "I want the spring
 # pattern to be tracked only in this time frame 4hr, D, W, M"); config "intraday_timeframes" overrides it
 DEFAULT_TIMEFRAMES = ('4H', 'D', 'W', 'M')
+# a pattern counts only when its candle starts at one of these times (owner, 08-Nov-2026: "spring pattern to be tracked
+# only 13.15 4hr candle only (i.e. 2nd 4hr candle of the day) not first one"); the FVG zones still come from every candle.
+# config "intraday_slots" overrides it ({} = every candle)
+DEFAULT_SLOTS = {'4H': ['13:15']}
 TF_MINUTES = {'15m': 15, '30m': 30, '1H': 60, '2H': 120, '4H': 240}
 TF_ARGS = {'15M': '15m', '15': '15m', '30M': '30m', '30': '30m', '1H': '1H', '60': '1H', '2H': '2H', '120': '2H',
            '4H': '4H', '240': '4H', 'D': 'D', '1D': 'D', 'W': 'W', '1W': 'W', 'M': 'M', '1M': 'M'}   # IntradayCheck.bat words
@@ -661,7 +665,7 @@ def candle_complete(c, tf, upto, holidays):
     return nxt.isoformat()[:7] > c['t']
 
 
-def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None):
+def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None):
     """The patterns of one stock on finished candles whose last session is after `since_iso` and not after `upto`.
     -> [{'tf', 'pattern', 'candle', 'session', 'low', 'close', 'zone': [bottom, top, formed] | None}]"""
     found = []
@@ -674,6 +678,8 @@ def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_on
         for i in range(1, len(cs)):
             c = cs[i]
             if c['day'] <= since_iso:
+                continue
+            if slots and slots.get(tf) and c['t'][11:16] not in slots[tf]:
                 continue
             if i in fs:
                 g, bottom, top = fs[i]
@@ -712,6 +718,21 @@ def now_ist():
     return datetime.now(IST).replace(tzinfo=None)
 
 
+def chosen_slots(cfg, tfs=None):
+    """{timeframe: ['HH:MM', ...]} of the timeframes scanned whose patterns count only at those candle times."""
+    raw = cfg.get('intraday_slots')
+    raw = DEFAULT_SLOTS if raw is None else raw
+    tfs = tfs if tfs is not None else chosen_tfs(cfg)
+    out = {}
+    if isinstance(raw, dict):
+        for tf, times in raw.items():
+            if tf in TF_MINUTES and tf in tfs and isinstance(times, (list, tuple)):
+                ok = sorted({str(t) for t in times if re.match(r'^\d{2}:\d{2}$', str(t))})
+                if ok:
+                    out[tf] = ok
+    return out
+
+
 def chosen_tfs(cfg):
     """The timeframes the daily scan reports, in TIMEFRAMES order."""
     want = cfg.get('intraday_timeframes') or DEFAULT_TIMEFRAMES
@@ -726,7 +747,7 @@ def due(cfg, holidays, now=None, state=None):
     now = now or now_ist()
     st = state if state is not None else state_load()
     upto = completed_session(now, holidays)
-    if (st.get('scanned') or '') >= upto.isoformat() and st.get('tfs') == chosen_tfs(cfg):
+    if (st.get('scanned') or '') >= upto.isoformat() and st.get('tfs') == chosen_tfs(cfg) and (st.get('slots') or {}) == chosen_slots(cfg):
         return False, upto
     if st.get('wait_login_until') and time.time() < float(st['wait_login_until']) and not session_valid(session_load()):
         return False, upto
@@ -747,7 +768,8 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             return None
         upto = completed_session(now, holidays)
         tfs = chosen_tfs(cfg)
-        changed = bool(st.get('scanned')) and st.get('tfs') != tfs
+        slots = chosen_slots(cfg, tfs)
+        changed = bool(st.get('scanned')) and (st.get('tfs') != tfs or (st.get('slots') or {}) != slots)
         if not force and not changed and (st.get('scanned') or '') >= upto.isoformat():
             log('Kite: the session of %s is already scanned.' % upto.isoformat())
             return 0
@@ -783,8 +805,9 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         imap = instruments(cfg, sess, now.date().isoformat())
         since = (st.get('scanned') if not changed else None) or sessions_back(upto, FIRST_RUN_SESSIONS, holidays).isoformat()
         if changed:
-            log('Kite: the timeframes are now %s - the last %d sessions are scanned again, and the sheet keeps only these '
-                'timeframes.' % (', '.join(tfs), FIRST_RUN_SESSIONS))
+            log('Kite: the timeframes are now %s%s - the last %d sessions are scanned again, and the sheet keeps only these.'
+                % (', '.join(tfs), ''.join(' (%s: only the %s candle)' % (t, ' / '.join(v)) for t, v in sorted(slots.items())),
+                   FIRST_RUN_SESSIONS))
         fvg_only = tuple(t for t in (cfg.get('intraday_fvg_only') if cfg.get('intraday_fvg_only') is not None
                                      else DEFAULT_FVG_ONLY) if t in TIMEFRAMES)
         t0, reqs, errors, in_row, nokite, items = time.time(), 0, 0, 0, [], []
@@ -811,7 +834,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                     log('Kite: %d errors in a row - stopping this scan (the next one carries on).' % in_row)
                     return None
                 continue
-            for f in scan(store, since, upto, holidays, tfs, fvg_only):
+            for f in scan(store, since, upto, holidays, tfs, fvg_only, slots=slots):
                 f['sym'] = sym
                 items.append(f)
             if (k + 1) % 200 == 0:
@@ -826,18 +849,19 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         sent, old_app = 0, False
         for p in range(0, max(1, len(items)), POST_ITEMS):
             part = items[p:p + POST_ITEMS]
-            res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part, 'tfs': tfs,
+            res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part, 'tfs': tfs, 'slots': slots,
                                         'last': p + POST_ITEMS >= len(items)}, tries=3, timeout=180)
             if not res.get('ok'):
                 log('Kite: the sheet refused the patterns - %s' % res.get('error'))
                 return None
             sent += int(res.get('added') or 0)
-            old_app = old_app or 'tfs' not in res
+            old_app = old_app or 'tfs' not in res or 'slots' not in res
         if old_app:
-            log('Kite: the sheet\'s web app is an older version - rows of other timeframes stay on the tab until you paste the '
-                'new Code2.gs and do the New version deploy (the next scan then clears them).')
+            log('Kite: the sheet\'s web app is an older version - rows of other timeframes / candles stay on the tab until you '
+                'paste the new Code2.gs and do the New version deploy (the next scan then clears them).')
         st['scanned'] = upto.isoformat()
         st['tfs'] = tfs
+        st['slots'] = slots
         st['last'] = {'at': datetime.now().strftime('%Y-%m-%d %H:%M'), 'stocks': len(syms) - len(nokite), 'found': len(items),
                       'requests': reqs, 'errors': errors}
         log('Kite: the sheet\'s "Intraday Patterns" tab has %d new row(s).' % sent)

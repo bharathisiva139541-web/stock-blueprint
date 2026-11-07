@@ -47,7 +47,8 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     Not logged in within 45 minutes: it asks again 2 hours later (at most 4 times a day) - or double-click IntradayNow.bat.
     If the page says "This site can't be reached" after you log in, the program had stopped waiting: IntradayNow.bat.
  3. It finds the sheet's Spring pattern and "Spring in FVG" (a Spring dipping into a 3-candle FVG that still holds - the
-    sheet's FVG+Spring rule) on 4H, D, W and M (your choice, 08-Nov-2026; config "intraday_timeframes" can list others:
+    sheet's FVG+Spring rule) on 4H (only the day's 2nd 4H candle, 13:15-15:30), D, W and M (your choice, 08-Nov-2026;
+    config "intraday_timeframes" can list others,
     15m, 30m, 1H, 2H - 15m and 30m report only Spring in FVG) and sends them to the sheet's
     "Intraday Patterns" tab (kept 30 days; the Chart column opens TradingView at that timeframe). The website's
     Patterns & FVG page lists them too (no prices - Kite's data is for your own use).

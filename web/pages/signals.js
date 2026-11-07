@@ -265,7 +265,9 @@
     var present = ITD_TFS.filter(function (t) { return rows.some(function (r) { return r.Timeframe === t; }); });
     var tfText = (present.length ? present : ['4H', 'D', 'W', 'M']).join(', ');
     var sub = 'Spring and <b>Spring in FVG</b> found by your PC program on Zerodha Kite candles - ' + esc(tfText) +
-      (tfText.indexOf('4H') !== -1 ? ' (4H = 09:15-13:15 / 13:15-15:30)' : '') + ' - with the same rules as your sheet, once a trading day after the close. ' +
+      (tfText.indexOf('4H') !== -1 ? (rows.every(function (r) { return r.Timeframe !== '4H' || /13:15$/.test(String(r.Candle || '')); })
+        ? ' (4H: only the day\'s 2nd candle, 13:15-15:30)' : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') +
+      ' - with the same rules as your sheet, once a trading day after the close. ' +
       'The button opens TradingView\'s own chart at that timeframe. ' + (it && it.note ? '<span class="sub">' + esc(String(it.note).replace(/^.*?(Last scan:[^.]*\.?).*$/, '$1')) + '</span>' : '');
     var body;
     if (!rows.length) {

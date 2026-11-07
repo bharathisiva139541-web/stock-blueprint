@@ -12271,7 +12271,19 @@ function ab_itdFromBridge_(req) {
   if (items.length > AB_ITD_MAX_ITEMS) return { ok: false, error: 'too many patterns in one post (at most ' + AB_ITD_MAX_ITEMS + ')' };
   // the timeframes the PC reports now (owner, 08-Nov-2026: "only 4hr, D, W, M"): rows of others are dropped from the tab
   const tfs = Array.isArray(req.tfs) ? AB_ITD_TFS.filter(function (t) { return req.tfs.map(String).indexOf(t) !== -1; }) : null;
-  const keepTf = function (tf) { return !tfs || !tfs.length || tfs.indexOf(tf) !== -1; };
+  // ... and the candle times that count (owner, 08-Nov-2026: 4H "only the 13:15 candle (2nd 4hr candle of the day)")
+  const slots = {};
+  let hasSlots = false;
+  if (req.slots && typeof req.slots === 'object' && !Array.isArray(req.slots)) {
+    Object.keys(req.slots).forEach(function (tf) {
+      const times = Array.isArray(req.slots[tf]) ? req.slots[tf].map(String).filter(function (t) { return /^\d{2}:\d{2}$/.test(t); }) : [];
+      if (AB_ITD_TV[tf] && /m$|H$/.test(tf) && times.length) { slots[tf] = times; hasSlots = true; }
+    });
+  }
+  const keepTf = function (tf, candle) {
+    if (tfs && tfs.length && tfs.indexOf(tf) === -1) return false;
+    return !slots[tf] || slots[tf].indexOf(String(candle || '').slice(11, 16)) !== -1;
+  };
   const want = {};
   ab_p1Symbols_().forEach(function (s) { want[s] = true; });
   const found = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
@@ -12285,7 +12297,7 @@ function ab_itdFromBridge_(req) {
     const sym = String(it && it.sym || '').trim().toUpperCase();
     const tf = String(it && it.tf || ''), pattern = String(it && it.pattern || '');
     const candle = String(it && it.candle || ''), session = String(it && it.session || '');
-    if (!want[sym] || !AB_ITD_TV[tf] || !keepTf(tf) || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
+    if (!want[sym] || !AB_ITD_TV[tf] || !keepTf(tf, candle) || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
         !/^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(candle) || !/^\d{4}-\d{2}-\d{2}$/.test(session)) { skipped++; return; }
     const z = Array.isArray(it.zone) ? it.zone : null;
     const r = { session: session, sym: sym, company: names[sym] || '', tf: tf, pattern: pattern, candle: candle,
@@ -12299,8 +12311,8 @@ function ab_itdFromBridge_(req) {
   const cutoff = Utilities.formatDate(new Date(Date.now() - AB_ITD_KEEP_DAYS * 86400000), AB_TZ, 'yyyy-MM-dd');
   let dropped = 0;
   const rows = Object.keys(byKey).map(function (k) { return byKey[k]; }).filter(function (r) {
-    if (r.session >= cutoff && keepTf(r.tf)) return true;
-    if (!keepTf(r.tf)) dropped++;
+    if (r.session >= cutoff && keepTf(r.tf, r.candle)) return true;
+    if (!keepTf(r.tf, r.candle)) dropped++;
     return false;
   });
   rows.sort(function (a, b) {
@@ -12316,7 +12328,8 @@ function ab_itdFromBridge_(req) {
   const tfText = tfs && tfs.length ? AB_ITD_TFS.slice().reverse().filter(function (t) { return tfs.indexOf(t) !== -1; }).join(', ')
     : '15m and 30m (Spring in FVG only), 1H, 2H, 4H, D, W, M';
   const note = 'Spring and Spring in FVG from Zerodha Kite candles (your PC program): ' + tfText +
-    (!tfs || tfs.indexOf('4H') !== -1 ? ' (4H = 09:15-13:15 / 13:15-15:30)' : '') + ' - the sheet\'s Spring and FVG+Spring rules. ' +
+    (!tfs || tfs.indexOf('4H') !== -1 ? (slots['4H'] && slots['4H'].join() === '13:15' ? ' (4H: only the day\'s 2nd candle, 13:15-15:30)'
+      : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') + ' - the sheet\'s Spring and FVG+Spring rules. ' +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {
@@ -12333,5 +12346,6 @@ function ab_itdFromBridge_(req) {
     sh.getRange(3, 1, n, AB_ITD_HEADERS.length).setValues(out);
   }
   sh.setFrozenRows(2);
-  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length, dropped: dropped, tfs: tfs };
+  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length, dropped: dropped, tfs: tfs,
+           slots: hasSlots ? slots : {} };
 }
