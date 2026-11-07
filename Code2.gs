@@ -12269,6 +12269,9 @@ function ab_itdFromBridge_(req) {
   const items = Array.isArray(req.items) ? req.items : null;
   if (!items) return { ok: false, error: 'items missing' };
   if (items.length > AB_ITD_MAX_ITEMS) return { ok: false, error: 'too many patterns in one post (at most ' + AB_ITD_MAX_ITEMS + ')' };
+  // the timeframes the PC reports now (owner, 08-Nov-2026: "only 4hr, D, W, M"): rows of others are dropped from the tab
+  const tfs = Array.isArray(req.tfs) ? AB_ITD_TFS.filter(function (t) { return req.tfs.map(String).indexOf(t) !== -1; }) : null;
+  const keepTf = function (tf) { return !tfs || !tfs.length || tfs.indexOf(tf) !== -1; };
   const want = {};
   ab_p1Symbols_().forEach(function (s) { want[s] = true; });
   const found = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
@@ -12282,7 +12285,7 @@ function ab_itdFromBridge_(req) {
     const sym = String(it && it.sym || '').trim().toUpperCase();
     const tf = String(it && it.tf || ''), pattern = String(it && it.pattern || '');
     const candle = String(it && it.candle || ''), session = String(it && it.session || '');
-    if (!want[sym] || !AB_ITD_TV[tf] || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
+    if (!want[sym] || !AB_ITD_TV[tf] || !keepTf(tf) || AB_ITD_PATTERNS.indexOf(pattern) === -1 ||
         !/^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(candle) || !/^\d{4}-\d{2}-\d{2}$/.test(session)) { skipped++; return; }
     const z = Array.isArray(it.zone) ? it.zone : null;
     const r = { session: session, sym: sym, company: names[sym] || '', tf: tf, pattern: pattern, candle: candle,
@@ -12294,7 +12297,12 @@ function ab_itdFromBridge_(req) {
     byKey[k] = r;
   });
   const cutoff = Utilities.formatDate(new Date(Date.now() - AB_ITD_KEEP_DAYS * 86400000), AB_TZ, 'yyyy-MM-dd');
-  const rows = Object.keys(byKey).map(function (k) { return byKey[k]; }).filter(function (r) { return r.session >= cutoff; });
+  let dropped = 0;
+  const rows = Object.keys(byKey).map(function (k) { return byKey[k]; }).filter(function (r) {
+    if (r.session >= cutoff && keepTf(r.tf)) return true;
+    if (!keepTf(r.tf)) dropped++;
+    return false;
+  });
   rows.sort(function (a, b) {
     if (a.session !== b.session) return a.session < b.session ? 1 : -1;
     const t = AB_ITD_TFS.indexOf(a.tf) - AB_ITD_TFS.indexOf(b.tf);
@@ -12305,8 +12313,11 @@ function ab_itdFromBridge_(req) {
     return a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0;
   });
   const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
-  const note = 'Spring and Spring in FVG from Zerodha Kite candles (your PC program): 15m and 30m (Spring in FVG only), 1H, 2H, 4H ' +
-    '(09:15-13:15 / 13:15-15:30), D, W, M - the sheet\'s Spring and FVG+Spring rules. ' + (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
+  const tfText = tfs && tfs.length ? AB_ITD_TFS.slice().reverse().filter(function (t) { return tfs.indexOf(t) !== -1; }).join(', ')
+    : '15m and 30m (Spring in FVG only), 1H, 2H, 4H, D, W, M';
+  const note = 'Spring and Spring in FVG from Zerodha Kite candles (your PC program): ' + tfText +
+    (!tfs || tfs.indexOf('4H') !== -1 ? ' (4H = 09:15-13:15 / 13:15-15:30)' : '') + ' - the sheet\'s Spring and FVG+Spring rules. ' +
+    (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {
     return [r.session, r.sym, r.company, r.tf, r.pattern, r.candle, r.formed,
@@ -12322,5 +12333,5 @@ function ab_itdFromBridge_(req) {
     sh.getRange(3, 1, n, AB_ITD_HEADERS.length).setValues(out);
   }
   sh.setFrozenRows(2);
-  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length };
+  return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length, dropped: dropped, tfs: tfs };
 }

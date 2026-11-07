@@ -261,8 +261,11 @@
   function itdRows(ctx) { return ui.objRows(ctx.D.intraday); }
   function itdSectionHtml(ctx) {
     var it = ctx.D.intraday, rows = itdRows(ctx);
-    var sub = 'Spring and <b>Spring in FVG</b> found by your PC program on Zerodha Kite candles - 15m and 30m (Spring in FVG only), 1H, 2H, ' +
-      '4H (09:15-13:15 / 13:15-15:30), D, W, M - with the same rules as your sheet, once a trading day after the close. ' +
+    // the timeframes in the data (owner, 08-Nov-2026: the PC reports only 4H, D, W, M)
+    var present = ITD_TFS.filter(function (t) { return rows.some(function (r) { return r.Timeframe === t; }); });
+    var tfText = (present.length ? present : ['4H', 'D', 'W', 'M']).join(', ');
+    var sub = 'Spring and <b>Spring in FVG</b> found by your PC program on Zerodha Kite candles - ' + esc(tfText) +
+      (tfText.indexOf('4H') !== -1 ? ' (4H = 09:15-13:15 / 13:15-15:30)' : '') + ' - with the same rules as your sheet, once a trading day after the close. ' +
       'The button opens TradingView\'s own chart at that timeframe. ' + (it && it.note ? '<span class="sub">' + esc(String(it.note).replace(/^.*?(Last scan:[^.]*\.?).*$/, '$1')) + '</span>' : '');
     var body;
     if (!rows.length) {

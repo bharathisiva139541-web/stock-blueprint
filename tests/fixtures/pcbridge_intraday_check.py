@@ -252,7 +252,7 @@ def press_login(token='req1', status='success'):
 PAGES = []
 assert K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'a finished session not scanned yet'
 assert not K.due(dict(CFG, kite_api_secret=''), HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'not set up'
-assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06'})[0]
+assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M']})[0]
 s = K.login(CFG, wait_s=20, ready=press_login)
 assert s and s['access_token'] == 'at-req1' and s['user'] == 'Owner', s
 assert 'Kite login received' in PAGES[0]
@@ -323,6 +323,8 @@ assert any(it['pattern'] == 'Spring in FVG' and it['candle'] == '2026-10-30 13:1
            and it['zone'][2].startswith('2026-08-2') for it in para), para
 put = [p for p in POSTS if p['op'] == 'put'][0]
 assert put['upto'] == '2026-11-06' and put['since'] == '2026-10-23', put        # first run: the last 10 sessions
+assert put['tfs'] == ['4H', 'D', 'W', 'M'] and {it['tf'] for it in items} <= {'4H', 'D', 'W', 'M'}, ('owner, 08-Nov-2026: only 4H / D / W / M', put['tfs'])
+assert K.state_load()['tfs'] == ['4H', 'D', 'W', 'M']
 assert all(it['session'] > '2026-10-23' for it in items)
 assert not [it for it in items if it['tf'] in ('15m', '30m') and it['pattern'] == 'Spring'], '15m / 30m: Spring in FVG only'
 assert not [it for it in items if it['sym'] == 'NOPE'] and any('not on Kite: NOPE' in m for m in LOGS), LOGS[-4:]
@@ -330,6 +332,19 @@ assert K.state_load()['scanned'] == '2026-11-06'
 POSTS.clear()
 assert K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 6, 19, 0)) == 0 and not POSTS, 'already scanned'
 assert not K.due(CFG, HOL, now=datetime(2026, 11, 7, 10, 0))[0], 'Saturday: nothing new'
+# the timeframes changed (or a state from before 08-Nov-2026 without 'tfs'): the last 10 sessions again, nothing downloaded
+st1 = K.state_load()
+assert K.due(dict(CFG, intraday_timeframes=['4H', 'D']), HOL, now=datetime(2026, 11, 7, 10, 0), state=dict(st1, tried=0))[0]
+assert K.due(CFG, HOL, now=datetime(2026, 11, 7, 10, 0), state=dict(st1, tfs=None, tried=0))[0], 'the first version\'s state'
+CALLS.clear()
+POSTS.clear()
+assert K.intraday_step(dict(CFG, intraday_timeframes=['D', '4H']), fake_api, HOL, now=datetime(2026, 11, 7, 10, 0)) is not None
+put = [p for p in POSTS if p['op'] == 'put'][0]
+assert put['tfs'] == ['4H', 'D'] and put['since'] == '2026-10-23' and {it['tf'] for it in put['items']} <= {'4H', 'D'}, put['tfs']
+assert not [c for c in CALLS if c[1].startswith('/instruments/historical/')], 'everything was up to date: nothing read from Kite'
+assert any('the timeframes are now 4H, D' in m for m in LOGS), LOGS[-4:]
+assert any('older version' in m for m in LOGS[-3:]), 'the pretend sheet does not echo tfs: the hint'
+K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 7, 10, 5))           # back to the four
 
 # the next session: only the new candles are read and only their patterns are sent
 SERIES['PARAGMILK'] = SERIES['PARAGMILK'] + m15_day('2026-11-09', 260)

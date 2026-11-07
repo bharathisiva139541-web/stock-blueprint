@@ -66,7 +66,10 @@ SESSION_CLOSE = (15, 40)    # a session counts as finished after 15:40 IST
 POST_ITEMS = 400            # patterns per post to the sheet
 ABORT_AFTER_ERRORS = 40     # Kite errors in a row -> stop this scan (the next one carries on)
 
-TIMEFRAMES = ('15m', '30m', '1H', '2H', '4H', 'D', 'W', 'M')
+TIMEFRAMES = ('15m', '30m', '1H', '2H', '4H', 'D', 'W', 'M')       # all it can build (IntradayCheck shows any of them)
+# the timeframes the daily scan reports (owner, 08-Nov-2026, after the first scan found ~680 patterns a day: "I want the spring
+# pattern to be tracked only in this time frame 4hr, D, W, M"); config "intraday_timeframes" overrides it
+DEFAULT_TIMEFRAMES = ('4H', 'D', 'W', 'M')
 TF_MINUTES = {'15m': 15, '30m': 30, '1H': 60, '2H': 120, '4H': 240}
 TF_ARGS = {'15M': '15m', '15': '15m', '30M': '30m', '30': '30m', '1H': '1H', '60': '1H', '2H': '2H', '120': '2H',
            '4H': '4H', '240': '4H', 'D': 'D', '1D': 'D', 'W': 'W', '1W': 'W', 'M': 'M', '1M': 'M'}   # IntradayCheck.bat words
@@ -658,7 +661,7 @@ def candle_complete(c, tf, upto, holidays):
     return nxt.isoformat()[:7] > c['t']
 
 
-def scan(store, since_iso, upto, holidays, timeframes=TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None):
+def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None):
     """The patterns of one stock on finished candles whose last session is after `since_iso` and not after `upto`.
     -> [{'tf', 'pattern', 'candle', 'session', 'low', 'close', 'zone': [bottom, top, formed] | None}]"""
     found = []
@@ -709,14 +712,21 @@ def now_ist():
     return datetime.now(IST).replace(tzinfo=None)
 
 
+def chosen_tfs(cfg):
+    """The timeframes the daily scan reports, in TIMEFRAMES order."""
+    want = cfg.get('intraday_timeframes') or DEFAULT_TIMEFRAMES
+    return [t for t in TIMEFRAMES if t in want]
+
+
 def due(cfg, holidays, now=None, state=None):
-    """(True, upto) when the newest finished session is not scanned yet and no login was asked for recently."""
+    """(True, upto) when the newest finished session is not scanned yet (or the timeframes changed since the last scan)
+    and no login was asked for recently."""
     if not cfg.get('intraday', True) or not configured(cfg):
         return False, None
     now = now or now_ist()
     st = state if state is not None else state_load()
     upto = completed_session(now, holidays)
-    if (st.get('scanned') or '') >= upto.isoformat():
+    if (st.get('scanned') or '') >= upto.isoformat() and st.get('tfs') == chosen_tfs(cfg):
         return False, upto
     if st.get('wait_login_until') and time.time() < float(st['wait_login_until']) and not session_valid(session_load()):
         return False, upto
@@ -736,7 +746,9 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             log('Kite: not set up - run KiteSetup.bat (your API key and secret from developers.kite.trade).')
             return None
         upto = completed_session(now, holidays)
-        if not force and (st.get('scanned') or '') >= upto.isoformat():
+        tfs = chosen_tfs(cfg)
+        changed = bool(st.get('scanned')) and st.get('tfs') != tfs
+        if not force and not changed and (st.get('scanned') or '') >= upto.isoformat():
             log('Kite: the session of %s is already scanned.' % upto.isoformat())
             return 0
         sess = session_load()
@@ -769,8 +781,10 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             return None
         syms = [str(s).strip().upper() for s in ans.get('syms') or [] if str(s).strip()]
         imap = instruments(cfg, sess, now.date().isoformat())
-        since = st.get('scanned') or sessions_back(upto, FIRST_RUN_SESSIONS, holidays).isoformat()
-        tfs = [t for t in (cfg.get('intraday_timeframes') or TIMEFRAMES) if t in TIMEFRAMES]
+        since = (st.get('scanned') if not changed else None) or sessions_back(upto, FIRST_RUN_SESSIONS, holidays).isoformat()
+        if changed:
+            log('Kite: the timeframes are now %s - the last %d sessions are scanned again, and the sheet keeps only these '
+                'timeframes.' % (', '.join(tfs), FIRST_RUN_SESSIONS))
         fvg_only = tuple(t for t in (cfg.get('intraday_fvg_only') if cfg.get('intraday_fvg_only') is not None
                                      else DEFAULT_FVG_ONLY) if t in TIMEFRAMES)
         t0, reqs, errors, in_row, nokite, items = time.time(), 0, 0, 0, [], []
@@ -809,16 +823,21 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             % (len(syms) - len(nokite), (time.time() - t0) / 60, reqs, ', %d errors' % errors if errors else '',
                ', not on Kite: ' + ', '.join(nokite[:12]) + (' ...' if len(nokite) > 12 else '') if nokite else '',
                len(items), ': ' + ', '.join('%s %d' % kv for kv in sorted(counts.items())) if counts else ''))
-        sent = 0
+        sent, old_app = 0, False
         for p in range(0, max(1, len(items)), POST_ITEMS):
             part = items[p:p + POST_ITEMS]
-            res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part,
+            res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part, 'tfs': tfs,
                                         'last': p + POST_ITEMS >= len(items)}, tries=3, timeout=180)
             if not res.get('ok'):
                 log('Kite: the sheet refused the patterns - %s' % res.get('error'))
                 return None
             sent += int(res.get('added') or 0)
+            old_app = old_app or 'tfs' not in res
+        if old_app:
+            log('Kite: the sheet\'s web app is an older version - rows of other timeframes stay on the tab until you paste the '
+                'new Code2.gs and do the New version deploy (the next scan then clears them).')
         st['scanned'] = upto.isoformat()
+        st['tfs'] = tfs
         st['last'] = {'at': datetime.now().strftime('%Y-%m-%d %H:%M'), 'stocks': len(syms) - len(nokite), 'found': len(items),
                       'requests': reqs, 'errors': errors}
         log('Kite: the sheet\'s "Intraday Patterns" tab has %d new row(s).' % sent)
