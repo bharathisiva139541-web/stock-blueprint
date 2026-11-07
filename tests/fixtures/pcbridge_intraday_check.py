@@ -189,6 +189,24 @@ assert '2026-10-30 13:15' in hits, ('the PARAGMILK-like 4H Spring in FVG', hits,
 gi = sp[[i for i in sp if cs4[i]['t'] == '2026-10-30 13:15'][0]][0]
 assert cs4[gi]['t'].startswith('2026-08-2'), ('the August gap', cs4[gi]['t'])
 
+# a 4H Spring on the day's first candle is not reported, one on the second candle is (owner, 08-Nov-2026)
+flat = [(dd, hf, 100.0, 100.2, 99.8, 100.0) for dd in sessions('2026-09-01', '2026-11-06') for hf in (0, 1)]
+for k, (dd, hf, *_r) in enumerate(flat):
+    if (dd, hf) == ('2026-10-26', 1):
+        flat[k] = (dd, hf, 100.0, 100.3, 96.8, 97.0)          # red
+    if (dd, hf) == ('2026-10-27', 0):
+        flat[k] = (dd, hf, 97.2, 97.8, 96.5, 97.5)            # Spring on the 09:15 candle
+    if (dd, hf) == ('2026-10-29', 0):
+        flat[k] = (dd, hf, 100.0, 100.3, 96.8, 97.0)          # red
+    if (dd, hf) == ('2026-10-29', 1):
+        flat[k] = (dd, hf, 97.2, 97.8, 96.5, 97.5)            # Spring on the 13:15 candle
+two = {'m15': to_m15(flat), 'day': []}
+both = K.scan(two, '2026-10-20', d('2026-11-06'), HOL, ['4H'], slots={})
+assert [f['candle'] for f in both] == ['2026-10-27 09:15', '2026-10-29 13:15'], both
+only = K.scan(two, '2026-10-20', d('2026-11-06'), HOL, ['4H'], slots=K.chosen_slots({}))
+assert [f['candle'] for f in only] == ['2026-10-29 13:15'], only
+assert K.chosen_slots({'intraday_slots': {}}) == {} and K.chosen_slots({'intraday_timeframes': ['D']}) == {}
+
 # ------------------------------------------------------------------ 5. pretend Kite
 TOKENS = {'PARAGMILK': 111, 'FLAT': 222, 'BEONLY-BE': 333}
 CALLS = []
@@ -252,7 +270,7 @@ def press_login(token='req1', status='success'):
 PAGES = []
 assert K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'a finished session not scanned yet'
 assert not K.due(dict(CFG, kite_api_secret=''), HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'not set up'
-assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M']})[0]
+assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M'], 'slots': {'4H': ['13:15']}})[0]
 s = K.login(CFG, wait_s=20, ready=press_login)
 assert s and s['access_token'] == 'at-req1' and s['user'] == 'Owner', s
 assert 'Kite login received' in PAGES[0]
@@ -324,7 +342,8 @@ assert any(it['pattern'] == 'Spring in FVG' and it['candle'] == '2026-10-30 13:1
 put = [p for p in POSTS if p['op'] == 'put'][0]
 assert put['upto'] == '2026-11-06' and put['since'] == '2026-10-23', put        # first run: the last 10 sessions
 assert put['tfs'] == ['4H', 'D', 'W', 'M'] and {it['tf'] for it in items} <= {'4H', 'D', 'W', 'M'}, ('owner, 08-Nov-2026: only 4H / D / W / M', put['tfs'])
-assert K.state_load()['tfs'] == ['4H', 'D', 'W', 'M']
+assert K.state_load()['tfs'] == ['4H', 'D', 'W', 'M'] and K.state_load()['slots'] == {'4H': ['13:15']}
+assert put['slots'] == {'4H': ['13:15']} and all(it['candle'].endswith('13:15') for it in items if it['tf'] == '4H'), 'owner: only the 13:15 4H candle'
 assert all(it['session'] > '2026-10-23' for it in items)
 assert not [it for it in items if it['tf'] in ('15m', '30m') and it['pattern'] == 'Spring'], '15m / 30m: Spring in FVG only'
 assert not [it for it in items if it['sym'] == 'NOPE'] and any('not on Kite: NOPE' in m for m in LOGS), LOGS[-4:]

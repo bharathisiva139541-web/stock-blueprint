@@ -38,7 +38,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '06-11-2026', session: '2026-11-06' },               // a bad candle time
     { sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-09-01', session: '2026-09-01', low: 1, close: 2 }   // older than 30 days
   ]));
-  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, tfs: null });
+  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, tfs: null, slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.match(rows[0][0], /^Spring and Spring in FVG from Zerodha Kite candles .* Last scan: session 2026-11-06 \(2026-11-06 19:00\)\. Kept 30 days\./);
   assert.deepStrictEqual(rows[1], ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close', 'FVG Bottom', 'FVG Top', 'Found']);
@@ -54,7 +54,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
   e.setNow(Date.UTC(2026, 10, 9, 12, 0));
   const r2 = e.post(put([PARA, { sym: 'FLAT', tf: '15m', pattern: 'Spring in FVG', candle: '2026-11-09 10:30', session: '2026-11-09', low: 100, close: 101,
     zone: [99.5, 100.5, '2026-11-05 11:00'] }], { upto: '2026-11-09' }));
-  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, tfs: null });
+  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, tfs: null, slots: {} });
   const rows2 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows2[2].slice(0, 5), ['2026-11-09', 'FLAT', 'Flat Co', '15m', 'Spring in FVG']);
   assert.strictEqual(rows2.find((x) => x[1] === 'PARAGMILK')[12], '2026-11-06 19:00');
@@ -71,10 +71,22 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   assert.strictEqual(e.sheet('Intraday Patterns').rows.length, 5);
   const r = e.post(put([{ sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-11-06', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '30m', pattern: 'Spring in FVG', candle: '2026-11-06 11:15', session: '2026-11-06', low: 99, close: 100 }], { tfs: ['4H', 'D', 'W', 'M', 'nope'] }));
-  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, tfs: ['M', 'W', 'D', '4H'] });
+  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, tfs: ['M', 'W', 'D', '4H'], slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows.slice(2).map((x) => x[1] + ' ' + x[3]), ['FLAT D', 'PARAGMILK 4H'], 'the 15m and 1H rows are gone, the 30m one was not added');
   assert.match(rows[0][0], /candles \(your PC program\): 4H, D, W, M \(4H = 09:15-13:15 \/ 13:15-15:30\) - the sheet's/);
+
+  // 4H: only the day's 2nd candle (owner, 08-Nov-2026: "only 13.15 4hr candle ... not first one")
+  e.post(put([{ sym: 'M&M', tf: '4H', pattern: 'Spring', candle: '2026-11-05 09:15', session: '2026-11-05', low: 3000, close: 3010 }], { tfs: ['4H', 'D', 'W', 'M'] }));
+  assert.ok(e.sheet('Intraday Patterns').rows.some((x) => x[1] === 'M&M' && x[5] === '2026-11-05 09:15'), 'kept while no candle rule is sent');
+  const r3 = e.post(put([{ sym: 'FLAT', tf: '4H', pattern: 'Spring in FVG', candle: '2026-11-06 09:15', session: '2026-11-06', low: 99, close: 100 },
+    { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '2026-11-06 13:15', session: '2026-11-06', low: 99, close: 100 }],
+  { tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'], D: ['10:00'], bad: ['13:15'], '1H': ['x'] } }));
+  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] } });
+  const rows3 = e.sheet('Intraday Patterns').rows;
+  assert.deepStrictEqual(rows3.slice(2).map((x) => x[1] + ' ' + x[3] + ' ' + x[5]), ['FLAT D 2026-11-06', 'FLAT 4H 2026-11-06 13:15', 'PARAGMILK 4H 2026-10-30 13:15'],
+    'the 09:15 4H rows are gone, the 13:15 ones and the daily one stay');
+  assert.match(rows3[0][0], /4H, D, W, M \(4H: only the day's 2nd candle, 13:15-15:30\)/);
 });
 
 test('site feed part "intraday": the allowed columns only (no prices), newest 10 sessions = export_xlsx.py', () => {
