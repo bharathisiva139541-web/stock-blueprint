@@ -81,10 +81,28 @@ RP_ROW[RPT.cols.indexOf('Pre-Result Close')] = 100;
 RP_ROW[RPT.cols.indexOf('Result Day Close')] = 106;
 // Zerodha Kite patterns (site feed format 9, part 'intraday' - the PC program's "Intraday Patterns" tab, no prices)
 LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles (your PC program) ... Last scan: session 2026-10-20 (2026-10-20 19:05). Kept 30 days.',
-  cols: ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed'],
-  rows: [['2026-10-20', FLAG_SYM, 'Flag Co', '4H', 'Spring in FVG', '2026-10-20 13:15', '2026-08-24 09:15'],
-    ['2026-10-20', FLAG_SYM, 'Flag Co', '1H', 'Spring', '2026-10-20 14:15', null],
-    ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null]] };
+  cols: ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail'],
+  rows: [['2026-10-20', FLAG_SYM, 'Flag Co', '4H', 'Spring in FVG', '2026-10-20 13:15', '2026-08-24 09:15', 'FVG bottom (touch 3)'],
+    ['2026-10-20', FLAG_SYM, 'Flag Co', '1H', 'Spring', '2026-10-20 14:15', null, null],
+    ['2026-10-20', SENT_SYM, null, '4H', 'FVG First Touch', '2026-10-20 09:15', '2026-10-14 13:15', 'FVG'],
+    ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null]] };
+// format 10: 4H FVG zones (no prices) + the FVG+Spring backtest (R only)
+LIVE_MAIN.zones4h = { note: '4H FVG zones still untouched ...', cols: ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'],
+  rows: [[FLAG_SYM, 'Flag Co', 'FVG', 3.52, '2026-10-14 13:15', 1.2, null], [SENT_SYM, null, 'Gap-up', 4.1, '2026-10-16 09:15', 6.5, null],
+    [SENT_SYM, null, 'FVG', 2.2, '2026-10-01 13:15', -0.4, 'Y']] };
+const BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To'];
+LIVE_MAIN.springBacktest = {
+  summary: { note: 'FVG+Spring backtest on Zerodha Kite candles ...', cols: BT_COLS, rows: [
+    ['4H', 'FVG+Spring', 120, 45, 60, 10, 5, 42.9, 0.31, '2026-05-12 13:15', '2026-10-20 13:15'],
+    ['4H', 'FVG+Spring - zone top', 70, 30, 34, 4, 2, 46.9, 0.42, '2026-05-12 13:15', '2026-10-20 13:15'],
+    ['4H', 'FVG+Spring - zone bottom', 50, 15, 26, 6, 3, 36.6, 0.1, '2026-05-14 13:15', '2026-10-17 13:15'],
+    ['4H', 'Spring (every one, for comparison)', 900, 260, 520, 90, 30, 33.3, -0.05, '2026-05-11 13:15', '2026-10-20 13:15'],
+    ['D', 'FVG+Spring', 800, 300, 400, 90, 10, 42.9, 0.25, '2021-08-02', '2026-10-20'],
+    ['W', 'FVG+Spring', 0, 0, 0, 0, 0, null, null, null, null]] },
+  trades: { note: 'The newest FVG+Spring trades ...', cols: ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'], rows: [
+    ['2026-10-20 13:15', FLAG_SYM, 'Flag Co', '4H', 'FVG', 'Bottom', 3, 'Open', null, 0],
+    ['2026-10-16', SENT_SYM, null, 'D', 'Gap-up', 'Top', 1, 'Win', 2, 3],
+    ['2026-10-09 13:15', SENT_SYM, null, '4H', 'FVG', 'Top', 2, 'Loss', -1, 1]] } };
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -834,15 +852,46 @@ function check(name, fn) {
       note: document.querySelector('#sg-itd .card-head p').textContent,
       jump: !!document.querySelector('[data-jump="sg-itd"]')
     }));
-    assert.strictEqual(r.count, '3 of 3');
-    assert.deepStrictEqual(r.chips, ['All timeframes (3)', '1H (1)', '4H (1)', 'W (1)']);
+    assert.strictEqual(r.count, '4 of 4');
+    assert.deepStrictEqual(r.chips, ['All timeframes (4)', '1H (1)', '4H (2)', 'W (1)']);
     assert.ok(r.links.some((l) => l[0] === 'TradingView 4H ↗' && l[1] === 'https://www.tradingview.com/chart/?symbol=NSE%3A' + encodeURIComponent(FLAG_SYM) + '&interval=240' && l[2] === '_blank'), JSON.stringify(r.links));
     assert.match(r.note, /Last scan: session 2026-10-20/);
     assert.ok(r.jump, 'in the page\'s jump chips');
+    assert.ok(await p.$eval('#sg-itd-t', (x) => x.textContent.includes('FVG bottom (touch 3)')), 'the Where column');
     await p.click('[data-chip="sgitdtf"][data-v="4H"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 3');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 4');
+    await p.click('[data-chip="sgitdp"][data-v="FVG First Touch"]');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 4');
     await p.click('[data-chip="sgitdp"][data-v="Spring"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 3');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 4');
+    // 4H FVG zones (format 10): kind chips, the "within 2%" chip, status, TradingView 4H
+    await p.waitForSelector('#sg-z4-t table');
+    const z = await p.evaluate(() => ({
+      count: document.querySelector('#sg-z4-count').textContent,
+      status: [...document.querySelectorAll('#sg-z4-t tbody tr')].map((tr) => tr.textContent.includes('Mitigated today')),
+      link: (document.querySelector('#sg-z4-t a.btn') || {}).textContent,
+      jump: !!document.querySelector('[data-jump="sg-z4"]') && !!document.querySelector('[data-jump="sg-sbt"]')
+    }));
+    assert.strictEqual(z.count, '3 of 3');
+    assert.ok(z.status.filter(Boolean).length === 1 && z.link === 'TradingView 4H ↗' && z.jump, JSON.stringify(z));
+    await p.click('[data-chip="sgz4"][data-v="near"]');
+    assert.strictEqual(await p.$eval('#sg-z4-count', (x) => x.textContent), '2 of 3', 'within 2% of the top (or inside)');
+    await p.click('[data-chip="sgz4"][data-v="Gap-up"]');
+    assert.strictEqual(await p.$eval('#sg-z4-count', (x) => x.textContent), '1 of 3');
+    // FVG+Spring win rate: one tile per timeframe, the summary table, the trades with result chips
+    const b = await p.evaluate(() => ({
+      tiles: [...document.querySelectorAll('#sg-sbt [data-sbt]')].map((t) => [t.getAttribute('data-sbt'), t.querySelector('.value').textContent]),
+      note4h: (document.querySelector('#sg-sbt [data-sbt="4H"] .note2') || {}).textContent,
+      sumRows: document.querySelectorAll('#sg-sbt-sum tbody tr').length,
+      trades: document.querySelector('#sg-sbt-count').textContent
+    }));
+    assert.deepStrictEqual(b.tiles, [['4H', '42.9%'], ['D', '42.9%'], ['W', '–']]);
+    assert.match(b.note4h, /120 signals · 45 won · 60 lost · avg 0\.31R.*top 46\.9% · bottom 36\.6% · every Spring 33\.3%/);
+    assert.ok(b.sumRows === 6 && b.trades === '3 of 3', JSON.stringify(b));
+    await p.click('[data-chip="sgsbtr"][data-v="Win"]');
+    assert.strictEqual(await p.$eval('#sg-sbt-count', (x) => x.textContent), '1 of 3');
+    await p.click('[data-chip="sgsbtf"][data-v="4H"]');
+    assert.strictEqual(await p.$eval('#sg-sbt-count', (x) => x.textContent), '0 of 3');
     assert.deepStrictEqual(errors, [], 'console/page errors');
     await c.close();
   });

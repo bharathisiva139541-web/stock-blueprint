@@ -71,7 +71,7 @@
     pattern: 'A bullish candlestick pattern (e.g. Hammer, Bullish Engulfing) on the latest daily candle - your sheet\'s Pattern column.',
     fvgFirstTouch: 'The price came back to a fair value gap (FVG - an untouched price gap) for the first time in the last few days.',
     fvgConfirmed: 'Like FVG first touch, and the next candle closed higher - the gap held as support.',
-    fvgSpring: 'A Spring (a dip below support that recovers at once) inside a fair value gap that still holds.',
+    fvgSpring: 'A Spring (a dip below support that recovers at once) on the top of a fair value gap or gap-up zone (its 1st or 2nd touch) or on the zone\'s bottom line.',
     zoneApproach: 'The price is at or just above an untouched FVG zone - a possible support area. Usually "only watch".',
     emaSupport: 'The price dipped to this moving average (EMA) and held above it - a bounce off support.',
     ttmBuy: 'Main\'s TTM Signal is Buy: the TTM target is above today\'s price, EPS growth is not negative and EPS is positive.',

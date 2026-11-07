@@ -171,7 +171,7 @@ test('Code.gs and the JS port agree: patterns (col W) and FVG tags (col X), fuzz
   const bad = [];
   sets.forEach((s, i) => {
     const gs = env.call('ab_longFvgDetail_', s.map(sheetC)).tags.join(', ');
-    const js = FVG.longFvgDetail(s).tags.join(', ');
+    const js = FVG.longFvgDetail(s, { AB_GAPUP_MAX_PCT: 10 }).tags.join(', ');   // the mock's Control Panel = code defaults
     if (/Twin Star Bottom \+ FVG/.test(gs)) twinFvg++;
     if (gs !== js) bad.push('fvg ' + i + ': sheet="' + gs + '" js="' + js + '"');
   });

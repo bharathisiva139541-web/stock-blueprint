@@ -197,7 +197,7 @@ def note_table(rows, first_header, **kw):
 
 # Code.gs AB_SITE_ITD_COLS / ab_site_itd_(): the Intraday Patterns tab (Zerodha Kite via the PC bridge) - which pattern
 # formed when, no prices; the newest INTRADAY_SESSIONS sessions, at most INTRADAY_MAX rows
-INTRADAY_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed']
+INTRADAY_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail']
 INTRADAY_SESSIONS = 10
 INTRADAY_MAX = 4000
 
@@ -214,6 +214,40 @@ def intraday_patterns(rows):
     keep = sorted(days, reverse=True)[:INTRADAY_SESSIONS]
     out = [[(r[i] if i != -1 else None) for i in idx] for r in t['rows'] if si != -1 and r[si] in keep][:INTRADAY_MAX]
     return {'note': t['note'], 'cols': list(INTRADAY_COLS), 'rows': out}
+
+
+# 4H FVG zones + the FVG+Spring backtest (PC bridge, 08-Nov-2026) = Code.gs AB_SITE_Z4_COLS / AB_SITE_BT_COLS /
+# AB_SITE_BTT_COLS + ab_site_pick_: no Kite prices - zone size / distance % and R multiples only
+Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted']
+Z4_MAX = 6000
+BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To']
+BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles']
+BTT_MAX = 1000
+
+
+def no_kite(t):
+    """The Mitigated FVG Log without its 4H rows (Zerodha Kite zones - Kite's prices stay on the sheet) = Code.gs
+    ab_site_noKite_."""
+    if not t or 'Type' not in (t.get('cols') or []):
+        return t
+    ti = t['cols'].index('Type')
+    t['rows'] = [r for r in t['rows'] if not str(r[ti] if r[ti] is not None else '').startswith('4H ')]
+    return t
+
+
+def pick(t, cols, mx):
+    idx = [t['cols'].index(c) if c in t['cols'] else -1 for c in cols]
+    return {'note': t['note'], 'cols': list(cols), 'rows': [[(r[i] if i != -1 else None) for i in idx] for r in t['rows'][:mx]]}
+
+
+def zones_4h(rows):
+    return pick(note_table(rows, 'Symbol', stop_blank=False, kinds={'Formed': 'str'}), Z4_COLS, Z4_MAX)
+
+
+def spring_backtest(rows, trade_rows):
+    return {'summary': pick(note_table(rows, 'Timeframe', stop_blank=False, kinds={'From': 'str', 'To': 'str'}), BT_COLS, 100),
+            'trades': pick(note_table(trade_rows, 'Candle', stop_blank=False, kinds={'Candle': 'str'}), BTT_COLS, BTT_MAX)
+            if trade_rows is not None else {'note': '', 'cols': list(BTT_COLS), 'rows': []}}
 
 
 IPO_SECTIONS = {'open now': 'open', 'closed - awaiting listing': 'closed', 'upcoming': 'upcoming', 'listed recently': 'listed'}
@@ -341,7 +375,7 @@ def export(path):
     if 'FVG Backtest' in wb.sheetnames:
         data['fvgBacktest'] = table(rows_of(wb['FVG Backtest']), 'Flagged On', stop_blank=False)
     if 'Mitigated FVG Log' in wb.sheetnames:
-        data['mitigatedLog'] = table(rows_of(wb['Mitigated FVG Log']), 'Date', stop_blank=False)
+        data['mitigatedLog'] = no_kite(table(rows_of(wb['Mitigated FVG Log']), 'Date', stop_blank=False))
 
     # Alerts: watch-level alerts only. 'Entry' alerts are the user's real
     # positions (alert level = their entry price), and the Trade Log / Trade
@@ -381,6 +415,11 @@ def export(path):
         data['delivery'] = table(rows_of(wb['Delivery %']), 'Symbol', stop_blank=False)
     if 'Intraday Patterns' in wb.sheetnames:
         data['intraday'] = intraday_patterns(rows_of(wb['Intraday Patterns']))
+    if '4H FVG Zones' in wb.sheetnames:
+        data['zones4h'] = zones_4h(rows_of(wb['4H FVG Zones']))
+    if 'Spring Backtest' in wb.sheetnames:
+        data['springBacktest'] = spring_backtest(rows_of(wb['Spring Backtest']),
+                                                 rows_of(wb['Spring Backtest Trades']) if 'Spring Backtest Trades' in wb.sheetnames else None)
 
     export_history(wb, data.get('asOf'))
     export_history60(wb)
