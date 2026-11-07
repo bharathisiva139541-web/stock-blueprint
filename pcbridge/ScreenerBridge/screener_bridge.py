@@ -3830,6 +3830,11 @@ def run_after_login(cfg):
             else ' and in %d minutes' % SECOND_RUN_AFTER_MIN,
             (', the results check every %g minutes' % (quick_s / 60)) if quick_s else ''))
     while next_full is not None or next_quick is not None:
+        # the Kite scan first, in its own thread (owner, 08-Nov-2026: it no longer waits for the full round to finish)
+        try:
+            runner.maybe_start(cfg, api, nse_holidays(), online=internet_ok)
+        except Exception as e:
+            log('Kite: could not start the scan - %s' % e)
         now = time.time()
         due_full = next_full is not None and now >= next_full
         due_quick = not due_full and next_quick is not None and now >= next_quick
@@ -3854,10 +3859,6 @@ def run_after_login(cfg):
                     gap = SECOND_RUN_AFTER_MIN * 60 if fulls == 1 else every_s
                     next_full = time.time() + gap if gap else None
                 next_quick = time.time() + quick_s if quick_s else None
-        try:
-            runner.maybe_start(cfg, api, nse_holidays())
-        except Exception as e:
-            log('Kite: could not start the scan - %s' % e)
         loop_sleep(LOOP_TICK_S)
     return 0
 
