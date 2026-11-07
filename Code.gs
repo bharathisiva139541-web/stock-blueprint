@@ -222,7 +222,7 @@ const AB_CP_SECTIONS_ = [
     { key: 'AB_UNMIT_MIN_AGE_DAYS', label: 'Unmitigated FVG: ignore zones younger than (days)', def: 1, type: 'number',
       help: 'Skips zones that only formed today.' },
     { key: 'AB_UNMIT_APPROACH_EMAIL', label: 'Unmitigated FVG: send the "approaching" email (1 = yes, 0 = no)', def: 0, type: 'number',
-      help: 'Off since 08-Nov-2026 (too many emails - Gmail allows about 50 a day). Approaching zones still show in the EOD summary. Gap-up "approaching" emails are not affected.' },
+      help: 'Off since 08-Nov-2026 (too many emails - Gmail allows about 50 a day): no approaching email and no approaching list in the EOD summary. 1 brings both back. Gap-up "approaching" emails are not affected.' },
     { key: 'AB_MIT_MAIL_EVERY_MIN', label: 'Mitigated FVG email: at most one every (minutes)', def: 60, type: 'number',
       help: 'Every mitigated zone - daily FVG, Gap-up FVG and the 4H zones from your PC (Zerodha) - goes into ONE combined email, at most once in this many minutes.' },
     { key: 'AB_GAPUP_MIN_PCT', label: 'Gap-up FVG: smallest gap to track (%)', def: 3, type: 'number', help: 'Overnight gap-up size.' },
@@ -5373,22 +5373,22 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * Both are 2/3-state machines that reset once they fire, exactly
  * mirroring the Pine Script's `var ..._current_state` logic.
  *
- * FVG+Spring (owner, 08-Nov-2026: "spring pattern forming on the top of
- * FVG or gapup zone in the first or second touch, or at the bottom line
- * of the FVG zone"): a 'Spring' candle pair - the same test and Control
- * Panel thresholds as the Spring pattern (ab_isSpringPair_: a big red
- * candle, then a small candle that fakes a breakdown below its low and
- * closes back above it) - whose 2nd candle sits on a 3-candle FVG or a
- * Gap-up zone (AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT, no circuit-locked
- * candle) formed before the pair that still holds (no close below its
- * bottom before the pair): TOP = its low comes into the zone's upper
- * half (middle <= low <= top) and it closes above the top, on the zone's
- * 1st or 2nd touch (a touch starts when a low reaches the top after the
- * previous candle's low stayed above it); BOTTOM = its low reaches the
- * bottom line, at most AB_FVG_SPRING_BOTTOM_TOL_PCT (1 %) under it, and
- * it closes above the bottom - any touch. The oldest such zone counts
- * (ab_fvgSpringZones_ / ab_fvgSpringZone_ = web/lib/fvg.js springZones /
- * springZone = kite_intraday.py, compared on random candles).
+ * FVG+Spring (owner, 08-Nov-2026, checked with him on a picture: "spring
+ * can be anywhere in the FVG zone ... valid only if there is no candle
+ * closed below the spring candle low"): a 'Spring' candle pair - the same
+ * test and Control Panel thresholds as the Spring pattern
+ * (ab_isSpringPair_: a big red candle, then a small candle that fakes a
+ * breakdown below its low and closes back above it) - whose 2nd candle sits
+ * on a 3-candle FVG or a Gap-up zone (AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT, no
+ * circuit-locked candle) formed before the pair that still holds (no close
+ * below its bottom before the pair): its low anywhere in the zone or below
+ * the bottom line (any depth), its close above the bottom line, and NO
+ * candle from the zone's formation to the red candle closed below the
+ * Spring candle's low (the red candle itself is excepted); any touch. The
+ * oldest such zone counts (ab_fvgSpringZones_ / ab_fvgSpringZone_ =
+ * web/lib/fvg.js springZones / springZone = kite_intraday.py, compared on
+ * random candles). The tag is dropped once a later candle closes below the
+ * Spring candle's low (ab_fvgSpringBroken_).
  *
  * Twin Star Bottom + FVG (owner, 30-Oct-2026): the Twin Star Bottom
  * pattern (ab_isTwinStarBottom_, Code2.gs: a red candle, then two small
@@ -5405,9 +5405,6 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * it's a still-true-as-of-today state check, so it stays tagged for
  * as long as the gap remains untouched.
  *****************************************************************/
-const AB_FVG_SPRING_BOTTOM_TOL_PCT = 1;   // FVG+Spring at the zone bottom: the low may go this far under the bottom line
-const AB_FVG_SPRING_TOP_TOUCHES = 2;     // FVG+Spring at the zone top: only on the zone's 1st or 2nd touch
-
 /** The zones a Spring can sit on (FVG+Spring): 3-candle FVGs (isFVGUp[g]: [High[g-2], Low[g]]) and Gap-ups (Low[j] >
  *  High[j-1] by AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT %, neither candle circuit-locked: [High[j-1], Low[j]]), oldest first,
  *  an FVG before a Gap-up of the same candle. = web/lib/fvg.js springZones. */
@@ -5423,29 +5420,32 @@ function ab_fvgSpringZones_(candles, isFVGUp) {
   return out;
 }
 
-/** FVG+Spring for the Spring pair (i-1, i): the oldest zone formed before the pair (f <= i-2) that still holds (no close
- *  below its bottom from f+1 to i-2) where candle i sits on the TOP (zone middle <= low <= top, close > top, the zone's
- *  1st or 2nd touch) or the BOTTOM (bottom x (1 - 1 %) <= low <= bottom, close > bottom). -> {kind, f, bottom, top, where,
- *  touch} or null. = web/lib/fvg.js springZone. */
+/** FVG+Spring for the Spring pair (i-1, i): the oldest zone formed before the pair (f <= i-2) where candle i's low is at or
+ *  under the zone top (inside it, or under the bottom - any depth) and its close above the bottom, while every close from
+ *  f+1 to i-2 stays at or above both the zone bottom (the zone holds) and candle i's low (no earlier close under the
+ *  Spring low). -> {kind, f, bottom, top, where: 'top'|'middle'|'bottom', touch} or null. = web/lib/fvg.js springZone. */
 function ab_fvgSpringZone_(candles, i, zones) {
   const c2 = candles[i];
   for (let z = 0; z < zones.length; z++) {
     const Z = zones[z];
     if (Z.f > i - 2) break;
     const top = Z.top, bottom = Z.bottom;
-    let where = null;
-    if (c2.Low <= top && c2.Low >= (bottom + top) / 2 && c2.Cls > top) where = 'top';
-    else if (c2.Low <= bottom && c2.Low >= bottom * (1 - AB_FVG_SPRING_BOTTOM_TOL_PCT / 100) && c2.Cls > bottom) where = 'bottom';
-    if (!where) continue;
-    let holds = true;
-    for (let k = Z.f + 1; k <= i - 2; k++) if (candles[k].Cls < bottom) { holds = false; break; }
-    if (!holds) continue;
+    if (!(c2.Low <= top && c2.Cls > bottom)) continue;
+    let ok = true;
+    for (let k = Z.f + 1; k <= i - 2; k++) if (candles[k].Cls < bottom || candles[k].Cls < c2.Low) { ok = false; break; }
+    if (!ok) continue;
     let touch = 0;
     for (let k = Z.f + 1; k <= i; k++) if (candles[k].Low <= top && (k === Z.f + 1 || candles[k - 1].Low > top)) touch++;
-    if (where === 'top' && touch > AB_FVG_SPRING_TOP_TOUCHES) continue;
+    const where = c2.Low <= bottom ? 'bottom' : c2.Low >= (bottom + top) / 2 ? 'top' : 'middle';
     return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch };
   }
   return null;
+}
+
+/** The first candle after i that closed below candle i's low (the Spring is no longer valid), or -1. */
+function ab_fvgSpringBroken_(candles, i) {
+  for (let k = i + 1; k < candles.length; k++) if (candles[k].Cls < candles[i].Low) return k;
+  return -1;
 }
 
 function ab_longFvgDetail_(candles) {
@@ -5560,7 +5560,7 @@ function ab_longFvgDetail_(candles) {
   for (let i = n - lastN; i < n; i++) {
     if (ftSignal[i]) touchIdx = i;   // keeps the most recent occurrence
     if (ftcSignal[i]) confIdx = i;
-    if (springSignal[i]) springIdx = i;
+    if (springSignal[i] && ab_fvgSpringBroken_(candles, i) === -1) springIdx = i;   // a later close under its low: no longer valid
     if (twinSignal[i]) twinIdx = i;
   }
 
@@ -6318,8 +6318,9 @@ function resetGapUpAlerts() {
 const AB_UNMIT_SHEET = 'UnmitigatedFVG';
 const AB_UNMIT_NEAR_PCT = ab_setting_('AB_UNMIT_NEAR_PCT', 0.5); // how close above the zone top counts as approaching
 // Owner, 08-Nov-2026: "I don't want email alert for unmitigated FVG approaching - too many emails, I have only 50 email
-// per day". The check still runs (it marks Alerted = 'Y', which the EOD summary's "approaching" list reads); only the
-// email is off. The menu's "Check Approaches Now" still emails. Gap-up FVG approaching emails are unchanged.
+// per day" ... "I don't want this unmitigated FVG approaching alert in EOD too". The check still runs (it marks Alerted =
+// 'Y' on the tab) but nothing is emailed and the EOD summary leaves the list out; 1 brings both back. The menu's "Check
+// Approaches Now" still emails. Gap-up FVG approaching emails are unchanged.
 const AB_UNMIT_APPROACH_EMAIL = ab_setting_('AB_UNMIT_APPROACH_EMAIL', 0);
 
 // A zone must be at least this many sessions old before it goes on the

@@ -12,8 +12,9 @@ Once a trading day, after the close (or whenever this computer is on next), this
   3. builds the 15m / 30m / 1H / 2H / 4H candles (sessions 09:15-15:30, 4H = 09:15-13:15 and 13:15-15:30 like
      TradingView) and D / W / M,
   4. looks for the sheet's Spring pattern and "Spring in FVG" (the sheet's FVG+Spring rule, owner 08-Nov-2026: the
-     Spring candle on the TOP of an FVG / Gap-up zone on its 1st or 2nd touch, or on its BOTTOM line) - the same rules
-     as Code.gs and the website (web/lib/patterns.js isSpringPair, web/lib/fvg.js longFvgDetail / springZone); on 4H
+     Spring candle anywhere on an FVG / Gap-up zone or under its bottom line, closing above the bottom, with no earlier
+     close under the Spring low; taken off again when a later candle closes under it) - the same rules as Code.gs and
+     the website (web/lib/patterns.js isSpringPair, web/lib/fvg.js longFvgDetail / springZone); on 4H
      also FVG First Touch / Confirmed / Twin Star Bottom + FVG and the untouched 4H FVG / Gap-up zones,
   5. sends what it found to the sheet's "Intraday Patterns" and "4H FVG Zones" tabs (action 'intraday'), and
   6. backtests every FVG+Spring of 4H / D / W on all stored candles (buy at the Spring close, stop under its low, win =
@@ -592,8 +593,6 @@ def spring_explain(c1, c2, cfg=None):
 GAPUP_MIN_PCT = 3            # Gap-up zones (Code.gs AB_GAPUP_MIN_PCT / the workbook's AB_GAPUP_MAX_PCT 5, web/lib/fvg.js DEFAULTS)
 GAPUP_MAX_PCT = 5
 CIRCUIT_LOCK_PCT = 0.05      # a candle whose range is <= 0.05 % never really traded (AB_CIRCUIT_LOCK_RANGE_PCT)
-SPRING_BOTTOM_TOL_PCT = 1    # FVG+Spring at the zone bottom: the low may go 1 % under the bottom line
-SPRING_TOP_TOUCHES = 2       # FVG+Spring at the zone top: only on the zone's 1st or 2nd touch
 TSB = {'c1BodyMinPct': 1, 'starBodyMax': 0.35, 'starTopMax': 0.25, 'lowTolPct': 1}   # web/lib/patterns.js TSB
 MIN_TURNOVER = 5000000       # AB_FVG_MIN_AVG_TURNOVER: thinner stocks get no 4H zones
 
@@ -661,48 +660,64 @@ def spring_zones(candles, up):
     return out
 
 
-def _zone_marks(candles, z, until):
-    """A zone's first close under its bottom (after it formed) and the candles that start a touch of its top (a low at
-    or under the top after the previous candle's low stayed above it), looked at up to candle `until`."""
-    if 'brk' in z and z['seen'] >= until:
-        return
-    top, bottom, f = z['top'], z['bottom'], z['f']
-    brk, starts = None, []
-    for k in range(f + 1, until + 1):
-        if brk is None and candles[k]['c'] < bottom:
-            brk = k
-        if candles[k]['l'] <= top and (k == f + 1 or candles[k - 1]['l'] > top):
-            starts.append(k)
-    z['brk'], z['starts'], z['seen'] = brk, starts, until
+class _RangeMin:
+    """Smallest close of candles lo..hi (inclusive), in O(1) after an O(n log n) table."""
+
+    def __init__(self, values):
+        self.t = [list(values)]
+        k = 1
+        while 2 * k <= len(values):
+            prev = self.t[-1]
+            self.t.append([min(prev[j], prev[j + k]) for j in range(len(values) - 2 * k + 1)])
+            k *= 2
+
+    def min(self, lo, hi):
+        if hi < lo:
+            return float('inf')
+        lvl = (hi - lo + 1).bit_length() - 1
+        row = self.t[lvl]
+        return min(row[lo], row[hi - (1 << lvl) + 1])
 
 
-def spring_zone(candles, i, zones, max_age=None):
-    """web/lib/fvg.js springZone: the oldest zone formed before the pair (f <= i-2; with `max_age`, at most that many
-    candles back) that still holds (no close under its bottom from f+1 to i-2) where candle i sits on the TOP (zone
-    middle <= low <= top, close above the top, the zone's 1st or 2nd touch) or on the BOTTOM line (bottom x 0.99 <= low
-    <= bottom, close above the bottom). -> {'kind', 'f', 'bottom', 'top', 'where', 'touch'} or None."""
+def _touch_starts(candles, z):
+    """The candles that start a touch of a zone's top (a low at or under the top after the previous candle's low stayed
+    above it), worked out once per zone."""
+    if 'starts' not in z:
+        top, f = z['top'], z['f']
+        z['starts'] = [k for k in range(f + 1, len(candles))
+                       if candles[k]['l'] <= top and (k == f + 1 or candles[k - 1]['l'] > top)]
+    return z['starts']
+
+
+def spring_zone(candles, i, zones, max_age=None, rmq=None):
+    """web/lib/fvg.js springZone (owner, 08-Nov-2026): the oldest zone formed before the pair (f <= i-2; with `max_age`,
+    at most that many candles back) where candle i's low is at or under the zone top (inside it, or under the bottom - any
+    depth) and its close above the bottom, while every close from f+1 to i-2 stays at or above both the zone bottom (the
+    zone holds) and candle i's low (no earlier close under the Spring low).
+    -> {'kind', 'f', 'bottom', 'top', 'where': 'top'|'middle'|'bottom', 'touch'} or None."""
     c2 = candles[i]
-    n = len(candles)
+    rmq = rmq or _RangeMin([c['c'] for c in candles])
     for z in zones:
         if z['f'] > i - 2:
             break
         if max_age is not None and i - z['f'] > max_age:
             continue
         top, bottom = z['top'], z['bottom']
-        if top >= c2['l'] >= (bottom + top) / 2 and c2['c'] > top:
-            where = 'top'
-        elif bottom >= c2['l'] >= bottom * (1 - SPRING_BOTTOM_TOL_PCT / 100) and c2['c'] > bottom:
-            where = 'bottom'
-        else:
+        if not (c2['l'] <= top and c2['c'] > bottom):
             continue
-        _zone_marks(candles, z, n - 1 if max_age is None else min(n - 1, z['f'] + max_age))
-        if z['brk'] is not None and z['brk'] <= i - 2:
+        if rmq.min(z['f'] + 1, i - 2) < max(bottom, c2['l']):
             continue
-        touch = sum(1 for k in z['starts'] if k <= i)
-        if where == 'top' and touch > SPRING_TOP_TOUCHES:
-            continue
+        touch = sum(1 for k in _touch_starts(candles, z) if k <= i)
+        where = 'bottom' if c2['l'] <= bottom else 'top' if c2['l'] >= (bottom + top) / 2 else 'middle'
         return {'kind': z['kind'], 'f': z['f'], 'bottom': bottom, 'top': top, 'where': where, 'touch': touch}
     return None
+
+
+def spring_broken(candles, i):
+    """web/lib/fvg.js springBroken: the first candle after i that closed below candle i's low (the Spring is no longer
+    valid - the owner's rule: it leaves the sheet's list), or None."""
+    low = candles[i]['l']
+    return next((k for k in range(i + 1, len(candles)) if candles[k]['c'] < low), None)
 
 
 def fvg_detail(candles, cfg=None, max_age=None):
@@ -753,10 +768,13 @@ def fvg_detail(candles, cfg=None, max_age=None):
     def active(i):
         return {'kind': 'FVG', 'f': f_at[i], 'bottom': bot_at[i], 'top': top_at[i]}
     zones = spring_zones(candles, up)
+    rmq = None
     for i in range(3, n):
         if is_spring_pair(candles[i - 1], candles[i], cfg):
-            hit = spring_zone(candles, i, zones, max_age)
+            rmq = rmq or _RangeMin([c['c'] for c in candles])
+            hit = spring_zone(candles, i, zones, max_age, rmq)
             if hit:
+                hit['broken'] = spring_broken(candles, i)
                 res['spring'][i] = hit
     for i in range(4, n):
         s1, s2 = candles[i - 1], candles[i]
@@ -804,17 +822,20 @@ def fvg_detail(candles, cfg=None, max_age=None):
 
 
 def fvg_spring(candles, cfg=None, max_age=None):
-    """FVG+Spring (owner, 08-Nov-2026) on one timeframe: {i: {'kind', 'f', 'bottom', 'top', 'where', 'touch'}} - the
-    Spring pairs (i-1, i) on the top (1st / 2nd touch) or the bottom line of an FVG / Gap-up zone (spring_zone)."""
+    """FVG+Spring (owner, 08-Nov-2026) on one timeframe: {i: {'kind', 'f', 'bottom', 'top', 'where', 'touch', 'broken'}} -
+    the Spring pairs (i-1, i) on an FVG / Gap-up zone (spring_zone); 'broken' = the first later candle that closed below
+    the Spring low (or None)."""
     n = len(candles)
     if n < 17:
         return {}
     zones = spring_zones(candles, fvg_gaps(candles))
+    rmq = _RangeMin([c['c'] for c in candles])
     out = {}
     for i in range(3, n):
         if is_spring_pair(candles[i - 1], candles[i], cfg):
-            hit = spring_zone(candles, i, zones, max_age)
+            hit = spring_zone(candles, i, zones, max_age, rmq)
             if hit:
+                hit['broken'] = spring_broken(candles, i)
                 out[i] = hit
     return out
 
@@ -871,7 +892,8 @@ FVG_PATTERN_TFS = ('4H',)          # ... and on 4H also the other FVG patterns +
 BACKTEST_TFS = ('4H', 'D', 'W')
 SPRING_PATTERNS = ('Spring in FVG', 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
 FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed'), ('twin', 'Twin Star Bottom + FVG'))
-RULES_VERSION = 2                  # a change rescans the last FIRST_RUN_SESSIONS sessions (2 = the 08-Nov-2026 FVG+Spring rule)
+RULES_VERSION = 3                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule)
+KEEP_DAYS = 30                     # = the sheet's AB_ITD_KEEP_DAYS: Spring in FVG rows a later close under the low takes off
 BT_HORIZON = 20                    # backtest: a trade gets 20 candles to hit 2R or its stop
 BT_RR = 2.0
 BT_TRADES = 500                    # newest FVG+Spring trades listed on the sheet
@@ -916,8 +938,10 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
     4H FVG zones still untouched + the ones first touched in those sessions, and (backtest) the 2R outcome of every
     FVG+Spring and Spring of BACKTEST_TFS on all stored candles.
     -> {'items': [{'tf', 'pattern', 'candle', 'session', 'low', 'close', 'zone'}], 'zones': [...], 'mitigated': [...],
-        'trades': [...FVG+Spring...], 'springs': [(tf, outcome)...every Spring...]}"""
-    out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': []}
+        'trades': [...FVG+Spring...], 'springs': [(tf, outcome)...every Spring...],
+        'invalid': [{'tf', 'candle'}...Spring in FVG of the last KEEP_DAYS a later close under the Spring low broke]}"""
+    out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': []}
+    keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
     for tf in timeframes:
         all_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
         if len(all_c) < 2:
@@ -932,7 +956,9 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             base = {'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2)}
             if _slot_ok(slots, tf, c):
                 sz = d['spring'].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
-                if sz:
+                if sz and sz['broken'] is not None:
+                    pass                    # a later candle closed below its low: no longer valid (owner, 08-Nov-2026)
+                elif sz:
                     out['items'].append(dict(base, pattern='Spring in FVG', zone=zone_out(all_c, sz)))
                 elif tf not in fvg_only and is_spring_pair(all_c[i - 1], c, cfg):
                     out['items'].append(dict(base, pattern='Spring', zone=None))
@@ -941,6 +967,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                     z = d[key].get(i)
                     if z and z['f'] is not None:
                         out['items'].append(dict(base, pattern=name, zone=zone_out(all_c, z)))
+        if d and tf not in NO_FVG_SPRING_TFS:
+            # Spring in FVG rows the sheet may hold (the last KEEP_DAYS) that a later close under the Spring low broke
+            for i, sz in d['spring'].items():
+                if sz['broken'] is not None and all_c[i]['day'] >= keep_from and _slot_ok(slots, tf, all_c[i]):
+                    out['invalid'].append({'tf': tf, 'candle': all_c[i]['t']})
         if d and tf in FVG_PATTERN_TFS:
             day = [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto.isoformat()][-TURNOVER_DAYS:]
             t = avg_turnover(day)
@@ -973,12 +1004,12 @@ def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_on
     return analyse(store, since_iso, upto, holidays, timeframes, fvg_only, cfg, slots)['items']
 
 
-BT_GROUPS = (('fvg', 'FVG+Spring'), ('top', 'FVG+Spring - zone top'), ('bottom', 'FVG+Spring - zone bottom'),
-             ('spring', 'Spring (every one, for comparison)'))
+BT_GROUPS = (('fvg', 'FVG+Spring'), ('top', 'FVG+Spring - zone top'), ('middle', 'FVG+Spring - zone middle'),
+             ('bottom', 'FVG+Spring - zone bottom'), ('spring', 'Spring (every one, for comparison)'))
 
 
 def bt_summary(trades, springs, tfs=BACKTEST_TFS):
-    """Win rate per timeframe: FVG+Spring (all / zone top / zone bottom) and every Spring. -> [row dicts]."""
+    """Win rate per timeframe: FVG+Spring (all / zone top / middle / bottom) and every Spring. -> [row dicts]."""
     agg = {}
 
     def add(tf, g, when, res):
@@ -1100,12 +1131,13 @@ def bt_log(rows):
     out = []
     for tf in BACKTEST_TFS:
         g = by.get(tf) or {}
-        f, sp = g.get(BT_GROUPS[0][1]), g.get(BT_GROUPS[3][1])
+        f, sp = g.get(BT_GROUPS[0][1]), g.get(BT_GROUPS[4][1])
         if not f:
             continue
         rate = lambda r: ('%.1f%%' % r['winRate']) if r and r['winRate'] is not None else '-'
-        out.append('%s FVG+Spring %d signals, win rate %s (top %s, bottom %s; every Spring %s)'
-                   % (tf, f['signals'], rate(f), rate(g.get(BT_GROUPS[1][1])), rate(g.get(BT_GROUPS[2][1])), rate(sp)))
+        out.append('%s FVG+Spring %d signals, win rate %s (top %s, middle %s, bottom %s; every Spring %s)'
+                   % (tf, f['signals'], rate(f), rate(g.get(BT_GROUPS[1][1])), rate(g.get(BT_GROUPS[2][1])),
+                      rate(g.get(BT_GROUPS[3][1])), rate(sp)))
     return out
 
 
@@ -1214,7 +1246,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         since = (st.get('scanned') if not changed else None) or sessions_back(upto, FIRST_RUN_SESSIONS, holidays).isoformat()
         if changed:
             log('Kite: %s - the last %d sessions are scanned again, and the sheet keeps only these.'
-                % ('new pattern rules (FVG+Spring: zone top on the 1st / 2nd touch or the bottom line; 4H FVG patterns + zones)'
+                % ('new pattern rules (FVG+Spring: anywhere on the zone or under it, no earlier close under the Spring low; 4H FVG patterns + zones)'
                    if st.get('rules') != RULES_VERSION and st.get('tfs') == tfs and (st.get('slots') or {}) == slots else
                    'the timeframes are now %s%s' % (', '.join(tfs), ''.join(' (%s: only the %s candle)' % (t, ' / '.join(v))
                                                                           for t, v in sorted(slots.items()))),
@@ -1222,7 +1254,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         fvg_only = tuple(t for t in (cfg.get('intraday_fvg_only') if cfg.get('intraday_fvg_only') is not None
                                      else DEFAULT_FVG_ONLY) if t in TIMEFRAMES)
         t0, reqs, errors, in_row, nokite, items = time.time(), 0, 0, 0, [], []
-        zones, mitigated, trades, springs_bt = [], [], [], []
+        zones, mitigated, trades, springs_bt, invalid = [], [], [], [], []
         log('Kite: reading the candles of %d stocks up to %s (only new days after the first time) ...'
             % (len(syms), upto.isoformat()))
         for k, sym in enumerate(syms):
@@ -1247,7 +1279,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                     return None
                 continue
             res = analyse(store, since, upto, holidays, tfs, fvg_only, slots=slots, backtest=True)
-            for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades)):
+            for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades), ('invalid', invalid)):
                 for f in res[key]:
                     f['sym'] = sym
                     dest.append(f)
@@ -1265,12 +1297,15 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         for p in range(0, max(1, len(items)), POST_ITEMS):
             part = items[p:p + POST_ITEMS]
             res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part, 'tfs': tfs, 'slots': slots,
-                                        'first': p == 0, 'last': p + POST_ITEMS >= len(items), 'rules': RULES_VERSION},
+                                        'first': p == 0, 'last': p + POST_ITEMS >= len(items), 'rules': RULES_VERSION,
+                                        'invalid': invalid if p == 0 else []},
                       tries=3, timeout=180)
             if not res.get('ok'):
                 log('Kite: the sheet refused the patterns - %s' % res.get('error'))
                 return None
             sent += int(res.get('added') or 0)
+            if p == 0 and res.get('removed'):
+                log('Kite: %d Spring in FVG row(s) taken off the sheet - a later candle closed below the Spring low.' % int(res['removed']))
             old_app = old_app or 'tfs' not in res or 'slots' not in res
         if old_app:
             log('Kite: the sheet\'s web app is an older version - rows of other timeframes / candles stay on the tab until you '
@@ -1334,8 +1369,10 @@ def check(cfg, args, holidays=None, out=print, now=None):
         for i, kind in hits:
             z = fs.get(i)
             out('  %-14s %s  (low %.2f, close %.2f)%s' % (kind, cs[i]['t'], cs[i]['l'], cs[i]['c'],
-                ('  on the %s of %s %.2f - %.2f formed %s (touch %d)' % (z['where'], 'the FVG' if z['kind'] == 'FVG' else 'the Gap-up',
-                                                                         z['bottom'], z['top'], cs[z['f']]['t'], z['touch'])) if z else ''))
+                ('  %s of %s %.2f - %.2f formed %s (touch %d)%s' % (z['where'], 'the FVG' if z['kind'] == 'FVG' else 'the Gap-up',
+                                                                    z['bottom'], z['top'], cs[z['f']]['t'], z['touch'],
+                                                                    ' - BROKEN: %s closed below its low' % cs[z['broken']]['t']
+                                                                    if z['broken'] is not None else '')) if z else ''))
     else:
         out('No Spring in this window.')
     if tf in FVG_PATTERN_TFS:
@@ -1356,8 +1393,10 @@ def check(cfg, args, holidays=None, out=print, now=None):
         steps = spring_explain(cs[i - 1], cs[i])
         bad = [n for n, ok in steps if not ok]
         out('  %s  ->  %s' % (cs[i - 1]['t'], _fmt_c(cs[i])))
-        out('     ' + ('SPRING' + (' in FVG (%s)' % fs[i]['where'] if i in fs else ' (not on the top - 1st / 2nd touch - or the bottom line '
-                                     'of an FVG / Gap-up zone that holds)') if not bad else 'no: ' + '; '.join(bad)))
+        out('     ' + ('SPRING' + ((' in FVG (%s)' % fs[i]['where'] + (' - no longer valid: %s closed below its low' % cs[fs[i]['broken']]['t']
+                                                                  if fs[i]['broken'] is not None else '')) if i in fs else
+                                     ' (not on an FVG / Gap-up zone that holds, or an earlier candle closed below its low)')
+                         if not bad else 'no: ' + '; '.join(bad)))
     out('\nTradingView: ' + tv_url(sym, tf))
     out('(nothing was sent to the sheet)')
     return 0

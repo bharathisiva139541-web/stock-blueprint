@@ -95,6 +95,7 @@ LIVE_MAIN.springBacktest = {
   summary: { note: 'FVG+Spring backtest on Zerodha Kite candles ...', cols: BT_COLS, rows: [
     ['4H', 'FVG+Spring', 120, 45, 60, 10, 5, 42.9, 0.31, '2026-05-12 13:15', '2026-10-20 13:15'],
     ['4H', 'FVG+Spring - zone top', 70, 30, 34, 4, 2, 46.9, 0.42, '2026-05-12 13:15', '2026-10-20 13:15'],
+    ['4H', 'FVG+Spring - zone middle', 0, 0, 0, 0, 0, null, null, null, null],
     ['4H', 'FVG+Spring - zone bottom', 50, 15, 26, 6, 3, 36.6, 0.1, '2026-05-14 13:15', '2026-10-17 13:15'],
     ['4H', 'Spring (every one, for comparison)', 900, 260, 520, 90, 30, 33.3, -0.05, '2026-05-11 13:15', '2026-10-20 13:15'],
     ['D', 'FVG+Spring', 800, 300, 400, 90, 10, 42.9, 0.25, '2021-08-02', '2026-10-20'],
@@ -886,8 +887,8 @@ function check(name, fn) {
       trades: document.querySelector('#sg-sbt-count').textContent
     }));
     assert.deepStrictEqual(b.tiles, [['4H', '42.9%'], ['D', '42.9%'], ['W', '–']]);
-    assert.match(b.note4h, /120 signals · 45 won · 60 lost · avg 0\.31R.*top 46\.9% · bottom 36\.6% · every Spring 33\.3%/);
-    assert.ok(b.sumRows === 6 && b.trades === '3 of 3', JSON.stringify(b));
+    assert.match(b.note4h, /120 signals · 45 won · 60 lost · avg 0\.31R.*top 46\.9% · middle – · bottom 36\.6% · every Spring 33\.3%/);
+    assert.ok(b.sumRows === 7 && b.trades === '3 of 3', JSON.stringify(b));
     await p.click('[data-chip="sgsbtr"][data-v="Win"]');
     assert.strictEqual(await p.$eval('#sg-sbt-count', (x) => x.textContent), '1 of 3');
     await p.click('[data-chip="sgsbtf"][data-v="4H"]');

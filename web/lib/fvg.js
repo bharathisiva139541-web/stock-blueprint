@@ -10,18 +10,18 @@
      14-bar average (High-Low) range ending at bar i. Zone = [High[i-2], Low[i]].
    - Touch: Low crosses under the active gap top (Low[i-1] >= top && Low[i] < top).
    - Confirm: Close crosses back above the High of the latest touch candle.
-   - FVG+Spring (owner, 08-Nov-2026): a Spring pair (patterns.js isSpringPair,
-     the Spring pattern's thresholds) whose 2nd candle sits on a 3-candle FVG
-     or a Gap-up zone formed before the pair that still holds (no close below
-     its bottom before the pair), in one of two places (springZone):
-       TOP    - its low comes into the zone's upper half (zone middle <= low
-                <= top) and it closes above the top, on the zone's 1st or 2nd
-                touch (a touch starts when a low reaches the top after the
-                previous candle's low stayed above it);
-       BOTTOM - its low reaches the bottom line, at most SPRING_BOTTOM_TOL_PCT
-                (1 %) under it, and it closes above the bottom - any touch.
-     The oldest such zone is taken (an FVG before a Gap-up formed on the
-     same candle).
+   - FVG+Spring (owner, 08-Nov-2026, checked with him on a picture): a Spring
+     pair (patterns.js isSpringPair, the Spring pattern's thresholds) whose
+     2nd candle sits on a 3-candle FVG or a Gap-up zone formed before the pair
+     that still holds (no close below its bottom before the pair): its low
+     anywhere in the zone or below the bottom line (any depth), its close
+     above the bottom line, and NO candle from the zone's formation to the
+     red candle closed below the Spring candle's low (the red candle itself
+     is excepted). Any touch. `where` = top (low in the upper half) / middle /
+     bottom (low at or under the bottom line). The oldest such zone is taken
+     (an FVG before a Gap-up formed on the same candle). A Spring is dropped
+     from the tags once a later candle closes below its low (events keep it,
+     with `broken` = that candle's index).
    - Twin Star Bottom + FVG: patterns.js isTwinStarBottom (red c1, two small
      candles holding the same low) whose stars reach into any gap formed before
      c1 that still holds (lowest star low <= top, both star closes >= bottom).
@@ -47,8 +47,6 @@
     AB_GAPUP_MIN_AGE_DAYS: 1,
     AB_UNMIT_MIN_AGE_DAYS: 1
   };
-  var SPRING_BOTTOM_TOL_PCT = 1;     // FVG+Spring at the zone bottom: the low may go this far under the bottom line
-  var SPRING_TOP_TOUCHES = 2;        // FVG+Spring at the zone top: only on the zone's 1st or 2nd touch
   function cfgOf(cfg) {
     var o = {};
     Object.keys(DEFAULTS).forEach(function (k) { o[k] = cfg && cfg[k] != null ? cfg[k] : DEFAULTS[k]; });
@@ -93,28 +91,32 @@
     return out;
   }
 
-  /** FVG+Spring for the Spring pair (i-1, i): the oldest zone formed before the pair (f <= i-2) that still holds (no
-   *  close below its bottom from f+1 to i-2) where candle i sits on the TOP (zone middle <= low <= top, close > top, the
-   *  zone's 1st or 2nd touch) or the BOTTOM (bottom x (1 - 1 %) <= low <= bottom, close > bottom).
-   *  -> {kind, f, bottom, top, where: 'top'|'bottom', touch} or null. */
+  /** FVG+Spring for the Spring pair (i-1, i): the oldest zone formed before the pair (f <= i-2) where candle i's low is
+   *  at or under the zone top (inside it, or under the bottom - any depth) and its close above the bottom, while every
+   *  close from f+1 to i-2 stays at or above both the zone bottom (the zone holds) and candle i's low (no earlier close
+   *  under the Spring low). -> {kind, f, bottom, top, where: 'top'|'middle'|'bottom', touch} or null. */
   function springZone(candles, i, zones) {
     var c2 = candles[i];
     for (var z = 0; z < zones.length; z++) {
       var Z = zones[z];
       if (Z.f > i - 2) break;
-      var top = Z.top, bottom = Z.bottom, where = null;
-      if (c2.Low <= top && c2.Low >= (bottom + top) / 2 && c2.Cls > top) where = 'top';
-      else if (c2.Low <= bottom && c2.Low >= bottom * (1 - SPRING_BOTTOM_TOL_PCT / 100) && c2.Cls > bottom) where = 'bottom';
-      if (!where) continue;
-      var holds = true, k;
-      for (k = Z.f + 1; k <= i - 2; k++) if (candles[k].Cls < bottom) { holds = false; break; }
-      if (!holds) continue;
+      var top = Z.top, bottom = Z.bottom;
+      if (!(c2.Low <= top && c2.Cls > bottom)) continue;
+      var ok = true, k;
+      for (k = Z.f + 1; k <= i - 2; k++) if (candles[k].Cls < bottom || candles[k].Cls < c2.Low) { ok = false; break; }
+      if (!ok) continue;
       var touch = 0;
       for (k = Z.f + 1; k <= i; k++) if (candles[k].Low <= top && (k === Z.f + 1 || candles[k - 1].Low > top)) touch++;
-      if (where === 'top' && touch > SPRING_TOP_TOUCHES) continue;
+      var where = c2.Low <= bottom ? 'bottom' : c2.Low >= (bottom + top) / 2 ? 'top' : 'middle';
       return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch };
     }
     return null;
+  }
+
+  /** The first candle after i that closed below candle i's low (the Spring is no longer valid), or -1. */
+  function springBroken(candles, i) {
+    for (var k = i + 1; k < candles.length; k++) if (candles[k].Cls < candles[i].Low) return k;
+    return -1;
   }
 
   /** ab_longFvgDetail_ -> { tags, unmitigated, events }. cfg: Spring keys of patterns.js DEFAULTS. */
@@ -201,7 +203,7 @@
     for (i = n - lastN; i < n; i++) {
       if (ftSignal[i]) touchIdx = i;
       if (ftcSignal[i]) confIdx = i;
-      if (springSignal[i]) springIdx = i;
+      if (springSignal[i] && springBroken(candles, i) === -1) springIdx = i;   // a later close under its low: no longer valid
       if (twinSignal[i]) twinIdx = i;
     }
     var lastGapIdx = -1;
@@ -234,7 +236,7 @@
       if (springSignal[i]) {
         var sz = springAt[i];
         events.push({ i: i, t: candles[i].t, type: 'fvg-spring', zone: sz.kind, where: sz.where, touch: sz.touch,
-          bottom: sz.bottom, top: sz.top, formedIdx: sz.f, formed: candles[sz.f].t });
+          bottom: sz.bottom, top: sz.top, formedIdx: sz.f, formed: candles[sz.f].t, broken: springBroken(candles, i) });
       }
       if (twinSignal[i]) events.push({ i: i, t: candles[i].t, type: 'fvg-twinstar' });
     }
@@ -346,8 +348,8 @@
   }
 
   return {
-    DEFAULTS: DEFAULTS, SPRING_BOTTOM_TOL_PCT: SPRING_BOTTOM_TOL_PCT, SPRING_TOP_TOUCHES: SPRING_TOP_TOUCHES,
-    isCircuitLocked: isCircuitLocked, avgTurnover: avgTurnover, longFvgDetail: longFvgDetail, springZones: springZones, springZone: springZone,
+    DEFAULTS: DEFAULTS, isCircuitLocked: isCircuitLocked, avgTurnover: avgTurnover, longFvgDetail: longFvgDetail,
+    springZones: springZones, springZone: springZone, springBroken: springBroken,
     gapUpFvgs: gapUpFvgs, gapUpTags: gapUpTags, columnTags: columnTags, watchZones: watchZones,
     approachState: approachState, classifyMitigation: classifyMitigation, MIT_LABELS: MIT_LABELS,
     fillState: fillState, bearishGaps: bearishGaps
