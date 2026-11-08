@@ -322,3 +322,25 @@ test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py
   assert.deepStrictEqual(out.b, data.springBacktest);
   assert.deepStrictEqual(out.m.rows.map((r) => r[3]), data.mitigatedLog.rows.map((r) => r[3]));
 });
+
+test('Kite live prices (owner, 08-Nov-2026): only the "Kite Live" tab, biggest gainers first, Main untouched', () => {
+  const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: Date.UTC(2026, 10, 8, 12, 35) });
+  const mainBefore = JSON.stringify(e.sheet('Main').rows);
+  const r = e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:05:00', items: [
+    ['PARAGMILK', 241.5, 236, 243, 235.1, 233], ['FLAT', 99, 100, 100.5, 98.8, 100], ['M&M', 3060, 3050, 3070, 3040, 3060],
+    ['bad sym!', 1, 1, 1, 1, 1], ['FLAT', 98, 1, 1, 1, 1], ['ZERO', 0, 1, 1, 1, 1]] });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true, received: 6, written: 3, skipped: 3, up: 1, down: 1, at: '2026-11-08 18:05:00' });
+  const t = e.sheet('Kite Live').rows;
+  assert.match(t[0][0], /^Kite live prices \(Zerodha, from your PC - LiveNow\.bat\), updated 2026-11-08 18:05:00 IST: 3 stocks, 1 up \/ 1 down\./);
+  assert.deepStrictEqual(t[1], ['Symbol', 'Company', 'Kite LTP', 'Change %', 'Prev Close', 'Open', 'High', 'Low', 'Sheet Price (GOOGLEFINANCE)', 'Kite vs Sheet %']);
+  assert.deepStrictEqual(t.slice(2).map((x) => [x[0], x[1], x[2], x[3], x[8], x[9]]), [
+    ['PARAGMILK', 'Parag Milk Foods Ltd.', 241.5, 3.65, 240, 0.63],
+    ['M&M', 'Mahindra & Mahindra', 3060, 0, 3050, 0.33],
+    ['FLAT', 'Flat Co', 99, -1, 101, -1.98]]);
+  assert.strictEqual(JSON.stringify(e.sheet('Main').rows), mainBefore, 'Main (GOOGLEFINANCE MKT Price) not touched');
+  // the next minute replaces the rows (fewer stocks: the old ones go)
+  e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:06:00', items: [['FLAT', 100.5, 100, 100.6, 98.8, 100]] });
+  assert.deepStrictEqual(e.sheet('Kite Live').rows.slice(2).filter((x) => x[0]).map((x) => x[0] + ' ' + x[3]), ['FLAT 0.5']);
+  assert.strictEqual(e.post({ token: TOKEN, action: 'kitelive' }).ok, false);
+  assert.strictEqual(e.post({ token: 'bad', action: 'kitelive', items: [] }).error, 'bad token');
+});

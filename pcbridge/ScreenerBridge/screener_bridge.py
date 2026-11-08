@@ -63,6 +63,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py intraday   the Kite intraday / weekly / monthly pattern scan now (asks for the login if needed)
   python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
   python screener_bridge.py backtest   the FVG+Spring win rate (2R) on the Kite candles already stored -> the sheet (no login)
+  python screener_bridge.py live       Kite live prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -4014,6 +4015,12 @@ def main(argv):
             return 1
         n = itd.intraday_step(dict(cfg, intraday=True), api, nse_holidays(), force=True)
         return 0 if n is not None else 1
+    if cmd == 'live':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        print('Kite live prices -> the sheet\'s "Kite Live" tab (Main and GOOGLEFINANCE are not touched). Close this window to stop.')
+        return itd.live(cfg, api, nse_holidays())
     if cmd == 'backtest':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

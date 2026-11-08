@@ -495,4 +495,59 @@ assert K.backtest_now(CFG, fake_api, HOL, out=OUT.append) == 0
 assert not CALLS and [p['op'] for p in POSTS] == ['backtest'], (CALLS[:3], POSTS[:1])
 assert any('PARAGMILK' == t['sym'] for t in POSTS[0]['trades']) and any('4H FVG+Spring' in o for o in OUT), OUT
 
+# ------------------------------------------------------------------ 11. LiveNow.bat: Kite live prices -> the sheet's "Kite Live" tab
+QUOTES = {'NSE:PARAGMILK': {'last_price': 241.5, 'ohlc': {'open': 236, 'high': 243, 'low': 235.1, 'close': 233.0}},
+          'NSE:FLAT': {'last_price': 99.0, 'ohlc': {'open': 100, 'high': 100.5, 'low': 98.8, 'close': 100.0}},
+          'NSE:BEONLY-BE': {'last_price': 50.0, 'ohlc': {'open': 50, 'high': 50, 'low': 50, 'close': 50.0}}}
+QCALLS = []
+
+
+def fake_http_live(method, url, headers, data=None, timeout=60):
+    u = urllib.parse.urlparse(url)
+    if u.path == '/quote/ohlc':
+        keys = [v for k, v in urllib.parse.parse_qsl(u.query) if k == 'i']
+        QCALLS.append(keys)
+        if headers.get('Authorization') != 'token key123:at-req1':
+            return 403, json.dumps({'status': 'error', 'error_type': 'TokenException', 'message': 'expired'})
+        return 200, json.dumps({'status': 'success', 'data': {k: QUOTES[k] for k in keys if k in QUOTES}})
+    return fake_http(method, url, headers, data, timeout)
+
+
+LIVE_POSTS = []
+
+
+def fake_api_live(cfg, action, payload=None, timeout=120, tries=3):
+    if action == 'intraday' and payload['op'] == 'syms':
+        return {'ok': True, 'syms': ['PARAGMILK', 'FLAT', 'BEONLY', 'NOPE']}
+    assert action == 'kitelive', action
+    LIVE_POSTS.append(payload)
+    return {'ok': True, 'written': len(payload['items']), 'up': 1, 'down': 1}
+
+
+K._http = fake_http_live
+K.session_save(s)
+OUT = []
+assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 8, 18, 5), sleep=lambda x: None, max_rounds=2) == 0
+assert len(LIVE_POSTS) == 2 and LIVE_POSTS[0]['at'] == '2026-11-08 18:05:00', LIVE_POSTS[:1]
+items = {it[0]: it[1:] for it in LIVE_POSTS[0]['items']}
+assert items == {'PARAGMILK': [241.5, 236, 243, 235.1, 233.0], 'FLAT': [99.0, 100, 100.5, 98.8, 100.0], 'BEONLY': [50.0, 50, 50, 50, 50.0]}, items
+assert QCALLS and sorted(QCALLS[0]) == ['NSE:BEONLY-BE', 'NSE:FLAT', 'NSE:PARAGMILK'], 'BE series as SYMBOL-BE; NOPE is not on Kite'
+assert any('until 08-Nov 22:05' in o for o in OUT), ('Sunday (Muhurat): 4 hours', OUT[:3])
+assert any('Not on Kite: NOPE' in o for o in OUT) and any('top: PARAGMILK +3.6%' in o for o in OUT), OUT
+# a trading day stops at 15:35; an older web app without the action -> a clear hint
+OUT.clear()
+LIVE_POSTS.clear()
+
+
+def old_app(cfg, action, payload=None, timeout=120, tries=3):
+    if action == 'intraday':
+        return {'ok': True, 'syms': ['FLAT']}
+    return {'ok': False, 'error': 'unknown action'}
+
+
+assert K.live(CFG, old_app, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None, max_rounds=3) == 1
+assert any('until 09-Nov 15:35' in o for o in OUT) and any('New version deploy' in o for o in OUT), OUT
+assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 15, 36), sleep=lambda x: None) == 0, \
+    'after 15:35 on a trading day: one round, then it stops'
+
 print('OK')

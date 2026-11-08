@@ -1402,6 +1402,119 @@ def check(cfg, args, holidays=None, out=print, now=None):
     return 0
 
 
+# ------------------------------------------------------------------ LiveNow.bat: Kite live prices -> the sheet's "Kite Live" tab
+LIVE_GAP_S = 60             # one round of prices a minute (config "kite_live_seconds", at least 15)
+LIVE_BATCH = 250            # instruments per quote request (Kite allows 1000; shorter links are safer)
+LIVE_QUOTE_GAP_S = 1.05     # Kite: 1 quote request a second
+LIVE_MAX_HOURS = 4          # started on a non-trading day (the Muhurat session): stops after 4 hours
+LIVE_STOP = (15, 35)        # on a trading day: stops at 15:35 IST
+
+
+def quote_key(imap, sym):
+    """'NSE:SYMBOL' as Kite's quote API knows it (BE / BZ series: SYMBOL-BE / SYMBOL-BZ), or None."""
+    for k in (sym, sym + '-BE', sym + '-BZ'):
+        if k in imap:
+            return 'NSE:' + k
+    return None
+
+
+def live_quotes(cfg, sess, keys):
+    """{'NSE:SYM': SYM} -> {SYM: [last price, open, high, low, previous close]} from Kite's /quote/ohlc."""
+    out = {}
+    ks = sorted(keys)
+    for p in range(0, len(ks), LIVE_BATCH):
+        _throttle(LIVE_QUOTE_GAP_S)
+        j = kite_req(cfg, sess, 'GET', '/quote/ohlc', params=[('i', k) for k in ks[p:p + LIVE_BATCH]], throttle=False)
+        for k, q in ((j or {}).get('data') or {}).items():
+            sym = keys.get(k)
+            if not sym or not isinstance(q, dict):
+                continue
+            o = q.get('ohlc') or {}
+            v = [_num(q.get('last_price')), _num(o.get('open')), _num(o.get('high')), _num(o.get('low')), _num(o.get('close'))]
+            if v[0]:
+                out[sym] = [round(x, 2) if x else None for x in v]
+    return out
+
+
+def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_rounds=None):
+    """LiveNow.bat (owner, 08-Nov-2026, Muhurat session): Kite's live prices of the sheet's stocks every minute ->
+    the sheet's "Kite Live" tab (action 'kitelive'). Nothing else on the sheet changes. Runs until 15:35 on a trading
+    day, LIVE_MAX_HOURS on any other day, or until this window is closed."""
+    holidays = set(holidays or ())
+    now_fn = now_fn or now_ist
+    if not configured(cfg):
+        out('Kite is not set up - run KiteSetup.bat first.')
+        return 1
+    gap = max(15, int(cfg.get('kite_live_seconds') or LIVE_GAP_S))
+    try:
+        sess = ensure_session(cfg)
+        if not sess:
+            out('No Kite login - nothing to show. Run LiveNow.bat again and log in on the Zerodha page.')
+            return 1
+        ans = api(cfg, 'intraday', {'op': 'syms'}, tries=2, timeout=120)
+        if not ans.get('ok'):
+            out('The sheet refused the symbol list - %s' % ans.get('error'))
+            return 1
+        syms = [str(x).strip().upper() for x in ans.get('syms') or [] if str(x).strip()]
+        now = now_fn()
+        imap = instruments(cfg, sess, now.date().isoformat())
+        keys, missing = {}, []
+        for sym in syms:
+            k = quote_key(imap, sym)
+            if k:
+                keys[k] = sym
+            else:
+                missing.append(sym)
+        trading = is_trading_day(now.date(), holidays)
+        stop_at = (now.replace(hour=LIVE_STOP[0], minute=LIVE_STOP[1], second=0, microsecond=0) if trading
+                   else now + timedelta(hours=LIVE_MAX_HOURS))
+        out('Kite live prices of %d stocks -> the sheet\'s "Kite Live" tab every %d seconds, until %s (or close this window).'
+            % (len(keys), gap, stop_at.strftime('%d-%b %H:%M')))
+        if missing:
+            out('Not on Kite: %s' % ', '.join(missing[:12]) + (' ...' if len(missing) > 12 else ''))
+        rounds = 0
+        while True:
+            t0 = time.time()
+            try:
+                q = live_quotes(cfg, sess, keys)
+            except NeedLogin:
+                out('Kite asks for a new login (it ends at 6 AM) - the login page opens.')
+                sess = ensure_session(cfg)
+                if not sess:
+                    out('No login - stopped.')
+                    return 1
+                continue
+            except KiteError as e:
+                out('%s  Kite: %s - trying again in a minute' % (now_fn().strftime('%H:%M:%S'), e))
+                q = None
+            if q:
+                at = now_fn().strftime('%Y-%m-%d %H:%M:%S')
+                res = api(cfg, 'kitelive', {'at': at, 'items': [[s_] + v for s_, v in q.items()]}, tries=2, timeout=90)
+                if not res.get('ok'):
+                    err = str(res.get('error'))
+                    out('%s  The sheet refused the prices - %s' % (at[11:], err))
+                    if 'unknown action' in err or 'items missing' in err:
+                        out('Paste the new Code.gs + Code2.gs, do the New version deploy, then run LiveNow.bat again.')
+                        return 1
+                else:
+                    moves = sorted(((v[0] - v[4]) / v[4] * 100, s_) for s_, v in q.items() if v[0] and v[4])
+                    top = ', '.join('%s %+.1f%%' % (s_, m) for m, s_ in reversed(moves[-3:]))
+                    out('%s  %d prices -> Kite Live (%s up / %s down)%s' % (at[11:], int(res.get('written') or 0), res.get('up'),
+                                                                         res.get('down'), ('; top: ' + top) if top else ''))
+            rounds += 1
+            if (max_rounds and rounds >= max_rounds) or now_fn() >= stop_at:
+                out('Stopped (%s). The "Kite Live" tab keeps the last prices.' % ('done' if max_rounds and rounds >= max_rounds
+                                                                                    else 'market time over'))
+                return 0
+            sleep(max(5.0, gap - (time.time() - t0)))
+    except KeyboardInterrupt:
+        out('Stopped. The "Kite Live" tab keeps the last prices.')
+        return 0
+    except (KiteError, NeedLogin) as e:
+        out('PROBLEM - %s' % e)
+        return 1
+
+
 def setup(cfg, save_config, ask=input, ask_secret=None):
     """KiteSetup.bat: your Kite Connect app's API key and secret -> config.json, then a first login."""
     import getpass

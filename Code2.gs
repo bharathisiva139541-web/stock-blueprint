@@ -12753,3 +12753,93 @@ function ab_btFromBridge_(req) {
   tsh.setFrozenRows(2);
   return { ok: true, rows: sumRows.length, trades: tRows.length };
 }
+
+// =====================================================================================================================
+// KITE LIVE PRICES (owner, 08-Nov-2026, before the Muhurat session: "I want kite live price in sheet, but it should not
+// modify our system (googlefinance giving price)"). LiveNow.bat on the PC (kite_intraday.py live) reads Zerodha Kite's
+// quotes (last price + the day's open / high / low + the previous close) of PatternData's stocks every minute while it
+// runs and posts doPost action 'kitelive' {at, items: [[sym, ltp, open, high, low, prevClose], ...]} (handled before the
+// script lock - it writes nothing else). ONLY the tab "Kite Live" is written, rebuilt on every post, biggest gainers
+// first: Main, MKT Price (GOOGLEFINANCE), the alerts and the emails are not touched; "Sheet Price" just shows Main's MKT
+// Price beside it to compare. The website never gets this tab (Kite data is for the owner's own use).
+// =====================================================================================================================
+const AB_KL_SHEET = 'Kite Live';
+const AB_KL_HEADERS = ['Symbol', 'Company', 'Kite LTP', 'Change %', 'Prev Close', 'Open', 'High', 'Low',
+  'Sheet Price (GOOGLEFINANCE)', 'Kite vs Sheet %'];
+const AB_KL_MAX = 5000;
+
+/** Main's company name and MKT Price by symbol, one read (headers found by name in the first 10 rows). */
+function ab_klMainInfo_() {
+  const out = { name: {}, price: {} };
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MAIN_SHEET);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const head = sh.getRange(1, 1, Math.min(10, sh.getLastRow()), sh.getLastColumn()).getValues();
+  let hr = -1, si = -1, ni = -1, pi = -1;
+  for (let r = 0; r < head.length && hr === -1; r++) {
+    const row = head[r].map(function (v) { return String(v).trim(); });
+    if (row.indexOf('SYMBOL') !== -1) { hr = r; si = row.indexOf('SYMBOL'); ni = row.indexOf('StockName'); pi = row.indexOf('MKT Price'); }
+  }
+  if (hr === -1 || sh.getLastRow() <= hr + 1) return out;
+  sh.getRange(hr + 2, 1, sh.getLastRow() - hr - 1, Math.max(si, ni, pi) + 1).getValues().forEach(function (v) {
+    const sym = ab_cellText_(v[si]).toUpperCase();
+    if (!sym || out.name[sym] !== undefined) return;
+    out.name[sym] = ni === -1 ? '' : ab_cellText_(v[ni]);
+    const p = pi === -1 ? NaN : ab_toNum_(v[pi]);
+    if (!isNaN(p) && p > 0) out.price[sym] = p;
+  });
+  return out;
+}
+
+function ab_kiteLiveFromBridge_(req) {
+  const items = Array.isArray(req.items) ? req.items : null;
+  if (!items) return { ok: false, error: 'items missing' };
+  if (items.length > AB_KL_MAX) return { ok: false, error: 'too many prices in one post (at most ' + AB_KL_MAX + ')' };
+  const at = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(String(req.at || '')) ? String(req.at)
+    : Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm:ss');
+  const num = function (v) { const n = Number(v); return v !== null && v !== '' && v !== undefined && isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : ''; };
+  const pct = function (a, b) { return a !== '' && b !== '' && b > 0 ? Math.round((a - b) / b * 10000) / 100 : ''; };
+  const main = ab_klMainInfo_();
+  const seen = {};
+  let skipped = 0, up = 0, down = 0;
+  const rows = [];
+  items.forEach(function (it) {
+    const sym = Array.isArray(it) ? String(it[0] || '').trim().toUpperCase() : '';
+    const ltp = Array.isArray(it) ? num(it[1]) : '';
+    if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym) || ltp === '' || seen[sym]) { skipped++; return; }
+    seen[sym] = true;
+    const prev = num(it[5]);
+    const chg = pct(ltp, prev);
+    if (chg !== '' && chg > 0) up++;
+    if (chg !== '' && chg < 0) down++;
+    const sp = main.price[sym] === undefined ? '' : main.price[sym];
+    rows.push([sym, main.name[sym] || '', ltp, chg, prev, num(it[2]), num(it[3]), num(it[4]), sp, pct(ltp, sp)]);
+  });
+  rows.sort(function (a, b) {
+    const x = a[3] === '' ? -Infinity : a[3], y = b[3] === '' ? -Infinity : b[3];
+    if (x !== y) return y > x ? 1 : -1;
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  });
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_KL_SHEET);
+  const fresh = !sh;
+  if (!sh) sh = ss.insertSheet(AB_KL_SHEET);
+  const note = 'Kite live prices (Zerodha, from your PC - LiveNow.bat), updated ' + at + ' IST: ' + rows.length + ' stocks, ' +
+    up + ' up / ' + down + ' down. Biggest gainers first; Change % = Kite LTP vs the previous close. Main\'s MKT Price ' +
+    '(GOOGLEFINANCE) and every alert stay as they were - "Sheet Price" is only shown beside it to compare.';
+  sh.clearContents();
+  sh.getRange(1, 1).setValue(note);
+  sh.getRange(2, 1, 1, AB_KL_HEADERS.length).setValues([AB_KL_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  if (rows.length) sh.getRange(3, 1, rows.length, AB_KL_HEADERS.length).setValues(rows);
+  if (fresh) {
+    sh.setFrozenRows(2);
+    try {
+      sh.getRange(3, 3, AB_KL_MAX, 8).setNumberFormat('0.00');
+      const col = function (c) { return sh.getRange(3, c, AB_KL_MAX, 1); };
+      sh.setConditionalFormatRules([
+        SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(0).setFontColor('#0a8f4e').setRanges([col(4), col(10)]).build(),
+        SpreadsheetApp.newConditionalFormatRule().whenNumberLessThan(0).setFontColor('#d64545').setRanges([col(4), col(10)]).build()
+      ]);
+    } catch (fErr) { Logger.log('Kite Live formats: ' + fErr.message); }
+  }
+  return { ok: true, received: items.length, written: rows.length, skipped: skipped, up: up, down: down, at: at };
+}

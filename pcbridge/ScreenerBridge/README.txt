@@ -32,6 +32,7 @@ computer is on - no time limit:
  - IntradayNow.bat         the Kite intraday / weekly / monthly pattern scan right now (opens the login page if needed)
  - IntradayCheck.bat       one stock's Spring check on Kite's candles, e.g. PARAGMILK 4H (sends nothing)
  - BacktestNow.bat         the FVG+Spring win rate on the Kite candles already on this computer -> the sheet (no login)
+ - LiveNow.bat             Kite LIVE prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
@@ -76,6 +77,12 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
  - 4H candles = 09:15-13:15 and 13:15-15:30 (like TradingView); a week / month only once it has finished.
  - IntradayCheck.bat PARAGMILK 4H 2026-10-30 shows every Spring in Kite's candles of that stock and, for each pair of
    that day, which part of the Spring rule passed or failed (sends nothing).
+ - KITE LIVE PRICES (LiveNow.bat): double-click it while the market is open (or for the Muhurat session). It asks for
+   the Kite login if you have not logged in today, then every minute sends the live price (+ the day's open / high /
+   low and the previous close) of the sheet's stocks to a separate tab "Kite Live" (biggest gainers first, with Main's
+   GOOGLEFINANCE price beside it to compare). Main, MKT Price, the alerts and the emails are NOT changed. It stops at
+   3:35 PM on a trading day, after 4 hours on another day (Muhurat), or when you close the window.
+   config.json "kite_live_seconds": 60 = how often (at least 15).
  - To switch it off: in config.json  "intraday": false
 
 NSE PRICE BAND CHANGES (no more copy/paste)
