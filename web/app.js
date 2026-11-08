@@ -457,14 +457,22 @@
   SB.indexLive = function () { var L = ctx.idxLive; return !!(L && Date.now() - L.at < KITE_FRESH_MS && ctx.market.state === 'LIVE'); };
   var kiteTimer = null, kiteBusy = false;
   function kiteLater(ms) { clearTimeout(kiteTimer); kiteTimer = setTimeout(kitePoll, ms); }
-  function kitePoll() {
-    kiteTimer = null;
-    if (kiteBusy || !SB.wlSync || !SB.wlSync.hasPin || !SB.wlSync.hasPin()) return;
-    // only a PIN the sheet accepted (or one kept from before): a PIN still being checked would count twice when wrong
+  /** The Kite request, or null without an accepted PIN on this device (a PIN still being checked would count twice when wrong). */
+  function kiteAsk() {
+    if (!SB.wlSync || !SB.wlSync.hasPin || !SB.wlSync.hasPin()) return null;
     var ws = SB.wlSync.status ? SB.wlSync.status() : null;
-    if (!ws || !ws.linked) return;
+    return ws && ws.linked ? SB.wlSync.kite() : null;
+  }
+  // asked at boot, together with the page's data (owner, 08-Nov-2026: "when i ctrl+f5, it shows suddenly EOD and then
+  // changes Live") - the Kite prices then arrive with the page instead of a few seconds after it
+  var kitePre = null;
+  function kitePoll(pre) {
+    kiteTimer = null;
+    if (kiteBusy) return;
+    var ask = pre || kiteAsk();
+    if (!ask) return;
     kiteBusy = true;
-    SB.wlSync.kite().then(function (k) {
+    ask.then(function (k) {
       kiteBusy = false;
       var n = k.fresh ? kiteApply(k) : 0;
       if (n) { setStatus(); rerender(); }
@@ -481,7 +489,7 @@
     });
   }
   function initKite() {
-    kiteLater(1500);
+    if (kitePre) { var pre = kitePre; kitePre = null; kitePoll(pre); } else kiteLater(1500);
     // the PIN typed on this device later (My Watchlists): the Kite prices start once the sheet accepted it
     if (SB.wlSync && SB.wlSync.onStatus) {
       SB.wlSync.onStatus(function (st) { if (st.phase === 'ok' && st.linked && !kiteTimer && !kiteBusy) kiteLater(300); });
@@ -882,6 +890,8 @@
   }
   function boot() {
     var base = ctx.site.apiBase = apiBase();
+    try { kitePre = base == null ? null : kiteAsk(); } catch (e) { kitePre = null; }
+    if (kitePre) kitePre.catch(function () { /* handled when the page is ready */ });
     $('#app').innerHTML = '<section class="card" aria-busy="true"><h2>Loading…</h2><p class="sub" style="margin-top:4px">' +
       (base == null ? 'Loading the saved copy of your Google Sheet data…' : 'Loading the latest data from your Google Sheet…') + '</p>' + ui.skeleton(3) + '</section>';
     (base == null ? Promise.resolve({ reason: null }) : loadLive()).then(function (o) {

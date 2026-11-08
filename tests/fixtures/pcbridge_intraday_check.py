@@ -273,6 +273,17 @@ def press_login(token='req1', status='success'):
 
 
 PAGES = []
+
+
+def page_text():
+    """The local page's answer: the browser thread stores it just after the login returns (a race under load)."""
+    for _ in range(200):
+        if PAGES:
+            break
+        real_sleep(0.05)
+    return PAGES[0] if PAGES else ''
+
+
 assert K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'a finished session not scanned yet'
 assert not K.due(dict(CFG, kite_api_secret=''), HOL, now=datetime(2026, 11, 6, 16, 0), state={})[0], 'not set up'
 assert not K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026-11-06', 'tfs': ['4H', 'D', 'W', 'M'], 'slots': {'4H': ['13:15']},
@@ -281,7 +292,7 @@ assert K.due(CFG, HOL, now=datetime(2026, 11, 6, 16, 0), state={'scanned': '2026
     'new pattern rules: the last sessions are scanned again'
 s = K.login(CFG, wait_s=20, ready=press_login)
 assert s and s['access_token'] == 'at-req1' and s['user'] == 'Owner', s
-assert 'Kite login received' in PAGES[0]
+assert 'Kite login received' in page_text()
 assert OPENED and OPENED[-1] == 'https://kite.zerodha.com/connect/login?v=3&api_key=key123'
 exp = datetime.fromtimestamp(s['expires'], K.IST)
 assert (exp.hour, exp.minute) == (6, 0) and exp > datetime.now(K.IST), 'valid until 6 AM'
@@ -296,7 +307,7 @@ assert K.next_6am(datetime(2026, 11, 6, 20, 0, tzinfo=K.IST).timestamp()) == dat
 PAGES.clear()
 K.time.sleep = lambda x: None
 assert K.wait_for_request_token(1.5, ready=lambda: press_login('x', 'cancelled')) is None
-assert PAGES and 'Login not completed' in PAGES[0]
+assert 'Login not completed' in page_text()
 
 # ------------------------------------------------------------------ 7. the download: first all, then only the new days
 imap = K.instruments(CFG, s, '2026-11-06')
