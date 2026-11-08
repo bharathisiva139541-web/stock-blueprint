@@ -11051,12 +11051,15 @@ const AB_WL_NOTE = 'My Watchlists of the website (Vercel / Firebase / phone), ke
 function ab_wlFromSite_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
-  if (req.op !== 'get' && req.op !== 'put') return ab_bridgeJson_({ ok: false, error: 'unknown op' });
+  if (req.op !== 'get' && req.op !== 'put' && req.op !== 'kite') return ab_bridgeJson_({ ok: false, error: 'unknown op' });
   const lock = ab_wlLock_();
   if (!lock.tryLock(20000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
   try {
     const refused = ab_wlCheckPin_(req.pin);
     if (refused) return ab_bridgeJson_({ ok: false, error: refused });
+    // the owner's own Kite live prices (owner, 08-Nov-2026: "enaku matumana live view ... use existing daily %") - only
+    // with the PIN, never in the public site feed (Kite's data is for the owner's own use)
+    if (req.op === 'kite') return ab_bridgeJson_(ab_klForSite_());
     const cur = ab_wlRead_();
     const reply = function (result, rev, savedAt, lists) {
       return ab_bridgeJson_({ ok: true, result: result, rev: rev, savedAt: savedAt, state: { v: 1, lists: lists } });
@@ -12790,6 +12793,24 @@ function ab_kiteLivePrices_() {
   });
   AB_KL_MEMO_ = { at: at, px: px };
   return px;
+}
+
+/** The owner's website (op 'kite' of action 'watchlists', PIN checked): {ok, result: 'kite', fresh, at, ageSec, items:
+ *  [[SYMBOL, Kite LTP, Change % vs the previous close]]} - items only while LiveNow's prices are fresh. */
+function ab_klForSite_() {
+  const at = Number(PropertiesService.getScriptProperties().getProperty(AB_KL_AT_PROP)) || 0;
+  const fresh = at > 0 && Date.now() - at <= AB_KL_FRESH_MS;
+  const out = { ok: true, result: 'kite', fresh: fresh, at: at ? Utilities.formatDate(new Date(at), AB_TZ, 'yyyy-MM-dd HH:mm:ss') : '',
+                ageSec: at ? Math.max(0, Math.round((Date.now() - at) / 1000)) : null, items: [] };
+  const sh = fresh ? SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_KL_SHEET) : null;
+  if (!sh || sh.getLastRow() < 3) { out.fresh = false; return out; }
+  sh.getRange(3, 1, sh.getLastRow() - 2, 4).getValues().forEach(function (v) {
+    const sym = ab_cellText_(v[0]).toUpperCase();
+    const p = ab_toNum_(v[2]);
+    const c = ab_toNum_(v[3]);
+    if (sym && !isNaN(p) && p > 0) out.items.push([sym, p, isNaN(c) || v[3] === '' ? null : c]);
+  });
+  return out;
 }
 
 /** Overlays fresh Kite prices on a {SYMBOL: price} map (in place). -> the symbols that got a Kite price. */

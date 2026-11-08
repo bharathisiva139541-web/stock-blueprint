@@ -1,4 +1,4 @@
-// POST /api/watchlists   body { op: 'get' | 'put', pin, base?, state? }   (JSON)
+// POST /api/watchlists   body { op: 'get' | 'put' | 'kite', pin, base?, state? }   (JSON)
 // The viewer's "My Watchlists" kept in the owner's Google Sheet (Code.gs doPost action
 // 'watchlists', Code2.gs ab_wlFromSite_, hidden tab Site_Watchlists), so the phone, this
 // site and the Firebase copy all show the same lists (web/ui/watchlist-sync.js).
@@ -8,6 +8,9 @@
 //   op 'get'                      -> the sheet's lists and revision
 //   op 'put', base, state         -> saved when base = the sheet's revision, else result 'conflict'
 //                                    with the sheet's lists (the browser merges and saves again)
+//   op 'kite'                     -> the owner's Kite live prices (owner, 08-Nov-2026: only for the owner,
+//                                    behind the same PIN): { ok, result:'kite', fresh, at, ageSec,
+//                                    items:[[SYMBOL, price, change %]] } (items only while fresh)
 // -> 200 { ok:true, result:'ok'|'conflict', rev, savedAt, state:{ v:1, lists } }
 //    200 { ok:false, code, message }   code: not-configured | pin | locked | nopin | auth |
 //                                      busy | timeout | network | too-big | unreadable | error ...
@@ -66,7 +69,7 @@
   /** What goes to the sheet - only these fields, the lists cleaned with the website's rules. */
   function toSheet(body) {
     const op = body.op;
-    if (op !== 'get' && op !== 'put') throw bad('op must be "get" or "put"');
+    if (op !== 'get' && op !== 'put' && op !== 'kite') throw bad('op must be "get", "put" or "kite"');
     const pin = typeof body.pin === 'string' ? body.pin.trim() : '';
     if (!pin || pin.length > 64) throw bad('pin missing');
     const out = { action: 'watchlists', op: op, pin: pin };
@@ -77,6 +80,20 @@
       out.state = M.strip(body.state);
     }
     return out;
+  }
+
+  /** The sheet's Kite prices, checked: only [SYMBOL, price > 0, change % | null] rows (max 5000). */
+  function kiteReply(a) {
+    if (!a || a.result !== 'kite' || !Array.isArray(a.items)) return { ok: false, code: 'malformed', message: 'the sheet answered in an unexpected way' };
+    const items = [];
+    a.items.slice(0, 5000).forEach(function (it) {
+      if (!Array.isArray(it) || typeof it[0] !== 'string' || !/^[A-Z0-9&_.-]{1,30}$/.test(it[0])) return;
+      const p = Number(it[1]), c = it[2] === null || it[2] === undefined || it[2] === '' ? null : Number(it[2]);
+      if (!(p > 0) || !isFinite(p) || (c !== null && !isFinite(c))) return;
+      items.push([it[0], p, c]);
+    });
+    return { ok: true, result: 'kite', fresh: a.fresh === true && items.length > 0, at: typeof a.at === 'string' ? a.at.slice(0, 19) : '',
+             ageSec: Number.isFinite(a.ageSec) ? a.ageSec : null, items: a.fresh === true ? items : [] };
   }
 
   /** deps (tests): { env, fetch, timeoutMs } */
@@ -106,6 +123,10 @@
         return;
       }
       const a = r.data;
+      if (ask.op === 'kite') {
+        http.sendJson(res, 200, kiteReply(a), { env: env, cacheControl: noStore });
+        return;
+      }
       if ((a.result !== 'ok' && a.result !== 'conflict') || !Number.isInteger(a.rev) || a.rev < 0 ||
           !a.state || !Array.isArray(a.state.lists)) {
         http.sendJson(res, 200, { ok: false, code: 'malformed', message: 'the sheet answered in an unexpected way' },
