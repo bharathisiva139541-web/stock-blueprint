@@ -303,6 +303,11 @@
       columns: [
         { key: 'Session', label: 'Session', type: 'date' },
         { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
+        // owner, 08-Nov-2026: "add daily % to this table" - the stock's change today, the same number as the
+        // Watchlist's Today column (Zerodha Kite live on the owner's devices with the PIN, else the sheet's price)
+        { key: 'chg', label: 'Daily %', type: 'pct', digits: 2,
+          title: 'Today\'s change % of the stock - the same as the Watchlist\'s Today column (Zerodha Kite live on your devices with the PIN, else the sheet\'s delayed price)',
+          get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
         { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
         { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },

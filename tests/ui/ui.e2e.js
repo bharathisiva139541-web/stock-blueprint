@@ -861,6 +861,17 @@ function check(name, fn) {
     assert.match(r.note, /Last scan: session 2026-10-20/);
     assert.ok(r.jump, 'in the page\'s jump chips');
     assert.ok(await p.$eval('#sg-itd-t', (x) => x.textContent.includes('FVG bottom (touch 3)')), 'the Where column');
+    // Daily % (owner, 08-Nov-2026) = the stock's s.chg, as in the Watchlist's Today column
+    const dp = await p.evaluate(() => {
+      const ths = [...document.querySelectorAll('#sg-itd-t thead th')].map((th) => th.textContent.trim());
+      const i = ths.findIndex((x) => /^Daily %/.test(x));
+      const tr = document.querySelector('#sg-itd-t tbody tr');
+      const sym = tr.querySelector('[data-sym]').getAttribute('data-sym');
+      return { ths, i, cell: i < 0 ? '' : tr.children[i].textContent.trim(), chg: window.SB.ctx.bySym[sym] && window.SB.ctx.bySym[sym].chg };
+    });
+    assert.strictEqual(dp.ths[dp.i - 1].replace(/[↑↓]/g, '').trim(), 'Stock', 'Daily % right after Stock: ' + dp.ths.join(' | '));
+    assert.ok(typeof dp.chg === 'number', 'the stock has a change %');
+    assert.ok(dp.cell.includes(Math.abs(dp.chg).toFixed(2)), dp.cell + ' vs ' + dp.chg);
     await p.click('[data-chip="sgitdtf"][data-v="4H"]');
     assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 4');
     await p.click('[data-chip="sgitdp"][data-v="FVG First Touch"]');
