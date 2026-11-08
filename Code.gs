@@ -8870,6 +8870,11 @@ function doPost(e) {
   if (req && req.action === 'watchlists') return ab_wlFromSite_(req);
   const real = ab_bridgeToken_(false);
   if (!req || !real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
+  // Kite live prices (Code2.gs, every minute from LiveNow.bat): writes only its own "Kite Live" tab, so it never waits
+  // for the script lock the alerts / results use
+  if (req.action === 'kitelive') {
+    try { return ab_bridgeJson_(ab_kiteLiveFromBridge_(req)); } catch (klErr) { return ab_bridgeJson_({ ok: false, error: klErr.message }); }
+  }
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(120000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
