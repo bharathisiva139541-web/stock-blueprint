@@ -5384,8 +5384,8 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * test and Control Panel thresholds as the Spring pattern
  * (ab_isSpringPair_: a big red candle, then a small candle that fakes a
  * breakdown below its low and closes back above it) - whose 2nd candle sits
- * on a 3-candle FVG or a Gap-up zone (AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT, no
- * circuit-locked candle) formed before the pair that still holds (no close
+ * on a zone - a 3-candle FVG, or a Gap-up zone (AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT, no
+ * circuit-locked candle) for Gap-up FVG + Spring - formed before the pair that still holds (no close
  * below its bottom before the pair): its low anywhere in the zone or below
  * the bottom line (any depth), its close above the bottom line, and NO
  * candle from the zone's formation to the red candle closed below the
@@ -5394,6 +5394,14 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * web/lib/fvg.js springZones / springZone = kite_intraday.py, compared on
  * random candles). The tag is dropped once a later candle closes below the
  * Spring candle's low (ab_fvgSpringBroken_).
+ *
+ * FVG+Spring and Gap-up FVG + Spring, SPLIT (owner, 08-Nov-2026: "add
+ * Pattern Gapup FVG + Spring like we did FVG+spring"; choice "split"):
+ * 'FVG+Spring' takes the 3-candle FVG zones only, 'Gap-up FVG + Spring' the
+ * Gap-up zones only - the same Spring rule on each (a Spring on both kinds
+ * gets both tags); the Gap-up tag says "inside FVG" when its zone lies in
+ * a 3-candle FVG (ab_gapInsideFvg_), e.g. "Gap-up FVG + Spring (Today,
+ * inside FVG)".
  *
  * Twin Star Bottom + FVG (owner, 30-Oct-2026): the Twin Star Bottom
  * pattern (ab_isTwinStarBottom_, Code2.gs: a red candle, then two small
@@ -5506,14 +5514,18 @@ function ab_longFvgDetail_(candles) {
     }
   }
 
-  // FVG+Spring: a Spring pair (c1 = i-1, c2 = i) on the top / bottom of an
-  // FVG or Gap-up zone formed before c1 that still holds (see the header above).
+  // FVG+Spring: a Spring pair (c1 = i-1, c2 = i) on a 3-candle FVG formed before c1 that still holds; Gap-up FVG +
+  // Spring: the same on a Gap-up zone (see the header above).
   const springCfg = ab_springCfg_();
   const springZones = ab_fvgSpringZones_(candles, isFVGUp);
+  const fvgZones = springZones.filter(function (z) { return z.kind === 'FVG'; });
+  const gapZones = springZones.filter(function (z) { return z.kind === 'Gap-up'; });
   const springSignal = new Array(n).fill(false);
+  const gapSpring = new Array(n).fill(null);
   for (let i = 3; i < n; i++) {
     if (!ab_isSpringPair_(candles[i - 1], candles[i], springCfg)) continue;
-    if (ab_fvgSpringZone_(candles, i, springZones)) springSignal[i] = true;
+    if (ab_fvgSpringZone_(candles, i, fvgZones)) springSignal[i] = true;
+    gapSpring[i] = ab_fvgSpringZone_(candles, i, gapZones);
   }
 
   // Twin Star Bottom + FVG: c1 = i-2 (red), stars i-1 and i, dipping into a gap formed before c1 that still holds
@@ -5561,11 +5573,12 @@ function ab_longFvgDetail_(candles) {
   // and remember exactly which bar, so the tag can say how fresh it is
   // (spot brand-new setups without opening every chart).
   const lastN = Math.min(4, n);
-  let touchIdx = -1, confIdx = -1, springIdx = -1, twinIdx = -1;
+  let touchIdx = -1, confIdx = -1, springIdx = -1, twinIdx = -1, gapSpringIdx = -1;
   for (let i = n - lastN; i < n; i++) {
     if (ftSignal[i]) touchIdx = i;   // keeps the most recent occurrence
     if (ftcSignal[i]) confIdx = i;
     if (springSignal[i] && ab_fvgSpringBroken_(candles, i) === -1) springIdx = i;   // a later close under its low: no longer valid
+    if (gapSpring[i] && ab_fvgSpringBroken_(candles, i) === -1) gapSpringIdx = i;
     if (twinSignal[i]) twinIdx = i;
   }
 
@@ -5594,6 +5607,11 @@ function ab_longFvgDetail_(candles) {
   if (touchIdx !== -1) tags.push('FVG First Touch ' + recencyLabel_(touchIdx));
   if (confIdx !== -1) tags.push('FVG First Touch Confirmed ' + recencyLabel_(confIdx));
   if (springIdx !== -1) tags.push('FVG+Spring ' + recencyLabel_(springIdx));
+  if (gapSpringIdx !== -1) {
+    const gz = gapSpring[gapSpringIdx];
+    const inside = ab_gapInsideFvg_(candles, isFVGUp, gz.f, gz.bottom, gz.top, gapSpringIdx);
+    tags.push('Gap-up FVG + Spring ' + (inside ? recencyLabel_(gapSpringIdx).replace(')', ', inside FVG)') : recencyLabel_(gapSpringIdx)));
+  }
   if (twinIdx !== -1) tags.push('Twin Star Bottom + FVG ' + recencyLabel_(twinIdx));
 
   // The unmitigated gap's actual PRICE LEVELS, taken from the very same
@@ -5675,26 +5693,38 @@ function computeLongFVGTouchPatterns_() {
  * anything smaller is noise, anything larger is usually news or a
  * corporate action rather than a tradeable imbalance.
  *
- * A gap only counts while it is COMPLETELY UNTOUCHED. If any later
- * candle has traded at or below the gap top - even a wick - the
- * imbalance has been visited, and it is dropped entirely: no longer
- * listed, no longer alerted, never revived. What you want is the
- * FIRST return to a virgin zone; a second or third visit is a
- * different, weaker setup.
+ * LIFE OF A GAP-UP ZONE (owner, 08-Nov-2026: "it should not be removed. it
+ * is actually mitigated. these Gapup zones mostly react than normal FVG
+ * Zone. even wick just touches this zone, it would be considered mitigated
+ * and sent to mail. zone to be invalid only price after that closed below
+ * the zone. until then the zone should be tracked. email only once at first
+ * touch"; before that a touched gap was dropped at once):
+ *   - Untouched: no later candle has traded at or below the gap top yet.
+ *     Only these get the "approaching" alert.
+ *   - Mitigated: the FIRST later candle whose low (a wick is enough) reaches
+ *     the gap top - the one mitigated alert (live, or the evening's EOD
+ *     catch), once. The zone stays on the GapUpFVG tab (Status "Mitigated",
+ *     "Mitigated On" = that candle's day) and in the FVG column
+ *     ("..., mitigated)").
+ *   - Invalid: a later candle CLOSES below the gap bottom - dropped for good.
+ * A circuit-locked candle never counts as the touch (its "Low" is just the
+ * frozen band price), but a close below the bottom always ends the zone.
  *
- * That one condition also gives "approach from above" for free. If
- * price has never traded at or below the gap top, it cannot be
- * anywhere but above the zone - so an approach is always a fall back
- * toward it, never a rise up into it from underneath. It equally
- * handles a later gap DOWN straight past the zone: that candle's low
- * sits below the gap top, so the gap is retired without any special
- * case for it.
+ * INSIDE FVG (owner, 08-Nov-2026, BSE weekly / daily and SBICARD charts:
+ * "Gapup FVG area inside a FVG area ... is most powerful"): a gap-up zone
+ * that lies within a 3-candle FVG ([High[g-2], Low[g]], the col X rule)
+ * formed at most one candle after it, the FVG not closed below since, is
+ * marked "inside FVG" - in the tab (column J), the FVG column text, its
+ * mitigated email row ('Gap-up FVG (inside FVG)', listed first) and the
+ * "Gap-up FVG + Spring" tag.
  *
- * The alert therefore fires at most once per gap, when live price
- * first comes within AB_GAPUP_NEAR_PCT above the top or enters the
- * zone. It never re-arms.
+ * The approach alert fires at most once per gap, when live price first
+ * comes within AB_GAPUP_NEAR_PCT above the top or enters the zone.
  *****************************************************************/
 const AB_GAPUP_SHEET = 'GapUpFVG';
+const AB_GAPUP_HEADERS = ['Symbol', 'Gap Bottom', 'Gap Top', 'Gap %', 'Formed', 'Status', 'Alerted', 'Mitigated Alerted',
+  'Mitigated On', 'Inside FVG'];
+const AB_GAPUP_INSIDE_LABEL = 'Gap-up FVG (inside FVG)';   // its mitigated log / email type (listed first in the email)
 const AB_GAPUP_MIN_PCT = ab_setting_('AB_GAPUP_MIN_PCT', 3);   // smallest gap worth tracking
 const AB_GAPUP_MAX_PCT = ab_setting_('AB_GAPUP_MAX_PCT', 10);   // largest - beyond this it's news, not an imbalance
 const AB_GAPUP_NEAR_PCT = ab_setting_('AB_GAPUP_NEAR_PCT', 0.5);  // how far above the gap top counts as "approaching"
@@ -5815,20 +5845,46 @@ function ab_todaysCircuitLockedSymbols_() {
   return locked;
 }
 
+/** The bullish 3-candle FVG flags of col X (ab_longFvgDetail_): Low[i] > High[i-2] by at least 70 % of the 14-bar average
+ *  high-low range ending at i. = web/lib/fvg.js fvgUpFlags. */
+function ab_fvgUpFlags_(candles) {
+  const n = (candles || []).length;
+  const out = new Array(n).fill(false);
+  for (let i = 13; i < n; i++) {
+    let sum = 0;
+    for (let k = i - 13; k <= i; k++) sum += (candles[k].High - candles[k].Low);
+    const low = candles[i].Low, highTwoBack = candles[i - 2].High;
+    if (low > highTwoBack && (low - highTwoBack) >= 0.70 * (sum / 14)) out[i] = true;
+  }
+  return out;
+}
+
+/** Is the gap-up zone [bottom, top] formed by candle j inside a 3-candle FVG formed at most one candle after it
+ *  (g <= j + 1) whose bottom no close from g+1 to `upto` went under? = web/lib/fvg.js gapInsideFvg. */
+function ab_gapInsideFvg_(candles, isFVGUp, j, bottom, top, upto) {
+  for (let g = 2; g <= Math.min(j + 1, upto); g++) {
+    if (!isFVGUp[g]) continue;
+    const fb = candles[g - 2].High, ft = candles[g].Low;
+    if (!(fb <= bottom && ft >= top)) continue;
+    let holds = true;
+    for (let k = g + 1; k <= upto; k++) if (candles[k].Cls < fb) { holds = false; break; }
+    if (holds) return true;
+  }
+  return false;
+}
+
 /**
- * Every UNTOUCHED gap-up in one symbol's candle series, oldest last.
  * `candles` is oldest -> newest, as built from History30.
  *
- * Returns [{ bottom, top, pct, formedIdx, daysAgo }], NEWEST FIRST - a
- * stock can have several open gaps at once (all are tracked); the most
- * recently formed one leads. A gap that any
- * later candle has traded into - low at or below the gap top - is
- * dropped, however briefly it was visited.
+ * Returns the gap-up zones still VALID (see "LIFE OF A GAP-UP ZONE" above), NEWEST FIRST: [{ bottom, top, pct,
+ * formedIdx, daysAgo, touchIdx (the first touch, -1 = untouched), insideFvg }]. A stock can have several at once.
+ * = web/lib/fvg.js gapUpFvgs.
  */
 function ab_gapUpFvgs_(candles) {
   const out = [];
   const n = (candles || []).length;
   if (n < 2) return out;
+  let isFVGUp = null;
 
   for (let i = 1; i < n; i++) {
     // Either side circuit-locked and the gap isn't real. A locked day
@@ -5845,27 +5901,24 @@ function ab_gapUpFvgs_(candles) {
     const pct = (low - prevHigh) / prevHigh * 100;
     if (pct < AB_GAPUP_MIN_PCT || pct > AB_GAPUP_MAX_PCT) continue;
 
-    // Has anything since come back down to it? Comparing against the
-    // gap TOP (not the bottom) means a wick that only clips the upper
-    // edge still counts as touched - the zone is no longer virgin, and
-    // a virgin zone is the whole point. The scan starts at i+1 because
-    // the gap candle's own low IS the top by definition. A circuit-
-    // locked day is skipped here too, same reasoning as the formation
-    // check above: its "Low" is just the frozen band price, not a real
-    // trade down into the zone, so it can't be what mitigates it.
-    let touched = false;
+    // The first later candle whose low (a wick is enough) reaches the gap top = mitigated (a circuit-locked day's
+    // "Low" is the frozen band price - never the touch); a later CLOSE under the bottom ends the zone.
+    let touchIdx = -1, broken = false;
     for (let j = i + 1; j < n; j++) {
-      if (ab_isCircuitLocked_(candles[j])) continue;
-      if (!isNaN(candles[j].Low) && candles[j].Low <= low) { touched = true; break; }
+      if (touchIdx === -1 && !ab_isCircuitLocked_(candles[j]) && !isNaN(candles[j].Low) && candles[j].Low <= low) touchIdx = j;
+      if (!isNaN(candles[j].Cls) && candles[j].Cls < prevHigh) { broken = true; break; }
     }
-    if (touched) continue;
+    if (broken) continue;
 
+    if (!isFVGUp) isFVGUp = ab_fvgUpFlags_(candles);
     out.push({
       bottom: prevHigh,
       top: low,
       pct: Math.round(pct * 100) / 100,
       formedIdx: i,
-      daysAgo: (n - 1) - i
+      daysAgo: (n - 1) - i,
+      touchIdx: touchIdx,
+      insideFvg: ab_gapInsideFvg_(candles, isFVGUp, i, prevHigh, low, n - 1)
     });
   }
   // Newest first: the loop above runs oldest -> newest.
@@ -5873,11 +5926,11 @@ function ab_gapUpFvgs_(candles) {
   return out;
 }
 
-/** Tag text for the FVG column, e.g. "Gap-up FVG 3.8% (2d ago)". */
+/** Tag text for the FVG column: "Gap-up FVG 3.8% (2d ago)", "... (5d ago, mitigated)", "... (today, inside FVG)". */
 function ab_gapUpTags_(candles) {
   return ab_gapUpFvgs_(candles).map(function (g) {
-    return 'Gap-up FVG ' + g.pct + '% ' +
-           (g.daysAgo === 0 ? '(today)' : '(' + g.daysAgo + 'd ago)');
+    return 'Gap-up FVG ' + g.pct + '% (' + (g.daysAgo === 0 ? 'today' : g.daysAgo + 'd ago') +
+           (g.touchIdx !== -1 ? ', mitigated' : '') + (g.insideFvg ? ', inside FVG' : '') + ')';
   });
 }
 
@@ -5921,7 +5974,8 @@ function computeGapUpFvgs_() {
       // market-hours mitigation alert (checkGapUpMitigatedAlerts_),
       // tracked independently of the "approaching" flag in col G.
       prevMitigatedAlerted[key] = String(r[7] || '').trim().toUpperCase() === 'Y';
-      prevZones[key] = { sym: sym, bottom: ab_toNum_(r[1]), top: ab_toNum_(r[2]), pct: ab_toNum_(r[3]) };
+      prevZones[key] = { sym: sym, bottom: ab_toNum_(r[1]), top: ab_toNum_(r[2]), pct: ab_toNum_(r[3]),
+                         inside: String(r[9] || '').trim().toUpperCase() === 'Y' };
     });
   }
 
@@ -5931,7 +5985,26 @@ function computeGapUpFvgs_() {
 
   const rows = [];
   const openKeys = {};
-  let tooNew = 0, illiquid = 0;
+  const eodMitigated = [];
+  let tooNew = 0, illiquid = 0, mitigatedN = 0, insideN = 0;
+  // A first touch the live check did not report: by the day's REAL low (History30), mitigated -> logged once ('EOD').
+  // Only a touch after the previous scan's data day is new (with no record of it: the last 3 candles); an older one was
+  // handled before (the earlier version dropped a touched gap there and then).
+  const isNewTouch = function (candles, idx) {
+    if (!scanSinceKey) return idx >= candles.length - 3;
+    const k = ab_msDateKey_(candles[idx].date);
+    return !!k && k > scanSinceKey;
+  };
+  const eodLog = function (z, c, inside) {
+    const label = inside ? AB_GAPUP_INSIDE_LABEL : 'Gap-up FVG';
+    eodMitigated.push({
+      symbol: z.sym, bottom: z.bottom, top: z.top, pct: z.pct,
+      low: c.Low, close: c.Cls, date: c.date,
+      chartUrl: ab_chartUrl_(z.sym), screenerUrl: ab_screenerUrl_(z.sym),
+      label: label
+    });
+    ab_logMitigation_(label, z.sym, z.bottom, z.top, z.pct, c.Low, 'EOD', c.date);
+  };
   Object.keys(bySymbol).sort().forEach(function (sym) {
     const candles = bySymbol[sym];
     // Too thinly traded for a gap here to mean anything - see
@@ -5956,40 +6029,35 @@ function computeGapUpFvgs_() {
       const formed = candles[g.formedIdx] ? candles[g.formedIdx].date : '';
       const key = sym + '|' + g.bottom + '|' + g.top;
       openKeys[key] = true;
-      rows.push([sym, g.bottom, g.top, g.pct, formed, 'Untouched',
-                 prevAlerted[key] ? 'Y' : '', prevMitigatedAlerted[key] ? 'Y' : '']);
+      let mitAlerted = !!prevMitigatedAlerted[key];
+      let mitOn = '';
+      if (g.touchIdx !== -1) {
+        mitigatedN++;
+        const tc = candles[g.touchIdx];
+        mitOn = tc.date;
+        if (!mitAlerted) {
+          // mitigated, never emailed: a new touch -> the evening's EOD catch; an older one -> marked done quietly
+          if (isNewTouch(candles, g.touchIdx)) eodLog({ sym: sym, bottom: g.bottom, top: g.top, pct: g.pct }, tc, g.insideFvg);
+          mitAlerted = true;
+        }
+      }
+      if (g.insideFvg) insideN++;
+      rows.push([sym, g.bottom, g.top, g.pct, formed, g.touchIdx !== -1 ? 'Mitigated' : 'Untouched',
+                 prevAlerted[key] ? 'Y' : '', mitAlerted ? 'Y' : '', mitOn, g.insideFvg ? 'Y' : '']);
     });
   });
 
-  // Catch what the delayed live price missed: a zone that was open
-  // yesterday but is NOT in today's list has disappeared either because
-  // it was genuinely touched, or (far more rarely) because its forming
-  // candles rolled out of the History30 / History60 window. The only way to
-  // tell the two apart is to check the real EOD data directly - if
-  // today's actual Low on that symbol reached the zone top, it was
-  // mitigated, full stop, regardless of what the 5-minute live price
-  // check (reading Google Sheets' own delayed GOOGLEFINANCE quote)
-  // happened to see in between. Only reported here if the live check
-  // never already caught it (prevMitigatedAlerted), so nothing doubles up.
-  const eodMitigated = [];
+  // A zone on yesterday's list that is gone today closed below its bottom (or rolled out of the History30 / History60
+  // window). Touched and broken since the last scan without the live check seeing it -> still one mitigated email: its
+  // first touch is found in the REAL EOD data (every candle since the last scan; circuit-locked days skipped inside).
   Object.keys(prevZones).forEach(function (key) {
-    if (openKeys[key]) return; // still open, nothing to report
-    if (prevMitigatedAlerted[key]) return; // live check already caught this one
+    if (openKeys[key]) return; // still listed, handled above
+    if (prevMitigatedAlerted[key]) return; // already emailed
     const z = prevZones[key];
     const candles = bySymbol[z.sym];
-    // Looks at EVERY candle since the last scan (normally just today's). If a scan
-    // was missed (e.g. Phase 1 timed out), a touch on the skipped day is still found
-    // instead of being lost because today's own Low is higher. Circuit-locked days
-    // are skipped inside (a frozen "Low" is the band price, not a real fill).
     const today = ab_firstFillCandle_(candles, z.top, scanSinceKey);
     if (!today) return; // not actually mitigated - window rolled, most likely
-    eodMitigated.push({
-      symbol: z.sym, bottom: z.bottom, top: z.top, pct: z.pct,
-      low: today.Low, close: today.Cls, date: today.date,
-      chartUrl: ab_chartUrl_(z.sym), screenerUrl: ab_screenerUrl_(z.sym),
-      label: 'Gap-up FVG'
-    });
-    ab_logMitigation_('Gap-up FVG', z.sym, z.bottom, z.top, z.pct, today.Low, 'EOD', today.date);
+    eodLog(z, today, z.inside);
   });
 
   // Most recently formed gaps first (ties: alphabetical). The alert pass
@@ -6005,21 +6073,21 @@ function computeGapUpFvgs_() {
 
   const sh = ab_getOrCreateSheet_(AB_GAPUP_SHEET);
   sh.clearContents();
-  sh.getRange(1, 1, 1, 8).setValues([[
-    'Symbol', 'Gap Bottom', 'Gap Top', 'Gap %', 'Formed', 'Status', 'Alerted', 'Mitigated Alerted'
-  ]]);
+  sh.getRange(1, 1, 1, AB_GAPUP_HEADERS.length).setValues([AB_GAPUP_HEADERS]);
   sh.setFrozenRows(1);
-  if (rows.length) sh.getRange(2, 1, rows.length, 8).setValues(rows);
+  if (rows.length) sh.getRange(2, 1, rows.length, AB_GAPUP_HEADERS.length).setValues(rows);
   if (scanNowKey) ab_propSet_('AB_GAPUP_SCAN_KEY', scanNowKey);
 
   const symCount = rows.reduce(function (acc, r) {
     acc[r[0]] = true; return acc;
   }, {});
-  Logger.log('Gap-up FVG: ' + rows.length + ' open gap(s) across ' +
-             Object.keys(symCount).length + ' symbol(s), ' + tooNew + ' formed today (tracked, approach-alert held), ' +
+  Logger.log('Gap-up FVG: ' + rows.length + ' valid gap(s) across ' +
+             Object.keys(symCount).length + ' symbol(s) (' + mitigatedN + ' mitigated, still tracked; ' + insideN + ' inside an FVG), ' +
+             tooNew + ' formed today (tracked, approach-alert held), ' +
              illiquid + ' symbol(s) skipped as too illiquid (< Rs' + AB_FVG_MIN_AVG_TURNOVER + '/day avg turnover).' +
              (eodMitigated.length ? ' ' + eodMitigated.length + ' mitigated today, missed live.' : ''));
-  return { gaps: rows.length, symbols: Object.keys(symCount).length, tooNew: tooNew, illiquid: illiquid, eodMitigated: eodMitigated };
+  return { gaps: rows.length, symbols: Object.keys(symCount).length, tooNew: tooNew, illiquid: illiquid, mitigated: mitigatedN,
+           inside: insideN, eodMitigated: eodMitigated };
 }
 
 /**
@@ -6118,6 +6186,11 @@ function ab_checkZoneAlerts_(sheetName, nearPct, label, minAgeDays) {
 
     const price = priceBySym[sym];
     if (!sym || isNaN(bottom) || isNaN(top) || price === undefined) {
+      alertedOut.push([alerted ? 'Y' : '']);
+      return;
+    }
+    // A Gap-up zone already mitigated (still tracked until a close below it): nothing to approach any more
+    if (/^mitigated/i.test(String(r[5] || '').trim())) {
       alertedOut.push([alerted ? 'Y' : '']);
       return;
     }
@@ -6398,12 +6471,13 @@ function computeUnmitigatedFvgs_() {
   // setup. Gap-up wins because it is the tighter, more specific rule:
   // an actual overnight gap of a stated size, not a structural
   // imbalance inferred across three candles.
+  // (untouched gap-ups only: a mitigated one stays on its tab until a close below it, but is not watched for a touch)
   const gapUpSyms = {};
   const gapSheet = ss.getSheetByName(AB_GAPUP_SHEET);
   if (gapSheet && gapSheet.getLastRow() > 1) {
-    gapSheet.getRange(2, 1, gapSheet.getLastRow() - 1, 1).getValues().forEach(function (r) {
+    gapSheet.getRange(2, 1, gapSheet.getLastRow() - 1, 6).getValues().forEach(function (r) {
       const s = String(r[0] || '').trim().toUpperCase();
-      if (s) gapUpSyms[s] = true;
+      if (s && !/^mitigated/i.test(String(r[5] || '').trim())) gapUpSyms[s] = true;
     });
   }
 
@@ -6670,6 +6744,8 @@ function ab_checkZoneMitigatedAlerts_(sheetName, label) {
     }
 
     if (price <= top && !mitigatedAlerted) {
+      // a Gap-up zone inside a 3-candle FVG (col J) - the owner's strongest kind - gets its own line, first in the email
+      const lab = sheetName === AB_GAPUP_SHEET && String(r[9] || '').trim().toUpperCase() === 'Y' ? AB_GAPUP_INSIDE_LABEL : label;
       fired.push({
         symbol: sym,
         name: nameBySym[sym] || '',
@@ -6679,9 +6755,9 @@ function ab_checkZoneMitigatedAlerts_(sheetName, label) {
         pct: pct,
         chartUrl: ab_chartUrl_(sym),
         screenerUrl: ab_screenerUrl_(sym),
-        label: label
+        label: lab
       });
-      ab_logMitigation_(label, sym, bottom, top, pct, price, kite[sym] ? 'Live, Kite' : 'Live');
+      ab_logMitigation_(lab, sym, bottom, top, pct, price, kite[sym] ? 'Live, Kite' : 'Live');
       mitigatedAlerted = true;
       changed = true;
     }
@@ -9240,7 +9316,7 @@ function ab_site_main_(cx, readAt) {
 }
 
 // export_xlsx.py Z4_COLS / BT_COLS / BTT_COLS + pick(): the only columns of those tabs the website gets
-const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'];
+const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG'];
 const AB_SITE_Z4_MAX = 6000;
 const AB_SITE_BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To'];
 const AB_SITE_BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'];
@@ -9776,7 +9852,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 11;   // 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 12;   // 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

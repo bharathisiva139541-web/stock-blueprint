@@ -67,9 +67,11 @@ test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and 
     return {
       springs: cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf('Spring') >= 0),
       fvg: det.events.filter((e) => e.type === 'fvg-spring').map((e) => [e.i, e.zone, e.where, e.touch, e.formedIdx, e.bottom, e.top, e.broken]),
+      gap: det.events.filter((e) => e.type === 'gap-spring').map((e) => [e.i, e.zone, e.where, e.touch, e.formedIdx, e.bottom, e.top, e.broken, e.inside]),
       ft: ev('first-touch'), conf: ev('confirmed'), twin: ev('fvg-twinstar'),
       unmit: zoneOf(det.unmitigated),
-      gapups: FVG.gapUpFvgs(cs).map((g) => [g.bottom, g.top, g.formedIdx, g.pct])
+      // owner, 08-Nov-2026: Gap-ups kept after the first touch (touchIdx) until a close under the bottom; inside FVG
+      gapups: FVG.gapUpFvgs(cs).map((g) => [g.bottom, g.top, g.formedIdx, g.pct, g.touchIdx, g.insideFvg])
     };
   });
   const code = [
@@ -80,30 +82,34 @@ test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and 
     'for cs in json.load(sys.stdin):',
     '    d = K.fvg_detail(cs)',
     '    fs = K.fvg_spring(cs)',
-    '    assert sorted(fs) == sorted(d["spring"]), "fvg_spring = fvg_detail spring"',
+    '    assert sorted(fs) == sorted(set(d["spring"]) | set(d["gapspring"])), "fvg_spring = fvg_detail spring + gapspring"',
     '    out.append({"springs": K.springs(cs),',
     '                "fvg": [[i, z["kind"], z["where"], z["touch"], z["f"], z["bottom"], z["top"], -1 if z["broken"] is None else z["broken"]]',
-    '                        for i, z in sorted(fs.items())],',
+    '                        for i, z in sorted(d["spring"].items())],',
+    '                "gap": [[i, z["kind"], z["where"], z["touch"], z["f"], z["bottom"], z["top"], -1 if z["broken"] is None else z["broken"], z["inside"]]',
+    '                        for i, z in sorted(d["gapspring"].items())],',
     '                "ft": sorted(d["ft"]), "conf": sorted(d["conf"]), "twin": sorted(d["twin"]),',
     '                "unmit": [d["unmit"]["bottom"], d["unmit"]["top"], d["unmit"]["f"]] if d["unmit"] else None,',
-    '                "gapups": [[z["bottom"], z["top"], z["f"], z["pct"]] for z in d["gapups"]]})',
+    '                "gapups": [[z["bottom"], z["top"], z["f"], z["pct"], -1 if z["hit"] is None else z["hit"], z["inside"]] for z in d["gapups"]]})',
     'print(json.dumps(out))'
   ].join('\n');
   const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'kite_intraday.py')],
     { input: JSON.stringify(all), encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 26 });
   assert.strictEqual(r.status, 0, r.stderr);
   const pyOut = JSON.parse(r.stdout);
-  let springs = 0, ft = 0, gapups = 0;
-  const fvg = { top: 0, middle: 0, bottom: 0, 'Gap-up': 0, touch3: 0, broken: 0 };
+  let springs = 0, ft = 0, gapups = 0, gapTouched = 0, gapInside = 0;
+  const fvg = { top: 0, middle: 0, bottom: 0, gapSpring: 0, touch3: 0, broken: 0 };
   js.forEach((j, k) => {
-    ['springs', 'fvg', 'ft', 'conf', 'twin', 'unmit', 'gapups'].forEach((key) => {
+    ['springs', 'fvg', 'gap', 'ft', 'conf', 'twin', 'unmit', 'gapups'].forEach((key) => {
       assert.deepStrictEqual(pyOut[k][key], j[key], key + ', series ' + k);
     });
     springs += j.springs.length; ft += j.ft.length; gapups += j.gapups.length;
-    j.fvg.forEach((e) => { fvg[e[2]]++; if (e[1] === 'Gap-up') fvg['Gap-up']++; if (e[3] >= 3) fvg.touch3++; if (e[7] >= 0) fvg.broken++; });
+    gapTouched += j.gapups.filter((g) => g[4] >= 0).length; gapInside += j.gapups.filter((g) => g[5]).length;
+    j.fvg.forEach((e) => { fvg[e[2]]++; if (e[3] >= 3) fvg.touch3++; if (e[7] >= 0) fvg.broken++; });
+    fvg.gapSpring += j.gap.length;
   });
   const twin = js.reduce((a, j) => a + j.twin.length, 0), conf = js.reduce((a, j) => a + j.conf.length, 0);
-  assert.ok(springs > 150 && fvg.top > 5 && fvg.middle > 5 && fvg.bottom > 3 && fvg['Gap-up'] >= 1 && fvg.touch3 >= 1 && fvg.broken > 5 &&
-    ft > 20 && gapups > 5 && twin > 5 && conf > 20,
-    'the random candles exercise every rule: ' + JSON.stringify({ springs: springs, fvg: fvg, ft: ft, gapups: gapups, twin: twin, conf: conf }));
+  assert.ok(springs > 150 && fvg.top > 5 && fvg.middle > 5 && fvg.bottom > 3 && fvg.gapSpring >= 1 && fvg.touch3 >= 1 && fvg.broken > 5 &&
+    ft > 20 && gapups > 5 && gapTouched >= 1 && gapInside >= 1 && twin > 5 && conf > 20,
+    'the random candles exercise every rule: ' + JSON.stringify({ springs: springs, fvg: fvg, ft: ft, gapups: gapups, gapTouched: gapTouched, gapInside: gapInside, twin: twin, conf: conf }));
 });

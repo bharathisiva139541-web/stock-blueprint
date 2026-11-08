@@ -11,11 +11,13 @@ Once a trading day, after the close (or whenever this computer is on next), this
      kept in the folder intraday_data next to this script (only the new days are read after the first time),
   3. builds the 15m / 30m / 1H / 2H / 4H candles (sessions 09:15-15:30, 4H = 09:15-13:15 and 13:15-15:30 like
      TradingView) and D / W / M,
-  4. looks for the sheet's Spring pattern and "Spring in FVG" (the sheet's FVG+Spring rule, owner 08-Nov-2026: the
-     Spring candle anywhere on an FVG / Gap-up zone or under its bottom line, closing above the bottom, with no earlier
-     close under the Spring low; taken off again when a later candle closes under it) - the same rules as Code.gs and
-     the website (web/lib/patterns.js isSpringPair, web/lib/fvg.js longFvgDetail / springZone); on 4H
-     also FVG First Touch / Confirmed / Twin Star Bottom + FVG and the untouched 4H FVG / Gap-up zones,
+  4. looks for the sheet's Spring pattern, "Spring in FVG" (the sheet's FVG+Spring rule, owner 08-Nov-2026: the
+     Spring candle anywhere on a 3-candle FVG or under its bottom line, closing above the bottom, with no earlier
+     close under the Spring low; taken off again when a later candle closes under it) and "Gap-up FVG + Spring" (the
+     same on a Gap-up zone, split off on 08-Nov-2026; "inside FVG" when the Gap-up zone lies in a 3-candle FVG) - the
+     same rules as Code.gs and the website (web/lib/patterns.js isSpringPair, web/lib/fvg.js longFvgDetail /
+     springZone); on 4H also FVG First Touch / Confirmed / Twin Star Bottom + FVG and the 4H zones: the untouched
+     FVG, and the Gap-ups (kept after their first touch = mitigated until a candle closes under the bottom),
   5. sends what it found to the sheet's "Intraday Patterns" and "4H FVG Zones" tabs (action 'intraday'), and
   6. backtests every FVG+Spring of 4H / D / W on all stored candles (buy at the Spring close, stop under its low, win =
      2 x risk first, 20 candles) -> the sheet's "Spring Backtest" tabs (BacktestNow.bat runs only this, no login).
@@ -645,6 +647,21 @@ def fvg_gaps(candles):
     return up
 
 
+def gap_inside_fvg(candles, up, j, bottom, top, upto):
+    """web/lib/fvg.js gapInsideFvg = Code.gs ab_gapInsideFvg_ (owner, 08-Nov-2026: a Gap-up zone inside an FVG is the
+    strongest): the gap-up zone of candle j lies in a 3-candle FVG formed at most one candle after it (g <= j + 1) whose
+    bottom no close from g+1 to `upto` went under."""
+    for g in range(2, min(j + 1, upto) + 1):
+        if not up[g]:
+            continue
+        fb, ft = candles[g - 2]['h'], candles[g]['l']
+        if not (fb <= bottom and ft >= top):
+            continue
+        if all(candles[k]['c'] >= fb for k in range(g + 1, upto + 1)):
+            return True
+    return False
+
+
 def spring_zones(candles, up):
     """web/lib/fvg.js springZones: FVG and Gap-up zones oldest first -> [{'kind', 'f', 'bottom', 'top'}]."""
     out = []
@@ -722,12 +739,14 @@ def spring_broken(candles, i):
 
 def fvg_detail(candles, cfg=None, max_age=None):
     """web/lib/fvg.js longFvgDetail's events + gapUpFvgs on one timeframe's candles (oldest first):
-    {'spring': {i: zone}, 'ft': {i: zone}, 'conf': {i: zone}, 'twin': {i: zone}, 'unmit': zone | None,
-     'gapups': [zone], 'gapup_touch': [(i, zone)]}; a zone = {'kind', 'f', 'bottom', 'top', ...}. Needs 17 candles for
-    the FVG events (Gap-ups: 2)."""
+    {'spring': {i: zone} (FVG+Spring = 3-candle FVGs), 'gapspring': {i: zone} (Gap-up FVG + Spring), 'ft': {i: zone},
+     'conf': {i: zone}, 'twin': {i: zone}, 'unmit': zone | None, 'gapups': [zone], 'gapup_touch': [(i, zone)]}; a zone =
+    {'kind', 'f', 'bottom', 'top', ...}. Gap-ups (owner, 08-Nov-2026): 'gapups' = the ones still valid (no later close
+    under the bottom), newest first, 'hit' = the first touch (mitigated; None = untouched), 'inside' = inside an FVG;
+    'gapup_touch' = every first touch (a zone broken since too). Needs 17 candles for the FVG events (Gap-ups: 2)."""
     n = len(candles)
-    res = {'spring': {}, 'ft': {}, 'conf': {}, 'twin': {}, 'unmit': None, 'gapups': [], 'gapup_touch': []}
-    # Gap-up zones (gapUpFvgs): untouched ones = watch zones; the first touch = mitigated
+    res = {'spring': {}, 'gapspring': {}, 'ft': {}, 'conf': {}, 'twin': {}, 'unmit': None, 'gapups': [], 'gapup_touch': []}
+    up = fvg_gaps(candles)
     for i in range(1, n):
         a, b = candles[i - 1], candles[i]
         if is_locked(a) or is_locked(b) or not a['h'] > 0 or b['l'] <= a['h']:
@@ -736,15 +755,23 @@ def fvg_detail(candles, cfg=None, max_age=None):
         if pct < GAPUP_MIN_PCT or pct > GAPUP_MAX_PCT:
             continue
         z = {'kind': 'Gap-up', 'f': i, 'bottom': a['h'], 'top': b['l'], 'pct': math.floor(pct * 100 + 0.5) / 100}
-        hit = next((j for j in range(i + 1, n) if not is_locked(candles[j]) and candles[j]['l'] <= b['l']), None)
-        if hit is None:
-            res['gapups'].append(z)
-        else:
+        hit = None
+        broken = False
+        for j in range(i + 1, n):
+            if hit is None and not is_locked(candles[j]) and candles[j]['l'] <= b['l']:
+                hit = j
+            if candles[j]['c'] < a['h']:
+                broken = True
+                break
+        z['hit'] = hit
+        z['inside'] = gap_inside_fvg(candles, up, i, a['h'], b['l'], n - 1)
+        if hit is not None:
             res['gapup_touch'].append((hit, z))
+        if not broken:
+            res['gapups'].append(z)
     res['gapups'].reverse()
     if n < 17:
         return res
-    up = fvg_gaps(candles)
     top_at, bot_at, f_at = [None] * n, [None] * n, [None] * n
     cur = (None, None, None)
     for i in range(n):
@@ -768,14 +795,21 @@ def fvg_detail(candles, cfg=None, max_age=None):
     def active(i):
         return {'kind': 'FVG', 'f': f_at[i], 'bottom': bot_at[i], 'top': top_at[i]}
     zones = spring_zones(candles, up)
+    fz = [z for z in zones if z['kind'] == 'FVG']
+    gz = [z for z in zones if z['kind'] == 'Gap-up']
     rmq = None
     for i in range(3, n):
         if is_spring_pair(candles[i - 1], candles[i], cfg):
             rmq = rmq or _RangeMin([c['c'] for c in candles])
-            hit = spring_zone(candles, i, zones, max_age, rmq)
+            hit = spring_zone(candles, i, fz, max_age, rmq)
             if hit:
                 hit['broken'] = spring_broken(candles, i)
                 res['spring'][i] = hit
+            hit = spring_zone(candles, i, gz, max_age, rmq)
+            if hit:
+                hit['broken'] = spring_broken(candles, i)
+                hit['inside'] = gap_inside_fvg(candles, up, hit['f'], hit['bottom'], hit['top'], i)
+                res['gapspring'][i] = hit
     for i in range(4, n):
         s1, s2 = candles[i - 1], candles[i]
         if not is_twin_star_bottom(candles[i - 2], s1, s2):
@@ -822,21 +856,12 @@ def fvg_detail(candles, cfg=None, max_age=None):
 
 
 def fvg_spring(candles, cfg=None, max_age=None):
-    """FVG+Spring (owner, 08-Nov-2026) on one timeframe: {i: {'kind', 'f', 'bottom', 'top', 'where', 'touch', 'broken'}} -
-    the Spring pairs (i-1, i) on an FVG / Gap-up zone (spring_zone); 'broken' = the first later candle that closed below
-    the Spring low (or None)."""
-    n = len(candles)
-    if n < 17:
-        return {}
-    zones = spring_zones(candles, fvg_gaps(candles))
-    rmq = _RangeMin([c['c'] for c in candles])
-    out = {}
-    for i in range(3, n):
-        if is_spring_pair(candles[i - 1], candles[i], cfg):
-            hit = spring_zone(candles, i, zones, max_age, rmq)
-            if hit:
-                hit['broken'] = spring_broken(candles, i)
-                out[i] = hit
+    """FVG+Spring / Gap-up FVG + Spring (owner, 08-Nov-2026) on one timeframe: {i: {'kind', 'f', 'bottom', 'top', 'where',
+    'touch', 'broken'}} - the Spring pairs (i-1, i) on a 3-candle FVG, else on a Gap-up zone (spring_zone; 'kind' says
+    which); 'broken' = the first later candle that closed below the Spring low (or None)."""
+    d = fvg_detail(candles, cfg, max_age)
+    out = dict(d['gapspring'])
+    out.update(d['spring'])
     return out
 
 
@@ -890,9 +915,11 @@ def candle_complete(c, tf, upto, holidays):
 NO_FVG_SPRING_TFS = ('M',)        # owner, 08-Nov-2026: FVG+Spring on 4H, D and W - the monthly chart gets the plain Spring only
 FVG_PATTERN_TFS = ('4H',)          # ... and on 4H also the other FVG patterns + the FVG zones (mitigation alerts)
 BACKTEST_TFS = ('4H', 'D', 'W')
-SPRING_PATTERNS = ('Spring in FVG', 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
+GAP_SPRING = 'Gap-up FVG + Spring'   # owner, 08-Nov-2026: split from Spring in FVG (= 3-candle FVG zones only)
+SPRING_PATTERNS = ('Spring in FVG', GAP_SPRING, 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
 FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed'), ('twin', 'Twin Star Bottom + FVG'))
-RULES_VERSION = 3                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule)
+RULES_VERSION = 4                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
+                                   # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch)
 KEEP_DAYS = 30                     # = the sheet's AB_ITD_KEEP_DAYS: Spring in FVG rows a later close under the low takes off
 BT_HORIZON = 20                    # backtest: a trade gets 20 candles to hit 2R or its stop
 BT_RR = 2.0
@@ -901,10 +928,13 @@ TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the
 
 
 def zone_out(cs, z):
-    """[bottom, top, formed candle, kind, where, touch] (where / touch only for FVG+Spring)."""
+    """[bottom, top, formed candle, kind, where, touch, inside] (where / touch only for a Spring on a zone; inside = 1 for a
+    Gap-up zone inside a 3-candle FVG)."""
     out = [round(z['bottom'], 2), round(z['top'], 2), cs[z['f']]['t'], z['kind']]
     if 'where' in z:
         out += [z['where'], z['touch']]
+        if z.get('inside'):
+            out.append(1)
     return out
 
 
@@ -956,11 +986,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             base = {'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2)}
             if _slot_ok(slots, tf, c):
                 sz = d['spring'].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
-                if sz and sz['broken'] is not None:
-                    pass                    # a later candle closed below its low: no longer valid (owner, 08-Nov-2026)
-                elif sz:
-                    out['items'].append(dict(base, pattern='Spring in FVG', zone=zone_out(all_c, sz)))
-                elif tf not in fvg_only and is_spring_pair(all_c[i - 1], c, cfg):
+                gs = d['gapspring'].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
+                for z, name in ((sz, 'Spring in FVG'), (gs, GAP_SPRING)):
+                    if z and z['broken'] is None:   # a later candle closed below its low: no longer valid (owner, 08-Nov-2026)
+                        out['items'].append(dict(base, pattern=name, zone=zone_out(all_c, z)))
+                if not sz and not gs and tf not in fvg_only and is_spring_pair(all_c[i - 1], c, cfg):
                     out['items'].append(dict(base, pattern='Spring', zone=None))
             if d and tf in FVG_PATTERN_TFS:
                 for key, name in FVG_PATTERNS:
@@ -969,20 +999,30 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                         out['items'].append(dict(base, pattern=name, zone=zone_out(all_c, z)))
         if d and tf not in NO_FVG_SPRING_TFS:
             # Spring in FVG rows the sheet may hold (the last KEEP_DAYS) that a later close under the Spring low broke
-            for i, sz in d['spring'].items():
-                if sz['broken'] is not None and all_c[i]['day'] >= keep_from and _slot_ok(slots, tf, all_c[i]):
-                    out['invalid'].append({'tf': tf, 'candle': all_c[i]['t']})
+            for key, name in (('spring', 'Spring in FVG'), ('gapspring', GAP_SPRING)):
+                for i, sz in d[key].items():
+                    if sz['broken'] is not None and all_c[i]['day'] >= keep_from and _slot_ok(slots, tf, all_c[i]):
+                        out['invalid'].append({'tf': tf, 'candle': all_c[i]['t'], 'pattern': name})
         if d and tf in FVG_PATTERN_TFS:
             day = [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto.isoformat()][-TURNOVER_DAYS:]
             t = avg_turnover(day)
             if t is None or t >= MIN_TURNOVER:
+                # Gap-up zones stay after their first touch until a close under the bottom (owner, 08-Nov-2026):
+                # 'touched' = that candle (the sheet marks it mitigated), 'inside' = inside a 3-candle FVG
                 for z in ([d['unmit']] if d['unmit'] else []) + d['gapups']:
-                    out['zones'].append({'tf': tf, 'zone': zone_out(all_c, z), 'pct': z['pct']})
+                    zo = {'tf': tf, 'zone': zone_out(all_c, z), 'pct': z['pct']}
+                    if z.get('hit') is not None:
+                        zo['touched'] = all_c[z['hit']]['t']
+                    if z.get('inside'):
+                        zo['inside'] = 1
+                    out['zones'].append(zo)
             touched = [(i, z) for i, z in d['ft'].items()] + d['gapup_touch']
             for i, z in touched:
                 if all_c[i]['day'] > since_iso and z['f'] is not None:
-                    out['mitigated'].append({'tf': tf, 'zone': zone_out(all_c, z), 'candle': all_c[i]['t'],
-                                             'low': round(all_c[i]['l'], 2)})
+                    mo = {'tf': tf, 'zone': zone_out(all_c, z), 'candle': all_c[i]['t'], 'low': round(all_c[i]['l'], 2)}
+                    if z.get('inside'):
+                        mo['inside'] = 1
+                    out['mitigated'].append(mo)
         if backtest and tf in BACKTEST_TFS:
             for i in range(3, len(all_c)):
                 c = all_c[i]
@@ -992,10 +1032,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 if res is None:
                     continue
                 out['springs'].append((tf, c['t'], res))
-                sz = d['spring'].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
-                if sz:
-                    out['trades'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'zone': sz['kind'], 'where': sz['where'],
-                                          'touch': sz['touch'], 'result': res[0], 'r': res[1], 'bars': res[2]})
+                for key in ('spring', 'gapspring'):
+                    sz = d[key].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
+                    if sz:
+                        out['trades'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'zone': sz['kind'], 'where': sz['where'],
+                                              'touch': sz['touch'], 'result': res[0], 'r': res[1], 'bars': res[2]})
     return out
 
 
@@ -1005,7 +1046,8 @@ def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_on
 
 
 BT_GROUPS = (('fvg', 'FVG+Spring'), ('top', 'FVG+Spring - zone top'), ('middle', 'FVG+Spring - zone middle'),
-             ('bottom', 'FVG+Spring - zone bottom'), ('spring', 'Spring (every one, for comparison)'))
+             ('bottom', 'FVG+Spring - zone bottom'), ('spring', 'Spring (every one, for comparison)'),
+             ('gap', 'Gap-up FVG + Spring'))
 
 
 def bt_summary(trades, springs, tfs=BACKTEST_TFS):
@@ -1022,6 +1064,9 @@ def bt_summary(trades, springs, tfs=BACKTEST_TFS):
         a['from'], a['to'] = min(a['from'], when), max(a['to'], when)
     for t in trades:
         res = (t['result'], t['r'], t['bars'])
+        if t.get('zone') == 'Gap-up':           # Gap-up FVG + Spring (owner, 08-Nov-2026: split from FVG+Spring)
+            add(t['tf'], 'gap', t['candle'], res)
+            continue
         add(t['tf'], 'fvg', t['candle'], res)
         add(t['tf'], t['where'], t['candle'], res)
     for tf, when, res in springs:
@@ -1135,9 +1180,11 @@ def bt_log(rows):
         if not f:
             continue
         rate = lambda r: ('%.1f%%' % r['winRate']) if r and r['winRate'] is not None else '-'
-        out.append('%s FVG+Spring %d signals, win rate %s (top %s, middle %s, bottom %s; every Spring %s)'
+        gp = g.get(BT_GROUPS[5][1])
+        out.append('%s FVG+Spring %d signals, win rate %s (top %s, middle %s, bottom %s); Gap-up FVG + Spring %d, win rate %s; '
+                   'every Spring %s'
                    % (tf, f['signals'], rate(f), rate(g.get(BT_GROUPS[1][1])), rate(g.get(BT_GROUPS[2][1])),
-                      rate(g.get(BT_GROUPS[3][1])), rate(sp)))
+                      rate(g.get(BT_GROUPS[3][1])), gp['signals'] if gp else 0, rate(gp), rate(sp)))
     return out
 
 
@@ -1363,7 +1410,7 @@ def check(cfg, args, holidays=None, out=print, now=None):
     cs = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)][-WINDOW[tf]:]
     out('%s %s - %d finished candles from Kite, %s to %s' % (sym, tf, len(cs), cs[0]['t'] if cs else '-', cs[-1]['t'] if cs else '-'))
     fs = fvg_spring(cs) if tf not in NO_FVG_SPRING_TFS else {}
-    hits = [(i, 'Spring in FVG' if i in fs else 'Spring') for i in springs(cs)]
+    hits = [(i, ('Spring in FVG' if fs[i]['kind'] == 'FVG' else GAP_SPRING) if i in fs else 'Spring') for i in springs(cs)]
     if hits:
         out('Found in this window:')
         for i, kind in hits:
@@ -1383,8 +1430,11 @@ def check(cfg, args, holidays=None, out=print, now=None):
             for i, name, z in ev:
                 out('  %-26s %s  zone %.2f - %.2f formed %s' % (name, cs[i]['t'], z['bottom'], z['top'], cs[z['f']]['t']))
         zs = ([d['unmit']] if d['unmit'] else []) + d['gapups']
-        out('Untouched %s zones now: %s' % (tf, '; '.join('%s %.2f - %.2f formed %s' % (z['kind'], z['bottom'], z['top'], cs[z['f']]['t'])
-                                                         for z in zs) or 'none'))
+        out('%s zones now (untouched, or Gap-ups mitigated but not closed below): %s'
+            % (tf, '; '.join('%s %.2f - %.2f formed %s%s%s' % (z['kind'], z['bottom'], z['top'], cs[z['f']]['t'],
+                                                              ' mitigated %s' % cs[z['hit']]['t'] if z.get('hit') is not None else '',
+                                                              ' (inside FVG)' if z.get('inside') else '')
+                             for z in zs) or 'none'))
     pairs = [i for i in range(1, len(cs)) if (on and cs[i]['day'] == on) or (not on and cs[i - 1]['c'] < cs[i - 1]['o'])]
     if not on:
         pairs = pairs[-20:]
@@ -1393,7 +1443,8 @@ def check(cfg, args, holidays=None, out=print, now=None):
         steps = spring_explain(cs[i - 1], cs[i])
         bad = [n for n, ok in steps if not ok]
         out('  %s  ->  %s' % (cs[i - 1]['t'], _fmt_c(cs[i])))
-        out('     ' + ('SPRING' + ((' in FVG (%s)' % fs[i]['where'] + (' - no longer valid: %s closed below its low' % cs[fs[i]['broken']]['t']
+        out('     ' + ('SPRING' + ((' in %s (%s)' % ('FVG' if fs[i]['kind'] == 'FVG' else 'a Gap-up FVG', fs[i]['where'])
+                                    + (' - no longer valid: %s closed below its low' % cs[fs[i]['broken']]['t']
                                                                   if fs[i]['broken'] is not None else '')) if i in fs else
                                      ' (not on an FVG / Gap-up zone that holds, or an earlier candle closed below its low)')
                          if not bad else 'no: ' + '; '.join(bad)))

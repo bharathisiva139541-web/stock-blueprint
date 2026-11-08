@@ -218,7 +218,7 @@ def intraday_patterns(rows):
 
 # 4H FVG zones + the FVG+Spring backtest (PC bridge, 08-Nov-2026) = Code.gs AB_SITE_Z4_COLS / AB_SITE_BT_COLS /
 # AB_SITE_BTT_COLS + ab_site_pick_: no Kite prices - zone size / distance % and R multiples only
-Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted']
+Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG']
 Z4_MAX = 6000
 BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To']
 BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles']

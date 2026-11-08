@@ -385,7 +385,7 @@ assert all(m['candle'][:10] > '2026-10-23' for m in zp[0]['mitigated']), zp[0]['
 bp = [p for p in POSTS if p['op'] == 'backtest']
 assert len(bp) == 1 and bp[0]['horizon'] == 20 and bp[0]['rr'] == 2.0, bp
 groups = {(r['tf'], r['group']) for r in bp[0]['rows']}
-assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 15, groups
+assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 18, groups
 tr = [t for t in bp[0]['trades'] if t['sym'] == 'PARAGMILK' and t['candle'] == '2026-10-30 13:15']
 assert tr and tr[0]['result'] == 'win' and tr[0]['where'] == 'bottom' and tr[0]['r'] == 2.0, tr
 assert all(set(t) == {'sym', 'tf', 'candle', 'session', 'zone', 'where', 'touch', 'result', 'r', 'bars'} for t in bp[0]['trades'])
@@ -466,7 +466,36 @@ assert r4['FVG+Spring - zone top']['winRate'] == 100.0 and r4['FVG+Spring - zone
 assert r4['FVG+Spring']['from'] == '2026-10-01 13:15' and r4['FVG+Spring']['to'] == '2026-10-09 13:15'
 rd = {r['group']: r for r in rows if r['tf'] == 'D'}
 assert rd['Spring (every one, for comparison)']['open'] == 1 and rd['Spring (every one, for comparison)']['winRate'] is None
-assert rd['FVG+Spring']['signals'] == 0 and len(rows) == 15
+assert rd['FVG+Spring']['signals'] == 0 and len(rows) == 18
+# Gap-up FVG + Spring (owner, 08-Nov-2026: split from FVG+Spring) - its own group, not in the FVG+Spring ones
+rows = K.bt_summary([{'tf': 'D', 'candle': '2026-10-01', 'zone': 'Gap-up', 'where': 'top', 'result': 'win', 'r': 2.0, 'bars': 3},
+                     {'tf': 'D', 'candle': '2026-10-02', 'zone': 'FVG', 'where': 'top', 'result': 'loss', 'r': -1.0, 'bars': 1}], [])
+rd = {r['group']: r for r in rows if r['tf'] == 'D'}
+assert (rd['Gap-up FVG + Spring']['signals'], rd['Gap-up FVG + Spring']['winRate']) == (1, 100.0), rd
+assert (rd['FVG+Spring']['signals'], rd['FVG+Spring - zone top']['signals']) == (1, 1), rd
+assert 'Gap-up FVG + Spring 1, win rate 100.0%' in K.bt_log(rows)[1], K.bt_log(rows)
+
+# Gap-up zones (owner, 08-Nov-2026): kept after the first touch (= mitigated, 'hit') until a later close under the bottom;
+# 'inside' when the zone lies in a 3-candle FVG
+def G(o, h, l, c):
+    return {'t': 'x', 'day': 'x', 'o': o, 'h': h, 'l': l, 'c': c, 'v': 1}
+
+
+wide = [G(100, 104, 96, 100) for _ in range(18)] + [G(109, 114, 108.2, 113), G(113, 115, 111, 114)]
+gd = K.fvg_detail(wide)
+assert [(z['bottom'], z['top'], z['f'], z['hit'], z['inside']) for z in gd['gapups']] == [(104, 108.2, 18, None, True)], gd['gapups']
+touched = wide + [G(114, 114.5, 107.5, 109)]                      # a wick to 107.5 (under the top 108.2), closes 109
+gd = K.fvg_detail(touched)
+assert [(z['f'], z['hit']) for z in gd['gapups']] == [(18, 20)] and [(i, z['f']) for i, z in gd['gapup_touch']] == [(20, 18)], gd
+gone = touched + [G(109, 109.5, 102, 103.5)]                       # closes 103.5 under the bottom 104: no longer a zone
+gd = K.fvg_detail(gone)
+assert gd['gapups'] == [] and [(i, z['f']) for i, z in gd['gapup_touch']] == [(20, 18)], gd
+# a Spring on it: 'Gap-up FVG + Spring' with ', inside FVG' in the sheet's detail (zone_out's 7th value)
+pair = [G(114, 114.5, 107.5, 107.8), G(108.0, 108.8, 106.5, 108.4)]
+gd = K.fvg_detail(wide + pair)
+gz = gd['gapspring'][21]
+assert (gz['kind'], gz['where'], gz['inside'], gz['broken']) == ('Gap-up', 'top', True, None), gz
+assert K.zone_out(wide + pair, gz)[3:] == ['Gap-up', 'top', 1, 1] and gd['spring'][21]['kind'] == 'FVG'
 
 # owner, 08-Nov-2026: a Spring in FVG stops counting once a LATER candle closes below its low - not reported, and the
 # sheet is told to take its row off ('invalid', the last KEEP_DAYS)
@@ -492,10 +521,20 @@ try:
     gone = K.analyse({'bars': bars + [H4('2026-09-14', 0, 104.3, 104.6, 102.5, 102.9)], 'day': []}, '2026-09-10', d('2026-09-14'), HOL,
                      ['4H'], (), slots={'4H': ['13:15']})
     assert not [i for i in gone['items'] if i['pattern'] == 'Spring in FVG'], 'broken: not reported'
-    assert gone['invalid'] == [{'tf': '4H', 'candle': '2026-09-11 13:15'}], gone['invalid']
+    assert gone['invalid'] == [{'tf': '4H', 'candle': '2026-09-11 13:15', 'pattern': 'Spring in FVG'}], gone['invalid']
     old = K.analyse({'bars': bars + [H4('2026-09-14', 0, 104.3, 104.6, 102.5, 102.9)], 'day': []}, '2026-09-10', d('2026-11-06'), HOL,
                     ['4H'], (), slots={'4H': ['13:15']})
     assert old['invalid'] == [], 'older than the 30 days the sheet keeps: nothing to take off'
+    # a Gap-up on 4H: the Spring on it is 'Gap-up FVG + Spring' (13:15 candle), the zone is still sent after its touch
+    gb = [H4('2026-10-%02d' % (1 + k // 2), k % 2, 100, 104, 96, 100) for k in range(18)]
+    gb += [H4('2026-10-10', 0, 109, 114, 108.2, 113), H4('2026-10-10', 1, 113, 115, 111, 114),
+           H4('2026-10-12', 0, 114, 114.5, 107.5, 107.8), H4('2026-10-12', 1, 108.0, 108.8, 106.5, 108.4)]
+    ga = K.analyse({'bars': gb, 'day': []}, '2026-10-10', d('2026-10-12'), HOL, ['4H'], (), slots={'4H': ['13:15']})
+    sp = [(i['pattern'], i['candle'], i['zone'][3:]) for i in ga['items'] if 'Spring' in i['pattern']]
+    assert ('Gap-up FVG + Spring', '2026-10-12 13:15', ['Gap-up', 'top', 1, 1]) in sp, sp
+    gzs = [z for z in ga['zones'] if z['zone'][3] == 'Gap-up']
+    assert gzs and gzs[0]['touched'] == '2026-10-12 09:15' and gzs[0]['inside'] == 1, ga['zones']
+    assert [m for m in ga['mitigated'] if m['zone'][3] == 'Gap-up'][0]['inside'] == 1, ga['mitigated']
 finally:
     K.timeframe_candles = orig_tc
 

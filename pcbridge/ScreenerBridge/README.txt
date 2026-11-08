@@ -54,17 +54,22 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     opens TradingView at that timeframe). The website's Patterns & FVG page lists them too (no prices - Kite's data is
     for your own use).
     "Spring in FVG" (your rule of 08-Nov-2026, checked on a picture; the same as the sheet's FVG+Spring and the
-    website's): the Spring candle sits on a 3-candle FVG or a Gap-up zone (3-5 %) that still holds (no close under its
+    website's): the Spring candle sits on a 3-candle FVG that still holds (no close under its
     bottom before the Spring): its low anywhere in the zone or under the bottom line (any depth), its close above the
     bottom line, and NO candle since the zone formed closed under the Spring candle's low (the red candle excepted).
     The column "FVG Detail" says where its low sat ("FVG top (touch 2)", "FVG middle (touch 3)", "Gap-up bottom
     (touch 4)"). When a LATER candle closes under the Spring low, the next scan takes that row off the sheet.
     Not on the monthly chart (M: the plain Spring only).
+    "Gap-up FVG + Spring" (your choice of 08-Nov-2026: split off from Spring in FVG): the same rule on a Gap-up zone
+    (3-5 %); FVG Detail adds ", inside FVG" when that Gap-up zone lies inside a 3-candle FVG (the strongest kind).
+    A Spring on both kinds of zone is sent as both.
  4. On 4H it also finds the other FVG patterns of the sheet's FVG column - FVG First Touch, FVG First Touch Confirmed
-    and Twin Star Bottom + FVG (on every 4H candle) - and sends the 4H FVG ZONES still untouched (the latest 3-candle
-    FVG when never touched + every untouched Gap-up of 3-5 %, liquid stocks only) to the sheet's "4H FVG Zones" tab.
-    During market hours the sheet watches them: price at or under a zone top = mitigated -> one combined
-    "Mitigated FVG" email at most once an hour, together with the daily zones.
+    and Twin Star Bottom + FVG (on every 4H candle) - and sends the 4H FVG ZONES (the latest 3-candle FVG when never
+    touched + every Gap-up of 3-5 %, liquid stocks only) to the sheet's "4H FVG Zones" tab. A Gap-up zone stays after
+    its first touch (a wick is enough = mitigated, emailed once) until a 4H candle closes under its bottom (your rule,
+    08-Nov-2026); "Inside FVG" = Y when it lies inside a 3-candle FVG. During market hours the sheet watches them:
+    price at or under a zone top = mitigated -> one combined "Mitigated FVG" email at most once an hour, together
+    with the daily zones (inside-FVG Gap-ups listed first).
  5. BACKTEST: after each scan it tests every Spring in FVG of 4H (13:15 candle), D and W on all the candles stored here
     (4H ~6 months, D and W ~5 years): buy at the Spring candle's close, stop just under its low, WIN = the target
     (2 x the risk) reached before the stop within 20 candles (a candle that does both = a loss); top / middle / bottom

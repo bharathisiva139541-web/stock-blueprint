@@ -239,10 +239,10 @@ function slides(heights) {
   no++;
   out.push('<section class="slide"><div class="sec">Timeframes · Zerodha Kite</div><h1>எந்த timeframe-இல் எந்த pattern</h1><ol class="txt">' +
     '<li><b>Daily (Sheet):</b> எல்லா candle pattern-களும் (Pattern column) மற்றும் FVG pattern-களும் (FVG column) - ஒவ்வொரு நாளும் Phase 2-இல்.</li>' +
-    '<li><b>Zerodha Kite (உங்கள் laptop):</b> Spring, FVG + Spring - 4H, Daily, Weekly; Monthly-இல் சாதாரண Spring மட்டும் (FVG + Spring இல்லை).</li>' +
-    '<li><b>4H:</b> Spring / FVG + Spring - அன்றைய 2வது 4H candle (13:15 - 15:30) மட்டும். FVG First Touch / Confirmed / Twin Star Bottom + FVG - எல்லா 4H candle-களிலும்.</li>' +
-    '<li><b>4H FVG zones:</b> தொடப்படாத சமீபத்திய FVG + Gap-up zone-கள் (நாள் turnover ≥ ₹50 லட்சம் உள்ள பங்குகள்) - சந்தை நேரத்தில் zone-க்குள் வந்தால் mitigated email (ஒரு மணிக்கு ஒன்று).</li>' +
-    '<li><b>Win rate:</b> FVG + Spring backtest - entry = Spring close, stop = Spring low-க்குக் கீழே, target = 2R, 20 candle-களுக்குள் (Website: Patterns & FVG).</li>' +
+    '<li><b>Zerodha Kite (உங்கள் laptop):</b> Spring, FVG + Spring, Gap-up FVG + Spring - 4H, Daily, Weekly; Monthly-இல் சாதாரண Spring மட்டும்.</li>' +
+    '<li><b>4H:</b> Spring / FVG + Spring / Gap-up FVG + Spring - அன்றைய 2வது 4H candle (13:15 - 15:30) மட்டும். FVG First Touch / Confirmed / Twin Star Bottom + FVG - எல்லா 4H candle-களிலும்.</li>' +
+    '<li><b>4H FVG zones:</b> தொடப்படாத சமீபத்திய FVG + Gap-up zone-கள் (நாள் turnover ≥ ₹50 லட்சம் உள்ள பங்குகள்) - சந்தை நேரத்தில் zone-க்குள் வந்தால் mitigated email (ஒரு மணிக்கு ஒன்று). Gap-up zone தொட்ட பின்னும் bottom-க்குக் கீழே close ஆகும் வரை தொடரும்.</li>' +
+    '<li><b>Win rate:</b> FVG + Spring / Gap-up FVG + Spring backtest - entry = Spring close, stop = Spring low-க்குக் கீழே, target = 2R, 20 candle-களுக்குள் (Website: Patterns & FVG).</li>' +
     '</ol>' + footer(no, total) + '</section>');
   // adding a pattern
   no++;

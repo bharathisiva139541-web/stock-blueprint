@@ -402,11 +402,11 @@ const PAGES = [
   },
   {
     id: 'fvgspring', section: 'X', title: 'FVG + Spring', tags: ['FVG+Spring'],
-    ta: 'Spring (2-candle) ஒரு FVG அல்லது Gap-up zone-இல் உருவாகிறது. உங்கள் இறுதி விதி (08-Nov-2026, படத்தில் சரிபார்த்தது): ' +
-      'Spring low zone-க்குள் எங்கும் (மேல் / நடு) அல்லது கீழ்க்கோட்டுக்குக் கீழே (எவ்வளவும்); close கீழ்க்கோட்டுக்கு மேலே.',
+    ta: 'Spring (2-candle) ஒரு 3-candle FVG zone-இல் உருவாகிறது. உங்கள் இறுதி விதி (08-Nov-2026, படத்தில் சரிபார்த்தது): ' +
+      'Spring low zone-க்குள் எங்கும் (மேல் / நடு) அல்லது கீழ்க்கோட்டுக்குக் கீழே (எவ்வளவும்); close கீழ்க்கோட்டுக்கு மேலே. Gap-up zone-இல் = "Gap-up FVG + Spring" (தனி பக்கம்).',
     rules: [
       'Spring = Spring பக்கத்தின் அதே 2-candle விதி',
-      'Zone = 3-candle FVG அல்லது Gap-up (3-5%), சிவப்பு candle-க்கு முன் உருவானது',
+      'Zone = 3-candle FVG, சிவப்பு candle-க்கு முன் உருவானது (Gap-up zone = Gap-up FVG + Spring)',
       'Spring candle low ≤ zone top (உள்ளே எங்கும், அல்லது கீழ்க்கோட்டுக்குக் கீழே); close > zone bottom',
       'Zone உருவானதிலிருந்து சிவப்பு candle வரை: எந்த close-உம் zone bottom-க்கோ Spring low-க்கோ கீழே இல்லை',
       'எத்தனையாவது தொடுதல் என்றாலும் சரி; இடம் = top / middle / bottom',
@@ -465,23 +465,74 @@ const PAGES = [
   },
   {
     id: 'gapup', section: 'X', title: 'Gap-up FVG', tags: ['Gap-up FVG'],
-    ta: 'இன்றைய low, நேற்றைய high-ஐவிட 3%-இலிருந்து 5% மேலே திறந்து நிற்கிறது - ஒரு gap-up zone (நேற்றைய high முதல் இன்றைய low வரை).',
+    ta: 'இன்றைய low, நேற்றைய high-ஐவிட 3%-இலிருந்து 5% மேலே திறந்து நிற்கிறது - ஒரு gap-up zone (நேற்றைய high முதல் இன்றைய low வரை). ' +
+      'தொட்டால் mitigated - ஆனால் zone தொடர்கிறது (08-Nov-2026).',
     rules: [
       'இன்றைய low > நேற்றைய high; இடைவெளி 3% - 5% (Control Panel)',
       'Circuit-இல் பூட்டிய candle (range ≤ 0.05%) கணக்கில் இல்லை',
-      'பின்னர் ஒரு candle-இன் low zone top-ஐத் தொட்டால் → நீக்கம்',
-      'Zone அருகே விலை வந்தால் "approaching" alert, உள்ளே வந்தால் "mitigated" (hourly email)'
+      'பின்னர் ஒரு candle-இன் low zone top-ஐத் தொட்டால் (wick போதும்) → "mitigated": ஒரே ஒரு email (hourly mail-இல்); zone நீக்கப்படாது',
+      'ஒரு candle zone bottom-க்குக் கீழே close ஆனால் மட்டும் → செல்லாது (அடுத்த பக்கம்)',
+      '"Approaching" alert தொடாத zone-க்கு மட்டும்; Kite 4H Gap-up zone-களுக்கும் இதே விதி'
     ],
     examples: [
-      { ok: true, label: 'Gap-up 3.5%', why: 'low 104.0 - நேற்றைய high 100.5-ஐவிட 3.5% மேலே',
+      { ok: true, label: 'Gap-up 3.5%', why: 'low 104.0 - நேற்றைய high 100.5-ஐவிட 3.5% மேலே; இன்னும் தொடவில்லை',
         candles: flat(5, 100).concat([[100.2, 100.5, 99.8, 100.3], [104.2, 106.4, 104.0, 106.0], [106.0, 107.0, 105.0, 106.5], [106.5, 107.2, 105.5, 106.8]]),
-        marks: { zone: { from: 6, bottom: 100.5, top: 104.0, label: 'Gap-up zone' }, hl: { 5: 'நேற்று', 6: 'gap' } }, check: { type: 'gap' } },
+        marks: { zone: { from: 6, bottom: 100.5, top: 104.0, label: 'Gap-up zone' }, hl: { 5: 'நேற்று', 6: 'gap' } }, check: { type: 'gap', touched: false } },
       { ok: false, label: 'Gap பெரியது (7%)', why: '5%-க்கு மேல் - கணக்கில் இல்லை',
         candles: flat(5, 100).concat([[100.2, 100.5, 99.8, 100.3], [107.8, 109.6, 107.6, 109.0], [109.0, 110.0, 108.0, 109.5], [109.5, 110.2, 108.5, 109.8]]),
         marks: { hl: { 5: 'நேற்று', 6: 'gap' }, rings: [{ i: 6, at: 'low' }] }, check: { type: 'gap' } },
-      { ok: false, label: 'நிரம்பிவிட்டது', why: 'பின்னர் low 103.8 - zone top 104.0-ஐத் தொட்டது',
-        candles: flat(5, 100).concat([[100.2, 100.5, 99.8, 100.3], [104.2, 106.4, 104.0, 106.0], [106.0, 107.0, 105.0, 106.5], [106.5, 106.8, 103.8, 104.5]]),
-        marks: { zone: { from: 6, bottom: 100.5, top: 104.0, label: 'Gap-up zone' }, hl: { 5: 'நேற்று', 6: 'gap' }, rings: [{ i: 8, at: 'low' }] }, check: { type: 'gap' } }
+      { ok: true, label: 'Mitigated - இன்னும் valid', why: 'low 103.8 zone-ஐத் தொட்டது = mitigated (ஒரு email); close 104.5 bottom-க்கு மேலே - zone தொடர்கிறது',
+        candles: flat(5, 100).concat([[100.2, 100.5, 99.8, 100.3], [104.2, 106.4, 104.0, 106.0], [106.0, 107.0, 105.0, 106.5], [106.5, 106.8, 103.8, 104.5], [104.5, 106.6, 104.2, 106.2]]),
+        marks: { zone: { from: 6, bottom: 100.5, top: 104.0, label: 'Gap-up zone' }, hl: { 5: 'நேற்று', 6: 'gap', 8: 'mitigated' }, rings: [{ i: 8, at: 'low' }] }, check: { type: 'gap', touched: true } }
+    ]
+  },
+  {
+    id: 'gapup2', section: 'X', title: 'Gap-up FVG - நீக்கம் & FVG-க்குள்', tags: [],
+    ta: 'Zone bottom-க்குக் கீழே ஒரு close = zone முடிந்தது. ஒரு 3-candle FVG-க்குள் இருக்கும் Gap-up zone = "inside FVG" - மிக வலுவானது (உங்கள் BSE / SBICARD charts).',
+    rules: [
+      'Close < zone bottom → செல்லாது: GapUpFVG tab-இலிருந்தும் alert-இலிருந்தும் நீக்கம்',
+      'அதற்கு முன் mitigated email போகவில்லை என்றால் - அந்த முதல் தொடுதலுக்கு ஒரு email (EOD)',
+      'Inside FVG = Gap-up zone ஒரு 3-candle FVG-க்குள் (FVG bottom ≤ gap bottom, FVG top ≥ gap top; அந்த FVG உடையாமல்)',
+      'Inside FVG: tab-இல் "Inside FVG" = Y, FVG column-இல் "(…, inside FVG)", mitigated email-இல் முதலில்'
+    ],
+    examples: [
+      { ok: false, label: 'Bottom-க்குக் கீழே close', why: 'close 100.0 < zone bottom 100.5 - zone செல்லாது',
+        candles: flat(5, 100).concat([[100.2, 100.5, 99.8, 100.3], [104.2, 106.4, 104.0, 106.0], [106.0, 107.0, 105.0, 106.5], [106.5, 106.8, 103.8, 104.5], [104.5, 104.8, 99.6, 100.0]]),
+        marks: { zone: { from: 6, bottom: 100.5, top: 104.0, label: 'Gap-up zone' }, hl: { 5: 'நேற்று', 6: 'gap' }, rings: [{ i: 9, at: 'close', color: '#ff5252' }] }, check: { type: 'gap' } },
+      { ok: true, label: 'FVG-க்குள் Gap-up (inside FVG)', why: 'Gap-up 102.0 - 105.4, FVG 100.5 - 105.4-க்குள்',
+        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2]]),
+        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 13: 'A', 14: 'நேற்று', 15: 'gap' },
+          lines: [{ y: 100.5, from: 13, to: 17, label: 'FVG bottom', dash: true }] }, check: { type: 'gap', inside: true } }
+    ]
+  },
+  {
+    id: 'gapupspring', section: 'X', title: 'Gap-up FVG + Spring', tags: ['Gap-up FVG + Spring'],
+    ta: 'FVG + Spring போலவே - ஆனால் zone ஒரு Gap-up zone (08-Nov-2026, தனியாகப் பிரிக்கப்பட்டது). Zone ஒரு 3-candle FVG-க்குள் இருந்தால் tag-இல் "inside FVG".',
+    rules: [
+      'Spring = Spring பக்கத்தின் அதே 2-candle விதி',
+      'Zone = Gap-up (3-5%), சிவப்பு candle-க்கு முன் உருவானது',
+      'Spring candle low ≤ zone top (உள்ளே எங்கும், அல்லது கீழ்க்கோட்டுக்குக் கீழே); close > zone bottom',
+      'Zone உருவானதிலிருந்து சிவப்பு candle வரை: எந்த close-உம் zone bottom-க்கோ Spring low-க்கோ கீழே இல்லை',
+      'எத்தனையாவது தொடுதல் என்றாலும் சரி; பின்னர் ஒரு close Spring low-க்குக் கீழே = நீக்கம்',
+      'ஒரே Spring 3-candle FVG-இலும் இருந்தால் FVG+Spring tag-உம் வரும்',
+      'Kite: 4H (13:15 candle), D, W - backtest-இல் தனி வரி'
+    ],
+    examples: [
+      { ok: true, label: 'மேல் (Top), inside FVG', why: 'low 104.6 gap zone மேல் பாதியில்; zone FVG 100.5 - 105.4-க்குள்',
+        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2],
+          [108.2, 108.4, 106.4, 106.6], [106.6, 106.8, 105.3, 105.5], [105.4, 105.9, 104.6, 105.6]]),
+        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 15: 'gap', 19: 'c1', 20: 'c2' },
+          lines: [{ y: 103.7, from: 15, to: 20, label: 'நடு', dash: true }] }, check: { type: 'x', tag: 'Gap-up FVG + Spring', where: 'top', inside: true } },
+      { ok: true, label: 'கீழ் (Bottom)', why: 'low 101.6 - zone bottom 102.0-க்குக் கீழே; close 102.9 மேலே',
+        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2],
+          [108.2, 108.4, 106.4, 106.6], [106.6, 106.8, 102.6, 102.8], [102.7, 103.6, 101.6, 102.9]]),
+        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 15: 'gap', 19: 'c1', 20: 'c2' } },
+        check: { type: 'x', tag: 'Gap-up FVG + Spring', where: 'bottom', inside: true } },
+      { ok: false, label: 'Zone உடைந்தது', why: 'முன் close 101.8 - zone bottom 102.0-க்குக் கீழே',
+        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2],
+          [108.2, 108.4, 101.5, 101.8], [104.8, 105.0, 103.4, 103.6], [103.5, 104.2, 102.9, 103.7]]),
+        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 15: 'gap', 19: 'c1', 20: 'c2' }, rings: [{ i: 18, at: 'close', color: '#ff5252' }] },
+        check: { type: 'x', tag: 'Gap-up FVG + Spring' } }
     ]
   },
 

@@ -92,16 +92,28 @@ test('a later close below the Spring low takes the tag off (the event keeps it w
   assert.strictEqual(FVG.longFvgDetail(held).events.filter((e) => e.type === 'fvg-spring')[0].broken, -1);
 });
 
-test('a Gap-up zone counts too', () => {
+const gapEv = (s, cfg) => FVG.longFvgDetail(s, cfg).events.filter((e) => e.type === 'gap-spring')
+  .map((e) => ({ i: e.i, zone: e.zone, where: e.where, touch: e.touch, bottom: e.bottom, top: e.top, inside: e.inside }));
+
+test('a Gap-up zone: Gap-up FVG + Spring (owner, 08-Nov-2026: split from FVG+Spring)', () => {
   // wide candles (range 8), then a 4% gap-up: candle 18 low 108.2 > candle 17 high 104 - too small for a 3-candle FVG
   const g = [];
   for (let i = 0; i < 18; i++) g.push(c(100, 104, 96, 100));
   g.push(c(109, 114, 108.2, 113));               // 18: gap-up 104 -> 108.2 (4.04 %)
   g.push(c(113, 115, 111, 114));                 // 19 (also a 3-candle FVG 104 - 111, formed later)
   const pair = [c(114, 114.5, 107.5, 107.8), c(108.0, 108.8, 106.5, 108.4)];   // low 106.5 in the upper half (>= 106.1)
-  assert.deepStrictEqual(springEv(g.concat(pair)), [{ i: 21, zone: 'Gap-up', where: 'top', touch: 1, bottom: 104, top: 108.2 }]);
-  // with AB_GAPUP_MAX_PCT 3 the gap is no zone; the later FVG (104 - 111) takes it, in its lower half
-  assert.deepStrictEqual(springEv(g.concat(pair), { AB_GAPUP_MAX_PCT: 3 }).map((e) => e.zone + ' ' + e.where), ['FVG middle']);
+  assert.deepStrictEqual(gapEv(g.concat(pair)), [{ i: 21, zone: 'Gap-up', where: 'top', touch: 1, bottom: 104, top: 108.2, inside: true }],
+    'the gap-up 104 - 108.2 lies in the FVG 104 - 111 formed by the next candle: inside FVG');
+  // ... and the same Spring sits in the lower half of that FVG: FVG+Spring too (a Spring on both kinds gets both tags)
+  assert.deepStrictEqual(springEv(g.concat(pair)).map((e) => e.zone + ' ' + e.where), ['FVG middle']);
+  assert.deepStrictEqual(FVG.longFvgDetail(g.concat(pair)).tags.filter((t) => /Spring/.test(t)), ['FVG+Spring (Today)', 'Gap-up FVG + Spring (Today, inside FVG)']);
+  // with AB_GAPUP_MAX_PCT 3 the gap is no zone: only FVG+Spring
+  assert.deepStrictEqual(gapEv(g.concat(pair), { AB_GAPUP_MAX_PCT: 3 }), []);
+  // a Gap-up not inside an FVG (the next candle's low 108.3 is only 4.3 over candle 17's high - too small for a 3-candle FVG
+  // among these wide candles): no "inside FVG", and no FVG+Spring either
+  const h = g.slice(); h[19] = c(113, 115, 108.3, 114);
+  const t = FVG.longFvgDetail(h.concat(pair)).tags.filter((x) => /Spring/.test(x));
+  assert.deepStrictEqual(t, ['Gap-up FVG + Spring (Today)'], t.join(', '));
 });
 
 test('an older gap still counts after a newer one formed', () => {
@@ -144,15 +156,17 @@ test('Code.gs and the JS port give identical FVG tags (fuzz + crafted cases)', (
   const r = rnd(7);
   const sets = [base().concat([c(108, 108.5, 104.2, 104.5), c(104.4, 105, 103.0, 104.3)]), base().concat([c(106, 106.5, 100.3, 100.5), c(100.6, 101.4, 100.0, 101.2)])];
   for (let k = 0; k < 4000; k++) sets.push(series(r));
-  let hits = 0;
+  let hits = 0, gapHits = 0;
   const bad = [];
   sets.forEach((s, i) => {
     const sheetCandles = s.map((x) => ({ Opn: x.o, High: x.h, Low: x.l, Cls: x.c }));
     const gs = env.call('ab_longFvgDetail_', sheetCandles).tags.join(', ');
     const js = FVG.longFvgDetail(s, { AB_GAPUP_MAX_PCT: 10 }).tags.join(', ');   // the mock's Control Panel = code defaults
     if (/FVG\+Spring/.test(gs)) hits++;
+    if (/Gap-up FVG \+ Spring/.test(gs)) gapHits++;
     if (gs !== js) bad.push(i + ': sheet="' + gs + '" js="' + js + '"');
   });
   assert.deepStrictEqual(bad.slice(0, 10), [], bad.length + ' mismatches');
   assert.ok(hits >= 5, 'the fuzz must exercise FVG+Spring: ' + hits + ' hits');
+  assert.ok(gapHits >= 1, 'the fuzz must exercise Gap-up FVG + Spring: ' + gapHits + ' hits');
 });

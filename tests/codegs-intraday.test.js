@@ -40,7 +40,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
   ]));
   assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {} });
   const rows = e.sheet('Intraday Patterns').rows;
-  assert.match(rows[0][0], /^Spring and Spring in FVG from Zerodha Kite candles .* Last scan: session 2026-11-06 \(2026-11-06 19:00\)\. Kept 30 days\./);
+  assert.match(rows[0][0], /^Spring, Spring in FVG and Gap-up FVG \+ Spring from Zerodha Kite candles .* Last scan: session 2026-11-06 \(2026-11-06 19:00\)\. Kept 30 days\./);
   assert.deepStrictEqual(rows[1], ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close', 'FVG Bottom', 'FVG Top', 'Found', 'FVG Detail']);
   assert.deepStrictEqual(rows.slice(2).map((x) => [x[0], x[1], x[3], x[4]]), [
     ['2026-11-06', 'FLAT', 'W', 'Spring'], ['2026-11-06', 'M&M', '1H', 'Spring'],
@@ -116,7 +116,7 @@ test('intraday: FVG+Spring detail, the 4H FVG patterns on every candle, a rescan
   assert.ok(by('FLAT', '4H', 'Twin Star Bottom + FVG'));
   assert.ok(!by('PARAGMILK', '4H', 'Spring in FVG') && !by('FLAT', 'D', 'Spring in FVG'), 'the old rule\'s rows after since are gone');
   assert.ok(by('FLAT', 'D', 'Spring'), 'a session before since stays');
-  assert.match(rows[0][0], /anywhere on an FVG \/ Gap-up zone or under its bottom line, closing above the bottom, no earlier close under the Spring low/);
+  assert.match(rows[0][0], /anywhere on a 3-candle FVG or under its bottom line, closing above the bottom, no earlier close under the Spring low; Gap-up FVG \+ Spring = the same on a Gap-up zone/);
 });
 
 test('intraday: a Spring in FVG a later candle closed below is taken off (owner, 08-Nov-2026); FVG Detail "middle"', () => {
@@ -154,9 +154,9 @@ test('4H FVG zones: the tab, the live check in market hours, the PC\'s touched z
   ]));
   assert.deepStrictEqual(r, { ok: true, received: 5, kept: 3, skipped: 2, logged: 0 });
   const t = e.sheet('4H FVG Zones').rows;
-  assert.match(t[0][0], /^4H FVG zones still untouched, from Zerodha Kite 4H candles \(your PC program, session 2026-11-06\)/);
+  assert.match(t[0][0], /^4H FVG zones from Zerodha Kite 4H candles \(your PC program, session 2026-11-06\): .* kept after its first touch/);
   assert.deepStrictEqual(t[1], ['Symbol', 'Company', 'Kind', 'Zone Bottom', 'Zone Top', 'Zone %', 'Formed', 'Distance %', 'Chart',
-    'Mitigated Alerted', 'Mitigated At', 'Updated']);
+    'Mitigated Alerted', 'Mitigated At', 'Updated', 'Inside FVG']);
   assert.deepStrictEqual(t.slice(2).map((x) => x.slice(0, 8)), [
     ['FLAT', 'Flat Co', 'FVG', 90, 95, 5.56, '2026-10-01 13:15', 6.32],
     ['M&M', 'Mahindra & Mahindra', 'Gap-up', 2950, 3040, 3.05, '2026-11-03 09:15', 0.33],
@@ -200,6 +200,38 @@ test('4H FVG zones: the tab, the live check in market hours, the PC\'s touched z
   assert.strictEqual(e.run('ab_mitMailFlush_(false)'), 1);
   assert.match(e.mails[e.mails.length - 1][0].subject, /^Mitigated FVG - 1: PARAGMILK/);
   assert.strictEqual(e.run('ab_mitMailFlush_(true)'), 0, 'nothing new');
+});
+
+test('4H Gap-up zones (owner, 08-Nov-2026): kept after the first touch (mitigated quietly), inside FVG typed apart, first in the email', () => {
+  const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
+  // M&M's Gap-up was touched by a 4H candle before the sheet ever listed it -> listed as mitigated, no email; FLAT's
+  // Gap-up lies in a 3-candle FVG and is untouched
+  const r = e.post(zput([
+    { sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], pct: 3.05, touched: '2026-11-05 13:15' },
+    { sym: 'FLAT', tf: '4H', zone: [96, 99.5, '2026-11-04 13:15', 'Gap-up'], pct: 3.65, inside: 1 },
+    { sym: 'PARAGMILK', tf: '4H', zone: [229.9, 238, '2026-10-20 13:15', 'FVG'], inside: 1 }      // inside is for Gap-ups only
+  ]));
+  assert.deepStrictEqual([r.kept, r.logged], [3, 0]);
+  const rows = () => Object.fromEntries(e.sheet('4H FVG Zones').rows.slice(2).map((x) => [x[0], [x[2], x[9], x[10], x[12]]]));
+  assert.deepStrictEqual(rows(), { FLAT: ['Gap-up', '', '', 'Y'], 'M&M': ['Gap-up', 'Y', '2026-11-05 13:15', ''], PARAGMILK: ['FVG', '', '', ''] });
+  assert.ok(!e.sheet('Mitigated FVG Log'), 'no log row for a touch before it was listed');
+  // Mon 11:00: FLAT at 99.2 (under its top 99.5) -> logged as the inside-FVG kind; M&M at 3035 stays quiet (mitigated before)
+  e.setNow(Date.UTC(2026, 10, 9, 5, 30));
+  e.sheet('Main').rows[3][3] = 3035;
+  e.sheet('Main').rows[4][3] = 99.2;
+  assert.deepStrictEqual(JSON.parse(e.run('JSON.stringify(ab_itdZoneCheck_().map(function (r) { return r.sym; }))')), ['FLAT']);
+  const log = e.sheet('Mitigated FVG Log').rows;
+  assert.deepStrictEqual(log.slice(1).map((x) => x[2] + ' ' + x[3]), ['4H Gap-up FVG (inside FVG) FLAT']);
+  // the PC's next scan: both Gap-ups still valid (no close under their bottoms) -> still listed, marks kept
+  e.post(zput([
+    { sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], pct: 3.05, touched: '2026-11-05 13:15' },
+    { sym: 'FLAT', tf: '4H', zone: [96, 99.5, '2026-11-04 13:15', 'Gap-up'], pct: 3.65, inside: 1, touched: '2026-11-09 09:15' }
+  ], [{ sym: 'FLAT', tf: '4H', zone: [96, 99.5, '2026-11-04 13:15', 'Gap-up'], candle: '2026-11-09 09:15', low: 99.1, inside: 1 }],
+  { upto: '2026-11-09', since: '2026-11-06' }));
+  assert.deepStrictEqual(rows(), { FLAT: ['Gap-up', 'Y', '2026-11-09 11:00', 'Y'], 'M&M': ['Gap-up', 'Y', '2026-11-05 13:15', ''] });
+  assert.strictEqual(e.sheet('Mitigated FVG Log').rows.length, 2, 'FLAT emailed once (the live catch)');
+  assert.strictEqual(e.run('ab_mitMailFlush_(true)'), 1);
+  assert.match(e.mails[e.mails.length - 1][0].htmlBody, /4H GAP-UP FVG \(INSIDE FVG\) \(ZERODHA, YOUR PC\)/);
 });
 
 test('mitigated email: daily zones + 4H together, at most one an hour; Unmitigated FVG approaching: no email (owner, 08-Nov-2026)', () => {
@@ -266,13 +298,13 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
   const it = data.intraday;
   assert.deepStrictEqual(it.cols, ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail']);
-  assert.match(it.note, /^Spring and Spring in FVG from Zerodha Kite/);
+  assert.match(it.note, /^Spring, Spring in FVG and Gap-up FVG \+ Spring from Zerodha Kite/);
   const days = [...new Set(it.rows.map((r) => r[0]))];
   assert.strictEqual(days.length, 10);
   assert.deepStrictEqual([days[0], days[9]], ['2026-10-30', '2026-10-14'], 'the newest 10 sessions');
   assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null]);
   assert.ok(!JSON.stringify(it).includes('228.05') && !JSON.stringify(it).includes('tradingview'), 'no Kite prices, no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 11);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 12);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
@@ -296,8 +328,8 @@ test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py
   e.run('ab_logMitigation_("4H FVG", "PARAGMILK", 229.9, 238, 3.52, 237, "Live")');
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
-  assert.deepStrictEqual(data.zones4h.cols, ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted']);
-  assert.deepStrictEqual(data.zones4h.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 3.52, '2026-10-20 13:15', 0.84, null]);
+  assert.deepStrictEqual(data.zones4h.cols, ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG']);
+  assert.deepStrictEqual(data.zones4h.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 3.52, '2026-10-20 13:15', 0.84, null, null]);
   assert.deepStrictEqual(data.springBacktest.summary.rows[0], ['4H', 'FVG+Spring', 1, 1, 0, 0, 0, 100, 2, '2026-10-30 13:15', '2026-10-30 13:15']);
   assert.deepStrictEqual(data.springBacktest.list.rows[0], ['2026-10-30 13:15', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'FVG', 'Bottom', 3, 'Win', 2, 4]);
   assert.deepStrictEqual(data.mitigatedLog.rows.map((r) => r[2] + ' ' + r[3]), ['Gap-up FVG M&M'], 'the 4H rows (Kite prices) stay on the sheet');
