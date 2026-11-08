@@ -232,6 +232,8 @@ const AB_CP_SECTIONS_ = [
       help: 'Alert when price comes within this % of the gap top.' },
     { key: 'AB_GAPUP_MIN_AGE_DAYS', label: 'Gap-up FVG: ignore gaps younger than (days)', def: 1, type: 'number',
       help: 'Skips gaps that only formed today.' },
+    { key: 'AB_GAPUP_INSIDE_BODY_MIN_PCT', label: 'Gap-up inside FVG: smallest green body of the two gap candles (%)', def: 2, type: 'number',
+      help: 'Inside FVG = 4 candles A B C D: B and C green with at least this body, C opens above B (any gap size, even under 1%), A\'s high under B\'s high, D\'s low over C\'s low.' },
     { key: 'AB_FVG_MIN_AVG_TURNOVER', label: 'Skip illiquid stocks: minimum average daily turnover (Rs)', def: 5000000, type: 'number', fmt: '#,##0',
       help: 'Average of price x volume over the last 30 days (circuit-locked days excluded). 50,00,000 = Rs 50 lakh.' },
     { key: 'AB_CIRCUIT_LOCK_RANGE_PCT', label: 'Circuit-lock detection: max day range (%)', def: 0.05, type: 'number',
@@ -5399,9 +5401,9 @@ function ab_writeOhlcAndHistory_(byTab, outRows) {
  * Pattern Gapup FVG + Spring like we did FVG+spring"; choice "split"):
  * 'FVG+Spring' takes the 3-candle FVG zones only, 'Gap-up FVG + Spring' the
  * Gap-up zones only - the same Spring rule on each (a Spring on both kinds
- * gets both tags); the Gap-up tag says "inside FVG" when its zone lies in
- * a 3-candle FVG (ab_gapInsideFvg_), e.g. "Gap-up FVG + Spring (Today,
- * inside FVG)".
+ * gets both tags); the Gap-up zones include the inside-FVG gap-ups of
+ * any size (ab_gapInsideAt_) and the tag then says so, e.g. "Gap-up FVG +
+ * Spring (Today, inside FVG)".
  *
  * Twin Star Bottom + FVG (owner, 30-Oct-2026): the Twin Star Bottom
  * pattern (ab_isTwinStarBottom_, Code2.gs: a red candle, then two small
@@ -5428,7 +5430,8 @@ function ab_fvgSpringZones_(candles, isFVGUp) {
     const a = candles[f - 1], b = candles[f];
     if (ab_isCircuitLocked_(a) || ab_isCircuitLocked_(b) || isNaN(a.High) || isNaN(b.Low) || !(a.High > 0) || !(b.Low > a.High)) continue;
     const pct = (b.Low - a.High) / a.High * 100;
-    if (pct >= AB_GAPUP_MIN_PCT && pct <= AB_GAPUP_MAX_PCT) out.push({ kind: 'Gap-up', f: f, bottom: a.High, top: b.Low });
+    const inside = pct <= AB_GAPUP_MAX_PCT && ab_gapInsideAt_(candles, f);     // any size between the two big green candles
+    if (inside || (pct >= AB_GAPUP_MIN_PCT && pct <= AB_GAPUP_MAX_PCT)) out.push({ kind: 'Gap-up', f: f, bottom: a.High, top: b.Low, inside: inside });
   }
   return out;
 }
@@ -5450,7 +5453,7 @@ function ab_fvgSpringZone_(candles, i, zones) {
     let touch = 0;
     for (let k = Z.f + 1; k <= i; k++) if (candles[k].Low <= top && (k === Z.f + 1 || candles[k - 1].Low > top)) touch++;
     const where = c2.Low <= bottom ? 'bottom' : c2.Low >= (bottom + top) / 2 ? 'top' : 'middle';
-    return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch };
+    return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch, inside: !!Z.inside };
   }
   return null;
 }
@@ -5609,8 +5612,7 @@ function ab_longFvgDetail_(candles) {
   if (springIdx !== -1) tags.push('FVG+Spring ' + recencyLabel_(springIdx));
   if (gapSpringIdx !== -1) {
     const gz = gapSpring[gapSpringIdx];
-    const inside = ab_gapInsideFvg_(candles, isFVGUp, gz.f, gz.bottom, gz.top, gapSpringIdx);
-    tags.push('Gap-up FVG + Spring ' + (inside ? recencyLabel_(gapSpringIdx).replace(')', ', inside FVG)') : recencyLabel_(gapSpringIdx)));
+    tags.push('Gap-up FVG + Spring ' + (gz.inside ? recencyLabel_(gapSpringIdx).replace(')', ', inside FVG)') : recencyLabel_(gapSpringIdx)));
   }
   if (twinIdx !== -1) tags.push('Twin Star Bottom + FVG ' + recencyLabel_(twinIdx));
 
@@ -5710,13 +5712,19 @@ function computeLongFVGTouchPatterns_() {
  * A circuit-locked candle never counts as the touch (its "Low" is just the
  * frozen band price), but a close below the bottom always ends the zone.
  *
- * INSIDE FVG (owner, 08-Nov-2026, BSE weekly / daily and SBICARD charts:
- * "Gapup FVG area inside a FVG area ... is most powerful"): a gap-up zone
- * that lies within a 3-candle FVG ([High[g-2], Low[g]], the col X rule)
- * formed at most one candle after it, the FVG not closed below since, is
- * marked "inside FVG" - in the tab (column J), the FVG column text, its
- * mitigated email row ('Gap-up FVG (inside FVG)', listed first) and the
- * "Gap-up FVG + Spring" tag.
+ * INSIDE FVG (owner, 09-Nov-2026, on the BSE daily chart - FVG 3139.8 -
+ * 3246.9 with the gap-up 3181.4 - 3206.8 in its middle; "STEELCAS is not a
+ * inside fvg ... There is 2 big green candle with atleast 2% body. gapup
+ * between the two candle is visible enough although size is less than 1%"):
+ * four candles A B C D in a row - B and C green with a body of at least
+ * AB_GAPUP_INSIDE_BODY_MIN_PCT (2 %), C's low over B's high (ANY gap size;
+ * at most AB_GAPUP_MAX_PCT), A's high under B's high and D's low over C's
+ * low - so the FVG A-high .. D-low holds the gap-up zone B-high .. C-low in
+ * its middle (ab_gapInsideAt_, judged once D has closed). Such a zone is
+ * tracked like a Gap-up zone even under AB_GAPUP_MIN_PCT, marked "inside
+ * FVG" in the tab (column J), the FVG column text, its mitigated email row
+ * ('Gap-up FVG (inside FVG)', listed first) and the "Gap-up FVG + Spring"
+ * tag.
  *
  * The approach alert fires at most once per gap, when live price first
  * comes within AB_GAPUP_NEAR_PCT above the top or enters the zone.
@@ -5845,32 +5853,16 @@ function ab_todaysCircuitLockedSymbols_() {
   return locked;
 }
 
-/** The bullish 3-candle FVG flags of col X (ab_longFvgDetail_): Low[i] > High[i-2] by at least 70 % of the 14-bar average
- *  high-low range ending at i. = web/lib/fvg.js fvgUpFlags. */
-function ab_fvgUpFlags_(candles) {
-  const n = (candles || []).length;
-  const out = new Array(n).fill(false);
-  for (let i = 13; i < n; i++) {
-    let sum = 0;
-    for (let k = i - 13; k <= i; k++) sum += (candles[k].High - candles[k].Low);
-    const low = candles[i].Low, highTwoBack = candles[i - 2].High;
-    if (low > highTwoBack && (low - highTwoBack) >= 0.70 * (sum / 14)) out[i] = true;
-  }
-  return out;
-}
+const AB_GAPUP_INSIDE_BODY_MIN_PCT = ab_setting_('AB_GAPUP_INSIDE_BODY_MIN_PCT', 2);
 
-/** Is the gap-up zone [bottom, top] formed by candle j inside a 3-candle FVG formed at most one candle after it
- *  (g <= j + 1) whose bottom no close from g+1 to `upto` went under? = web/lib/fvg.js gapInsideFvg. */
-function ab_gapInsideFvg_(candles, isFVGUp, j, bottom, top, upto) {
-  for (let g = 2; g <= Math.min(j + 1, upto); g++) {
-    if (!isFVGUp[g]) continue;
-    const fb = candles[g - 2].High, ft = candles[g].Low;
-    if (!(fb <= bottom && ft >= top)) continue;
-    let holds = true;
-    for (let k = g + 1; k <= upto; k++) if (candles[k].Cls < fb) { holds = false; break; }
-    if (holds) return true;
-  }
-  return false;
+/** INSIDE FVG (see above): candles A B C D = j-2 .. j+1 - B and C green with a body of at least
+ *  AB_GAPUP_INSIDE_BODY_MIN_PCT % of their open, C's low over B's high, A's high under B's high, D's low over C's low.
+ *  False until D exists. = web/lib/fvg.js gapInsideAt = kite_intraday.py gap_inside_at. */
+function ab_gapInsideAt_(candles, j) {
+  if (!candles || j < 2 || j + 1 >= candles.length) return false;
+  const a = candles[j - 2], b = candles[j - 1], c = candles[j], d = candles[j + 1];
+  const big = function (x) { return x.Opn > 0 && x.Cls > x.Opn && (x.Cls - x.Opn) / x.Opn * 100 >= AB_GAPUP_INSIDE_BODY_MIN_PCT; };
+  return big(b) && big(c) && c.Low > b.High && a.High < b.High && d.Low > c.Low;
 }
 
 /**
@@ -5884,7 +5876,6 @@ function ab_gapUpFvgs_(candles) {
   const out = [];
   const n = (candles || []).length;
   if (n < 2) return out;
-  let isFVGUp = null;
 
   for (let i = 1; i < n; i++) {
     // Either side circuit-locked and the gap isn't real. A locked day
@@ -5899,7 +5890,9 @@ function ab_gapUpFvgs_(candles) {
     if (low <= prevHigh) continue; // no gap at all
 
     const pct = (low - prevHigh) / prevHigh * 100;
-    if (pct < AB_GAPUP_MIN_PCT || pct > AB_GAPUP_MAX_PCT) continue;
+    // a gap of AB_GAPUP_MIN_PCT..MAX_PCT, or any size up to MAX_PCT between the two big green candles of an inside FVG
+    const inside = pct <= AB_GAPUP_MAX_PCT && ab_gapInsideAt_(candles, i);
+    if (!inside && (pct < AB_GAPUP_MIN_PCT || pct > AB_GAPUP_MAX_PCT)) continue;
 
     // The first later candle whose low (a wick is enough) reaches the gap top = mitigated (a circuit-locked day's
     // "Low" is the frozen band price - never the touch); a later CLOSE under the bottom ends the zone.
@@ -5910,7 +5903,6 @@ function ab_gapUpFvgs_(candles) {
     }
     if (broken) continue;
 
-    if (!isFVGUp) isFVGUp = ab_fvgUpFlags_(candles);
     out.push({
       bottom: prevHigh,
       top: low,
@@ -5918,7 +5910,7 @@ function ab_gapUpFvgs_(candles) {
       formedIdx: i,
       daysAgo: (n - 1) - i,
       touchIdx: touchIdx,
-      insideFvg: ab_gapInsideFvg_(candles, isFVGUp, i, prevHigh, low, n - 1)
+      insideFvg: inside
     });
   }
   // Newest first: the loop above runs oldest -> newest.

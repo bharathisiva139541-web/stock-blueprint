@@ -647,19 +647,20 @@ def fvg_gaps(candles):
     return up
 
 
-def gap_inside_fvg(candles, up, j, bottom, top, upto):
-    """web/lib/fvg.js gapInsideFvg = Code.gs ab_gapInsideFvg_ (owner, 08-Nov-2026: a Gap-up zone inside an FVG is the
-    strongest): the gap-up zone of candle j lies in a 3-candle FVG formed at most one candle after it (g <= j + 1) whose
-    bottom no close from g+1 to `upto` went under."""
-    for g in range(2, min(j + 1, upto) + 1):
-        if not up[g]:
-            continue
-        fb, ft = candles[g - 2]['h'], candles[g]['l']
-        if not (fb <= bottom and ft >= top):
-            continue
-        if all(candles[k]['c'] >= fb for k in range(g + 1, upto + 1)):
-            return True
-    return False
+INSIDE_BODY_MIN_PCT = 2     # inside FVG: the two gap candles' smallest green body (Code.gs AB_GAPUP_INSIDE_BODY_MIN_PCT)
+
+
+def gap_inside_at(candles, j):
+    """web/lib/fvg.js gapInsideAt = Code.gs ab_gapInsideAt_ (owner, 09-Nov-2026, BSE chart: the gap-up zone in the middle
+    of an FVG): candles A B C D = j-2 .. j+1 - B and C green with a body of at least INSIDE_BODY_MIN_PCT % of their open,
+    C's low over B's high (any gap size), A's high under B's high, D's low over C's low. False until D exists."""
+    if j < 2 or j + 1 >= len(candles):
+        return False
+    a, b, c, d = candles[j - 2], candles[j - 1], candles[j], candles[j + 1]
+
+    def big(x):
+        return x['o'] > 0 and x['c'] > x['o'] and (x['c'] - x['o']) / x['o'] * 100 >= INSIDE_BODY_MIN_PCT
+    return big(b) and big(c) and c['l'] > b['h'] and a['h'] < b['h'] and d['l'] > c['l']
 
 
 def spring_zones(candles, up):
@@ -672,8 +673,9 @@ def spring_zones(candles, up):
         if is_locked(a) or is_locked(b) or not a['h'] > 0 or not b['l'] > a['h']:
             continue
         pct = (b['l'] - a['h']) / a['h'] * 100
-        if GAPUP_MIN_PCT <= pct <= GAPUP_MAX_PCT:
-            out.append({'kind': 'Gap-up', 'f': f, 'bottom': a['h'], 'top': b['l']})
+        inside = pct <= GAPUP_MAX_PCT and gap_inside_at(candles, f)        # any size between the two big green candles
+        if inside or GAPUP_MIN_PCT <= pct <= GAPUP_MAX_PCT:
+            out.append({'kind': 'Gap-up', 'f': f, 'bottom': a['h'], 'top': b['l'], 'inside': inside})
     return out
 
 
@@ -726,7 +728,8 @@ def spring_zone(candles, i, zones, max_age=None, rmq=None):
             continue
         touch = sum(1 for k in _touch_starts(candles, z) if k <= i)
         where = 'bottom' if c2['l'] <= bottom else 'top' if c2['l'] >= (bottom + top) / 2 else 'middle'
-        return {'kind': z['kind'], 'f': z['f'], 'bottom': bottom, 'top': top, 'where': where, 'touch': touch}
+        return {'kind': z['kind'], 'f': z['f'], 'bottom': bottom, 'top': top, 'where': where, 'touch': touch,
+                'inside': bool(z.get('inside'))}
     return None
 
 
@@ -746,13 +749,13 @@ def fvg_detail(candles, cfg=None, max_age=None):
     'gapup_touch' = every first touch (a zone broken since too). Needs 17 candles for the FVG events (Gap-ups: 2)."""
     n = len(candles)
     res = {'spring': {}, 'gapspring': {}, 'ft': {}, 'conf': {}, 'twin': {}, 'unmit': None, 'gapups': [], 'gapup_touch': []}
-    up = fvg_gaps(candles)
     for i in range(1, n):
         a, b = candles[i - 1], candles[i]
         if is_locked(a) or is_locked(b) or not a['h'] > 0 or b['l'] <= a['h']:
             continue
         pct = (b['l'] - a['h']) / a['h'] * 100
-        if pct < GAPUP_MIN_PCT or pct > GAPUP_MAX_PCT:
+        inside = pct <= GAPUP_MAX_PCT and gap_inside_at(candles, i)
+        if not inside and (pct < GAPUP_MIN_PCT or pct > GAPUP_MAX_PCT):
             continue
         z = {'kind': 'Gap-up', 'f': i, 'bottom': a['h'], 'top': b['l'], 'pct': math.floor(pct * 100 + 0.5) / 100}
         hit = None
@@ -764,7 +767,7 @@ def fvg_detail(candles, cfg=None, max_age=None):
                 broken = True
                 break
         z['hit'] = hit
-        z['inside'] = gap_inside_fvg(candles, up, i, a['h'], b['l'], n - 1)
+        z['inside'] = inside
         if hit is not None:
             res['gapup_touch'].append((hit, z))
         if not broken:
@@ -772,6 +775,7 @@ def fvg_detail(candles, cfg=None, max_age=None):
     res['gapups'].reverse()
     if n < 17:
         return res
+    up = fvg_gaps(candles)
     top_at, bot_at, f_at = [None] * n, [None] * n, [None] * n
     cur = (None, None, None)
     for i in range(n):
@@ -808,7 +812,6 @@ def fvg_detail(candles, cfg=None, max_age=None):
             hit = spring_zone(candles, i, gz, max_age, rmq)
             if hit:
                 hit['broken'] = spring_broken(candles, i)
-                hit['inside'] = gap_inside_fvg(candles, up, hit['f'], hit['bottom'], hit['top'], i)
                 res['gapspring'][i] = hit
     for i in range(4, n):
         s1, s2 = candles[i - 1], candles[i]

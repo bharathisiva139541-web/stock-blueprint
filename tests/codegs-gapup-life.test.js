@@ -22,10 +22,11 @@ function weekdays(n, last) {
 const DAYS = weekdays(25, '2026-11-06').concat(['2026-11-09', '2026-11-10']);
 const V = 100000;
 
-// GAPA: wide candles (no 3-candle FVG) - a 4.25 % gap-up on day 15 (106 -> 110.5), a wick to 109 on day 20 = mitigated
-// (long before the first scan), never closed under 106 -> still tracked. GAPB: the same, but day 22 closes at 105 under the
-// bottom -> gone. GAPC / GAPD: tight candles - a 3.96 % gap-up (101 -> 105) inside the 3-candle FVG of the same candles,
-// untouched; day 25 (09-Nov) wicks GAPC to 104.9, day 26 (10-Nov) takes GAPD straight through (close 96).
+// GAPA: wide candles - a 4.25 % gap-up on day 15 (106 -> 110.5), a wick to 109 on day 20 = mitigated (long before the
+// first scan), never closed under 106 -> still tracked; not inside an FVG (day 14 is no big green candle). GAPB: the
+// same, but day 22 closes at 105 under the bottom -> gone. GAPC / GAPD: the owner's inside-FVG shape (09-Nov-2026, BSE)
+// - two big green candles (days 14, 15) with a 1.94 % gap between them (103 -> 105: under the 3 % minimum, tracked as
+// inside FVG), untouched; day 25 (09-Nov) wicks GAPC to 104.9, day 26 (10-Nov) takes GAPD straight through (close 96).
 function series(kind, n) {
   const out = [];
   for (let i = 0; i < n; i++) {
@@ -33,7 +34,8 @@ function series(kind, n) {
     if (kind === 'wide') {
       c = i < 15 ? [100, 106, 94, 100] : i === 15 ? [112, 118, 110.5, 114] : i === 20 ? [113, 117, 109, 113] : [113, 117, 111, 114];
     } else {
-      c = i < 15 ? [100, 101, 99, 100] : i === 15 ? [106, 108, 105, 107] : [107, 109, 106, 108];
+      // A (13) high 101 < B (14) high 103; B and C green with bodies >= 2 %; C's low 105 over B's high 103 (1.94 %); D's low 106 over C's low
+      c = i < 14 ? [100, 101, 99, 100] : i === 14 ? [100.2, 103, 100, 102.9] : i === 15 ? [105.2, 108, 105, 107.8] : [107, 109, 106, 108];
     }
     out.push(c);
   }
@@ -70,9 +72,9 @@ test('ab_gapUpFvgs_: a touched gap-up stays (mitigated) until a close under its 
     'C: ab_gapUpFvgs_(ab_readHistoryCandles_().GAPC)})'));
   assert.deepStrictEqual(z.A, [{ bottom: 106, top: 110.5, pct: 4.25, formedIdx: 15, daysAgo: 9, touchIdx: 20, insideFvg: false }]);
   assert.deepStrictEqual(z.B, [], 'closed under the bottom on day 22: invalid');
-  assert.deepStrictEqual(z.C, [{ bottom: 101, top: 105, pct: 3.96, formedIdx: 15, daysAgo: 9, touchIdx: -1, insideFvg: true }]);
+  assert.deepStrictEqual(z.C, [{ bottom: 103, top: 105, pct: 1.94, formedIdx: 15, daysAgo: 9, touchIdx: -1, insideFvg: true }]);
   const tags = JSON.parse(e.run('JSON.stringify({A: ab_gapUpTags_(ab_readHistoryCandles_().GAPA), C: ab_gapUpTags_(ab_readHistoryCandles_().GAPC)})'));
-  assert.deepStrictEqual(tags, { A: ['Gap-up FVG 4.25% (9d ago, mitigated)'], C: ['Gap-up FVG 3.96% (9d ago, inside FVG)'] });
+  assert.deepStrictEqual(tags, { A: ['Gap-up FVG 4.25% (9d ago, mitigated)'], C: ['Gap-up FVG 1.94% (9d ago, inside FVG)'] });
   // the website's port: same zones (Control Panel 3-10 % in the mock)
   const web = (s) => FVG.gapUpFvgs(CANDLES[s].slice(0, 25).map((c, i) => ({ t: DAYS[i], o: c[0], h: c[1], l: c[2], c: c[3], v: V })), { AB_GAPUP_MAX_PCT: 10 })
     .map((g) => ({ bottom: g.bottom, top: g.top, pct: g.pct, formedIdx: g.formedIdx, daysAgo: g.daysAgo, touchIdx: g.touchIdx, insideFvg: g.insideFvg }));

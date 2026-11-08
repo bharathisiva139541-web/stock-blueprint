@@ -483,19 +483,23 @@ def G(o, h, l, c):
 
 wide = [G(100, 104, 96, 100) for _ in range(18)] + [G(109, 114, 108.2, 113), G(113, 115, 111, 114)]
 gd = K.fvg_detail(wide)
-assert [(z['bottom'], z['top'], z['f'], z['hit'], z['inside']) for z in gd['gapups']] == [(104, 108.2, 18, None, True)], gd['gapups']
+assert [(z['bottom'], z['top'], z['f'], z['hit'], z['inside']) for z in gd['gapups']] == [(104, 108.2, 18, None, False)], gd['gapups']
 touched = wide + [G(114, 114.5, 107.5, 109)]                      # a wick to 107.5 (under the top 108.2), closes 109
 gd = K.fvg_detail(touched)
 assert [(z['f'], z['hit']) for z in gd['gapups']] == [(18, 20)] and [(i, z['f']) for i, z in gd['gapup_touch']] == [(20, 18)], gd
 gone = touched + [G(109, 109.5, 102, 103.5)]                       # closes 103.5 under the bottom 104: no longer a zone
 gd = K.fvg_detail(gone)
 assert gd['gapups'] == [] and [(i, z['f']) for i, z in gd['gapup_touch']] == [(20, 18)], gd
-# a Spring on it: 'Gap-up FVG + Spring' with ', inside FVG' in the sheet's detail (zone_out's 7th value)
-pair = [G(114, 114.5, 107.5, 107.8), G(108.0, 108.8, 106.5, 108.4)]
-gd = K.fvg_detail(wide + pair)
+# inside FVG (owner, 09-Nov-2026, BSE): A B C D - B and C big green candles, C's low over B's high by any amount (0.38 %),
+# A's high under B's high, D's low over C's low; a Spring on it: 'Gap-up FVG + Spring' with the 7th zone value 1
+ins = [G(100, 104, 96, 100) for _ in range(17)] + [G(100, 104.5, 99.8, 104.3), G(105, 110, 104.9, 109.5), G(109.5, 111, 106, 110.5)]
+pair = [G(110.5, 110.8, 105.4, 105.6), G(105.5, 106.0, 104.7, 105.7)]
+gd = K.fvg_detail(ins + pair)
+assert [(z['bottom'], z['top'], z['pct'], z['inside']) for z in gd['gapups']] == [(104.5, 104.9, 0.38, True)], gd['gapups']
 gz = gd['gapspring'][21]
 assert (gz['kind'], gz['where'], gz['inside'], gz['broken']) == ('Gap-up', 'top', True, None), gz
-assert K.zone_out(wide + pair, gz)[3:] == ['Gap-up', 'top', 1, 1] and gd['spring'][21]['kind'] == 'FVG'
+assert K.zone_out(ins + pair, gz)[3:] == ['Gap-up', 'top', 1, 1] and 21 not in gd['spring']
+assert K.gap_inside_at(ins, 18) and not K.gap_inside_at(ins[:19], 18), 'judged once D has closed'
 
 # owner, 08-Nov-2026: a Spring in FVG stops counting once a LATER candle closes below its low - not reported, and the
 # sheet is told to take its row off ('invalid', the last KEEP_DAYS)
@@ -526,14 +530,14 @@ try:
                     ['4H'], (), slots={'4H': ['13:15']})
     assert old['invalid'] == [], 'older than the 30 days the sheet keeps: nothing to take off'
     # a Gap-up on 4H: the Spring on it is 'Gap-up FVG + Spring' (13:15 candle), the zone is still sent after its touch
-    gb = [H4('2026-10-%02d' % (1 + k // 2), k % 2, 100, 104, 96, 100) for k in range(18)]
-    gb += [H4('2026-10-10', 0, 109, 114, 108.2, 113), H4('2026-10-10', 1, 113, 115, 111, 114),
-           H4('2026-10-12', 0, 114, 114.5, 107.5, 107.8), H4('2026-10-12', 1, 108.0, 108.8, 106.5, 108.4)]
+    gb = [H4('2026-10-%02d' % (1 + k // 2), k % 2, 100, 104, 96, 100) for k in range(17)]
+    gb += [H4('2026-10-09', 1, 100, 104.5, 99.8, 104.3), H4('2026-10-10', 0, 105, 110, 104.9, 109.5), H4('2026-10-10', 1, 109.5, 111, 106, 110.5),
+           H4('2026-10-12', 0, 110.5, 110.8, 105.4, 105.6), H4('2026-10-12', 1, 105.5, 106.0, 104.7, 105.7)]
     ga = K.analyse({'bars': gb, 'day': []}, '2026-10-10', d('2026-10-12'), HOL, ['4H'], (), slots={'4H': ['13:15']})
     sp = [(i['pattern'], i['candle'], i['zone'][3:]) for i in ga['items'] if 'Spring' in i['pattern']]
     assert ('Gap-up FVG + Spring', '2026-10-12 13:15', ['Gap-up', 'top', 1, 1]) in sp, sp
     gzs = [z for z in ga['zones'] if z['zone'][3] == 'Gap-up']
-    assert gzs and gzs[0]['touched'] == '2026-10-12 09:15' and gzs[0]['inside'] == 1, ga['zones']
+    assert gzs and gzs[0]['touched'] == '2026-10-12 13:15' and gzs[0]['inside'] == 1, ga['zones']
     assert [m for m in ga['mitigated'] if m['zone'][3] == 'Gap-up'][0]['inside'] == 1, ga['mitigated']
 finally:
     K.timeframe_candles = orig_tc
