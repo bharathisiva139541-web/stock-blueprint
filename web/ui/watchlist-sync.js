@@ -12,7 +12,8 @@
    and on "Sync now". Offline the lists stay in this browser and go with the next sync.
 
    SB.wlSync = { status(), connect(pin) -> Promise(status), disconnect(), syncNow() -> Promise,
-                 onStatus(fn(status)) -> off() }
+                 onStatus(fn(status)) -> off(), hasPin(), kite() -> Promise({ fresh, at, ageSec, items }) }
+   kite(): the owner's Kite live prices (the sheet's "Kite Live" tab, while the laptop sends them) - only with the PIN.
    status() = { phase, linked, at, message }   (linked stays false while a newly typed PIN is being checked)
      phase: 'nohost' (no website server here: localhost / file) | 'off' (no PIN on this device) |
             'syncing' | 'ok' | 'offline' (tried, will try again) | 'locked' (too many wrong PINs) |
@@ -38,8 +39,9 @@
     return e;
   }
 
-  /** One call to api/watchlists -> the sheet's answer { result, rev, savedAt, state } or a rejection with .code. */
-  function send(m, body) {
+  /** One call to api/watchlists -> the sheet's answer { result, rev, savedAt, state } or a rejection with .code.
+   *  `ok(j)` = what a good answer looks like (default: the lists). */
+  function send(m, body, ok) {
     var b = host();
     if (b == null) return Promise.reject(fail('nohost'));
     var ctl = window.AbortController ? new AbortController() : null;
@@ -58,7 +60,7 @@
       clearTimeout(to);
       throw fail('offline', e && e.name === 'AbortError' ? 'the sheet took too long to answer' : 'no internet connection, or the site could not be reached');
     }).then(function (j) {
-      if (j && j.ok === true && j.state && Array.isArray(j.state.lists) && typeof j.rev === 'number') return j;
+      if (j && j.ok === true && (ok ? ok(j) : j.state && Array.isArray(j.state.lists) && typeof j.rev === 'number')) return j;
       throw fail((j && j.code) || 'error', (j && (j.message || j.error)) || 'an unexpected answer');
     });
   }
@@ -169,6 +171,13 @@
     connect: connect,
     disconnect: disconnect,
     syncNow: run,
+    // the owner's Kite live prices (08-Nov-2026), with this device's PIN - app.js shows them in place of the delayed prices
+    hasPin: function () { return !!meta().pin && host() != null; },
+    kite: function () {
+      var m = meta();
+      if (!m.pin) return Promise.reject(fail('off', 'no PIN on this device'));
+      return send(m, { op: 'kite' }, function (j) { return j.result === 'kite' && Array.isArray(j.items); });
+    },
     onStatus: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }
   };
 })();

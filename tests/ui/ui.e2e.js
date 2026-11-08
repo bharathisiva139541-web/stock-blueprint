@@ -160,8 +160,10 @@ function watchlistBackend() {
     env: { SHEET_FEED_URL: 'https://sheet.invalid/exec', SHEET_FEED_TOKEN: 'feed-token' },
     fetch: async (url, init) => new Response(JSON.stringify(gs.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } })
   });
+  gs.setProp = (k, v) => gs.run('PropertiesService.getScriptProperties().setProperty(' + JSON.stringify(k) + ', ' + JSON.stringify(v) + ')');
   return {
     bodies,
+    gs,
     lists: () => JSON.parse(JSON.stringify(gs.call('ab_wlRead_').lists)).map((l) => l.name + ': ' + l.syms.join(' ')),
     answer: async (req) => {
       if (req.method() === 'POST') bodies.push(JSON.parse(req.postData() || '{}'));
@@ -1073,6 +1075,47 @@ function check(name, fn) {
     assert.ok(/st-CACHED/.test(st.pillCls), 'pill CACHED');
   });
 
+  await check('the owner\'s Kite live prices: with the PIN, price + Today % come from Kite with the LIVE label; without it nothing changes', async () => {
+    const sheet = watchlistBackend();
+    sheet.gs.setProp('AB_BRIDGE_TOKEN', 'bridge-token');
+    const KSYM = SENT_SYM;
+    sheet.gs.post({ token: 'bridge-token', action: 'kitelive', at: '2026-11-09 11:00:00', items: [[KSYM, 777.77, 760, 780, 755, 700]] });
+    const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
+    const open = async (pin) => {
+      const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+      await c.addInitScript((pn) => { try { localStorage.setItem('sb:api', 'true'); if (pn) localStorage.setItem('sb:wlsync', JSON.stringify({ pin: pn })); } catch (e) { /* ignore */ } }, pin);
+      await routeAll(c, base, api({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), []);
+      const p = await c.newPage(), errors = watchErrors(p);
+      await p.goto(base + '#watchlist', { waitUntil: 'load' });
+      await p.waitForFunction(dataReady, null, { timeout: 15000 });
+      return { c, p, errors };
+    };
+    const own = await open('Blue2026');
+    await own.p.waitForFunction((sym) => { const s = window.SB.ctx.bySym[sym]; return s && s.price === 777.77; }, KSYM, { timeout: 15000 });
+    const st = await own.p.evaluate((sym) => ({ chg: window.SB.ctx.bySym[sym].chg, pill: document.querySelector('#status').textContent,
+      src: window.SB.ctx.market.source, kiteAsked: true }), KSYM);
+    assert.strictEqual(st.chg, 11.11, 'Today % = Kite vs the previous close');
+    assert.match(st.pill, /^LIVE/);
+    assert.match(st.src, /Kite .*only you/);
+    assert.ok(sheet.bodies.some((b) => b.op === 'kite' && b.pin === 'Blue2026'), 'asked with the PIN');
+    assert.deepStrictEqual(own.errors, [], 'console/page errors');
+    await own.c.close();
+    const n = sheet.bodies.length;
+    const other = await open(null);
+    await other.p.waitForTimeout(2500);
+    const o = await other.p.evaluate((sym) => ({ price: window.SB.ctx.bySym[sym].price, pill: document.querySelector('#status').textContent }), KSYM);
+    assert.notStrictEqual(o.price, 777.77, 'no PIN: no Kite price');
+    assert.ok(!/^LIVE/.test(o.pill), o.pill);
+    assert.strictEqual(sheet.bodies.length, n, 'no PIN: the sheet is not even asked');
+    // the PIN typed later on this device (My Watchlists): the Kite prices start without a reload
+    await other.p.goto(base + '#lists');
+    await other.p.waitForSelector('#wl-pin', { timeout: 15000 });
+    await other.p.fill('#wl-pin', 'Blue2026');
+    await other.p.press('#wl-pin', 'Enter');
+    await other.p.waitForFunction((sym) => window.SB.ctx.bySym[sym].price === 777.77 && /^LIVE/.test(document.querySelector('#status').textContent), KSYM, { timeout: 15000 });
+    assert.deepStrictEqual(other.errors, [], 'console/page errors (PIN typed later)');
+    await other.c.close();
+  });
   await check('my watchlists sync: a PC on Vercel and a phone on Firebase share the lists through api/watchlists + the sheet', async () => {
     const sheet = watchlistBackend();
     const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
@@ -1149,7 +1192,8 @@ function check(name, fn) {
     assert.deepStrictEqual(pc.errors.concat(phone.errors), [], 'console/page errors');
     assert.ok(overflow <= 0, 'horizontal page overflow ' + overflow + 'px');
     assert.ok(allCalls.every((u) => u.indexOf('Blue2026') < 0), 'the PIN never goes in a URL');
-    assert.ok(sheet.bodies.length >= 6 && sheet.bodies.every((b) => b.op === 'get' || b.op === 'put'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
+    // 'kite' = the owner's Kite live prices, asked once the PIN is on the device (none come here: no Kite Live tab)
+    assert.ok(sheet.bodies.length >= 6 && sheet.bodies.every((b) => b.op === 'get' || b.op === 'put' || b.op === 'kite'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
   });
 
   const preview = path.join(__dirname, '..', '..', 'dist', 'stock-blueprint-preview.html');

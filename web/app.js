@@ -260,6 +260,7 @@
           q.items.forEach(function (it) {
             var s = ctx.bySym[it.symbol];
             if (!s || !isNum(it.ltp) || it.state === 'UNAVAILABLE') return;
+            if (kiteFresh(s)) return;                       // the owner's Kite price (newer) stays
             s.price = it.ltp;
             if (isNum(it.changePct)) s.chg = it.changePct;
             s.priceState = it.state || q.state;
@@ -273,6 +274,7 @@
       });
     }, Promise.resolve()).then(function () {
       var m = ctx.market;
+      if (m.kite && Date.now() - m.kite < KITE_FRESH_MS) return got;   // the Kite label stays while its prices are fresh
       if (got) {
         m.state = ui.leastFresh(states);                 // never better than the stalest price returned
         m.asOf = asOf;
@@ -347,8 +349,68 @@
     }, ms);
   }
 
+  // ---------- the owner's Kite live prices (08-Nov-2026: "enaku matumana live view ... use existing daily %") ----------
+  // Only on a device with the My Watchlists PIN: api/watchlists op 'kite' -> the sheet's "Kite Live" tab while the
+  // laptop sends it. Price and Daily % (s.price / s.chg) everywhere on the site, label LIVE; nobody else sees them.
+  var KITE_FRESH_MS = 3 * 60000, KITE_POLL_MS = 60000, KITE_IDLE_MS = 5 * 60000;
+  function kiteFresh(s) { return !!(s.kiteAt && Date.now() - s.kiteAt < KITE_FRESH_MS); }
+  function kiteApply(k) {
+    var m = ctx.market, now = Date.now(), n = 0;
+    k.items.forEach(function (it) {
+      var s = ctx.bySym[it[0]];
+      if (!s || !isNum(it[1])) return;
+      s.price = it[1];
+      if (isNum(it[2])) s.chg = it[2];
+      s.priceState = 'LIVE';
+      s.priceAsOf = k.at;
+      s.kiteAt = now;
+      applySignal(s);
+      n++;
+    });
+    if (!n) return 0;
+    m.kite = now;
+    m.state = 'LIVE';
+    m.asOf = k.at;
+    m.fetchedAt = now;
+    m.partial = n < ctx.stocks.length;
+    m.source = 'Zerodha Kite (your laptop) - only you see these';
+    m.message = n + ' of ' + ctx.stocks.length + ' prices and Daily % live from Kite (shown only on your devices with the PIN)' +
+      (m.partial ? '; the rest are ' + sheetWord() : '') + '.';
+    return n;
+  }
+  var kiteTimer = null, kiteBusy = false;
+  function kiteLater(ms) { clearTimeout(kiteTimer); kiteTimer = setTimeout(kitePoll, ms); }
+  function kitePoll() {
+    kiteTimer = null;
+    if (kiteBusy || !SB.wlSync || !SB.wlSync.hasPin || !SB.wlSync.hasPin()) return;
+    kiteBusy = true;
+    SB.wlSync.kite().then(function (k) {
+      kiteBusy = false;
+      var n = k.fresh ? kiteApply(k) : 0;
+      if (n) { setStatus(); rerender(); }
+      else if (ctx.market.kite && downgrade('Kite prices stopped (the laptop is off or LiveNow is not running)')) {
+        ctx.market.kite = 0;
+        setStatus(); rerender();
+      }
+      kiteLater(n ? KITE_POLL_MS : KITE_IDLE_MS);
+    }, function (e) {
+      kiteBusy = false;
+      // a wrong / locked PIN is never retried (5 wrong PINs lock the sheet); anything else: again later
+      if (e && /^(pin|nopin|locked|off)$/.test(e.code)) return;
+      kiteLater(KITE_IDLE_MS);
+    });
+  }
+  function initKite() {
+    kiteLater(1500);
+    // the PIN typed on this device later (My Watchlists): the Kite prices start once the sheet accepted it
+    if (SB.wlSync && SB.wlSync.onStatus) {
+      SB.wlSync.onStatus(function (st) { if (st.phase === 'ok' && st.linked && !kiteTimer && !kiteBusy) kiteLater(300); });
+    }
+  }
+
   function initMarket() {
     var m = ctx.market;
+    initKite();
     if (ctx.site.apiBase == null) {
       m.message = 'This host serves the static site only (no market-data API) - showing ' + sheetWord() + '.';
       setStatus();
