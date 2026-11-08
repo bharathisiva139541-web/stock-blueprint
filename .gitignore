@@ -17,6 +17,7 @@ pcbridge/ScreenerBridge/kite_session.json
 pcbridge/ScreenerBridge/kite_instruments.json
 pcbridge/ScreenerBridge/intraday_state.json
 pcbridge/ScreenerBridge/intraday_data/
+pcbridge/ScreenerBridge/kite_live.json
 .clasprc.json
 *.token
 .env

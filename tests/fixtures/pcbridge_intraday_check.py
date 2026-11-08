@@ -25,6 +25,7 @@ K.SESSION_PATH = os.path.join(TMP, 'kite_session.json')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
 K.INSTR_PATH = os.path.join(TMP, 'kite_instruments.json')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
+K.LIVE_MARK_PATH = os.path.join(TMP, 'kite_live.json')
 K.REQ_GAP_S = 0
 K.REDIRECT_PORT = 18765 + os.getpid() % 1000
 LOGS = []
@@ -549,5 +550,46 @@ assert K.live(CFG, old_app, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 1
 assert any('until 09-Nov 15:35' in o for o in OUT) and any('New version deploy' in o for o in OUT), OUT
 assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 15, 36), sleep=lambda x: None) == 0, \
     'after 15:35 on a trading day: one round, then it stops'
+
+# ------------------------------------------------------------------ 12. every trading day by itself (owner, 08-Nov-2026)
+assert K.live_due(CFG, HOL, datetime(2026, 11, 9, 10, 0)) and K.live_due(CFG, HOL, datetime(2026, 11, 9, 9, 10))
+assert not K.live_due(CFG, HOL, datetime(2026, 11, 9, 9, 5)) and not K.live_due(CFG, HOL, datetime(2026, 11, 9, 15, 35))
+assert not K.live_due(CFG, HOL, datetime(2026, 11, 8, 18, 0)), 'Sunday (Muhurat): only LiveNow.bat by hand'
+assert not K.live_due(dict(CFG, kite_live=False), HOL, datetime(2026, 11, 9, 10, 0)) and not K.live_due({}, HOL, datetime(2026, 11, 9, 10, 0))
+STARTED = []
+orig_live = K.live
+K.live = lambda *a, **kw: STARTED.append(kw)
+try:
+    R2 = K.Runner()
+    assert R2.maybe_start_live(CFG, fake_api_live, HOL, now=datetime(2026, 11, 9, 9, 0)) is False, 'before 09:10'
+    assert R2.maybe_start_live(CFG, fake_api_live, HOL, online=lambda: False, now=datetime(2026, 11, 9, 10, 0)) is False, 'offline'
+    assert R2.maybe_start_live(CFG, fake_api_live, HOL, now=datetime(2026, 11, 9, 10, 0)) is True
+    R2.live_thread.join(5)
+    assert STARTED and STARTED[0]['background'] is True and callable(STARTED[0]['out'])
+    assert R2.maybe_start_live(CFG, fake_api_live, HOL, now=datetime(2026, 11, 9, 10, 1)) is False, 'stopped early: again 30 minutes later'
+    R2.live_next = 0
+    os.remove(K.SESSION_PATH)                       # no login today: at most 3 login pages a day
+    starts = 0
+    for k in range(5):
+        if R2.maybe_start_live(CFG, fake_api_live, HOL, now=datetime(2026, 11, 9, 11, k)):
+            starts += 1
+            R2.live_thread.join(5)
+        R2.live_next = 0
+    assert starts == 3, starts                      # 3 login pages a day (the 10:00 start had a login already)
+    K.session_save(s)
+finally:
+    K.live = orig_live
+# one copy only: another program's recent mark stops a second LiveNow
+with open(K.LIVE_MARK_PATH, 'w') as f:
+    json.dump({'pid': os.getpid() + 1, 'at': time.time()}, f)
+OUT = []
+assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None, max_rounds=1) == 0
+assert OUT and 'already being sent' in OUT[0], OUT
+os.remove(K.LIVE_MARK_PATH)
+# the background run writes a price line every 15 rounds only
+OUT = []
+assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None,
+              max_rounds=16, background=True) == 0
+assert len([o for o in OUT if 'prices -> Kite Live' in o]) == 2 and not any('close this window' in o for o in OUT), OUT
 
 print('OK')

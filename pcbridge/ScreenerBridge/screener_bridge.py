@@ -3826,6 +3826,9 @@ def run_after_login(cfg):
     if itd.configured(cfg) and cfg.get('intraday', True):
         log('Kite intraday patterns: on - after each trading day\'s close (or the next time this computer is on) the '
             'program asks you to log in to Kite once and then scans the candles.')
+    if itd.configured(cfg) and cfg.get('kite_live', True):
+        log('Kite live prices: on - on trading days from 09:10 to 15:35 the sheet\'s "Kite Live" tab gets Kite\'s prices '
+            'every minute (the Kite login page opens in the morning when today\'s login is missing).')
     if quick_s or every_s:
         log('Background program started: a full round now%s%s.' % (
             ', in %d minutes and then every %g hours' % (SECOND_RUN_AFTER_MIN, every_s / 3600) if every_s
@@ -3837,6 +3840,11 @@ def run_after_login(cfg):
             runner.maybe_start(cfg, api, nse_holidays(), online=internet_ok)
         except Exception as e:
             log('Kite: could not start the scan - %s' % e)
+        # Kite live prices on trading days 09:10-15:35 (owner, 08-Nov-2026: start it every day by itself) -> the "Kite Live" tab
+        try:
+            runner.maybe_start_live(cfg, api, nse_holidays(), online=internet_ok)
+        except Exception as e:
+            log('Kite live: could not start - %s' % e)
         now = time.time()
         due_full = next_full is not None and now >= next_full
         due_quick = not due_full and next_quick is not None and now >= next_quick

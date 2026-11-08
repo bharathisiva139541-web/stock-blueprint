@@ -1408,6 +1408,11 @@ LIVE_BATCH = 250            # instruments per quote request (Kite allows 1000; s
 LIVE_QUOTE_GAP_S = 1.05     # Kite: 1 quote request a second
 LIVE_MAX_HOURS = 4          # started on a non-trading day (the Muhurat session): stops after 4 hours
 LIVE_STOP = (15, 35)        # on a trading day: stops at 15:35 IST
+LIVE_FROM = (9, 10)         # the background program starts it on a trading day from 09:10 IST (config "kite_live": false = off)
+LIVE_LOGINS_PER_DAY = 3     # login pages the background program opens for it a day
+LIVE_RETRY_S = 30 * 60      # a background run that stopped early (no login / a problem) starts again 30 minutes later
+LIVE_LOG_EVERY = 15         # the background run writes a price line to bridge.log every 15 rounds (problems at once)
+LIVE_MARK_PATH = os.path.join(HERE, 'kite_live.json')   # {pid, at}: only one copy sends prices (LiveNow.bat or the background)
 
 
 def quote_key(imap, sym):
@@ -1436,7 +1441,33 @@ def live_quotes(cfg, sess, keys):
     return out
 
 
-def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_rounds=None):
+def _live_mark(check=False):
+    """check: True when another program sent prices in the last 2.5 minutes (it is still running). Else marks ours."""
+    if check:
+        try:
+            with open(LIVE_MARK_PATH, 'r', encoding='utf-8') as f:
+                m = json.load(f)
+            return int(m.get('pid') or 0) != os.getpid() and time.time() - float(m.get('at') or 0) < 150
+        except (OSError, ValueError, AttributeError, TypeError):
+            return False
+    try:
+        with open(LIVE_MARK_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'pid': os.getpid(), 'at': time.time()}, f)
+    except OSError:
+        pass
+    return False
+
+
+def live_due(cfg, holidays, now=None):
+    """The background program's live prices: on (config "kite_live", default on, Kite set up), a trading day, 09:10-15:35."""
+    if not cfg.get('kite_live', True) or not configured(cfg):
+        return False
+    now = now or now_ist()
+    m = now.hour * 60 + now.minute
+    return is_trading_day(now.date(), set(holidays or ())) and LIVE_FROM[0] * 60 + LIVE_FROM[1] <= m < LIVE_STOP[0] * 60 + LIVE_STOP[1]
+
+
+def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_rounds=None, background=False):
     """LiveNow.bat (owner, 08-Nov-2026, Muhurat session): Kite's live prices of the sheet's stocks every minute ->
     the sheet's "Kite Live" tab (action 'kitelive'). Nothing else on the sheet changes. Runs until 15:35 on a trading
     day, LIVE_MAX_HOURS on any other day, or until this window is closed."""
@@ -1446,6 +1477,9 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
         out('Kite is not set up - run KiteSetup.bat first.')
         return 1
     gap = max(15, int(cfg.get('kite_live_seconds') or LIVE_GAP_S))
+    if _live_mark(check=True):
+        out('Kite live prices are already being sent (LiveNow.bat or the background program) - this copy stops.')
+        return 0
     try:
         sess = ensure_session(cfg)
         if not sess:
@@ -1468,8 +1502,8 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
         trading = is_trading_day(now.date(), holidays)
         stop_at = (now.replace(hour=LIVE_STOP[0], minute=LIVE_STOP[1], second=0, microsecond=0) if trading
                    else now + timedelta(hours=LIVE_MAX_HOURS))
-        out('Kite live prices of %d stocks -> the sheet\'s "Kite Live" tab every %d seconds, until %s (or close this window).'
-            % (len(keys), gap, stop_at.strftime('%d-%b %H:%M')))
+        out('Kite live prices of %d stocks -> the sheet\'s "Kite Live" tab every %d seconds, until %s%s.'
+            % (len(keys), gap, stop_at.strftime('%d-%b %H:%M'), '' if background else ' (or close this window)'))
         if missing:
             out('Not on Kite: %s' % ', '.join(missing[:12]) + (' ...' if len(missing) > 12 else ''))
         rounds = 0
@@ -1488,6 +1522,10 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
                 out('%s  Kite: %s - trying again in a minute' % (now_fn().strftime('%H:%M:%S'), e))
                 q = None
             if q:
+                if _live_mark(check=True):
+                    out('Another copy is sending Kite live prices now - this one stops.')
+                    return 0
+                _live_mark()
                 at = now_fn().strftime('%Y-%m-%d %H:%M:%S')
                 res = api(cfg, 'kitelive', {'at': at, 'items': [[s_] + v for s_, v in q.items()]}, tries=2, timeout=90)
                 if not res.get('ok'):
@@ -1499,8 +1537,9 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
                 else:
                     moves = sorted(((v[0] - v[4]) / v[4] * 100, s_) for s_, v in q.items() if v[0] and v[4])
                     top = ', '.join('%s %+.1f%%' % (s_, m) for m, s_ in reversed(moves[-3:]))
-                    out('%s  %d prices -> Kite Live (%s up / %s down)%s' % (at[11:], int(res.get('written') or 0), res.get('up'),
-                                                                         res.get('down'), ('; top: ' + top) if top else ''))
+                    if not background or rounds % LIVE_LOG_EVERY == 0:
+                        out('%s  %d prices -> Kite Live (%s up / %s down)%s' % (at[11:], int(res.get('written') or 0), res.get('up'),
+                                                                             res.get('down'), ('; top: ' + top) if top else ''))
             rounds += 1
             if (max_rounds and rounds >= max_rounds) or now_fn() >= stop_at:
                 out('Stopped (%s). The "Kite Live" tab keeps the last prices.' % ('done' if max_rounds and rounds >= max_rounds
@@ -1572,13 +1611,42 @@ def status_line(cfg):
 
 
 class Runner:
-    """The background program's intraday scan, in its own thread so the results checks go on meanwhile."""
+    """The background program's intraday scan and (owner, 08-Nov-2026) the day's Kite live prices, each in its own
+    thread so the results checks go on meanwhile."""
 
     def __init__(self):
         self.thread = None
+        self.live_thread = None
+        self.live_next = 0.0
+        self.live_day = ''
+        self.live_logins = 0
 
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
+
+    def live_busy(self):
+        return bool(self.live_thread and self.live_thread.is_alive())
+
+    def maybe_start_live(self, cfg, api, holidays, online=None, now=None):
+        """Starts the live prices on a trading day 09:10-15:35 (the Kite login page opens when today's login is missing,
+        at most LIVE_LOGINS_PER_DAY times); a run that stopped early starts again LIVE_RETRY_S later."""
+        if self.live_busy() or time.time() < self.live_next:
+            return False
+        now = now or now_ist()
+        if not live_due(cfg, holidays, now) or (online and not online()):
+            return False
+        day = now.date().isoformat()
+        if day != self.live_day:
+            self.live_day, self.live_logins = day, 0
+        if not session_valid(session_load()):
+            if self.live_logins >= LIVE_LOGINS_PER_DAY:
+                return False
+            self.live_logins += 1
+        self.live_next = time.time() + LIVE_RETRY_S
+        self.live_thread = threading.Thread(target=live, args=(cfg, api, holidays),
+                                            kwargs={'out': lambda m: log('Kite live: ' + m), 'background': True}, daemon=True)
+        self.live_thread.start()
+        return True
 
     def maybe_start(self, cfg, api, holidays, online=None):
         """Starts the scan when it is due (and, with `online`, only while the internet works - checked only then)."""

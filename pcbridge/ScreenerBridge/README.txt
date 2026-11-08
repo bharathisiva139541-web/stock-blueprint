@@ -82,7 +82,13 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
    low and the previous close) of the sheet's stocks to a separate tab "Kite Live" (biggest gainers first, with Main's
    GOOGLEFINANCE price beside it to compare). Main, MKT Price, the alerts and the emails are NOT changed. It stops at
    3:35 PM on a trading day, after 4 hours on another day (Muhurat), or when you close the window.
-   config.json "kite_live_seconds": 60 = how often (at least 15).
+   EVERY TRADING DAY BY ITSELF: the background program starts it at 09:10 (or as soon as the computer is on before
+   3:35 PM); the Kite login page opens in the morning when today's login is missing (at most 3 times a day) - that
+   morning login also covers the evening pattern scan. bridge.log shows a "Kite live:" line every 15 minutes.
+   Only one copy sends prices at a time (LiveNow.bat by hand stops if the background one runs, and the other way).
+   While these prices are fresh, the sheet's Mitigated FVG alerts (daily + 4H zones) and IPO base alerts use them;
+   when the computer is off they use the GOOGLEFINANCE price as before.
+   config.json "kite_live_seconds": 60 = how often (at least 15); "kite_live": false = not by itself.
  - To switch it off: in config.json  "intraday": false
 
 NSE PRICE BAND CHANGES (no more copy/paste)

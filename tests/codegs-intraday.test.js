@@ -344,3 +344,28 @@ test('Kite live prices (owner, 08-Nov-2026): only the "Kite Live" tab, biggest g
   assert.strictEqual(e.post({ token: TOKEN, action: 'kitelive' }).ok, false);
   assert.strictEqual(e.post({ token: 'bad', action: 'kitelive', items: [] }).error, 'bad token');
 });
+
+test('alerts use Kite\'s live price while the laptop sends it (fresh <= 3 min), else GOOGLEFINANCE (owner, 08-Nov-2026)', () => {
+  const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
+  e.post(zput([{ sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'] }, { sym: 'FLAT', tf: '4H', zone: [90, 100.2, '2026-10-01 13:15', 'FVG'] }]));
+  // Mon 09-Nov 11:00 IST: GOOGLEFINANCE (Main) says M&M 3050 / FLAT 101 - above both tops; Kite says M&M 3035 (under 3040)
+  e.setNow(Date.UTC(2026, 10, 9, 5, 30));
+  assert.strictEqual(e.run('ab_kiteLivePrices_()'), null, 'no Kite prices yet');
+  e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-09 11:00:00', items: [['M&M', 3035, 3050, 3060, 3030, 3040], ['FLAT', 101.5, 100, 102, 99.5, 100]] });
+  assert.strictEqual(e.run('ab_kiteLivePrices_()["M&M"]'), 3035);
+  assert.deepStrictEqual(JSON.parse(e.run('JSON.stringify(ab_itdZoneCheck_().map(function (r) { return r.sym; }))')), ['M&M']);
+  const log = e.sheet('Mitigated FVG Log').rows;
+  assert.strictEqual(log[log.length - 1][7], '3035 (Live, Kite)');
+  // 4 minutes later without a new post (laptop off): stale -> Main's GOOGLEFINANCE price
+  e.setNow(Date.UTC(2026, 10, 9, 5, 34));
+  assert.strictEqual(e.run('ab_kiteLivePrices_()'), null);
+  e.sheet('Main').rows[4][3] = 100;                  // FLAT on GOOGLEFINANCE now 100 (under its top 100.2)
+  assert.deepStrictEqual(JSON.parse(e.run('JSON.stringify(ab_itdZoneCheck_().map(function (r) { return r.sym; }))')), ['FLAT']);
+  const log2 = e.sheet('Mitigated FVG Log').rows;
+  assert.strictEqual(log2[log2.length - 1][7], '100 (Live)');
+  // ab_kiteLiveOverlay_: Kite wins for the symbols it has, the rest keep their sheet price
+  e.setNow(Date.UTC(2026, 10, 9, 5, 35));
+  e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-09 11:05:00', items: [['FLAT', 99, 100, 102, 98.5, 100]] });
+  assert.deepStrictEqual(JSON.parse(e.run('(function () { const p = { FLAT: 101, PARAGMILK: 240 }; const u = ab_kiteLiveOverlay_(p); return JSON.stringify([p, u]); })()')),
+    [{ FLAT: 99, PARAGMILK: 240 }, { FLAT: true }]);
+});
