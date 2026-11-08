@@ -41,19 +41,30 @@ test('FVG pages: col X tags (and where the Spring sat) as the charts say', () =>
     const d = F.longFvgDetail(b);
     const re = new RegExp('^' + ex.check.tag.replace(/[+()]/g, '\\$&') + ' \\(');
     assert.strictEqual(d.tags.some((t) => re.test(t)), ex.ok, name + ': ' + JSON.stringify(d.tags));
+    const gapSpring = ex.check.tag === 'Gap-up FVG + Spring';     // owner, 08-Nov-2026: split from FVG+Spring
     if (ex.check.where) {
-      const ev = d.events.filter((e) => e.type === 'fvg-spring' && e.i === b.length - 1)[0];
+      const ev = d.events.filter((e) => e.type === (gapSpring ? 'gap-spring' : 'fvg-spring') && e.i === b.length - 1)[0];
       assert.ok(ev && ev.where === ex.check.where, name + ': ' + JSON.stringify(ev));
+      if ('inside' in ex.check) assert.strictEqual(ev.inside, ex.check.inside, name + ': inside FVG');
     }
-    if (ex.marks && ex.marks.zone && ex.check.tag !== 'Gap-up FVG') {
+    if ('inside' in ex.check) assert.strictEqual(d.tags.some((t) => / inside FVG\)$/.test(t) && re.test(t)), ex.check.inside, name + ': ' + JSON.stringify(d.tags));
+    if (ex.marks && ex.marks.zone && gapSpring) {
+      // the drawn zone = a Gap-up zone of the code's rule (3-5 %, formed on that candle)
+      const z = ex.marks.zone, a = b[z.from - 1], g = b[z.from];
+      const pct = (g.l - a.h) / a.h * 100;
+      assert.ok(a.h === z.bottom && g.l === z.top && pct >= 3 && pct <= 5, name + ': drawn zone = a Gap-up ' + JSON.stringify([a.h, g.l, pct]));
+    } else if (ex.marks && ex.marks.zone && ex.check.tag !== 'Gap-up FVG') {
       const gap = d.events.filter((e) => e.type === 'gap' && e.i === ex.marks.zone.from)[0];
       assert.ok(gap && gap.bottom === ex.marks.zone.bottom && gap.top === ex.marks.zone.top, name + ': drawn zone = the code\'s gap ' + JSON.stringify(gap));
     }
   });
   examples.filter((e) => e.ex.check.type === 'gap').forEach(({ ex, name }) => {
+    // owner, 08-Nov-2026: a touched zone stays (mitigated) until a close under its bottom
     const g = F.gapUpFvgs(bars(ex.candles), { AB_GAPUP_MIN_PCT: 3, AB_GAPUP_MAX_PCT: 5 });
     assert.strictEqual(g.length > 0, ex.ok, name + ': ' + JSON.stringify(g));
     if (ex.ok) assert.deepStrictEqual([g[0].bottom, g[0].top], [ex.marks.zone.bottom, ex.marks.zone.top], name + ': drawn zone');
+    if ('touched' in ex.check) assert.strictEqual(g[0].touched, ex.check.touched, name + ': mitigated');
+    if ('inside' in ex.check) assert.strictEqual(g[0].insideFvg, ex.check.inside, name + ': inside FVG');
   });
 });
 

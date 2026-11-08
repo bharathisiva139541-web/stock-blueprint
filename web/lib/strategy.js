@@ -57,7 +57,7 @@
   function emaOf(ctx, len) { return memo(ctx, 'ema' + len, function () { return I.ema(ctx.candles, len); }); }
   function atrOf(ctx) { return memo(ctx, 'atr', function () { return I.atrEmaLast(I.sheetBars(ctx.candles), 14); }); }   // the sheet's ATR14 (History30)
   function ageOfTag(tag) {
-    var m = /\((Today|today|formed today)\)|\((?:formed )?(\d+)d ago\)/.exec(tag || '');
+    var m = /\((Today|today|formed today)[,)]|\((?:formed )?(\d+)d ago[,)]/.exec(tag || '');   // '(Today, inside FVG)' too
     if (!m) return null;
     return m[2] ? +m[2] : 0;
   }
@@ -122,10 +122,11 @@
       var t = fvgOf(x).tags.filter(function (s) { return /^FVG First Touch Confirmed/.test(s); })[0];
       return { pass: !!t && ageOfTag(t) <= p.maxAge, value: t || null, detail: t || 'not confirmed' };
     } });
-  def('fvgSpring', { label: 'FVG + Spring (Spring candle on an FVG / Gap-up zone, no earlier close below its low)', kind: 'sheet', setGroup: 'trigger', type: 'reversal', pit: true,
-    ref: 'Code.gs ab_longFvgDetail_ "FVG+Spring"', params: [{ key: 'maxAge', label: 'Max age (bars)', def: 3 }],
+  def('fvgSpring', { label: 'FVG + Spring or Gap-up FVG + Spring (Spring candle on an FVG / Gap-up zone, no earlier close below its low)', kind: 'sheet', setGroup: 'trigger', type: 'reversal', pit: true,
+    ref: 'Code.gs ab_longFvgDetail_ "FVG+Spring" / "Gap-up FVG + Spring"', params: [{ key: 'maxAge', label: 'Max age (bars)', def: 3 }],
     eval: function (x, p) {
-      var t = fvgOf(x).tags.filter(function (s) { return /^FVG\+Spring/.test(s); })[0];
+      // owner, 08-Nov-2026: the two split in the sheet (FVG+Spring = 3-candle FVG, Gap-up FVG + Spring = Gap-up zone) - this rule keeps both
+      var t = fvgOf(x).tags.filter(function (s) { return /^(FVG\+Spring|Gap-up FVG \+ Spring)/.test(s); })[0];
       return { pass: !!t && ageOfTag(t) <= p.maxAge, value: t || null, detail: t || 'none' };
     } });
   def('zoneApproach', { label: 'Price at / near an untouched FVG zone', kind: 'sheet', setGroup: 'trigger', type: 'pullback', pit: true,
@@ -134,6 +135,7 @@
       var w = FVG.watchZones(x.candles, x.fvgCfg);
       if (w.illiquid) return { pass: false, detail: 'illiquid - zones not watched' };
       for (var k = 0; k < w.zones.length; k++) {
+        if (w.zones[k].touched) continue;   // a mitigated Gap-up zone (kept until a close below) is not "untouched"
         var z = w.zones[k], st = FVG.approachState(x.price, z, x.fvgCfg);
         if (st && st.approaching) return { pass: true, value: z, detail: z.kind + ' ' + round(z.bottom) + '–' + round(z.top) + (st.inZone ? ' (inside)' : ' (' + round(st.distancePct) + '% above)') };
       }

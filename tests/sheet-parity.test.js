@@ -44,7 +44,14 @@ test('patterns (col W) match the sheet for every symbol', { skip: !H && 'no web/
 // FVG+Spring changed to the owner's broader rule (Oct 2026) and Twin Star Bottom + FVG was
 // added (30-Oct-2026) after the saved export was made, so those tags are set aside here;
 // tests/fvg-spring.test.js and tests/patterns-twinstar.test.js check Code.gs = JS.
-function dropSpring(tags) { return P.splitTags(tags).filter((t) => !/^FVG\+Spring|^Twin Star Bottom \+ FVG/.test(t)).join(', '); }
+// Gap-up FVG changed on 08-Nov-2026 (owner: a touched zone stays, "mitigated", until a close under its bottom; "inside FVG";
+// Gap-up FVG + Spring split off): the saved export has the old rule (untouched gap-ups only), so the JS text is compared
+// in that old view - mitigated ones and Gap-up FVG + Spring left out, ", inside FVG" taken off. tests/codegs-gapup-life.test.js
+// checks the new rule Code.gs = JS.
+function dropSpring(tags) {
+  return P.splitTags(tags).filter((t) => !/^FVG\+Spring|^Twin Star Bottom \+ FVG|^Gap-up FVG \+ Spring|, mitigated/.test(t))
+    .map((t) => t.replace(', inside FVG)', ')')).join(', ');
+}
 
 test('FVG tags (col X) match the sheet for every symbol', { skip: !H && 'no web/data/history.js' }, () => {
   let n = 0; const bad = [];

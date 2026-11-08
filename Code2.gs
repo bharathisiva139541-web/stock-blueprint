@@ -2181,7 +2181,7 @@ const AB_PATTERN_DASH_SHEET = 'Pattern Dashboard';
 
 /** "FVG First Touch (3d ago)" -> "FVG First Touch"; "Gap-up FVG 4.81% (2d ago)" -> "Gap-up FVG". */
 function ab_pdNormTag_(t) {
-  return String(t || '').replace(/\s*\([^)]*\)\s*/g, ' ').replace(/^Gap-up FVG.*$/i, 'Gap-up FVG').replace(/\s+/g, ' ').trim();
+  return String(t || '').replace(/\s*\([^)]*\)\s*/g, ' ').replace(/^Gap-up FVG [\d.]+%.*$/i, 'Gap-up FVG').replace(/\s+/g, ' ').trim();
 }
 
 /** Comma-split that keeps "(...)" groups together. */
@@ -2192,7 +2192,7 @@ function ab_pdSplit_(text) {
 /** Is this tag about today (a candlestick pattern always is; FVG/EMA say so in brackets)? */
 function ab_pdIsFresh_(raw, group) {
   if (group === 'Pattern') return true;
-  return /\((today|formed today)\)/i.test(raw) || /\(today\)/i.test(raw);
+  return /\((today|formed today)[,)]/i.test(raw);
 }
 
 function ab_buildPatternDashboard_() {
@@ -12242,8 +12242,8 @@ const AB_ITD_TFS = ['M', 'W', 'D', '4H', '2H', '1H', '30m', '15m'];          // 
 // owner, 08-Nov-2026: FVG+Spring = the Spring candle anywhere on an FVG / Gap-up zone or under its bottom line, no earlier
 // close under the Spring low ('FVG Detail' says top / middle / bottom); on 4H also the other FVG patterns of col X (they count on every 4H candle - the
 // 13:15 rule is for the Spring patterns only)
-const AB_ITD_PATTERNS = ['Spring in FVG', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
-const AB_ITD_SPRINGS = ['Spring in FVG', 'Spring'];
+const AB_ITD_PATTERNS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
+const AB_ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
 const AB_ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
 const AB_ITD_KEEP_DAYS = 30;
 const AB_ITD_MAX_ITEMS = 2000;            // per post (the PC sends 400 at a time)
@@ -12300,7 +12300,8 @@ function ab_itdDetail_(z) {
   const where = String(z[4] || '');
   const touch = Number(z[5]);
   if (['top', 'middle', 'bottom'].indexOf(where) === -1) return kind;
-  return kind + ' ' + where + (touch >= 1 && touch < 1000 ? ' (touch ' + Math.round(touch) + ')' : '');
+  // z[6] = 1: a Gap-up zone inside a 3-candle FVG (owner, 08-Nov-2026: "most powerful")
+  return kind + ' ' + where + (touch >= 1 && touch < 1000 ? ' (touch ' + Math.round(touch) + ')' : '') + (kind === 'Gap-up' && Number(z[6]) === 1 ? ', inside FVG' : '');
 }
 
 function ab_itdFromBridge_(req) {
@@ -12339,7 +12340,8 @@ function ab_itdFromBridge_(req) {
   const gone = {};
   (Array.isArray(req.invalid) ? req.invalid : []).forEach(function (x) {
     const sym = String(x && x.sym || '').trim().toUpperCase();
-    if (sym) gone[sym + '|' + String(x.tf || '') + '|Spring in FVG|' + String(x.candle || '')] = true;
+    const pat = String(x.pattern || '') === 'Gap-up FVG + Spring' ? 'Gap-up FVG + Spring' : 'Spring in FVG';   // an older PC sends no pattern
+    if (sym) gone[sym + '|' + String(x.tf || '') + '|' + pat + '|' + String(x.candle || '')] = true;
   });
   let replaced = 0, removed = 0;
   ab_itdRead_(sh).forEach(function (r) {
@@ -12385,10 +12387,11 @@ function ab_itdFromBridge_(req) {
   const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
   const tfText = tfs && tfs.length ? AB_ITD_TFS.slice().reverse().filter(function (t) { return tfs.indexOf(t) !== -1; }).join(', ')
     : '15m and 30m (Spring in FVG only), 1H, 2H, 4H, D, W, M';
-  const note = 'Spring and Spring in FVG from Zerodha Kite candles (your PC program): ' + tfText +
+  const note = 'Spring, Spring in FVG and Gap-up FVG + Spring from Zerodha Kite candles (your PC program): ' + tfText +
     (!tfs || tfs.indexOf('4H') !== -1 ? (slots['4H'] && slots['4H'].join() === '13:15' ? ' (4H Spring: only the day\'s 2nd candle, 13:15-15:30)'
-      : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') + ' - the sheet\'s Spring and FVG+Spring rules (Spring in FVG = the Spring candle ' +
-    'anywhere on an FVG / Gap-up zone or under its bottom line, closing above the bottom, no earlier close under the Spring low - ' +
+      : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') + ' - the sheet\'s Spring, FVG+Spring and Gap-up FVG + Spring rules (Spring in FVG = the ' +
+    'Spring candle anywhere on a 3-candle FVG or under its bottom line, closing above the bottom, no earlier close under the Spring low; ' +
+    'Gap-up FVG + Spring = the same on a Gap-up zone, "inside FVG" when that zone lies in a 3-candle FVG - ' +
     'FVG Detail says top / middle / bottom; taken off when a later candle closes under the Spring low; not on the monthly chart). ' +
     (!tfs || tfs.indexOf('4H') !== -1 ? '4H also: FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' : '') +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
@@ -12423,7 +12426,8 @@ const AB_MIT_MAIL_PROP = 'AB_MIT_MAIL';
 const AB_MIT_MAIL_EVERY_MIN = ab_setting_('AB_MIT_MAIL_EVERY_MIN', 60);
 const AB_MIT_MAIL_MAX_ROWS = 60;          // rows listed in one email (the rest: "+N more - see the tab")
 const AB_MIT_MAIL_READ = 500;             // log rows read at most
-const AB_MIT_MAIL_TYPES = ['Unmitigated FVG', 'Gap-up FVG', '4H FVG', '4H Gap-up FVG'];
+// a Gap-up zone inside a 3-candle FVG first (owner, 08-Nov-2026: "most powerful"), then the order the owner had
+const AB_MIT_MAIL_TYPES = ['Gap-up FVG (inside FVG)', '4H Gap-up FVG (inside FVG)', 'Unmitigated FVG', 'Gap-up FVG', '4H FVG', '4H Gap-up FVG'];
 
 /** A Mitigated FVG Log row of a 4H zone (Zerodha, the PC)? The daily readers - the Signal Watchlist backfill, the FVG
  *  Backtest's zone index and the EOD summary's "mitigated today" - judge zones on daily candles, so they leave these out
@@ -12537,7 +12541,9 @@ function ab_mitMailSend_(items) {
 // =====================================================================================================================
 const AB_ITDZ_SHEET = '4H FVG Zones';
 const AB_ITDZ_HEADERS = ['Symbol', 'Company', 'Kind', 'Zone Bottom', 'Zone Top', 'Zone %', 'Formed', 'Distance %', 'Chart',
-  'Mitigated Alerted', 'Mitigated At', 'Updated'];
+  'Mitigated Alerted', 'Mitigated At', 'Updated', 'Inside FVG'];
+// a 4H Gap-up zone inside a 3-candle FVG (owner, 08-Nov-2026: "most powerful") - its own line, first in the email
+const AB_ITDZ_INSIDE_LABEL = '4H Gap-up FVG (inside FVG)';
 const AB_ITDZ_MAX = 6000;
 const AB_ITDZ_KINDS = { FVG: '4H FVG', 'Gap-up': '4H Gap-up FVG' };
 
@@ -12547,7 +12553,8 @@ function ab_itdzRead_(sh) {
   const txt = function (v) { return v === null || v === undefined ? '' : String(v).trim(); };
   return vals.filter(function (v) { return txt(v[0]); }).map(function (v) {
     return { sym: txt(v[0]).toUpperCase(), company: txt(v[1]), kind: txt(v[2]), bottom: ab_toNum_(v[3]), top: ab_toNum_(v[4]),
-             pct: ab_toNum_(v[5]), formed: txt(v[6]), dist: v[7], alerted: txt(v[9]).toUpperCase() === 'Y', at: txt(v[10]), updated: txt(v[11]) };
+             pct: ab_toNum_(v[5]), formed: txt(v[6]), dist: v[7], alerted: txt(v[9]).toUpperCase() === 'Y', at: txt(v[10]), updated: txt(v[11]),
+             inside: txt(v[12]).toUpperCase() === 'Y' };
   });
 }
 
@@ -12579,12 +12586,12 @@ function ab_itdzWrite_(sh, rows, note) {
   sh.getRange(2, 1, 1, AB_ITDZ_HEADERS.length).setValues([AB_ITDZ_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
   if (rows.length) {
     const n = rows.length;
-    [1, 2, 3, 7, 10, 11, 12].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
+    [1, 2, 3, 7, 10, 11, 12, 13].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
     sh.getRange(3, 4, n, 3).setNumberFormat('0.00');
     sh.getRange(3, 8, n, 1).setNumberFormat('0.00');
     sh.getRange(3, 1, n, AB_ITDZ_HEADERS.length).setValues(rows.map(function (r) {
       return [r.sym, r.company, r.kind, r.bottom, r.top, r.pct, r.formed, r.dist === undefined ? '' : r.dist,
-        '=HYPERLINK("' + ab_itdTvUrl_(r.sym, '4H') + '","4H chart")', r.alerted ? 'Y' : '', r.at || '', r.updated || ''];
+        '=HYPERLINK("' + ab_itdTvUrl_(r.sym, '4H') + '","4H chart")', r.alerted ? 'Y' : '', r.at || '', r.updated || '', r.inside ? 'Y' : ''];
     }));
   }
   sh.setFrozenRows(2);
@@ -12594,8 +12601,9 @@ function ab_itdzDistance_(price, top) {
   return price > 0 && top > 0 ? Math.round((price - top) / top * 10000) / 100 : '';
 }
 
-/** doPost action 'intraday' {op: 'zones', upto, since, tf: '4H', zones: [{sym, zone: [bottom, top, formed, kind], pct}],
- *  mitigated: [{sym, zone, candle, low}]} from the PC. */
+/** doPost action 'intraday' {op: 'zones', upto, since, tf: '4H', zones: [{sym, zone: [bottom, top, formed, kind], pct,
+ *  touched (the first-touch candle of a Gap-up zone - owner, 08-Nov-2026: kept, mitigated, until a close under its bottom),
+ *  inside (1 = inside a 3-candle FVG)}], mitigated: [{sym, zone, candle, low, inside}]} from the PC. */
 function ab_itdZonesFromBridge_(req) {
   const zones = Array.isArray(req.zones) ? req.zones : null;
   if (!zones) return { ok: false, error: 'zones missing' };
@@ -12618,7 +12626,10 @@ function ab_itdZonesFromBridge_(req) {
     const candle = String(m.candle || '');
     let day = null;
     try { day = /^\d{4}-\d{2}-\d{2}/.test(candle) ? Utilities.parseDate(candle.slice(0, 10), AB_TZ, 'yyyy-MM-dd') : null; } catch (e) { day = null; }
-    ab_logMitigation_(AB_ITDZ_KINDS[o.kind], sym, o.bottom, o.top, o.pct, ab_toNum_(m.low), 'EOD, 4H candle ' + candle.slice(11, 16), day);
+    ab_logMitigation_(o.kind === 'Gap-up' && (o.inside || m.inside) ? AB_ITDZ_INSIDE_LABEL : AB_ITDZ_KINDS[o.kind], sym, o.bottom, o.top,
+      o.pct, ab_toNum_(m.low), 'EOD, 4H candle ' + candle.slice(11, 16), day);
+    o.alerted = true;
+    o.at = o.at || candle;
     logged++;
   });
   const names = ab_itdNames_();
@@ -12637,17 +12648,22 @@ function ab_itdZonesFromBridge_(req) {
     if (seen[k]) return;
     seen[k] = true;
     const o = old[k];
+    // a Gap-up zone the PC saw touched stays (mitigated - emailed once: live, or from `mitigated` above; a touch before
+    // it was on this tab is marked quietly)
+    const touched = kind === 'Gap-up' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(it.touched || '')) ? String(it.touched) : '';
     rows.push({ sym: sym, company: names[sym] || '', kind: kind, bottom: bottom, top: top,
                 pct: Math.round((top - bottom) / bottom * 10000) / 100, formed: formed, dist: ab_itdzDistance_(prices[sym], top),
-                alerted: !!(o && o.alerted), at: o ? o.at : '', updated: updated });
+                alerted: !!(o && o.alerted) || !!touched, at: (o && o.at) || touched, updated: updated,
+                inside: kind === 'Gap-up' && !!it.inside });
   });
   rows.sort(function (a, b) {
     if (a.sym !== b.sym) return a.sym < b.sym ? -1 : 1;
     return a.formed < b.formed ? 1 : a.formed > b.formed ? -1 : 0;
   });
   const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
-  const note = '4H FVG zones still untouched, from Zerodha Kite 4H candles (your PC program' + (upto ? ', session ' + upto : '') +
-    '): the latest 3-candle FVG when never touched and every untouched Gap-up of ' + AB_GAPUP_MIN_PCT + '-5 %; stocks with an ' +
+  const note = '4H FVG zones from Zerodha Kite 4H candles (your PC program' + (upto ? ', session ' + upto : '') +
+    '): the latest 3-candle FVG when never touched, and every Gap-up of ' + AB_GAPUP_MIN_PCT + '-5 % - kept after its first touch ' +
+    '(Mitigated Alerted = Y, emailed once) until a candle closes under its bottom; Inside FVG = Y: the Gap-up lies in a 3-candle FVG; stocks with an ' +
     'average daily turnover under Rs ' + Math.round(AB_FVG_MIN_AVG_TURNOVER / 100000) + ' lakh left out. During market hours ' +
     'Main\'s MKT Price at or under a zone top = mitigated -> the Mitigated FVG Log and the hourly combined email. ' +
     'Distance % = MKT Price vs the zone top (delayed price). Updated ' + updated + '.';
@@ -12675,7 +12691,8 @@ function ab_itdZoneCheck_() {
   const fired = [];
   hits.forEach(function (r) {
     if (locked[r.sym]) return;                // a frozen circuit print is not a real fill
-    ab_logMitigation_(AB_ITDZ_KINDS[r.kind] || '4H FVG', r.sym, r.bottom, r.top, r.pct, prices[r.sym], kite[r.sym] ? 'Live, Kite' : 'Live');
+    ab_logMitigation_(r.kind === 'Gap-up' && r.inside ? AB_ITDZ_INSIDE_LABEL : AB_ITDZ_KINDS[r.kind] || '4H FVG', r.sym, r.bottom, r.top, r.pct,
+      prices[r.sym], kite[r.sym] ? 'Live, Kite' : 'Live');
     r.alerted = true;
     r.at = at;
     fired.push(r);

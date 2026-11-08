@@ -28,13 +28,13 @@
   // the sheet's "Intraday Patterns" tab, filled by the PC program once a trading day after the close (feed part 'intraday')
   var ITD_TFS = ['15m', '30m', '1H', '2H', '4H', 'D', 'W', 'M'];
   var ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
-  var ITD_SPRINGS = ['Spring in FVG', 'Spring'];
-  var ITD_PATTERNS = ['Spring in FVG', 'Spring', 'FVG First Touch', 'FVG First Touch Confirmed', 'Twin Star Bottom + FVG'];
+  var ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
+  var ITD_PATTERNS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'FVG First Touch', 'FVG First Touch Confirmed', 'Twin Star Bottom + FVG'];
   function tvUrl(sym, tf) { return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '&interval=' + (ITD_TV[tf] || 'D'); }
   var CACHE = null;               // candle-derived results, computed once per history file
 
-  var FVG_KINDS = [['all', 'Any FVG state'], ['ft', 'First Touch'], ['conf', 'Confirmed'], ['unmit', 'Unmitigated'], ['gap', 'Gap-up'], ['spring', 'FVG+Spring'], ['twin', 'Twin Star + FVG']];
-  var FVG_RX = { ft: /^FVG First Touch \(/, conf: /^FVG First Touch Confirmed/, unmit: /^FVG Unmitigated/, gap: /^Gap-up FVG/, spring: /^FVG\+Spring/, twin: /^Twin Star Bottom \+ FVG/ };
+  var FVG_KINDS = [['all', 'Any FVG state'], ['ft', 'First Touch'], ['conf', 'Confirmed'], ['unmit', 'Unmitigated'], ['gap', 'Gap-up'], ['spring', 'FVG+Spring'], ['gapspring', 'Gap-up FVG + Spring'], ['twin', 'Twin Star + FVG']];
+  var FVG_RX = { ft: /^FVG First Touch \(/, conf: /^FVG First Touch Confirmed/, unmit: /^FVG Unmitigated/, gap: /^Gap-up FVG [\d.]+%/, spring: /^FVG\+Spring/, gapspring: /^Gap-up FVG \+ Spring/, twin: /^Twin Star Bottom \+ FVG/ };
 
   // FVG Backtest categories in the sheet's display order (Code.gs AB_MIT_CATS_ + Spring)
   var BT_CATS = [
@@ -145,6 +145,8 @@
     var st = SB.fvg.approachState(s.price, z.zone);
     if (!st) return null;
     var label, cls;
+    // a Gap-up zone already mitigated (first touch) stays watched until a close below its bottom (owner, 08-Nov-2026)
+    if (z.zone && z.zone.touched) return { st: st, label: 'Mitigated' + (z.zone.touchedOn ? ' ' + z.zone.touchedOn : '') + ' - valid till a close below', cls: 's-warn', key: 'mitigated' };
     if (st.inZone) { label = 'Inside zone'; cls = 's-warn'; }
     else if (st.approaching) { label = 'Approaching (≤0.5%)'; cls = 's-info'; }
     else if (s.price <= z.bottom) { label = 'Below zone ' + F.pct((s.price - z.bottom) / z.bottom * 100, 1); cls = 's-bad'; }
@@ -274,8 +276,9 @@
     var sub = 'Spring and <b>Spring in FVG</b> found by your PC program on Zerodha Kite candles - ' + esc(tfText) +
       (tfText.indexOf('4H') !== -1 ? (rows.every(function (r) { return r.Timeframe !== '4H' || ITD_SPRINGS.indexOf(r.Pattern) === -1 || /13:15$/.test(String(r.Candle || '')); })
         ? ' (4H Spring: only the day\'s 2nd candle, 13:15-15:30)' : ' (4H = 09:15-13:15 / 13:15-15:30)') : '') +
-      ' - with the same rules as your sheet, once a trading day after the close. <b>Spring in FVG</b> = the Spring candle anywhere on an FVG or ' +
-      'Gap-up zone or below its bottom line, closing above the bottom, with <b>no earlier candle closed below the Spring low</b>; it is taken off when a later candle ' +
+      ' - with the same rules as your sheet, once a trading day after the close. <b>Spring in FVG</b> = the Spring candle anywhere on a 3-candle FVG ' +
+      'or below its bottom line, closing above the bottom, with <b>no earlier candle closed below the Spring low</b>; <b>Gap-up FVG + Spring</b> = the same on a Gap-up zone ' +
+      '("inside FVG" when that zone lies in a 3-candle FVG). Both are taken off when a later candle ' +
       'closes below that low - not on the monthly chart. On 4H also FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' +
       'The button opens TradingView\'s own chart at that timeframe. ' + (it && it.note ? '<span class="sub">' + esc(String(it.note).replace(/^.*?(Last scan:[^.]*\.?).*$/, '$1')) + '</span>' : '');
     var body;
@@ -309,7 +312,7 @@
           title: 'Today\'s change % of the stock - the same as the Watchlist\'s Today column (Zerodha Kite live on your devices with the PIN, else the sheet\'s delayed price)',
           get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
-        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
+        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' || r.Pattern === 'Gap-up FVG + Spring' ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
         { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },
         { key: 'FVG Detail', label: 'Where', title: 'Spring in FVG: where its low sat - top (upper half) / middle / bottom (at or under the bottom line) of an FVG / Gap-up zone, with the touch number; the other FVG patterns: the zone kind' },
         { key: 'FVG Formed', label: 'Zone formed', title: 'When the zone formed (same timeframe)' },
@@ -336,8 +339,9 @@
   // "4H FVG Zones" tab (feed part zones4h) - no Kite prices, the zone size and the distance from the sheet's price only
   function z4SectionHtml(ctx) {
     var z = ctx.D.zones4h, rows = ui.objRows(z);
-    var sub = 'Untouched 4H fair value gaps from Zerodha Kite candles (your PC program, after each day\'s close): the latest 3-candle FVG of each stock when never touched, ' +
-      'and every untouched Gap-up of 3-5%. During market hours your sheet watches them: price at or under a zone top = mitigated, in the hourly <b>Mitigated FVG</b> email. ' +
+    var sub = '4H fair value gaps from Zerodha Kite candles (your PC program, after each day\'s close): the latest 3-candle FVG of each stock when never touched, ' +
+      'and every Gap-up of 3-5% - <b>a Gap-up stays after its first touch</b> (mitigated, emailed once) until a 4H candle closes below its bottom; ' +
+      '<b>inside FVG</b> = the Gap-up lies in a 3-candle FVG (the strongest kind). During market hours your sheet watches them: price at or under a zone top = mitigated, in the hourly <b>Mitigated FVG</b> email. ' +
       'Distance = the sheet\'s delayed price vs the zone top.';
     var body;
     if (!rows.length) {
@@ -347,7 +351,7 @@
       rows.forEach(function (r) { n[r.Kind] = (n[r.Kind] || 0) + 1; });
       body = '<div class="controls"><input class="search" id="sg-z4-q" type="search" placeholder="Search symbol or company" aria-label="Search 4H FVG zones" value="' + esc(ST.z4Q) + '">' +
         ui.chips('sgz4', [['all', 'All (' + F.int(rows.length) + ')'], ['FVG', '3-candle FVG (' + F.int(n.FVG) + ')'], ['Gap-up', 'Gap-up (' + F.int(n['Gap-up']) + ')'],
-          ['near', 'Within 2%']], ST.z4Kind) + '<span class="count" id="sg-z4-count"></span></div><div id="sg-z4-t"></div>';
+          ['inside', 'Gap-up inside FVG (' + F.int(rows.filter(function (r) { return r['Inside FVG'] === 'Y'; }).length) + ')'], ['near', 'Within 2%']], ST.z4Kind) + '<span class="count" id="sg-z4-count"></span></div><div id="sg-z4-t"></div>';
     }
     return sectionHtml('sg-z4', '4H FVG zones (Zerodha)', sub, body);
   }
@@ -368,19 +372,21 @@
       rows: [], pageSize: 25, id: 'signals-zones4h', empty: 'No zone with these filters',
       columns: [
         { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
-        { key: 'Kind', label: 'Zone', html: function (r) { return ui.badge(r.Kind === 'Gap-up' ? 'Gap-up' : '3-candle FVG', 's-info'); } },
+        { key: 'Kind', label: 'Zone', get: function (r) { return r.Kind === 'Gap-up' ? 'Gap-up' + (r['Inside FVG'] === 'Y' ? ' (inside FVG)' : '') : '3-candle FVG'; },
+          html: function (r) { return ui.badge(r.Kind === 'Gap-up' ? 'Gap-up' + (r['Inside FVG'] === 'Y' ? ' · inside FVG' : '') : '3-candle FVG', r['Inside FVG'] === 'Y' ? 's-good' : 's-info'); } },
         { key: 'Formed', label: 'Formed (4H candle)' },
         { key: 'Zone %', label: 'Zone size', type: 'num', digits: 2, title: 'Zone height as % of its bottom' },
         { key: 'Distance %', label: 'Distance', type: 'pct', digits: 2, title: 'The price now (Kite live with your PIN / delayed, else the sheet\'s) vs the zone top (negative = at / inside the zone)' },
         { key: 'Mitigated Alerted', label: 'Status', get: function (r) { return r['Mitigated Alerted'] === 'Y' ? 'Mitigated' : 'Watching'; },
-          html: function (r) { return r['Mitigated Alerted'] === 'Y' ? ui.badge('Mitigated today', 's-bad') : ui.badge('Watching', 's-good'); } },
+          html: function (r) { return r['Mitigated Alerted'] === 'Y' ? ui.badge(r.Kind === 'Gap-up' ? 'Mitigated - valid till a close below' : 'Mitigated today', 's-bad') : ui.badge('Watching', 's-good'); } },
         { key: 'chart', label: 'Chart', get: function () { return null; },
           html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, '4H')) + '" target="_blank" rel="noopener">TradingView 4H ↗</a>'; } }
       ]
     }).mount(box);
     function apply() {
       var rows = all.filter(function (r) {
-        var k = ST.z4Kind === 'all' || r.Kind === ST.z4Kind || (ST.z4Kind === 'near' && isNum(r['Distance %']) && r['Distance %'] <= 2);
+        var k = ST.z4Kind === 'all' || r.Kind === ST.z4Kind || (ST.z4Kind === 'near' && isNum(r['Distance %']) && r['Distance %'] <= 2) ||
+          (ST.z4Kind === 'inside' && r['Inside FVG'] === 'Y');
         return k && ui.textMatch(ST.z4Q, [r.Symbol, r.Company]);
       });
       var c = $('#sg-z4-count', el);
@@ -398,7 +404,8 @@
   var SBT_TFS = [['4H', '4 hour (13:15 candle)'], ['D', 'Daily'], ['W', 'Weekly']];
   function sbtSectionHtml(ctx) {
     var b = ctx.D.springBacktest || {}, sum = ui.objRows(b.summary), trades = ui.objRows(b.list);
-    var sub = 'Every <b>FVG+Spring</b> (the Spring candle anywhere on an FVG / Gap-up zone or below its bottom line, no earlier close below the Spring low) tested on your PC\'s ' +
+    var sub = 'Every <b>FVG+Spring</b> (the Spring candle anywhere on a 3-candle FVG or below its bottom line, no earlier close below the Spring low) and every ' +
+      '<b>Gap-up FVG + Spring</b> (the same on a Gap-up zone) tested on your PC\'s ' +
       'Zerodha candles: <b>buy at the Spring candle\'s close, stop just under its low; a win = the target (2 × the risk) reached before the stop, within 20 candles</b>. ' +
       'A candle that touches both counts as a loss. Win rate = wins ÷ (wins + losses); with a 2R target, about 33% is break-even (before costs). ' +
       'Past results are research, not a promise.';
@@ -411,13 +418,15 @@
       var tiles = SBT_TFS.map(function (tf) {
         var g = by[tf[0]] || {}, f = g['FVG+Spring'] || {}, sp = g['Spring (every one, for comparison)'] || {};
         var top = g['FVG+Spring - zone top'] || {}, mid = g['FVG+Spring - zone middle'] || {}, bot = g['FVG+Spring - zone bottom'] || {};
+        var gap = g['Gap-up FVG + Spring'];
         var rate = function (r) { return isNum(r['Win Rate %']) ? F.num(r['Win Rate %'], 1) + '%' : '–'; };
         return '<div class="tile" data-sbt="' + esc(tf[0]) + '"><div class="label">' + esc(tf[1]) + ' - FVG+Spring</div><div class="value">' + rate(f) + '</div>' +
           '<div class="note2">' + F.int(f.Signals) + ' signals · ' + F.int(f.Wins) + ' won · ' + F.int(f.Losses) + ' lost · avg ' + (isNum(f['Avg R']) ? F.num(f['Avg R'], 2) + 'R' : '–') +
-          '<br>top ' + rate(top) + ' · middle ' + rate(mid) + ' · bottom ' + rate(bot) + ' · every Spring ' + rate(sp) + '</div></div>';
+          '<br>top ' + rate(top) + ' · middle ' + rate(mid) + ' · bottom ' + rate(bot) + ' · every Spring ' + rate(sp) +
+          (gap ? '<br>Gap-up FVG + Spring ' + rate(gap) + ' (' + F.int(gap.Signals) + ' signals)' : '') + '</div></div>';
       }).join('');
       body = '<div class="tiles">' + tiles + '</div><div id="sg-sbt-sum" style="margin-top:14px"></div>' +
-        '<h3 style="margin:18px 0 8px">Newest FVG+Spring trades</h3>' +
+        '<h3 style="margin:18px 0 8px">Newest FVG+Spring / Gap-up FVG + Spring trades</h3>' +
         (trades.length ? '<div class="controls"><input class="search" id="sg-sbt-q" type="search" placeholder="Search symbol or company" aria-label="Search backtest trades" value="' + esc(ST.btQ2) + '">' +
           ui.chips('sgsbtf', [['all', 'All timeframes']].concat(SBT_TFS.map(function (t) { return [t[0], t[0]]; })), ST.btTf) +
           ui.chips('sgsbtr', [['all', 'Any result'], ['Win', 'Wins'], ['Loss', 'Losses'], ['No result', 'No result'], ['Open', 'Still open']], ST.btRes) +
@@ -483,7 +492,7 @@
       '<ul class="sub" style="margin:8px 0 0 18px;padding:0;display:grid;gap:4px">' +
       '<li><b>Timeframe:</b> daily candles only - the FVG rules look up to 60 sessions back (History30 tab + History60\'s older days from NSE via your PC); the 10 / 21 EMA support tags use the last 30 (History30), like the sheet.</li>' +
       '<li><b>Bullish 3-candle FVG</b> on day i: Low[i] &gt; High[i−2], and the gap (Low[i] − High[i−2]) is at least 0.7 × the average High−Low range of the 14 days ending on day i. Zone = High[i−2] (bottom) to Low[i] (top). Needs 17+ candles.</li>' +
-      '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 10% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT, Control Panel). Zone = High[i−1] to Low[i]. It is dropped once a later candle trades down to the zone top (Low ≤ top).</li>' +
+      '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 10% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT, Control Panel). Zone = High[i−1] to Low[i]. The first later candle that trades down to the zone top (Low ≤ top, a wick is enough) <b>mitigates</b> it (one email); it stays watched until a later candle <b>closes below the bottom</b>. <b>Inside FVG</b> = the Gap-up zone lies in a 3-candle FVG. <b>Gap-up FVG + Spring</b> = a Spring on a Gap-up zone (FVG+Spring = on a 3-candle FVG).</li>' +
       '<li><b>First touch:</b> a candle\'s low crosses below the zone top after the previous low was at or above it. <b>Confirmed:</b> after a touch, a close crosses back above the high of the touch candle. <b>FVG+Spring</b> (your rule of 08-Nov-2026): a Spring candle pair (big red candle, then a small candle that dips below its low and closes back above it) whose 2nd candle sits on a 3-candle FVG or a Gap-up zone formed before the pair that still holds (no close below its bottom before the pair): its low anywhere in the zone or below the bottom line (any depth), its close above the bottom line, and <b>no candle since the zone formed closed below the Spring candle\'s low</b> (the red candle excepted) - any touch. A later close below the Spring low takes the tag off. <b>Twin Star Bottom + FVG:</b> a red candle, then two small candles whose lows are within 1% of each other (the Twin Star Bottom pattern), with the stars reaching into an FVG formed before the red candle that still holds (both stars close at or above its bottom). These tags are reported for the last 4 candles.</li>' +
       '<li><b>Unmitigated:</b> the latest 3-candle FVG has not been touched since it formed. <b>Mitigated:</b> the price reached the zone - the sheet logs it (Mitigated FVG Log) and judges the next candle (held / swept / closed inside / broke below…).</li>' +
       '<li><b>Circuit-lock filter:</b> a candle whose High−Low range is ≤ 0.05% of its low is treated as locked at a price band; such candles cannot form a gap-up FVG and do not count as touches.</li>' +
@@ -513,7 +522,7 @@
     var state = lastDate === sess.date ? 'EOD' : 'CACHED';
     $('#sg-live-state', el).innerHTML = ui.stateBadge(state, lastDate, H.source || 'History30 tab');
     var rows = data.rows;
-    var counts = { pat: 0, patNoQ: 0, fvg: 0, ema: 0, c3: 0 }, patCount = {}, fvgCount = { ft: 0, conf: 0, spring: 0, twin: 0, unmit: 0, gap: 0 }, e10 = 0, e21 = 0;
+    var counts = { pat: 0, patNoQ: 0, fvg: 0, ema: 0, c3: 0 }, patCount = {}, fvgCount = { ft: 0, conf: 0, spring: 0, gapspring: 0, twin: 0, unmit: 0, gap: 0 }, e10 = 0, e21 = 0;
     var catCount = {};
     rows.forEach(function (r) {
       if (r.pat) counts.pat++;
@@ -552,7 +561,7 @@
       ui.bars(SB.patterns.ORDER.map(function (p) { return { label: p, value: patCount[p] || 0, tip: p + ': ' + F.int(patCount[p] || 0) + ' stocks' }; }).filter(function (b) { return b.value; })
         .concat(SB.patterns.ORDER.some(function (p) { return patCount[p]; }) ? [] : [{ label: 'No pattern on any stock', value: 0 }])) +
       '</div><div><h3 style="margin-bottom:8px">FVG &amp; EMA tags</h3>' +
-      ui.bars([['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'], ['spring', 'FVG+Spring'], ['twin', 'Twin Star Bottom + FVG'], ['unmit', 'FVG Unmitigated'], ['gap', 'Gap-up FVG']].map(function (k) {
+      ui.bars([['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'], ['spring', 'FVG+Spring'], ['gapspring', 'Gap-up FVG + Spring'], ['twin', 'Twin Star Bottom + FVG'], ['unmit', 'FVG Unmitigated'], ['gap', 'Gap-up FVG']].map(function (k) {
         return { label: k[1], value: fvgCount[k[0]], tip: k[1] + ': ' + F.int(fvgCount[k[0]]) + ' stocks' };
       }).concat([{ label: '10 EMA Support', value: e10 }, { label: '21 EMA Support', value: e21 }])) + '</div></div>';
 
@@ -638,11 +647,12 @@
       return z;
     });
     var nGap = zones.filter(function (z) { return z.kind === 'Gap-up'; }).length;
-    var nState = { inside: 0, near: 0, above: 0, below: 0 };
+    var nState = { inside: 0, near: 0, above: 0, below: 0, mitigated: 0 };
+    var nInside = zones.filter(function (z) { return z.zone && z.zone.insideFvg; }).length;
     zones.forEach(function (z) { if (z.ap) nState[z.ap.key]++; });
     var sheetN = ui.objRows(ctx.D.fvg).length, sheetG = ui.objRows(ctx.D.gapup).length;
     var h = TILES +
-      ui.tile('Open zones watched', F.int(zones.length), F.int(nGap) + ' gap-up · ' + F.int(zones.length - nGap) + ' 3-candle') +
+      ui.tile('Open zones watched', F.int(zones.length), F.int(nGap) + ' gap-up (' + F.int(nState.mitigated) + ' mitigated, ' + F.int(nInside) + ' inside an FVG) · ' + F.int(zones.length - nGap) + ' 3-candle') +
       ui.tile('Inside a zone now', F.int(nState.inside), F.int(nState.near) + ' approaching (≤0.5%)') +
       ui.tile('Skipped: low turnover', F.int(data.illiquid), 'avg turnover below ₹50 lakh') +
       ui.tile('Your sheet\'s tabs', F.int(sheetN + sheetG), F.int(sheetN) + ' unmitigated · ' + F.int(sheetG) + ' gap-up (snapshot below)') +
@@ -650,7 +660,7 @@
     h += '<div class="controls" style="margin-top:14px"><input class="search" id="sg-zq" type="search" placeholder="Search symbol or category" aria-label="Search FVG zones" value="' + esc(ST.zq) + '">' +
       ui.chips('sgzk', [['all', 'All zones'], ['Gap-up', 'Gap-up FVG'], ['FVG', '3-candle FVG']], ST.zkind) + '</div>' +
       '<div class="controls">' + ui.chips('sgzs', [['all', 'Any price position'], ['inside', 'Inside zone (' + nState.inside + ')'], ['near', 'Approaching (' + nState.near + ')'],
-        ['above', 'Above (' + nState.above + ')'], ['below', 'Below zone (' + nState.below + ')']], ST.zstate) +
+        ['above', 'Above (' + nState.above + ')'], ['below', 'Below zone (' + nState.below + ')'], ['mitigated', 'Gap-up mitigated (' + nState.mitigated + ')']], ST.zstate) +
       '<span class="count" id="sg-zcount"></span><button class="btn" type="button" id="sg-zcsv">Export CSV</button></div><div id="sg-zt"></div>';
     body.innerHTML = h;
 
@@ -660,7 +670,7 @@
         { key: 'sym', label: 'Stock', type: 'sym', name: 'name', csv: function (r) { return r.sym; } },
         { key: 'dist', label: 'Price vs zone', type: 'num', title: 'Distance of the price from the zone top', csv: function (r) { return r.ap ? r.ap.label : ''; },
           html: function (r) { return r.ap ? ui.badge(r.ap.label, r.ap.cls) : '<span class="sub">no price</span>'; } },
-        { key: 'kind', label: 'Zone', get: function (r) { return r.kind === 'Gap-up' ? 'Gap-up FVG' : '3-candle FVG'; } },
+        { key: 'kind', label: 'Zone', get: function (r) { return r.kind === 'Gap-up' ? 'Gap-up FVG' + (r.zone && r.zone.insideFvg ? ' (inside FVG)' : '') : '3-candle FVG'; } },
         { key: 'bottom', label: 'Bottom', type: 'price' },
         { key: 'top', label: 'Top', type: 'price' },
         { key: 'pct', label: 'Size', type: 'num', html: function (r) { return pctPlain(r.pct); } },
@@ -790,7 +800,14 @@
       ];
     }
     new ui.Table({ rows: ui.objRows(D.fvg), pageSize: 15, sort: { key: 'Formed', dir: -1 }, empty: 'The UnmitigatedFVG tab was empty.', columns: zoneCols('Zone') }).mount($('#sg-fvg', el));
-    new ui.Table({ rows: ui.objRows(D.gapup), pageSize: 15, sort: { key: 'Formed', dir: -1 }, empty: 'The GapUpFVG tab was empty.', columns: zoneCols('Gap') }).mount($('#sg-gap', el));
+    // GapUpFVG (owner, 08-Nov-2026): a mitigated zone stays until a close under its bottom - Mitigated On / Inside FVG
+    // (a sheet copy from before has no such columns: they show empty)
+    new ui.Table({ rows: ui.objRows(D.gapup), pageSize: 15, sort: { key: 'Formed', dir: -1 }, empty: 'The GapUpFVG tab was empty.', id: 'signals-gapup-tab',
+      columns: zoneCols('Gap').concat([
+        { key: 'Mitigated On', label: 'Mitigated on', type: 'date', title: 'The first candle that touched the zone (it stays watched until a close below its bottom)' },
+        { key: 'Inside FVG', label: 'Inside FVG', get: function (r) { return r['Inside FVG'] === 'Y' ? 'Yes' : ''; },
+          html: function (r) { return r['Inside FVG'] === 'Y' ? ui.badge('Inside FVG', 's-good') : ''; } }
+      ]) }).mount($('#sg-gap', el));
   }
 
   // ---------- 6. FVG backtest ----------
