@@ -245,8 +245,9 @@ def zones_4h(rows):
 
 
 def spring_backtest(rows, trade_rows):
+    # 'list', never 'trades': api/site.js / tools/build.js treat a "trades" key as the owner's Trade Log and block it
     return {'summary': pick(note_table(rows, 'Timeframe', stop_blank=False, kinds={'From': 'str', 'To': 'str'}), BT_COLS, 100),
-            'trades': pick(note_table(trade_rows, 'Candle', stop_blank=False, kinds={'Candle': 'str'}), BTT_COLS, BTT_MAX)
+            'list': pick(note_table(trade_rows, 'Candle', stop_blank=False, kinds={'Candle': 'str'}), BTT_COLS, BTT_MAX)
             if trade_rows is not None else {'note': '', 'cols': list(BTT_COLS), 'rows': []}}
 
 

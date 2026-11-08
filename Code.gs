@@ -9208,7 +9208,9 @@ function ab_site_main_(cx, readAt) {
   // Zerodha Kite patterns (PC bridge): which pattern formed when - no prices (Kite's data is for the owner's own use)
   const itd = ab_site_tab_(cx, 'Intraday Patterns');
   if (itd) data.intraday = ab_site_itd_(cx, itd);
-  // 4H FVG zones + the FVG+Spring backtest (PC bridge, 08-Nov-2026): no Kite prices - zone size / distance % and R only
+  // 4H FVG zones + the FVG+Spring backtest (PC bridge, 08-Nov-2026): no Kite prices - zone size / distance % and R only.
+  // The backtest's signal list is under 'list': a "trades" key is one of api/site.js's personal-data markers (the owner's
+  // Trade Log) and blocked the whole live feed (08-Nov-2026) - never use that key in the feed
   const z4 = ab_site_tab_(cx, '4H FVG Zones');
   if (z4) data.zones4h = ab_site_pick_(ab_site_noteTable_(cx, z4, 'Symbol', { stopBlank: false, kinds: { Formed: 'str' } }), AB_SITE_Z4_COLS, AB_SITE_Z4_MAX);
   const sbt = ab_site_tab_(cx, 'Spring Backtest');
@@ -9216,7 +9218,7 @@ function ab_site_main_(cx, readAt) {
     const btT = ab_site_tab_(cx, 'Spring Backtest Trades');
     data.springBacktest = {
       summary: ab_site_pick_(ab_site_noteTable_(cx, sbt, 'Timeframe', { stopBlank: false, kinds: { From: 'str', To: 'str' } }), AB_SITE_BT_COLS, 100),
-      trades: btT ? ab_site_pick_(ab_site_noteTable_(cx, btT, 'Candle', { stopBlank: false, kinds: { Candle: 'str' } }), AB_SITE_BTT_COLS, AB_SITE_BTT_MAX)
+      list: btT ? ab_site_pick_(ab_site_noteTable_(cx, btT, 'Candle', { stopBlank: false, kinds: { Candle: 'str' } }), AB_SITE_BTT_COLS, AB_SITE_BTT_MAX)
         : { note: '', cols: AB_SITE_BTT_COLS.slice(), rows: [] }
     };
   }
@@ -9760,7 +9762,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 10;   // 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 11;   // 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

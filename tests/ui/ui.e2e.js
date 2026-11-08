@@ -100,7 +100,7 @@ LIVE_MAIN.springBacktest = {
     ['4H', 'Spring (every one, for comparison)', 900, 260, 520, 90, 30, 33.3, -0.05, '2026-05-11 13:15', '2026-10-20 13:15'],
     ['D', 'FVG+Spring', 800, 300, 400, 90, 10, 42.9, 0.25, '2021-08-02', '2026-10-20'],
     ['W', 'FVG+Spring', 0, 0, 0, 0, 0, null, null, null, null]] },
-  trades: { note: 'The newest FVG+Spring trades ...', cols: ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'], rows: [
+  list: { note: 'The newest FVG+Spring trades ...', cols: ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'], rows: [
     ['2026-10-20 13:15', FLAG_SYM, 'Flag Co', '4H', 'FVG', 'Bottom', 3, 'Open', null, 0],
     ['2026-10-16', SENT_SYM, null, 'D', 'Gap-up', 'Top', 1, 'Win', 2, 3],
     ['2026-10-09 13:15', SENT_SYM, null, '4H', 'FVG', 'Top', 2, 'Loss', -1, 1]] } };
