@@ -205,7 +205,23 @@ test('op kite: the owner\'s Kite live prices (08-Nov-2026) only with the PIN, on
   assert.deepEqual([k.ok, k.result, k.fresh, k.items], [true, 'kite', true, [['FLAT', 99, -1, 102, 98.5]]]);
   assert.match(k.at, /^2026-10-29 15:30/);
   assert.equal(plain(wl(env, { op: 'kite', pin: 'Wrong999' })).error, 'wrong PIN', 'the PIN is checked like the lists\'');
-  env.setNow(T0 + 4 * 60000);                         // 4 minutes without a new post: the laptop is off
-  const old = plain(wl(env, { op: 'kite' }));
-  assert.deepEqual([old.fresh, old.items, old.ageSec >= 240], [false, [], true]);
+  // owner, 08-Nov-2026: "after market close, it vanished. show the data" - the last post came at 15:30 (after 15:29):
+  // 4 minutes later it is not fresh, but today's closing prices stay until the next day
+  env.setNow(T0 + 4 * 60000);
+  const close = plain(wl(env, { op: 'kite' }));
+  assert.deepEqual([close.fresh, close.closed, close.items, close.ageSec >= 240], [false, true, [['FLAT', 99, -1, 102, 98.5]], true]);
+  env.setNow(T0 + 9 * 3600000);                        // 00:30 the next day: gone
+  const next = plain(wl(env, { op: 'kite' }));
+  assert.deepEqual([next.fresh, next.closed, next.items], [false, false, []]);
+  // a post from the middle of a trading day that stopped (laptop off at 11:00): the sheet's delayed price is newer - nothing
+  env.setNow(Date.UTC(2026, 9, 30, 5, 30));            // Fri 30-Oct 11:00 IST
+  env.post({ token: 'bridge-token', action: 'kitelive', at: '2026-10-30 11:00:00', items: [['FLAT', 98, 100, 102, 97, 100]] });
+  env.setNow(Date.UTC(2026, 9, 30, 6, 30));            // 12:00
+  assert.deepEqual(plain(wl(env, { op: 'kite' })).items, []);
+  // a day without a regular session (Sunday 08-Nov-2026, Muhurat): the last prices stay, whatever the time
+  env.setNow(Date.UTC(2026, 10, 8, 8, 0));             // Sun 13:30 IST
+  env.post({ token: 'bridge-token', action: 'kitelive', at: '2026-11-08 13:30:00', items: [['FLAT', 101, 100, 102, 99, 100]] });
+  env.setNow(Date.UTC(2026, 10, 8, 9, 0));             // 14:30
+  const sun = plain(wl(env, { op: 'kite' }));
+  assert.deepEqual([sun.fresh, sun.closed, sun.items], [false, true, [['FLAT', 101, 1, 102, 99]]]);
 });

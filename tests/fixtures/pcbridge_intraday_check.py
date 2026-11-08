@@ -606,6 +606,18 @@ with open(K.LIVE_MARK_PATH, 'w') as f:
 OUT = []
 assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None, max_rounds=1) == 0
 assert OUT and 'already being sent' in OUT[0], OUT
+# ... but a closed window (its program no longer running) does not (owner, 08-Nov-2026: LiveNow closed and opened again)
+K.pid_alive = lambda pid: False
+OUT = []
+assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None, max_rounds=1) == 0
+assert not any('already being sent' in o for o in OUT) and any('prices -> Kite Live' in o for o in OUT), OUT
+K.pid_alive = lambda pid: True
+with open(K.LIVE_MARK_PATH, 'w') as f:
+    json.dump({'pid': os.getpid() + 1, 'at': time.time()}, f)
+OUT = []
+assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None, max_rounds=1) == 0
+assert OUT and 'already being sent' in OUT[0], ('a running one still stops it', OUT)
+K.pid_alive = None
 os.remove(K.LIVE_MARK_PATH)
 # the background run writes a price line every 15 rounds only
 OUT = []

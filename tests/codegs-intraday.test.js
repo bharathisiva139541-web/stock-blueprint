@@ -363,7 +363,9 @@ test('Kite indices (owner, 08-Nov-2026): the PC gets the Indextracker symbols, p
   assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_klForSite_()'))).indices, []);
   e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:07:00', items: [['FLAT', 99, 100, 100.5, 98.8, 100]], indices: [['NIFTY_50', 25000, 1, 1, 1, 24900]] });
   e.setNow(Date.UTC(2026, 10, 8, 12, 40));
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_klForSite_()'))).indices, [], 'stale: nothing');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_klForSite_()'))).indices, [['NIFTY_50', 25000, 0.4, 1, 1]], 'Sunday (no regular session): today\'s last prices stay');
+  e.setNow(Date.UTC(2026, 10, 8, 19, 0));               // Mon 00:30 IST
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_klForSite_()'))).indices, [], 'the next day: nothing');
 });
 
 test('alerts use Kite\'s live price while the laptop sends it (fresh <= 3 min), else GOOGLEFINANCE (owner, 08-Nov-2026)', () => {

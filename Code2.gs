@@ -12776,6 +12776,7 @@ const AB_KL_MAX = 5000;
 // prices came; older than AB_KL_FRESH_MS (3 rounds of a minute) = the laptop is off -> Main's GOOGLEFINANCE price.
 const AB_KL_AT_PROP = 'AB_KL_AT';
 const AB_KL_FRESH_MS = 3 * 60 * 1000;
+const AB_KL_CLOSE_HHMM = 1529;            // a last post at / after 15:29 IST = the day's closing prices (kept for the website until the next day)
 let AB_KL_MEMO_ = null;                  // {at, px} - one read of the tab per post
 // The indices of the Indextracker tab from Kite too (owner, 08-Nov-2026: "NIFTY 50 / indices: Kite-இலிருந்து ...
 // deploy this"): the PC quotes 'NSE:NIFTY 50' for NIFTY_50 (the tab's NSE Symbol with spaces) and posts them with the
@@ -12815,15 +12816,30 @@ function ab_kiteLivePrices_() {
 /** The owner's website (op 'kite' of action 'watchlists', PIN checked): {ok, result: 'kite', fresh, at, ageSec, items:
  *  [[SYMBOL, Kite LTP, Change % vs the previous close]]} - items only while LiveNow's prices are fresh. */
 function ab_klForSite_() {
-  const at = Number(PropertiesService.getScriptProperties().getProperty(AB_KL_AT_PROP)) || 0;
+  const props = PropertiesService.getScriptProperties();
+  const at = Number(props.getProperty(AB_KL_AT_PROP)) || 0;
   const fresh = at > 0 && Date.now() - at <= AB_KL_FRESH_MS;
-  const out = { ok: true, result: 'kite', fresh: fresh, at: at ? Utilities.formatDate(new Date(at), AB_TZ, 'yyyy-MM-dd HH:mm:ss') : '',
+  // After the close the last prices stay (owner, 08-Nov-2026: "some minutes back, the blank cells were filled with values
+  // but after market close, it vanished. show the data"): today's last post when it came at / after 15:29 IST or on a
+  // day without a regular session (Muhurat) = the closing prices, `closed` - until the next day; a post from the middle
+  // of a trading day that stopped early is not served (the sheet's delayed price is newer then)
+  let closed = false;
+  if (!fresh && at > 0) {
+    const w = Utilities.formatDate(new Date(at), AB_TZ, 'yyyy-MM-dd u HHmm').split(' ');
+    const today = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd');
+    let holidays = [];
+    try { holidays = JSON.parse(props.getProperty(AB_IPOT_HOLIDAYS_PROP) || '[]'); } catch (e) { holidays = []; }
+    const trading = Number(w[1]) <= 5 && !(Array.isArray(holidays) && holidays.indexOf(w[0]) >= 0);
+    closed = w[0] === today && (Number(w[2]) >= AB_KL_CLOSE_HHMM || !trading);
+  }
+  const use = fresh || closed;
+  const out = { ok: true, result: 'kite', fresh: fresh, closed: closed, at: at ? Utilities.formatDate(new Date(at), AB_TZ, 'yyyy-MM-dd HH:mm:ss') : '',
                 ageSec: at ? Math.max(0, Math.round((Date.now() - at) / 1000)) : null, items: [] };
-  // the indices (Indextracker symbols, e.g. NIFTY_50): [SYM, ltp, change %, day high, day low] while fresh
+  // the indices (Indextracker symbols, e.g. NIFTY_50): [SYM, ltp, change %, day high, day low]
   out.indices = [];
-  if (fresh) {
+  if (use) {
     let idx = null;
-    try { idx = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_KL_IDX_PROP) || 'null'); } catch (e) { idx = null; }
+    try { idx = JSON.parse(props.getProperty(AB_KL_IDX_PROP) || 'null'); } catch (e) { idx = null; }
     if (idx && typeof idx === 'object') {
       Object.keys(idx).forEach(function (sym) {
         const v = idx[sym];
@@ -12831,8 +12847,8 @@ function ab_klForSite_() {
       });
     }
   }
-  const sh = fresh ? SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_KL_SHEET) : null;
-  if (!sh || sh.getLastRow() < 3) { out.fresh = false; return out; }
+  const sh = use ? SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_KL_SHEET) : null;
+  if (!sh || sh.getLastRow() < 3) { out.fresh = false; out.closed = false; out.indices = []; return out; }
   // [SYMBOL, LTP, change %, day high, day low] (AB_KL_HEADERS: ... Prev Close, Open, High, Low) - the high / low give the
   // website the session's move (Result day %) and new 52-week highs (owner, 08-Nov-2026: "do whichever we can make as live")
   sh.getRange(3, 1, sh.getLastRow() - 2, 8).getValues().forEach(function (v) {

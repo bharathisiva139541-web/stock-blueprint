@@ -151,9 +151,9 @@ async function routeAll(context, siteBase, api, calls) {
   });
 }
 /** The owner's sheet (real Code.gs in the Apps Script mock, PIN Blue2026 set) behind the real api/watchlists. */
-function watchlistBackend() {
+function watchlistBackend(now) {
   const gs = require('../fixtures/apps-script-mock').loadCodeGs({ sheets: [{ name: 'Main', rows: [[], ['SYMBOL']] }] },
-    { props: { AB_FEED_TOKEN: 'feed-token' }, prompts: ['Blue2026', 'Blue2026'] });
+    Object.assign({ props: { AB_FEED_TOKEN: 'feed-token' }, prompts: ['Blue2026', 'Blue2026'] }, now ? { now: now } : {}));
   gs.call('runWatchlistPinSetup');
   const bodies = [];
   const handler = require('../../api/watchlists').createHandler({
@@ -1087,7 +1087,8 @@ function check(name, fn) {
   });
 
   await check('the owner\'s Kite live prices: with the PIN, price + Today % come from Kite with the LIVE label; without it nothing changes', async () => {
-    const sheet = watchlistBackend();
+    const SUN = Date.UTC(2026, 10, 8, 10, 0);           // the sheet's clock: Sun 08-Nov-2026 15:30 IST (Muhurat day)
+    const sheet = watchlistBackend(SUN);
     sheet.gs.setProp('AB_BRIDGE_TOKEN', 'bridge-token');
     const KSYM = SENT_SYM;
     sheet.gs.post({ token: 'bridge-token', action: 'kitelive', at: '2026-11-09 11:00:00', items: [[KSYM, 777.77, 760, 780, 755, 700]],
@@ -1124,6 +1125,20 @@ function check(name, fn) {
     // NIFTY 50 from Kite (owner, 08-Nov-2026): the hero tile's level and day change, labelled LIVE
     const hero = await own.p.evaluate(() => { const t = [...document.querySelectorAll('.tile')].find((x) => /NIFTY 50/.test(x.textContent)); return t ? t.innerText : ''; });
     assert.ok(/26,543\.21/.test(hero) && /\+2\.09%/.test(hero) && /LIVE/.test(hero), 'NIFTY 50 tile: ' + hero);
+    // after the close (owner, 08-Nov-2026: "after market close, it vanished. show the data"): 10 minutes without a post,
+    // the page reloaded - today's last Kite prices stay, labelled EOD, and the live columns keep working from them
+    sheet.gs.setNow(SUN + 10 * 60000);
+    await own.p.reload({ waitUntil: 'load' });
+    await own.p.waitForFunction((sym) => { const s = window.SB && window.SB.ctx && window.SB.ctx.bySym && window.SB.ctx.bySym[sym]; return s && s.price === 777.77; }, KSYM, { timeout: 15000 });
+    const cl = await own.p.evaluate(() => ({ pill: document.querySelector('#status').textContent, src: window.SB.ctx.market.source,
+      ms: (document.querySelector('#ov-mstat') || {}).innerText || '', live: window.SB.livePrice(window.SB.ctx.stocks.find((x) => x.price === 777.77)),
+      hero: ([...document.querySelectorAll('.tile')].find((x) => /NIFTY 50/.test(x.textContent)) || {}).innerText || '' }));
+    assert.match(cl.pill, /^EOD/);
+    assert.match(cl.src, /last prices your laptop sent today, after the close/);
+    assert.ok(cl.live, 'the live columns use them');
+    assert.ok(/at today's close/.test(cl.ms), 'Market statistics: ' + cl.ms.slice(0, 160));
+    assert.ok(/26,543\.21/.test(cl.hero) && /EOD/.test(cl.hero), 'NIFTY 50 tile after the close: ' + cl.hero);
+    sheet.gs.setNow(SUN);                                  // back to the session for the checks below
     assert.deepStrictEqual(own.errors, [], 'console/page errors');
     await own.c.close();
     const n = sheet.bodies.length;

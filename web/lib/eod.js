@@ -15,7 +15,8 @@
                               change today, at a 52-week high = day high (else price) >= the 52-week high before today
                               (NSE's report, else Main's); circuits stay NSE's end-of-day ones (no price bands live)
      current(D, stocks, market) -> liveDay while the prices are of a newer day than NSE's end-of-day files and
-                              fresh (LIVE / DELAYED, or EOD on a trading day), else day(D.marketDay)
+                              fresh (LIVE / DELAYED, Kite's close of today - market.kiteClosed -, or EOD on a trading
+                              day), else day(D.marketDay)
      highs(high52)         -> { asOf, note, rows: [{ sym, name, high, date, close, below, isNew, inMain }],
                                 bySym: {SYM: row}, newToday: [rows] }
      delivery(delivery)    -> { date, dates: [...newest first], bySym: {SYM: { latest, avg5, hist: [...] }} }
@@ -112,10 +113,10 @@
   function current(D, stocks, market) {
     var eod = day(D && D.marketDay), m = market || {};
     var pDay = dayOf(m.asOf), st = m.state;
-    var fresh = st === 'LIVE' || st === 'DELAYED' || (st === 'EOD' && m.session !== 'weekend' && m.session !== 'holiday');
+    var fresh = st === 'LIVE' || st === 'DELAYED' || !!m.kiteClosed || (st === 'EOD' && m.session !== 'weekend' && m.session !== 'holiday');
     if (!fresh || !pDay || (eod && eod.date && pDay <= eod.date)) return eod;
     var live = liveDay(stocks, { date: pDay, asOf: m.asOf, state: st, eod: eod,
-      live: function (s) { return dayOf(s.priceAsOf) === pDay || s.priceState === 'LIVE' || s.priceState === 'DELAYED'; } });
+      live: function (s) { return dayOf(s.priceAsOf) === pDay || s.priceState === 'LIVE' || s.priceState === 'DELAYED' || !!s.kiteLast; } });
     return live.rows.length ? live : eod;
   }
 

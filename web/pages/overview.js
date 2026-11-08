@@ -25,7 +25,7 @@
     var tot = (n.advances || 0) + (n.declines || 0) + (n.unchanged || 0);
     var w = function (v) { return tot ? Math.round((v || 0) / tot * 1000) / 10 : 0; };
     var live = !!(day && day.live), m = ctx.market;
-    var h = head + (live ? 'Your Main stocks <b>now</b>, from the prices on this page - click a number for the list ' +
+    var h = head + (live ? 'Your Main stocks <b>' + (m.kiteClosed ? 'at today\'s close' : 'now') + '</b>, from the prices on this page - click a number for the list ' +
         ui.stateBadge(day.state, day.asOf, m.source || 'Prices shown on the site')
       : 'Your Main stocks on <b>' + F.date(date) + '</b> - click a number for the list ' +
         ui.stateBadge('EOD', date, 'NSE end-of-day files read by your PC bridge (Market Day / Market Statistics tabs of your sheet)')) + '</p></div></div>';
