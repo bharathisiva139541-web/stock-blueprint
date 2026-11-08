@@ -383,7 +383,7 @@
   // Backtest" tabs (feed part springBacktest), made by the PC program on all its Zerodha candles: no prices, R only
   var SBT_TFS = [['4H', '4 hour (13:15 candle)'], ['D', 'Daily'], ['W', 'Weekly']];
   function sbtSectionHtml(ctx) {
-    var b = ctx.D.springBacktest || {}, sum = ui.objRows(b.summary), trades = ui.objRows(b.trades);
+    var b = ctx.D.springBacktest || {}, sum = ui.objRows(b.summary), trades = ui.objRows(b.list);
     var sub = 'Every <b>FVG+Spring</b> (the Spring candle anywhere on an FVG / Gap-up zone or below its bottom line, no earlier close below the Spring low) tested on your PC\'s ' +
       'Zerodha candles: <b>buy at the Spring candle\'s close, stop just under its low; a win = the target (2 × the risk) reached before the stop, within 20 candles</b>. ' +
       'A candle that touches both counts as a loss. Win rate = wins ÷ (wins + losses); with a 2R target, about 33% is break-even (before costs). ' +
@@ -432,7 +432,7 @@
     }
     var box = $('#sg-sbt-t', el);
     if (!box) return;
-    var all = ui.objRows(b.trades);
+    var all = ui.objRows(b.list);
     var t = new ui.Table({
       rows: [], pageSize: 25, id: 'signals-spring-trades', empty: 'No trade with these filters',
       columns: [

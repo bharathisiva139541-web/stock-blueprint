@@ -272,7 +272,7 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   assert.deepStrictEqual([days[0], days[9]], ['2026-10-30', '2026-10-14'], 'the newest 10 sessions');
   assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null]);
   assert.ok(!JSON.stringify(it).includes('228.05') && !JSON.stringify(it).includes('tradingview'), 'no Kite prices, no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 10);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 11);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
@@ -299,9 +299,12 @@ test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py
   assert.deepStrictEqual(data.zones4h.cols, ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted']);
   assert.deepStrictEqual(data.zones4h.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 3.52, '2026-10-20 13:15', 0.84, null]);
   assert.deepStrictEqual(data.springBacktest.summary.rows[0], ['4H', 'FVG+Spring', 1, 1, 0, 0, 0, 100, 2, '2026-10-30 13:15', '2026-10-30 13:15']);
-  assert.deepStrictEqual(data.springBacktest.trades.rows[0], ['2026-10-30 13:15', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'FVG', 'Bottom', 3, 'Win', 2, 4]);
+  assert.deepStrictEqual(data.springBacktest.list.rows[0], ['2026-10-30 13:15', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'FVG', 'Bottom', 3, 'Win', 2, 4]);
   assert.deepStrictEqual(data.mitigatedLog.rows.map((r) => r[2] + ' ' + r[3]), ['Gap-up FVG M&M'], 'the 4H rows (Kite prices) stay on the sheet');
   const txt = JSON.stringify([data.zones4h, data.springBacktest, data.mitigatedLog]);
+  // the Vercel api/site.js guard (08-Nov-2026: a "trades" key blocked the whole live feed)
+  const site = require('../api/site.js');
+  assert.deepStrictEqual(site.PERSONAL_MARKERS.filter((re) => re.test(JSON.stringify(data))).map(String), [], 'no personal-data marker in the main part');
   assert.ok(!/229\.9|238|2950|3040|tradingview/.test(txt), 'no zone prices, no chart formula');
 
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
