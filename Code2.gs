@@ -12662,6 +12662,7 @@ function ab_itdZoneCheck_() {
   const rows = ab_itdzRead_(sh);
   if (!rows.length) return [];
   const prices = ab_itdMainPrices_();
+  const kite = ab_kiteLiveOverlay_(prices);           // the laptop's Kite prices while fresh, else GOOGLEFINANCE
   const hits = rows.filter(function (r) { const p = prices[r.sym]; return !r.alerted && p > 0 && r.top > 0 && p <= r.top; });
   let locked = {};
   if (hits.length) {
@@ -12671,7 +12672,7 @@ function ab_itdZoneCheck_() {
   const fired = [];
   hits.forEach(function (r) {
     if (locked[r.sym]) return;                // a frozen circuit print is not a real fill
-    ab_logMitigation_(AB_ITDZ_KINDS[r.kind] || '4H FVG', r.sym, r.bottom, r.top, r.pct, prices[r.sym], 'Live');
+    ab_logMitigation_(AB_ITDZ_KINDS[r.kind] || '4H FVG', r.sym, r.bottom, r.top, r.pct, prices[r.sym], kite[r.sym] ? 'Live, Kite' : 'Live');
     r.alerted = true;
     r.at = at;
     fired.push(r);
@@ -12767,6 +12768,38 @@ const AB_KL_SHEET = 'Kite Live';
 const AB_KL_HEADERS = ['Symbol', 'Company', 'Kite LTP', 'Change %', 'Prev Close', 'Open', 'High', 'Low',
   'Sheet Price (GOOGLEFINANCE)', 'Kite vs Sheet %'];
 const AB_KL_MAX = 5000;
+// Alerts take Kite's price while it is fresh (owner, 08-Nov-2026: "use this live feed for alerts (mitigated, IPO base
+// alerts) if my laptop is on, otherwise use googlefinance delayed price"): Script Property AB_KL_AT = when the last
+// prices came; older than AB_KL_FRESH_MS (3 rounds of a minute) = the laptop is off -> Main's GOOGLEFINANCE price.
+const AB_KL_AT_PROP = 'AB_KL_AT';
+const AB_KL_FRESH_MS = 3 * 60 * 1000;
+let AB_KL_MEMO_ = null;                  // {at, px} - one read of the tab per post
+
+/** {SYMBOL: Kite last price} while LiveNow's prices are fresh (laptop on), else null (use GOOGLEFINANCE). */
+function ab_kiteLivePrices_() {
+  const at = Number(PropertiesService.getScriptProperties().getProperty(AB_KL_AT_PROP)) || 0;
+  if (!(at > 0) || Date.now() - at > AB_KL_FRESH_MS) return null;
+  if (AB_KL_MEMO_ && AB_KL_MEMO_.at === at) return AB_KL_MEMO_.px;
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_KL_SHEET);
+  if (!sh || sh.getLastRow() < 3) return null;
+  const px = {};
+  sh.getRange(3, 1, sh.getLastRow() - 2, 3).getValues().forEach(function (v) {
+    const sym = ab_cellText_(v[0]).toUpperCase();
+    const p = ab_toNum_(v[2]);
+    if (sym && !isNaN(p) && p > 0) px[sym] = p;
+  });
+  AB_KL_MEMO_ = { at: at, px: px };
+  return px;
+}
+
+/** Overlays fresh Kite prices on a {SYMBOL: price} map (in place). -> the symbols that got a Kite price. */
+function ab_kiteLiveOverlay_(priceBySym) {
+  const kl = ab_kiteLivePrices_();
+  const used = {};
+  if (!kl) return used;
+  Object.keys(kl).forEach(function (sym) { priceBySym[sym] = kl[sym]; used[sym] = true; });
+  return used;
+}
 
 /** Main's company name and MKT Price by symbol, one read (headers found by name in the first 10 rows). */
 function ab_klMainInfo_() {
@@ -12841,5 +12874,7 @@ function ab_kiteLiveFromBridge_(req) {
       ]);
     } catch (fErr) { Logger.log('Kite Live formats: ' + fErr.message); }
   }
+  PropertiesService.getScriptProperties().setProperty(AB_KL_AT_PROP, String(Date.now()));
+  AB_KL_MEMO_ = null;
   return { ok: true, received: items.length, written: rows.length, skipped: skipped, up: up, down: down, at: at };
 }

@@ -59,6 +59,10 @@ class FakeRunner:
         EVENTS.append(('kite', CLOCK[0]))
         return False
 
+    def maybe_start_live(self, cfg, api, holidays, online=None):
+        EVENTS.append(('live', CLOCK[0]))
+        return False
+
 
 sb.itd.Runner = FakeRunner
 sb.run_once = lambda cfg: EVENTS.append(('full', CLOCK[0])) or 0
@@ -72,8 +76,10 @@ cfg = dict(sb.DEFAULTS)
 assert cfg['quick_check_minutes'] == 30 and cfg['full_round_every_hours'] == 3
 run_for(cfg, 8)
 assert at('full') == [0, 60, 240, 420], at('full')
-assert EVENTS[0][0] == 'kite' and EVENTS[1][0] == 'full' and EVENTS[0][1] == EVENTS[1][1], ('the Kite scan is started before the first full round', EVENTS[:3])
+assert [e[0] for e in EVENTS[:3]] == ['kite', 'live', 'full'] and EVENTS[0][1] == EVENTS[2][1], \
+    ('the Kite scan (and the live prices) are started before the first full round', EVENTS[:3])
 assert len(at('kite')) > 100, 'looked at on every tick'
+assert len(at('live')) == len(at('kite')), 'the Kite live prices are looked at on every tick too (owner, 08-Nov-2026)'
 q = at('quick')
 # (a full round does the check too - the next one is 30 minutes after it)
 assert q == [30, 90, 120, 150, 180, 210, 270, 300, 330, 360, 390, 450, 480], q

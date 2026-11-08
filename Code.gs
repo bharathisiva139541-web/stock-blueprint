@@ -3620,13 +3620,17 @@ function checkIpoBaseIntraday_(opts) {
   const maxAgeMs = AB_IPOBASE_ALERT_MAX_AGE_DAYS > 0 ? AB_IPOBASE_ALERT_MAX_AGE_DAYS * 86400000 : 0;
   const now = new Date();
   let changed = false;
+  // Kite's live price from the laptop (LiveNow) while it is fresh, else the IPOs tab's own (GOOGLEFINANCE) price
+  let kite = null;
+  try { kite = ab_kiteLivePrices_(); } catch (kErr) { Logger.log('IPO base: Kite prices not read - ' + kErr.message); }
 
   for (let r = L.headerRowIdx + 1; r < L.data.length; r++) {
     const row = L.data[r];
     const sym = ab_cellText_(row[L.symbol]).toUpperCase();
     if (!sym) continue;
     const base = ab_ipoCellNum_(row[L.activeBase]);
-    const price = ab_ipoCellNum_(row[L.marketPrice]);
+    const fromKite = !!(kite && kite[sym] > 0);
+    const price = fromKite ? kite[sym] : ab_ipoCellNum_(row[L.marketPrice]);
     if (isNaN(base) || base <= 0 || isNaN(price) || price <= 0) continue;
     if (maxAgeMs && L.listingDate !== -1) {
       const ld = row[L.listingDate];
@@ -3635,7 +3639,7 @@ function checkIpoBaseIntraday_(opts) {
     const gapPct = (price - base) / base * 100;
     const noRaw = L.activeNo !== -1 ? ab_cellText_(row[L.activeNo]) : '';
     const item = {
-      symbol: sym, base: base, price: price, gapPct: gapPct,
+      symbol: sym, base: base, price: price, gapPct: gapPct, kite: fromKite,
       baseNo: noRaw || '',
       fvg: L.fvg !== -1 ? ab_cellText_(row[L.fvg]) : '',
       chartUrl: ab_chartUrl_(sym), screenerUrl: ab_screenerUrl_(sym)
@@ -3675,7 +3679,8 @@ function sendIpoBaseIntradayEmail_(alerts) {
     h += '<div style="font-size:18px;font-weight:700;color:#111">' + f.symbol + '</div></div>';
     h += '<table style="width:100%;border-collapse:collapse">';
     h += '<tr><td ' + td + '>Active base</td><td ' + td + ' align="right"><b>' + ab_num2_(f.base) + '</b></td></tr>';
-    h += '<tr><td ' + td + '>Price now</td><td ' + td + ' align="right"><b>' + ab_num2_(f.price) + '</b></td></tr>';
+    h += '<tr><td ' + td + '>Price now' + (f.kite ? ' (Kite live)' : ' (GOOGLEFINANCE, ~20 min delayed)') + '</td><td ' + td +
+         ' align="right"><b>' + ab_num2_(f.price) + '</b></td></tr>';
     h += '<tr><td ' + td + '>' + (above ? 'Above the base by' : 'Distance to base') + '</td><td ' + td +
          ' align="right"><span style="color:' + accent + ';font-weight:bold">' + ab_pct2_(f.gapPct) + '</span></td></tr>';
     if (f.fvg) h += '<tr><td ' + td + '>Open zone under base</td><td ' + td + ' align="right">' + f.fvg + '</td></tr>';
@@ -6623,6 +6628,10 @@ function ab_checkZoneMitigatedAlerts_(sheetName, label) {
     if (nm) nameBySym[sym] = nm;
   }
 
+  // Kite's live price from the laptop (LiveNow) while it is fresh - else Main's GOOGLEFINANCE price above (owner,
+  // 08-Nov-2026: "use this live feed for alerts ... if my laptop is on, otherwise googlefinance")
+  const kite = ab_kiteLiveOverlay_(priceBySym);
+
   // Symbols whose latest real candle is circuit-locked - see
   // ab_checkZoneAlerts_ for why Main's live price can't be trusted for
   // these. This is exactly the RELINFRA-style case: a frozen print
@@ -6672,7 +6681,7 @@ function ab_checkZoneMitigatedAlerts_(sheetName, label) {
         screenerUrl: ab_screenerUrl_(sym),
         label: label
       });
-      ab_logMitigation_(label, sym, bottom, top, pct, price, 'Live');
+      ab_logMitigation_(label, sym, bottom, top, pct, price, kite[sym] ? 'Live, Kite' : 'Live');
       mitigatedAlerted = true;
       changed = true;
     }
