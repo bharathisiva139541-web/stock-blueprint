@@ -354,7 +354,16 @@
   function drawZ4(el, ctx) {
     var box = $('#sg-z4-t', el);
     if (!box) return;
-    var all = ui.objRows(ctx.D.zones4h);
+    // Distance % follows the site's newer price (owner, 08-Nov-2026: "do whichever we can make as live"): the zone top
+    // stays where it was, so the sheet's distance is moved from the sheet's price (Main's, as exported) to the price now
+    var all = ui.objRows(ctx.D.zones4h).map(function (r) {
+      var st = ctx.bySym[r.Symbol];
+      if (!(SB.livePrice && SB.livePrice(st)) || !st.base || !(st.base.price > 0) || !isNum(r['Distance %'])) return r;
+      var o = {};
+      Object.keys(r).forEach(function (k) { o[k] = r[k]; });
+      o['Distance %'] = SB.rebasePct(r['Distance %'], st.base.price, st.price);
+      return o;
+    });
     var t = new ui.Table({
       rows: [], pageSize: 25, id: 'signals-zones4h', empty: 'No zone with these filters',
       columns: [
@@ -362,7 +371,7 @@
         { key: 'Kind', label: 'Zone', html: function (r) { return ui.badge(r.Kind === 'Gap-up' ? 'Gap-up' : '3-candle FVG', 's-info'); } },
         { key: 'Formed', label: 'Formed (4H candle)' },
         { key: 'Zone %', label: 'Zone size', type: 'num', digits: 2, title: 'Zone height as % of its bottom' },
-        { key: 'Distance %', label: 'Distance', type: 'pct', digits: 2, title: 'The sheet\'s price vs the zone top (negative = at / inside the zone)' },
+        { key: 'Distance %', label: 'Distance', type: 'pct', digits: 2, title: 'The price now (Kite live with your PIN / delayed, else the sheet\'s) vs the zone top (negative = at / inside the zone)' },
         { key: 'Mitigated Alerted', label: 'Status', get: function (r) { return r['Mitigated Alerted'] === 'Y' ? 'Mitigated' : 'Watching'; },
           html: function (r) { return r['Mitigated Alerted'] === 'Y' ? ui.badge('Mitigated today', 's-bad') : ui.badge('Watching', 's-good'); } },
         { key: 'chart', label: 'Chart', get: function () { return null; },

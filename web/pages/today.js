@@ -24,7 +24,12 @@
       var live = !!(ctx.site && ctx.site.live);
       // the live site: the real day; a saved copy: the day it was saved
       var dayDate = live ? new Date() : ctx.refDate, day = ui.iso(dayDate);
-      var all = R.todayRows(ctx.stocks, ui.objRows(ctx.D.resultsTracker), day, ui.objRows((ctx.D.resultsPerf || {}).table)).sort(function (a, b) {
+      // Results Performance rows with the site's newer price (owner, 08-Nov-2026: "do whichever we can make as live")
+      var perfLive = R.livePerf(ui.objRows((ctx.D.resultsPerf || {}).table), function (sym) {
+        var s = ctx.bySym[sym];
+        return SB.livePrice && SB.livePrice(s) ? s : null;
+      });
+      var all = R.todayRows(ctx.stocks, ui.objRows(ctx.D.resultsTracker), day, perfLive).sort(function (a, b) {
         return ORDER[a.status] - ORDER[b.status] || (a.annTime < b.annTime ? -1 : a.annTime > b.annTime ? 1 : 0) || (a.sym < b.sym ? -1 : 1);
       });
       var pick = statusOf(params && params[0]) ? params[0] : 'all';

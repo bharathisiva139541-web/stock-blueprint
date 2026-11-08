@@ -57,3 +57,32 @@ test('day: the Main stocks of the newest day, counts per list, missing files lea
   assert.deepStrictEqual([noFiles.counts.high52, noFiles.counts.upper, noFiles.counts.lower], [null, null, null]);
   assert.strictEqual(E.day(null), null);
 });
+
+// owner, 08-Nov-2026: "this is not live, even though we have live data" - the Market statistics from the prices on the page
+test('liveDay / current: counts from the live change, 52-week high from the day high, circuits kept from NSE\'s day', () => {
+  const MD = { note: 'Your Main stocks on 2026-11-06: 3 traded, in upper circuit 1, 52-week high 0', cols: ['Symbol', 'Company', 'Close', '% Change', 'Move', 'Circuit', 'New 52W High', 'Delivery %'],
+    rows: [['AAA', 'A Ltd', 100, 5, 'Advance', 'Upper', 'No', 40], ['BBB', 'B Ltd', 50, -1, 'Decline', '', 'No', 20], ['CCC', 'C Ltd', 10, 0, 'Unchanged', '', 'No', 10]] };
+  const st = (sym, price, chg, extra) => Object.assign({ sym, name: sym + ' Ltd', price, chg, priceState: 'LIVE', priceAsOf: '2026-11-08 14:56:00' }, extra || {});
+  const stocks = [
+    st('AAA', 104, 4, { dayHigh: 106, nse52: { high: 105 } }),        // day high 106 >= 105: at a 52-week high
+    st('BBB', 49, -2, { base: { hi52: 60 } }),                         // no NSE report row: Main's 52W high
+    st('CCC', 10, 0),
+    st('DDD', 7, 1, { priceState: 'CACHED', priceAsOf: '2026-11-06 15:30' }),   // an older price is not counted
+    st('EEE', 20, null)
+  ];
+  const market = { state: 'LIVE', asOf: '2026-11-08 14:56:00' };
+  const d = E.current({ marketDay: MD }, stocks, market);
+  assert.strictEqual(d.live, true);
+  assert.deepStrictEqual([d.date, d.eodDate, d.state], ['2026-11-08', '2026-11-06', 'LIVE']);
+  assert.deepStrictEqual(d.counts, { traded: 3, advances: 1, declines: 1, unchanged: 1, high52: 1, upper: 1, lower: 0 });
+  assert.deepStrictEqual(E.pick(d.rows, 'upper').map((r) => [r.sym, r.close, r.chg]), [['AAA', 104, 4]], 'NSE\'s upper circuit list with the price now');
+  assert.deepStrictEqual(E.pick(d.rows, 'high52').map((r) => r.sym), ['AAA']);
+  // prices of NSE's own day or older, a weekend snapshot, a cached price: NSE's end-of-day files
+  assert.strictEqual(E.current({ marketDay: MD }, stocks, { state: 'LIVE', asOf: '2026-11-06 15:30' }).live, undefined);
+  assert.strictEqual(E.current({ marketDay: MD }, stocks, { state: 'EOD', session: 'weekend', asOf: '2026-11-08 10:00' }).live, undefined);
+  assert.strictEqual(E.current({ marketDay: MD }, stocks, { state: 'CACHED', asOf: '2026-11-08 10:00' }).live, undefined);
+  assert.strictEqual(E.current({ marketDay: MD }, stocks, { state: 'EOD', session: 'closed', asOf: '2026-11-09 16:10' }).live, true, 'after the close, before NSE\'s files');
+  // no end-of-day files at all: live counts, circuits unknown
+  const n = E.current({}, stocks, market);
+  assert.deepStrictEqual([n.live, n.counts.traded, n.counts.upper, n.counts.lower], [true, 3, null, null]);
+});

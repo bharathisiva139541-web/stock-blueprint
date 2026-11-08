@@ -64,3 +64,34 @@ test('the Results Performance columns (owner: "same as in the results performanc
   assert.strictEqual(R.todayRows(st, tracker, DAY)[0].rdayPct, null, 'without the tab: empty');
   assert.strictEqual(R.dailyPct({ 'Pre-Result Close': 0, 'Result Day Close': 5 }), null);
 });
+
+// owner, 08-Nov-2026: "do whichever we can make as live" - the Results Performance rows with the site's newer price
+test('livePerf: since results / today from the price now; Result day + max gain / drawdown once the market could react', () => {
+  const row = (sym, extra) => Object.assign({ Symbol: sym, Quarter: 'Sep 2026', 'Result Date': '2026-11-07', 'Pre-Result Close': 1000, 'Current Price': 1005,
+    'Today %': 0.5, '% Since Results': 0.5, 'Result Day %': null, 'Result Day Close': null, 'Max Gain %': null, 'Max Drawdown %': null,
+    'Reaction From': 'after 2026-11-07', Announced: '07/11 16:58 Market closed' }, extra || {});
+  const rows = [
+    row('KITE'),                                                                    // filed Saturday, reacting in today's session
+    row('DONE', { 'Result Date': '2026-10-20', 'Reaction From': 'from 2026-10-20', 'Result Day %': 6, 'Result Day Close': 1040, 'Max Gain %': 9, 'Max Drawdown %': -2 }),
+    row('EARLY', { 'Reaction From': 'after 2026-11-08' }),                          // reacts tomorrow: only the price now
+    row('NOLIVE')
+  ];
+  const s = { KITE: { price: 1120, chg: 12, dayHigh: 1130, dayLow: 990, priceAsOf: '2026-11-08 14:56:00' },
+    DONE: { price: 1100, chg: 1, dayHigh: 1110, dayLow: 1090, priceAsOf: '2026-11-08 14:56:00' },
+    EARLY: { price: 980, chg: -2, priceAsOf: '2026-11-08 14:56:00' } };
+  const out = R.livePerf(rows, (sym) => s[sym] || null);
+  const k = out[0];
+  assert.deepStrictEqual([k._live, k._reacting, k['Current Price'], k['Today %']], [true, true, 1120, 12]);
+  assert.ok(Math.abs(k['% Since Results'] - 12) < 1e-9);
+  assert.ok(Math.abs(k['Result Day %'] - 13) < 1e-9, 'the day high went further than the low: +13%');
+  assert.ok(Math.abs(R.dailyPct(k) - 12) < 1e-9, 'Daily % = the price now while the session is on');
+  assert.deepStrictEqual([Math.round(k['Max Gain %'] * 100) / 100, Math.round(k['Max Drawdown %'] * 100) / 100], [13, -1]);
+  const d = out[1];
+  assert.deepStrictEqual([d['Result Day %'], d._reacting, Math.round(d['Max Gain %'] * 100) / 100, d['Max Drawdown %']], [6, undefined, 11, -2], 'the result day stays; today\'s high widens the max gain');
+  const e = out[2];
+  assert.deepStrictEqual([e['Result Day %'], e['Max Gain %'], Math.round(e['% Since Results'] * 100) / 100], [null, null, -2]);
+  assert.strictEqual(out[3], rows[3], 'no newer price: the row as the sheet built it');
+  assert.strictEqual(rows[0]['% Since Results'], 0.5, 'the sheet rows are not changed');
+  const sl = R.seasonLive(out);
+  assert.deepStrictEqual([Math.round(sl.median * 100) / 100, sl.above], [5.25, '3 of 4 (75%)']);
+});

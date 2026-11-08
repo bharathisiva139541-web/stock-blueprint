@@ -143,7 +143,12 @@
       var D = ctx.D, perf = D.resultsPerf || {};
       var season = (perf.seasons || [])[0];
       var seasonName = R.seasonOf(perf);
-      var pRows = withOpm(R.perfRows(perf, seasonName), ctx, seasonName, 'Quarter');
+      // the site's newer price on every row (owner, 08-Nov-2026: "do whichever we can make as live")
+      var pRows = R.livePerf(withOpm(R.perfRows(perf, seasonName), ctx, seasonName, 'Quarter'), function (sym) {
+        var s = ctx.bySym[sym];
+        return SB.livePrice && SB.livePrice(s) ? s : null;
+      });
+      var liveN = pRows.filter(function (r) { return r._live; }).length;
       var tRows = withOpm(R.trackerRows(D.resultsTracker, seasonName), ctx, seasonName, 'Quarter Expected');
       if (params && params[0] && R.KINDS.some(function (k) { return k.id === params[0]; })) {
         renderList(el, ctx, params[0], perf, pRows, tRows, seasonName);
@@ -162,13 +167,16 @@
 
       var h = '<div class="page-head"><div><h1>Results &amp; corporate events' + (season ? ' · ' + esc(season.season) + ' season' : '') + '</h1>' +
         '<p>Upcoming result dates, how stocks moved after their quarterly results, and which results screener.in has not shown yet. ' +
-        ui.stateBadge('CACHED', perf.asOf || D.asOf, 'Results Performance tab') + '</p></div></div>';
+        ui.stateBadge('CACHED', perf.asOf || D.asOf, 'Results Performance tab') +
+        (liveN ? ' · prices ' + ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source || 'Prices shown on the site') +
+          ' <span class="sub">(Since results, Result day, Daily %, Max gain / drawdown of ' + F.int(liveN) + ' stocks follow the price now)</span>' : '') + '</p></div></div>';
       if (season) {
+        var sl = liveN ? R.seasonLive(pRows) : null;
         h += '<div class="tiles">' +
           linkTile('tracked', 'Stocks tracked', F.int(season.tracked), 'results updated this season') +
-          linkTile('tracked', 'Average since results', ui.deltaHtml(season.avg, 2), 'vs close before the result') +
-          linkTile('tracked', 'Median since results', ui.deltaHtml(season.median, 2)) +
-          linkTile('above', 'Above pre-result price', esc(season.above || '–')) +
+          linkTile('tracked', 'Average since results', ui.deltaHtml(sl ? sl.avg : season.avg, 2), 'vs close before the result') +
+          linkTile('tracked', 'Median since results', ui.deltaHtml(sl ? sl.median : season.median, 2)) +
+          linkTile('above', 'Above pre-result price', esc((sl ? sl.above : season.above) || '–')) +
           linkTile('soldoff', 'Strong results, sold off', F.int(season.soldOff), 'good numbers, price fell') +
           linkTile('waiting', 'Waiting on screener.in', F.int(tc.Pending), tc['Gave up'] + ' gave up') +
           '</div>';

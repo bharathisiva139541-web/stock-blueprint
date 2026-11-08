@@ -362,6 +362,20 @@
   // ======================================================================
   function buildSheet(P) {
     var D = P.ctx.D, host = $('#sec-sheet', P.el), rows = ui.objRows(D.alerts);
+    // Latest price / % since alert follow the site's newer price (owner, 08-Nov-2026: "do whichever we can make as live");
+    // Outcome / Days stay the sheet's (decided by its own rules at its refresh)
+    var liveN = 0;
+    rows = rows.map(function (r) {
+      var st = P.ctx.bySym[r.Symbol];
+      if (!(SB.livePrice && SB.livePrice(st)) || !isNum(r['Current Price']) || !(r['Current Price'] > 0)) return r;
+      var o = {};
+      Object.keys(r).forEach(function (k) { o[k] = r[k]; });
+      var lvl = r['Alert Level'];
+      o['% Since Alert'] = isNum(lvl) && lvl > 0 ? (st.price / lvl - 1) * 100 : SB.rebasePct(r['% Since Alert'], r['Current Price'], st.price);
+      o['Current Price'] = st.price;
+      liveN++;
+      return o;
+    });
     var by = {}, order = [], tot = { total: 0, win: 0, loss: 0, open: 0 };
     rows.forEach(function (r) {
       var k = r['Alert Type'] || 'Unspecified';
@@ -400,7 +414,10 @@
         '<div class="legend"><span><i style="background:var(--bar)"></i>Above the alert level</span><span><i style="background:var(--bar-neg)"></i>Below the alert level</span></div>') +
       '</div>';
     h += gradingHtml();
-    h += '<section class="card"><div class="card-head"><div><h2>Alert log</h2><p>Latest price, % since alert, days and outcome are as of the sheet\'s refresh at ' + esc(F.dateTime(D.asOf)) + '.</p></div></div>' +
+    h += '<section class="card"><div class="card-head"><div><h2>Alert log</h2><p>' + (liveN
+      ? 'Latest price and % since alert: the price now ' + ui.stateBadge(P.ctx.market.state, P.ctx.market.asOf, P.ctx.market.source || 'Prices shown on the site') +
+        '; days and outcome as of the sheet\'s refresh at ' + esc(F.dateTime(D.asOf)) + '.'
+      : 'Latest price, % since alert, days and outcome are as of the sheet\'s refresh at ' + esc(F.dateTime(D.asOf)) + '.') + '</p></div></div>' +
       '<div class="controls"><input class="search" id="sa-q" type="search" placeholder="Search symbol, company, pattern or FVG tag" aria-label="Search sheet alerts" value="' + val(ST.logQ) + '">' +
       '<select class="sel" id="sa-type" aria-label="Alert type"><option value="">All types</option>' + types.map(function (t) {
         return '<option value="' + esc(t.type) + '"' + (ST.logType === t.type ? ' selected' : '') + '>' + esc(t.type) + ' (' + t.total + ')</option>';
@@ -431,7 +448,7 @@
         { key: 'Alert Type', label: 'Type' },
         { key: 'Alert Level', label: 'Alert level', type: 'price', title: 'The level you set in Main' },
         { key: 'Trigger Price', label: 'Trigger price', type: 'price', title: 'Price when the alert fired' },
-        { key: 'Current Price', label: 'Latest price', type: 'price', title: 'Price at the sheet\'s last refresh' },
+        { key: 'Current Price', label: 'Latest price', type: 'price', title: 'The price now on the site (Kite live with your PIN / delayed), else the price at the sheet\'s last refresh' },
         { key: '% Since Alert', label: 'Since alert', type: 'pct', digits: 2, title: 'Latest price vs the alert level' },
         { key: 'Days Since', label: 'Days', type: 'num', digits: 0 },
         { key: 'Outcome', label: 'Outcome', type: 'badge' },

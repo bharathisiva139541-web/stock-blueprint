@@ -202,7 +202,7 @@ test('op kite: the owner\'s Kite live prices (08-Nov-2026) only with the PIN, on
   assert.deepEqual([none.ok, none.fresh, none.items], [true, false, []], 'no Kite prices yet');
   env.post({ token: 'bridge-token', action: 'kitelive', at: '2026-10-29 15:30:00', items: [['FLAT', 99, 100, 102, 98.5, 100]] });
   const k = plain(wl(env, { op: 'kite' }));
-  assert.deepEqual([k.ok, k.result, k.fresh, k.items], [true, 'kite', true, [['FLAT', 99, -1]]]);
+  assert.deepEqual([k.ok, k.result, k.fresh, k.items], [true, 'kite', true, [['FLAT', 99, -1, 102, 98.5]]]);
   assert.match(k.at, /^2026-10-29 15:30/);
   assert.equal(plain(wl(env, { op: 'kite', pin: 'Wrong999' })).error, 'wrong PIN', 'the PIN is checked like the lists\'');
   env.setNow(T0 + 4 * 60000);                         // 4 minutes without a new post: the laptop is off
