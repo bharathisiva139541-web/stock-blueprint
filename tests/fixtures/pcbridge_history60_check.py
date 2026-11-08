@@ -117,7 +117,9 @@ assert max(SHEET) == '2026-10-27' and not any(d.isoformat() in SHEET for d in HO
 assert [len(p) for p in POSTS] == [10] * 6, POSTS
 assert POSTS[0][-1] == '2026-10-27' and POSTS[0][0] == '2026-10-13', 'newest first, going back (20-10 is a holiday)'
 st = sb.hist_load_state()
-assert st['misses'] == {'2026-10-02': 1, '2026-10-20': 1, '2026-09-14': 2}, st      # today's missing file is not a miss; a copy is a holiday at once
+# today's missing file is not a miss; a copy is a holiday at once; the last week's weekend days were asked once for a
+# special session (Muhurat, 08-Nov-2026) - none there, so they are not asked again
+assert st['misses'] == {'2026-10-02': 1, '2026-10-20': 1, '2026-09-14': 2, '2026-10-24': 2, '2026-10-25': 2}, st
 assert "History60: NSE's file for 14-09-2026 holds the trading day 11-09-2026 - an exchange holiday, skipped." in LOGS, LOGS
 log = '\n'.join(LOGS)
 assert 'History60: sent 13-10-2026 .. 27-10-2026 (10 days) - the sheet has 10 of 60 days.' in log, log
@@ -140,7 +142,9 @@ assert max(SHEET) == '2026-10-30' and len(SHEET) == 60
 d31 = date(2026, 11, 2)
 sb._BHAV_CACHE[d31] = sb.bhav_parse(day_csv(d31))
 del POSTS[:], HITS[:]
-assert sb.hist_step(CFG, h60(), today=d31) == 1 and POSTS == [['2026-11-02']] and HITS == [], (POSTS, HITS)
+assert sb.hist_step(CFG, h60(), today=d31) == 1 and POSTS == [['2026-11-02']], (POSTS, HITS)
+assert sorted(HITS) == ['/products/content/sec_bhavdata_full_01112026.csv', '/products/content/sec_bhavdata_full_31102026.csv'], \
+    ('only the weekend before is asked for (a special session?) - the cached day is not downloaded again', HITS)
 
 # 5) an older web app: the deploy hint, nothing kept as sent
 REPLY['r'] = {'ok': False, 'error': 'unknown action'}
@@ -167,4 +171,32 @@ sb._BHAV_CACHE.clear()
 del POSTS[:], LOGS[:]
 assert sb.hist_step(CFG, h60(), today=date(2026, 11, 4)) == 1 and POSTS == [['2026-11-03']], POSTS
 assert any('04-11-2026: HTTP 500' in x for x in LOGS), LOGS
+
+# 8) a SUNDAY special session (owner, 08-Nov-2026: Muhurat trading - "reports are available in NSE website"): Sunday's
+#    file holds Sunday's date -> taken like any day; Saturday's answer is Friday's file -> no session, no log line
+FILES['/products/content/sec_bhavdata_full_04112026.csv'] = (200, day_csv(date(2026, 11, 4)))
+publish(date(2026, 11, 6))
+FILES['/products/content/sec_bhavdata_full_07112026.csv'] = (200, day_csv(date(2026, 11, 6)))
+FILES['/products/content/sec_bhavdata_full_08112026.csv'] = (200, day_csv(date(2026, 11, 8)))
+sb._BHAV_CACHE.clear()
+del POSTS[:], LOGS[:]
+assert sb.hist_step(CFG, h60(), today=date(2026, 11, 8)) == 4
+assert POSTS == [['2026-11-04', '2026-11-05', '2026-11-06', '2026-11-08']], POSTS
+assert sb.hist_load_state()['misses'].get('2026-11-07') == 2 and not any('07-11-2026' in x for x in LOGS), LOGS
+assert '2026-11-08' in SHEET
+# a Sunday whose file is not out yet: asked again next run (not marked); a weekend more than a week old: never asked
+FILES.pop('/products/content/sec_bhavdata_full_08112026.csv')
+SHEET.discard('2026-11-08')
+sb._BHAV_CACHE.clear()
+del POSTS[:], HITS[:]
+sb.hist_step(CFG, h60(), today=date(2026, 11, 8))
+assert '2026-11-08' not in sb.hist_load_state()['misses'] and '/products/content/sec_bhavdata_full_08112026.csv' in HITS, HITS
+# ... nor when NSE's archive answers for today with Friday's file (the real Sunday file may still come in the evening)
+FILES['/products/content/sec_bhavdata_full_08112026.csv'] = (200, day_csv(date(2026, 11, 6)))
+sb._BHAV_CACHE.clear()
+del POSTS[:], LOGS[:]
+sb.hist_step(CFG, h60(), today=date(2026, 11, 8))
+assert '2026-11-08' not in sb.hist_load_state()['misses'] and POSTS == [] and not any('holiday' in x for x in LOGS), LOGS
+assert sb.maybe_session(date(2026, 11, 7), date(2026, 11, 8)) and not sb.maybe_session(date(2026, 10, 31), date(2026, 11, 8))
+assert sb.maybe_session(date(2026, 11, 6), date(2026, 12, 31)), 'weekdays always'
 print('OK')

@@ -140,6 +140,9 @@ The sheet counts YOUR Main stocks only (not the whole market) and fills four tab
 shows them: Overview (Market statistics - click a number for its list), IPOs & Markets (52-week highs),
 Watchlist and the stock details (Delivery %).
  - Days missed while the PC was off are caught up (up to a week back). eod_state.json remembers the last day.
+ - Special sessions on a Saturday / Sunday (Muhurat trading) are taken too: the weekend days of the last week
+   are tried, and NSE's file is used only when it holds that very day. bridge.log then says "a special Sunday
+   session (e.g. Muhurat trading)". An ordinary weekend is noted in eod_state.json and not asked again.
  - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
  - To switch it off: in config.json add  "eod": false
 
@@ -182,7 +185,8 @@ stocks). The sheet's FVG scans (FVG column, GapUpFVG, UnmitigatedFVG) and Result
    (from NSE's previous close on the ex-date) and matches them to GOOGLEFINANCE where History30 starts.
  - A stock GOOGLEFINANCE gives no data for gets its candles from History60 in Phase 1 (AutoFetch Log:
    "From History60 ...").
- - history_state.json remembers exchange holidays (a past weekday with no bhavcopy, twice).
+ - history_state.json remembers exchange holidays (a past weekday with no bhavcopy, twice) and weekends
+   without a special session. A Saturday / Sunday session of the last week (Muhurat trading) gets its column.
  - bridge.log shows "History60: ..." lines.
  - To switch it off: in config.json add  "history60": false
 
