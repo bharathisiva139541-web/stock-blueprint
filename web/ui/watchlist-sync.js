@@ -116,7 +116,8 @@
   function run() {
     var m = meta();
     if (host() == null) { set('nohost'); return Promise.resolve(); }
-    if (!m.pin) { set('off'); return Promise.resolve(); }
+    // no PIN: 'off' - but a PIN the sheet just refused keeps its message (the start-up run below could come after it)
+    if (!m.pin) { if (st.phase !== 'pin' && st.phase !== 'nopin') set('off'); return Promise.resolve(); }
     if (busy) { again = true; return busy; }
     clearTimeout(timer);
     lastRun = Date.now();
@@ -163,8 +164,8 @@
     else if (!st.linked) run();
     else set(st.phase, st.message);
   });
-  // first sync once app.js has set SB.apiBase
-  setTimeout(function () { run(); }, 300);
+  // first sync once app.js has set SB.apiBase (not again when a PIN typed meanwhile already started one)
+  setTimeout(function () { if (!lastRun) run(); }, 300);
 
   SB.wlSync = {
     status: function () { return !st.linked && st.phase === 'off' && host() == null ? { phase: 'nohost', linked: false, at: null, message: '' } : st; },

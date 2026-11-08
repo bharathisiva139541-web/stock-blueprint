@@ -3225,6 +3225,9 @@ def _pid_alive(pid):
         return False
 
 
+itd.pid_alive = _pid_alive   # LiveNow: a closed window's recent mark does not stop a new copy
+
+
 def lock_is_stale():
     """True when there is no bridge.lock or its round is gone (see above)."""
     try:

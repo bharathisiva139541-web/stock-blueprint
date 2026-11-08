@@ -11,7 +11,8 @@
 //   op 'kite'                     -> the owner's Kite live prices (owner, 08-Nov-2026: only for the owner,
 //                                    behind the same PIN): { ok, result:'kite', fresh, at, ageSec,
 //                                    items:[[SYMBOL, price, change %, day high, day low]], indices: same rows for
-//                                    the Indextracker indices (NIFTY_50 ...) } (both only while fresh)
+//                                    the Indextracker indices (NIFTY_50 ...) } (both while fresh, or `closed`: today's
+//                                    last prices after the close - until the next day)
 // -> 200 { ok:true, result:'ok'|'conflict', rev, savedAt, state:{ v:1, lists } }
 //    200 { ok:false, code, message }   code: not-configured | pin | locked | nopin | auth |
 //                                      busy | timeout | network | too-big | unreadable | error ...
@@ -102,9 +103,11 @@
       if (p === null || (c !== null && !isFinite(c))) return;
       indices.push([it[0], p, c, pos(it[3]), pos(it[4])]);
     });
-    return { ok: true, result: 'kite', fresh: a.fresh === true && items.length > 0, at: typeof a.at === 'string' ? a.at.slice(0, 19) : '',
-             ageSec: Number.isFinite(a.ageSec) ? a.ageSec : null, items: a.fresh === true ? items : [],
-             indices: a.fresh === true && items.length ? indices : [] };
+    // fresh = sent in the last 3 minutes; closed = today's last prices after the close (kept until the next day)
+    const use = (a.fresh === true || a.closed === true) && items.length > 0;
+    return { ok: true, result: 'kite', fresh: a.fresh === true && items.length > 0, closed: a.fresh !== true && a.closed === true && items.length > 0,
+             at: typeof a.at === 'string' ? a.at.slice(0, 19) : '', ageSec: Number.isFinite(a.ageSec) ? a.ageSec : null,
+             items: use ? items : [], indices: use ? indices : [] };
   }
 
   /** deps (tests): { env, fetch, timeoutMs } */

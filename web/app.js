@@ -172,7 +172,7 @@
     else if (isNum(b.up)) s.up = ((1 + b.up / 100) / k - 1) * 100;
   }
   /** A price newer than the sheet's copy: Kite (owner) or the quote provider, refreshed after the page loaded. */
-  function livePrice(s) { return !!(s && (s.priceState === 'LIVE' || s.priceState === 'DELAYED') && isNum(s.price) && s.price > 0); }
+  function livePrice(s) { return !!(s && (s.priceState === 'LIVE' || s.priceState === 'DELAYED' || s.kiteLast) && isNum(s.price) && s.price > 0); }
   SB.livePrice = livePrice;
   SB.rebasePct = rebasePct;
 
@@ -292,7 +292,7 @@
           q.items.forEach(function (it) {
             var s = ctx.bySym[it.symbol];
             if (!s || !isNum(it.ltp) || it.state === 'UNAVAILABLE') return;
-            if (kiteFresh(s)) return;                       // the owner's Kite price (newer) stays
+            if (kiteFresh(s) || s.kiteLast) return;          // the owner's Kite price (newer / today's close) stays
             s.price = it.ltp;
             if (isNum(it.changePct)) s.chg = it.changePct;
             s.priceState = it.state || q.state;
@@ -308,7 +308,7 @@
       });
     }, Promise.resolve()).then(function () {
       var m = ctx.market;
-      if (m.kite && Date.now() - m.kite < KITE_FRESH_MS) return got;   // the Kite label stays while its prices are fresh
+      if ((m.kite && Date.now() - m.kite < KITE_FRESH_MS) || m.kiteClosed) return got;   // the Kite label stays while its prices are fresh / today's close
       if (got) {
         m.state = ui.leastFresh(states);                 // never better than the stalest price returned
         m.asOf = asOf;
@@ -388,8 +388,11 @@
   // laptop sends it. Price and Daily % (s.price / s.chg) everywhere on the site, label LIVE; nobody else sees them.
   var KITE_FRESH_MS = 3 * 60000, KITE_POLL_MS = 60000, KITE_IDLE_MS = 5 * 60000;
   function kiteFresh(s) { return !!(s.kiteAt && Date.now() - s.kiteAt < KITE_FRESH_MS); }
+  // k.fresh = sent in the last 3 minutes (LIVE); k.closed = today's last prices after the close (owner, 08-Nov-2026:
+  // "after market close, it vanished. show the data") - shown as EOD (Kite's close) until the next day, and every live
+  // column keeps working from them (s.kiteLast) until the evening's candles rebuild the sheet's own figures
   function kiteApply(k) {
-    var m = ctx.market, now = Date.now(), n = 0;
+    var m = ctx.market, now = Date.now(), n = 0, live = !!k.fresh;
     k.items.forEach(function (it) {
       var s = ctx.bySym[it[0]];
       if (!s || !isNum(it[1])) return;
@@ -397,28 +400,31 @@
       if (isNum(it[2])) s.chg = it[2];
       s.dayHigh = isNum(it[3]) && it[3] > 0 ? it[3] : null;    // Kite's day high / low (sheet's newer version)
       s.dayLow = isNum(it[4]) && it[4] > 0 ? it[4] : null;
-      s.priceState = 'LIVE';
+      s.priceState = live ? 'LIVE' : 'EOD';
       s.priceAsOf = k.at;
-      s.kiteAt = now;
+      s.kiteAt = live ? now : 0;
+      s.kiteLast = live ? null : k.at;
       liveDerive(s);
       n++;
     });
     if (!n) return 0;
-    kiteIndices(k.indices, k.at, now);
-    m.kite = now;
-    m.state = 'LIVE';
+    kiteIndices(k.indices, k.at, now, live);
+    m.kite = live ? now : 0;
+    m.kiteClosed = !live;
+    m.state = live ? 'LIVE' : 'EOD';
     m.asOf = k.at;
     m.fetchedAt = now;
     m.partial = n < ctx.stocks.length;
-    m.source = 'Zerodha Kite (your laptop) - only you see these';
-    m.message = n + ' of ' + ctx.stocks.length + ' prices and Daily % live from Kite (shown only on your devices with the PIN)' +
-      (m.partial ? '; the rest are ' + sheetWord() : '') + '.';
+    m.source = live ? 'Zerodha Kite (your laptop) - only you see these'
+      : 'Zerodha Kite - the last prices your laptop sent today, after the close (' + String(k.at).slice(11, 16) + ') - only you see these';
+    m.message = n + ' of ' + ctx.stocks.length + ' prices and Daily % ' + (live ? 'live from Kite' : 'from Kite\'s last prices of today (after the close)') +
+      ' (shown only on your devices with the PIN)' + (m.partial ? '; the rest are ' + sheetWord() : '') + '.';
     return n;
   }
   // The Indextracker indices from Kite (owner, 08-Nov-2026: "NIFTY 50 / indices: Kite-இலிருந்து ... deploy this"):
   // the feed's index rows (ctx.D.indices) get the level, day change and everything worked out from the level
   // (drop from the all-time high - raised by today's high -, 1Y / 5Y / 10Y returns); ctx.idxLive = {at, asOf, n}
-  function kiteIndices(list, asOf, now) {
+  function kiteIndices(list, asOf, now, live) {
     var t = ctx.D && ctx.D.indices;
     if (!t || !Array.isArray(t.cols) || !Array.isArray(t.rows) || !Array.isArray(list) || !list.length) return 0;
     var c = {};
@@ -445,16 +451,22 @@
       });
       n++;
     });
-    ctx.idxLive = n ? { at: now, asOf: asOf, n: n } : ctx.idxLive;
+    ctx.idxLive = n ? { at: now, asOf: asOf, n: n, closed: live === false } : ctx.idxLive;
     return n;
   }
-  /** The index rows' label: LIVE from Kite while fresh, else the Indextracker tab (cached). */
+  /** The index rows' label: LIVE from Kite while fresh, EOD (Kite's close) after it, else the Indextracker tab (cached). */
+  function idxOn() {
+    var L = ctx.idxLive, m = ctx.market;
+    if (!L) return null;
+    if (L.closed) return m.kiteClosed ? L : null;
+    return Date.now() - L.at < KITE_FRESH_MS && m.state === 'LIVE' ? L : null;
+  }
   SB.indexBadge = function (fallbackAt) {
-    var L = ctx.idxLive;
-    if (L && Date.now() - L.at < KITE_FRESH_MS && ctx.market.state === 'LIVE') return ui.stateBadge('LIVE', L.asOf, 'Zerodha Kite (your laptop) - only you see these');
+    var L = idxOn();
+    if (L) return ui.stateBadge(L.closed ? 'EOD' : 'LIVE', L.asOf, L.closed ? 'Zerodha Kite - today\'s last prices (after the close)' : 'Zerodha Kite (your laptop) - only you see these');
     return ui.stateBadge('CACHED', fallbackAt, 'Indextracker tab of your sheet');
   };
-  SB.indexLive = function () { var L = ctx.idxLive; return !!(L && Date.now() - L.at < KITE_FRESH_MS && ctx.market.state === 'LIVE'); };
+  SB.indexLive = function () { return !!idxOn(); };
   var kiteTimer = null, kiteBusy = false;
   function kiteLater(ms) { clearTimeout(kiteTimer); kiteTimer = setTimeout(kitePoll, ms); }
   /** The Kite request, or null without an accepted PIN on this device (a PIN still being checked would count twice when wrong). */
@@ -474,13 +486,13 @@
     kiteBusy = true;
     ask.then(function (k) {
       kiteBusy = false;
-      var n = k.fresh ? kiteApply(k) : 0;
+      var n = k.fresh || k.closed ? kiteApply(k) : 0;
       if (n) { setStatus(); rerender(); }
       else if (ctx.market.kite && downgrade('Kite prices stopped (the laptop is off or LiveNow is not running)')) {
         ctx.market.kite = 0;
         setStatus(); rerender();
       }
-      kiteLater(n ? KITE_POLL_MS : KITE_IDLE_MS);
+      kiteLater(n && k.fresh ? KITE_POLL_MS : KITE_IDLE_MS);
     }, function (e) {
       kiteBusy = false;
       // a wrong / locked PIN is never retried (5 wrong PINs lock the sheet); anything else: again later

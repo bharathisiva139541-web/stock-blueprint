@@ -1448,13 +1448,21 @@ def live_quotes(cfg, sess, keys):
     return out
 
 
+pid_alive = None   # screener_bridge.py sets its _pid_alive (Windows-safe) - a closed LiveNow window is then not 'still running'
+
+
 def _live_mark(check=False):
-    """check: True when another program sent prices in the last 2.5 minutes (it is still running). Else marks ours."""
+    """check: True when another program sent prices in the last 2.5 minutes and is still running (owner, 08-Nov-2026:
+    LiveNow.bat closed and opened again within 2.5 minutes stopped at once - the closed window's mark was still recent).
+    Else marks ours."""
     if check:
         try:
             with open(LIVE_MARK_PATH, 'r', encoding='utf-8') as f:
                 m = json.load(f)
-            return int(m.get('pid') or 0) != os.getpid() and time.time() - float(m.get('at') or 0) < 150
+            pid = int(m.get('pid') or 0)
+            if pid == os.getpid() or time.time() - float(m.get('at') or 0) >= 150:
+                return False
+            return bool(pid_alive(pid)) if pid_alive else True
         except (OSError, ValueError, AttributeError, TypeError):
             return False
     try:
