@@ -88,6 +88,8 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
    Only one copy sends prices at a time (LiveNow.bat by hand stops if the background one runs, and the other way).
    While these prices are fresh, the sheet's Mitigated FVG alerts (daily + 4H zones) and IPO base alerts use them;
    when the computer is off they use the GOOGLEFINANCE price as before.
+   The sheet's Indextracker indices (NIFTY 50, NIFTY BANK ...) come along in the same requests: the window shows
+   NIFTY 50 on each line, and your website (with the PIN) shows them live on the Overview and Markets pages.
    config.json "kite_live_seconds": 60 = how often (at least 15); "kite_live": false = not by itself.
  - To switch it off: in config.json  "intraday": false
 

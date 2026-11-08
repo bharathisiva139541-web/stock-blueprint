@@ -404,6 +404,7 @@
       n++;
     });
     if (!n) return 0;
+    kiteIndices(k.indices, k.at, now);
     m.kite = now;
     m.state = 'LIVE';
     m.asOf = k.at;
@@ -414,6 +415,46 @@
       (m.partial ? '; the rest are ' + sheetWord() : '') + '.';
     return n;
   }
+  // The Indextracker indices from Kite (owner, 08-Nov-2026: "NIFTY 50 / indices: Kite-இலிருந்து ... deploy this"):
+  // the feed's index rows (ctx.D.indices) get the level, day change and everything worked out from the level
+  // (drop from the all-time high - raised by today's high -, 1Y / 5Y / 10Y returns); ctx.idxLive = {at, asOf, n}
+  function kiteIndices(list, asOf, now) {
+    var t = ctx.D && ctx.D.indices;
+    if (!t || !Array.isArray(t.cols) || !Array.isArray(t.rows) || !Array.isArray(list) || !list.length) return 0;
+    var c = {};
+    t.cols.forEach(function (k, i) { c[k] = i; });
+    if (c['NSE Symbol'] == null || c['Current Price'] == null) return 0;
+    var by = {};
+    list.forEach(function (it) { if (Array.isArray(it) && isNum(it[1]) && it[1] > 0) by[it[0]] = it; });
+    var n = 0;
+    t.rows.forEach(function (r) {
+      var it = by[String(r[c['NSE Symbol']] || '').trim().toUpperCase()];
+      if (!it) return;
+      var px = it[1], set = function (k, v) { if (c[k] != null) r[c[k]] = v; };
+      set('Current Price', px);
+      if (isNum(it[2])) set('Day change', it[2]);
+      var ath = c['All time high'] != null ? r[c['All time high']] : null;
+      if (isNum(ath) && ath > 0) {
+        ath = Math.max(ath, isNum(it[3]) ? it[3] : 0, px);
+        set('All time high', ath);
+        set('Drop from all time high', (px / ath - 1) * 100);
+      }
+      [['Price 1Y ago', '1 year returns'], ['Price 5Y ago', '5Y returns'], ['Price 10Y ago', '10Y returns']].forEach(function (p) {
+        var b = c[p[0]] != null ? r[c[p[0]]] : null;
+        if (isNum(b) && b > 0) set(p[1], (px / b - 1) * 100);
+      });
+      n++;
+    });
+    ctx.idxLive = n ? { at: now, asOf: asOf, n: n } : ctx.idxLive;
+    return n;
+  }
+  /** The index rows' label: LIVE from Kite while fresh, else the Indextracker tab (cached). */
+  SB.indexBadge = function (fallbackAt) {
+    var L = ctx.idxLive;
+    if (L && Date.now() - L.at < KITE_FRESH_MS && ctx.market.state === 'LIVE') return ui.stateBadge('LIVE', L.asOf, 'Zerodha Kite (your laptop) - only you see these');
+    return ui.stateBadge('CACHED', fallbackAt, 'Indextracker tab of your sheet');
+  };
+  SB.indexLive = function () { var L = ctx.idxLive; return !!(L && Date.now() - L.at < KITE_FRESH_MS && ctx.market.state === 'LIVE'); };
   var kiteTimer = null, kiteBusy = false;
   function kiteLater(ms) { clearTimeout(kiteTimer); kiteTimer = setTimeout(kitePoll, ms); }
   function kitePoll() {

@@ -369,7 +369,7 @@
     function drawChips() { $('#ix-pchips', el).innerHTML = periodChips('ixp', DASH.period, ctx); }
     function drawDash() {
       var body = $('#ix-dash-body', el), p = DASH.period;
-      $('#ix-dash-fresh', el).innerHTML = freshHtml(ctx, p) + (p === '1D' ? ' · Benchmark NIFTY 50: ' + ui.deltaHtml(nifty(ctx), 2) + ' ' + ui.stateBadge('CACHED', ctx.D.asOf || ctx.D.generated, 'Indextracker tab') : '');
+      $('#ix-dash-fresh', el).innerHTML = freshHtml(ctx, p) + (p === '1D' ? ' · Benchmark NIFTY 50: ' + ui.deltaHtml(nifty(ctx), 2) + ' ' + SB.indexBadge(ctx.D.asOf || ctx.D.generated) : '');
       if (!periodOk(ctx, p)) { body.innerHTML = '<div class="note warn">' + esc(periodWhy(ctx, p)) + '</div>'; return; }
       var vals = returnsFor(M, ctx, p);
       if (!vals) { body.innerHTML = loadingNote('Loading daily candles for ' + p + ' returns…'); return; }
@@ -542,7 +542,7 @@
         ui.tile('Mean ' + p, ui.deltaHtml(a.mean, 2)) +
         ui.tile('Breadth', isNum(a.breadthPct) ? F.num(a.breadthPct, 0) + '%' : '–', '<span class="up">▲ ' + a.adv + '</span> · <span class="down">▼ ' + a.dec + '</span>' + (a.flat ? ' · ' + a.flat + ' unch.' : '')) +
         ui.tile('Volume trend', ui.deltaHtml(a.volTrend, 0), 'median 5-day vs prior 20-day volume') +
-        ui.tile('vs NIFTY 50', p === '1D' ? vsHtml(isNum(nb) && isNum(a.median) ? a.median - nb : null) : '<span class="sub">1D only</span>', p === '1D' ? 'NIFTY 50 ' + F.pct(nb, 2) + ' (Indextracker, cached)' : '') +
+        ui.tile('vs NIFTY 50', p === '1D' ? vsHtml(isNum(nb) && isNum(a.median) ? a.median - nb : null) : '<span class="sub">1D only</span>', p === '1D' ? 'NIFTY 50 ' + F.pct(nb, 2) + (SB.indexLive() ? ' (Kite, live)' : ' (Indextracker, cached)') : '') +
         '</div><div class="grid g2" style="margin-top:12px"><div><h3 class="ix-h3">Leaders</h3>' + lst(a.leaders) + '</div><div><h3 class="ix-h3">Laggards</h3>' + lst(a.laggards) + '</div></div>' +
         methodHtml();
     }

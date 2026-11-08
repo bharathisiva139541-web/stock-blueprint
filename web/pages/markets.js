@@ -217,7 +217,7 @@
       h += ipoTrackerCard(D);
       h += high52Card(D);
       h += priceBandCard();
-      h += ui.card('Indices', 'Day change and distance from all-time high (Indextracker tab)', '<div id="mk-idx"></div>');
+      h += ui.card('Indices', 'Day change and distance from all-time high ' + (SB.indexLive() ? '(live from Kite) ' : '(Indextracker tab) ') + SB.indexBadge(D.asOf || D.generated), '<div id="mk-idx"></div>');
       h += '<section class="card"><div class="card-head"><div><h2>Listed IPOs &amp; IPO bases</h2><p>' + ipos.length + ' IPOs · price vs listing price and IPO base</p></div></div>' +
         '<div class="controls"><input class="search" id="ipo-q" type="search" placeholder="Search IPO symbol or base status" aria-label="Search IPOs">' +
         ui.chips('ipo', [['all', 'All'], ['Above', 'Above IPO price'], ['Below', 'Below IPO price']], 'all') + '</div><div id="ipo-t"></div></section>';
