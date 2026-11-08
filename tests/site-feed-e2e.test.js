@@ -339,7 +339,7 @@ function browser(nowMs) {
   };
   const SB = { classify: classify, strategy: strategy, eod: eod, ctx: ctx, ui: ui };
   const app = fromBrowser('web/app.js',
-    ['var SITE_TIMEOUT_MS', 'var LIVE_SOURCE', 'var QUOTE_TTL', 'istMs', 'sheetState', 'prepare', 'applySignal', 'validMain', 'validHistory', 'apiBaseFor'],
+    ['var SITE_TIMEOUT_MS', 'var LIVE_SOURCE', 'var QUOTE_TTL', 'istMs', 'sheetState', 'prepare', 'var BASE_KEYS', 'keepBase', 'applySignal', 'validMain', 'validHistory', 'apiBaseFor'],
     { SB: SB, ui: ui, F: { dateTime: String }, ctx: ctx, isNum: core.isNum, Date: FakeDate });
   const st = fromBrowser('web/ui/strategy-state.js', ['var candleMap', 'candles'], { SB: SB });
   const cs = /\n {2}SB\.candleState = (function \(H\) \{[\s\S]*?\n {2}\});/.exec(read('web/ui/strategy-state.js'));

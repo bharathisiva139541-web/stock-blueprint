@@ -1109,6 +1109,17 @@ function check(name, fn) {
     assert.match(st.pill, /^LIVE/);
     assert.match(st.src, /Kite .*only you/);
     assert.ok(sheet.bodies.some((b) => b.op === 'kite' && b.pin === 'Blue2026'), 'asked with the PIN');
+    // owner, 08-Nov-2026: "do whichever we can make as live" - Main's price-based columns follow the Kite price,
+    // the day high / low come along, and the Overview's Market statistics count from the prices now
+    const dv = await own.p.evaluate((sym) => { const s = window.SB.ctx.bySym[sym]; return { b: s.base, d10: s.d10, up: s.up, tgt: s.tgt, hi: s.dayHigh, lo: s.dayLow, pe: s.pe }; }, KSYM);
+    assert.deepStrictEqual([dv.hi, dv.lo], [780, 755], 'Kite\'s day high / low');
+    if (typeof dv.b.d10 === 'number' && dv.b.price > 0) assert.ok(Math.abs(dv.d10 - ((1 + dv.b.d10 / 100) * 777.77 / dv.b.price - 1) * 100) < 1e-6, '10D from the price now');
+    if (typeof dv.b.pe === 'number' && dv.b.price > 0) assert.ok(Math.abs(dv.pe - dv.b.pe * 777.77 / dv.b.price) < 1e-6, 'PE at the price now');
+    if (typeof dv.tgt === 'number' && dv.tgt > 0) assert.ok(Math.abs(dv.up - (dv.tgt / 777.77 - 1) * 100) < 1e-6, 'upside at the price now');
+    await own.p.goto(base + '#overview');
+    await own.p.waitForSelector('#ov-mstat');
+    const ms = await own.p.$eval('#ov-mstat', (x) => x.innerText);
+    assert.ok(/Your Main stocks now/.test(ms) && /LIVE/.test(ms), 'Market statistics from the prices now: ' + ms.slice(0, 200));
     assert.deepStrictEqual(own.errors, [], 'console/page errors');
     await own.c.close();
     const n = sheet.bodies.length;

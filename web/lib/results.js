@@ -25,6 +25,9 @@
                                        status, plus the Results Performance row of that stock and day (perfRows, optional)
      dailyPct(perfRow)              -> where the result day closed vs the close before the results (during that session: the
                                        price now) - the Results tables' "Daily %"
+     livePerf(perfRows, stockOf)    -> the rows with the site's newer price: Current Price, Today %, % Since Results, and while
+                                       the reaction session is on Result Day % (so Daily %), Max Gain / Drawdown (_live / _reacting)
+     seasonLive(perfRows)           -> { avg, median, above: 'N of M (P%)' } of % Since Results (the season tiles, live)
    }
    pick / counts take the reclaim rows as a 3rd argument for the kinds reclaimed / reclaimslow / nearreclaim. */
 (function (root, factory) {
@@ -228,6 +231,58 @@
   }
   function num(v) { return isNum(v) ? v : null; }
 
+  // ---- live prices on the Results Performance rows (owner, 08-Nov-2026: "do whichever we can make as live") ----
+  // The tab is a snapshot (rebuilt about hourly while the market is open); with a newer price on the site (Kite on the
+  // owner's devices, else the delayed quote) the price-based figures are worked out again the sheet's way:
+  //   Current Price / Today % = the price shown; % Since Results = price vs Pre-Result Close;
+  //   while the reaction session is on (no Result Day Close yet, the price is from the session that could first react:
+  //   'Reaction From' after / from that day; an after-market or closed-day filing = a later day) Result Day % = that
+  //   session's high or low vs the baseline, whichever went further (Kite's day high / low, else the price), so
+  //   Daily % (Current Price while the session is on) follows too;
+  //   Max Gain % / Max Drawdown % = widened by today's high / low once the market could react.
+  // stockOf(sym) -> { price, chg, dayHigh, dayLow, priceAsOf } of a stock with a newer price, else null.
+  function priceDay(s) { return dayOf(String(s && s.priceAsOf || '').replace('T', ' ')); }
+  function reactFrom(r) {
+    var rf = /^(after|from)\s+(\d{4}-\d{2}-\d{2})/.exec(String(r['Reaction From'] || ''));
+    if (rf) return { day: rf[2], strict: rf[1] === 'after' };
+    var d = dayOf(r['Result Date']);
+    return d ? { day: d, strict: session(r) === 'after' } : null;
+  }
+  function daysApart(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+  function livePerf(rows, stockOf) {
+    return (rows || []).map(function (r) {
+      var s = r && r.Symbol ? stockOf(r.Symbol) : null, base = r && r['Pre-Result Close'];
+      if (!s || !(s.price > 0) || !isNum(base) || !(base > 0)) return r;
+      var o = {};
+      Object.keys(r).forEach(function (k) { o[k] = r[k]; });
+      o._live = true;
+      o['Current Price'] = s.price;
+      if (isNum(s.chg)) o['Today %'] = s.chg;
+      o[SINCE] = (s.price / base - 1) * 100;
+      var pd = priceDay(s), rf = reactFrom(r);
+      var reacted = !!(pd && rf && (rf.strict ? pd > rf.day : pd >= rf.day));
+      if (!reacted) return o;
+      var hi = Math.max(isNum(s.dayHigh) ? s.dayHigh : s.price, s.price), lo = Math.min(isNum(s.dayLow) ? s.dayLow : s.price, s.price);
+      var hiPct = (hi / base - 1) * 100, loPct = (lo / base - 1) * 100;
+      if (!isNum(r['Result Day Close']) && daysApart(rf.day, pd) <= 5) {
+        var best = [r[DAY], hiPct, loPct].filter(isNum).sort(function (a, b) { return Math.abs(b) - Math.abs(a); })[0];
+        o[DAY] = best;
+        o._reacting = true;
+      }
+      o['Max Gain %'] = Math.max(isNum(r['Max Gain %']) ? r['Max Gain %'] : hiPct, hiPct);
+      o['Max Drawdown %'] = Math.min(isNum(r['Max Drawdown %']) ? r['Max Drawdown %'] : loPct, loPct);
+      return o;
+    });
+  }
+  /** The season tiles from rows (average / median since results, "N of M (P%)" above the pre-result price). */
+  function seasonLive(rows) {
+    var v = (rows || []).map(since).filter(isNum).sort(function (a, b) { return a - b; });
+    if (!v.length) return null;
+    var up = v.filter(function (x) { return x > 0; }).length, n = v.length, mid = Math.floor(n / 2);
+    return { avg: v.reduce(function (a, b) { return a + b; }, 0) / n, median: n % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2,
+             above: up + ' of ' + n + ' (' + Math.round(up / n * 100) + '%)' };
+  }
+
   function todayRows(stocks, tracker, dayKey, perf) {
     var tr = {}, rp = {};
     (tracker || []).forEach(function (r) { if (r.Symbol && dayOf(r['Result Date']) === dayKey) tr[r.Symbol] = r; });
@@ -261,6 +316,7 @@
   }
 
   return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session, TODAY: TODAY, todayRows: todayRows, dailyPct: dailyPct,
+           livePerf: livePerf, seasonLive: seasonLive,
            pick: pick, counts: counts, bySession: bySession, movers: movers, reclaim: reclaim, reclaimRows: reclaimRows, RECLAIM: RECLAIM,
            flagList: flagList, flagIndex: flagIndex };
 });

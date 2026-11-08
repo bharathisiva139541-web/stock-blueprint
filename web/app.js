@@ -89,6 +89,7 @@
       s.priceState = state;
       s.priceAsOf = asOf;
       s.sigSheet = s.sig;               // the cell as exported; s.sig follows the price shown
+      keepBase(s);
       applySignal(s);
       return s;
     });
@@ -143,6 +144,37 @@
   function applySignal(s) {
     s.sig = isNum(s.tgt) && isNum(s.price) ? SB.strategy.ttmSignal(s, s.price) || null : s.sigSheet || null;
   }
+  // Main's price-based columns as exported (prepare) - worked out again at every new price (owner, 08-Nov-2026:
+  // "do whichever we can make as live"): 10D / 30D / From 52W high / PE / PE vs industry / PEG / market cap /
+  // upside all follow the price shown, from the same bases the sheet used (x = sheet value at the sheet's price).
+  var BASE_KEYS = ['price', 'd10', 'd30', 'hi52', 'down52', 'pe', 'pevs', 'peg', 'mcap', 'up'];
+  function keepBase(s) {
+    var b = {};
+    BASE_KEYS.forEach(function (k) { b[k] = isNum(s[k]) ? s[k] : null; });
+    s.base = b;
+  }
+  /** % move measured from a fixed base, moved from the sheet's price to the price shown. */
+  function rebasePct(pct, from, to) { return isNum(pct) && from > 0 && to > 0 ? ((1 + pct / 100) * to / from - 1) * 100 : pct; }
+  function liveDerive(s) {
+    applySignal(s);
+    var b = s.base;
+    if (!b || !(b.price > 0) || !(s.price > 0)) return;
+    var k = s.price / b.price;
+    s.d10 = rebasePct(b.d10, b.price, s.price);
+    s.d30 = rebasePct(b.d30, b.price, s.price);
+    var top = Math.max(isNum(s.dayHigh) ? s.dayHigh : 0, s.price);
+    if (isNum(b.hi52) && b.hi52 > 0) {
+      s.hi52 = Math.max(b.hi52, top);                 // a new 52-week high today raises it
+      s.down52 = (s.price / s.hi52 - 1) * 100;
+    } else if (isNum(b.down52)) s.down52 = Math.min(0, rebasePct(b.down52, b.price, s.price));
+    ['pe', 'pevs', 'peg', 'mcap'].forEach(function (f) { if (isNum(b[f])) s[f] = b[f] * k; });   // all = price x a fixed figure
+    if (isNum(s.tgt) && s.tgt > 0) s.up = (s.tgt / s.price - 1) * 100;
+    else if (isNum(b.up)) s.up = ((1 + b.up / 100) / k - 1) * 100;
+  }
+  /** A price newer than the sheet's copy: Kite (owner) or the quote provider, refreshed after the page loaded. */
+  function livePrice(s) { return !!(s && (s.priceState === 'LIVE' || s.priceState === 'DELAYED') && isNum(s.price) && s.price > 0); }
+  SB.livePrice = livePrice;
+  SB.rebasePct = rebasePct;
 
   function validMain(d) {
     return !!(d && d.main && Array.isArray(d.main.cols) && Array.isArray(d.main.rows) && d.main.rows.length && d.main.cols.indexOf('sym') >= 0);
@@ -266,7 +298,9 @@
             s.priceState = it.state || q.state;
             s.priceAsOf = it.lastTradeTime || q.asOf;
             s.liveVol = it.volume;
-            applySignal(s);
+            s.dayHigh = isNum(it.high) && it.high > 0 ? it.high : null;
+            s.dayLow = isNum(it.low) && it.low > 0 ? it.low : null;
+            liveDerive(s);
             states.push(s.priceState);
             got++;
           });
@@ -361,10 +395,12 @@
       if (!s || !isNum(it[1])) return;
       s.price = it[1];
       if (isNum(it[2])) s.chg = it[2];
+      s.dayHigh = isNum(it[3]) && it[3] > 0 ? it[3] : null;    // Kite's day high / low (sheet's newer version)
+      s.dayLow = isNum(it[4]) && it[4] > 0 ? it[4] : null;
       s.priceState = 'LIVE';
       s.priceAsOf = k.at;
       s.kiteAt = now;
-      applySignal(s);
+      liveDerive(s);
       n++;
     });
     if (!n) return 0;
@@ -383,6 +419,9 @@
   function kitePoll() {
     kiteTimer = null;
     if (kiteBusy || !SB.wlSync || !SB.wlSync.hasPin || !SB.wlSync.hasPin()) return;
+    // only a PIN the sheet accepted (or one kept from before): a PIN still being checked would count twice when wrong
+    var ws = SB.wlSync.status ? SB.wlSync.status() : null;
+    if (!ws || !ws.linked) return;
     kiteBusy = true;
     SB.wlSync.kite().then(function (k) {
       kiteBusy = false;

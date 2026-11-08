@@ -10,6 +10,12 @@
                                        counts: { traded, advances, declines, unchanged, high52, upper, lower } }
                               (the Main stocks of the newest day - the lists behind the Overview tiles)
      KINDS                 -> [[kind, label]] of those lists; pick(rows, kind) -> the rows of one list
+     liveDay(stocks, opts) -> the same shape from the prices on the page (owner, 08-Nov-2026: "this is not live, even
+                              though we have live data"): traded / advances / declines / unchanged from each stock's
+                              change today, at a 52-week high = day high (else price) >= the 52-week high before today
+                              (NSE's report, else Main's); circuits stay NSE's end-of-day ones (no price bands live)
+     current(D, stocks, market) -> liveDay while the prices are of a newer day than NSE's end-of-day files and
+                              fresh (LIVE / DELAYED, or EOD on a trading day), else day(D.marketDay)
      highs(high52)         -> { asOf, note, rows: [{ sym, name, high, date, close, below, isNew, inMain }],
                                 bySym: {SYM: row}, newToday: [rows] }
      delivery(delivery)    -> { date, dates: [...newest first], bySym: {SYM: { latest, avg5, hist: [...] }} }
@@ -81,6 +87,38 @@
     return { date: (/ on (\d{4}-\d{2}-\d{2})/.exec(note) || [])[1] || null, note: note, rows: rows, counts: counts };
   }
 
+  /** opts: { date, asOf, state, eod (day() of the end-of-day files, for the circuit lists), live(stock) -> bool } */
+  function liveDay(stocks, opts) {
+    var o = opts || {}, eod = o.eod || null, eodBy = {};
+    if (eod) eod.rows.forEach(function (r) { eodBy[r.sym] = r; });
+    var rows = [];
+    (stocks || []).forEach(function (s) {
+      if (!s || !s.sym || !isNum(s.chg) || !(o.live ? o.live(s) : true)) return;
+      var e = eodBy[s.sym] || null;
+      var prior = s.nse52 && isNum(s.nse52.high) ? s.nse52.high : s.base && isNum(s.base.hi52) ? s.base.hi52 : null;
+      var top = isNum(s.dayHigh) ? Math.max(s.dayHigh, s.price) : s.price;
+      rows.push({ sym: s.sym, name: s.name || '', close: isNum(s.price) ? s.price : null, chg: s.chg,
+        move: s.chg > 0 ? 'Advance' : s.chg < 0 ? 'Decline' : 'Unchanged',
+        circuit: e ? e.circuit : '', new52: isNum(prior) && prior > 0 && isNum(top) && top >= prior, deliv: e ? e.deliv : null });
+    });
+    var counts = {};
+    KINDS.forEach(function (k) { counts[k[0]] = pick(rows, k[0]).length; });
+    counts.upper = eod ? eod.counts.upper : null;      // from NSE's end-of-day file (o.eod.date)
+    counts.lower = eod ? eod.counts.lower : null;
+    return { live: true, date: o.date || null, asOf: o.asOf || null, state: o.state || null, eodDate: eod ? eod.date : null,
+             note: '', rows: rows, counts: counts };
+  }
+  /** The day the Market statistics show: the prices on the page when they are of a newer day than NSE's files. */
+  function current(D, stocks, market) {
+    var eod = day(D && D.marketDay), m = market || {};
+    var pDay = dayOf(m.asOf), st = m.state;
+    var fresh = st === 'LIVE' || st === 'DELAYED' || (st === 'EOD' && m.session !== 'weekend' && m.session !== 'holiday');
+    if (!fresh || !pDay || (eod && eod.date && pDay <= eod.date)) return eod;
+    var live = liveDay(stocks, { date: pDay, asOf: m.asOf, state: st, eod: eod,
+      live: function (s) { return dayOf(s.priceAsOf) === pDay || s.priceState === 'LIVE' || s.priceState === 'DELAYED'; } });
+    return live.rows.length ? live : eod;
+  }
+
   function highs(t) {
     var asOf = (/as on (\d{4}-\d{2}-\d{2})/.exec((t && t.note) || '') || [])[1] || null;
     var rows = objRows(t).map(function (o) {
@@ -110,5 +148,5 @@
     return { date: days.length ? days[0][1] : null, dates: days.map(function (d) { return d[1]; }), bySym: bySym };
   }
 
-  return { stats: stats, day: day, KINDS: KINDS, pick: pick, highs: highs, delivery: delivery, dayOf: dayOf };
+  return { stats: stats, day: day, KINDS: KINDS, pick: pick, liveDay: liveDay, current: current, highs: highs, delivery: delivery, dayOf: dayOf };
 });

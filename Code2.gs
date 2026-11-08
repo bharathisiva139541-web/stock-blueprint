@@ -12804,11 +12804,16 @@ function ab_klForSite_() {
                 ageSec: at ? Math.max(0, Math.round((Date.now() - at) / 1000)) : null, items: [] };
   const sh = fresh ? SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_KL_SHEET) : null;
   if (!sh || sh.getLastRow() < 3) { out.fresh = false; return out; }
-  sh.getRange(3, 1, sh.getLastRow() - 2, 4).getValues().forEach(function (v) {
+  // [SYMBOL, LTP, change %, day high, day low] (AB_KL_HEADERS: ... Prev Close, Open, High, Low) - the high / low give the
+  // website the session's move (Result day %) and new 52-week highs (owner, 08-Nov-2026: "do whichever we can make as live")
+  sh.getRange(3, 1, sh.getLastRow() - 2, 8).getValues().forEach(function (v) {
     const sym = ab_cellText_(v[0]).toUpperCase();
     const p = ab_toNum_(v[2]);
     const c = ab_toNum_(v[3]);
-    if (sym && !isNaN(p) && p > 0) out.items.push([sym, p, isNaN(c) || v[3] === '' ? null : c]);
+    const hi = ab_toNum_(v[6]), lo = ab_toNum_(v[7]);
+    if (sym && !isNaN(p) && p > 0) {
+      out.items.push([sym, p, isNaN(c) || v[3] === '' ? null : c, !isNaN(hi) && hi > 0 && v[6] !== '' ? hi : null, !isNaN(lo) && lo > 0 && v[7] !== '' ? lo : null]);
+    }
   });
   return out;
 }

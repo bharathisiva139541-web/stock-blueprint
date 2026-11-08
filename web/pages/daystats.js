@@ -10,12 +10,15 @@
 
   SB.page('daystats', {
     render: function (el, params, ctx) {
-      var day = SB.eod.day(ctx.D.marketDay);
+      // live from the prices on the page while they are of a newer day than NSE's files (owner, 08-Nov-2026)
+      var day = SB.eod.current(ctx.D, ctx.stocks, ctx.market), live = !!(day && day.live);
       var kinds = SB.eod.KINDS;
       var kind = kinds.some(function (k) { return k[0] === params[0]; }) ? params[0] : 'traded';
       var label = kinds.filter(function (k) { return k[0] === kind; })[0][1];
       var h = '<div class="page-head"><div><p class="sub"><a href="#overview">← Market overview</a></p><h1>Market statistics: ' + esc(label) + '</h1><p>' +
-        (day ? 'Your Main stocks on <b>' + F.date(day.date) + '</b> ' + ui.stateBadge('EOD', day.date, 'Market Day tab of your sheet (NSE end-of-day files via your PC bridge)')
+        (live ? 'Your Main stocks <b>now</b> ' + ui.stateBadge(day.state, day.asOf, ctx.market.source || 'Prices shown on the site') +
+            (kind === 'upper' || kind === 'lower' ? ' · circuits: NSE end-of-day' + (day.eodDate ? ' of ' + F.date(day.eodDate) : '') + ' (live needs the price bands), price and change now' : '')
+          : day ? 'Your Main stocks on <b>' + F.date(day.date) + '</b> ' + ui.stateBadge('EOD', day.date, 'Market Day tab of your sheet (NSE end-of-day files via your PC bridge)')
           : 'Your Main stocks') + '</p></div>' +
         (day ? '<div class="actions"><button class="btn" type="button" id="ds-csv">Export CSV</button></div>' : '') + '</div>';
       if (!day) {
@@ -40,13 +43,13 @@
           { key: 'sym', label: 'Stock', type: 'sym', name: 'name', csv: function (r) { return r.sym; } },
           { key: 'name', label: 'Company', csvOnly: true },
           { key: 'cat', label: 'Category', wrap: true, get: function (r) { var s = ctx.bySym[r.sym]; return s ? s.catName || null : null; } },
-          { key: 'close', label: 'Close', type: 'price' },
+          { key: 'close', label: live ? 'Price' : 'Close', type: 'price' },
           { key: 'chg', label: 'Change', type: 'pct', digits: 2 },
-          { key: 'deliv', label: 'Deliv %', type: 'num', digits: 1, title: 'Delivery %: delivered quantity / traded quantity (NSE bhavcopy, EQ series)' },
+          { key: 'deliv', label: 'Deliv %', type: 'num', digits: 1, title: 'Delivery %: delivered quantity / traded quantity (NSE bhavcopy, EQ series)' + (live ? ' - of the last NSE day' : '') },
           { key: 'circuit', label: 'Circuit', get: function (r) { return r.circuit || null; },
             html: function (r) { return r.circuit ? ui.badge(r.circuit + ' circuit', r.circuit === 'Upper' ? 's-good' : 's-bad') : '<span class="sub">–</span>'; } },
           { key: 'new52', label: '52W high', get: function (r) { return r.new52 ? 'New high' : null; },
-            html: function (r) { return r.new52 ? ui.badge('New 52W high', 'new52') : '<span class="sub">–</span>'; } }
+            html: function (r) { return r.new52 ? ui.badge(live ? 'At 52W high' : 'New 52W high', 'new52') : '<span class="sub">–</span>'; } }
         ]
       }).mount($('#ds-t', el));
       var list = SB.eod.pick(day.rows, kind);
@@ -57,7 +60,7 @@
       }
       var timer;
       $('#ds-q', el).addEventListener('input', function (e) { clearTimeout(timer); timer = setTimeout(function () { ST.q = e.target.value.trim(); apply(); }, 120); });
-      $('#ds-csv', el).addEventListener('click', function () { ui.download('market-' + kind + '-' + day.date + '.csv', ui.toCsv(t.toCsvRows())); });
+      $('#ds-csv', el).addEventListener('click', function () { ui.download('market-' + kind + '-' + (day.date || 'now') + '.csv', ui.toCsv(t.toCsvRows())); });
       apply();
     }
   });

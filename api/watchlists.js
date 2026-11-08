@@ -10,7 +10,7 @@
 //                                    with the sheet's lists (the browser merges and saves again)
 //   op 'kite'                     -> the owner's Kite live prices (owner, 08-Nov-2026: only for the owner,
 //                                    behind the same PIN): { ok, result:'kite', fresh, at, ageSec,
-//                                    items:[[SYMBOL, price, change %]] } (items only while fresh)
+//                                    items:[[SYMBOL, price, change %, day high, day low]] } (items only while fresh)
 // -> 200 { ok:true, result:'ok'|'conflict', rev, savedAt, state:{ v:1, lists } }
 //    200 { ok:false, code, message }   code: not-configured | pin | locked | nopin | auth |
 //                                      busy | timeout | network | too-big | unreadable | error ...
@@ -82,15 +82,16 @@
     return out;
   }
 
-  /** The sheet's Kite prices, checked: only [SYMBOL, price > 0, change % | null] rows (max 5000). */
+  /** The sheet's Kite prices, checked: only [SYMBOL, price > 0, change % | null, day high | null, day low | null] rows (max 5000). */
   function kiteReply(a) {
     if (!a || a.result !== 'kite' || !Array.isArray(a.items)) return { ok: false, code: 'malformed', message: 'the sheet answered in an unexpected way' };
     const items = [];
+    const pos = function (v) { const n = Number(v); return v !== null && v !== '' && n > 0 && isFinite(n) ? n : null; };
     a.items.slice(0, 5000).forEach(function (it) {
       if (!Array.isArray(it) || typeof it[0] !== 'string' || !/^[A-Z0-9&_.-]{1,30}$/.test(it[0])) return;
       const p = Number(it[1]), c = it[2] === null || it[2] === undefined || it[2] === '' ? null : Number(it[2]);
       if (!(p > 0) || !isFinite(p) || (c !== null && !isFinite(c))) return;
-      items.push([it[0], p, c]);
+      items.push([it[0], p, c, pos(it[3]), pos(it[4])]);
     });
     return { ok: true, result: 'kite', fresh: a.fresh === true && items.length > 0, at: typeof a.at === 'string' ? a.at.slice(0, 19) : '',
              ageSec: Number.isFinite(a.ageSec) ? a.ageSec : null, items: a.fresh === true ? items : [] };

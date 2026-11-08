@@ -7,6 +7,8 @@
   var PB = { view: 'latest', f: 'all', q: '' };
   var H52 = { f: 'new', q: '' };
 
+  function livePx(st) { return !!(SB.livePrice && SB.livePrice(st)); }
+  function copy(r) { var o = {}; Object.keys(r).forEach(function (k) { o[k] = r[k]; }); return o; }
   var SECTIONS = [['open', 'Open now', 'Open for subscription today'], ['closed', 'Closed - awaiting listing', 'Subscription closed, not listed yet'],
     ['upcoming', 'Upcoming', 'Opens on a later day'], ['listed', 'Listed recently', 'Listed in the last 14 days']];
 
@@ -42,6 +44,15 @@
     SECTIONS.forEach(function (s) {
       var rows = ui.objRows(T[s[0]] || { cols: [], rows: [] });
       if (s[0] === 'listed') {
+        // the price now for stocks in Main (owner, 08-Nov-2026: "do whichever we can make as live")
+        rows = rows.map(function (r) {
+          var st = SB.ctx.bySym[r.Symbol];
+          if (!livePx(st)) return r;
+          var o = copy(r);
+          o['Last close'] = st.price;
+          if (isNum(r['Issue price']) && r['Issue price'] > 0) o['Since issue %'] = (st.price / r['Issue price'] - 1) * 100;
+          return o;
+        });
         new ui.Table({
           rows: rows, pageSize: 20, sort: { key: 'Listing date', dir: -1 }, empty: 'None',
           columns: [
@@ -52,7 +63,7 @@
             { key: 'Issue price', label: 'Issue price', type: 'price' },
             { key: 'Listing price', label: 'Listing price', type: 'price', title: 'The listing day\'s open (NSE bhavcopy)' },
             { key: 'Listing gain %', label: 'Listing gain', type: 'pct' },
-            { key: 'Last close', label: 'Last close', type: 'price' },
+            { key: 'Last close', label: 'Price', type: 'price', title: 'The price now for stocks in Main (Kite live with your PIN / delayed), else NSE\'s last close' },
             { key: 'Since issue %', label: 'Since issue', type: 'pct' },
             { key: 'Note', label: 'Note', wrap: true }
           ]
@@ -95,6 +106,17 @@
   function mountHigh52(el, D) {
     if (!D.high52) return;
     var X = SB.eod.highs(D.high52);
+    // stocks in Main: the price now and how far below the 52-week high it is (owner, 08-Nov-2026); "New high" stays NSE's day
+    var liveH = 0;
+    X.rows = X.rows.map(function (r) {
+      var st = r.inMain ? SB.ctx.bySym[r.sym] : null;
+      if (!livePx(st) || !(r.high > 0)) return r;
+      var o = copy(r), top = Math.max(isNum(st.dayHigh) ? st.dayHigh : st.price, st.price);
+      o.close = st.price;
+      o.below = top >= r.high ? 0 : (1 - st.price / r.high) * 100;
+      liveH++;
+      return o;
+    });
     var newMain = X.newToday.filter(function (r) { return r.inMain; }).length;
     $('#h52-sum', el).innerHTML = X.asOf ? 'As on <b>' + F.date(X.asOf) + '</b>: ' + F.int(X.newToday.length) + ' mainboard stock' + (X.newToday.length === 1 ? '' : 's') +
       ' at a new 52-week high · ' + F.int(newMain) + ' in your watchlist ' + ui.stateBadge('EOD', X.asOf, '52 Week High tab (NSE via the PC bridge)') : esc(X.note);
@@ -105,7 +127,7 @@
         { key: 'name', label: 'Company', csvOnly: true },
         { key: 'high', label: '52W high', type: 'price' },
         { key: 'date', label: 'High on', type: 'date' },
-        { key: 'close', label: 'Close', type: 'price' },
+        { key: 'close', label: liveH ? 'Close / price now' : 'Close', type: 'price', title: liveH ? 'Your watchlist stocks: the price now (Kite live with your PIN / delayed); the others: NSE\'s close' : 'NSE\'s closing price' },
         { key: 'below', label: '% below high', type: 'num', digits: 1 },
         { key: 'isNew', label: 'Today', get: function (r) { return r.isNew ? 'New high' : null; },
           html: function (r) { return r.isNew ? ui.badge('New high', 'new52') : '<span class="sub">–</span>'; } },
@@ -178,7 +200,18 @@
 
   SB.page('markets', {
     render: function (el, params, ctx) {
-      var D = ctx.D, ipos = ui.objRows(D.ipos);
+      var D = ctx.D, ipos = ui.objRows(D.ipos).map(function (r) {
+        // Price / Today / vs listing / vs base follow the price now (owner, 08-Nov-2026); the base levels stay the sheet's
+        var st = ctx.bySym[r['NSE SYMBOL']], was = r.MarketPrice;
+        if (!livePx(st) || !isNum(was) || !(was > 0)) return r;
+        var o = copy(r);
+        o.MarketPrice = st.price;
+        if (isNum(st.chg)) o['% change'] = st.chg;
+        o['% Down/up from Listing Price'] = isNum(r['LISTING PRICE']) && r['LISTING PRICE'] > 0 ? (st.price / r['LISTING PRICE'] - 1) * 100
+          : SB.rebasePct(r['% Down/up from Listing Price'], was, st.price);
+        o['% to IPO Base'] = SB.rebasePct(r['% to IPO Base'], was, st.price);
+        return o;
+      });
       var h = '<div class="page-head"><div><h1>IPOs &amp; markets</h1><p>Mainboard IPOs (open, closed - awaiting listing, upcoming), NSE 52-week highs, NSE price band changes, indices, ' +
         'listed IPOs and their bases, and the latest listings. ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Sheet snapshot') + '</p></div></div>';
       h += ipoTrackerCard(D);

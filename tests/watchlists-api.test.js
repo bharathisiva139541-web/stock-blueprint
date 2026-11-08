@@ -184,11 +184,11 @@
 
   test('op kite: the owner\'s Kite live prices behind the PIN, checked rows only, never cached', async () => {
     const f = mockFetch(() => json(200, { ok: true, result: 'kite', fresh: true, at: '2026-11-09 11:00:00', ageSec: 20,
-      items: [['PARAGMILK', 241.5, 3.65], ['M&M', 3060, null], ['bad sym', 1, 1], ['ZERO', 0, 1], ['X', 'abc', 1], 'junk'] }));
+      items: [['PARAGMILK', 241.5, 3.65, 244, 236.1], ['M&M', 3060, null], ['HL', 10, 1, 'abc', -2], ['bad sym', 1, 1], ['ZERO', 0, 1], ['X', 'abc', 1], 'junk'] }));
     const h = api.createHandler({ env: ENV, fetch: f });
     const r = await call(h, { op: 'kite', pin: 'Blue2026', state: { lists: [] } });
     assert.deepEqual(f.calls[0].body, { action: 'watchlists', op: 'kite', pin: 'Blue2026', token: SHEET_TOKEN });
-    assert.deepEqual(r.body, { ok: true, result: 'kite', fresh: true, at: '2026-11-09 11:00:00', ageSec: 20, items: [['PARAGMILK', 241.5, 3.65], ['M&M', 3060, null]] });
+    assert.deepEqual(r.body, { ok: true, result: 'kite', fresh: true, at: '2026-11-09 11:00:00', ageSec: 20, items: [['PARAGMILK', 241.5, 3.65, 244, 236.1], ['M&M', 3060, null, null, null], ['HL', 10, 1, null, null]] });
     assert.equal(r.headers['cache-control'], 'no-store');
     noSecrets(r);
     // not fresh (laptop off): no prices

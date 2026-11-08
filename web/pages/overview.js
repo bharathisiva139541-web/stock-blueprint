@@ -7,9 +7,10 @@
   function avg(a) { var s = a.filter(isNum); return s.length ? s.reduce(function (x, y) { return x + y; }, 0) / s.length : null; }
 
   /** Market statistics of the Main stocks (Market Day / Market Statistics tabs, from NSE's end-of-day files
-      read by the PC bridge). Every tile opens the list of those stocks (#daystats/<kind>). */
-  function marketStats(D) {
-    var day = SB.eod.day(D.marketDay), M = day ? null : SB.eod.stats(D.marketStats);
+      read by the PC bridge) - live from the prices on the page while they are of a newer day (SB.eod.current;
+      owner, 08-Nov-2026). Every tile opens the list of those stocks (#daystats/<kind>). */
+  function marketStats(D, ctx) {
+    var day = SB.eod.current(D, ctx.stocks, ctx.market), M = day ? null : SB.eod.stats(D.marketStats);
     var head = '<section class="card" id="ov-mstat"><div class="card-head"><div><h2>Market statistics</h2><p>';
     if (!day && !M) {
       return head + 'Your Main stocks</p></div></div><p class="empty">Not in this copy of the data yet. Your PC bridge reads NSE\'s ' +
@@ -23,8 +24,11 @@
     }
     var tot = (n.advances || 0) + (n.declines || 0) + (n.unchanged || 0);
     var w = function (v) { return tot ? Math.round((v || 0) / tot * 1000) / 10 : 0; };
-    var h = head + 'Your Main stocks on <b>' + F.date(date) + '</b> - click a number for the list ' +
-      ui.stateBadge('EOD', date, 'NSE end-of-day files read by your PC bridge (Market Day / Market Statistics tabs of your sheet)') + '</p></div></div>';
+    var live = !!(day && day.live), m = ctx.market;
+    var h = head + (live ? 'Your Main stocks <b>now</b>, from the prices on this page - click a number for the list ' +
+        ui.stateBadge(day.state, day.asOf, m.source || 'Prices shown on the site')
+      : 'Your Main stocks on <b>' + F.date(date) + '</b> - click a number for the list ' +
+        ui.stateBadge('EOD', date, 'NSE end-of-day files read by your PC bridge (Market Day / Market Statistics tabs of your sheet)')) + '</p></div></div>';
     h += '<div class="mstat">' +
       tile('traded', 'Stocks traded', 'k-acc') + tile('advances', 'Advances', 'k-up') +
       tile('declines', 'Declines', 'k-down') + tile('unchanged', 'Unchanged', 'k-warn') + '</div>';
@@ -33,12 +37,17 @@
         '<i class="b-up" style="width:' + w(n.advances) + '%"></i><i class="b-flat" style="width:' + w(n.unchanged) + '%"></i><i class="b-down" style="width:' + w(n.declines) + '%"></i></div>' +
         '<p class="sub mstat-ad">Advance / decline ratio <b>' + (n.declines ? (n.advances / n.declines).toFixed(2) : '–') + '</b></p>';
     }
+    var cDay = live ? (day.eodDate ? 'on ' + F.date(day.eodDate) + ' (NSE end-of-day)' : 'NSE end-of-day - not in this copy') : '';
     h += '<div class="mstat mstat-2">' +
-      tile('high52', 'Stocks at 52-week high', 'k-up', 'new 52-week high that day', '▲ ') +
-      tile('upper', 'Stocks in upper circuit', 'k-up', 'closed at the upper price band') +
-      tile('lower', 'Stocks in lower circuit', 'k-down', 'closed at the lower price band') + '</div>';
-    return h + '<p class="sub" style="margin-top:8px">Counted for the stocks of your sheet (Main) only, from NSE\'s end-of-day files (bhavcopy, ' +
-      '52-week high report, price band list). Stocks without a price band (F&amp;O stocks) are never counted as circuits.</p></section>';
+      tile('high52', 'Stocks at 52-week high', 'k-up', live ? 'today\'s high at or above the 52-week high' : 'new 52-week high that day', '▲ ') +
+      tile('upper', 'Stocks in upper circuit', 'k-up', live ? 'closed at the upper price band ' + cDay : 'closed at the upper price band') +
+      tile('lower', 'Stocks in lower circuit', 'k-down', live ? 'closed at the lower price band ' + cDay : 'closed at the lower price band') + '</div>';
+    return h + '<p class="sub" style="margin-top:8px">' + (live
+      ? 'Counted for the stocks of your sheet (Main) only, from each stock\'s price and change today on this page (' + esc(m.source || 'the prices shown') +
+        '); 52-week high = today\'s high (or the price) at or above the 52-week high before today. The circuit counts need each stock\'s price band, ' +
+        'so they stay NSE\'s end-of-day numbers until the evening files come.'
+      : 'Counted for the stocks of your sheet (Main) only, from NSE\'s end-of-day files (bhavcopy, ' +
+        '52-week high report, price band list). Stocks without a price band (F&amp;O stocks) are never counted as circuits.') + '</p></section>';
   }
 
   function tipBadge(text, cls, tip) {
@@ -106,7 +115,7 @@
 
       var h = '<div class="page-head"><div><h1>Market overview</h1><p>Your ' + F.int(stocks.length) + '-stock NSE watchlist: benchmarks, breadth, sectors, strategy setups, results and alerts. ' +
         ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + '</p></div></div>';
-      h += marketStats(D);
+      h += marketStats(D, ctx);
       h += '<div class="tiles">' +
         ui.tile('NIFTY 50', n50 ? F.price(n50['Current Price']) : '–', n50 ? ui.deltaHtml(n50['Day change'], 2) + ' today · ' + F.pct(n50['Drop from all time high']) + ' from ATH · ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Indextracker tab of your sheet') : 'not in Indextracker', 'hero') +
         ui.tile('Breadth', adv + ' / ' + dec, 'advancing / declining · ' + flat + ' unchanged') +
