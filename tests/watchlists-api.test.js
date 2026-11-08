@@ -184,17 +184,19 @@
 
   test('op kite: the owner\'s Kite live prices behind the PIN, checked rows only, never cached', async () => {
     const f = mockFetch(() => json(200, { ok: true, result: 'kite', fresh: true, at: '2026-11-09 11:00:00', ageSec: 20,
-      items: [['PARAGMILK', 241.5, 3.65, 244, 236.1], ['M&M', 3060, null], ['HL', 10, 1, 'abc', -2], ['bad sym', 1, 1], ['ZERO', 0, 1], ['X', 'abc', 1], 'junk'] }));
+      items: [['PARAGMILK', 241.5, 3.65, 244, 236.1], ['M&M', 3060, null], ['HL', 10, 1, 'abc', -2], ['bad sym', 1, 1], ['ZERO', 0, 1], ['X', 'abc', 1], 'junk'],
+      indices: [['NIFTY_50', 25030.35, 0.4, 25060, 24940], ['NIFTY BAD', 1, 1], ['NIFTY_IT', 0, 1], 'junk'] }));
     const h = api.createHandler({ env: ENV, fetch: f });
     const r = await call(h, { op: 'kite', pin: 'Blue2026', state: { lists: [] } });
     assert.deepEqual(f.calls[0].body, { action: 'watchlists', op: 'kite', pin: 'Blue2026', token: SHEET_TOKEN });
-    assert.deepEqual(r.body, { ok: true, result: 'kite', fresh: true, at: '2026-11-09 11:00:00', ageSec: 20, items: [['PARAGMILK', 241.5, 3.65, 244, 236.1], ['M&M', 3060, null, null, null], ['HL', 10, 1, null, null]] });
+    assert.deepEqual(r.body, { ok: true, result: 'kite', fresh: true, at: '2026-11-09 11:00:00', ageSec: 20, items: [['PARAGMILK', 241.5, 3.65, 244, 236.1], ['M&M', 3060, null, null, null], ['HL', 10, 1, null, null]],
+      indices: [['NIFTY_50', 25030.35, 0.4, 25060, 24940]] });
     assert.equal(r.headers['cache-control'], 'no-store');
     noSecrets(r);
     // not fresh (laptop off): no prices
     const f2 = mockFetch(() => json(200, { ok: true, result: 'kite', fresh: false, at: '2026-11-09 10:00:00', ageSec: 3600, items: [['TCS', 1, 1]] }));
     const r2 = await call(api.createHandler({ env: ENV, fetch: f2 }), { op: 'kite', pin: 'Blue2026' });
-    assert.deepEqual(r2.body, { ok: true, result: 'kite', fresh: false, at: '2026-11-09 10:00:00', ageSec: 3600, items: [] });
+    assert.deepEqual(r2.body, { ok: true, result: 'kite', fresh: false, at: '2026-11-09 10:00:00', ageSec: 3600, items: [], indices: [] });
     // a wrong PIN is the sheet's refusal as usual; an odd answer is 'malformed'
     const f3 = mockFetch(() => json(200, { ok: false, error: 'wrong PIN' }));
     assert.equal((await call(api.createHandler({ env: ENV, fetch: f3 }), { op: 'kite', pin: 'Blue2026' })).body.code, 'pin');

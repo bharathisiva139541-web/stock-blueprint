@@ -144,10 +144,8 @@
       var season = (perf.seasons || [])[0];
       var seasonName = R.seasonOf(perf);
       // the site's newer price on every row (owner, 08-Nov-2026: "do whichever we can make as live")
-      var pRows = R.livePerf(withOpm(R.perfRows(perf, seasonName), ctx, seasonName, 'Quarter'), function (sym) {
-        var s = ctx.bySym[sym];
-        return SB.livePrice && SB.livePrice(s) ? s : null;
-      });
+      var liveOf = function (sym) { var s = ctx.bySym[sym]; return SB.livePrice && SB.livePrice(s) ? s : null; };
+      var pRows = R.livePerf(withOpm(R.perfRows(perf, seasonName), ctx, seasonName, 'Quarter'), liveOf);
       var liveN = pRows.filter(function (r) { return r._live; }).length;
       var tRows = withOpm(R.trackerRows(D.resultsTracker, seasonName), ctx, seasonName, 'Quarter Expected');
       if (params && params[0] && R.KINDS.some(function (k) { return k.id === params[0]; })) {
@@ -263,7 +261,9 @@
       }).mount($('#up-t', el));
 
       // FII trend and TTM EPS growth are not in the Results Performance tab: take them from Main
-      var perfRows = withOpm(withFlags(ui.objRows(perf.table), D), ctx, seasonName, 'Quarter').map(function (r) {
+      // the price now on every row too (owner, 08-Nov-2026: "this table is not live yet. just show now then you can
+      // adjust using OHLC after EOD" - the evening rebuild with the day's candle replaces these)
+      var perfRows = R.livePerf(withOpm(withFlags(ui.objRows(perf.table), D), ctx, seasonName, 'Quarter'), liveOf).map(function (r) {
         var s = ctx.bySym[r.Symbol];
         r.fiiTrend = s ? s.fii : null;
         r.epsGrowth = s ? s.epsg : null;

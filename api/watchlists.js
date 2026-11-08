@@ -10,7 +10,8 @@
 //                                    with the sheet's lists (the browser merges and saves again)
 //   op 'kite'                     -> the owner's Kite live prices (owner, 08-Nov-2026: only for the owner,
 //                                    behind the same PIN): { ok, result:'kite', fresh, at, ageSec,
-//                                    items:[[SYMBOL, price, change %, day high, day low]] } (items only while fresh)
+//                                    items:[[SYMBOL, price, change %, day high, day low]], indices: same rows for
+//                                    the Indextracker indices (NIFTY_50 ...) } (both only while fresh)
 // -> 200 { ok:true, result:'ok'|'conflict', rev, savedAt, state:{ v:1, lists } }
 //    200 { ok:false, code, message }   code: not-configured | pin | locked | nopin | auth |
 //                                      busy | timeout | network | too-big | unreadable | error ...
@@ -93,8 +94,17 @@
       if (!(p > 0) || !isFinite(p) || (c !== null && !isFinite(c))) return;
       items.push([it[0], p, c, pos(it[3]), pos(it[4])]);
     });
+    // the Indextracker indices (NIFTY_50 ...): the same row shape, max 120
+    const indices = [];
+    (Array.isArray(a.indices) ? a.indices : []).slice(0, 120).forEach(function (it) {
+      if (!Array.isArray(it) || typeof it[0] !== 'string' || !/^[A-Z0-9_&]{2,40}$/.test(it[0])) return;
+      const p = pos(it[1]), c = it[2] === null || it[2] === undefined || it[2] === '' ? null : Number(it[2]);
+      if (p === null || (c !== null && !isFinite(c))) return;
+      indices.push([it[0], p, c, pos(it[3]), pos(it[4])]);
+    });
     return { ok: true, result: 'kite', fresh: a.fresh === true && items.length > 0, at: typeof a.at === 'string' ? a.at.slice(0, 19) : '',
-             ageSec: Number.isFinite(a.ageSec) ? a.ageSec : null, items: a.fresh === true ? items : [] };
+             ageSec: Number.isFinite(a.ageSec) ? a.ageSec : null, items: a.fresh === true ? items : [],
+             indices: a.fresh === true && items.length ? indices : [] };
   }
 
   /** deps (tests): { env, fetch, timeoutMs } */

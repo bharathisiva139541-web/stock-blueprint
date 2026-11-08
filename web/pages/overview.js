@@ -117,7 +117,7 @@
         ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + '</p></div></div>';
       h += marketStats(D, ctx);
       h += '<div class="tiles">' +
-        ui.tile('NIFTY 50', n50 ? F.price(n50['Current Price']) : '–', n50 ? ui.deltaHtml(n50['Day change'], 2) + ' today · ' + F.pct(n50['Drop from all time high']) + ' from ATH · ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Indextracker tab of your sheet') : 'not in Indextracker', 'hero') +
+        ui.tile('NIFTY 50', n50 ? F.price(n50['Current Price']) : '–', n50 ? ui.deltaHtml(n50['Day change'], 2) + ' today · ' + F.pct(n50['Drop from all time high']) + ' from ATH · ' + SB.indexBadge(D.asOf || D.generated) : 'not in Indextracker', 'hero') +
         ui.tile('Breadth', adv + ' / ' + dec, 'advancing / declining · ' + flat + ' unchanged') +
         ui.tile('Strategy setups', '<span id="ov-q">…</span>', '<span id="ov-qn">active strategy</span>') +
         ui.tile('Results season' + (season ? ' · ' + season.season : ''), F.int(season ? season.tracked : 0), F.int(pend) + ' still waiting on screener.in') +
@@ -134,7 +134,7 @@
       }).sort(function (a, b) { return b.value - a.value; });
 
       h += '<div class="grid g2">' +
-        ui.card('Benchmarks', 'NSE indices from your Indextracker tab ' + ui.stateBadge('CACHED', D.asOf || D.generated, 'Indextracker tab of your sheet'), '<div id="ov-idx"></div>') +
+        ui.card('Benchmarks', (SB.indexLive() ? 'NSE indices, live from Kite ' : 'NSE indices from your Indextracker tab ') + SB.indexBadge(D.asOf || D.generated), '<div id="ov-idx"></div>') +
         ui.card('Industry performance today', 'Average % change per category - click a bar for the industry page', ui.bars(catItems, { diverging: true, fmt: function (v) { return F.pct(v, 2); } }) +
           '<div class="legend"><span><i style="background:var(--bar)"></i>Average up</span><span><i style="background:var(--bar-neg)"></i>Average down</span></div>') + '</div>';
       h += '<section class="card"><div class="card-head"><div><h2>Top strategy setups</h2><p id="ov-strat-sub">Running the active strategy…</p></div><a class="btn" href="#suggestions">All suggestions</a></div><div id="ov-strat">' + ui.skeleton(4) + '</div></section>';

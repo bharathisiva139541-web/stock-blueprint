@@ -1423,8 +1423,15 @@ def quote_key(imap, sym):
     return None
 
 
+def index_key(sym):
+    """The Indextracker tab's NSE Symbol (NIFTY_50, NIFTY_FIN_SERVICE) -> Kite's index quote key ('NSE:NIFTY 50')."""
+    s = str(sym or '').strip().upper()
+    return 'NSE:' + s.replace('_', ' ') if re.match(r'^[A-Z0-9_&]{2,40}$', s) else None
+
+
 def live_quotes(cfg, sess, keys):
-    """{'NSE:SYM': SYM} -> {SYM: [last price, open, high, low, previous close]} from Kite's /quote/ohlc."""
+    """{'NSE:SYM': SYM} -> {SYM: [last price, open, high, low, previous close]} from Kite's /quote/ohlc.
+    A value may be any key, e.g. ('idx', 'NIFTY_50') for an index quoted in the same request."""
     out = {}
     ks = sorted(keys)
     for p in range(0, len(ks), LIVE_BATCH):
@@ -1499,11 +1506,21 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
                 keys[k] = sym
             else:
                 missing.append(sym)
+        # the sheet's Indextracker indices too (owner, 08-Nov-2026), in the same requests: 'NSE:NIFTY 50' for NIFTY_50
+        # (an older web app sends no 'indices' - then only the stocks)
+        idx_names = []
+        for x in ans.get('indices') or []:
+            k = index_key(x)
+            if k and k not in keys:
+                keys[k] = ('idx', str(x).strip().upper())
+                idx_names.append(str(x).strip().upper())
+        idx_told = False
         trading = is_trading_day(now.date(), holidays)
         stop_at = (now.replace(hour=LIVE_STOP[0], minute=LIVE_STOP[1], second=0, microsecond=0) if trading
                    else now + timedelta(hours=LIVE_MAX_HOURS))
-        out('Kite live prices of %d stocks -> the sheet\'s "Kite Live" tab every %d seconds, until %s%s.'
-            % (len(keys), gap, stop_at.strftime('%d-%b %H:%M'), '' if background else ' (or close this window)'))
+        out('Kite live prices of %d stocks%s -> the sheet\'s "Kite Live" tab every %d seconds, until %s%s.'
+            % (len(keys) - len(idx_names), (' and %d indices' % len(idx_names)) if idx_names else '', gap,
+               stop_at.strftime('%d-%b %H:%M'), '' if background else ' (or close this window)'))
         if missing:
             out('Not on Kite: %s' % ', '.join(missing[:12]) + (' ...' if len(missing) > 12 else ''))
         rounds = 0
@@ -1521,13 +1538,24 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
             except KiteError as e:
                 out('%s  Kite: %s - trying again in a minute' % (now_fn().strftime('%H:%M:%S'), e))
                 q = None
+            qi = {}
+            if q:
+                qi = {k_[1]: q.pop(k_) for k_ in [k_ for k_ in q if isinstance(k_, tuple)]}
+                if idx_names and not idx_told:
+                    idx_told = True
+                    gone = [n_ for n_ in idx_names if n_ not in qi]
+                    if gone:
+                        out('Indices not on Kite: %s' % ', '.join(gone[:12]) + (' ...' if len(gone) > 12 else ''))
             if q:
                 if _live_mark(check=True):
                     out('Another copy is sending Kite live prices now - this one stops.')
                     return 0
                 _live_mark()
                 at = now_fn().strftime('%Y-%m-%d %H:%M:%S')
-                res = api(cfg, 'kitelive', {'at': at, 'items': [[s_] + v for s_, v in q.items()]}, tries=2, timeout=90)
+                body = {'at': at, 'items': [[s_] + v for s_, v in q.items()]}
+                if qi:
+                    body['indices'] = [[n_] + v for n_, v in qi.items()]
+                res = api(cfg, 'kitelive', body, tries=2, timeout=90)
                 if not res.get('ok'):
                     err = str(res.get('error'))
                     out('%s  The sheet refused the prices - %s' % (at[11:], err))
@@ -1537,9 +1565,11 @@ def live(cfg, api, holidays=None, out=print, now_fn=None, sleep=time.sleep, max_
                 else:
                     moves = sorted(((v[0] - v[4]) / v[4] * 100, s_) for s_, v in q.items() if v[0] and v[4])
                     top = ', '.join('%s %+.1f%%' % (s_, m) for m, s_ in reversed(moves[-3:]))
+                    n50 = qi.get('NIFTY_50')
+                    nifty = ('; NIFTY 50 %.2f (%+.2f%%)' % (n50[0], (n50[0] - n50[4]) / n50[4] * 100)) if n50 and n50[0] and n50[4] else ''
                     if not background or rounds % LIVE_LOG_EVERY == 0:
-                        out('%s  %d prices -> Kite Live (%s up / %s down)%s' % (at[11:], int(res.get('written') or 0), res.get('up'),
-                                                                             res.get('down'), ('; top: ' + top) if top else ''))
+                        out('%s  %d prices -> Kite Live (%s up / %s down)%s%s' % (at[11:], int(res.get('written') or 0), res.get('up'),
+                                                                               res.get('down'), nifty, ('; top: ' + top) if top else ''))
             rounds += 1
             if (max_rounds and rounds >= max_rounds) or now_fn() >= stop_at:
                 out('Stopped (%s). The "Kite Live" tab keeps the last prices.' % ('done' if max_rounds and rounds >= max_rounds

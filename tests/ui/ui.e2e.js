@@ -1090,7 +1090,8 @@ function check(name, fn) {
     const sheet = watchlistBackend();
     sheet.gs.setProp('AB_BRIDGE_TOKEN', 'bridge-token');
     const KSYM = SENT_SYM;
-    sheet.gs.post({ token: 'bridge-token', action: 'kitelive', at: '2026-11-09 11:00:00', items: [[KSYM, 777.77, 760, 780, 755, 700]] });
+    sheet.gs.post({ token: 'bridge-token', action: 'kitelive', at: '2026-11-09 11:00:00', items: [[KSYM, 777.77, 760, 780, 755, 700]],
+      indices: [['NIFTY_50', 26543.21, 26400, 26600, 26350, 26000]] });
     const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
     const open = async (pin) => {
       const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
@@ -1120,6 +1121,9 @@ function check(name, fn) {
     await own.p.waitForSelector('#ov-mstat');
     const ms = await own.p.$eval('#ov-mstat', (x) => x.innerText);
     assert.ok(/Your Main stocks now/.test(ms) && /LIVE/.test(ms), 'Market statistics from the prices now: ' + ms.slice(0, 200));
+    // NIFTY 50 from Kite (owner, 08-Nov-2026): the hero tile's level and day change, labelled LIVE
+    const hero = await own.p.evaluate(() => { const t = [...document.querySelectorAll('.tile')].find((x) => /NIFTY 50/.test(x.textContent)); return t ? t.innerText : ''; });
+    assert.ok(/26,543\.21/.test(hero) && /\+2\.09%/.test(hero) && /LIVE/.test(hero), 'NIFTY 50 tile: ' + hero);
     assert.deepStrictEqual(own.errors, [], 'console/page errors');
     await own.c.close();
     const n = sheet.bodies.length;

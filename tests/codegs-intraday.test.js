@@ -26,7 +26,7 @@ const PARA = { sym: 'PARAGMILK', tf: '4H', pattern: 'Spring in FVG', candle: '20
 
 test('intraday: the symbol list, then the patterns on the "Intraday Patterns" tab (newest first, one row each, kept 30 days)', () => {
   const e = env();
-  assert.deepStrictEqual(e.post({ token: TOKEN, action: 'intraday', op: 'syms' }), { ok: true, syms: ['PARAGMILK', 'M&M', 'FLAT'] });
+  assert.deepStrictEqual(e.post({ token: TOKEN, action: 'intraday', op: 'syms' }), { ok: true, syms: ['PARAGMILK', 'M&M', 'FLAT'], indices: [] });
   const r = e.post(put([
     PARA,
     { sym: 'M&M', tf: '1H', pattern: 'Spring', candle: '2026-11-06 14:15', session: '2026-11-06', low: 3000, close: 3010.5, zone: null },
@@ -329,7 +329,7 @@ test('Kite live prices (owner, 08-Nov-2026): only the "Kite Live" tab, biggest g
   const r = e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:05:00', items: [
     ['PARAGMILK', 241.5, 236, 243, 235.1, 233], ['FLAT', 99, 100, 100.5, 98.8, 100], ['M&M', 3060, 3050, 3070, 3040, 3060],
     ['bad sym!', 1, 1, 1, 1, 1], ['FLAT', 98, 1, 1, 1, 1], ['ZERO', 0, 1, 1, 1, 1]] });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true, received: 6, written: 3, skipped: 3, up: 1, down: 1, at: '2026-11-08 18:05:00' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true, received: 6, written: 3, skipped: 3, up: 1, down: 1, at: '2026-11-08 18:05:00', indices: 0 });
   const t = e.sheet('Kite Live').rows;
   assert.match(t[0][0], /^Kite live prices \(Zerodha, from your PC - LiveNow\.bat\), updated 2026-11-08 18:05:00 IST: 3 stocks, 1 up \/ 1 down\./);
   assert.deepStrictEqual(t[1], ['Symbol', 'Company', 'Kite LTP', 'Change %', 'Prev Close', 'Open', 'High', 'Low', 'Sheet Price (GOOGLEFINANCE)', 'Kite vs Sheet %']);
@@ -343,6 +343,27 @@ test('Kite live prices (owner, 08-Nov-2026): only the "Kite Live" tab, biggest g
   assert.deepStrictEqual(e.sheet('Kite Live').rows.slice(2).filter((x) => x[0]).map((x) => x[0] + ' ' + x[3]), ['FLAT 0.5']);
   assert.strictEqual(e.post({ token: TOKEN, action: 'kitelive' }).ok, false);
   assert.strictEqual(e.post({ token: 'bad', action: 'kitelive', items: [] }).error, 'bad token');
+});
+
+test('Kite indices (owner, 08-Nov-2026): the PC gets the Indextracker symbols, posts their quotes; kept for the owner\'s website view', () => {
+  const book = zoneBook();
+  book.sheets.push({ name: 'Indextracker', rows: [['NSE Symbol', 'Drop from all time high', 'Current Price'], ['NIFTY_50', -1, 25000], ['nifty_bank', -2, 55000],
+    ['', '', ''], ['NIFTY_50', -1, 25000], ['bad sym', 0, 0]] });
+  const e = mock.loadCodeGs(book, { props: { AB_BRIDGE_TOKEN: TOKEN }, now: Date.UTC(2026, 10, 8, 12, 35) });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.post({ token: TOKEN, action: 'intraday', op: 'syms' }).indices)), ['NIFTY_50', 'NIFTY_BANK']);
+  const r = e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:05:00', items: [['FLAT', 99, 100, 100.5, 98.8, 100]],
+    indices: [['NIFTY_50', 25030.35, 24950, 25060, 24940, 24930.6], ['NIFTY_BANK', 55500, 55400, 55600, 55300, 55600], ['bad sym', 1, 1, 1, 1, 1], ['NIFTY_IT', 0, 1, 1, 1, 1]] });
+  assert.strictEqual(r.indices, 2);
+  assert.match(e.sheet('Kite Live').rows[0][0], /1 up \/ 0 down|0 up \/ 1 down/);
+  assert.match(e.sheet('Kite Live').rows[0][0], /; NIFTY 50 25030\.35 \(\+0\.4%\); 2 indices for your website view\./);
+  const site = JSON.parse(JSON.stringify(e.run('ab_klForSite_()')));
+  assert.deepStrictEqual(site.indices, [['NIFTY_50', 25030.35, 0.4, 25060, 24940], ['NIFTY_BANK', 55500, -0.18, 55600, 55300]]);
+  // a post without indices (an older PC program) clears them; stale = none
+  e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:06:00', items: [['FLAT', 99, 100, 100.5, 98.8, 100]] });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_klForSite_()'))).indices, []);
+  e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-08 18:07:00', items: [['FLAT', 99, 100, 100.5, 98.8, 100]], indices: [['NIFTY_50', 25000, 1, 1, 1, 24900]] });
+  e.setNow(Date.UTC(2026, 10, 8, 12, 40));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_klForSite_()'))).indices, [], 'stale: nothing');
 });
 
 test('alerts use Kite\'s live price while the laptop sends it (fresh <= 3 min), else GOOGLEFINANCE (owner, 08-Nov-2026)', () => {

@@ -12304,7 +12304,7 @@ function ab_itdDetail_(z) {
 }
 
 function ab_itdFromBridge_(req) {
-  if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_() };
+  if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_(), indices: ab_klIndexSyms_() };
   if (req.op === 'zones') return ab_itdZonesFromBridge_(req);
   if (req.op === 'backtest') return ab_btFromBridge_(req);
   if (req.op !== 'put') return { ok: false, error: 'unknown intraday request - update screener_bridge.py + kite_intraday.py on the PC' };
@@ -12777,6 +12777,23 @@ const AB_KL_MAX = 5000;
 const AB_KL_AT_PROP = 'AB_KL_AT';
 const AB_KL_FRESH_MS = 3 * 60 * 1000;
 let AB_KL_MEMO_ = null;                  // {at, px} - one read of the tab per post
+// The indices of the Indextracker tab from Kite too (owner, 08-Nov-2026: "NIFTY 50 / indices: Kite-இலிருந்து ...
+// deploy this"): the PC quotes 'NSE:NIFTY 50' for NIFTY_50 (the tab's NSE Symbol with spaces) and posts them with the
+// prices; kept here {SYM: [ltp, change %, high, low, prev close]} for the owner's website view only (ab_klForSite_)
+const AB_KL_IDX_PROP = 'AB_KL_IDX';
+const AB_KL_IDX_MAX = 120;
+
+/** The Indextracker tab's index symbols (column A from row 2, e.g. NIFTY_50) - the PC asks Kite for these. */
+function ab_klIndexSyms_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_INDEXTRACKER_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const seen = {}, out = [];
+  sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (r) {
+    const s = String(r[0] == null ? '' : r[0]).trim().toUpperCase();
+    if (/^[A-Z0-9_&]{2,40}$/.test(s) && !seen[s] && out.length < AB_KL_IDX_MAX) { seen[s] = true; out.push(s); }
+  });
+  return out;
+}
 
 /** {SYMBOL: Kite last price} while LiveNow's prices are fresh (laptop on), else null (use GOOGLEFINANCE). */
 function ab_kiteLivePrices_() {
@@ -12802,6 +12819,18 @@ function ab_klForSite_() {
   const fresh = at > 0 && Date.now() - at <= AB_KL_FRESH_MS;
   const out = { ok: true, result: 'kite', fresh: fresh, at: at ? Utilities.formatDate(new Date(at), AB_TZ, 'yyyy-MM-dd HH:mm:ss') : '',
                 ageSec: at ? Math.max(0, Math.round((Date.now() - at) / 1000)) : null, items: [] };
+  // the indices (Indextracker symbols, e.g. NIFTY_50): [SYM, ltp, change %, day high, day low] while fresh
+  out.indices = [];
+  if (fresh) {
+    let idx = null;
+    try { idx = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_KL_IDX_PROP) || 'null'); } catch (e) { idx = null; }
+    if (idx && typeof idx === 'object') {
+      Object.keys(idx).forEach(function (sym) {
+        const v = idx[sym];
+        if (Array.isArray(v) && v[0] > 0) out.indices.push([sym, v[0], v[1] === '' ? null : v[1], v[2] === '' ? null : v[2], v[3] === '' ? null : v[3]]);
+      });
+    }
+  }
   const sh = fresh ? SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_KL_SHEET) : null;
   if (!sh || sh.getLastRow() < 3) { out.fresh = false; return out; }
   // [SYMBOL, LTP, change %, day high, day low] (AB_KL_HEADERS: ... Prev Close, Open, High, Low) - the high / low give the
@@ -12878,12 +12907,28 @@ function ab_kiteLiveFromBridge_(req) {
     if (x !== y) return y > x ? 1 : -1;
     return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
   });
+  // the indices (PC from 08-Nov-2026): [SYM, ltp, open, high, low, prev close] -> {SYM: [ltp, chg, high, low, prev]}
+  const idx = {};
+  let nIdx = 0;
+  (Array.isArray(req.indices) ? req.indices : []).slice(0, AB_KL_IDX_MAX).forEach(function (it) {
+    const sym = Array.isArray(it) ? String(it[0] || '').trim().toUpperCase() : '';
+    const ltp = Array.isArray(it) ? num(it[1]) : '';
+    if (!/^[A-Z0-9_&]{2,40}$/.test(sym) || ltp === '' || idx[sym]) return;
+    const prev = num(it[5]);
+    idx[sym] = [ltp, pct(ltp, prev), num(it[3]), num(it[4]), prev];
+    nIdx++;
+  });
+  const props = PropertiesService.getScriptProperties();
+  if (nIdx) props.setProperty(AB_KL_IDX_PROP, JSON.stringify(idx));
+  else props.deleteProperty(AB_KL_IDX_PROP);
+  const n50 = idx.NIFTY_50;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(AB_KL_SHEET);
   const fresh = !sh;
   if (!sh) sh = ss.insertSheet(AB_KL_SHEET);
   const note = 'Kite live prices (Zerodha, from your PC - LiveNow.bat), updated ' + at + ' IST: ' + rows.length + ' stocks, ' +
-    up + ' up / ' + down + ' down. Biggest gainers first; Change % = Kite LTP vs the previous close. Main\'s MKT Price ' +
+    up + ' up / ' + down + ' down' + (n50 ? '; NIFTY 50 ' + n50[0] + (n50[1] === '' ? '' : ' (' + (n50[1] > 0 ? '+' : '') + n50[1] + '%)') : '') +
+    (nIdx ? '; ' + nIdx + ' indices for your website view' : '') + '. Biggest gainers first; Change % = Kite LTP vs the previous close. Main\'s MKT Price ' +
     '(GOOGLEFINANCE) and every alert stay as they were - "Sheet Price" is only shown beside it to compare.';
   sh.clearContents();
   sh.getRange(1, 1).setValue(note);
@@ -12900,7 +12945,7 @@ function ab_kiteLiveFromBridge_(req) {
       ]);
     } catch (fErr) { Logger.log('Kite Live formats: ' + fErr.message); }
   }
-  PropertiesService.getScriptProperties().setProperty(AB_KL_AT_PROP, String(Date.now()));
+  props.setProperty(AB_KL_AT_PROP, String(Date.now()));
   AB_KL_MEMO_ = null;
-  return { ok: true, received: items.length, written: rows.length, skipped: skipped, up: up, down: down, at: at };
+  return { ok: true, received: items.length, written: rows.length, skipped: skipped, up: up, down: down, at: at, indices: nIdx };
 }

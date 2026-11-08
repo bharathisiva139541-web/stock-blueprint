@@ -499,7 +499,9 @@ assert any('PARAGMILK' == t['sym'] for t in POSTS[0]['trades']) and any('4H FVG+
 # ------------------------------------------------------------------ 11. LiveNow.bat: Kite live prices -> the sheet's "Kite Live" tab
 QUOTES = {'NSE:PARAGMILK': {'last_price': 241.5, 'ohlc': {'open': 236, 'high': 243, 'low': 235.1, 'close': 233.0}},
           'NSE:FLAT': {'last_price': 99.0, 'ohlc': {'open': 100, 'high': 100.5, 'low': 98.8, 'close': 100.0}},
-          'NSE:BEONLY-BE': {'last_price': 50.0, 'ohlc': {'open': 50, 'high': 50, 'low': 50, 'close': 50.0}}}
+          'NSE:BEONLY-BE': {'last_price': 50.0, 'ohlc': {'open': 50, 'high': 50, 'low': 50, 'close': 50.0}},
+          'NSE:NIFTY 50': {'last_price': 25030.35, 'ohlc': {'open': 24950, 'high': 25060, 'low': 24940, 'close': 24930.6}},
+          'NSE:NIFTY FIN SERVICE': {'last_price': 26500.0, 'ohlc': {'open': 26400, 'high': 26550, 'low': 26390, 'close': 26450.0}}}
 QCALLS = []
 
 
@@ -519,7 +521,7 @@ LIVE_POSTS = []
 
 def fake_api_live(cfg, action, payload=None, timeout=120, tries=3):
     if action == 'intraday' and payload['op'] == 'syms':
-        return {'ok': True, 'syms': ['PARAGMILK', 'FLAT', 'BEONLY', 'NOPE']}
+        return {'ok': True, 'syms': ['PARAGMILK', 'FLAT', 'BEONLY', 'NOPE'], 'indices': ['NIFTY_50', 'NIFTY_FIN_SERVICE', 'NIFTY_NOSUCH', 'bad sym']}
     assert action == 'kitelive', action
     LIVE_POSTS.append(payload)
     return {'ok': True, 'written': len(payload['items']), 'up': 1, 'down': 1}
@@ -532,7 +534,15 @@ assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2
 assert len(LIVE_POSTS) == 2 and LIVE_POSTS[0]['at'] == '2026-11-08 18:05:00', LIVE_POSTS[:1]
 items = {it[0]: it[1:] for it in LIVE_POSTS[0]['items']}
 assert items == {'PARAGMILK': [241.5, 236, 243, 235.1, 233.0], 'FLAT': [99.0, 100, 100.5, 98.8, 100.0], 'BEONLY': [50.0, 50, 50, 50, 50.0]}, items
-assert QCALLS and sorted(QCALLS[0]) == ['NSE:BEONLY-BE', 'NSE:FLAT', 'NSE:PARAGMILK'], 'BE series as SYMBOL-BE; NOPE is not on Kite'
+assert QCALLS and sorted(QCALLS[0]) == ['NSE:BEONLY-BE', 'NSE:FLAT', 'NSE:NIFTY 50', 'NSE:NIFTY FIN SERVICE', 'NSE:NIFTY NOSUCH', 'NSE:PARAGMILK'], \
+    ('BE series as SYMBOL-BE; NOPE is not on Kite; the sheet\'s indices in the same request', QCALLS[0])
+assert len(QCALLS) == 2, 'one request a round for stocks + indices'
+# the indices (owner, 08-Nov-2026): sent with the prices under the sheet's own names; one not on Kite is told once
+idx = {it[0]: it[1:] for it in LIVE_POSTS[0]['indices']}
+assert idx == {'NIFTY_50': [25030.35, 24950, 25060, 24940, 24930.6], 'NIFTY_FIN_SERVICE': [26500.0, 26400, 26550, 26390, 26450.0]}, idx
+assert 'NIFTY_50' not in items, 'indices never in the stock rows'
+assert sum('Indices not on Kite: NIFTY_NOSUCH' in o for o in OUT) == 1, OUT
+assert any('3 stocks and 3 indices' in o for o in OUT) and any('NIFTY 50 25030.35 (+0.40%)' in o for o in OUT), OUT
 assert any('until 08-Nov 22:05' in o for o in OUT), ('Sunday (Muhurat): 4 hours', OUT[:3])
 assert any('Not on Kite: NOPE' in o for o in OUT) and any('top: PARAGMILK +3.6%' in o for o in OUT), OUT
 # a trading day stops at 15:35; an older web app without the action -> a clear hint
