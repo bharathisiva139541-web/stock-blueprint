@@ -204,5 +204,39 @@ del SENT[:]
 sb.eod_step(CFG, today=DAY)
 assert SENT == []
 
+# a special session on a weekend (Muhurat trading, Sunday 08-Nov-2026): weekend days of the last week are tried too; NSE's file
+# is taken only when it holds that very day (owner, 08-Nov-2026: the Sunday session's OHLC never reached the sheet)
+SAT, SUN, MON = date(2026, 11, 7), date(2026, 11, 8), date(2026, 11, 9)
+assert sb.eod_days_to_check(MON, date(2026, 11, 6)) == [SAT, SUN, MON]
+assert sb.eod_days_to_check(MON, date(2026, 11, 6), ['2026-11-07']) == [SUN, MON]
+assert sb.maybe_session(MON, MON) and sb.maybe_session(SUN, MON) and not sb.maybe_session(date(2026, 10, 31), MON), 'weekends: the last week only'
+sb.eod_save_state({'v': sb.EOD_STATE_VERSION, 'last': '2026-11-06'})
+put(SAT, holds=date(2026, 11, 6))            # Saturday: NSE's archive answers with Friday's file = no session
+del SENT[:], LOGS[:], HITS[:]
+sb.eod_step(CFG, today=SUN)                  # Sunday morning: today's file is not out yet
+assert SENT == [] and sb.eod_load_state()['no_session'] == ['2026-11-07'], sb.eod_load_state()
+assert not any('holiday' in x for x in LOGS) and 'NSE end-of-day: up to date (latest day sent: 06-11-2026).' in LOGS, LOGS
+put(SUN, holds=date(2026, 11, 6))            # a copy of Friday's file for today: not marked - the real one may come later
+del SENT[:], LOGS[:], HITS[:]
+sb.eod_step(CFG, today=SUN)
+assert SENT == [] and sb.eod_load_state()['no_session'] == ['2026-11-07'], sb.eod_load_state()
+assert not any('07112026' in h for h in HITS), 'Saturday is not asked again'
+put(SUN)                                     # the evening: Sunday's own files
+del SENT[:], LOGS[:], HITS[:]
+sb.eod_step(CFG, today=SUN)
+assert [x['tradeDate'] for x in SENT] == ['2026-11-08'] and SENT[0]['files'] == {'bhav': True, 'w52': True, 'bands': True}, SENT
+assert 'NSE end-of-day 08-11-2026: a special Sunday session (e.g. Muhurat trading) - taken like any trading day.' in LOGS, LOGS
+assert sb.eod_load_state()['last'] == '2026-11-08'
+put(MON)                                     # Monday: just Monday
+del SENT[:], LOGS[:]
+sb.eod_step(CFG, today=MON)
+assert [x['tradeDate'] for x in SENT] == ['2026-11-09'], [x['tradeDate'] for x in SENT]
+# an ordinary weekend: Saturday / Sunday without files - nothing logged as a holiday, Saturday noted after it passed
+sb.eod_save_state({'v': sb.EOD_STATE_VERSION, 'last': '2026-11-13'})
+del SENT[:], LOGS[:]
+sb.eod_step(CFG, today=date(2026, 11, 15))
+assert SENT == [] and sb.eod_load_state()['no_session'] == ['2026-11-14'], sb.eod_load_state()
+assert LOGS == ['NSE end-of-day: up to date (latest day sent: 13-11-2026).'], LOGS
+
 srv.shutdown()
 print('OK')

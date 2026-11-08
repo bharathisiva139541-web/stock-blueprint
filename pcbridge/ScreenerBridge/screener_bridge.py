@@ -538,6 +538,17 @@ EOD_FILES = {
 EOD_LINK_RE = {'bhav': r'sec_bhavdata_full_', 'w52': r'CM_52_wk_High_low_', 'bands': r'sec_list_'}
 EOD_SERIES = ('EQ', 'BE', 'BZ')     # mainboard equities (SME and other series are left out)
 EOD_LOOKBACK_DAYS = 7
+# Special sessions on a Saturday / Sunday (owner, 08-Nov-2026: the Sunday Muhurat session's OHLC never reached History60 -
+# only weekdays were asked for): weekend days of the last week are tried too; NSE's file is taken only when it holds that
+# very day (no file, or an earlier day's copy = no session - noted, never asked again).
+WEEKEND_LOOKBACK_DAYS = 7
+
+
+def maybe_session(d, today, no_session=()):
+    """A day worth asking NSE for: a weekday, or a recent weekend day not yet known to have had no session."""
+    if d.weekday() < 5:
+        return True
+    return (today - d).days <= WEEKEND_LOOKBACK_DAYS and d.isoformat() not in no_session
 EOD_STATE_VERSION = 4       # 1: new 52-week highs from the report's date alone; 2: counts of all NSE stocks (now: the sheet counts
                             # its own Main stocks from 'day'); 3: a day answered by the web app's older version (just after a
                             # New version deploy) was taken as done. An older state re-sends the last week once.
@@ -800,14 +811,15 @@ def eod_save_state(st):
         log('NSE end-of-day: could not save %s (%s)' % (EOD_STATE_PATH, e))
 
 
-def eod_days_to_check(today, last):
-    """Trading days (weekdays) after the last one the sheet received, up to today, at most a week back."""
+def eod_days_to_check(today, last, no_session=()):
+    """Trading days after the last one the sheet received, up to today, at most a week back: weekdays, and weekend days
+    that may have had a special session (Muhurat) - `no_session` = weekend days already found without one."""
     start = today - timedelta(days=EOD_LOOKBACK_DAYS)
     if last:
         start = max(start, last + timedelta(days=1))
     days, d = [], start
     while d <= today:
-        if d.weekday() < 5:
+        if maybe_session(d, today, no_session):
             days.append(d)
         d += timedelta(days=1)
     return days
@@ -825,7 +837,8 @@ def eod_step(cfg, today=None):
             last = date.fromisoformat(st['last']) if st.get('last') and st.get('v') == EOD_STATE_VERSION else None
         except ValueError:
             last = None
-        days = eod_days_to_check(today, last)
+        no_session = [x for x in (st.get('no_session') or []) if str(x) >= (today - timedelta(days=30)).isoformat()]
+        days = eod_days_to_check(today, last, no_session)
         if not days:
             log('NSE end-of-day: up to date (latest day sent: %s).' % (last.strftime('%d-%m-%Y') if last else '-'))
             return
@@ -843,11 +856,22 @@ def eod_step(cfg, today=None):
                 _BHAV_CACHE[d] = bhav
                 td = bhav_day(bhav)
                 if td and td != d:
-                    log('NSE end-of-day %s: NSE\'s file holds the trading day %s - an exchange holiday, skipped.'
-                        % (d.strftime('%d-%m-%Y'), td.strftime('%d-%m-%Y')))
+                    if d.weekday() >= 5:
+                        if d < today:                                # a weekend without a session: not asked again
+                            no_session.append(d.isoformat())         # (today's own file may still come in the evening)
+                            st['no_session'] = no_session
+                            eod_save_state(st)
+                    else:
+                        log('NSE end-of-day %s: NSE\'s file holds the trading day %s - an exchange holiday, skipped.'
+                            % (d.strftime('%d-%m-%Y'), td.strftime('%d-%m-%Y')))
                     continue
             if kind == 'missing':
-                today_missing = today_missing or d == today
+                if d.weekday() >= 5 and d < today:
+                    no_session.append(d.isoformat())                 # a past weekend day without a file: no session
+                    st['no_session'] = no_session
+                    eod_save_state(st)
+                    continue
+                today_missing = today_missing or (d == today and d.weekday() < 5)
                 continue                     # a holiday, or not published yet
             if kind == 'error':
                 problems.append('%s: %s' % (d.strftime('%d-%m-%Y'), bhav))
@@ -884,6 +908,9 @@ def eod_step(cfg, today=None):
                 return
             s = res['stats']
             missing = [n for n, k in (('52-week report', 'w52'), ('price band list', 'bands')) if not payload['files'][k]]
+            if d.weekday() >= 5:
+                log('NSE end-of-day %s: a special %s session (e.g. Muhurat trading) - taken like any trading day.'
+                    % (label, d.strftime('%A')))
             log('NSE end-of-day %s: your Main stocks - %d traded, %d up / %d down / %d unchanged, %s at a 52-week high, '
                 'circuits %s up / %s down; Delivery %% for %d in Main%s.'
                 % (label, s['traded'], s['advances'], s['declines'], s['unchanged'],
@@ -1039,10 +1066,17 @@ def hist_step(cfg, h60, today=None):
                 problem[0] = '%s: %s' % (d.strftime('%d-%m-%Y'), rows)
                 return False
             if kind == 'copy':
+                if d.weekday() >= 5 and d >= today:
+                    return True                    # today's weekend file may still come in the evening
                 misses[d.isoformat()] = 2
-                log('History60: NSE\'s file for %s holds the trading day %s - an exchange holiday, skipped.'
-                    % (d.strftime('%d-%m-%Y'), rows.strftime('%d-%m-%Y')))
+                if d.weekday() < 5:
+                    log('History60: NSE\'s file for %s holds the trading day %s - an exchange holiday, skipped.'
+                        % (d.strftime('%d-%m-%Y'), rows.strftime('%d-%m-%Y')))
                 return True
+            if d.weekday() >= 5:
+                if d < today:
+                    misses[d.isoformat()] = 2      # a weekend day without a file: no special session
+                return True                        # (today's may still come in the evening - asked again next run)
             if d >= today:
                 not_out[0] = True                  # today's file is published in the evening
             else:
@@ -1053,7 +1087,7 @@ def hist_step(cfg, h60, today=None):
         if have:
             d = max(max(have) + timedelta(days=1), limit)
             while d <= today:
-                if d.weekday() < 5 and not holiday(d) and not take(d):
+                if maybe_session(d, today) and not holiday(d) and not take(d):
                     break
                 if not_out[0]:
                     break
@@ -1062,7 +1096,7 @@ def hist_step(cfg, h60, today=None):
         # 2) older days, going back, until the sheet has `want`
         d = (min(have) if have else today + timedelta(days=1)) - timedelta(days=1)
         while ok and len(have) < want and d >= limit:
-            if d.weekday() < 5 and not holiday(d) and not take(d):
+            if maybe_session(d, today) and not holiday(d) and not take(d):
                 ok = False
                 break
             d -= timedelta(days=1)
