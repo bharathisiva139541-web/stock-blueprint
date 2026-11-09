@@ -90,20 +90,24 @@ LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles
 LIVE_MAIN.zones4h = { note: '4H FVG zones still untouched ...', cols: ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'],
   rows: [[FLAG_SYM, 'Flag Co', 'FVG', 3.52, '2026-10-14 13:15', 1.2, null], [SENT_SYM, null, 'Gap-up', 4.1, '2026-10-16 09:15', 6.5, null],
     [SENT_SYM, null, 'FVG', 2.2, '2026-10-01 13:15', -0.4, 'Y']] };
-const BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To'];
+// format 13 (owner, 09-Nov-2026): the 30-day move, 1R - 5R, the highest R before the stop - no prices
+const BT_COLS = ['Timeframe', 'Group', 'Signals', 'Avg Up % (30d)', 'Median Up % (30d)', 'Hit 1R %', 'Hit 1.5R %', 'Hit 2R %',
+  'Hit 3R %', 'Hit 5R %', 'Stopped %', 'Avg Max R', 'Median Max R', 'Still open', 'From', 'To'];
 LIVE_MAIN.springBacktest = {
-  summary: { note: 'FVG+Spring backtest on Zerodha Kite candles ...', cols: BT_COLS, rows: [
-    ['4H', 'FVG+Spring', 120, 45, 60, 10, 5, 42.9, 0.31, '2026-05-12 13:15', '2026-10-20 13:15'],
-    ['4H', 'FVG+Spring - zone top', 70, 30, 34, 4, 2, 46.9, 0.42, '2026-05-12 13:15', '2026-10-20 13:15'],
-    ['4H', 'FVG+Spring - zone middle', 0, 0, 0, 0, 0, null, null, null, null],
-    ['4H', 'FVG+Spring - zone bottom', 50, 15, 26, 6, 3, 36.6, 0.1, '2026-05-14 13:15', '2026-10-17 13:15'],
-    ['4H', 'Spring (every one, for comparison)', 900, 260, 520, 90, 30, 33.3, -0.05, '2026-05-11 13:15', '2026-10-20 13:15'],
-    ['D', 'FVG+Spring', 800, 300, 400, 90, 10, 42.9, 0.25, '2021-08-02', '2026-10-20'],
-    ['W', 'FVG+Spring', 0, 0, 0, 0, 0, null, null, null, null]] },
-  list: { note: 'The newest FVG+Spring trades ...', cols: ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'], rows: [
-    ['2026-10-20 13:15', FLAG_SYM, 'Flag Co', '4H', 'FVG', 'Bottom', 3, 'Open', null, 0],
-    ['2026-10-16', SENT_SYM, null, 'D', 'Gap-up', 'Top', 1, 'Win', 2, 3],
-    ['2026-10-09 13:15', SENT_SYM, null, '4H', 'FVG', 'Top', 2, 'Loss', -1, 1]] } };
+  summary: { note: 'FVG+Spring / Gap-up FVG + Spring backtest on Zerodha Kite candles ...', cols: BT_COLS, rows: [
+    ['4H', 'FVG+Spring', 120, 6.2, 4.1, 55, 47.5, 40, 25, 10, 52.5, 1.9, 1.2, 5, '2021-05-12 13:15', '2026-10-20 13:15'],
+    ['4H', 'FVG+Spring - zone top', 70, 7, 4.5, 58, 50, 42, 27, 11, 50, 2, 1.3, 2, '2021-05-12 13:15', '2026-10-20 13:15'],
+    ['4H', 'FVG+Spring - zone middle', 0, null, null, null, null, null, null, null, null, null, null, 0, null, null],
+    ['4H', 'FVG+Spring - zone bottom', 50, 5, 3.6, 51, 44, 37, 22, 8, 56, 1.7, 1.1, 3, '2021-05-14 13:15', '2026-10-17 13:15'],
+    ['4H', 'Spring (every one, for comparison)', 900, 4.4, 3, 45, 38, 30, 18, 6, 60, 1.4, 0.9, 30, '2021-05-11 13:15', '2026-10-20 13:15'],
+    ['4H', 'Gap-up FVG + Spring', 20, 8, 6, 60, 55, 45, 30, 12, 50, 2.3, 1.5, 1, '2022-01-03 13:15', '2026-10-16 13:15'],
+    ['4H', 'Gap-up FVG + Spring - inside FVG', 6, 11, 9, 67, 67, 50, 33, 17, 33, 2.9, 2, 0, '2023-02-01 13:15', '2026-09-16 13:15'],
+    ['D', 'FVG+Spring', 800, 9.1, 6, 60, 50, 42, 26, 9, 48, 2.1, 1.4, 10, '2007-08-02', '2026-10-20'],
+    ['W', 'FVG+Spring', 0, null, null, null, null, null, null, null, null, null, null, 0, null, null]] },
+  list: { note: 'The newest FVG+Spring / Gap-up FVG + Spring trades ...', cols: ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Up % (30d)', 'Max R', 'Result'], rows: [
+    ['2026-10-20 13:15', FLAG_SYM, 'Flag Co', '4H', 'FVG', 'Bottom', 3, null, null, 'Open'],
+    ['2026-09-16', SENT_SYM, null, 'D', 'Gap-up inside FVG', 'Top', 1, 12.5, 4.2, '3R reached'],
+    ['2026-09-09 13:15', SENT_SYM, null, '4H', 'FVG', 'Top', 2, 1.1, 0.4, 'Stopped']] } };
 
 /** API answers for one scenario: url -> { json, status } | 'abort'. */
 function liveApi(o) {
@@ -892,17 +896,17 @@ function check(name, fn) {
     assert.strictEqual(await p.$eval('#sg-z4-count', (x) => x.textContent), '2 of 3', 'within 2% of the top (or inside)');
     await p.click('[data-chip="sgz4"][data-v="Gap-up"]');
     assert.strictEqual(await p.$eval('#sg-z4-count', (x) => x.textContent), '1 of 3');
-    // FVG+Spring win rate: one tile per timeframe, the summary table, the trades with result chips
+    // FVG+Spring backtest: one tile per timeframe (the 30-day move), the summary table, the trades with result chips
     const b = await p.evaluate(() => ({
       tiles: [...document.querySelectorAll('#sg-sbt [data-sbt]')].map((t) => [t.getAttribute('data-sbt'), t.querySelector('.value').textContent]),
       note4h: (document.querySelector('#sg-sbt [data-sbt="4H"] .note2') || {}).textContent,
       sumRows: document.querySelectorAll('#sg-sbt-sum tbody tr').length,
       trades: document.querySelector('#sg-sbt-count').textContent
     }));
-    assert.deepStrictEqual(b.tiles, [['4H', '42.9%'], ['D', '42.9%'], ['W', '–']]);
-    assert.match(b.note4h, /120 signals · 45 won · 60 lost · avg 0\.31R.*top 46\.9% · middle – · bottom 36\.6% · every Spring 33\.3%/);
-    assert.ok(b.sumRows === 7 && b.trades === '3 of 3', JSON.stringify(b));
-    await p.click('[data-chip="sgsbtr"][data-v="Win"]');
+    assert.deepStrictEqual(b.tiles, [['4H', '+6.2%'], ['D', '+9.1%'], ['W', '–']]);
+    assert.match(b.note4h, /median \+4\.1% · 120 signals · 2R hit 40% · stopped 52\.5%.*Gap-up FVG \+ Spring \+8% · 2R 45% \(20\).*Gap-up inside FVG \+ Spring \+11% · 2R 50% \(6\).*Every Spring \+4\.4% · 2R 30% \(900\)/);
+    assert.ok(b.sumRows === 9 && b.trades === '3 of 3', JSON.stringify(b));
+    await p.click('[data-chip="sgsbtr"][data-v="reached"]');
     assert.strictEqual(await p.$eval('#sg-sbt-count', (x) => x.textContent), '1 of 3');
     await p.click('[data-chip="sgsbtf"][data-v="4H"]');
     assert.strictEqual(await p.$eval('#sg-sbt-count', (x) => x.textContent), '0 of 3');

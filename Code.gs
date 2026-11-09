@@ -9310,8 +9310,9 @@ function ab_site_main_(cx, readAt) {
 // export_xlsx.py Z4_COLS / BT_COLS / BTT_COLS + pick(): the only columns of those tabs the website gets
 const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG'];
 const AB_SITE_Z4_MAX = 6000;
-const AB_SITE_BT_COLS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %', 'Avg R', 'From', 'To'];
-const AB_SITE_BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles'];
+const AB_SITE_BT_COLS = ['Timeframe', 'Group', 'Signals', 'Avg Up % (30d)', 'Median Up % (30d)', 'Hit 1R %', 'Hit 1.5R %', 'Hit 2R %',
+  'Hit 3R %', 'Hit 5R %', 'Stopped %', 'Avg Max R', 'Median Max R', 'Still open', 'From', 'To'];
+const AB_SITE_BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Up % (30d)', 'Max R', 'Result'];
 const AB_SITE_BTT_MAX = 1000;
 
 /** The Mitigated FVG Log without its 4H rows (zones from Zerodha Kite candles - Kite's prices stay on the sheet) =
@@ -9844,7 +9845,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 12;   // 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 13;   // 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;

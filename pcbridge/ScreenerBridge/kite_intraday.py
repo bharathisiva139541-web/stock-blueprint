@@ -28,6 +28,7 @@ with a button that opens TradingView's own chart at that timeframe.
 Settings (config.json): kite_api_key, kite_api_secret (KiteSetup.bat asks for both), "intraday": false turns it off,
 "intraday_timeframes", "intraday_fvg_only" (timeframes that report only "Spring in FVG", default 15m and 30m).
 """
+import bisect
 import csv
 import gzip
 import hashlib
@@ -62,6 +63,14 @@ REQ_GAP_S = 0.35            # Kite: 3 historical-data requests a second
 M15_BACKFILL_DAYS = 190     # the first read of a stock (Kite: at most 200 days of 15-minute candles a request)
 M15_KEEP_SESSIONS = 125     # 15-minute candles kept per stock (~6 months: the 4H window below + its older gaps)
 DAY_BACKFILL_DAYS = 1900    # (Kite: at most 2000 days of day candles a request) - W / M need years
+# Deep history for the backtest (owner, 09-Nov-2026: "the backtest date should be maximum number of days ... my doubt if
+# we choose long duration, our sheet capable?" - the candles stay on this computer; the sheet gets only the summary):
+DEEP_DAY_YEARS = 20         # daily candles back this far (or to the listing day): W from them too
+DEEP_H4_DAYS = 2000         # 4H candles back this far, built from Kite's 60-minute candles (09:15-13:15 / 13:15-15:30)
+DAY_CHUNK_DAYS = 1995       # Kite: at most 2000 days of day candles a request
+H60_CHUNK_DAYS = 395        # Kite: at most 400 days of 60-minute candles a request
+DEEP_BUDGET_S = 20 * 60     # the daily scan adds deep history for at most this long a day (KiteHistoryNow.bat: all at once)
+SCAN_KEEP = {'4H': 300, 'D': 1400, 'W': 300, 'M': 120}   # candles the daily pattern scan looks at (deep history = backtest)
 OVERLAP_DAYS = 4            # each update reads these days again: a split / bonus changes Kite's older candles -> read all again
 ADJUST_TOL = 0.005          # 0.5 %
 FIRST_RUN_SESSIONS = 10     # the first scan reports the patterns of the last 10 sessions
@@ -403,10 +412,11 @@ def store_load(sym):
         if isinstance(s, dict):
             s.setdefault('m15', [])
             s.setdefault('day', [])
+            s.setdefault('h4', [])
             return s
     except (OSError, ValueError, EOFError):
         pass
-    return {'v': 1, 'sym': sym, 'm15': [], 'day': []}
+    return {'v': 1, 'sym': sym, 'm15': [], 'day': [], 'h4': []}
 
 
 def store_save(sym, s):
@@ -467,6 +477,8 @@ def update_symbol(cfg, sess, sym, token, upto):
         frm = upto - timedelta(days=DAY_BACKFILL_DAYS)
         day = historical(cfg, sess, token, 'day', datetime(frm.year, frm.month, frm.day), end)
         req += 1
+        if s.get('deep') or s.get('h4'):     # a split / bonus: the deep history is read again (deep_fill)
+            s['deep'], s['h4'] = {}, []
     last15 = date.fromisoformat(m15[-1][0][:10]) if m15 else None
     full15 = full or not last15 or (upto - last15).days > M15_BACKFILL_DAYS - OVERLAP_DAYS - 5
     if not full15:
@@ -482,10 +494,88 @@ def update_symbol(cfg, sess, sym, token, upto):
         m15 = historical(cfg, sess, token, '15minute', datetime(frm.year, frm.month, frm.day, 9, 0), end)
         req += 1
     s['day'] = [r for r in day if r[0] <= upto_iso]
-    s['m15'] = _trim_sessions([r for r in m15 if r[0][:10] <= upto_iso], M15_KEEP_SESSIONS)
+    m15 = [r for r in m15 if r[0][:10] <= upto_iso]
+    kept = _trim_sessions(m15, M15_KEEP_SESSIONS)
+    if s.get('h4') and len(kept) < len(m15):     # the 15-minute days that leave go on as 4H candles of the deep history
+        first = kept[0][0][:10] if kept else '9999'
+        s['h4'] = _merge(s['h4'], h4_rows([r for r in m15 if r[0][:10] < first]))
+    s['m15'] = kept
     s['upto'] = upto_iso
     store_save(sym, s)
     return s, req
+
+
+def h4_rows(rows):
+    """15- or 60-minute rows -> 4H rows [t, o, h, l, c, v] (09:15-13:15 / 13:15-15:30)."""
+    return [[c['t'], c['o'], c['h'], c['l'], c['c'], c['v']] for c in bucket_intraday(rows, 240)]
+
+
+def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
+    """The deep history of one stock for the backtest: daily candles back DEEP_DAY_YEARS (or to its listing) and 4H
+    candles back DEEP_H4_DAYS from Kite's 60-minute candles - each read once (store['deep']); a split / bonus later
+    (update_symbol) reads them again. -> (store, requests)."""
+    s = store or store_load(sym)
+    deep = s.get('deep') if isinstance(s.get('deep'), dict) else {}
+    req = 0
+    if not deep.get('day'):
+        limit = upto - timedelta(days=int(365.25 * DEEP_DAY_YEARS))
+        end = (date.fromisoformat(s['day'][0][0]) if s['day'] else upto + timedelta(days=1)) - timedelta(days=1)
+        while end > limit:
+            frm = max(limit, end - timedelta(days=DAY_CHUNK_DAYS))
+            rows = historical(cfg, sess, token, 'day', datetime(frm.year, frm.month, frm.day), datetime(end.year, end.month, end.day, 15, 30))
+            req += 1
+            if not rows:
+                break                                  # nothing older on Kite (listed later)
+            s['day'] = _merge(rows, s['day'])          # the stored candles win where both have a day
+            end = frm - timedelta(days=1)
+        deep['day'] = upto.isoformat()
+    if not deep.get('h4'):
+        limit = upto - timedelta(days=DEEP_H4_DAYS)
+        first = (s.get('h4') or [[None]])[0][0] or (s['m15'][0][0] if s['m15'] else None)
+        end = (date.fromisoformat(first[:10]) if first else upto + timedelta(days=1)) - timedelta(days=1)
+        if not s.get('h4') and s['m15']:            # the stored 15-minute days are 4H candles too
+            s['h4'] = h4_rows(s['m15'])
+        while end > limit:
+            frm = max(limit, end - timedelta(days=H60_CHUNK_DAYS))
+            rows = historical(cfg, sess, token, '60minute', datetime(frm.year, frm.month, frm.day, 9, 0),
+                              datetime(end.year, end.month, end.day, 15, 30))
+            req += 1
+            if not rows:
+                break
+            s['h4'] = _merge(h4_rows(rows), s.get('h4') or [])
+            end = frm - timedelta(days=1)
+        deep['h4'] = upto.isoformat()
+    s['deep'] = deep
+    if req:
+        store_save(sym, s)
+    return s, req
+
+
+def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None):
+    """deep_fill_symbol for the stocks without their deep history yet, for at most `budget_s` seconds (None = all).
+    -> (filled, still to do, requests). NeedLogin goes up; other errors skip the stock."""
+    out = out or log
+    t0, done, req, todo = time.time(), 0, 0, []
+    for sym in syms:
+        tok = token_for(imap, sym)
+        if tok is None:
+            continue
+        st = store_load(sym)
+        deep = st.get('deep') if isinstance(st.get('deep'), dict) else {}
+        if not (deep.get('day') and deep.get('h4')):
+            todo.append((sym, tok, st))
+    for k, (sym, tok, st) in enumerate(todo):
+        if budget_s is not None and time.time() - t0 > budget_s:
+            break
+        try:
+            _, n = deep_fill_symbol(cfg, sess, sym, tok, upto, st)
+            req += n
+            done += 1
+        except KiteError as e:
+            out('Kite deep history: %s - %s' % (sym, e))
+        if (k + 1) % 100 == 0:
+            out('Kite deep history: %d / %d stocks (%d requests, %.0f min)' % (k + 1, len(todo), req, (time.time() - t0) / 60))
+    return done, len(todo) - done, req
 
 
 # ------------------------------------------------------------------ candles of every timeframe
@@ -548,6 +638,12 @@ def group_days(day, kind):
 
 
 def timeframe_candles(store, tf):
+    if tf == '4H':
+        recent = bucket_intraday(store.get('m15') or [], 240)
+        first = recent[0]['t'][:10] if recent else '9999-12-31'
+        older = [{'t': r[0], 'day': r[0][:10], 'o': r[1], 'h': r[2], 'l': r[3], 'c': r[4], 'v': r[5]}
+                 for r in store.get('h4') or [] if r[0][:10] < first]
+        return older + recent
     if tf in TF_MINUTES:
         return bucket_intraday(store.get('m15') or [], TF_MINUTES[tf])
     if tf == 'D':
@@ -698,25 +794,17 @@ class _RangeMin:
         return min(row[lo], row[hi - (1 << lvl) + 1])
 
 
-def _touch_starts(candles, z):
-    """The candles that start a touch of a zone's top (a low at or under the top after the previous candle's low stayed
-    above it), worked out once per zone."""
-    if 'starts' not in z:
-        top, f = z['top'], z['f']
-        z['starts'] = [k for k in range(f + 1, len(candles))
-                       if candles[k]['l'] <= top and (k == f + 1 or candles[k - 1]['l'] > top)]
-    return z['starts']
-
-
-def spring_zone(candles, i, zones, max_age=None, rmq=None):
+def spring_zone(candles, i, zones, max_age=None, rmq=None, fs=None):
     """web/lib/fvg.js springZone (owner, 08-Nov-2026): the oldest zone formed before the pair (f <= i-2; with `max_age`,
     at most that many candles back) where candle i's low is at or under the zone top (inside it, or under the bottom - any
     depth) and its close above the bottom, while every close from f+1 to i-2 stays at or above both the zone bottom (the
-    zone holds) and candle i's low (no earlier close under the Spring low).
-    -> {'kind', 'f', 'bottom', 'top', 'where': 'top'|'middle'|'bottom', 'touch'} or None."""
+    zone holds) and candle i's low (no earlier close under the Spring low). `fs` = the zones' f values (sorted, as
+    `zones`) - the search then starts at the first zone young enough (the long backtest).
+    -> {'kind', 'f', 'bottom', 'top', 'where': 'top'|'middle'|'bottom', 'touch', 'inside'} or None."""
     c2 = candles[i]
     rmq = rmq or _RangeMin([c['c'] for c in candles])
-    for z in zones:
+    start = bisect.bisect_left(fs, i - max_age) if fs is not None and max_age is not None else 0
+    for z in zones[start:]:
         if z['f'] > i - 2:
             break
         if max_age is not None and i - z['f'] > max_age:
@@ -726,9 +814,10 @@ def spring_zone(candles, i, zones, max_age=None, rmq=None):
             continue
         if rmq.min(z['f'] + 1, i - 2) < max(bottom, c2['l']):
             continue
-        touch = sum(1 for k in _touch_starts(candles, z) if k <= i)
+        f = z['f']
+        touch = sum(1 for k in range(f + 1, i + 1) if candles[k]['l'] <= top and (k == f + 1 or candles[k - 1]['l'] > top))
         where = 'bottom' if c2['l'] <= bottom else 'top' if c2['l'] >= (bottom + top) / 2 else 'middle'
-        return {'kind': z['kind'], 'f': z['f'], 'bottom': bottom, 'top': top, 'where': where, 'touch': touch,
+        return {'kind': z['kind'], 'f': f, 'bottom': bottom, 'top': top, 'where': where, 'touch': touch,
                 'inside': bool(z.get('inside'))}
     return None
 
@@ -924,8 +1013,9 @@ FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed')
 RULES_VERSION = 4                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
                                    # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch)
 KEEP_DAYS = 30                     # = the sheet's AB_ITD_KEEP_DAYS: Spring in FVG rows a later close under the low takes off
-BT_HORIZON = 20                    # backtest: a trade gets 20 candles to hit 2R or its stop
-BT_RR = 2.0
+BT_DAYS = 30                       # backtest (owner, 09-Nov-2026: "use % movement to upward direction within 30 days from
+                                   # pattern day" and "backtest should not be limited to 2R"): the 30 calendar days after it
+BT_TARGETS = (1, 1.5, 2, 3, 5)     # R targets reached before the stop (R = the Spring candle's close - its low)
 BT_TRADES = 500                    # newest FVG+Spring trades listed on the sheet
 TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the last 30 daily candles
 
@@ -941,24 +1031,59 @@ def zone_out(cs, z):
     return out
 
 
-def trade_2r(cs, i, horizon=BT_HORIZON, rr=BT_RR):
-    """The owner's backtest (08-Nov-2026): buy at candle i's close, stop just under its low, target = close + 2 x risk;
-    a WIN when a later candle reaches the target before any goes under the low, within `horizon` candles. A candle that
-    does both counts as a loss (the order inside it is unknown). -> (result, R, candles) with result win / loss /
-    timeout (R = where it closed after `horizon` candles) / open (fewer candles since); None without a risk."""
+def trade_30d(cs, i, days=BT_DAYS):
+    """The owner's backtest (09-Nov-2026) of a Spring on candle i: buy at its close, stop = under its low, R = close - low.
+    Over the candles of the next `days` calendar days: 'up' = the highest high vs the entry in % (the move, stop or not),
+    'hits' = each BT_TARGETS target reached before any candle went under the stop (a candle doing both = not reached),
+    'maxR' = the highest high before the stop in R, 'stopped' = a low under the stop. 'result' = the biggest target reached
+    ('5R' ... '1R'), else 'stopped' / 'none'; 'open' while the 30 days are not over. None without a risk."""
     entry, stop = cs[i]['c'], cs[i]['l']
     risk = entry - stop
-    if not risk > 0:
+    if not (risk > 0 and entry > 0):
         return None
-    target = entry + rr * risk
-    for j in range(i + 1, min(len(cs), i + 1 + horizon)):
-        if cs[j]['l'] < stop:
-            return ('loss', -1.0, j - i)
-        if cs[j]['h'] >= target:
-            return ('win', rr, j - i)
-    if i + horizon < len(cs):
-        return ('timeout', round((cs[i + horizon]['c'] - entry) / risk, 2), horizon)
-    return ('open', None, len(cs) - 1 - i)
+    end = (date.fromisoformat(cs[i]['day'][:10]) + timedelta(days=days)).isoformat()
+    win, j, n = [], i + 1, len(cs)
+    while j < n and cs[j]['day'][:10] <= end:
+        win.append(cs[j])
+        j += 1
+    if j >= n:                                 # no candle after the 30 days yet: still running
+        return {'result': 'open', 'up': None, 'maxR': None, 'stopped': False, 'hits': [False] * len(BT_TARGETS), 'bars': len(win)}
+    up = (max(c['h'] for c in win) - entry) / entry * 100 if win else 0.0
+    k = next((x for x, c in enumerate(win) if c['l'] < stop), None)
+    best = max((c['h'] for c in (win if k is None else win[:k])), default=entry)
+    hits = [best >= entry + t * risk for t in BT_TARGETS]
+    top = max((t for t, h in zip(BT_TARGETS, hits) if h), default=None)
+    return {'result': ('%gR' % top) if top is not None else ('stopped' if k is not None else 'none'), 'up': round(up, 2),
+            'maxR': round(max(0.0, (best - entry) / risk), 2), 'stopped': k is not None, 'hits': hits, 'bars': len(win)}
+
+
+def bt_signals(cs, cfg=None, max_age=None):
+    """FVG+Spring and Gap-up FVG + Spring of a long candle series, quickly (the backtest): {i: [zone, ...]} - the same
+    zones as fvg_detail's 'spring' / 'gapspring' (zones at most `max_age` candles old)."""
+    n = len(cs)
+    if n < 17:
+        return {}
+    zones = spring_zones(cs, fvg_gaps(cs))
+    fz = [z for z in zones if z['kind'] == 'FVG']
+    gz = [z for z in zones if z['kind'] == 'Gap-up']
+    ff, gf = [z['f'] for z in fz], [z['f'] for z in gz]
+    rmq = _RangeMin([c['c'] for c in cs])
+    out = {}
+    for i in range(3, n):
+        if not is_spring_pair(cs[i - 1], cs[i], cfg):
+            continue
+        hits = [h for h in (spring_zone(cs, i, fz, max_age, rmq, ff), spring_zone(cs, i, gz, max_age, rmq, gf)) if h]
+        if hits:
+            out[i] = hits
+    return out
+
+
+def _median(xs):
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    m = len(xs) // 2
+    return round(xs[m] if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2, 2)
 
 
 def _slot_ok(slots, tf, c):
@@ -967,18 +1092,20 @@ def _slot_ok(slots, tf, c):
 
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
             backtest=False):
-    """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`), the
-    4H FVG zones still untouched + the ones first touched in those sessions, and (backtest) the 2R outcome of every
-    FVG+Spring and Spring of BACKTEST_TFS on all stored candles.
+    """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
+    last SCAN_KEEP candles -, the 4H FVG zones + the ones first touched in those sessions, and (backtest) the 30-day
+    outcome (trade_30d) of every FVG+Spring / Gap-up FVG + Spring and Spring of BACKTEST_TFS on ALL stored candles.
     -> {'items': [{'tf', 'pattern', 'candle', 'session', 'low', 'close', 'zone'}], 'zones': [...], 'mitigated': [...],
         'trades': [...FVG+Spring...], 'springs': [(tf, outcome)...every Spring...],
         'invalid': [{'tf', 'candle'}...Spring in FVG of the last KEEP_DAYS a later close under the Spring low broke]}"""
     out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': []}
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
     for tf in timeframes:
-        all_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
-        if len(all_c) < 2:
+        full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
+        if len(full_c) < 2:
             continue
+        # the daily scan looks at the recent candles (as before the deep history); the backtest below at all of them
+        all_c = full_c[-SCAN_KEEP[tf]:] if tf in SCAN_KEEP else full_c
         win = WINDOW.get(tf, 300)
         d = fvg_detail(all_c, cfg, max_age=win) if tf not in NO_FVG_SPRING_TFS or tf in FVG_PATTERN_TFS else None
         first = max(1, len(all_c) - win)
@@ -1027,19 +1154,18 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                         mo['inside'] = 1
                     out['mitigated'].append(mo)
         if backtest and tf in BACKTEST_TFS:
-            for i in range(3, len(all_c)):
-                c = all_c[i]
-                if not _slot_ok(slots, tf, c) or not is_spring_pair(all_c[i - 1], c, cfg):
+            sig = bt_signals(full_c, cfg, win) if tf not in NO_FVG_SPRING_TFS else {}
+            for i in range(3, len(full_c)):
+                c = full_c[i]
+                if not _slot_ok(slots, tf, c) or not is_spring_pair(full_c[i - 1], c, cfg):
                     continue
-                res = trade_2r(all_c, i)
-                if res is None:
+                o = trade_30d(full_c, i)
+                if o is None:
                     continue
-                out['springs'].append((tf, c['t'], res))
-                for key in ('spring', 'gapspring'):
-                    sz = d[key].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
-                    if sz:
-                        out['trades'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'zone': sz['kind'], 'where': sz['where'],
-                                              'touch': sz['touch'], 'result': res[0], 'r': res[1], 'bars': res[2]})
+                out['springs'].append((tf, c['t'], o))
+                for z in sig.get(i, ()):
+                    out['trades'].append(dict(o, tf=tf, candle=c['t'], session=c['day'], zone=z['kind'], where=z['where'],
+                                              touch=z['touch'], inside=bool(z.get('inside'))))
     return out
 
 
@@ -1050,43 +1176,70 @@ def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_on
 
 BT_GROUPS = (('fvg', 'FVG+Spring'), ('top', 'FVG+Spring - zone top'), ('middle', 'FVG+Spring - zone middle'),
              ('bottom', 'FVG+Spring - zone bottom'), ('spring', 'Spring (every one, for comparison)'),
-             ('gap', 'Gap-up FVG + Spring'))
+             ('gap', 'Gap-up FVG + Spring'), ('gapin', 'Gap-up FVG + Spring - inside FVG'))
 
 
 def bt_summary(trades, springs, tfs=BACKTEST_TFS):
-    """Win rate per timeframe: FVG+Spring (all / zone top / middle / bottom) and every Spring. -> [row dicts]."""
+    """Per timeframe and group: signals whose 30 days are over, the 30-day move (avg / median %), each target's hit % (of
+    those signals), stopped %, the highest R before the stop (avg / median), first / last signal. -> [row dicts]."""
     agg = {}
 
-    def add(tf, g, when, res):
-        a = agg.setdefault((tf, g), {'n': 0, 'win': 0, 'loss': 0, 'timeout': 0, 'open': 0, 'r': 0.0, 'rn': 0, 'from': when, 'to': when})
-        a['n'] += 1
-        a[res[0]] += 1
-        if res[1] is not None:
-            a['r'] += res[1]
-            a['rn'] += 1
+    def add(tf, g, when, o):
+        a = agg.setdefault((tf, g), {'n': 0, 'open': 0, 'ups': [], 'rs': [], 'hits': [0] * len(BT_TARGETS), 'stopped': 0,
+                                     'from': when, 'to': when})
         a['from'], a['to'] = min(a['from'], when), max(a['to'], when)
+        if o['result'] == 'open':
+            a['open'] += 1
+            return
+        a['n'] += 1
+        a['ups'].append(o['up'])
+        a['rs'].append(o['maxR'])
+        a['stopped'] += 1 if o['stopped'] else 0
+        for x, h in enumerate(o['hits']):
+            a['hits'][x] += 1 if h else 0
     for t in trades:
-        res = (t['result'], t['r'], t['bars'])
         if t.get('zone') == 'Gap-up':           # Gap-up FVG + Spring (owner, 08-Nov-2026: split from FVG+Spring)
-            add(t['tf'], 'gap', t['candle'], res)
+            add(t['tf'], 'gap', t['candle'], t)
+            if t.get('inside'):
+                add(t['tf'], 'gapin', t['candle'], t)
             continue
-        add(t['tf'], 'fvg', t['candle'], res)
-        add(t['tf'], t['where'], t['candle'], res)
-    for tf, when, res in springs:
-        add(tf, 'spring', when, res)
+        add(t['tf'], 'fvg', t['candle'], t)
+        add(t['tf'], t['where'], t['candle'], t)
+    for tf, when, o in springs:
+        add(tf, 'spring', when, o)
     rows = []
     for tf in tfs:
         for g, name in BT_GROUPS:
-            a = agg.get((tf, g))
-            if not a:
-                rows.append({'tf': tf, 'group': name, 'signals': 0, 'wins': 0, 'losses': 0, 'timeouts': 0, 'open': 0,
-                             'winRate': None, 'avgR': None, 'from': '', 'to': ''})
-                continue
-            closed = a['win'] + a['loss']
-            rows.append({'tf': tf, 'group': name, 'signals': a['n'], 'wins': a['win'], 'losses': a['loss'], 'timeouts': a['timeout'],
-                         'open': a['open'], 'winRate': round(a['win'] * 100.0 / closed, 1) if closed else None,
-                         'avgR': round(a['r'] / a['rn'], 2) if a['rn'] else None, 'from': a['from'], 'to': a['to']})
+            a = agg.get((tf, g)) or {'n': 0, 'open': 0, 'ups': [], 'rs': [], 'hits': [0] * len(BT_TARGETS), 'stopped': 0,
+                                     'from': '', 'to': ''}
+            n = a['n']
+            pct = (lambda c: round(c * 100.0 / n, 1)) if n else (lambda c: None)
+            rows.append({'tf': tf, 'group': name, 'signals': n, 'open': a['open'],
+                         'avgUp': round(sum(a['ups']) / n, 2) if n else None, 'medUp': _median(a['ups']),
+                         'hits': [pct(c) for c in a['hits']], 'stopped': pct(a['stopped']),
+                         'avgR': round(sum(a['rs']) / n, 2) if n else None, 'medR': _median(a['rs']),
+                         'from': a['from'], 'to': a['to']})
     return rows
+
+
+def bt_log(rows):
+    """One line per timeframe: FVG+Spring, Gap-up FVG + Spring (+ inside FVG) and every Spring - the 30-day move and 2R."""
+    by = {}
+    for r in rows:
+        by.setdefault(r['tf'], {})[r['group']] = r
+    i2 = BT_TARGETS.index(2)
+    fmt = lambda r: ('%d: up %+.1f%% avg / %+.1f%% median, 2R %s, stopped %s' % (
+        r['signals'], r['avgUp'], r['medUp'], ('%.0f%%' % r['hits'][i2]) if r['hits'][i2] is not None else '-',
+        ('%.0f%%' % r['stopped']) if r['stopped'] is not None else '-')) if r and r['signals'] else '0'
+    out = []
+    for tf in BACKTEST_TFS:
+        g = by.get(tf) or {}
+        if not g.get(BT_GROUPS[0][1]):
+            continue
+        out.append('%s FVG+Spring %s; Gap-up FVG + Spring %s (inside FVG %s); every Spring %s'
+                   % (tf, fmt(g.get(BT_GROUPS[0][1])), fmt(g.get(BT_GROUPS[5][1])), fmt(g.get(BT_GROUPS[6][1])),
+                      fmt(g.get(BT_GROUPS[4][1]))))
+    return out
 
 
 def tv_url(sym, tf):
@@ -1171,35 +1324,17 @@ def send_zones(cfg, api, upto, since, zones, mitigated):
         log('Kite: 4H FVG zones not sent - %s' % e)
 
 
-def bt_log(rows):
-    """One line per timeframe: FVG+Spring signals and win rate (+ every Spring for comparison)."""
-    by = {}
-    for r in rows:
-        by.setdefault(r['tf'], {})[r['group']] = r
-    out = []
-    for tf in BACKTEST_TFS:
-        g = by.get(tf) or {}
-        f, sp = g.get(BT_GROUPS[0][1]), g.get(BT_GROUPS[4][1])
-        if not f:
-            continue
-        rate = lambda r: ('%.1f%%' % r['winRate']) if r and r['winRate'] is not None else '-'
-        gp = g.get(BT_GROUPS[5][1])
-        out.append('%s FVG+Spring %d signals, win rate %s (top %s, middle %s, bottom %s); Gap-up FVG + Spring %d, win rate %s; '
-                   'every Spring %s'
-                   % (tf, f['signals'], rate(f), rate(g.get(BT_GROUPS[1][1])), rate(g.get(BT_GROUPS[2][1])),
-                      rate(g.get(BT_GROUPS[3][1])), gp['signals'] if gp else 0, rate(gp), rate(sp)))
-    return out
-
-
 def send_backtest(cfg, api, upto, trades, springs_bt):
-    """The 2R backtest of every FVG+Spring (4H / D / W, all stored candles) -> the sheet's "Spring Backtest" tabs."""
+    """The backtest of every FVG+Spring / Gap-up FVG + Spring (4H / D / W, all stored candles) -> the sheet's "Spring
+    Backtest" tabs (the summary rows + the newest BT_TRADES trades, no prices)."""
     try:
         rows = bt_summary(trades, springs_bt)
         for line in bt_log(rows):
-            log('Kite backtest (2R before the stop, %d candles): %s' % (BT_HORIZON, line))
-        newest = sorted(trades, key=lambda t: (t['candle'], t['sym']), reverse=True)[:BT_TRADES]
+            log('Kite backtest (the %d days after each signal): %s' % (BT_DAYS, line))
+        keys = ('sym', 'tf', 'candle', 'zone', 'where', 'touch', 'inside', 'result', 'up', 'maxR')
+        newest = [{k: t.get(k) for k in keys} for t in sorted(trades, key=lambda t: (t['candle'], t['sym']), reverse=True)[:BT_TRADES]]
         res = api(cfg, 'intraday', {'op': 'backtest', 'upto': upto.isoformat(), 'rows': rows, 'trades': newest,
-                                    'horizon': BT_HORIZON, 'rr': BT_RR, 'total': len(trades)}, tries=3, timeout=180)
+                                    'days': BT_DAYS, 'targets': list(BT_TARGETS), 'total': len(trades)}, tries=3, timeout=180)
         if not res.get('ok'):
             log('Kite: the sheet refused the backtest - %s (paste the new Code.gs + Code2.gs and do the New version deploy)'
                 % res.get('error'))
@@ -1223,7 +1358,8 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
         return 1
     slots = chosen_slots(cfg, list(BACKTEST_TFS))
     trades, springs_bt, t0 = [], [], time.time()
-    out('Backtest of FVG+Spring on %d stocks (4H, D, W; candles up to %s) ...' % (len(names), upto.isoformat()))
+    out('Backtest of FVG+Spring / Gap-up FVG + Spring on %d stocks (4H, D, W - every stored candle; up to %s) ...'
+        % (len(names), upto.isoformat()))
     for k, name in enumerate(names):
         try:
             with gzip.open(os.path.join(DATA_DIR, name), 'rt', encoding='utf-8') as f:
@@ -1239,11 +1375,41 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
         if (k + 1) % 300 == 0:
             out('  %d / %d stocks (%.0f s)' % (k + 1, len(names), time.time() - t0))
     rows = send_backtest(cfg, api, upto, trades, springs_bt) or bt_summary(trades, springs_bt)
-    out('\nWin rate = target (2 x risk) reached before the stop (just under the Spring candle\'s low), within %d candles:' % BT_HORIZON)
+    out('\nIn the %d days after each signal: "up" = the highest price vs the Spring candle\'s close; "2R" = the target of 2 x the '
+        'risk (close - low) reached before any candle went under the Spring low; "stopped" = it did go under:' % BT_DAYS)
     for line in bt_log(rows):
         out('  ' + line)
     out('\nThe sheet\'s "Spring Backtest" tab has every number; the website shows them under Signals.')
     return 0
+
+
+def history_now(cfg, api, holidays=None, now=None, out=print):
+    """KiteHistoryNow.bat: the deep history of every PatternData stock at once (daily candles back DEEP_DAY_YEARS, 4H
+    back DEEP_H4_DAYS - the first time about an hour and ~250 MB in intraday_data), then the backtest -> the sheet."""
+    holidays = set(holidays or ())
+    now = now or now_ist()
+    sess = ensure_session(cfg)
+    if not sess:
+        out('No Kite login - nothing read.')
+        return 1
+    ans = api(cfg, 'intraday', {'op': 'syms'}, tries=2, timeout=120)
+    if not ans.get('ok'):
+        out('The sheet refused the symbol list - %s' % ans.get('error'))
+        return 1
+    syms = [str(x).strip().upper() for x in ans.get('syms') or [] if str(x).strip()]
+    upto = completed_session(now, holidays)
+    imap = instruments(cfg, sess, now.date().isoformat())
+    out('Deep history for the backtest: daily candles back %d years, 4H back %d days, %d stocks (only what is not on '
+        'this computer yet) ...' % (DEEP_DAY_YEARS, DEEP_H4_DAYS, len(syms)))
+    t0 = time.time()
+    try:
+        done, left, req = deep_fill(cfg, sess, imap, syms, upto, None, out)
+    except NeedLogin as e:
+        out('Kite: %s - run KiteHistoryNow.bat again after the login.' % e)
+        return 1
+    out('Deep history: %d stocks read (%d requests, %.0f min)%s.' % (done, req, (time.time() - t0) / 60,
+                                                                    ', %d still to do' % left if left else ''))
+    return backtest_now(cfg, api, holidays, now, out)
 
 
 def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=False, open_browser=True):
@@ -1363,6 +1529,13 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         if '4H' in tfs:
             send_zones(cfg, api, upto, since, zones, mitigated)
         send_backtest(cfg, api, upto, trades, springs_bt)
+        try:                            # the deep history for the backtest, a part a day (KiteHistoryNow.bat: all at once)
+            done, left, n = deep_fill(cfg, sess, imap, syms, upto, DEEP_BUDGET_S)
+            if done or left:
+                log('Kite: deep history for the backtest - %d stocks read now (%d requests)%s.'
+                    % (done, n, ', %d still to do: the next scans carry on (or KiteHistoryNow.bat all at once)' % left if left else ', all done'))
+        except NeedLogin:
+            log('Kite: deep history stopped - the permission ended (it carries on after the next login).')
         st['scanned'] = upto.isoformat()
         st['tfs'] = tfs
         st['slots'] = slots

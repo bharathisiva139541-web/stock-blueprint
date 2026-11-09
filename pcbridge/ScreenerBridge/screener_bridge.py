@@ -62,7 +62,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py kitesetup  your Kite Connect API key + secret, then the first Kite login
   python screener_bridge.py intraday   the Kite intraday / weekly / monthly pattern scan now (asks for the login if needed)
   python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
-  python screener_bridge.py backtest   the FVG+Spring win rate (2R) on the Kite candles already stored -> the sheet (no login)
+  python screener_bridge.py backtest   the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1-5R) on the stored Kite candles -> the sheet (no login)
+  python screener_bridge.py kitehistory  Kite's long history (daily ~20 years, 4H ~5 years) for the backtest at once, then the backtest
   python screener_bridge.py live       Kite live prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
@@ -4071,6 +4072,15 @@ def main(argv):
             log('Not set up yet - run Setup.bat first.')
             return 1
         return itd.backtest_now(cfg, api, nse_holidays())
+    if cmd == 'kitehistory':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        try:
+            return itd.history_now(cfg, api, nse_holidays())
+        except (itd.KiteError, itd.NeedLogin) as e:
+            print('PROBLEM - %s' % e)
+            return 1
     if cmd == 'intradaycheck':
         print('Kite candle check - Spring / Spring in FVG of one stock (nothing is sent to the sheet)')
         try:

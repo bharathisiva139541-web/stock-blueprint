@@ -383,14 +383,15 @@ assert all(z['tf'] == '4H' and len(z['zone']) == 4 and z['zone'][3] in ('FVG', '
 assert all(m['candle'][:10] > '2026-10-23' for m in zp[0]['mitigated']), zp[0]['mitigated']
 # the backtest: every FVG+Spring of 4H / D / W on all stored candles, 2R before the stop within 20 candles
 bp = [p for p in POSTS if p['op'] == 'backtest']
-assert len(bp) == 1 and bp[0]['horizon'] == 20 and bp[0]['rr'] == 2.0, bp
+assert len(bp) == 1 and bp[0]["days"] == 30 and bp[0]["targets"] == [1, 1.5, 2, 3, 5], LOGS[-8:]
 groups = {(r['tf'], r['group']) for r in bp[0]['rows']}
-assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 18, groups
+assert ('4H', 'FVG+Spring') in groups and ('D', 'Spring (every one, for comparison)') in groups and len(bp[0]['rows']) == 21, groups
+assert ('4H', 'Gap-up FVG + Spring - inside FVG') in groups
 tr = [t for t in bp[0]['trades'] if t['sym'] == 'PARAGMILK' and t['candle'] == '2026-10-30 13:15']
-assert tr and tr[0]['result'] == 'win' and tr[0]['where'] == 'bottom' and tr[0]['r'] == 2.0, tr
-assert all(set(t) == {'sym', 'tf', 'candle', 'session', 'zone', 'where', 'touch', 'result', 'r', 'bars'} for t in bp[0]['trades'])
+assert tr and tr[0]['where'] == 'bottom' and tr[0]['result'] == 'open', 'the candles end a week later: its 30 days are not over'
+assert all(set(t) == {'sym', 'tf', 'candle', 'zone', 'where', 'touch', 'inside', 'result', 'up', 'maxR'} for t in bp[0]['trades'])
 row = [r for r in bp[0]['rows'] if r['tf'] == '4H' and r['group'] == 'FVG+Spring'][0]
-assert row['signals'] >= 1 and row['wins'] >= 1 and row['winRate'] is not None, row
+assert row['open'] >= 1 and len(row['hits']) == 5, row
 assert any('Kite backtest' in m and '4H FVG+Spring' in m for m in LOGS), LOGS[-6:]
 POSTS.clear()
 assert K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 6, 19, 0)) == 0 and not POSTS, 'already scanned'
@@ -441,65 +442,53 @@ R = K.Runner()
 assert R.maybe_start(CFG, fake_api, HOL, online=lambda: False) is False and not R.busy()
 assert R.maybe_start(dict(CFG, kite_api_key=''), fake_api, HOL, online=lambda: 1 / 0) is False, 'not due: the internet is not even checked'
 
-# ------------------------------------------------------------------ 10. the 2R rule and the summary
-def C(o, h, l, c):
-    return {'t': 'x', 'day': 'x', 'o': o, 'h': h, 'l': l, 'c': c, 'v': 1}
+# ------------------------------------------------------------------ 10. the 30-day outcome and the summary (owner, 09-Nov-2026)
+def C(o, h, l, c, day='2026-10-01'):
+    return {'t': day, 'day': day, 'o': o, 'h': h, 'l': l, 'c': c, 'v': 1}
 
 
-sig = [C(100, 101, 95, 96), C(96, 97, 94, 96.5)]           # entry 96.5, stop under 94, risk 2.5, target 101.5
-assert K.trade_2r(sig + [C(96.5, 99, 95, 98), C(98, 101.6, 97, 101)], 1) == ('win', 2.0, 2)
-assert K.trade_2r(sig + [C(96.5, 97, 93.9, 95)], 1) == ('loss', -1.0, 1), 'under the Spring candle\'s low = stopped'
-assert K.trade_2r(sig + [C(96.5, 94.1, 94.0, 94.0)], 1) is not None and K.trade_2r(sig + [C(96.5, 97, 94.0, 96)], 1)[0] == 'open', \
-    'touching the low exactly is not under it'
-assert K.trade_2r(sig + [C(96.5, 102, 93, 100)], 1)[0] == 'loss', 'stop and target in one candle: counted as a loss'
-flat = sig + [C(96.5, 97.5, 95.5, 97)] * 20
-assert K.trade_2r(flat, 1) == ('timeout', 0.2, 20), K.trade_2r(flat, 1)
-assert K.trade_2r(sig + [C(96.5, 97.5, 95.5, 97)] * 5, 1) == ('open', None, 5)
-assert K.trade_2r([C(100, 101, 95, 96), C(96, 97, 96, 96)], 1) is None, 'no risk'
-rows = K.bt_summary([{'tf': '4H', 'candle': '2026-10-01 13:15', 'where': 'top', 'result': 'win', 'r': 2.0, 'bars': 3},
-                     {'tf': '4H', 'candle': '2026-10-05 13:15', 'where': 'bottom', 'result': 'loss', 'r': -1.0, 'bars': 1},
-                     {'tf': '4H', 'candle': '2026-10-09 13:15', 'where': 'top', 'result': 'timeout', 'r': 0.5, 'bars': 20}],
-                    [('4H', '2026-10-01 13:15', ('win', 2.0, 3)), ('D', '2026-09-01', ('open', None, 2))])
+def days_after(n, start='2026-10-02'):
+    d0 = date.fromisoformat(start)
+    return [(d0 + timedelta(days=k)).isoformat() for k in range(n)]
+
+
+sig = [C(100, 101, 95, 96, '2026-09-30'), C(96, 97, 94, 96.5, '2026-10-01')]  # entry 96.5, stop under 94, R = 2.5
+dd = days_after(40)
+# up to 105 (3.4R, +8.8 %) on day 5, then down through the stop on day 10; nothing after day 30 counts (it goes to 200)
+path = [C(96.5, 99, 95, 98, dd[0]), C(98, 101.6, 97, 101, dd[1]), C(101, 103, 100, 102, dd[2]), C(102, 104, 101, 103, dd[3]),
+        C(103, 105, 102, 104, dd[4])] + [C(104, 104.5, 100, 101, x) for x in dd[5:9]] + [C(101, 101.5, 93.5, 94, dd[9])] + \
+       [C(94, 95, 93, 94.5, x) for x in dd[10:30]] + [C(150, 200, 150, 199, x) for x in dd[30:]]   # dd[29] = day 30 (in)
+o = K.trade_30d(sig + path, 1)
+assert o['result'] == '3R' and o['stopped'] and o['hits'] == [True, True, True, True, False], o
+assert o['up'] == 8.81 and o['maxR'] == 3.4, o
+# the stop candle reaching a target too: not counted (as before - a candle doing both is not a win)
+both = sig + [C(96.5, 102, 93, 100, dd[0])] + [C(100, 100.5, 99, 100, x) for x in dd[1:40]]
+o = K.trade_30d(both, 1)
+assert o['hits'] == [False] * 5 and o['result'] == 'stopped' and o['maxR'] == 0.0 and o['up'] == 5.7, o
+flat = sig + [C(96.5, 97.5, 95.5, 97, x) for x in dd]
+o = K.trade_30d(flat, 1)
+assert o['result'] == 'none' and not o['stopped'] and o['maxR'] == 0.4, o
+assert K.trade_30d(sig + [C(96.5, 97.5, 95.5, 97, x) for x in dd[:20]], 1)['result'] == 'open', 'no candle after the 30 days yet'
+assert K.trade_30d([C(100, 101, 95, 96), C(96, 97, 96, 96)], 1) is None, 'no risk'
+mk = lambda res, up, r, st, hits: {'result': res, 'up': up, 'maxR': r, 'stopped': st, 'hits': hits}
+H = lambda k: [True] * k + [False] * (5 - k)
+rows = K.bt_summary([dict(mk('3R', 9.0, 3.4, True, H(4)), tf='4H', candle='2026-10-01 13:15', zone='FVG', where='top'),
+                     dict(mk('stopped', 1.0, 0.3, True, H(0)), tf='4H', candle='2026-10-05 13:15', zone='FVG', where='bottom'),
+                     dict(mk('1R', 4.0, 1.2, False, H(1)), tf='4H', candle='2026-10-09 13:15', zone='FVG', where='top'),
+                     dict(mk('open', None, None, False, H(0)), tf='4H', candle='2026-11-05 13:15', zone='FVG', where='top'),
+                     dict(mk('2R', 6.0, 2.5, False, H(3)), tf='D', candle='2026-10-01', zone='Gap-up', where='top', inside=True)],
+                    [('4H', '2026-10-01 13:15', mk('3R', 9.0, 3.4, True, H(4))), ('D', '2026-09-01', mk('open', None, None, False, H(0)))])
 r4 = {r['group']: r for r in rows if r['tf'] == '4H'}
-assert r4['FVG+Spring']['signals'] == 3 and r4['FVG+Spring']['winRate'] == 50.0 and r4['FVG+Spring']['avgR'] == 0.5, r4
-assert r4['FVG+Spring - zone top']['winRate'] == 100.0 and r4['FVG+Spring - zone bottom']['winRate'] == 0.0
-assert r4['FVG+Spring']['from'] == '2026-10-01 13:15' and r4['FVG+Spring']['to'] == '2026-10-09 13:15'
+f = r4['FVG+Spring']
+assert (f['signals'], f['open'], f['avgUp'], f['medUp'], f['hits'], f['stopped'], f['avgR'], f['medR']) == \
+    (3, 1, 4.67, 4.0, [66.7, 33.3, 33.3, 33.3, 0.0], 66.7, 1.63, 1.2), f
+assert r4['FVG+Spring - zone top']['signals'] == 2 and r4['FVG+Spring - zone bottom']['hits'][0] == 0.0
+assert (f['from'], f['to']) == ('2026-10-01 13:15', '2026-11-05 13:15')
 rd = {r['group']: r for r in rows if r['tf'] == 'D'}
-assert rd['Spring (every one, for comparison)']['open'] == 1 and rd['Spring (every one, for comparison)']['winRate'] is None
-assert rd['FVG+Spring']['signals'] == 0 and len(rows) == 18
-# Gap-up FVG + Spring (owner, 08-Nov-2026: split from FVG+Spring) - its own group, not in the FVG+Spring ones
-rows = K.bt_summary([{'tf': 'D', 'candle': '2026-10-01', 'zone': 'Gap-up', 'where': 'top', 'result': 'win', 'r': 2.0, 'bars': 3},
-                     {'tf': 'D', 'candle': '2026-10-02', 'zone': 'FVG', 'where': 'top', 'result': 'loss', 'r': -1.0, 'bars': 1}], [])
-rd = {r['group']: r for r in rows if r['tf'] == 'D'}
-assert (rd['Gap-up FVG + Spring']['signals'], rd['Gap-up FVG + Spring']['winRate']) == (1, 100.0), rd
-assert (rd['FVG+Spring']['signals'], rd['FVG+Spring - zone top']['signals']) == (1, 1), rd
-assert 'Gap-up FVG + Spring 1, win rate 100.0%' in K.bt_log(rows)[1], K.bt_log(rows)
-
-# Gap-up zones (owner, 08-Nov-2026): kept after the first touch (= mitigated, 'hit') until a later close under the bottom;
-# 'inside' when the zone lies in a 3-candle FVG
-def G(o, h, l, c):
-    return {'t': 'x', 'day': 'x', 'o': o, 'h': h, 'l': l, 'c': c, 'v': 1}
-
-
-wide = [G(100, 104, 96, 100) for _ in range(18)] + [G(109, 114, 108.2, 113), G(113, 115, 111, 114)]
-gd = K.fvg_detail(wide)
-assert [(z['bottom'], z['top'], z['f'], z['hit'], z['inside']) for z in gd['gapups']] == [(104, 108.2, 18, None, False)], gd['gapups']
-touched = wide + [G(114, 114.5, 107.5, 109)]                      # a wick to 107.5 (under the top 108.2), closes 109
-gd = K.fvg_detail(touched)
-assert [(z['f'], z['hit']) for z in gd['gapups']] == [(18, 20)] and [(i, z['f']) for i, z in gd['gapup_touch']] == [(20, 18)], gd
-gone = touched + [G(109, 109.5, 102, 103.5)]                       # closes 103.5 under the bottom 104: no longer a zone
-gd = K.fvg_detail(gone)
-assert gd['gapups'] == [] and [(i, z['f']) for i, z in gd['gapup_touch']] == [(20, 18)], gd
-# inside FVG (owner, 09-Nov-2026, BSE): A B C D - B and C big green candles, C's low over B's high by any amount (0.38 %),
-# A's high under B's high, D's low over C's low; a Spring on it: 'Gap-up FVG + Spring' with the 7th zone value 1
-ins = [G(100, 104, 96, 100) for _ in range(17)] + [G(100, 104.5, 99.8, 104.3), G(105, 110, 104.9, 109.5), G(109.5, 111, 106, 110.5)]
-pair = [G(110.5, 110.8, 105.4, 105.6), G(105.5, 106.0, 104.7, 105.7)]
-gd = K.fvg_detail(ins + pair)
-assert [(z['bottom'], z['top'], z['pct'], z['inside']) for z in gd['gapups']] == [(104.5, 104.9, 0.38, True)], gd['gapups']
-gz = gd['gapspring'][21]
-assert (gz['kind'], gz['where'], gz['inside'], gz['broken']) == ('Gap-up', 'top', True, None), gz
-assert K.zone_out(ins + pair, gz)[3:] == ['Gap-up', 'top', 1, 1] and 21 not in gd['spring']
-assert K.gap_inside_at(ins, 18) and not K.gap_inside_at(ins[:19], 18), 'judged once D has closed'
+assert rd['Gap-up FVG + Spring']['signals'] == 1 and rd['Gap-up FVG + Spring - inside FVG']['hits'][2] == 100.0, rd
+assert rd['FVG+Spring']['signals'] == 0 and rd['Spring (every one, for comparison)']['open'] == 1 and len(rows) == 21
+log2 = K.bt_log(rows)
+assert log2[0].startswith('4H FVG+Spring 3: up +4.7% avg / +4.0% median, 2R 33%, stopped 67%') and 'inside FVG 1: up +6.0%' in log2[1], log2
 
 # owner, 08-Nov-2026: a Spring in FVG stops counting once a LATER candle closes below its low - not reported, and the
 # sheet is told to take its row off ('invalid', the last KEEP_DAYS)
@@ -667,5 +656,69 @@ OUT = []
 assert K.live(CFG, fake_api_live, HOL, out=OUT.append, now_fn=lambda: datetime(2026, 11, 9, 10, 0), sleep=lambda x: None,
               max_rounds=16, background=True) == 0
 assert len([o for o in OUT if 'prices -> Kite Live' in o]) == 2 and not any('close this window' in o for o in OUT), OUT
+
+# ------------------------------------------------------------------ 13. deep history for the backtest (owner, 09-Nov-2026:
+# "the backtest date should be maximum number of days") - daily back DEEP_DAY_YEARS in 2000-day chunks until Kite has no
+# more, 4H from 60-minute candles; the scan's 4H = the deep 4H + the 15-minute-built recent part, no candle twice
+HCALLS = []
+orig_hist = K.historical
+
+
+def fake_hist(cfg, sess, token, interval, frm, to):
+    HCALLS.append((interval, frm.date().isoformat(), to.date().isoformat()))
+    listed = date(2015, 3, 2)
+    out, d = [], max(frm.date(), listed)
+    while d <= to.date():
+        if d.weekday() < 5:
+            if interval == 'day':
+                out.append([d.isoformat(), 100.0, 101.0, 99.0, 100.5, 1000])
+            else:                                  # 60-minute: 09:15 .. 15:15
+                for hh in (9, 10, 11, 12, 13, 14, 15):
+                    out.append(['%s %02d:15' % (d.isoformat(), hh), 100.0, 100.0 + hh, 99.0, 100.2, 10])
+        d += timedelta(days=1)
+    return out
+
+
+K.historical = fake_hist
+try:
+    up = date(2026, 11, 6)
+    m15 = [['2026-11-%02d %02d:%02d' % (dd, hh, mm), 100, 101, 99, 100.5, 5] for dd in (5, 6) for hh in range(9, 16)
+           for mm in (0, 15, 30, 45) if (hh, mm) >= (9, 15) and (hh, mm) < (15, 30)]
+    st = {'v': 1, 'sym': 'DEEP', 'm15': m15, 'day': [['2026-11-05', 100, 101, 99, 100, 1], ['2026-11-06', 100, 101, 99, 100, 1]], 'h4': []}
+    st2, n = K.deep_fill_symbol({}, {}, 'DEEP', 1, up, st)
+    days = [c for c in HCALLS if c[0] == 'day']
+    assert len(days) == 4 and days[0][2] == '2026-11-04', (len(days), days[:2])      # listed 2015: 3 chunks of ~5.5 years, then none
+    assert st2['day'][0][0] == '2015-03-02' and st2['day'][-1][0] == '2026-11-06' and st2['deep']['day'] == '2026-11-06'
+    h60 = [c for c in HCALLS if c[0] == '60minute']
+    assert h60 and h60[0][2] == '2026-11-04' and min(c[1] for c in h60) == (up - timedelta(days=K.DEEP_H4_DAYS)).isoformat(), h60[:2]
+    h4 = K.timeframe_candles(st2, '4H')
+    ts = [c['t'] for c in h4]
+    assert len(ts) == len(set(ts)) and ts == sorted(ts) and ts[-1] == '2026-11-06 13:15' and ts[-4:-2] == ['2026-11-05 09:15', '2026-11-05 13:15']
+    first = [c for c in h4 if c['t'][:10] == '2026-11-04']
+    assert [c['t'][11:] for c in first] == ['09:15', '13:15'] and first[0]['h'] == 112 and first[1]['h'] == 115, first
+    assert K.store_load('DEEP')['deep'] == {'day': '2026-11-06', 'h4': '2026-11-06'}
+    HCALLS.clear()
+    assert K.deep_fill_symbol({}, {}, 'DEEP', 1, up, K.store_load('DEEP'))[1] == 0 and not HCALLS, 'read once'
+    # deep_fill: only the stocks without it, within the time allowed
+    K.store_save('NEW1', {'v': 1, 'sym': 'NEW1', 'm15': [], 'day': [], 'h4': []})
+    done, left, req = K.deep_fill({}, {}, {'DEEP': 1, 'NEW1': 2}, ['DEEP', 'NEW1', 'NOTONKITE'], up)
+    assert (done, left) == (1, 0) and req > 0 and K.store_load('NEW1')['day'][-1][0] == '2026-11-06'
+    # the daily update: the 15-minute days that leave the store go on as 4H candles of the deep history
+    keep = K.M15_KEEP_SESSIONS
+    K.M15_KEEP_SESSIONS = 2
+    try:
+        s3 = K.store_load('DEEP')                    # a day behind: the update reads 05-11 .. 06-11 and trims to 2 sessions
+        s3['m15'] = [r for r in fake_hist({}, {}, 1, '15minute', datetime(2026, 11, 3), datetime(2026, 11, 5, 15, 30))]
+        s3['day'] = [r for r in s3['day'] if r[0] <= '2026-11-05']
+        K.store_save('DEEP', s3)
+        s4, _ = K.update_symbol({}, {}, 'DEEP', 1, up)
+        assert sorted({r[0][:10] for r in s4['m15']}) == ['2026-11-05', '2026-11-06'], 'two sessions kept'
+        assert [r[0] for r in s4['h4'] if r[0][:10] == '2026-11-04'] == ['2026-11-04 09:15', '2026-11-04 13:15']
+        assert [c['t'] for c in K.timeframe_candles(s4, '4H')][-6:] == ['2026-11-04 09:15', '2026-11-04 13:15', '2026-11-05 09:15',
+                                                                       '2026-11-05 13:15', '2026-11-06 09:15', '2026-11-06 13:15']
+    finally:
+        K.M15_KEEP_SESSIONS = keep
+finally:
+    K.historical = orig_hist
 
 print('OK')
