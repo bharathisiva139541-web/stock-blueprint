@@ -84,8 +84,8 @@
     if (!p || typeof p !== 'object' || Array.isArray(p)) return out;
     Object.keys(p).slice(0, 60).forEach(function (k) {
       const v = p[k];
-      if (!/^[A-Za-z]{1,20}$/.test(k)) return;
-      if ((typeof v === 'number' && isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 20)) out[k] = v;
+      if (!/^[A-Za-z][A-Za-z0-9]{0,19}$/.test(k)) return;
+      if ((typeof v === 'number' && isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && /^[A-Za-z0-9_.-]{0,20}$/.test(v))) out[k] = v;
     });
     return out;
   }

@@ -13113,22 +13113,19 @@ const AB_LAB_MAX_PARTS = 40;                     // 1.8 M characters a result at
 const AB_LAB_STALE_MS = 20 * 60000;              // a run taken by the PC and not back after this = the laptop stopped
 const AB_LAB_WAIT_MS = 12 * 3600000;             // a run nobody took in 12 hours is dropped
 const AB_LAB_FAST_MS = 10 * 60000;
-const AB_LAB_CHOICES = {
-  tf: ['D', 'W', '4H'], group: ['fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring'],
-  entry: ['close', 'next_open'], stop: ['zone', 'spring', 'lower', 'pct'], after: ['trail', 'fixed'], trail: ['lows', 'pct', 'ema', 'none']
-};
-const AB_LAB_NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN',
-  'maxDays', 'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen'];
 const AB_LAB_HEADERS = ['Id', 'Saved', 'Name', 'Summary', 'Result (JSON, in parts)'];
 
-/** The run's rules from the page: only known keys / choices / finite numbers (the PC checks the limits again). */
+/** The run's rules from the page: a flat object of finite numbers, booleans and short plain words (choices, dates) -
+ *  the PC (backtest_lab.py clean_params) keeps only the rules it knows and checks every limit, so a new rule there needs
+ *  no change here (owner, 09-Nov-2026: the EMA confluence rules came this way). */
 function ab_labParams_(p) {
   const out = {};
-  if (!p || typeof p !== 'object') return out;
-  Object.keys(AB_LAB_CHOICES).forEach(function (k) { if (AB_LAB_CHOICES[k].indexOf(p[k]) >= 0) out[k] = p[k]; });
-  AB_LAB_NUMS.forEach(function (k) { if (typeof p[k] === 'number' && isFinite(p[k])) out[k] = p[k]; });
-  ['breakeven', 'compound'].forEach(function (k) { if (typeof p[k] === 'boolean') out[k] = p[k]; });
-  ['from', 'to'].forEach(function (k) { if (typeof p[k] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p[k])) out[k] = p[k]; });
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return out;
+  Object.keys(p).slice(0, 80).forEach(function (k) {
+    const v = p[k];
+    if (!/^[A-Za-z][A-Za-z0-9]{0,19}$/.test(k)) return;
+    if ((typeof v === 'number' && isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && /^[A-Za-z0-9_.-]{0,20}$/.test(v))) out[k] = v;
+  });
   return out;
 }
 

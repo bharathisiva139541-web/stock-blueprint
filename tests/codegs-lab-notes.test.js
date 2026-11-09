@@ -39,11 +39,13 @@ test('Backtest Lab: the page saves a run, the PC takes it once, its result is ke
   // the page was opened just now -> the PC asks every 10 s; nothing to do yet
   assert.deepEqual(pc(env, { op: 'poll' }), { ok: true, job: null, next: 10 });
   st = site(env, { op: 'lab', lab: { do: 'run', name: '  My   2R trail ', params: { tf: 'D', group: 'fvg', stop: 'zone', stopBuf: 0.5, targetR: 2,
-    trail: 'lows', trailN: 2, maxDays: 60, evil: '=IMPORTXML()', capital: 'lots', breakeven: true, from: '2010-01-01', to: 'x' } } });
+    trail: 'lows', trailN: 2, maxDays: 60, evil: '=IMPORTXML()', 'bad key': 1, deep: { x: 1 }, breakeven: true, from: '2010-01-01',
+    emaSupport: 10, above21: true, emaStack: false, big: Infinity } } });
   assert.equal(st.job.status, 'waiting');
   assert.equal(st.job.name, 'My 2R trail');
-  assert.deepEqual(st.job.params, { tf: 'D', group: 'fvg', stop: 'zone', trail: 'lows', stopBuf: 0.5, targetR: 2, trailN: 2, maxDays: 60,
-                                    breakeven: true, from: '2010-01-01' }, 'only known keys / values pass');
+  assert.deepEqual(st.job.params, { tf: 'D', group: 'fvg', stop: 'zone', stopBuf: 0.5, targetR: 2, trail: 'lows', trailN: 2, maxDays: 60,
+                                    breakeven: true, from: '2010-01-01', emaSupport: 10, above21: true, emaStack: false },
+    'flat numbers / booleans / plain words pass (the PC keeps only the rules it knows); a formula, nested data or a bad key do not');
   const got = pc(env, { op: 'poll' });
   assert.equal(got.job.id, st.job.id);
   assert.equal(got.next, 5);

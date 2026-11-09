@@ -15,7 +15,10 @@
     name: 'My FVG+Spring idea', tf: 'D', group: 'fvg', from: '', to: '', minPrice: 0, minTurnover: 0, maxTouch: 0,
     entry: 'close', stop: 'zone', stopBuf: 0.5, stopPct: 5, maxRisk: 15,
     targetR: 2, after: 'trail', breakeven: true, trail: 'lows', trailN: 2, trailPct: 8, emaN: 20, maxDays: 60, cost: 0.2,
-    capital: 1000000, riskPct: 1, maxPosPct: 25, maxOpen: 10, compound: false
+    capital: 1000000, riskPct: 1, maxPosPct: 25, maxOpen: 10, compound: false,
+    // EMA confluence (owner, 09-Nov-2026: "I don't enter the trade blindly ... if price is taking support at 10 EMA, I believe
+    // the stock will go upward") - all off by default
+    emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false
   };
   var CHOICES = {
     tf: [['D', 'Daily'], ['W', 'Weekly'], ['4H', '4 hour (13:15 candle)']],
@@ -27,10 +30,11 @@
       ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry']],
     after: [['trail', 'Keep the trade and trail the stop'], ['fixed', 'Sell at the target']],
     trail: [['lows', 'Under the lowest low of the last N candles'], ['pct', 'X % under the highest price since entry'],
-      ['ema', 'Sell when a candle closes under the N EMA'], ['none', 'No trail (the stop stays)']]
+      ['ema', 'Sell when a candle closes under the N EMA'], ['none', 'No trail (the stop stays)']],
+    emaSupport: [[0, 'Off - do not look at it'], [10, 'the 10 EMA'], [21, 'the 21 EMA'], [50, 'the 50 EMA'], [1, 'any of the 10 / 21 / 50 EMA']]
   };
   var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN', 'maxDays',
-    'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen'];
+    'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch'];
   var REASON = { stop: ['Stop loss', 's-bad'], target: ['Target', 's-good'], be: ['Breakeven (stop at entry)', ''], trail: ['Trailing stop', 's-good'],
     ema: ['Close under EMA', 's-good'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
   var POLL_MS = 4000;
@@ -44,13 +48,28 @@
   }
   function saveForm(f) { ui.store.set('lab:form', f); }
   function presets() { var p = ui.store.get('lab:presets', []); return Array.isArray(p) ? p : []; }
-  function choiceLabel(k, v) { var c = (CHOICES[k] || []).filter(function (x) { return x[0] === v; })[0]; return c ? c[1] : v; }
+  function choiceLabel(k, v) { var c = (CHOICES[k] || []).filter(function (x) { return String(x[0]) === String(v); })[0]; return c ? c[1] : v; }
+
+  /** The EMA confluence rules in words ('' when none is on). */
+  function emaWords(p) {
+    var w = [];
+    if (Number(p.emaSupport)) {
+      w.push('the Spring candle took support at ' + (Number(p.emaSupport) === 1 ? 'the 10, 21 or 50 EMA' : 'the ' + p.emaSupport + ' EMA') +
+        ' (its low came down to it - or within ' + F.num(p.emaTouch, 2) + '% above it - and it closed at or above it)');
+    }
+    var above = [10, 21, 50].filter(function (n) { return p['above' + n]; });
+    if (above.length) w.push('it closed above the ' + above.join(', ') + ' EMA');
+    if (p.emaStack) w.push('the EMAs were in order 10 > 21 > 50 (an uptrend)');
+    return w.length ? 'Only when ' + w.join('; ') + '.' : '';
+  }
 
   /** The rules in plain words (shown above the Run button and with each result). */
   function plain(p) {
     var s = [];
     s.push(choiceLabel('group', p.group) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
       (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
+    var ema = emaWords(p);
+    if (ema) s.push(ema);
     s.push('Buy ' + (p.entry === 'close' ? 'at the Spring candle\'s close' : 'at the next candle\'s open') + '.');
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
       F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' : 'the zone bottom or the Spring low, whichever is lower')) +
@@ -70,7 +89,7 @@
 
   function sel(k, v) {
     return '<select class="sel" data-k="' + k + '">' + CHOICES[k].map(function (o) {
-      return '<option value="' + esc(o[0]) + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(v) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
     }).join('') + '</select>';
   }
   function num(k, v, label, attrs) {
@@ -93,12 +112,19 @@
       num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
       num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
       num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
-      '<h3 class="lab-h">2 · Entry and stop loss</h3><div class="form-grid">' +
+      '<h3 class="lab-h">2 · EMA confluence (optional) - take the signal only when the EMAs agree</h3><div class="form-grid">' +
+      field('The Spring candle took support at', sel('emaSupport', f.emaSupport), 'wide') +
+      (Number(f.emaSupport) ? num('emaTouch', f.emaTouch, 'Its low within % above the EMA', ' min="0" step="0.25"') : '') +
+      '<div class="field lab-checks lab-checks-row"><span>It closed above</span>' + check('above10', f.above10, '10 EMA') +
+      check('above21', f.above21, '21 EMA') + check('above50', f.above50, '50 EMA') + '</div>' +
+      '<div class="field lab-checks">' + check('emaStack', f.emaStack, 'EMAs in order: 10 > 21 > 50 (uptrend)') + '</div></div>' +
+      '<p class="sub">EMAs of the same timeframe (daily / weekly / 4 hour), on the Spring candle. Leave everything off to test the pattern alone.</p>' +
+      '<h3 class="lab-h">3 · Entry and stop loss</h3><div class="form-grid">' +
       field('Buy', sel('entry', f.entry)) + field('Stop loss', sel('stop', f.stop), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
       num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') + '</div>' +
-      '<h3 class="lab-h">3 · Target and exit</h3><div class="form-grid">' +
+      '<h3 class="lab-h">4 · Target and exit</h3><div class="form-grid">' +
       num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"') + field('At the target', sel('after', f.after), 'wide') +
       (trailOn ? field('Then', sel('trail', f.trail), 'wide') : '') +
       (trailOn && f.trail === 'lows' ? num('trailN', f.trailN, 'N candles', ' min="1" step="1"') : '') +
@@ -107,7 +133,7 @@
       num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
       num('cost', f.cost, 'Costs per trade (%)', ' min="0" step="0.05"') +
       (trailOn ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>' +
-      '<h3 class="lab-h">4 · Money</h3><div class="form-grid">' +
+      '<h3 class="lab-h">5 · Money</h3><div class="form-grid">' +
       num('capital', f.capital, 'Account ₹', ' min="1000" step="10000"') + num('riskPct', f.riskPct, 'Risk per trade (% of the account)', ' min="0.05" step="0.25"') +
       num('maxPosPct', f.maxPosPct, 'One position at most (% of the account)', ' min="1" step="5"') +
       num('maxOpen', f.maxOpen, 'Trades open at once, at most', ' min="1" step="1"') +
@@ -213,6 +239,34 @@
   }
 
   function r2(v) { return isNum(v) ? F.num(v, 2) + 'R' : '–'; }
+
+  /** "N skipped: ..." - why the account did not take some signals (each trade's reason: hover / tap "skipped"). */
+  function skipWords(a) {
+    var w = a.skipReasons || {};
+    var parts = [[w.full, 'too many open at once'], [w.cap, 'one share cost more than your position limit'],
+      [w.risk, 'one share risked more than your risk per trade'], [w.blown, 'the account had run out']]
+      .filter(function (x) { return x[0]; }).map(function (x) { return F.int(x[0]) + ' ' + x[1]; });
+    if (!a.skipped) return 'none skipped';
+    return F.int(a.skipped) + ' skipped' + (parts.length ? ': ' + parts.join(', ') : '') + ' - hover / tap "skipped" in the list for each one';
+  }
+  /** A plain hint when a money rule left out many signals. */
+  function skipHint(a, p) {
+    var w = a.skipReasons || {}, h = '';
+    var total = (a.taken || 0) + (a.skipped || 0);
+    if (!total) return '';
+    if (w.cap && w.cap >= total * 0.1) {
+      h += '<p class="note warn">' + F.int(w.cap) + ' signals were not taken because one share cost more than your position limit (' + F.num(p.maxPosPct, 0) +
+        '% of the account). To take them: raise <b>One position at most</b> in 5 · Money.</p>';
+    }
+    if (w.full && w.full >= total * 0.1) {
+      h += '<p class="note warn">' + F.int(w.full) + ' signals came while ' + F.int(p.maxOpen) + ' trades were already open. To take them: raise <b>Trades open at once, at most</b> in 5 · Money.</p>';
+    }
+    if (a.capped && a.capped >= (a.taken || 1) * 0.3) {
+      h += '<p class="note">' + F.int(a.capped) + ' of the trades taken were made smaller by your position limit (' + F.num(p.maxPosPct, 0) + '%), so they risked less than ' +
+        F.num(p.riskPct, 2) + '% of the account.</p>';
+    }
+    return h;
+  }
   function tone(v) { return isNum(v) ? (v > 0 ? ' up' : v < 0 ? ' down' : '') : ''; }
 
   function paintResult(el) {
@@ -233,7 +287,8 @@
     }
     h += '<h3 class="lab-h">Every signal (each trade on its own, in R)</h3><div class="tiles">' +
       ui.tile('Trades', F.int(s.trades), (res.open ? F.int(res.open) + ' still running (not counted)' : 'all finished') +
-        (res.skipped && res.skipped.risk ? ' · ' + F.int(res.skipped.risk) + ' skipped (risk too big)' : '')) +
+        (res.skipped && res.skipped.risk ? ' · ' + F.int(res.skipped.risk) + ' skipped (risk too big)' : '') +
+        (res.skipped && res.skipped.ema ? ' · ' + F.int(res.skipped.ema) + ' left out by your EMA rules' : '')) +
       ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry (after costs)') +
       ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge') +
       ui.tile('Total', '<span class="' + tone(s.totalR) + '">' + F.num(s.totalR, 1) + 'R</span>', 'profit factor ' + (isNum(s.pf) ? F.num(s.pf, 2) : '–')) +
@@ -245,7 +300,8 @@
       ui.tile('Account now', F.inr(a.final), '<span class="' + tone(a.pnl) + '">' + (a.pnl >= 0 ? '+' : '−') + F.inr(Math.abs(a.pnl)) + '</span>') +
       ui.tile('Return', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', isNum(a.cagr) ? F.pct(a.cagr) + ' a year over ' + F.num(a.years, 1) + ' years' : 'over ' + F.num(a.years, 1) + ' years') +
       ui.tile('Max drawdown', F.num(a.maxDD, 1) + '%', 'the deepest fall from a peak') +
-      ui.tile('Trades taken', F.int(a.taken), F.int(a.skipped) + ' skipped (too many open at once)' + (a.openNow ? ' · ' + F.int(a.openNow) + ' still open' : '')) + '</div>' +
+      ui.tile('Trades taken', F.int(a.taken), skipWords(a) + (a.openNow ? ' · ' + F.int(a.openNow) + ' still open' : '')) + '</div>' +
+      skipHint(a, p) +
       (a.blown ? '<p class="note bad">The account ran out on ' + F.date(a.blown) + ' - no trades after that.</p>' : '') +
       '<div id="lab-curve" class="lab-chart"></div>';
     h += '<div class="lab-two"><div><h3 class="lab-h">How the trades ended</h3><div id="lab-reasons"></div></div>' +
@@ -288,8 +344,14 @@
         { key: 'ret', label: 'Return %', type: 'num', digits: 2 }, { key: 'days', label: 'Days', type: 'num', digits: 0 },
         { key: 'maxR', label: 'Best (R)', type: 'num', digits: 2, title: 'The highest price before the exit, in R' },
         { key: 'pnl', label: 'P/L ₹', type: 'num', digits: 0, get: function (r) { return r.taken ? r.pnl : null; } },
-        { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; } }
-      ]
+        { key: 'ema', label: 'EMA', get: function (r) { return r.ema || ''; }, title: 'What the EMAs showed on the Spring candle (with EMA rules on)' },
+        { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
+          // owner, 09-Nov-2026: "show the reason if I place the cursor on the word skipped" (a tap on a phone)
+          html: function (r) {
+            var t = r.taken ? 'yes' : 'skipped';
+            return r.acct ? '<span class="lab-acct' + (r.taken ? '' : ' skip') + '" tabindex="0" data-tip="' + esc(String(r.acct).replace(/\bRs /g, '₹')) + '">' + t + ' <i aria-hidden="true">ⓘ</i></span>' : t;
+          } }
+      ].filter(function (c) { return c.key !== 'ema' || rows.some(function (r) { return r.ema; }); })
     }).mount($('#lab-trades', box));
     bindResult(el, it);
   }
@@ -319,7 +381,7 @@
       if (!k) return;
       var f = readForm(el);
       saveForm(f);
-      if (['stop', 'after', 'trail'].indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear
+      if (['stop', 'after', 'trail', 'emaSupport'].indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
     });

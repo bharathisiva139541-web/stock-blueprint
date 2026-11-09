@@ -315,4 +315,9 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    first run makes it if it is missing (about 3 minutes, once).
  - This computer must be on and the background program running (it starts at Windows log-in). After installing this
    zip: sign out and in again (or restart), so the background program uses the new version.
+ - EMA confluence (09-Nov-2026): step 2 of the page - take a signal only when the Spring candle took support at the
+   10 / 21 / 50 EMA (its low came down to it, or within x % above it, and it closed at or above it), closed above
+   chosen EMAs, and / or the EMAs were in order 10 > 21 > 50. The trade list then shows what the EMAs did.
+ - "skipped" in the trade list: hover (or tap on a phone) to see why - too many trades open at once, one share
+   costing more than your position limit, one share risking more than your risk per trade, or the account ran out.
  - A check without the website: python screener_bridge.py lab   (or: lab W / lab 4H) - the default rules, nothing sent.

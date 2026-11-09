@@ -275,4 +275,65 @@ LOGS.clear()
 w.loop({}, api2, rounds=2)
 assert sum('older version' in m for m in LOGS) == 1, LOGS
 
+# ------------------------------------------------------------------ 7. EMA confluence + why a trade was not taken (owner, 09-Nov-2026)
+assert [L._rs(x, d) for x, d in ((1234567, 0), (300000, 0), (999.999, 2), (84.5, 2), (10062.93, 2), (-1500, 0))] == \
+    ['12,34,567', '3,00,000', '1,000', '84.5', '10,062.93', '-1,500']
+p = P(emaSupport=10, above50=True, emaStack=True, emaTouch=2)
+assert (p['emaSupport'], p['above50'], p['emaStack'], p['emaTouch']) == (10, True, True, 2.0) and L.ema_lens(p) == [10, 21, 50]
+assert L.ema_lens(P()) == [] and L.ema_lens(P(emaSupport=1)) == [10, 21, 50] and L.ema_lens(P(above21=True)) == [21]
+assert P(emaSupport=7)['emaSupport'] == 0 and P(emaSupport=True)['emaSupport'] == 0 and P(emaSupport=21.0)['emaSupport'] == 21
+
+
+class CS:
+    def __init__(self, rows):
+        self.o, self.h, self.l, self.c = ([r[k] for r in rows] for k in range(4))
+        self.n = len(rows)
+
+
+# a steady rise (10 > 21 > 50 EMA), then a Spring candle whose low dips to the 10 EMA and closes above it
+rise = [[100 + k, 101 + k, 99 + k, 100 + k] for k in range(80)]
+cs = CS(rise)
+emas = {n: L.ema_series(cs.c, n) for n in (10, 21, 50)}
+i = 79
+e10 = emas[10][i]
+cs.l[i] = round(e10 - 0.3, 2)
+ok, note = L.ema_check(cs, i, P(emaSupport=10, emaStack=True, above50=True), emas)
+assert ok and note.startswith('support 10') and '10>21>50' in note, note
+# the low stayed well above every EMA: no support at 10
+cs.l[i] = round(e10 * 1.05, 2)
+assert not L.ema_check(cs, i, P(emaSupport=10), emas)[0]
+assert L.ema_check(cs, i, P(emaSupport=10, emaTouch=6), emas)[0], 'within 6 % above the EMA counts as support'
+# closed under the EMA: no support, not above
+cs.l[i], cs.c[i] = e10 - 3, round(e10 - 1, 2)
+assert not L.ema_check(cs, i, P(emaSupport=10), emas)[0] and not L.ema_check(cs, i, P(above10=True), emas)[0]
+assert not L.ema_check(cs, 30, P(above50=True), emas)[0], 'too few candles for the 50 EMA'
+# a run with the EMA rules: fewer trades, the others counted as left out, each trade says what the EMAs showed
+K.backtest_pass(set(), upto, {}, out=lambda m: None)          # section 6 removed the cache
+base_run = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0})
+ema_run = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'above21': True})
+assert 0 < ema_run['tradesTotal'] < base_run['tradesTotal'], (ema_run['tradesTotal'], base_run['tradesTotal'])
+assert ema_run['tradesTotal'] + ema_run['skipped']['ema'] == base_run['tradesTotal']
+assert all('above' in r[L.TRADE_COLS.index('ema')] or 'support' in r[L.TRADE_COLS.index('ema')] for r in ema_run['trades'])
+assert all(r[L.TRADE_COLS.index('ema')] == '' for r in base_run['trades']), 'no EMA rule: no EMA text'
+
+# why a signal was not taken
+o = date(2021, 1, 1).toordinal()
+ts = [T('A', o, o + 10, 100, 5, 110), T('B', o + 1, o + 9, 100, 5, 104), T('C', o + 2, o + 9, 40000, 900, 41000),
+      T('D', o + 3, o + 9, 200, 150, 210), T('E', o + 4, o + 9, 50, 2, 52)]
+acc = L.portfolio(ts, P(capital=300000, riskPct=1, maxPosPct=5, maxOpen=3, cost=0))
+by = {t['sym']: t for t in ts}
+assert by['A']['taken'] and '150 shares' in by['A']['acct'] and 'made smaller by your position limit of 5%' in by['A']['acct'] \
+    and 'would be 600 shares' in by['A']['acct'], by['A']['acct']
+assert not by['C']['taken'] and 'one share costs Rs 40,000, more than your position limit of Rs 15,000 (5% of the account' in by['C']['acct'], by['C']['acct']
+assert by['D']['taken'] and by['D']['acct'] == '20 shares, Rs 4,000 invested, Rs 3,000 at risk.', by['D']['acct']
+assert not by['E']['taken'] and '3 trades were already open - your limit is 3 at once' in by['E']['acct'], by['E']['acct']
+assert acc['skipReasons'] == {'full': 1, 'cap': 1, 'risk': 0, 'blown': 0} and acc['capped'] == 2, acc
+x = T('X', o, o + 5, 500, 400, 600)
+acc2 = L.portfolio([x], P(capital=10000, riskPct=1, maxPosPct=100, maxOpen=5, cost=0))
+assert acc2['skipReasons']['risk'] == 1 and acc2['skipped'] == 1
+assert x['acct'] == 'Not taken: one share risks Rs 400 (entry 500 - stop 100), more than your risk per trade of Rs 100 (1% of the account).', x['acct']
+row = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'maxOpen': 1})['trades']
+assert any(r[L.TRADE_COLS.index('taken')] == 0 and r[L.TRADE_COLS.index('acct')].startswith('Not taken: 1 trades were already open')
+           for r in row), 'the list carries the reason'
+
 print('OK')
