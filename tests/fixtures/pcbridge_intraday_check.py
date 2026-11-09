@@ -701,8 +701,24 @@ try:
     assert K.deep_fill_symbol({}, {}, 'DEEP', 1, up, K.store_load('DEEP'))[1] == 0 and not HCALLS, 'read once'
     # deep_fill: only the stocks without it, within the time allowed
     K.store_save('NEW1', {'v': 1, 'sym': 'NEW1', 'm15': [], 'day': [], 'h4': []})
-    done, left, req = K.deep_fill({}, {}, {'DEEP': 1, 'NEW1': 2}, ['DEEP', 'NEW1', 'NOTONKITE'], up)
-    assert (done, left) == (1, 0) and req > 0 and K.store_load('NEW1')['day'][-1][0] == '2026-11-06'
+    K.store_save('NEW2', {'v': 1, 'sym': 'NEW2', 'm15': [], 'day': [], 'h4': []})
+    lines, held, orig_dfs = [], [], K.deep_fill_symbol
+    def one_at_a_time(cfg, sess, sym, token, upto, store=None):
+        held.append(store)                           # deep_fill keeps no store of the to-do list in memory
+        return orig_dfs(cfg, sess, sym, token, upto, store)
+    K.deep_fill_symbol = one_at_a_time
+    try:
+        done, left, req = K.deep_fill({}, {}, {'DEEP': 1, 'NEW1': 2, 'NEW2': 3}, ['DEEP', 'NEW1', 'NEW2', 'NOTONKITE'], up,
+                                      None, lines.append, every=1)
+    finally:
+        K.deep_fill_symbol = orig_dfs
+    assert (done, left) == (2, 0) and req > 0 and K.store_load('NEW1')['day'][-1][0] == '2026-11-06'
+    assert held == [None, None], held
+    assert lines[0].startswith('Kite deep history: 2 of 4 stocks to read'), lines
+    assert 'Kite deep history: 1 / 2 stocks' in lines[1] and 'min left' in lines[1] and 'left' not in lines[2], lines
+    # the daily scan's quiet call: nothing to do -> no line
+    lines.clear()
+    assert K.deep_fill({}, {}, {'DEEP': 1}, ['DEEP'], up, 60, lines.append) == (0, 0, 0) and lines == []
     # the daily update: the 15-minute days that leave the store go on as 4H candles of the deep history
     keep = K.M15_KEEP_SESSIONS
     K.M15_KEEP_SESSIONS = 2
