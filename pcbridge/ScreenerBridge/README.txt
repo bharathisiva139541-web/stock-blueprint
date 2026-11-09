@@ -83,7 +83,8 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     LONG HISTORY: daily candles back ~20 years (or to the listing day) and 4H back ~5 years (built from Kite's
     60-minute candles) are read once and kept here (folder intraday_data, about 250 MB) - the sheet never gets them,
     only the summary, so the sheet is not loaded by it. The daily scan reads this history a part a day (20 minutes);
-    KiteHistoryNow.bat reads all of it at once (the first time about an hour), then runs the backtest.
+    KiteHistoryNow.bat reads all of it at once (the first time about 2 hours; a line every 25 stocks with
+    the time left), then runs the backtest. Stopped half-way? Run it again - the stocks already read are kept.
  - The candles are kept in the folder intraday_data (only the new days are read after the first time); the day's
    Kite permission in kite_session.json. Both stay on this computer.
  - 4H candles = 09:15-13:15 and 13:15-15:30 (like TradingView); a week / month only once it has finished.

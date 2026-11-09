@@ -551,30 +551,38 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
     return s, req
 
 
-def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None):
+def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
     """deep_fill_symbol for the stocks without their deep history yet, for at most `budget_s` seconds (None = all).
-    -> (filled, still to do, requests). NeedLogin goes up; other errors skip the stock."""
+    -> (filled, still to do, requests). NeedLogin goes up; other errors skip the stock. One stock's candles in memory
+    at a time (09-Nov-2026: the first version kept every store of the to-do list - ~2.5 GB at the start, ~6 GB at
+    the end for 1,800 stocks); a line every `every` stocks with the time left."""
     out = out or log
     t0, done, req, todo = time.time(), 0, 0, []
     for sym in syms:
         tok = token_for(imap, sym)
         if tok is None:
             continue
-        st = store_load(sym)
-        deep = st.get('deep') if isinstance(st.get('deep'), dict) else {}
-        if not (deep.get('day') and deep.get('h4')):
-            todo.append((sym, tok, st))
-    for k, (sym, tok, st) in enumerate(todo):
+        deep = store_load(sym).get('deep')
+        if not (isinstance(deep, dict) and deep.get('day') and deep.get('h4')):
+            todo.append((sym, tok))
+    if budget_s is None or todo:
+        out('Kite deep history: %d of %d stocks to read (the rest are on this computer already; checked in %.0f s)'
+            % (len(todo), len(syms), time.time() - t0))
+    t1 = time.time()
+    for k, (sym, tok) in enumerate(todo):
         if budget_s is not None and time.time() - t0 > budget_s:
             break
         try:
-            _, n = deep_fill_symbol(cfg, sess, sym, tok, upto, st)
+            _, n = deep_fill_symbol(cfg, sess, sym, tok, upto)
             req += n
             done += 1
         except KiteError as e:
             out('Kite deep history: %s - %s' % (sym, e))
-        if (k + 1) % 100 == 0:
-            out('Kite deep history: %d / %d stocks (%d requests, %.0f min)' % (k + 1, len(todo), req, (time.time() - t0) / 60))
+        if (k + 1) % every == 0 or k + 1 == len(todo):
+            spent = time.time() - t1
+            left = spent / (k + 1) * (len(todo) - k - 1)
+            out('Kite deep history: %d / %d stocks (%d requests, %.0f min%s)' % (
+                k + 1, len(todo), req, spent / 60, ', about %.0f min left' % (left / 60) if k + 1 < len(todo) else ''))
     return done, len(todo) - done, req
 
 
@@ -1385,7 +1393,8 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
 
 def history_now(cfg, api, holidays=None, now=None, out=print):
     """KiteHistoryNow.bat: the deep history of every PatternData stock at once (daily candles back DEEP_DAY_YEARS, 4H
-    back DEEP_H4_DAYS - the first time about an hour and ~250 MB in intraday_data), then the backtest -> the sheet."""
+    back DEEP_H4_DAYS - the first time about 2 hours (a line every 25 stocks with the time left) and ~250 MB in
+    intraday_data), then the backtest -> the sheet."""
     holidays = set(holidays or ())
     now = now or now_ist()
     sess = ensure_session(cfg)
@@ -1530,7 +1539,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             send_zones(cfg, api, upto, since, zones, mitigated)
         send_backtest(cfg, api, upto, trades, springs_bt)
         try:                            # the deep history for the backtest, a part a day (KiteHistoryNow.bat: all at once)
-            done, left, n = deep_fill(cfg, sess, imap, syms, upto, DEEP_BUDGET_S)
+            done, left, n = deep_fill(cfg, sess, imap, syms, upto, DEEP_BUDGET_S, every=100)
             if done or left:
                 log('Kite: deep history for the backtest - %d stocks read now (%d requests)%s.'
                     % (done, n, ', %d still to do: the next scans carry on (or KiteHistoryNow.bat all at once)' % left if left else ', all done'))
