@@ -120,9 +120,10 @@
     const fetch = async (url, init) => { const b = JSON.parse(init.body); calls.push(b); return new Response(JSON.stringify(answer[b.op]), { status: 200 }); };
     const h = wl.createHandler({ env: ENV, fetch: fetch });
     const p = phone(1);
-    let r = await call(h, { op: 'lab', pin: 'Blue2026', lab: { do: 'run', name: 'My idea', params: { tf: 'D', stopBuf: 0.5, breakeven: true, x: { y: 1 }, 'bad key': 1 } } });
+    let r = await call(h, { op: 'lab', pin: 'Blue2026', lab: { do: 'run', name: 'My idea', params: { tf: 'D', stopBuf: 0.5, breakeven: true, x: { y: 1 }, 'bad key': 1,
+      above10: true, emaSupport: 21, f: '=1+1' } } });
     assert.deepEqual(r.body, answer.lab);
-    assert.deepEqual(calls[0].lab, { do: 'run', params: { tf: 'D', stopBuf: 0.5, breakeven: true }, name: 'My idea' });
+    assert.deepEqual(calls[0].lab, { do: 'run', params: { tf: 'D', stopBuf: 0.5, breakeven: true, above10: true, emaSupport: 21 }, name: 'My idea' });
     r = await call(h, { op: 'push', pin: 'Blue2026', push: { do: 'add', sub: { endpoint: p.endpoint, keys: p.keys }, label: 'Android' } });
     assert.deepEqual(r.body, answer.push);
     assert.equal(calls[1].pushUrl, 'https://stock-blueprint.vercel.app/api/push');

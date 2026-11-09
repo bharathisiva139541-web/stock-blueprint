@@ -1191,6 +1191,12 @@ function check(name, fn) {
     await own.p.fill('[data-k="trailN"]', '3');
     await own.p.fill('[data-k="name"]', 'Zone stop 1%');
     await own.p.dispatchEvent('[data-k="trailN"]', 'change');
+    // EMA confluence (owner, 09-Nov-2026): support at the 10 EMA + closed above the 21 EMA
+    await own.p.selectOption('[data-k="emaSupport"]', '10');
+    await own.p.waitForSelector('[data-k="emaTouch"]');
+    await own.p.check('[data-k="above21"]');
+    assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /Only when the Spring candle took support at the 10 EMA .*; it closed above the 21 EMA\./);
+    assert.strictEqual(await own.p.$eval('[data-k="name"]', (x) => x.value), 'Zone stop 1%', 'the form keeps what was typed when it redraws');
     assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /1% below the zone bottom.*At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
     await own.p.click('#lab-run');
     await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
@@ -1198,20 +1204,23 @@ function check(name, fn) {
     const got = JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll' })));
     assert.strictEqual(got.job.name, 'Zone stop 1%');
     assert.deepStrictEqual([got.job.params.stopBuf, got.job.params.trailN, got.job.params.stop, got.job.params.targetR], [1, 3, 'zone', 2]);
-    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken'];
+    assert.deepStrictEqual([got.job.params.emaSupport, got.job.params.above21, got.job.params.above10, got.job.params.emaStack], [10, true, false, false]);
+    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'acct'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
                avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1 },
-      open: 1, skipped: { risk: 2 }, reasons: { stop: 1, trail: 2, open: 1 },
-      account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 4, skipped: 0, openNow: 1, openPnl: 500, years: 16.8,
-                 curve: [['2010-02-01', 990000], ['2015-01-01', 1012000], ['2026-10-20', 1036000]], blown: null },
+      open: 1, skipped: { risk: 2, ema: 37 }, reasons: { stop: 1, trail: 2, open: 1 },
+      account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 3, skipped: 1, openNow: 1, openPnl: 500, years: 16.8,
+                 curve: [['2010-02-01', 990000], ['2015-01-01', 1012000], ['2026-10-20', 1036000]], blown: null,
+                 skipReasons: { full: 0, cap: 1, risk: 0, blown: 0 }, capped: 0 },
       years: [{ year: 2010, trades: 1, winPct: 0, avgR: -1, totalR: -1, pnl: -10000, taken: 1 }, { year: 2026, trades: 2, winPct: 100, avgR: 2.3, totalR: 4.6, pnl: 46000, taken: 2 }],
       hist: [{ label: '-1R to 0', n: 1 }, { label: '1R to 2R', n: 1 }, { label: '3R to 5R', n: 1 }],
       tradeCols: cols, tradesTotal: 4, secs: 1.2,
-      trades: [['ABC', '2026-10-30', 'Gap-up inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1],
-               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1],
-               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1],
-               ['LMN', '2010-01-04', 'FVG', 'top', 1, 20, 19, 5, 19, '2010-01-12', 'stop', -1, -5, 8, 0.2, 10000, -10000, 1]] };
+      trades: [['ABC', '2026-10-30', 'Gap-up inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1, 'support 10 EMA · above 21', '40 shares, Rs 9,284 invested, Rs 148 at risk.'],
+               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.'],
+               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.'],
+               ['LMN', '2010-01-04', 'FVG', 'top', 1, 30435, 28825, 5, 31290, '2010-01-12', 'trail', 0.5, 2.6, 8, 0.9, 0, 0, 0, 'support 10 EMA · above 21',
+                'Not taken: one share costs Rs 30,435, more than your position limit of Rs 15,000 (5% of the account, Money: "One position at most").']] };
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
     // the page sees it done (it asks every 4 s) and opens it
     await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
@@ -1219,6 +1228,16 @@ function check(name, fn) {
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
     assert.match(view, /At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
+    // why a signal was skipped: on the word itself (hover / tap), and counted in the account tile
+    assert.match(view, /37 left out by your EMA rules/);
+    assert.match(view, /1 skipped: 1 one share cost more than your position limit/);
+    const tipText = await own.p.$eval('#lab-trades .lab-acct.skip', (x) => x.getAttribute('data-tip'));
+    assert.match(tipText, /^Not taken: one share costs ₹30,435, more than your position limit of ₹15,000/);
+    await own.p.hover('#lab-trades .lab-acct.skip');           // (scrolling it into view hides the tip once - move again)
+    const bx = await own.p.$eval('#lab-trades .lab-acct.skip', (x) => { const r = x.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    await own.p.mouse.move(bx[0] + 1, bx[1]);
+    await own.p.waitForFunction(() => !document.querySelector('#tip').hidden && /position limit/.test(document.querySelector('#tip').textContent), null, { timeout: 5000 });
+    assert.ok(await own.p.$('#lab-trades th:text-is("EMA")'), 'the EMA column (EMA rules on)');
     assert.ok(await own.p.$('#lab-curve svg'), 'the account curve');
     assert.match(await own.p.$eval('#lab-runs', (x) => x.innerText), /Zone stop 1%[\s\S]*3 trades/);
     // the bell: two unread notes from the sheet (+ "Backtest ready"), newest first

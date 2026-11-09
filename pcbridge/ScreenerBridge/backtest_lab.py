@@ -53,17 +53,25 @@ DEFAULTS = {
     'targetR': 2.0, 'after': 'trail', 'breakeven': True, 'trail': 'lows', 'trailN': 2, 'trailPct': 8.0, 'emaN': 20,
     'maxDays': 60, 'cost': 0.2,
     'capital': 1000000.0, 'riskPct': 1.0, 'maxPosPct': 25.0, 'maxOpen': 10, 'compound': False,
+    # EMA confluence (owner, 09-Nov-2026: "I don't enter the trade blindly seeing FVG+Spring ... I see EMA (10, 21, 50) -
+    # if price is taking support at 10 EMA, I believe the stock will go upward"): on the Spring candle -
+    # emaSupport 0 off / 10 / 21 / 50 / 1 = any of them: its low came to (or within emaTouch % above) that EMA and it
+    # closed at / above it; aboveNN = it closed above that EMA; emaStack = 10 EMA > 21 EMA > 50 EMA (an uptrend)
+    'emaSupport': 0, 'emaTouch': 1.0, 'above10': False, 'above21': False, 'above50': False, 'emaStack': False,
 }
+EMA_LENS = (10, 21, 50)
+BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring'),
     'entry': ('close', 'next_open'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
-    'trail': ('lows', 'pct', 'ema', 'none'),
+    'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
     'stopPct': (0.1, 50, False), 'maxRisk': (0, 100, False), 'targetR': (0.25, 50, False), 'trailN': (1, 50, True),
     'trailPct': (0.5, 60, False), 'emaN': (2, 200, True), 'maxDays': (1, 3650, True), 'cost': (0, 5, False),
     'capital': (1000, 1e10, False), 'riskPct': (0.05, 100, False), 'maxPosPct': (1, 100, False), 'maxOpen': (1, 1000, True),
+    'emaTouch': (0, 10, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -72,7 +80,7 @@ GROUP_NAMES = {
 }
 REASONS = ('stop', 'target', 'be', 'trail', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
-              'days', 'maxR', 'qty', 'pnl', 'taken']
+              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'acct']
 
 
 def _iso_date(s):
@@ -87,15 +95,16 @@ def clean_params(p):
     p = p if isinstance(p, dict) else {}
     out = dict(DEFAULTS)
     for k, opts in CHOICES.items():
-        if p.get(k) in opts:
-            out[k] = p[k]
+        v = p.get(k)
+        if not isinstance(v, bool) and v in opts:
+            out[k] = int(v) if isinstance(v, float) else v
     for k, (lo, hi, integer) in LIMITS.items():
         v = p.get(k)
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
             continue
         v = min(max(v, lo), hi)
         out[k] = int(round(v)) if integer else float(v)
-    for k in ('breakeven', 'compound'):
+    for k in BOOLS:
         if isinstance(p.get(k), bool):
             out[k] = p[k]
     for k in ('from', 'to'):
@@ -267,6 +276,49 @@ def _f(x):
     return round(float(x), 2)
 
 
+def ema_lens(P):
+    """The EMA lengths the run's confluence rules need (none = no EMA filter)."""
+    need = set()
+    if P['emaSupport']:
+        need.update(EMA_LENS if P['emaSupport'] == 1 else (int(P['emaSupport']),))
+    need.update(n for n in EMA_LENS if P['above%d' % n])
+    if P['emaStack']:
+        need.update(EMA_LENS)
+    return sorted(need)
+
+
+def ema_check(cs, i, P, emas):
+    """EMA confluence on the Spring candle i -> (ok, text). text = what the EMAs show there ('support 10 EMA ·
+    above 21 / 50 · 10>21>50'). The first candles of a stock (shorter than the EMA) never pass."""
+    lens = sorted(emas)
+    if not lens or i < max(lens):
+        return False, ''
+    c, l = _f(cs.c[i]), _f(cs.l[i])
+    e = {n: emas[n][i] for n in lens}
+    touch = 1 + P['emaTouch'] / 100.0
+    sup = [n for n in lens if l <= e[n] * touch and c >= e[n]]
+    above = [n for n in lens if c > e[n]]
+    stack = len(lens) == 3 and e[10] > e[21] > e[50]
+    ok = True
+    if P['emaSupport']:
+        want = EMA_LENS if P['emaSupport'] == 1 else (int(P['emaSupport']),)
+        ok = ok and any(n in sup for n in want)
+    for n in EMA_LENS:
+        if P['above%d' % n]:
+            ok = ok and n in above
+    if P['emaStack']:
+        ok = ok and stack
+    parts = []
+    if sup:
+        parts.append('support ' + ' / '.join(str(n) for n in sup) + ' EMA')
+    rest = [n for n in above if n not in sup]
+    if rest:
+        parts.append('above ' + ' / '.join(str(n) for n in rest))
+    if stack:
+        parts.append('10>21>50')
+    return ok, ' · '.join(parts)
+
+
 def simulate(cs, row, P, ema=None):
     """One signal row -> the trade under the rules P (see the module text), or (None, why skipped)."""
     i, code, zb = row[0], row[1], row[2]
@@ -394,31 +446,72 @@ def pick(rows, P):
 
 
 # ------------------------------------------------------------------ the account + figures
+def _rs(v, d=0):
+    """Rupees with Indian grouping (12,34,567); d decimals at most (trailing zeros dropped)."""
+    neg = v < 0
+    whole, _, frac = ('%.*f' % (d, abs(v))).partition('.')
+    if len(whole) > 3:
+        head, parts = whole[:-3], []
+        while len(head) > 2:
+            parts.insert(0, head[-2:])
+            head = head[:-2]
+        whole = ','.join(([head] if head else []) + parts) + ',' + whole[-3:]
+    frac = frac.rstrip('0')
+    return ('-' if neg else '') + whole + ('.' + frac if frac else '')
+
+
 def portfolio(trades, P):
     """Trades in time order -> each taken one gets qty / pnl (rupees); at most maxOpen at once. -> summary dict."""
     cap = P['capital']
     eq = cap
-    heap, still, realized, skipped, seq, blown = [], [], [], 0, 0, None
+    heap, still, realized, skipped, seq, blown, capped = [], [], [], 0, 0, None, 0
+    why = {'full': 0, 'cap': 0, 'risk': 0, 'blown': 0}
     order = sorted(trades, key=lambda t: (t['ek'], t['sym']))
     for t in order:
         while heap and heap[0][0] <= t['ek']:    # positions sold before (or when) this one is bought
             o = heapq.heappop(heap)[2]
             eq += o['pnl']
             realized.append(o)
-        t['qty'], t['pnl'], t['taken'] = 0, 0, 0
+        t['qty'], t['pnl'], t['taken'], t['acct'] = 0, 0, 0, ''
+        # why a signal is not taken (owner, 09-Nov-2026: "more trades were skipped in the account, I don't know why -
+        # show the reason when I place the cursor on the word skipped")
         if eq <= 0:                              # the account is gone: no more trades
             blown = blown or date.fromordinal(t['ek'][0]).isoformat()
             skipped += 1
+            why['blown'] += 1
+            t['acct'] = 'Not taken: the account had run out (Rs %s).' % _rs(eq)
             continue
         if len(heap) + len(still) >= P['maxOpen']:
             skipped += 1
+            why['full'] += 1
+            t['acct'] = ('Not taken: %d trades were already open - your limit is %d at once (Money: "Trades open at once, '
+                         'at most").' % (len(heap) + len(still), P['maxOpen']))
             continue
         base = eq if P['compound'] else cap
-        qty = int(base * P['riskPct'] / 100.0 // t['risk'])
-        qty = min(qty, int(base * P['maxPosPct'] / 100.0 // t['entry']))
-        if qty < 1:
+        risk_amt = base * P['riskPct'] / 100.0
+        pos_amt = base * P['maxPosPct'] / 100.0
+        qty_r = int(risk_amt // t['risk'])
+        qty_c = int(pos_amt // t['entry'])
+        qty = min(qty_r, qty_c)
+        if qty_r < 1:
             skipped += 1
+            why['risk'] += 1
+            t['acct'] = ('Not taken: one share risks Rs %s (entry %s - stop %s), more than your risk per trade of Rs %s '
+                         '(%g%% of the account).' % (_rs(t['risk'], 2), _rs(t['entry'], 2), _rs(t.get('stop', t['entry'] - t['risk']), 2),
+                                                     _rs(risk_amt), P['riskPct']))
             continue
+        if qty_c < 1:
+            skipped += 1
+            why['cap'] += 1
+            t['acct'] = ('Not taken: one share costs Rs %s, more than your position limit of Rs %s (%g%% of the account, '
+                         'Money: "One position at most").' % (_rs(t['entry'], 2), _rs(pos_amt), P['maxPosPct']))
+            continue
+        t['acct'] = '%d shares, Rs %s invested, Rs %s at risk' % (qty, _rs(qty * t['entry']), _rs(qty * t['risk']))
+        if qty_c < qty_r:
+            capped += 1
+            t['acct'] += (' - made smaller by your position limit of %g%% (the full %g%% risk would be %d shares)'
+                          % (P['maxPosPct'], P['riskPct'], qty_r))
+        t['acct'] += '.'
         t['qty'] = qty
         t['pnl'] = round(qty * (t['exit'] - t['entry']) - P['cost'] / 100.0 * qty * t['entry'], 2)
         t['taken'] = 1
@@ -449,7 +542,7 @@ def portfolio(trades, P):
     return {'capital': cap, 'final': round(final), 'pnl': round(final - cap), 'returnPct': round((final - cap) / cap * 100, 2),
             'cagr': round(cagr, 2) if cagr is not None else None, 'maxDD': round(dd, 2), 'taken': len(realized) + len(still),
             'skipped': skipped, 'openNow': len(still), 'openPnl': round(sum(o['qty'] * (o['exit'] - o['entry']) for o in still)),
-            'years': round(years, 1), 'curve': curve, 'blown': blown}
+            'years': round(years, 1), 'curve': curve, 'blown': blown, 'skipReasons': why, 'capped': capped}
 
 
 def _stats(ts):
@@ -502,7 +595,7 @@ def summarise(trades, P, skips, meta, secs):
                      zone_name[t['code']] + (' inside FVG' if t['code'] == 'G' and t['inside'] else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
-                     t['qty'], t['pnl'], t['taken']])
+                     t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('acct', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     return {'v': 1, 'params': P, 'groupName': GROUP_NAMES[P['group']], 'cacheUpto': meta.get('upto'),
@@ -524,7 +617,8 @@ def run_job(params, base=None, progress=None):
     index = meta['index'].get(tf) or {}
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
-    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0}
+    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0}
+    lens = ema_lens(P)
     syms = sorted(sigs)
     with open(os.path.join(d, tf + '.bin'), 'rb') as f:
         for k, sym in enumerate(syms):
@@ -533,10 +627,19 @@ def run_job(params, base=None, progress=None):
                 continue
             cs = Candles(f, index[sym][0], index[sym][1])
             ema = ema_series(cs.c, P['emaN']) if P['after'] == 'trail' and P['trail'] == 'ema' else None
+            emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens}
             for r in rows:
                 if r[0] >= cs.n or (lo and cs.day[r[0]] < lo) or (hi and cs.day[r[0]] > hi):
                     continue
+                note = ''
+                if lens:
+                    ok, note = ema_check(cs, r[0], P, emas)
+                    if not ok:
+                        skips['ema'] = skips.get('ema', 0) + 1
+                        continue
                 t, why = simulate(cs, r, P, ema)
+                if t is not None:
+                    t['ema'] = note
                 if t is None:
                     skips[why] = skips.get(why, 0) + 1
                     continue
