@@ -1197,6 +1197,11 @@ function check(name, fn) {
     await own.p.check('[data-k="above21"]');
     assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /Only when the Spring candle took support at the 10 EMA .*; it closed above the 21 EMA\./);
     assert.strictEqual(await own.p.$eval('[data-k="name"]', (x) => x.value), 'Zone stop 1%', 'the form keeps what was typed when it redraws');
+    // market condition (owner, 09-Nov-2026): NIFTY 50 above its 50 EMA that day
+    await own.p.selectOption('[data-k="mktIndex"]', 'NIFTY_50');
+    await own.p.waitForSelector('[data-k="mktAbove"]');
+    await own.p.selectOption('[data-k="mktAbove"]', '50');
+    assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /Only on days when NIFTY 50 closed above its 50 EMA\./);
     assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /1% below the zone bottom.*At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
     await own.p.click('#lab-run');
     await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
@@ -1205,11 +1210,12 @@ function check(name, fn) {
     assert.strictEqual(got.job.name, 'Zone stop 1%');
     assert.deepStrictEqual([got.job.params.stopBuf, got.job.params.trailN, got.job.params.stop, got.job.params.targetR], [1, 3, 'zone', 2]);
     assert.deepStrictEqual([got.job.params.emaSupport, got.job.params.above21, got.job.params.above10, got.job.params.emaStack], [10, true, false, false]);
+    assert.deepStrictEqual([got.job.params.mktIndex, got.job.params.mktAbove, got.job.params.mktStack], ['NIFTY_50', 50, false]);
     const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'acct'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
                avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1 },
-      open: 1, skipped: { risk: 2, ema: 37 }, reasons: { stop: 1, trail: 2, open: 1 },
+      open: 1, skipped: { risk: 2, ema: 37, mkt: 12 }, reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
       account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 3, skipped: 1, openNow: 1, openPnl: 500, years: 16.8,
                  curve: [['2010-02-01', 990000], ['2015-01-01', 1012000], ['2026-10-20', 1036000]], blown: null,
                  skipReasons: { full: 0, cap: 1, risk: 0, blown: 0 }, capped: 0 },
@@ -1229,7 +1235,10 @@ function check(name, fn) {
     assert.match(view, /At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
     // why a signal was skipped: on the word itself (hover / tap), and counted in the account tile
-    assert.match(view, /37 left out by your EMA rules/);
+    assert.match(view, /37 left out by your EMA rules · 12 left out by your market rule/);
+    assert.match(view, /Only on days when NIFTY 50 closed above its 50 EMA/);
+    assert.deepStrictEqual(await own.p.$$eval('#lab-mkt-index option', (o) => o.map((x) => x.value)), ['', 'NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
+      'the Index list = the indices the laptop has');
     assert.match(view, /1 skipped: 1 one share cost more than your position limit/);
     const tipText = await own.p.$eval('#lab-trades .lab-acct.skip', (x) => x.getAttribute('data-tip'));
     assert.match(tipText, /^Not taken: one share costs ₹30,435, more than your position limit of ₹15,000/);

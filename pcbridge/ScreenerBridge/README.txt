@@ -318,6 +318,10 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
  - EMA confluence (09-Nov-2026): step 2 of the page - take a signal only when the Spring candle took support at the
    10 / 21 / 50 EMA (its low came down to it, or within x % above it, and it closed at or above it), closed above
    chosen EMAs, and / or the EMAs were in order 10 > 21 > 50. The trade list then shows what the EMAs did.
+ - Market condition (09-Nov-2026): step 3 of the page - take a signal only on days when an index (NIFTY 50, 100, 200, 500,
+   Bank, Midcap, Smallcap ... and every index of your Indextracker tab) closed above its 10 / 21 / 50 / 100 / 200 EMA
+   and / or had its EMAs in order 10 > 21 > 50. The index candles (20 years, daily) come from Kite with the daily scan
+   (after 15:40) or KiteHistoryNow.bat - kept in intraday_data\indices.
  - "skipped" in the trade list: hover (or tap on a phone) to see why - too many trades open at once, one share
    costing more than your position limit, one share risking more than your risk per trade, or the account ran out.
  - A check without the website: python screener_bridge.py lab   (or: lab W / lab 4H) - the default rules, nothing sent.

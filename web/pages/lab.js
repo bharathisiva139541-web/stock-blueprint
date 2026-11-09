@@ -18,8 +18,13 @@
     capital: 1000000, riskPct: 1, maxPosPct: 25, maxOpen: 10, compound: false,
     // EMA confluence (owner, 09-Nov-2026: "I don't enter the trade blindly ... if price is taking support at 10 EMA, I believe
     // the stock will go upward") - all off by default
-    emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false
+    emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false,
+    // market condition (owner, 09-Nov-2026: "yes ... why only Nifty50, you can add other indices also") - off by default
+    mktIndex: '', mktAbove: 0, mktStack: false
   };
+  // the indices the laptop keeps (= kite_intraday.py LAB_INDICES; a finished run's indexNames replaces this list)
+  var DEFAULT_INDICES = ['NIFTY_50', 'NIFTY_NEXT_50', 'NIFTY_100', 'NIFTY_200', 'NIFTY_500', 'NIFTY_BANK', 'NIFTY_MIDCAP_100',
+    'NIFTY_MIDCAP_150', 'NIFTY_SMLCAP_100', 'NIFTY_SMLCAP_250', 'NIFTY_MIDSML_400', 'NIFTY_MICROCAP250'];
   var CHOICES = {
     tf: [['D', 'Daily'], ['W', 'Weekly'], ['4H', '4 hour (13:15 candle)']],
     group: [['fvg', 'FVG+Spring'], ['fvg_top', 'FVG+Spring - Spring at the zone top'], ['fvg_middle', 'FVG+Spring - in the middle'],
@@ -31,10 +36,11 @@
     after: [['trail', 'Keep the trade and trail the stop'], ['fixed', 'Sell at the target']],
     trail: [['lows', 'Under the lowest low of the last N candles'], ['pct', 'X % under the highest price since entry'],
       ['ema', 'Sell when a candle closes under the N EMA'], ['none', 'No trail (the stop stays)']],
-    emaSupport: [[0, 'Off - do not look at it'], [10, 'the 10 EMA'], [21, 'the 21 EMA'], [50, 'the 50 EMA'], [1, 'any of the 10 / 21 / 50 EMA']]
+    emaSupport: [[0, 'Off - do not look at it'], [10, 'the 10 EMA'], [21, 'the 21 EMA'], [50, 'the 50 EMA'], [1, 'any of the 10 / 21 / 50 EMA']],
+    mktAbove: [[0, 'Off'], [10, 'its 10 EMA'], [21, 'its 21 EMA'], [50, 'its 50 EMA'], [100, 'its 100 EMA'], [200, 'its 200 EMA']]
   };
   var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN', 'maxDays',
-    'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch'];
+    'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove'];
   var REASON = { stop: ['Stop loss', 's-bad'], target: ['Target', 's-good'], be: ['Breakeven (stop at entry)', ''], trail: ['Trailing stop', 's-good'],
     ema: ['Close under EMA', 's-good'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
   var POLL_MS = 4000;
@@ -63,6 +69,22 @@
     return w.length ? 'Only when ' + w.join('; ') + '.' : '';
   }
 
+  function idxName(n) { return String(n || '').replace(/_/g, ' '); }
+  function indexList(cur) {
+    var l = ui.store.get('lab:indices', null);
+    l = Array.isArray(l) && l.length ? l.slice() : DEFAULT_INDICES.slice();
+    if (cur && l.indexOf(cur) < 0) l.unshift(cur);
+    return l;
+  }
+  /** The market rule in words ('' when off). */
+  function mktWords(p) {
+    if (!p.mktIndex || !(Number(p.mktAbove) || p.mktStack)) return '';
+    var w = [];
+    if (Number(p.mktAbove)) w.push('closed above its ' + p.mktAbove + ' EMA');
+    if (p.mktStack) w.push('had its EMAs in order 10 > 21 > 50');
+    return 'Only on days when ' + idxName(p.mktIndex) + ' ' + w.join(' and ') + '.';
+  }
+
   /** The rules in plain words (shown above the Run button and with each result). */
   function plain(p) {
     var s = [];
@@ -70,6 +92,8 @@
       (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
     var ema = emaWords(p);
     if (ema) s.push(ema);
+    var mkt = mktWords(p);
+    if (mkt) s.push(mkt);
     s.push('Buy ' + (p.entry === 'close' ? 'at the Spring candle\'s close' : 'at the next candle\'s open') + '.');
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
       F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' : 'the zone bottom or the Spring low, whichever is lower')) +
@@ -119,12 +143,21 @@
       check('above21', f.above21, '21 EMA') + check('above50', f.above50, '50 EMA') + '</div>' +
       '<div class="field lab-checks">' + check('emaStack', f.emaStack, 'EMAs in order: 10 > 21 > 50 (uptrend)') + '</div></div>' +
       '<p class="sub">EMAs of the same timeframe (daily / weekly / 4 hour), on the Spring candle. Leave everything off to test the pattern alone.</p>' +
-      '<h3 class="lab-h">3 · Entry and stop loss</h3><div class="form-grid">' +
+      '<h3 class="lab-h">3 · Market condition (optional) - trade only when the market agrees</h3><div class="form-grid">' +
+      field('Index', '<select class="sel" data-k="mktIndex" id="lab-mkt-index"><option value="">Off - no market rule</option>' +
+        indexList(f.mktIndex).map(function (n) {
+          return '<option value="' + esc(n) + '"' + (n === f.mktIndex ? ' selected' : '') + '>' + esc(idxName(n)) + '</option>';
+        }).join('') + '</select>', 'wide') +
+      (f.mktIndex ? field('The index closed above', sel('mktAbove', f.mktAbove)) +
+        '<div class="field lab-checks">' + check('mktStack', f.mktStack, 'Its EMAs in order: 10 > 21 > 50') + '</div>' : '') + '</div>' +
+      '<p class="sub">The index\'s daily candles on the Spring candle\'s day (your laptop reads them from Kite: your Indextracker indices + NIFTY 50 / 100 / 200 / 500, ' +
+      'Bank, Midcap, Smallcap ...).</p>' +
+      '<h3 class="lab-h">4 · Entry and stop loss</h3><div class="form-grid">' +
       field('Buy', sel('entry', f.entry)) + field('Stop loss', sel('stop', f.stop), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
       num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') + '</div>' +
-      '<h3 class="lab-h">4 · Target and exit</h3><div class="form-grid">' +
+      '<h3 class="lab-h">5 · Target and exit</h3><div class="form-grid">' +
       num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"') + field('At the target', sel('after', f.after), 'wide') +
       (trailOn ? field('Then', sel('trail', f.trail), 'wide') : '') +
       (trailOn && f.trail === 'lows' ? num('trailN', f.trailN, 'N candles', ' min="1" step="1"') : '') +
@@ -133,7 +166,7 @@
       num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
       num('cost', f.cost, 'Costs per trade (%)', ' min="0" step="0.05"') +
       (trailOn ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>' +
-      '<h3 class="lab-h">5 · Money</h3><div class="form-grid">' +
+      '<h3 class="lab-h">6 · Money</h3><div class="form-grid">' +
       num('capital', f.capital, 'Account ₹', ' min="1000" step="10000"') + num('riskPct', f.riskPct, 'Risk per trade (% of the account)', ' min="0.05" step="0.25"') +
       num('maxPosPct', f.maxPosPct, 'One position at most (% of the account)', ' min="1" step="5"') +
       num('maxOpen', f.maxOpen, 'Trades open at once, at most', ' min="1" step="1"') +
@@ -232,6 +265,7 @@
     paintRuns(el);
     ask({ lab: { do: 'result', id: id } }).then(function (j) {
       ST.item = j.item;
+      rememberIndices(el, j.item && j.item.result && j.item.result.indexNames);
       paintResult(el);
     }, function (e) {
       if (box) box.innerHTML = '<p class="note bad">' + esc(e && e.message || 'could not load that run') + '</p>';
@@ -239,6 +273,20 @@
   }
 
   function r2(v) { return isNum(v) ? F.num(v, 2) + 'R' : '–'; }
+
+  /** The indices the laptop really has (from a run) - kept on this device for the Index list. */
+  function rememberIndices(el, names) {
+    if (!Array.isArray(names) || !names.length) return;
+    var clean = names.filter(function (n) { return /^[A-Z0-9_&.-]{2,40}$/.test(n); });
+    if (!clean.length) return;
+    ui.store.set('lab:indices', clean);
+    var s = $('#lab-mkt-index', el);
+    if (!s) return;
+    var cur = s.value;
+    s.innerHTML = '<option value="">Off - no market rule</option>' + indexList(cur).map(function (n) {
+      return '<option value="' + esc(n) + '"' + (n === cur ? ' selected' : '') + '>' + esc(idxName(n)) + '</option>';
+    }).join('');
+  }
 
   /** "N skipped: ..." - why the account did not take some signals (each trade's reason: hover / tap "skipped"). */
   function skipWords(a) {
@@ -256,10 +304,10 @@
     if (!total) return '';
     if (w.cap && w.cap >= total * 0.1) {
       h += '<p class="note warn">' + F.int(w.cap) + ' signals were not taken because one share cost more than your position limit (' + F.num(p.maxPosPct, 0) +
-        '% of the account). To take them: raise <b>One position at most</b> in 5 · Money.</p>';
+        '% of the account). To take them: raise <b>One position at most</b> in 6 · Money.</p>';
     }
     if (w.full && w.full >= total * 0.1) {
-      h += '<p class="note warn">' + F.int(w.full) + ' signals came while ' + F.int(p.maxOpen) + ' trades were already open. To take them: raise <b>Trades open at once, at most</b> in 5 · Money.</p>';
+      h += '<p class="note warn">' + F.int(w.full) + ' signals came while ' + F.int(p.maxOpen) + ' trades were already open. To take them: raise <b>Trades open at once, at most</b> in 6 · Money.</p>';
     }
     if (a.capped && a.capped >= (a.taken || 1) * 0.3) {
       h += '<p class="note">' + F.int(a.capped) + ' of the trades taken were made smaller by your position limit (' + F.num(p.maxPosPct, 0) + '%), so they risked less than ' +
@@ -288,7 +336,8 @@
     h += '<h3 class="lab-h">Every signal (each trade on its own, in R)</h3><div class="tiles">' +
       ui.tile('Trades', F.int(s.trades), (res.open ? F.int(res.open) + ' still running (not counted)' : 'all finished') +
         (res.skipped && res.skipped.risk ? ' · ' + F.int(res.skipped.risk) + ' skipped (risk too big)' : '') +
-        (res.skipped && res.skipped.ema ? ' · ' + F.int(res.skipped.ema) + ' left out by your EMA rules' : '')) +
+        (res.skipped && res.skipped.ema ? ' · ' + F.int(res.skipped.ema) + ' left out by your EMA rules' : '') +
+        (res.skipped && res.skipped.mkt ? ' · ' + F.int(res.skipped.mkt) + ' left out by your market rule' : '')) +
       ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry (after costs)') +
       ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge') +
       ui.tile('Total', '<span class="' + tone(s.totalR) + '">' + F.num(s.totalR, 1) + 'R</span>', 'profit factor ' + (isNum(s.pf) ? F.num(s.pf, 2) : '–')) +
@@ -381,7 +430,7 @@
       if (!k) return;
       var f = readForm(el);
       saveForm(f);
-      if (['stop', 'after', 'trail', 'emaSupport'].indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear
+      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex'].indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
     });

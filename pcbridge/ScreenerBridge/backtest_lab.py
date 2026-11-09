@@ -25,6 +25,7 @@ How it works:
 """
 import array
 import bisect
+import re
 import gzip
 import heapq
 import json
@@ -58,13 +59,17 @@ DEFAULTS = {
     # emaSupport 0 off / 10 / 21 / 50 / 1 = any of them: its low came to (or within emaTouch % above) that EMA and it
     # closed at / above it; aboveNN = it closed above that EMA; emaStack = 10 EMA > 21 EMA > 50 EMA (an uptrend)
     'emaSupport': 0, 'emaTouch': 1.0, 'above10': False, 'above21': False, 'above50': False, 'emaStack': False,
+    # market condition (owner, 09-Nov-2026: "I see the market condition" -> "yes ... why only Nifty50, you can add other
+    # indices also"): mktIndex = an index name with underscores ('NIFTY_50', '' = off); on the signal's day its daily
+    # close above its mktAbove EMA (0 off / 10 / 21 / 50 / 100 / 200) and / or its 10 > 21 > 50 EMA (mktStack)
+    'mktIndex': '', 'mktAbove': 0, 'mktStack': False,
 }
 EMA_LENS = (10, 21, 50)
-BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack')
+BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring'),
     'entry': ('close', 'next_open'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
-    'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1),
+    'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -109,6 +114,8 @@ def clean_params(p):
             out[k] = p[k]
     for k in ('from', 'to'):
         out[k] = _iso_date(p.get(k) or '')
+    mk = str(p.get('mktIndex') or '').strip().upper().replace(' ', '_')
+    out['mktIndex'] = mk if re.match(r'^[A-Z0-9_&.-]{2,40}$', mk) else ''
     return out
 
 
@@ -135,6 +142,7 @@ class CacheWriter:
         self.pos = {tf: 0 for tf in TFS}
         self.index = {tf: {} for tf in TFS}
         self.signals = {tf: {} for tf in TFS}
+        self.indices = {}               # {NAME: [[day ordinal, close], ...]} - the market filter's index candles
         self.done = False
 
     def add(self, sym, tf, candles, rows):
@@ -178,7 +186,8 @@ class CacheWriter:
         for f in self.files.values():
             f.close()
         meta = {'v': CACHE_VERSION, 'upto': self.upto, 'built': datetime.now().isoformat(timespec='seconds'),
-                'index': self.index, 'signals': self.signals}
+                'index': self.index, 'signals': self.signals,
+                'indices': {k: {'d': [r[0] for r in v], 'c': [r[1] for r in v]} for k, v in (self.indices or {}).items()}}
         with gzip.open(os.path.join(self.dir, 'signals.json.gz'), 'wt', encoding='utf-8') as f:
             json.dump(meta, f, separators=(',', ':'))
         final = os.path.join(self.base, self.name)
@@ -317,6 +326,39 @@ def ema_check(cs, i, P, emas):
     if stack:
         parts.append('10>21>50')
     return ok, ' · '.join(parts)
+
+
+def market_filter(meta, P):
+    """The run's market condition -> fn(day ordinal) -> True when the index agreed that day (None = no market rule).
+    Raises LabError when the laptop has no candles of that index yet."""
+    name = P['mktIndex']
+    if not name or not (P['mktAbove'] or P['mktStack']):
+        return None
+    ix = (meta.get('indices') or {}).get(name)
+    if not ix or not ix.get('d'):
+        have = ', '.join(sorted((meta.get('indices') or {}).keys())[:12]) or 'none yet'
+        raise LabError('no candles of the index %s on the laptop (it has: %s) - they come with the next daily scan '
+                       '(after 15:40) or KiteHistoryNow.bat' % (name.replace('_', ' '), have))
+    days, closes = ix['d'], ix['c']
+    lens = set()
+    if P['mktAbove']:
+        lens.add(int(P['mktAbove']))
+    if P['mktStack']:
+        lens.update(EMA_LENS)
+    emas = {n: ema_series(closes, n) for n in lens}
+    longest = max(lens)
+
+    def ok(day):
+        k = bisect.bisect_right(days, day) - 1          # that day's close (or the last one before it)
+        if k < longest:
+            return False
+        c = closes[k]
+        if P['mktAbove'] and not c > emas[int(P['mktAbove'])][k]:
+            return False
+        if P['mktStack'] and not emas[10][k] > emas[21][k] > emas[50][k]:
+            return False
+        return True
+    return ok
 
 
 def simulate(cs, row, P, ema=None):
@@ -617,8 +659,9 @@ def run_job(params, base=None, progress=None):
     index = meta['index'].get(tf) or {}
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
-    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0}
+    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0}
     lens = ema_lens(P)
+    mkt = market_filter(meta, P)
     syms = sorted(sigs)
     with open(os.path.join(d, tf + '.bin'), 'rb') as f:
         for k, sym in enumerate(syms):
@@ -630,6 +673,9 @@ def run_job(params, base=None, progress=None):
             emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens}
             for r in rows:
                 if r[0] >= cs.n or (lo and cs.day[r[0]] < lo) or (hi and cs.day[r[0]] > hi):
+                    continue
+                if mkt and not mkt(cs.day[r[0]]):
+                    skips['mkt'] += 1
                     continue
                 note = ''
                 if lens:
@@ -647,7 +693,9 @@ def run_job(params, base=None, progress=None):
                 trades.append(t)
             if progress and (k + 1) % 300 == 0:
                 progress(int((k + 1) * 90 / max(1, len(syms))))
-    return summarise(trades, P, skips, meta, time.time() - t0)
+    res = summarise(trades, P, skips, meta, time.time() - t0)
+    res['indexNames'] = sorted((meta.get('indices') or {}).keys())      # the page's list of indices
+    return res
 
 
 class LabError(Exception):

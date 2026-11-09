@@ -252,6 +252,9 @@ def fake_http(method, url, headers, data=None, timeout=60):
         return 200, '\n'.join(lines)
     if u.path.startswith('/instruments/historical/'):
         _, _, _, tok, interval = u.path.split('/')
+        if tok == '999':                               # NIFTY 50 (the Backtest Lab's market filter): FLAT's daily candles
+            assert interval == 'day'
+            return 200, json.dumps({'status': 'success', 'data': {'candles': kite_candles('FLAT', interval, q['from'], q['to'])}})
         sym = [s for s, t in TOKENS.items() if str(t) == tok][0]
         assert q['oi'] == '0' and q['continuous'] == '0'
         return 200, json.dumps({'status': 'success', 'data': {'candles': kite_candles(sym, interval, q['from'], q['to'])}})
@@ -312,7 +315,7 @@ assert 'Login not completed' in page_text()
 
 # ------------------------------------------------------------------ 7. the download: first all, then only the new days
 imap = K.instruments(CFG, s, '2026-11-06')
-assert imap == {'PARAGMILK': 111, 'FLAT': 222, 'BEONLY-BE': 333}, imap
+assert imap == {'PARAGMILK': 111, 'FLAT': 222, 'BEONLY-BE': 333, 'IDX:NIFTY 50': 999}, imap   # + the indices (Backtest Lab market filter)
 assert K.token_for(imap, 'BEONLY') == 333 and K.token_for(imap, 'NOPE') is None
 CALLS.clear()
 K.instruments(CFG, s, '2026-11-06')
@@ -419,7 +422,8 @@ n = K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 9, 16, 0))
 put = [p for p in POSTS if p['op'] == 'put'][0]
 assert put['since'] == '2026-11-06' and all(it['session'] == '2026-11-09' for it in put['items']), put
 froms = [c for c in CALLS if c[1].startswith('/instruments/historical/')]
-assert len(froms) == 6, ('2 short reads a stock', len(froms))
+assert len(froms) == 7 and sum(1 for c in froms if '/999/' in c[1]) == 1, ('2 short reads a stock + 1 for NIFTY 50', froms)
+froms = [c for c in froms if '/999/' not in c[1]]
 
 # ------------------------------------------------------------------ 9. no login: it waits and asks again later; 403 part-way
 K.state_save({})

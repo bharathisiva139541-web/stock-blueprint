@@ -336,4 +336,57 @@ row = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'maxOpen': 1})['tra
 assert any(r[L.TRADE_COLS.index('taken')] == 0 and r[L.TRADE_COLS.index('acct')].startswith('Not taken: 1 trades were already open')
            for r in row), 'the list carries the reason'
 
+# ------------------------------------------------------------------ 8. market condition: the index's own EMA (owner, 09-Nov-2026)
+assert K.index_names(['NIFTY_50', 'NIFTY_IT', 'bad name!', 'NIFTY_IT'])[:3] == ['NIFTY 50', 'NIFTY IT', 'NIFTY NEXT 50']
+assert len(K.index_names([])) == len(K.LAB_INDICES)
+# Kite's daily index candles: back DEEP_DAY_YEARS in chunks the first time, then a short read, nothing when up to date
+idx_rows = []
+d0 = date(2008, 1, 1)
+for k in range(6400):
+    d = d0 + timedelta(days=k)
+    if d.weekday() < 5:
+        px = 5000 + k if d.year < 2011 else 5000 + 3 * 365 - (k - 3 * 365) * 2    # up until 2011, then down
+        idx_rows.append([d.isoformat(), px, px + 5, px - 5, px, 0])
+HC = []
+orig_hist = K.historical
+
+
+def fake_idx(cfg, sess, token, interval, frm, to):
+    HC.append((token, interval, frm.date(), to.date()))
+    return [r for r in idx_rows if frm.date().isoformat() <= r[0] <= to.date().isoformat()]
+
+
+K.historical = fake_idx
+try:
+    n = K.update_index({}, {}, 'NIFTY 50', 256265, date(2012, 6, 20))
+    assert n >= 2 and all(h[1] == 'day' for h in HC) and K.index_load('NIFTY 50')['day'][0][0] == '2008-01-01', (n, HC[:3])
+    HC.clear()
+    assert K.update_index({}, {}, 'NIFTY 50', 256265, date(2012, 6, 20)) == 0 and not HC, 'up to date: nothing read'
+    assert K.update_index({}, {}, 'NIFTY 50', 256265, date(2012, 6, 29)) == 1 and HC[0][2] == date(2012, 6, 16), HC
+    read, missing = K.index_fill({}, {}, {'IDX:NIFTY 50': 256265}, ['NIFTY 50', 'NIFTY XYZ'], date(2012, 6, 29), out=LOGS.append)
+    assert (read, missing) == (1, ['NIFTY XYZ']) and any('not on Kite: NIFTY XYZ' in m for m in LOGS[-2:])
+finally:
+    K.historical = orig_hist
+closes = K.index_closes(date(2012, 6, 20))
+assert list(closes) == ['NIFTY_50'] and closes['NIFTY_50'][-1][0] == date(2012, 6, 20).toordinal()
+# into the cache with the next backtest pass, and the run's filter
+K.backtest_pass(set(), upto, {}, out=lambda m: None)
+meta, _ = L.load_meta()
+assert list(meta['indices']) == ['NIFTY_50'] and len(meta['indices']['NIFTY_50']['d']) == len(closes['NIFTY_50'])
+base_run = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0})
+assert base_run['indexNames'] == ['NIFTY_50']
+up_run = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'mktIndex': 'NIFTY_50', 'mktAbove': 50})
+assert 0 < up_run['tradesTotal'] < base_run['tradesTotal'] and up_run['tradesTotal'] + up_run['skipped']['mkt'] == base_run['tradesTotal']
+assert all(r[1] < '2011-03' for r in up_run['trades']), 'only while NIFTY 50 was above its 50 EMA (the rise up to 2011)'
+st_run = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'mktIndex': 'nifty 50', 'mktStack': True})
+assert st_run['params']['mktIndex'] == 'NIFTY_50' and 0 < st_run['tradesTotal'] < base_run['tradesTotal']
+assert L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'mktIndex': 'NIFTY_50'})['tradesTotal'] == base_run['tradesTotal'], \
+    'an index without a condition changes nothing'
+try:
+    L.run_job({'tf': 'D', 'group': 'spring', 'mktIndex': 'NIFTY_BANK', 'mktAbove': 21})
+    raise AssertionError('no index candles: must refuse')
+except L.LabError as e:
+    assert 'NIFTY BANK' in str(e) and 'it has: NIFTY_50' in str(e), e
+assert L.clean_params({'mktIndex': 'NIFTY 50; drop', 'mktAbove': 7})['mktIndex'] == '' and L.clean_params({'mktAbove': 7})['mktAbove'] == 0
+
 print('OK')

@@ -333,7 +333,7 @@ def instruments(cfg, sess, today_iso):
     try:
         with open(INSTR_PATH, 'r', encoding='utf-8') as f:
             c = json.load(f)
-        if c.get('day') == today_iso and c.get('map'):
+        if c.get('day') == today_iso and c.get('map') and c.get('v') == 2:
             return c['map']
     except (OSError, ValueError, AttributeError):
         pass
@@ -343,21 +343,140 @@ def instruments(cfg, sess, today_iso):
         raise KiteError('Kite\'s instrument list was empty')
     try:
         with open(INSTR_PATH, 'w', encoding='utf-8') as f:
-            json.dump({'day': today_iso, 'map': m}, f)
+            json.dump({'day': today_iso, 'v': 2, 'map': m}, f)
     except OSError:
         pass
     return m
 
 
 def instruments_parse(text):
+    """Kite's NSE list -> {SYMBOL: token} for equities and {'IDX:NIFTY 50': token} for the indices (segment INDICES -
+    the Backtest Lab's market filter, owner 09-Nov-2026)."""
     out = {}
     for r in csv.DictReader(io.StringIO(text)):
-        if (r.get('segment') or '') != 'NSE' or (r.get('instrument_type') or '') != 'EQ':
+        seg = (r.get('segment') or '')
+        if seg == 'INDICES':
+            key = 'IDX:' + (r.get('tradingsymbol') or '').strip().upper()
+        elif seg == 'NSE' and (r.get('instrument_type') or '') == 'EQ':
+            key = (r.get('tradingsymbol') or '').strip().upper()
+        else:
             continue
         try:
-            out[(r.get('tradingsymbol') or '').strip().upper()] = int(r.get('instrument_token'))
+            out[key] = int(r.get('instrument_token'))
         except (TypeError, ValueError):
             continue
+    return out
+
+
+# ------------------------------------------------------------------ index candles (the Backtest Lab's market filter)
+# owner, 09-Nov-2026: "I see the market condition ..." -> "yes you can do it. why only Nifty50, you can add other indices
+# also": the daily candles of the sheet's Indextracker indices + these, back DEEP_DAY_YEARS, in intraday_data/indices/
+LAB_INDICES = ('NIFTY 50', 'NIFTY NEXT 50', 'NIFTY 100', 'NIFTY 200', 'NIFTY 500', 'NIFTY BANK', 'NIFTY MIDCAP 100',
+               'NIFTY MIDCAP 150', 'NIFTY SMLCAP 100', 'NIFTY SMLCAP 250', 'NIFTY MIDSML 400', 'NIFTY MICROCAP250')
+
+
+def index_dir():
+    return os.path.join(DATA_DIR, 'indices')
+
+
+def index_path(name):
+    return os.path.join(index_dir(), _safe(name.replace(' ', '_')) + '.json.gz')
+
+
+def index_load(name):
+    try:
+        with gzip.open(index_path(name), 'rt', encoding='utf-8') as f:
+            s = json.load(f)
+        if isinstance(s, dict) and isinstance(s.get('day'), list):
+            return s
+    except (OSError, ValueError, EOFError):
+        pass
+    return {'v': 1, 'name': name, 'day': []}
+
+
+def index_save(name, s):
+    os.makedirs(index_dir(), exist_ok=True)
+    tmp = index_path(name) + '.tmp'
+    with gzip.open(tmp, 'wt', encoding='utf-8') as f:
+        json.dump(s, f, separators=(',', ':'))
+    os.replace(tmp, index_path(name))
+
+
+def index_names(sheet_syms=None):
+    """The sheet's Indextracker indices (NIFTY_50 -> 'NIFTY 50') + LAB_INDICES, each once."""
+    out = []
+    for n in [str(x or '').strip().upper().replace('_', ' ') for x in (sheet_syms or [])] + list(LAB_INDICES):
+        if n and re.match(r'^[A-Z0-9 &.-]{2,40}$', n) and n not in out:
+            out.append(n)
+    return out
+
+
+def update_index(cfg, sess, name, token, upto):
+    """An index's daily candles: back DEEP_DAY_YEARS the first time, then from a few days back. -> requests."""
+    s = index_load(name)
+    rows, req = s['day'], 0
+    if rows and str(s.get('upto') or '') >= upto.isoformat():
+        return 0                                       # already read up to this session
+    end = datetime(upto.year, upto.month, upto.day, 15, 30)
+    if not rows:
+        limit = upto - timedelta(days=int(365.25 * DEEP_DAY_YEARS))
+        stop = upto
+        while stop > limit:
+            frm = max(limit, stop - timedelta(days=DAY_CHUNK_DAYS))
+            got = historical(cfg, sess, token, 'day', datetime(frm.year, frm.month, frm.day),
+                             datetime(stop.year, stop.month, stop.day, 15, 30))
+            req += 1
+            if not got:
+                break
+            rows = _merge(got, rows)
+            stop = frm - timedelta(days=1)
+    else:
+        frm = date.fromisoformat(rows[-1][0][:10]) - timedelta(days=OVERLAP_DAYS)
+        rows = _merge(rows, historical(cfg, sess, token, 'day', datetime(frm.year, frm.month, frm.day), end))
+        req += 1
+    s['day'] = [r for r in rows if r[0] <= upto.isoformat()]
+    s['name'], s['upto'] = name, upto.isoformat()
+    index_save(name, s)
+    return req
+
+
+def index_fill(cfg, sess, imap, names, upto, out=None):
+    """update_index for every index Kite lists. -> (read, not on Kite). NeedLogin goes up; other errors skip one."""
+    out = out or log
+    read, missing = 0, []
+    for name in names:
+        tok = imap.get('IDX:' + name)
+        if tok is None:
+            missing.append(name)
+            continue
+        try:
+            update_index(cfg, sess, name, tok, upto)
+            read += 1
+        except KiteError as e:
+            out('Kite index %s: %s' % (name, e))
+    out('Kite: %d index(es) for the Backtest Lab\'s market filter%s.' % (
+        read, ' (not on Kite: ' + ', '.join(missing) + ')' if missing else ''))
+    return read, missing
+
+
+def index_closes(upto=None):
+    """Every stored index -> {NAME_WITH_UNDERSCORES: [[day ordinal, close], ...]} (for the lab cache)."""
+    out = {}
+    d = index_dir()
+    if not os.path.isdir(d):
+        return out
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith('.json.gz'):
+            continue
+        try:
+            with gzip.open(os.path.join(d, fn), 'rt', encoding='utf-8') as f:
+                s = json.load(f)
+        except (OSError, ValueError, EOFError):
+            continue
+        name = str(s.get('name') or '').upper().replace(' ', '_')
+        rows = [r for r in s.get('day') or [] if not upto or r[0][:10] <= upto.isoformat()]
+        if name and rows:
+            out[name] = [[date.fromisoformat(r[0][:10]).toordinal(), r[4]] for r in rows]
     return out
 
 
@@ -1388,6 +1507,7 @@ def backtest_pass(holidays, upto, slots, out=print, lab=True):
             if (k + 1) % 300 == 0:
                 out('  %d / %d stocks (%.0f s)' % (k + 1, len(names), time.time() - t0))
         if writer:
+            writer.indices = index_closes(upto)
             writer.close()
     finally:
         if writer and not writer.done:
@@ -1462,6 +1582,10 @@ def history_now(cfg, api, holidays=None, now=None, out=print):
         return 1
     out('Deep history: %d stocks read (%d requests, %.0f min)%s.' % (done, req, (time.time() - t0) / 60,
                                                                     ', %d still to do' % left if left else ''))
+    try:
+        index_fill(cfg, sess, imap, index_names(ans.get('indices')), upto, out)
+    except NeedLogin as e:
+        out('Kite: %s - the indices are read at the next scan.' % e)
     return backtest_now(cfg, api, holidays, now, out)
 
 
@@ -1558,6 +1682,13 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                 springs_bt.extend(res['springs'])
                 if (k + 1) % 200 == 0:
                     log('Kite: %d / %d stocks (%d requests, %.0f min)' % (k + 1, len(syms), reqs, (time.time() - t0) / 60))
+            try:
+                index_fill(cfg, sess, imap, index_names(ans.get('indices')), upto)
+            except NeedLogin:
+                log('Kite: the permission ended before the indices were read - the next scan reads them.')
+            except Exception as e:      # the indices are extra: the scan's patterns still go to the sheet
+                log('Kite: the indices could not be read - %s' % e)
+            lab_w.indices = index_closes(upto)
             try:
                 lab_w.close()
             except OSError as e:
