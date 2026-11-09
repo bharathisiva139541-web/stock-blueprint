@@ -1782,7 +1782,9 @@ function ab_rpRefresh_(opts) {
   const tr = opts.tracker || ab_rsReadTracker_();
   const sh = ab_getOrCreateSheet_(AB_RP_SHEET);
   const rows = ab_rpReadExisting_(sh);
-  const hist = ab_readHistoryMerged_();   // History30 + History60's older days (results up to ~60 sessions back)
+  // History30 + History60's older days (results up to ~60 sessions back) + its weekend / holiday sessions (owner, 09-Nov-2026:
+  // the Sunday Muhurat session was the first session after Saturday's filings - its candle is only in History60)
+  const hist = ab_readHistoryMerged_(null, { special: true });
   let annStore = null;
   try { annStore = ab_annLoad_(); } catch (e) { annStore = null; }
   const todayKey = ab_rsDayKey_(new Date());
@@ -1796,6 +1798,7 @@ function ab_rpRefresh_(opts) {
     return wd !== 0 && wd !== 6 && holidays.indexOf(iso) < 0;
   };
   const priceMoved = isSession(todayKey) && Number(Utilities.formatDate(nowDate, AB_TZ, 'HHmm')) >= AB_RP_LIVE_FROM;
+  const afterClose = Number(Utilities.formatDate(nowDate, AB_TZ, 'HHmm')) >= AB_RP_CLOSE_HHMM;   // Main's price = the day's close
 
   // First Main row per symbol, plus display values for today's % Change.
   const data = layout.data;
@@ -1861,10 +1864,19 @@ function ab_rpRefresh_(opts) {
       row.rdStored = NaN;
     }
     if (pre.length || !row.reactFrom) row.reactFrom = rx.text;
-    if (isNaN(row.base) && pre.length) row.base = pre[pre.length - 1].Cls;
+    // Worked out from the candles whenever the history still holds the days around the results (owner, 09-Nov-2026: Daily %
+    // of a Saturday filing was Monday's price vs Friday's close - the Sunday Muhurat candle came later; also an after-market
+    // filing's own close arrives with the evening's candles): a value stored on the tab is kept only once the history no
+    // longer reaches back that far.
+    if (pre.length) row.base = pre[pre.length - 1].Cls;
     const post = candles.filter(function (c) { return rx.strict ? c.k > rx.from : c.k >= rx.from; });
-    if (isNaN(row.rdClose) && post.length >= 1) row.rdClose = post[0].Cls;
-    if (isNaN(row.nextClose) && post.length >= 2) row.nextClose = post[1].Cls;
+    if (pre.length && post.length) {
+      row.rdClose = post[0].Cls;
+      row.nextClose = post.length >= 2 ? post[1].Cls : NaN;
+    } else {
+      if (isNaN(row.rdClose) && post.length >= 1) row.rdClose = post[0].Cls;
+      if (isNaN(row.nextClose) && post.length >= 2) row.nextClose = post[1].Cls;
+    }
     post.forEach(function (c) {
       if (!isNaN(c.High)) row.hi = isNaN(row.hi) ? c.High : Math.max(row.hi, c.High);
       if (!isNaN(c.Low)) row.lo = isNaN(row.lo) ? c.Low : Math.min(row.lo, c.Low);
@@ -1874,6 +1886,12 @@ function ab_rpRefresh_(opts) {
     let cur = mainNum(r, layout.mktPrice);
     if (isNaN(cur) && candles.length) cur = candles[candles.length - 1].Cls;
     row.cur = cur;
+    // an after-market filing of today's session, after the close, before the evening's candle: the baseline is today's
+    // close = Main's price now (not the day before's close)
+    if (rx.strict && rx.from === todayKey && isSession(todayKey) && !isNaN(cur) && cur > 0 && afterClose &&
+        !(pre.length && pre[pre.length - 1].k === todayKey)) {
+      row.base = cur;
+    }
     row.days = ab_rsDaysBetween_(rdKey, todayKey);
     // the session that could first react, and whether today's session is it (or the one after it) - its candle comes
     // with Phase 1 in the evening; until then Main's price is that session's price so far
@@ -4374,10 +4392,57 @@ function ab_h60Date_(iso) {
 }
 
 /**
+ * The special sessions History30 cannot have (owner, 09-Nov-2026: the Muhurat session of Sunday 08-Nov-2026 - GOOGLEFINANCE
+ * gives no weekend / holiday candle, NSE's bhavcopy via the PC does): per stock the History60 candles of a Saturday,
+ * Sunday or NSE holiday (property AB_IPOT_HOLIDAYS_PROP) after its first History30 day that History30 lacks, scaled to
+ * History30 at the History30 day just before when the two differ by more than 0.5 %. { SYM: [{ iso, Opn, ... }] }.
+ */
+function ab_h60Specials_(gf, g) {
+  const out = {};
+  let holidays = [];
+  try { holidays = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_IPOT_HOLIDAYS_PROP) || '[]'); } catch (e) { holidays = []; }
+  if (!Array.isArray(holidays)) holidays = [];
+  const special = {};
+  g.days.forEach(function (iso) {
+    const p = iso.split('-'), wd = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    if (wd === 0 || wd === 6 || holidays.indexOf(iso) >= 0) special[iso] = true;
+  });
+  if (!Object.keys(special).length) return out;
+  g.syms.forEach(function (sym) {
+    const own = {};
+    (gf[sym] || []).forEach(function (c) { const k = ab_h60Iso_(c.date); if (k) own[k] = c.Cls; });
+    const keys = Object.keys(own).sort();
+    if (!keys.length) return;
+    const nse = ab_h60Adjust_(g, sym);
+    const at = {};
+    nse.forEach(function (c) { at[c.iso] = c; });
+    const list = [];
+    nse.forEach(function (c) {
+      if (!special[c.iso] || own[c.iso] !== undefined || c.iso <= keys[0]) return;
+      let before = '';
+      for (let i = keys.length - 1; i >= 0; i--) if (keys[i] < c.iso) { before = keys[i]; break; }
+      const seam = before ? at[before] : null;
+      let r = 1;
+      if (seam && seam.Cls > 0 && own[before] > 0) {
+        r = own[before] / seam.Cls;
+        if (!(r > 0.02 && r < 50)) return;                     // not the same prices at all
+        if (Math.abs(r - 1) <= 0.005) r = 1;
+      }
+      list.push(r === 1 ? c : { iso: c.iso, Opn: ab_h60R2_(c.Opn * r), High: ab_h60R2_(c.High * r), Low: ab_h60R2_(c.Low * r),
+                                Cls: ab_h60R2_(c.Cls * r), Volume: ab_h60Vol_(c.Volume, r) });
+    });
+    if (list.length) out[sym] = list;
+  });
+  return out;
+}
+
+/**
  * History30 + History60's older days: { SYM: [{ date, Opn, High, Low, Cls, Volume }] } oldest first,
  * the same shape as ab_readHistoryCandles_. Without a History60 tab it is just History30.
+ * opts.special (Results Performance): also History60's weekend / holiday sessions inside History30's window
+ * (ab_h60Specials_ - e.g. a Muhurat session), in date order.
  */
-function ab_readHistoryMerged_(gf) {
+function ab_readHistoryMerged_(gf, opts) {
   gf = gf || ab_readHistoryCandles_();
   let g;
   try { g = ab_h60Load_(); } catch (e) { Logger.log('History60 not read: ' + e.message); return gf; }
@@ -4385,13 +4450,19 @@ function ab_readHistoryMerged_(gf) {
   const allowed = {};
   ab_p1Symbols_().forEach(function (s) { allowed[s] = true; });
   const older = ab_h60Older_(gf, g, allowed);
+  const asCandle = function (c) { return { date: ab_h60Date_(c.iso), Opn: c.Opn, High: c.High, Low: c.Low, Cls: c.Cls, Volume: c.Volume }; };
   const out = {};
   Object.keys(gf).forEach(function (s) { out[s] = gf[s]; });
   Object.keys(older).forEach(function (s) {
-    out[s] = older[s].map(function (c) {
-      return { date: ab_h60Date_(c.iso), Opn: c.Opn, High: c.High, Low: c.Low, Cls: c.Cls, Volume: c.Volume };
-    }).concat(gf[s] || []);
+    out[s] = older[s].map(asCandle).concat(gf[s] || []);
   });
+  if (opts && opts.special) {
+    const sp = ab_h60Specials_(gf, g);
+    Object.keys(sp).forEach(function (s) {
+      const t = function (c) { const d = c.date instanceof Date ? c.date : new Date(c.date); return d.getTime(); };
+      out[s] = (out[s] || []).concat(sp[s].map(asCandle)).sort(function (a, b) { return t(a) - t(b); });
+    });
+  }
   return out;
 }
 

@@ -221,3 +221,82 @@ test('the website feed trigger rebuilds the tab in market hours and then sends t
   e.call('ab_siteFeedTrigger_', {});
   assert.strictEqual(e.run('__built'), null, 'nothing due, nothing rebuilt');
 });
+
+// owner, 09-Nov-2026: "in results performance table, daily % column is not reflecting true value". FINCABLES filed on
+// Saturday 07-Nov (13:50, market closed); the first session after it was the Sunday Muhurat session of 08-Nov, whose
+// candle only History60 has (NSE via the PC - GOOGLEFINANCE gives no weekend candle). Daily % was Monday's price vs
+// Friday's close (+13 %, two sessions together); now the reaction session is Sunday: Result Day Close = its close, Next
+// Day = Monday.
+function muhuratBook() {
+  const F = 1090.6, SUN = 1308.9, MON = 1232.4;
+  const h30 = [['Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']];
+  [['2026-11-04', 1080], ['2026-11-05', 1085], ['2026-11-06', F]].forEach(([d, c]) => h30.push(['FINCABLES', ist(d), c, c + 5, c - 5, c, 100000]));
+  const days = ['2026-11-04', '2026-11-05', '2026-11-06', '2026-11-08'];
+  const cells = { '2026-11-04': '1080 1085 1075 1080 100000 1075', '2026-11-05': '1085 1090 1080 1085 100000 1080',
+    '2026-11-06': '1090.6 1095.6 1085.6 1090.6 100000 1085', '2026-11-08': '1300 1324 1290 1308.9 90000 1090.6' };
+  const desc = days.slice().reverse();
+  const h60 = [['note'], ['Symbol'].concat(desc), ['(linked)'].concat(desc.map((d, i) => (i < desc.length - 1 ? 'Y' : '')))];
+  h60.push(['FINCABLES'].concat(desc.map((d) => cells[d])));
+  return { F: F, SUN: SUN, MON: MON, book: { sheets: [
+    { name: 'Main', rows: [['Main watchlist'], HEAD,
+      [true, 'Finolex Cables Ltd.', 'FINCABLES', ist('2026-11-07'), MON, -5.85, 13, 20, 15, 25, 'Stagnant', 'Increasing', 'Buy', '', '', '']] },
+    { name: 'PatternData', rows: [['Date', 'x', 'y', 'Symbol'], ['', '', '', 'FINCABLES']] },
+    { name: 'Results Tracker', rows: [TRACKER_HEAD,
+      ['FINCABLES', 'Finolex Cables Ltd.', '07/11/2026', 'Sep 2026', 'Updated', 'Sep 2026', '1', '07/11/2026 14:10', '07/11/2026 14:10',
+        '07/11/2026 14:10', '', 'NSE XBRL']] },
+    { name: 'History30', rows: h30 },
+    { name: 'History60', rows: h60 }
+  ] } };
+}
+function rpOf(e, sym) {
+  const rows = e.sheet('Results Performance').rows;
+  const h = rows[9];
+  const r = rows.slice(10).find((x) => new RegExp('"' + sym + '"').test(String(x[0])));
+  const o = {};
+  h.forEach((k, i) => { o[k] = r[i]; });
+  return o;
+}
+
+test('a Saturday filing reacts on the Sunday Muhurat session (its candle from History60): Daily % = Sunday\'s close vs Friday\'s', () => {
+  const m0 = muhuratBook();
+  const e = mock.loadCodeGs(m0.book, { props: { AB_BRIDGE_TOKEN: TOKEN, AB_RS_SEASON: 'Sep 2026' }, now: at('2026-11-09', '1724') });
+  e.post({ token: TOKEN, action: 'results_ann', ann: [['FINCABLES', '2026-11-07 13:50:00', 'Integrated Filing - Financial']] });
+  e.call('ab_rpRefresh_', {});
+  let m = rpOf(e, 'FINCABLES');
+  assert.strictEqual(m['Pre-Result Close'], m0.F);
+  assert.strictEqual(m['Result Day Close'], m0.SUN, 'the Sunday session closed at 1308.9');
+  assert.ok(Math.abs(m['Result Day %'] - (1324 / m0.F - 1)) < 1e-9, 'its high: ' + m['Result Day %']);
+  assert.ok(Math.abs(m['% Since Results'] - (m0.MON / m0.F - 1)) < 1e-9);
+  assert.ok(Math.abs(m['Next Day %'] - (m0.MON / m0.SUN - 1)) < 1e-9, 'Monday so far vs Sunday\'s close: ' + m['Next Day %']);
+  // the website's Daily %: Result Day Close vs Pre-Result Close = +20.0 %
+  const R = require('../web/lib/results.js');
+  assert.strictEqual(Math.round(R.dailyPct(m) * 10) / 10, 20);
+  // a row stored by the earlier version (Monday taken as the reaction day) is worked out again once the Sunday candle is there
+  e.run(`(function () { var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('History30');
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 7).setValues([['FINCABLES', new Date(Date.parse('2026-11-09T00:00:00+05:30')), 1310, 1324, 1225, ${m0.MON}, 120000]]); })()`);
+  e.setNow(at('2026-11-09', '1920'));
+  e.call('ab_rpRefresh_', {});
+  m = rpOf(e, 'FINCABLES');
+  assert.deepStrictEqual([m['Result Day Close'], m['Next Day Close']], [m0.SUN, m0.MON]);
+});
+
+test('an after-market filing of today: before the evening\'s candle the baseline is today\'s close (Main\'s price), then the candle', () => {
+  const m0 = muhuratBook();
+  const e = mock.loadCodeGs(m0.book, { props: { AB_BRIDGE_TOKEN: TOKEN, AB_RS_SEASON: 'Sep 2026' }, now: at('2026-11-09', '1724') });
+  e.run(`(function () { var sh = SpreadsheetApp.getActiveSpreadsheet();
+    sh.getSheetByName('Main').getRange(3, 4).setValue(new Date(Date.parse('2026-11-09T00:00:00+05:30')));
+    sh.getSheetByName('Results Tracker').getRange(2, 3).setValue('09/11/2026'); })()`);
+  e.post({ token: TOKEN, action: 'results_ann', ann: [['FINCABLES', '2026-11-09 16:53:00', 'Integrated Filing - Financial']] });
+  e.call('ab_rpRefresh_', {});
+  let m = rpOf(e, 'FINCABLES');
+  assert.strictEqual(m['Reaction From'], 'after 2026-11-09');
+  assert.strictEqual(m['Pre-Result Close'], m0.MON, 'today\'s close, not Sunday\'s / Friday\'s');
+  assert.strictEqual(m['% Since Results'], 0);
+  // Phase 1's candle: the same close from History30
+  e.run(`(function () { var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('History30');
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 7).setValues([['FINCABLES', new Date(Date.parse('2026-11-09T00:00:00+05:30')), 1310, 1324, 1225, 1232.5, 120000]]); })()`);
+  e.setNow(at('2026-11-09', '1920'));
+  e.call('ab_rpRefresh_', {});
+  m = rpOf(e, 'FINCABLES');
+  assert.strictEqual(m['Pre-Result Close'], 1232.5, 'from the candle once it is in');
+});
