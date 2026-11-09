@@ -12,7 +12,8 @@
    and on "Sync now". Offline the lists stay in this browser and go with the next sync.
 
    SB.wlSync = { status(), connect(pin) -> Promise(status), disconnect(), syncNow() -> Promise,
-                 onStatus(fn(status)) -> off(), hasPin(), kite() -> Promise({ fresh, at, ageSec, items }) }
+                 onStatus(fn(status)) -> off(), hasPin(), kite() -> Promise({ fresh, at, ageSec, items }),
+                 owner(body, ok) -> Promise(answer) (the Backtest Lab / bell / phone pop-ups, 09-Nov-2026) }
    kite(): the owner's Kite live prices (the sheet's "Kite Live" tab, while the laptop sends them) - only with the PIN.
    status() = { phase, linked, at, message }   (linked stays false while a newly typed PIN is being checked)
      phase: 'nohost' (no website server here: localhost / file) | 'off' (no PIN on this device) |
@@ -178,6 +179,13 @@
       var m = meta();
       if (!m.pin) return Promise.reject(fail('off', 'no PIN on this device'));
       return send(m, { op: 'kite' }, function (j) { return j.result === 'kite' && Array.isArray(j.items); });
+    },
+    // the owner's own requests (09-Nov-2026: the Backtest Lab - op 'lab' -, the app's bell - 'notes' - and phone pop-ups
+    // - 'push'), with this device's PIN; `ok(j)` = what a good answer looks like
+    owner: function (body, ok) {
+      var m = meta();
+      if (!m.pin) return Promise.reject(fail('off', 'no PIN on this device'));
+      return send(m, body, ok || function (j) { return j.ok === true; });
     },
     onStatus: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }
   };

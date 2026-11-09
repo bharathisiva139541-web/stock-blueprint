@@ -17,6 +17,7 @@ pcbridge/ScreenerBridge/kite_session.json
 pcbridge/ScreenerBridge/kite_instruments.json
 pcbridge/ScreenerBridge/intraday_state.json
 pcbridge/ScreenerBridge/intraday_data/
+pcbridge/ScreenerBridge/lab_cache/
 pcbridge/ScreenerBridge/kite_live.json
 .clasprc.json
 *.token
@@ -31,3 +32,11 @@ __pycache__/
 firebase-debug.log
 .vercel/
 dist/
+
+# Android app (android/): build output, local SDK path, the signing key (never in this public repo)
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.jks
+*.keystore

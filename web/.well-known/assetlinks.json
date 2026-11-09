@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.stockblueprint.app",
+      "sha256_cert_fingerprints": ["D6:83:A4:26:E4:37:63:5D:E5:C4:8B:2F:BA:81:CF:5A:E8:61:63:53:AD:BF:90:A6:A1:39:DD:C6:97:F3:1C:5F"]
+    }
+  }
+]

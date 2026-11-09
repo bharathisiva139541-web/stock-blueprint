@@ -1,0 +1,421 @@
+/* Backtest Lab (#lab, #lab/<run id>) - owner, 09-Nov-2026: "we have data to backtest. Now I need a platform to backtest
+   with my customized idea. You have backtested with stop loss placed below the low. Actually I place stoploss slightly
+   below the FVG area ... if I take a trade I have minimum 2R. If stoploss hit means the trade is loss. If the trade hits
+   2R, I don't close the trade, I try to catch the maximum move within weeks. So days, stoploss, risk, returns all should
+   be customizable ... make a separate page for backtest"; choices: this page (website / app), the owner's laptop
+   computes (the 20 years of Kite candles stay there); default after 2R: the stop to the entry, then a trail under the
+   lowest low of the last 2 candles.
+   Owner only: the My Watchlists PIN (SB.wlSync.owner -> api/watchlists op 'lab' -> Code2.gs ab_labFromSite_ -> the
+   laptop's backtest_lab.py). The rules are kept on this device (localStorage sb:lab:form, presets sb:lab:presets). */
+(function () {
+  'use strict';
+  var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, isNum = ui.isNum;
+
+  var DEF = {
+    name: 'My FVG+Spring idea', tf: 'D', group: 'fvg', from: '', to: '', minPrice: 0, minTurnover: 0, maxTouch: 0,
+    entry: 'close', stop: 'zone', stopBuf: 0.5, stopPct: 5, maxRisk: 15,
+    targetR: 2, after: 'trail', breakeven: true, trail: 'lows', trailN: 2, trailPct: 8, emaN: 20, maxDays: 60, cost: 0.2,
+    capital: 1000000, riskPct: 1, maxPosPct: 25, maxOpen: 10, compound: false
+  };
+  var CHOICES = {
+    tf: [['D', 'Daily'], ['W', 'Weekly'], ['4H', '4 hour (13:15 candle)']],
+    group: [['fvg', 'FVG+Spring'], ['fvg_top', 'FVG+Spring - Spring at the zone top'], ['fvg_middle', 'FVG+Spring - in the middle'],
+      ['fvg_bottom', 'FVG+Spring - at / under the bottom'], ['gap', 'Gap-up FVG + Spring'], ['gapin', 'Gap-up FVG + Spring - inside FVG only'],
+      ['zone', 'FVG+Spring or Gap-up FVG + Spring'], ['spring', 'Every Spring (no zone - to compare)']],
+    entry: [['close', 'At the Spring candle\'s close'], ['next_open', 'At the next candle\'s open']],
+    stop: [['zone', 'A little below the FVG / Gap-up zone bottom'], ['spring', 'A little below the Spring candle\'s low'],
+      ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry']],
+    after: [['trail', 'Keep the trade and trail the stop'], ['fixed', 'Sell at the target']],
+    trail: [['lows', 'Under the lowest low of the last N candles'], ['pct', 'X % under the highest price since entry'],
+      ['ema', 'Sell when a candle closes under the N EMA'], ['none', 'No trail (the stop stays)']]
+  };
+  var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN', 'maxDays',
+    'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen'];
+  var REASON = { stop: ['Stop loss', 's-bad'], target: ['Target', 's-good'], be: ['Breakeven (stop at entry)', ''], trail: ['Trailing stop', 's-good'],
+    ema: ['Close under EMA', 's-good'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
+  var POLL_MS = 4000;
+  var ST = { status: null, item: null, itemId: null, timer: 0, busy: false, err: '', host: null, gen: 0 };
+
+  function form() {
+    var f = ui.store.get('lab:form', null);
+    var out = {};
+    Object.keys(DEF).forEach(function (k) { out[k] = f && f[k] !== undefined && typeof f[k] === typeof DEF[k] ? f[k] : DEF[k]; });
+    return out;
+  }
+  function saveForm(f) { ui.store.set('lab:form', f); }
+  function presets() { var p = ui.store.get('lab:presets', []); return Array.isArray(p) ? p : []; }
+  function choiceLabel(k, v) { var c = (CHOICES[k] || []).filter(function (x) { return x[0] === v; })[0]; return c ? c[1] : v; }
+
+  /** The rules in plain words (shown above the Run button and with each result). */
+  function plain(p) {
+    var s = [];
+    s.push(choiceLabel('group', p.group) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
+      (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
+    s.push('Buy ' + (p.entry === 'close' ? 'at the Spring candle\'s close' : 'at the next candle\'s open') + '.');
+    s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
+      F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' : 'the zone bottom or the Spring low, whichever is lower')) +
+      (p.maxRisk ? ' - trades risking more than ' + F.num(p.maxRisk, 1) + '% are skipped' : '') + '.');
+    if (p.after === 'fixed') s.push('Sell at ' + F.num(p.targetR, 2) + 'R (' + F.num(p.targetR, 2) + ' x the risk).');
+    else {
+      s.push('At ' + F.num(p.targetR, 2) + 'R ' + (p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
+        (p.trail === 'lows' ? 'trail it under the lowest low of the last ' + p.trailN + ' candle' + (p.trailN === 1 ? '' : 's') :
+          p.trail === 'pct' ? 'trail it ' + F.num(p.trailPct, 1) + '% under the highest price' :
+            p.trail === 'ema' ? 'sell when a candle closes under the ' + p.emaN + ' EMA' : 'let it run with that stop') + '.');
+    }
+    s.push('Sold after ' + p.maxDays + ' days at the latest (that day\'s close). Costs ' + F.num(p.cost, 2) + '% a trade.');
+    s.push('Account ' + F.inr(p.capital) + ', risk ' + F.num(p.riskPct, 2) + '% a trade, a position at most ' + F.num(p.maxPosPct, 0) +
+      '% of it, at most ' + p.maxOpen + ' trades at once' + (p.compound ? ', profits re-invested' : '') + '.');
+    return s.join(' ');
+  }
+
+  function sel(k, v) {
+    return '<select class="sel" data-k="' + k + '">' + CHOICES[k].map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('') + '</select>';
+  }
+  function num(k, v, label, attrs) {
+    return '<label class="field"><span>' + label + '</span><input class="inp" type="number" inputmode="decimal" data-k="' + k + '" value="' +
+      esc(String(v)) + '"' + (attrs || '') + '></label>';
+  }
+  function field(label, html, cls) { return '<label class="field' + (cls ? ' ' + cls : '') + '"><span>' + label + '</span>' + html + '</label>'; }
+  function check(k, v, label) {
+    return '<label class="lab-check"><input type="checkbox" data-k="' + k + '"' + (v ? ' checked' : '') + '> ' + label + '</label>';
+  }
+
+  function formHtml(f) {
+    var trailOn = f.after === 'trail';
+    return '<section class="card lab-form" id="lab-form"><div class="card-head"><div><h2>Your rules</h2><p>Change anything - it is kept on this device. ' +
+      'Your laptop runs it on the Kite candles kept there (daily ~20 years, 4 hour ~5 years, weekly from the daily).</p></div></div>' +
+      '<h3 class="lab-h">1 · Which signals</h3><div class="form-grid">' +
+      field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
+      field('From (optional)', '<input class="inp" type="date" data-k="from" value="' + esc(f.from) + '">') +
+      field('To (optional)', '<input class="inp" type="date" data-k="to" value="' + esc(f.to) + '">') +
+      num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
+      num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
+      num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
+      '<h3 class="lab-h">2 · Entry and stop loss</h3><div class="form-grid">' +
+      field('Buy', sel('entry', f.entry)) + field('Stop loss', sel('stop', f.stop), 'wide') +
+      (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
+        num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
+      num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') + '</div>' +
+      '<h3 class="lab-h">3 · Target and exit</h3><div class="form-grid">' +
+      num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"') + field('At the target', sel('after', f.after), 'wide') +
+      (trailOn ? field('Then', sel('trail', f.trail), 'wide') : '') +
+      (trailOn && f.trail === 'lows' ? num('trailN', f.trailN, 'N candles', ' min="1" step="1"') : '') +
+      (trailOn && f.trail === 'pct' ? num('trailPct', f.trailPct, 'X %', ' min="0.5" step="0.5"') : '') +
+      (trailOn && f.trail === 'ema' ? num('emaN', f.emaN, 'EMA length', ' min="2" step="1"') : '') +
+      num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
+      num('cost', f.cost, 'Costs per trade (%)', ' min="0" step="0.05"') +
+      (trailOn ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>' +
+      '<h3 class="lab-h">4 · Money</h3><div class="form-grid">' +
+      num('capital', f.capital, 'Account ₹', ' min="1000" step="10000"') + num('riskPct', f.riskPct, 'Risk per trade (% of the account)', ' min="0.05" step="0.25"') +
+      num('maxPosPct', f.maxPosPct, 'One position at most (% of the account)', ' min="1" step="5"') +
+      num('maxOpen', f.maxOpen, 'Trades open at once, at most', ' min="1" step="1"') +
+      '<div class="field lab-checks">' + check('compound', f.compound, 'Re-invest the profits (risk % of the account as it grows)') + '</div></div>' +
+      '<p class="note lab-plain" id="lab-plain"><b>In plain words:</b> ' + esc(plain(f)) + '</p>' +
+      '<div class="lab-actions"><label class="field lab-name"><span>Name of this idea</span><input class="inp" type="text" maxlength="60" data-k="name" value="' + esc(f.name) + '"></label>' +
+      '<button class="btn primary" type="button" id="lab-run">▶ Run on my laptop</button>' +
+      '<button class="btn" type="button" id="lab-save">Save as a preset</button>' +
+      (presets().length ? '<select class="sel" id="lab-preset" aria-label="Load a preset"><option value="">Load a preset…</option>' +
+        presets().map(function (p, i) { return '<option value="' + i + '">' + esc(p.name || 'Preset ' + (i + 1)) + '</option>'; }).join('') + '</select>' +
+        '<button class="btn sm danger" type="button" id="lab-preset-del" title="Delete the chosen preset">Delete preset</button>' : '') +
+      '<button class="btn sm" type="button" id="lab-reset">Back to the default</button></div></section>';
+  }
+
+  function readForm(el) {
+    var f = form();
+    el.querySelectorAll('#lab-form [data-k]').forEach(function (inp) {
+      var k = inp.getAttribute('data-k');
+      if (inp.type === 'checkbox') f[k] = inp.checked;
+      else if (NUMS.indexOf(k) >= 0) { var v = Number(inp.value); if (isFinite(v) && inp.value !== '') f[k] = v; }
+      else f[k] = String(inp.value || '');
+    });
+    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
+    f.trailN = Math.max(1, f.trailN); f.maxDays = Math.max(1, f.maxDays); f.maxOpen = Math.max(1, f.maxOpen);
+    return f;
+  }
+
+  // ---------- talking to the sheet (the laptop answers through it)
+  function ask(body) {
+    return SB.wlSync.owner(Object.assign({ op: 'lab' }, body), function (j) { return j.result === 'lab'; });
+  }
+  function stopPoll() { clearTimeout(ST.timer); ST.timer = 0; }
+  function poll(el, gen) {
+    stopPoll();
+    if (gen !== ST.gen || !document.body.contains(el)) return;
+    ask({ lab: { do: 'status' } }).then(function (j) {
+      if (gen !== ST.gen) return;
+      var was = ST.status && ST.status.job, now = j.job;
+      ST.status = j;
+      ST.err = '';
+      paintStatus(el);
+      paintRuns(el);
+      if (now && (now.status === 'waiting' || now.status === 'running')) ST.timer = setTimeout(function () { poll(el, gen); }, POLL_MS);
+      else if (now && now.status === 'done' && was && was.id === now.id && was.status !== 'done') openRun(el, now.id);
+    }, function (e) {
+      if (gen !== ST.gen) return;
+      ST.err = e && e.message || 'the sheet could not be reached';
+      paintStatus(el);
+      if (!(e && /^(pin|nopin|locked|off)$/.test(e.code))) ST.timer = setTimeout(function () { poll(el, gen); }, POLL_MS * 4);
+    });
+  }
+
+  function paintStatus(el) {
+    var box = $('#lab-status', el);
+    if (!box) return;
+    var s = ST.status, j = s && s.job, h = '';
+    var seen = s && isNum(s.pcSeenSec) ? s.pcSeenSec : null;
+    var pc = seen === null ? '<span class="badge s-warn">laptop: not seen yet</span>' :
+      seen <= 180 ? '<span class="badge s-good">laptop: online (asked ' + (seen < 60 ? seen + ' s' : Math.round(seen / 60) + ' min') + ' ago)</span>' :
+        '<span class="badge s-warn">laptop: last asked ' + (seen < 3600 ? Math.round(seen / 60) + ' min' : Math.round(seen / 3600) + ' h') + ' ago - is it on?</span>';
+    if (ST.err) h += '<p class="note bad">' + esc(ST.err) + '</p>';
+    if (j && (j.status === 'waiting' || j.status === 'running')) {
+      var pct = j.status === 'running' ? Math.max(3, j.pct || 0) : 0;
+      h += '<div class="lab-run-state"><div><b>' + esc(j.name || 'Your run') + '</b> - ' + (j.status === 'waiting' ? 'waiting for your laptop' +
+        (seen !== null && seen > 180 ? ' (it has not asked for a while - switch it on, it will pick this up)' : ' (it asks every 10 seconds while this page is open)') :
+        'running on your laptop' + (j.note ? ': ' + esc(j.note) : '')) + '</div>' +
+        '<div class="lab-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></div>' +
+        (j.status === 'waiting' ? '<button class="btn sm" type="button" id="lab-cancel">Cancel</button>' : '') + '</div>';
+    } else if (j && j.status === 'failed') {
+      h += '<p class="note bad"><b>' + esc(j.name || 'The last run') + '</b> did not finish: ' + esc(j.error || 'failed') + '</p>';
+    }
+    box.innerHTML = '<div class="lab-pc">' + pc + '</div>' + h;
+    var c = $('#lab-cancel', box);
+    if (c) c.addEventListener('click', function () { ask({ lab: { do: 'cancel' } }).then(function () { poll(el, ST.gen); }, function () {}); });
+  }
+
+  function paintRuns(el) {
+    var box = $('#lab-runs', el);
+    if (!box) return;
+    var list = (ST.status && ST.status.list) || [];
+    if (!list.length) { box.innerHTML = '<p class="empty">No run yet - set your rules and press ▶ Run on my laptop.</p>'; return; }
+    box.innerHTML = '<div class="lab-runs">' + list.map(function (r) {
+      var h = r.head || {};
+      return '<a class="lab-run' + (r.id === ST.itemId ? ' on' : '') + '" href="#lab/' + esc(r.id) + '"><b>' + esc(r.name || h.group || 'Run') + '</b>' +
+        '<span class="sub">' + esc(r.saved) + ' · ' + esc(h.tf || '') + ' · ' + esc(h.group || '') + '</span>' +
+        '<span>' + F.int(h.trades) + ' trades · win ' + (isNum(h.winPct) ? F.num(h.winPct, 1) + '%' : '–') + ' · avg ' +
+        (isNum(h.avgR) ? F.num(h.avgR, 2) + 'R' : '–') + ' · account ' + (isNum(h.returnPct) ? F.pct(h.returnPct) : '–') + '</span></a>';
+    }).join('') + '</div>';
+  }
+
+  function openRun(el, id) {
+    if (!id) return;
+    ST.itemId = id;
+    var box = $('#lab-result', el);
+    if (box) box.innerHTML = ui.skeleton ? ui.skeleton(4) : '<p class="empty">Loading…</p>';
+    paintRuns(el);
+    ask({ lab: { do: 'result', id: id } }).then(function (j) {
+      ST.item = j.item;
+      paintResult(el);
+    }, function (e) {
+      if (box) box.innerHTML = '<p class="note bad">' + esc(e && e.message || 'could not load that run') + '</p>';
+    });
+  }
+
+  function r2(v) { return isNum(v) ? F.num(v, 2) + 'R' : '–'; }
+  function tone(v) { return isNum(v) ? (v > 0 ? ' up' : v < 0 ? ' down' : '') : ''; }
+
+  function paintResult(el) {
+    var box = $('#lab-result', el);
+    var it = ST.item;
+    if (!box || !it || !it.result) return;
+    var res = it.result, s = res.stats || {}, a = res.account || {}, p = res.params || {};
+    var h = '<section class="card"><div class="card-head"><div><h2>' + esc(it.name || res.groupName || 'Result') + '</h2>' +
+      '<p>' + esc(it.saved) + ' · candles up to ' + F.date(res.cacheUpto) + ' · signals ' + F.date(res.from) + ' – ' + F.date(res.to) +
+      ' · worked out in ' + F.num(res.secs, 1) + ' s on your laptop</p></div>' +
+      '<div class="actions"><button class="btn sm" type="button" id="lab-use">Use these rules</button>' +
+      '<button class="btn sm danger" type="button" id="lab-del">Delete this run</button></div></div>' +
+      '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>';
+    if (!s.trades) {
+      box.innerHTML = h + '<p class="empty">No trade matched these rules' + (res.open ? ' (' + res.open + ' still running)' : '') + '.</p></section>';
+      bindResult(el, it);
+      return;
+    }
+    h += '<h3 class="lab-h">Every signal (each trade on its own, in R)</h3><div class="tiles">' +
+      ui.tile('Trades', F.int(s.trades), (res.open ? F.int(res.open) + ' still running (not counted)' : 'all finished') +
+        (res.skipped && res.skipped.risk ? ' · ' + F.int(res.skipped.risk) + ' skipped (risk too big)' : '')) +
+      ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry (after costs)') +
+      ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge') +
+      ui.tile('Total', '<span class="' + tone(s.totalR) + '">' + F.num(s.totalR, 1) + 'R</span>', 'profit factor ' + (isNum(s.pf) ? F.num(s.pf, 2) : '–')) +
+      ui.tile('Reached ' + F.num(p.targetR, 2) + 'R', F.num(s.hitPct, 1) + '%', 'before the stop loss') +
+      ui.tile('Average win / loss', r2(s.avgWinR) + ' / ' + r2(s.avgLossR), 'best ' + r2(s.bestR) + ' · worst ' + r2(s.worstR)) +
+      ui.tile('Held', F.num(s.avgDays, 1) + ' days', 'on average · ' + F.int(s.maxLosingStreak) + ' losses in a row at worst') +
+      ui.tile('Return per trade', F.pct(s.avgRet, 2), 'median ' + F.pct(s.medRet, 2) + ' · best move before the exit ' + r2(s.avgMaxR) + ' avg') + '</div>';
+    h += '<h3 class="lab-h">Your account (' + F.inr(a.capital) + ', ' + F.num(p.riskPct, 2) + '% risk a trade, at most ' + F.int(p.maxOpen) + ' at once)</h3><div class="tiles">' +
+      ui.tile('Account now', F.inr(a.final), '<span class="' + tone(a.pnl) + '">' + (a.pnl >= 0 ? '+' : '−') + F.inr(Math.abs(a.pnl)) + '</span>') +
+      ui.tile('Return', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', isNum(a.cagr) ? F.pct(a.cagr) + ' a year over ' + F.num(a.years, 1) + ' years' : 'over ' + F.num(a.years, 1) + ' years') +
+      ui.tile('Max drawdown', F.num(a.maxDD, 1) + '%', 'the deepest fall from a peak') +
+      ui.tile('Trades taken', F.int(a.taken), F.int(a.skipped) + ' skipped (too many open at once)' + (a.openNow ? ' · ' + F.int(a.openNow) + ' still open' : '')) + '</div>' +
+      (a.blown ? '<p class="note bad">The account ran out on ' + F.date(a.blown) + ' - no trades after that.</p>' : '') +
+      '<div id="lab-curve" class="lab-chart"></div>';
+    h += '<div class="lab-two"><div><h3 class="lab-h">How the trades ended</h3><div id="lab-reasons"></div></div>' +
+      '<div><h3 class="lab-h">Result of each trade (R)</h3><div id="lab-hist"></div></div></div>';
+    h += '<h3 class="lab-h">Year by year</h3><div id="lab-years"></div>';
+    h += '<h3 class="lab-h">The trades' + (res.tradesTotal > (res.trades || []).length ? ' (the newest ' + F.int(res.trades.length) + ' of ' + F.int(res.tradesTotal) + ')' : '') + '</h3><div id="lab-trades"></div>' +
+      '<p class="sub">R = profit or loss in units of the risk (entry - stop): -1R = the full stop loss, 2R = twice the risk. Prices are Kite\'s - for you only. ' +
+      'A candle reaching both the stop and the target counts as the stop; a gap through the stop sells at the open.</p></section>';
+    box.innerHTML = h;
+    var curve = (a.curve || []).map(function (c) { return { x: c[0], y: c[1] }; });
+    if (curve.length > 1) ui.lineChart($('#lab-curve', box), [{ name: 'Account', points: curve, color: 'var(--accent)' }], { height: 240, label: 'Account value', fmt: function (v) { return F.inr(v); } });
+    else $('#lab-curve', box).innerHTML = '';
+    var rs = res.reasons || {};
+    $('#lab-reasons', box).innerHTML = ui.bars(Object.keys(REASON).filter(function (k) { return rs[k]; }).map(function (k) {
+      return { label: REASON[k][0], value: rs[k] };
+    }), { fmt: function (v) { return F.int(v); } });
+    $('#lab-hist', box).innerHTML = ui.bars((res.hist || []).map(function (b) { return { label: b.label, value: b.n }; }), { fmt: function (v) { return F.int(v); } });
+    new ui.Table({
+      rows: res.years || [], pageSize: 40, id: 'lab-years', tools: false,
+      columns: [
+        { key: 'year', label: 'Year' }, { key: 'trades', label: 'Trades', type: 'num', digits: 0 },
+        { key: 'winPct', label: 'Win %', type: 'num', digits: 1 }, { key: 'avgR', label: 'Avg R', type: 'num', digits: 2 },
+        { key: 'totalR', label: 'Total R', type: 'num', digits: 1 }, { key: 'taken', label: 'Taken', type: 'num', digits: 0 },
+        { key: 'pnl', label: 'Account P/L ₹', type: 'num', digits: 0 }
+      ]
+    }).mount($('#lab-years', box));
+    var cols = res.tradeCols || [];
+    var rows = (res.trades || []).map(function (r) { var o = {}; cols.forEach(function (c, i) { o[c] = r[i]; }); return o; });
+    new ui.Table({
+      rows: rows, pageSize: 50, id: 'lab-trades', empty: 'No trade',
+      columns: [
+        { key: 'sym', label: 'Stock', type: 'sym' },
+        { key: 'signal', label: 'Spring candle' },
+        { key: 'zone', label: 'Zone', get: function (r) { return r.zone + (r.where ? ' · ' + r.where : ''); } },
+        { key: 'entry', label: 'Entry', type: 'num', digits: 2 }, { key: 'stop', label: 'Stop', type: 'num', digits: 2 },
+        { key: 'riskPct', label: 'Risk %', type: 'num', digits: 2 },
+        { key: 'exit', label: 'Exit', type: 'num', digits: 2 }, { key: 'exitOn', label: 'Sold on' },
+        { key: 'reason', label: 'Why', html: function (r) { var x = REASON[r.reason] || [r.reason, '']; return ui.badge(x[0], x[1]); } },
+        { key: 'R', label: 'R', type: 'num', digits: 2, html: function (r) { return '<span class="' + tone(r.R) + '">' + r2(r.R) + '</span>'; } },
+        { key: 'ret', label: 'Return %', type: 'num', digits: 2 }, { key: 'days', label: 'Days', type: 'num', digits: 0 },
+        { key: 'maxR', label: 'Best (R)', type: 'num', digits: 2, title: 'The highest price before the exit, in R' },
+        { key: 'pnl', label: 'P/L ₹', type: 'num', digits: 0, get: function (r) { return r.taken ? r.pnl : null; } },
+        { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; } }
+      ]
+    }).mount($('#lab-trades', box));
+    bindResult(el, it);
+  }
+
+  function bindResult(el, it) {
+    var use = $('#lab-use', el), del = $('#lab-del', el);
+    if (use) use.addEventListener('click', function () {
+      var f = Object.assign({}, form(), it.result.params || {});
+      f.name = it.name || f.name;
+      saveForm(f);
+      SB.route(true);
+      window.scrollTo(0, 0);
+    });
+    if (del) del.addEventListener('click', function () {
+      if (!window.confirm('Delete this run?')) return;
+      ask({ lab: { do: 'delete', id: it.id } }).then(function (j) {
+        ST.status = j; ST.item = null; ST.itemId = null;
+        location.hash = '#lab';
+      }, function (e) { window.alert(e && e.message || 'could not delete'); });
+    });
+  }
+
+  function bindForm(el) {
+    var host = $('#lab-form', el);
+    host.addEventListener('change', function (e) {
+      var k = e.target.getAttribute && e.target.getAttribute('data-k');
+      if (!k) return;
+      var f = readForm(el);
+      saveForm(f);
+      if (['stop', 'after', 'trail'].indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear
+      var pl = $('#lab-plain', el);
+      if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
+    });
+    host.addEventListener('input', function () { saveForm(readForm(el)); var pl = $('#lab-plain', el); if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(readForm(el))); });
+    $('#lab-run', el).addEventListener('click', function () {
+      var f = readForm(el);
+      saveForm(f);
+      var params = {};
+      Object.keys(DEF).forEach(function (k) { if (k !== 'name') params[k] = f[k]; });
+      if (!params.from) delete params.from;
+      if (!params.to) delete params.to;
+      var b = this;
+      b.disabled = true;
+      ask({ lab: { do: 'run', name: f.name, params: params } }).then(function (j) {
+        b.disabled = false;
+        ST.status = j; ST.err = '';
+        paintStatus(el);
+        poll(el, ST.gen);
+      }, function (e) {
+        b.disabled = false;
+        ST.err = e && e.message || 'could not start the run';
+        paintStatus(el);
+      });
+    });
+    $('#lab-save', el).addEventListener('click', function () {
+      var f = readForm(el);
+      var name = window.prompt('Name of this preset', f.name || 'My idea');
+      if (!name) return;
+      f.name = name.slice(0, 60);
+      var list = presets().filter(function (p) { return p.name !== f.name; }).concat([f]).slice(-30);
+      ui.store.set('lab:presets', list);
+      saveForm(f);
+      SB.route(true);
+    });
+    var ps = $('#lab-preset', el);
+    if (ps) ps.addEventListener('change', function () {
+      var p = presets()[Number(ps.value)];
+      if (p) { saveForm(Object.assign({}, DEF, p)); SB.route(true); }
+    });
+    var pd = $('#lab-preset-del', el);
+    if (pd) pd.addEventListener('click', function () {
+      var i = ps ? Number(ps.value) : NaN;
+      if (!ps || ps.value === '' || !presets()[i]) { window.alert('Choose a preset in the list first.'); return; }
+      if (!window.confirm('Delete the preset "' + presets()[i].name + '"?')) return;
+      ui.store.set('lab:presets', presets().filter(function (_, k) { return k !== i; }));
+      SB.route(true);
+    });
+    $('#lab-reset', el).addEventListener('click', function () {
+      if (!window.confirm('Put every rule back to the default (stop below the zone, 2R, then trail under the last 2 lows)?')) return;
+      saveForm(Object.assign({}, DEF));
+      SB.route(true);
+    });
+  }
+
+  SB.page('lab', {
+    noPriceRedraw: true,                       // new prices do not change this page (app.js rerender skips it)
+    render: function (el, params) {
+      ST.gen++;
+      stopPoll();
+      var head = '<div class="page-head"><div><h1>Backtest Lab</h1><p>Test <b>your own</b> trade rules on every FVG+Spring / Gap-up FVG + Spring ' +
+        'signal of the last ~20 years: where the stop goes, the target, how the stop trails after it, how many days you hold, your risk and ' +
+        'your account. Your laptop does the work on its Kite candles; the result comes back here in a minute.</p></div></div>';
+      var sync = SB.wlSync;
+      if (!sync || (SB.apiBase && SB.apiBase() == null)) {
+        el.innerHTML = head + '<section class="card"><p class="empty">The Backtest Lab needs the live website (it talks to your sheet and your laptop).</p></section>';
+        return;
+      }
+      if (!sync.hasPin() || !sync.status().linked) {
+        el.innerHTML = head + '<section class="card"><p class="note">For you only: type your <b>My Watchlists PIN</b> once on this device ' +
+          '(<a href="#lists">My Watchlists → Sync with my sheet</a>) - then this page opens. The Kite candles and the trade list stay private.</p></section>';
+        return;
+      }
+      var f = form();
+      el.innerHTML = head + '<div id="lab-status" class="lab-status"></div>' + formHtml(f) +
+        '<section class="card"><div class="card-head"><div><h2>Your runs</h2><p>The newest 8 are kept in your sheet (tab Backtest_Lab). Open one to see it.</p></div></div>' +
+        '<div id="lab-runs"><p class="empty">Loading…</p></div></section><div id="lab-result"></div>';
+      bindForm(el);
+      paintStatus(el);
+      var gen = ST.gen;
+      var want = params && params[0];
+      ask({ lab: { do: 'status' } }).then(function (j) {
+        if (gen !== ST.gen) return;
+        ST.status = j;
+        paintStatus(el);
+        paintRuns(el);
+        var id = want || (j.list && j.list[0] && j.list[0].id);
+        if (id && ST.item && ST.item.id === id) { ST.itemId = id; paintRuns(el); paintResult(el); } else if (id) openRun(el, id);
+        if (j.job && (j.job.status === 'waiting' || j.job.status === 'running')) poll(el, gen);
+      }, function (e) {
+        if (gen !== ST.gen) return;
+        ST.err = e && e.message || 'the sheet could not be reached';
+        paintStatus(el);
+        paintRuns(el);
+      });
+    }
+  });
+
+  SB.lab = { plain: plain, DEF: DEF };
+})();

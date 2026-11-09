@@ -1351,6 +1351,19 @@ function ab_rsSendEmail_(ctx) {
     Logger.log('Results Day email failed: ' + e.message);
     return { updatedToday: updatedToday.length, text: textSummary + ' EMAIL FAILED: ' + e.message };
   }
+  // the app's bell + phone pop-up (owner, 09-Nov-2026): the same new rows, short
+  if (!ctx.reportDayKey) {
+    try {
+      const noteRow = function (t) {
+        const s = t.symbol;
+        const f = function (lab, v) { return v ? lab + ' ' + v : ''; };
+        return { symbol: s, line: s + ': ' + [f('Rev YoY', cell(s, layout.yoyRev)), f('PAT YoY', cell(s, layout.yoyNp)),
+          f('TTM Signal', cell(s, layout.ttmSignal))].filter(Boolean).join(', ') + (t.flags ? ' | ' + t.flags : '') };
+      };
+      ab_noteResults_(updatedShown.map(noteRow).concat(replaced.map(noteRow)), '');
+      ab_noteFlush_();
+    } catch (nErr) { Logger.log('Results notification: ' + nErr.message); }
+  }
   return { updatedToday: updatedToday.length, text: textSummary + ' Email sent' + (nParts > 1 ? ' (' + nParts + ' parts)' : '') + '.' };
 }
 
@@ -11122,7 +11135,7 @@ const AB_WL_NOTE = 'My Watchlists of the website (Vercel / Firebase / phone), ke
 function ab_wlFromSite_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
-  if (req.op !== 'get' && req.op !== 'put' && req.op !== 'kite') return ab_bridgeJson_({ ok: false, error: 'unknown op' });
+  if (['get', 'put', 'kite', 'lab', 'notes', 'push'].indexOf(req.op) < 0) return ab_bridgeJson_({ ok: false, error: 'unknown op' });
   const lock = ab_wlLock_();
   if (!lock.tryLock(20000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
   try {
@@ -11130,7 +11143,15 @@ function ab_wlFromSite_(req) {
     if (refused) return ab_bridgeJson_({ ok: false, error: refused });
     // the owner's own Kite live prices (owner, 08-Nov-2026: "enaku matumana live view ... use existing daily %") - only
     // with the PIN, never in the public site feed (Kite's data is for the owner's own use)
-    if (req.op === 'kite') return ab_bridgeJson_(ab_klForSite_());
+    if (req.op === 'kite') {
+      const kl = ab_klForSite_();
+      kl.notesNewest = ab_noteNewest_();       // the bell looks when this changes (owner, 09-Nov-2026)
+      return ab_bridgeJson_(kl);
+    }
+    // the Backtest Lab page and the app's bell / phone notifications (owner, 09-Nov-2026) - owner only, the same PIN
+    if (req.op === 'lab') return ab_bridgeJson_(ab_labFromSite_(req));
+    if (req.op === 'notes') return ab_bridgeJson_(ab_noteFromSite_());
+    if (req.op === 'push') return ab_bridgeJson_(ab_pushFromSite_(req));
     const cur = ab_wlRead_();
     const reply = function (result, rev, savedAt, lists) {
       return ab_bridgeJson_({ ok: true, result: result, rev: rev, savedAt: savedAt, state: { v: 1, lists: lists } });
@@ -12512,6 +12533,7 @@ function ab_mitMailState_() {
 /** Sends the Mitigated FVG Log rows not emailed yet as ONE email - only when the last one went at least
  *  AB_MIT_MAIL_EVERY_MIN minutes ago (or `force`). -> the number of zones emailed. */
 function ab_mitMailFlush_(force) {
+  ab_noteFlush_();                            // this run's notes -> the phones (App notifications, 09-Nov-2026)
   const props = PropertiesService.getScriptProperties();
   const st = ab_mitMailState_();
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MITIGATED_LOG_SHEET);
@@ -13067,4 +13089,410 @@ function ab_kiteLiveFromBridge_(req) {
   props.setProperty(AB_KL_AT_PROP, String(Date.now()));
   AB_KL_MEMO_ = null;
   return { ok: true, received: items.length, written: rows.length, skipped: skipped, up: up, down: down, at: at, indices: nIdx };
+}
+
+/*****************************************************************
+ * BACKTEST LAB (owner, 09-Nov-2026: "Now i need a platform to backtest with my customized idea ... I place stoploss
+ * slightly below the FVG area ... if the trade hits 2R I don't close it, I try to catch the maximum move within weeks.
+ * So days, stoploss, risk, returns all should be customizable ... make a separate page for backtest"; choices: the
+ * website / app page, the laptop computes; after 2R: the stop to the entry, then trail under the lowest low of the last
+ * 2 candles).
+ * The website's #lab page (owner only - the My Watchlists PIN; api/watchlists op 'lab') saves ONE job here (Script
+ * Property AB_LAB_JOB); the PC's background program (backtest_lab.py LabWorker, doPost action 'lab' with the bridge
+ * token - every 10 s while the page was open in the last 10 minutes, else every 2 minutes) takes it, runs it on the
+ * Kite candles kept on the laptop and posts the result: kept in the hidden tab Backtest_Lab (the newest AB_LAB_KEEP,
+ * JSON in 45,000-character cells). No candles come here - only the summary and the trade list.
+ *****************************************************************/
+const AB_LAB_JOB_PROP = 'AB_LAB_JOB';
+const AB_LAB_SEEN_PROP = 'AB_LAB_SEEN';          // the PC's last poll (ms)
+const AB_LAB_PAGE_PROP = 'AB_LAB_PAGE';          // the page's last look (ms) - the PC then polls every 10 s
+const AB_LAB_TAB = 'Backtest_Lab';
+const AB_LAB_KEEP = 8;
+const AB_LAB_PART = 45000;
+const AB_LAB_MAX_PARTS = 40;                     // 1.8 M characters a result at most
+const AB_LAB_STALE_MS = 20 * 60000;              // a run taken by the PC and not back after this = the laptop stopped
+const AB_LAB_WAIT_MS = 12 * 3600000;             // a run nobody took in 12 hours is dropped
+const AB_LAB_FAST_MS = 10 * 60000;
+const AB_LAB_CHOICES = {
+  tf: ['D', 'W', '4H'], group: ['fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring'],
+  entry: ['close', 'next_open'], stop: ['zone', 'spring', 'lower', 'pct'], after: ['trail', 'fixed'], trail: ['lows', 'pct', 'ema', 'none']
+};
+const AB_LAB_NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN',
+  'maxDays', 'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen'];
+const AB_LAB_HEADERS = ['Id', 'Saved', 'Name', 'Summary', 'Result (JSON, in parts)'];
+
+/** The run's rules from the page: only known keys / choices / finite numbers (the PC checks the limits again). */
+function ab_labParams_(p) {
+  const out = {};
+  if (!p || typeof p !== 'object') return out;
+  Object.keys(AB_LAB_CHOICES).forEach(function (k) { if (AB_LAB_CHOICES[k].indexOf(p[k]) >= 0) out[k] = p[k]; });
+  AB_LAB_NUMS.forEach(function (k) { if (typeof p[k] === 'number' && isFinite(p[k])) out[k] = p[k]; });
+  ['breakeven', 'compound'].forEach(function (k) { if (typeof p[k] === 'boolean') out[k] = p[k]; });
+  ['from', 'to'].forEach(function (k) { if (typeof p[k] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p[k])) out[k] = p[k]; });
+  return out;
+}
+
+function ab_labJob_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_LAB_JOB_PROP) || 'null'); } catch (e) { return null; }
+}
+
+function ab_labSaveJob_(job) {
+  const props = PropertiesService.getScriptProperties();
+  if (job) props.setProperty(AB_LAB_JOB_PROP, JSON.stringify(job));
+  else props.deleteProperty(AB_LAB_JOB_PROP);
+}
+
+/** The job as the page sees it (stale / old ones marked). */
+function ab_labJobView_(now) {
+  const j = ab_labJob_();
+  if (!j) return null;
+  if (j.status === 'running' && now - Number(j.claimedAt || 0) > AB_LAB_STALE_MS) {
+    j.status = 'failed';
+    j.error = 'the laptop stopped while running it - run it again';
+    ab_labSaveJob_(j);
+  }
+  if (j.status === 'waiting' && now - Number(j.at || 0) > AB_LAB_WAIT_MS) {
+    j.status = 'failed';
+    j.error = 'the laptop did not take it in 12 hours (was it off?) - run it again';
+    ab_labSaveJob_(j);
+  }
+  return { id: j.id, name: j.name || '', status: j.status, at: j.at, pct: j.pct || 0, note: j.note || '', error: j.error || '',
+           doneAt: j.doneAt || 0, params: j.params || {} };
+}
+
+function ab_labSheet_(create) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_LAB_TAB);
+  if (!sh && create) {
+    sh = ss.insertSheet(AB_LAB_TAB);
+    sh.getRange(1, 1, 1, AB_LAB_HEADERS.length).setValues([AB_LAB_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* the only visible tab cannot be hidden */ }
+  }
+  return sh;
+}
+
+/** A small summary of a result for the list (no trades). */
+function ab_labHead_(res, job) {
+  const s = (res && res.stats) || {}, a = (res && res.account) || {}, p = (res && res.params) || {};
+  return { tf: p.tf || '', group: res && res.groupName || '', trades: s.trades || 0, winPct: s.winPct, avgR: s.avgR, totalR: s.totalR,
+           returnPct: a.returnPct, cagr: a.cagr, maxDD: a.maxDD, from: res && res.from || '', to: res && res.to || '',
+           cacheUpto: res && res.cacheUpto || '', name: (job && job.name) || '' };
+}
+
+function ab_labStore_(job, res) {
+  const sh = ab_labSheet_(true);
+  const text = JSON.stringify(res);
+  const parts = [];
+  for (let i = 0; i < text.length && parts.length < AB_LAB_MAX_PARTS; i += AB_LAB_PART) parts.push(text.slice(i, i + AB_LAB_PART));
+  if (parts.length * AB_LAB_PART < text.length) throw new Error('the result is too big to keep');
+  const saved = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  const row = [job.id, saved, job.name || '', JSON.stringify(ab_labHead_(res, job))].concat(parts);
+  sh.insertRowBefore(2);
+  sh.getRange(2, 1, 1, row.length).setNumberFormat('@').setValues([row]);   // as text (a part may start with "=")
+  const last = sh.getLastRow();
+  if (last > AB_LAB_KEEP + 1) sh.deleteRows(AB_LAB_KEEP + 2, last - AB_LAB_KEEP - 1);
+}
+
+function ab_labList_() {
+  const sh = ab_labSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().map(function (r) {
+    let head = {};
+    try { head = JSON.parse(String(r[3] || '{}')); } catch (e) { head = {}; }
+    return { id: String(r[0]), saved: String(r[1]), name: String(r[2] || ''), head: head };
+  }).filter(function (x) { return x.id; });
+}
+
+function ab_labGet_(id) {
+  const sh = ab_labSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return null;
+  const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== String(id)) continue;
+    const width = sh.getLastColumn();
+    const row = sh.getRange(i + 2, 1, 1, width).getValues()[0];
+    let text = '';
+    for (let c = 4; c < row.length; c++) text += String(row[c] || '');
+    try { return { id: String(row[0]), saved: String(row[1]), name: String(row[2] || ''), result: JSON.parse(text) }; } catch (e) { return null; }
+  }
+  return null;
+}
+
+/** The website's page (inside ab_wlFromSite_, after the PIN): req.lab = {do: run | status | result | delete | cancel, ...}. */
+function ab_labFromSite_(req) {
+  const q = (req && req.lab) || {};
+  const props = PropertiesService.getScriptProperties();
+  const now = Date.now();
+  props.setProperty(AB_LAB_PAGE_PROP, String(now));
+  if (q.do === 'run') {
+    const cur = ab_labJobView_(now);
+    if (cur && cur.status === 'running') {
+      return { ok: false, error: 'a run is going on - wait for it (or cancel it)' };
+    }
+    const job = { id: 'L' + now.toString(36) + Math.floor(Math.random() * 1296).toString(36), name: String(q.name || '').replace(/\s+/g, ' ').trim().slice(0, 60), at: now,
+                  status: 'waiting', params: ab_labParams_(q.params) };
+    ab_labSaveJob_(job);
+    return ab_labStatus_(now);
+  }
+  if (q.do === 'cancel') {
+    const j = ab_labJob_();
+    if (j && j.status === 'waiting') { j.status = 'cancelled'; ab_labSaveJob_(j); }
+    return ab_labStatus_(now);
+  }
+  if (q.do === 'result') {
+    const r = ab_labGet_(String(q.id || ''));
+    return r ? { ok: true, result: 'lab', item: r } : { ok: false, error: 'that result is no longer kept' };
+  }
+  if (q.do === 'delete') {
+    const sh = ab_labSheet_(false);
+    if (sh && sh.getLastRow() >= 2) {
+      const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+      for (let i = ids.length - 1; i >= 0; i--) if (String(ids[i][0]) === String(q.id || '')) sh.deleteRow(i + 2);
+    }
+    return ab_labStatus_(now);
+  }
+  return ab_labStatus_(now);
+}
+
+function ab_labStatus_(now) {
+  const seen = Number(PropertiesService.getScriptProperties().getProperty(AB_LAB_SEEN_PROP)) || 0;
+  return { ok: true, result: 'lab', job: ab_labJobView_(now), pcSeenSec: seen ? Math.round((now - seen) / 1000) : null, list: ab_labList_() };
+}
+
+/** The PC (doPost action 'lab', bridge token): poll (takes a waiting job) / progress / result / fail. */
+function ab_labFromBridge_(req) {
+  const lock = ab_wlLock_();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'sheet busy - try again' };
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const now = Date.now();
+    props.setProperty(AB_LAB_SEEN_PROP, String(now));
+    const page = Number(props.getProperty(AB_LAB_PAGE_PROP)) || 0;
+    const next = now - page <= AB_LAB_FAST_MS ? 10 : 120;
+    const j = ab_labJob_();
+    if (req.op === 'poll') {
+      ab_labJobView_(now);                     // marks stale ones
+      const k = ab_labJob_();
+      if (k && k.status === 'waiting') {
+        k.status = 'running';
+        k.claimedAt = now;
+        k.pct = 0;
+        ab_labSaveJob_(k);
+        return { ok: true, job: { id: k.id, name: k.name, params: k.params }, next: 5 };
+      }
+      return { ok: true, job: null, next: next };
+    }
+    if (!j || String(req.id) !== String(j.id)) return { ok: false, error: 'not the current run' };
+    if (req.op === 'progress') {
+      j.pct = Math.max(0, Math.min(99, Number(req.pct) || 0));
+      j.note = String(req.note || '').slice(0, 200);
+      ab_labSaveJob_(j);
+      return { ok: true };
+    }
+    if (req.op === 'fail') {
+      j.status = 'failed';
+      j.error = String(req.error || 'failed').slice(0, 300);
+      j.doneAt = now;
+      ab_labSaveJob_(j);
+      return { ok: true };
+    }
+    if (req.op === 'result') {
+      const res = req.result;
+      if (!res || typeof res !== 'object' || !res.stats || !Array.isArray(res.trades)) return { ok: false, error: 'not a Backtest Lab result' };
+      ab_labStore_(j, res);
+      j.status = 'done';
+      j.pct = 100;
+      j.doneAt = now;
+      ab_labSaveJob_(j);
+      try {
+        const h = ab_labHead_(res, j);
+        ab_noteAdd_('lab', 'Backtest ready' + (j.name ? ': ' + j.name : ''),
+          h.trades + ' trades, win ' + (h.winPct === undefined ? '-' : h.winPct + '%') + ', avg ' + (h.avgR === undefined ? '-' : h.avgR + 'R') +
+          (typeof h.returnPct === 'number' ? ', account ' + (h.returnPct > 0 ? '+' : '') + h.returnPct + '%' : ''), '#lab/' + j.id);
+      } catch (nErr) { Logger.log('Backtest Lab note: ' + nErr.message); }
+      return { ok: true, stored: true };
+    }
+    return { ok: false, error: 'unknown op' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/*****************************************************************
+ * APP NOTIFICATIONS - the bell + phone pop-ups (owner, 09-Nov-2026: "mitigated notifications and results update
+ * notification I am receiving through mail can be viewed in Notification icon in the app?"; choice: the app's bell +
+ * phone pop-ups (Web Push), the emails go on as now).
+ *  - Every Mitigated FVG Log row (Code.gs ab_logMitigation_), every Results Update email's new rows (ab_rsSendEmail_) and a
+ *    finished Backtest Lab run add a row to the hidden tab App_Notifications (newest AB_NOTE_KEEP kept); the website asks
+ *    for them with the PIN (api/watchlists op 'notes'); the Kite poll's answer carries the newest one's time, so the bell
+ *    knows when to look.
+ *  - Phone pop-ups: the app's "Turn on phone notifications" saves the phone's push address here (op 'push', at most
+ *    AB_PUSH_MAX_SUBS, Script Property AB_PUSH_SUBS) with the website's own push sender (AB_PUSH_URL = <site>/api/push).
+ *    At the end of a run that added notes (ab_noteFlush_: called by ab_mitMailFlush_ and after the results email) ONE
+ *    request goes to that sender with the notes (one pop-up per kind); it is signed with HMAC-SHA256 of the feed token,
+ *    so the token itself never leaves the sheet. Apps Script cannot do Web Push's encryption - Vercel (api/push.js) does.
+ *****************************************************************/
+const AB_NOTE_TAB = 'App_Notifications';
+const AB_NOTE_HEADERS = ['Id', 'At', 'Kind', 'Title', 'Body', 'Link'];
+const AB_NOTE_KEEP = 300;
+const AB_NOTE_NEWEST_PROP = 'AB_NOTE_NEWEST';
+const AB_PUSH_SUBS_PROP = 'AB_PUSH_SUBS';
+const AB_PUSH_URL_PROP = 'AB_PUSH_URL';
+const AB_PUSH_MAX_SUBS = 10;
+const AB_PUSH_URL_RE = /^https:\/\/[a-z0-9.-]+(:\d{2,5})?\/api\/push$/i;
+let AB_NOTE_PUSH_ = [];                          // this execution's notes, for one push at the end
+
+/** Adds one notification (the bell) and keeps it for this execution's push. */
+function ab_noteAdd_(kind, title, body, link) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_NOTE_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(AB_NOTE_TAB);
+    sh.getRange(1, 1, 1, AB_NOTE_HEADERS.length).setValues([AB_NOTE_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* the only visible tab */ }
+  }
+  const now = new Date();
+  const at = Utilities.formatDate(now, AB_TZ, "yyyy-MM-dd'T'HH:mm:ss");
+  const note = { id: 'N' + now.getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36), at: at, kind: String(kind),
+                 title: String(title || '').slice(0, 140), body: String(body || '').slice(0, 600), url: String(link || '').slice(0, 200) };
+  sh.appendRow([note.id, note.at, note.kind, note.title, note.body, note.url]);
+  const last = sh.getLastRow();
+  if (last > AB_NOTE_KEEP + 51) sh.deleteRows(2, last - AB_NOTE_KEEP - 1);
+  PropertiesService.getScriptProperties().setProperty(AB_NOTE_NEWEST_PROP, note.at);
+  AB_NOTE_PUSH_.push(note);
+  return note;
+}
+
+function ab_noteNewest_() {
+  return PropertiesService.getScriptProperties().getProperty(AB_NOTE_NEWEST_PROP) || '';
+}
+
+/** The newest notifications (newest first). */
+function ab_noteList_(limit) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_NOTE_TAB);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const n = Math.min(limit || 100, sh.getLastRow() - 1);
+  const vals = sh.getRange(sh.getLastRow() - n + 1, 1, n, AB_NOTE_HEADERS.length).getValues();
+  return vals.reverse().map(function (r) {
+    const at = r[1] instanceof Date ? Utilities.formatDate(r[1], AB_TZ, "yyyy-MM-dd'T'HH:mm:ss") : String(r[1] || '');
+    return { id: String(r[0]), at: at, kind: String(r[2] || ''), title: String(r[3] || ''), body: String(r[4] || ''), url: String(r[5] || '') };
+  }).filter(function (x) { return x.id; });
+}
+
+/** A Mitigated FVG Log row -> a note (Code.gs ab_logMitigation_). */
+function ab_noteMitigated_(label, symbol, bottom, top, pct, price, source) {
+  const n2 = function (v) { const x = Number(v); return isFinite(x) ? String(Math.round(x * 100) / 100) : String(v || ''); };
+  ab_noteAdd_('mitigated', label + ' mitigated: ' + symbol,
+    'Zone ' + n2(bottom) + ' - ' + n2(top) + (pct !== '' && pct !== undefined && pct !== null ? ' (' + n2(pct) + '%)' : '') + ', price ' + n2(price) +
+    (source ? ' (' + source + ')' : ''), '#signals');
+}
+
+/** The Results Update email's new rows -> one note (ab_rsSendEmail_). `rows` = [{symbol, line}]. */
+function ab_noteResults_(rows, extra) {
+  if (!rows.length) return;
+  const syms = rows.map(function (r) { return r.symbol; });
+  ab_noteAdd_('results', 'Results: ' + rows.length + ' new in Main' + (extra ? ' ' + extra : '') + ' - ' + syms.slice(0, 4).join(', ') +
+    (syms.length > 4 ? ' +' + (syms.length - 4) : ''), rows.slice(0, 8).map(function (r) { return r.line; }).join('\n') +
+    (rows.length > 8 ? '\n+' + (rows.length - 8) + ' more' : ''), '#today');
+}
+
+/** This execution's notes -> one push request (one pop-up per kind; a finished backtest has no pop-up). Never throws. */
+function ab_noteFlush_() {
+  const notes = AB_NOTE_PUSH_;
+  AB_NOTE_PUSH_ = [];
+  try {
+    const byKind = {};
+    notes.forEach(function (n) { if (n.kind !== 'lab') (byKind[n.kind] = byKind[n.kind] || []).push(n); });
+    const out = [];
+    Object.keys(byKind).forEach(function (k) {
+      const list = byKind[k];
+      if (list.length === 1) { out.push({ kind: k, title: list[0].title, body: list[0].body, url: list[0].url, tag: list[0].id }); return; }
+      if (k === 'mitigated') {
+        const syms = [];
+        list.forEach(function (n) { const s = n.title.replace(/^.*: /, ''); if (syms.indexOf(s) < 0) syms.push(s); });
+        out.push({ kind: k, title: list.length + ' FVG zones mitigated: ' + syms.slice(0, 5).join(', ') + (syms.length > 5 ? ' +' + (syms.length - 5) : ''),
+                   body: list.slice(0, 6).map(function (n) { return n.title; }).join('\n'), url: '#signals', tag: list[0].id });
+        return;
+      }
+      out.push({ kind: k, title: list[0].title, body: list.map(function (n) { return n.title; }).join('\n').slice(0, 600), url: list[0].url, tag: list[0].id });
+    });
+    if (out.length) ab_pushSend_(out);
+  } catch (e) {
+    Logger.log('Phone notifications: ' + e.message);
+  }
+}
+
+function ab_pushSubs_() {
+  let s = [];
+  try { s = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_PUSH_SUBS_PROP) || '[]'); } catch (e) { s = []; }
+  return Array.isArray(s) ? s : [];
+}
+
+function ab_pushSaveSubs_(subs) {
+  PropertiesService.getScriptProperties().setProperty(AB_PUSH_SUBS_PROP, JSON.stringify(subs.slice(-AB_PUSH_MAX_SUBS)));
+}
+
+function ab_hex_(bytes) {
+  return bytes.map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+
+/** Sends the notes to every saved phone through the website's push sender. -> {sent, gone} or {error}. */
+function ab_pushSend_(notes) {
+  const subs = ab_pushSubs_();
+  const url = PropertiesService.getScriptProperties().getProperty(AB_PUSH_URL_PROP) || '';
+  const token = ab_feedToken_(false);
+  if (!subs.length || !AB_PUSH_URL_RE.test(url) || !token) return { sent: 0, gone: 0, skipped: true };
+  const body = JSON.stringify({ subs: subs.map(function (s) { return s.sub; }), notes: notes });
+  const ts = String(Date.now());
+  const sig = ab_hex_(Utilities.computeHmacSha256Signature(ts + '.' + body, token, Utilities.Charset.UTF_8));
+  const resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, followRedirects: true,
+                                        payload: JSON.stringify({ ts: ts, sig: sig, body: body }) });
+  let ans = null;
+  try { ans = JSON.parse(resp.getContentText()); } catch (e) { ans = null; }
+  if (!ans || ans.ok !== true) {
+    Logger.log('Phone notifications: the website\'s push sender answered HTTP ' + resp.getResponseCode() + (ans && ans.error ? ' - ' + ans.error : ''));
+    return { error: (ans && ans.error) || 'HTTP ' + resp.getResponseCode() };
+  }
+  const gone = Array.isArray(ans.gone) ? ans.gone : [];
+  if (gone.length) ab_pushSaveSubs_(subs.filter(function (s) { return gone.indexOf(s.sub.endpoint) < 0; }));
+  return { sent: Number(ans.sent) || 0, gone: gone.length };
+}
+
+/** The website's 'push' op (after the PIN): add / remove this phone, or send a test pop-up. */
+function ab_pushFromSite_(req) {
+  const q = (req && req.push) || {};
+  const props = PropertiesService.getScriptProperties();
+  let subs = ab_pushSubs_();
+  if (q.do === 'add') {
+    const sub = q.sub;
+    if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || sub.endpoint.length > 1000 || !sub.keys ||
+        typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string' || sub.keys.p256dh.length > 200 || sub.keys.auth.length > 100) {
+      return { ok: false, error: 'not a push subscription' };
+    }
+    if (!AB_PUSH_URL_RE.test(String(req.pushUrl || ''))) return { ok: false, error: 'no push sender address' };
+    props.setProperty(AB_PUSH_URL_PROP, String(req.pushUrl));
+    subs = subs.filter(function (s) { return s.sub.endpoint !== sub.endpoint; });
+    subs.push({ sub: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } },
+                label: String(q.label || '').slice(0, 60), at: Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm') });
+    ab_pushSaveSubs_(subs);
+    return { ok: true, result: 'push', devices: Math.min(subs.length, AB_PUSH_MAX_SUBS) };
+  }
+  if (q.do === 'remove') {
+    ab_pushSaveSubs_(subs.filter(function (s) { return s.sub.endpoint !== String(q.endpoint || ''); }));
+    return { ok: true, result: 'push', devices: ab_pushSubs_().length };
+  }
+  if (q.do === 'test') {
+    if (AB_PUSH_URL_RE.test(String(req.pushUrl || ''))) props.setProperty(AB_PUSH_URL_PROP, String(req.pushUrl));
+    const r = ab_pushSend_([{ kind: 'test', title: 'Stock Blueprint', body: 'Phone notifications work - mitigated FVG zones and new results will pop up here.',
+                              url: '#overview', tag: 'test' }]);
+    return { ok: !r.error, result: 'push', sent: r.sent || 0, gone: r.gone || 0, error: r.error || '', devices: ab_pushSubs_().length };
+  }
+  return { ok: true, result: 'push', devices: subs.length };
+}
+
+/** The website's 'notes' op (after the PIN): the newest notifications. */
+function ab_noteFromSite_() {
+  return { ok: true, result: 'notes', newest: ab_noteNewest_(), items: ab_noteList_(100), devices: ab_pushSubs_().length };
 }

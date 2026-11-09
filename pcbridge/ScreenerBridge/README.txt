@@ -300,3 +300,19 @@ Checks (they send nothing):
    run would send to the sheet.
  - If none works it prints where the figures seem to be and saves the pages in the folder
    moneycontrol_check (next to this file) - Claude may ask you for those files.
+
+BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
+ - The website's new page "Backtest Lab" (owner only - your My Watchlists PIN): choose the pattern (FVG+Spring,
+   Gap-up FVG + Spring, inside FVG, every Spring), the timeframe (daily / weekly / 4 hour), where the stop goes (a
+   little below the FVG zone bottom, below the Spring low, the lower of the two or a fixed %), the target (e.g. 2R),
+   what happens at the target (sell there, or move the stop to the entry and trail it under the lowest low of the last
+   N candles / x % under the high / a close under an EMA), the days you hold at most, costs, your account and risk per
+   trade - then "Run on my laptop".
+ - The background program of THIS computer picks the run up (it asks every 10 seconds while the page is open, every 2
+   minutes otherwise), works it out on the Kite candles kept here in a few seconds and sends the result back - the page
+   shows it, the sheet keeps the newest 8 (hidden tab Backtest_Lab). The candles never leave this computer.
+ - It reads a compact copy of the candles (folder lab_cache, made by BacktestNow.bat and by every daily scan). The
+   first run makes it if it is missing (about 3 minutes, once).
+ - This computer must be on and the background program running (it starts at Windows log-in). After installing this
+   zip: sign out and in again (or restart), so the background program uses the new version.
+ - A check without the website: python screener_bridge.py lab   (or: lab W / lab 4H) - the default rules, nothing sent.

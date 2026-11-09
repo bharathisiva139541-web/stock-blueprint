@@ -1,0 +1,13 @@
+// Stock Blueprint for Android (owner, 09-Nov-2026: "make an app that works on Android, iOS - not going to list this to
+// appstore or playstore"; choice: Android = an APK, iPhone = the website added to the Home Screen).
+// A Trusted Web Activity: the app opens https://stock-blueprint-sandy.vercel.app/ full screen in the phone's Chrome, so
+// the app is always the newest website and phone pop-ups (Web Push) arrive as this app's notifications. Build: android/README.md.
+pluginManagement {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral(); maven { url 'https://repo1.maven.org/maven2' } }
+}
+rootProject.name = 'StockBlueprint'
+include ':app'

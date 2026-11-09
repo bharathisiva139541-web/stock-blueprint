@@ -11,6 +11,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Blueprint">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>
   // apply the viewer's saved theme before first paint (default: light; the list = web/app.js THEMES)
   try {
@@ -32,6 +38,7 @@
       <div id="gsearch-results" class="search-results" role="listbox" hidden></div>
     </div>
     <button id="status" class="status-pill" type="button" aria-label="Data status">Loading…</button>
+    <button id="bell" class="icon-btn bell" type="button" aria-label="Notifications" title="Notifications" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9a6 6 0 0 1 12 0c0 6.5 2.5 8.5 2.5 8.5h-17S6 15.5 6 9"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></svg><span class="bell-n"></span></button>
     <button id="theme" class="icon-btn" type="button" aria-label="Choose theme" title="Theme"></button>
   </div>
   <nav class="tabs" aria-label="Sections"></nav>
@@ -80,6 +87,7 @@
 <script src="ui/core.js"></script>
 <script src="ui/watchlists.js"></script>
 <script src="ui/watchlist-sync.js"></script>
+<script src="ui/notify.js"></script>
 <script src="ui/strategy-state.js"></script>
 <script src="ui/stock-drawer.js"></script>
 <script src="pages/overview.js"></script>
@@ -95,6 +103,7 @@
 <script src="pages/today.js"></script>
 <script src="pages/alerts.js"></script>
 <script src="pages/backtest.js"></script>
+<script src="pages/lab.js"></script>
 <script src="pages/markets.js"></script>
 <script src="pages/daystats.js"></script>
 <script src="app.js"></script>

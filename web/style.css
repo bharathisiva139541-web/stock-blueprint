@@ -1492,3 +1492,42 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
   body::before { display: none; }
   .card, .tile { box-shadow: none; }
 }
+
+/* ---------- Backtest Lab (#lab) + the bell (owner, 09-Nov-2026) ---------- */
+.lab-h { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 16px 0 8px; letter-spacing: 0.01em; }
+.lab-form .form-grid .wide { grid-column: span 2; }
+@media (max-width: 520px) { .lab-form .form-grid .wide { grid-column: auto; } }
+.lab-form .field { grid-template-columns: minmax(0, 1fr); }
+.lab-form .field > .sel, .lab-form .field > .inp { width: 100%; min-width: 0; }
+.lab-checks { align-content: end; }
+.lab-check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.lab-plain { margin-top: 14px; }
+.lab-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-top: 14px; }
+.lab-name { min-width: 220px; flex: 1 1 220px; max-width: 360px; }
+.lab-status { display: grid; gap: 8px; margin-bottom: 12px; }
+.lab-pc { display: flex; gap: 8px; flex-wrap: wrap; }
+.lab-run-state { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.lab-bar { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.lab-bar i { display: block; height: 100%; background: var(--grad); border-radius: 99px; transition: width 0.6s ease; }
+.lab-runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.lab-run { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-size: 13px; }
+.lab-run:hover { text-decoration: none; border-color: rgba(var(--accent-rgb), 0.55); }
+.lab-run.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25); }
+.lab-chart { margin-top: 10px; }
+.lab-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.bell { position: relative; }
+.bell .bell-n { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; font-size: 10px; line-height: 16px;
+  font-weight: 700; text-align: center; background: var(--down); color: #fff; display: none; }
+.bell.has-new .bell-n { display: block; }
+.bell-pop { position: fixed; right: 12px; z-index: 60; width: min(420px, calc(100vw - 24px)); max-height: min(70vh, 640px); display: grid; grid-template-rows: auto 1fr auto;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.45); overflow: hidden; }
+.bell-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.bell-list { overflow: auto; padding: 6px; }
+.bell-item { display: grid; gap: 3px; padding: 9px 10px; border-radius: 10px; color: var(--ink); font-size: 13px; }
+.bell-item:hover { background: var(--surface-2); text-decoration: none; }
+.bell-item.new { background: rgba(var(--accent-rgb), 0.07); }
+.bell-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.bell-body { color: var(--ink-2); font-size: 12px; }
+.bell-push { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* the bell takes room in the header: on a phone the brand keeps only its mark so the status pill stays readable */
+@media (max-width: 440px) { .top-inner:has(#bell:not([hidden])) .brand > span:last-child { display: none; } }

@@ -64,6 +64,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
   python screener_bridge.py backtest   the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1-5R) on the stored Kite candles -> the sheet (no login)
   python screener_bridge.py kitehistory  Kite's long history (daily ~20 years, 4H ~5 years) for the backtest at once, then the backtest
+  python screener_bridge.py lab [D|W|4H]  the Backtest Lab with its default rules on this computer (a check; the website's page sends its own)
   python screener_bridge.py live       Kite live prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
@@ -152,6 +153,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import kite_intraday as itd   # noqa: E402  (Zerodha Kite: intraday / weekly / monthly patterns)
 itd.log = log
+itd.backtest_lab.log = log
 
 
 def nse_holidays():
@@ -3861,6 +3863,7 @@ def run_after_login(cfg):
     every_s = max(0.0, float(cfg.get('full_round_every_hours') or 0)) * 3600
     fulls, next_full, next_quick, offline = 0, time.time(), None, False
     runner = itd.Runner()       # the Kite scan, once a trading day after the close, in its own thread
+    lab = itd.backtest_lab.LabWorker()   # the website's Backtest Lab: runs on this computer's candles
     if itd.configured(cfg) and cfg.get('intraday', True):
         log('Kite intraday patterns: on - after each trading day\'s close (or the next time this computer is on) the '
             'program asks you to log in to Kite once and then scans the candles.')
@@ -3878,6 +3881,12 @@ def run_after_login(cfg):
             runner.maybe_start(cfg, api, nse_holidays(), online=internet_ok)
         except Exception as e:
             log('Kite: could not start the scan - %s' % e)
+        # the website's Backtest Lab (owner, 09-Nov-2026): asks the sheet for a run and does it here (its own thread)
+        try:
+            if os.path.isdir(itd.DATA_DIR) and lab.maybe_start(cfg, api, build=lambda out: itd.lab_build_cache(out, nse_holidays())):
+                log('Backtest Lab: on - runs from the website\'s Backtest Lab page are done on this computer.')
+        except Exception as e:
+            log('Backtest Lab: could not start - %s' % e)
         # Kite live prices on trading days 09:10-15:35 (owner, 08-Nov-2026: start it every day by itself) -> the "Kite Live" tab
         try:
             runner.maybe_start_live(cfg, api, nse_holidays(), online=internet_ok)
@@ -4081,6 +4090,18 @@ def main(argv):
         except (itd.KiteError, itd.NeedLogin) as e:
             print('PROBLEM - %s' % e)
             return 1
+    if cmd == 'lab':
+        # the Backtest Lab on this computer with the default rules (the website's page sends its own) - nothing is sent
+        tf = (argv[2] if len(argv) > 2 else 'D').upper()
+        print('Backtest Lab on this computer - %s, the default rules (stop under the zone, 2R, then trail) ...' % tf)
+        if not itd.backtest_lab.load_meta()[0]:
+            print('Making the candle cache first (about 3 minutes, only once) ...')
+            if not itd.lab_build_cache(print, nse_holidays()):
+                print('No Kite candles on this computer yet - run KiteHistoryNow.bat first.')
+                return 1
+        res = itd.backtest_lab.run_job({'tf': tf if tf in itd.backtest_lab.TFS else 'D'})
+        print(itd.backtest_lab.headline(res) + ' (%.1f s)' % res['secs'])
+        return 0
     if cmd == 'intradaycheck':
         print('Kite candle check - Spring / Spring in FVG of one stock (nothing is sent to the sheet)')
         try:

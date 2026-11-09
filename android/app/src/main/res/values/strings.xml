@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hostName" translatable="false">stock-blueprint-sandy.vercel.app</string>
+    <string name="launchUrl" translatable="false">https://stock-blueprint-sandy.vercel.app/#overview</string>
+    <string name="assetStatements" translatable="false">
+        [{ \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+           \"target\": {\"namespace\": \"web\", \"site\": \"https://stock-blueprint-sandy.vercel.app\"}}]
+    </string>
+</resources>
