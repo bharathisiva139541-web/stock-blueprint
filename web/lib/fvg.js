@@ -26,8 +26,12 @@
      candles holding the same low) whose stars reach into any gap formed before
      c1 that still holds (lowest star low <= top, both star closes >= bottom).
    - Gap-up FVG + Spring (owner, 08-Nov-2026, split from FVG+Spring): the
-     same Spring rule on a Gap-up zone (FVG+Spring = 3-candle FVGs only);
-     "inside FVG" when the gap-up zone lies in a 3-candle FVG (gapInsideFvg).
+     same Spring rule on a Gap-up zone (FVG+Spring = 3-candle FVGs only).
+   - Inside FVG (owner, 09-Nov-2026, BSE chart): candles A B C D - B and C
+     green with a body >= AB_GAPUP_INSIDE_BODY_MIN_PCT (2 %), C's low over B's
+     high (ANY gap size, at most AB_GAPUP_MAX_PCT), A's high under B's high,
+     D's low over C's low (gapInsideAt): the gap-up zone B-high .. C-low sits in
+     the middle of the FVG A-high .. D-low - tracked even under the 3 % minimum.
    - Gap-up FVG: Low[i] > High[i-1] by AB_GAPUP_MIN_PCT..AB_GAPUP_MAX_PCT %,
      neither candle circuit-locked. Owner, 08-Nov-2026: the first later
      (non-locked) candle with Low <= top MITIGATES it (touchIdx, one email);
@@ -49,7 +53,8 @@
     AB_GAPUP_NEAR_PCT: 0.5,
     AB_UNMIT_NEAR_PCT: 0.5,
     AB_GAPUP_MIN_AGE_DAYS: 1,
-    AB_UNMIT_MIN_AGE_DAYS: 1
+    AB_UNMIT_MIN_AGE_DAYS: 1,
+    AB_GAPUP_INSIDE_BODY_MIN_PCT: 2
   };
   function cfgOf(cfg) {
     var o = {};
@@ -90,7 +95,8 @@
       var lockB = !isNaN(b.High) && !isNaN(b.Low) && b.Low > 0 && (b.High - b.Low) / b.Low * 100 <= cfg.AB_CIRCUIT_LOCK_RANGE_PCT;
       if (lockA || lockB || isNaN(a.High) || isNaN(b.Low) || !(a.High > 0) || !(b.Low > a.High)) continue;
       var pct = (b.Low - a.High) / a.High * 100;
-      if (pct >= cfg.AB_GAPUP_MIN_PCT && pct <= cfg.AB_GAPUP_MAX_PCT) out.push({ kind: 'Gap-up', f: f, bottom: a.High, top: b.Low });
+      var inside = pct <= cfg.AB_GAPUP_MAX_PCT && gapInsideAt(candles, f, cfg);    // any size between the two big green candles
+      if (inside || (pct >= cfg.AB_GAPUP_MIN_PCT && pct <= cfg.AB_GAPUP_MAX_PCT)) out.push({ kind: 'Gap-up', f: f, bottom: a.High, top: b.Low, inside: inside });
     }
     return out;
   }
@@ -112,35 +118,20 @@
       var touch = 0;
       for (k = Z.f + 1; k <= i; k++) if (candles[k].Low <= top && (k === Z.f + 1 || candles[k - 1].Low > top)) touch++;
       var where = c2.Low <= bottom ? 'bottom' : c2.Low >= (bottom + top) / 2 ? 'top' : 'middle';
-      return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch };
+      return { kind: Z.kind, f: Z.f, bottom: bottom, top: top, where: where, touch: touch, inside: !!Z.inside };
     }
     return null;
   }
 
-  /** Code.gs ab_fvgUpFlags_: Low[i] > High[i-2] by >= 70 % of the 14-bar average range (the col X 3-candle FVG). */
-  function fvgUpFlags(candles) {
-    var n = candles.length, out = new Array(n).fill(false);
-    for (var i = 13; i < n; i++) {
-      var sum = 0;
-      for (var k = i - 13; k <= i; k++) sum += (candles[k].High - candles[k].Low);
-      var low = candles[i].Low, h2 = candles[i - 2].High;
-      if (low > h2 && (low - h2) >= 0.70 * (sum / 14)) out[i] = true;
-    }
-    return out;
-  }
-
-  /** Code.gs ab_gapInsideFvg_: the gap-up zone of candle j inside a 3-candle FVG formed at most one candle after it,
-   *  no close from g+1 to `upto` under that FVG's bottom. Sheet candles. */
-  function gapInsideFvg(candles, isFVGUp, j, bottom, top, upto) {
-    for (var g = 2; g <= Math.min(j + 1, upto); g++) {
-      if (!isFVGUp[g]) continue;
-      var fb = candles[g - 2].High, ft = candles[g].Low;
-      if (!(fb <= bottom && ft >= top)) continue;
-      var holds = true;
-      for (var k = g + 1; k <= upto; k++) if (candles[k].Cls < fb) { holds = false; break; }
-      if (holds) return true;
-    }
-    return false;
+  /** Code.gs ab_gapInsideAt_: candles A B C D = j-2 .. j+1 (sheet candles {Opn, High, Low, Cls}) - B and C green with
+   *  a body >= cfg.AB_GAPUP_INSIDE_BODY_MIN_PCT % of their open, C's low over B's high, A's high under B's high, D's
+   *  low over C's low. False until D exists. */
+  function gapInsideAt(candles, j, cfg) {
+    if (j < 2 || j + 1 >= candles.length) return false;
+    var a = candles[j - 2], b = candles[j - 1], c = candles[j], d = candles[j + 1];
+    var min = cfgOf(cfg).AB_GAPUP_INSIDE_BODY_MIN_PCT;
+    var big = function (x) { return x.Opn > 0 && x.Cls > x.Opn && (x.Cls - x.Opn) / x.Opn * 100 >= min; };
+    return big(b) && big(c) && c.Low > b.High && a.High < b.High && d.Low > c.Low;
   }
 
   /** The first candle after i that closed below candle i's low (the Spring is no longer valid), or -1. */
@@ -199,7 +190,7 @@
       var hit = springZone(candles, i, fvgZones);
       if (hit) { springSignal[i] = true; springAt[i] = hit; }
       var gh = springZone(candles, i, gapZones);
-      if (gh) { gh.inside = gapInsideFvg(candles, isFVGUp, gh.f, gh.bottom, gh.top, i); gapAt[i] = gh; }
+      if (gh) gapAt[i] = gh;
     }
     // Twin Star Bottom + FVG (ab_longFvgDetail_): c1 = i-2, stars i-1 and i, into a gap formed before c1 that still holds
     var twinSignal = new Array(n).fill(false);
@@ -285,9 +276,10 @@
   }
 
   /** ab_gapUpFvgs_ -> the gap-up zones still valid (no later close under the bottom), newest first; touchIdx = the first
-   *  later non-locked candle with low <= top (mitigated; -1 = untouched), touched, insideFvg. */
+   *  later non-locked candle with low <= top (mitigated; -1 = untouched), touched, insideFvg (gapInsideAt - such a gap
+   *  counts at any size up to the maximum). */
   function gapUpFvgs(candles, cfgIn) {
-    var cfg = cfgOf(cfgIn), out = [], n = (candles || []).length, flags = null;
+    var cfg = cfgOf(cfgIn), out = [], n = (candles || []).length, sc = null;
     if (n < 2) return out;
     for (var i = 1; i < n; i++) {
       if (isCircuitLocked(candles[i - 1], cfg) || isCircuitLocked(candles[i], cfg)) continue;
@@ -295,17 +287,17 @@
       if (isNaN(prevHigh) || isNaN(low) || prevHigh <= 0) continue;
       if (low <= prevHigh) continue;
       var pct = (low - prevHigh) / prevHigh * 100;
-      if (pct < cfg.AB_GAPUP_MIN_PCT || pct > cfg.AB_GAPUP_MAX_PCT) continue;
+      if (!sc) sc = candles.map(S);
+      var inside = pct <= cfg.AB_GAPUP_MAX_PCT && gapInsideAt(sc, i, cfg);
+      if (!inside && (pct < cfg.AB_GAPUP_MIN_PCT || pct > cfg.AB_GAPUP_MAX_PCT)) continue;
       var touchIdx = -1, broken = false;
       for (var j = i + 1; j < n; j++) {
         if (touchIdx === -1 && !isCircuitLocked(candles[j], cfg) && !isNaN(candles[j].l) && candles[j].l <= low) touchIdx = j;
         if (!isNaN(candles[j].c) && candles[j].c < prevHigh) { broken = true; break; }
       }
       if (broken) continue;
-      if (!flags) flags = fvgUpFlags(candles.map(S));
       out.push({ kind: 'Gap-up', bottom: prevHigh, top: low, pct: Math.round(pct * 100) / 100, formedIdx: i, formed: candles[i].t, daysAgo: (n - 1) - i,
-        touchIdx: touchIdx, touched: touchIdx !== -1, touchedOn: touchIdx !== -1 ? candles[touchIdx].t : null,
-        insideFvg: gapInsideFvg(candles.map(S), flags, i, prevHigh, low, n - 1) });
+        touchIdx: touchIdx, touched: touchIdx !== -1, touchedOn: touchIdx !== -1 ? candles[touchIdx].t : null, insideFvg: inside });
     }
     out.reverse();
     return out;
@@ -396,7 +388,7 @@
 
   return {
     DEFAULTS: DEFAULTS, isCircuitLocked: isCircuitLocked, avgTurnover: avgTurnover, longFvgDetail: longFvgDetail,
-    springZones: springZones, springZone: springZone, springBroken: springBroken, fvgUpFlags: fvgUpFlags, gapInsideFvg: gapInsideFvg,
+    springZones: springZones, springZone: springZone, springBroken: springBroken, gapInsideAt: gapInsideAt,
     gapUpFvgs: gapUpFvgs, gapUpTags: gapUpTags, columnTags: columnTags, watchZones: watchZones,
     approachState: approachState, classifyMitigation: classifyMitigation, MIT_LABELS: MIT_LABELS,
     fillState: fillState, bearishGaps: bearishGaps

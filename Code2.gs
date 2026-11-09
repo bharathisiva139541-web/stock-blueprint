@@ -12707,65 +12707,80 @@ function ab_itdZoneCheck_() {
 }
 
 // =====================================================================================================================
-// FVG+SPRING BACKTEST (owner, 08-Nov-2026: "backtest it and show the winrate"; choice "2R target"): the PC tests every
-// FVG+Spring of 4H (the 13:15 candle) / D / W on all its stored Kite candles - buy at the Spring candle's close, stop just
-// under its low, WIN = the target (2 x risk) reached before the stop within 20 candles (a candle doing both = a loss) - and
-// sends the counts per timeframe (FVG+Spring, at the zone top / middle / bottom, and every Spring for comparison) plus
-// the newest trades. Tabs "Spring Backtest" (summary) and "Spring Backtest Trades" (no prices - R multiples only).
+// FVG+SPRING BACKTEST (owner, 08-Nov-2026: "backtest it and show the winrate"; 09-Nov-2026: "the backtest date should be
+// maximum number of days. and backtest should not be limited to 2R" - "use % movement to upward direction within 30 days
+// from pattern day"; choice: both the move and several targets): the PC tests every FVG+Spring / Gap-up FVG + Spring of
+// 4H (the 13:15 candle) / D / W on ALL its stored Kite candles (daily ~20 years, 4H ~5 years - kept on the PC, the sheet
+// gets only these numbers): buy at the Spring candle's close, stop = under its low, R = close - low; in the 30 calendar
+// days after it: the highest price vs the entry (%), each target 1R / 1.5R / 2R / 3R / 5R reached before the stop, the
+// stop hit, the highest R before the stop. Tabs "Spring Backtest" (summary per timeframe / group) and "Spring Backtest
+// Trades" (the newest trades, no prices).
 // =====================================================================================================================
 const AB_BT_SHEET = 'Spring Backtest';
 const AB_BT_TRADES_SHEET = 'Spring Backtest Trades';
-const AB_BT_HEADERS = ['Timeframe', 'Group', 'Signals', 'Wins', 'Losses', 'No result (20 candles)', 'Still open', 'Win Rate %',
-  'Avg R', 'From', 'To'];
-const AB_BT_TRADE_HEADERS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Result', 'R', 'Candles', 'Chart'];
+const AB_BT_HEADERS = ['Timeframe', 'Group', 'Signals', 'Avg Up % (30d)', 'Median Up % (30d)', 'Hit 1R %', 'Hit 1.5R %', 'Hit 2R %',
+  'Hit 3R %', 'Hit 5R %', 'Stopped %', 'Avg Max R', 'Median Max R', 'Still open', 'From', 'To'];
+const AB_BT_TRADE_HEADERS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Up % (30d)', 'Max R', 'Result', 'Chart'];
+const AB_BT_TARGETS = [1, 1.5, 2, 3, 5];
 const AB_BT_MAX_TRADES = 1000;
 
 function ab_btFromBridge_(req) {
   const rows = Array.isArray(req.rows) ? req.rows : null;
   if (!rows) return { ok: false, error: 'rows missing' };
+  if (rows.length && !Array.isArray(rows[0] && rows[0].hits)) {
+    return { ok: false, error: 'an older backtest from the PC (2R only) - extract the new ScreenerBridge.zip' };
+  }
   const trades = Array.isArray(req.trades) ? req.trades.slice(0, AB_BT_MAX_TRADES) : [];
   const tfOk = function (t) { return ['4H', 'D', 'W'].indexOf(String(t)) !== -1; };
   const num = function (v) { const n = Number(v); return v !== null && v !== '' && v !== undefined && isFinite(n) ? n : ''; };
   const when = function (v) { return /^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(String(v || '')) ? String(v) : ''; };
+  // the PC's targets (1, 1.5, 2, 3, 5 R) -> the columns, by value
+  const tg = Array.isArray(req.targets) ? req.targets.map(Number) : AB_BT_TARGETS;
   const sumRows = rows.filter(function (r) { return r && tfOk(r.tf) && String(r.group || '').length < 80; }).map(function (r) {
-    return [String(r.tf), String(r.group), num(r.signals), num(r.wins), num(r.losses), num(r.timeouts), num(r.open), num(r.winRate),
-      num(r.avgR), when(r.from), when(r.to)];
+    const hit = function (t) { const k = tg.indexOf(t); return k === -1 ? '' : num(r.hits[k]); };
+    return [String(r.tf), String(r.group), num(r.signals), num(r.avgUp), num(r.medUp)].concat(AB_BT_TARGETS.map(hit))
+      .concat([num(r.stopped), num(r.avgR), num(r.medR), num(r.open), when(r.from), when(r.to)]);
   });
   const names = ab_itdNames_();
+  const resOk = /^(open|stopped|none|\d+(\.\d+)?R)$/;
   const tRows = trades.filter(function (t) {
-    return t && tfOk(t.tf) && /^[A-Z0-9&_.-]{1,30}$/.test(String(t.sym || '').toUpperCase()) && when(t.candle) &&
-      ['win', 'loss', 'timeout', 'open'].indexOf(String(t.result)) !== -1;
+    return t && tfOk(t.tf) && /^[A-Z0-9&_.-]{1,30}$/.test(String(t.sym || '').toUpperCase()) && when(t.candle) && resOk.test(String(t.result));
   }).map(function (t) {
     const sym = String(t.sym).toUpperCase();
-    const res = { win: 'Win', loss: 'Loss', timeout: 'No result', open: 'Open' }[String(t.result)];
-    return [when(t.candle), sym, names[sym] || '', String(t.tf), String(t.zone) === 'Gap-up' ? 'Gap-up' : 'FVG',
-      String(t.where) === 'bottom' ? 'Bottom' : String(t.where) === 'middle' ? 'Middle' : 'Top', num(t.touch), res, num(t.r), num(t.bars),
+    const r = String(t.result);
+    const res = r === 'open' ? 'Open' : r === 'stopped' ? 'Stopped' : r === 'none' ? 'Neither (30 days)' : r + ' reached';
+    const zone = String(t.zone) === 'Gap-up' ? (t.inside ? 'Gap-up inside FVG' : 'Gap-up') : 'FVG';
+    return [when(t.candle), sym, names[sym] || '', String(t.tf), zone,
+      String(t.where) === 'bottom' ? 'Bottom' : String(t.where) === 'middle' ? 'Middle' : 'Top', num(t.touch), num(t.up), num(t.maxR), res,
       '=HYPERLINK("' + ab_itdTvUrl_(sym, String(t.tf)) + '","' + t.tf + ' chart")'];
   });
   const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
   const at = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
-  const horizon = Number(req.horizon) > 0 ? Math.round(Number(req.horizon)) : 20;
-  const note = 'FVG+Spring backtest on Zerodha Kite candles (your PC program, candles up to ' + (upto || '?') + ', ' + at + '): ' +
-    'buy at the Spring candle\'s close, stop just under its low; WIN = the target (2 x the risk) reached before the stop within ' +
-    horizon + ' candles - a candle that touches both counts as a loss; Win Rate = wins / (wins + losses); Avg R = the average result ' +
-    'in risk units (no-result trades at their ' + horizon + 'th close). FVG+Spring = the Spring candle anywhere on an FVG / Gap-up ' +
-    'zone (top / middle) or under its bottom line (bottom), closing above the bottom, no earlier close under the Spring low - as the ' +
-    'pattern looked when it formed. 4H: only the day\'s 2nd candle (13:15); 4H covers ~6 months, D and W ~5 years. ' +
-    'Research only - past results do not promise future ones.';
+  const days = Number(req.days) > 0 ? Math.round(Number(req.days)) : 30;
+  const note = 'FVG+Spring / Gap-up FVG + Spring backtest on Zerodha Kite candles (your PC program, every stored candle up to ' +
+    (upto || '?') + ', ' + at + '): buy at the Spring candle\'s close, stop just under its low, R = close - low. In the ' + days +
+    ' days after each signal: Up % = the highest price vs the entry (whether the stop was hit or not); Hit xR % = the target ' +
+    'entry + x R reached before any candle went under the stop (a candle doing both does not count); Stopped % = a candle went under ' +
+    'the stop; Max R = the highest price before the stop, in R. Signals = those whose ' + days + ' days are over (Still open = not yet). ' +
+    'FVG+Spring = the Spring candle anywhere on a 3-candle FVG (top / middle) or under its bottom line (bottom), closing above the ' +
+    'bottom, no earlier close under the Spring low; Gap-up FVG + Spring = the same on a Gap-up zone (inside FVG = the gap between ' +
+    'two big green candles in the middle of an FVG). 4H: only the day\'s 2nd candle (13:15). Research only - past results do not ' +
+    'promise future ones.';
   const sh = ab_getOrCreateSheet_(AB_BT_SHEET);
   sh.clearContents();
   sh.getRange(1, 1).setValue(note);
   sh.getRange(2, 1, 1, AB_BT_HEADERS.length).setValues([AB_BT_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
   if (sumRows.length) {
-    sh.getRange(3, 10, sumRows.length, 2).setNumberFormat('@');
+    sh.getRange(3, 15, sumRows.length, 2).setNumberFormat('@');
     sh.getRange(3, 1, sumRows.length, AB_BT_HEADERS.length).setValues(sumRows);
   }
   sh.setFrozenRows(2);
   const tsh = ab_getOrCreateSheet_(AB_BT_TRADES_SHEET);
   tsh.clearContents();
-  tsh.getRange(1, 1).setValue('The newest FVG+Spring trades of the backtest (' + tRows.length + ' of ' + (num(req.total) || tRows.length) +
-    '; see "' + AB_BT_SHEET + '" for the rules). R = the result in risk units: Win = +2, Loss = -1, No result = where it closed ' +
-    'after ' + horizon + ' candles. No prices - Kite\'s data stays on your PC.');
+  tsh.getRange(1, 1).setValue('The newest FVG+Spring / Gap-up FVG + Spring trades of the backtest (' + tRows.length + ' of ' +
+    (num(req.total) || tRows.length) + '; see "' + AB_BT_SHEET + '" for the rules). Up % = the highest price in the ' + days +
+    ' days after the signal vs its close; Max R = the highest price before the stop in R; Result = the biggest target reached ' +
+    'before the stop. No prices - Kite\'s data stays on your PC.');
   tsh.getRange(2, 1, 1, AB_BT_TRADE_HEADERS.length).setValues([AB_BT_TRADE_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
   if (tRows.length) {
     tsh.getRange(3, 1, tRows.length, 1).setNumberFormat('@');

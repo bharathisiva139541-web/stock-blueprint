@@ -164,7 +164,7 @@
         'The top sections are recomputed in your browser from the daily candles with the same rules as your sheet; the lower sections are snapshots of the sheet\'s own tabs. ' +
         'These are chart conditions to research, not buy recommendations.</p></div></div>';
       h += '<nav class="chips" aria-label="On this page">' + [
-        ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-z4', '4H FVG zones'], ['sg-sbt', 'FVG+Spring win rate'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
+        ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-z4', '4H FVG zones'], ['sg-sbt', 'FVG+Spring backtest'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
         ['sg-tabs', 'Sheet FVG tabs'], ['sg-bt', 'FVG backtest'], ['sg-ml', 'Mitigated log'], ['sg-wl', 'Signal log']
       ].map(function (j) { return '<button type="button" class="chip" data-jump="' + j[0] + '">' + esc(j[1]) + '</button>'; }).join('') + '</nav>';
 
@@ -399,56 +399,68 @@
     apply();
   }
 
-  // FVG+Spring backtest (owner, 08-Nov-2026: "backtest it and show the winrate"; choice: 2R target) - the sheet's "Spring
-  // Backtest" tabs (feed part springBacktest), made by the PC program on all its Zerodha candles: no prices, R only
+  // FVG+Spring backtest (owner, 08-Nov-2026: "backtest it and show the winrate"; 09-Nov-2026: "maximum number of days ...
+  // not limited to 2R ... % movement to upward direction within 30 days from pattern day") - the sheet's "Spring Backtest"
+  // tabs (feed part springBacktest), made by the PC program on all its Zerodha candles: no prices, % and R only
   var SBT_TFS = [['4H', '4 hour (13:15 candle)'], ['D', 'Daily'], ['W', 'Weekly']];
+  var SBT_GROUPS = [['FVG+Spring', 'FVG+Spring'], ['Gap-up FVG + Spring', 'Gap-up FVG + Spring'], ['Gap-up FVG + Spring - inside FVG', 'Gap-up inside FVG + Spring'],
+    ['Spring (every one, for comparison)', 'Every Spring']];
+  function sbtPct(v, plus) { return isNum(v) ? (plus && v > 0 ? '+' : '') + F.num(v, 1) + '%' : '–'; }
   function sbtSectionHtml(ctx) {
     var b = ctx.D.springBacktest || {}, sum = ui.objRows(b.summary), trades = ui.objRows(b.list);
     var sub = 'Every <b>FVG+Spring</b> (the Spring candle anywhere on a 3-candle FVG or below its bottom line, no earlier close below the Spring low) and every ' +
-      '<b>Gap-up FVG + Spring</b> (the same on a Gap-up zone) tested on your PC\'s ' +
-      'Zerodha candles: <b>buy at the Spring candle\'s close, stop just under its low; a win = the target (2 × the risk) reached before the stop, within 20 candles</b>. ' +
-      'A candle that touches both counts as a loss. Win rate = wins ÷ (wins + losses); with a 2R target, about 33% is break-even (before costs). ' +
-      'Past results are research, not a promise.';
+      '<b>Gap-up FVG + Spring</b> (the same on a Gap-up zone; <b>inside FVG</b> = the gap between two big green candles in the middle of an FVG) tested on ' +
+      '<b>every Zerodha candle on your PC</b> (daily ~20 years, 4H ~5 years once the long history is read): <b>buy at the Spring candle\'s close, stop just under its low, R = close − low</b>. ' +
+      'In the <b>30 days</b> after each signal: <b>Up</b> = the highest price vs the entry; <b>Hit 1R … 5R</b> = that target reached before the stop; ' +
+      '<b>Stopped</b> = a candle went under the Spring low; <b>Max R</b> = the highest price before the stop, in R. Past results are research, not a promise.';
     var body;
     if (!sum.length) {
-      body = '<p class="empty">Nothing yet - after the next Zerodha scan (or double-click <b>BacktestNow.bat</b> in the ScreenerBridge folder) the win rates show here.</p>';
+      body = '<p class="empty">Nothing yet - after the next Zerodha scan (or double-click <b>BacktestNow.bat</b> in the ScreenerBridge folder) the results show here.</p>';
+    } else if (!('Hit 2R %' in (sum[0] || {}))) {
+      body = '<p class="empty">The sheet still holds the older 2R backtest - it is replaced after the next Zerodha scan with the new ScreenerBridge files (or <b>BacktestNow.bat</b>).</p>';
     } else {
       var by = {};
       sum.forEach(function (r) { (by[r.Timeframe] = by[r.Timeframe] || {})[r.Group] = r; });
       var tiles = SBT_TFS.map(function (tf) {
-        var g = by[tf[0]] || {}, f = g['FVG+Spring'] || {}, sp = g['Spring (every one, for comparison)'] || {};
-        var top = g['FVG+Spring - zone top'] || {}, mid = g['FVG+Spring - zone middle'] || {}, bot = g['FVG+Spring - zone bottom'] || {};
-        var gap = g['Gap-up FVG + Spring'];
-        var rate = function (r) { return isNum(r['Win Rate %']) ? F.num(r['Win Rate %'], 1) + '%' : '–'; };
-        return '<div class="tile" data-sbt="' + esc(tf[0]) + '"><div class="label">' + esc(tf[1]) + ' - FVG+Spring</div><div class="value">' + rate(f) + '</div>' +
-          '<div class="note2">' + F.int(f.Signals) + ' signals · ' + F.int(f.Wins) + ' won · ' + F.int(f.Losses) + ' lost · avg ' + (isNum(f['Avg R']) ? F.num(f['Avg R'], 2) + 'R' : '–') +
-          '<br>top ' + rate(top) + ' · middle ' + rate(mid) + ' · bottom ' + rate(bot) + ' · every Spring ' + rate(sp) +
-          (gap ? '<br>Gap-up FVG + Spring ' + rate(gap) + ' (' + F.int(gap.Signals) + ' signals)' : '') + '</div></div>';
+        var g = by[tf[0]] || {}, f = g['FVG+Spring'] || {};
+        var lines = SBT_GROUPS.slice(1).map(function (x) {
+          var r = g[x[0]];
+          return r && r.Signals ? esc(x[1]) + ' ' + sbtPct(r['Avg Up % (30d)'], true) + ' · 2R ' + sbtPct(r['Hit 2R %']) + ' (' + F.int(r.Signals) + ')' : '';
+        }).filter(Boolean).join('<br>');
+        return '<div class="tile" data-sbt="' + esc(tf[0]) + '"><div class="label">' + esc(tf[1]) + ' - FVG+Spring, 30-day move</div>' +
+          '<div class="value">' + sbtPct(f['Avg Up % (30d)'], true) + '</div>' +
+          '<div class="note2">median ' + sbtPct(f['Median Up % (30d)'], true) + ' · ' + F.int(f.Signals) + ' signals · 2R hit ' + sbtPct(f['Hit 2R %']) +
+          ' · stopped ' + sbtPct(f['Stopped %']) + (lines ? '<br>' + lines : '') + '</div></div>';
       }).join('');
       body = '<div class="tiles">' + tiles + '</div><div id="sg-sbt-sum" style="margin-top:14px"></div>' +
         '<h3 style="margin:18px 0 8px">Newest FVG+Spring / Gap-up FVG + Spring trades</h3>' +
         (trades.length ? '<div class="controls"><input class="search" id="sg-sbt-q" type="search" placeholder="Search symbol or company" aria-label="Search backtest trades" value="' + esc(ST.btQ2) + '">' +
           ui.chips('sgsbtf', [['all', 'All timeframes']].concat(SBT_TFS.map(function (t) { return [t[0], t[0]]; })), ST.btTf) +
-          ui.chips('sgsbtr', [['all', 'Any result'], ['Win', 'Wins'], ['Loss', 'Losses'], ['No result', 'No result'], ['Open', 'Still open']], ST.btRes) +
+          ui.chips('sgsbtr', [['all', 'Any result'], ['reached', 'A target reached'], ['Stopped', 'Stopped'], ['Neither (30 days)', 'Neither'], ['Open', 'Still open']], ST.btRes) +
           '<span class="count" id="sg-sbt-count"></span></div><div id="sg-sbt-t"></div>' : '<p class="empty">No trade listed.</p>') +
         (b.summary && b.summary.note ? '<p class="sub">' + esc(b.summary.note) + '</p>' : '');
     }
-    return sectionHtml('sg-sbt', 'FVG+Spring win rate (backtest on Zerodha candles)', sub, body);
+    return sectionHtml('sg-sbt', 'FVG+Spring backtest (Zerodha candles)', sub, body);
   }
   function drawSbt(el, ctx) {
     var b = ctx.D.springBacktest || {};
     var sbox = $('#sg-sbt-sum', el);
+    var pctCol = function (k, label, title, plus) { return { key: k, label: label, title: title, type: 'num', html: function (r) { return sbtPct(r[k], plus); } }; };
     if (sbox) {
       new ui.Table({
-        rows: ui.objRows(b.summary), pageSize: 20, id: 'signals-spring-backtest', tools: false,
+        rows: ui.objRows(b.summary), pageSize: 25, id: 'signals-spring-backtest-30d', tools: false,
         columns: [
           { key: 'Timeframe', label: 'Timeframe' }, { key: 'Group', label: 'Group' },
-          { key: 'Signals', label: 'Signals', type: 'num', digits: 0 }, { key: 'Wins', label: 'Wins', type: 'num', digits: 0 },
-          { key: 'Losses', label: 'Losses', type: 'num', digits: 0 },
-          { key: 'No result (20 candles)', label: 'No result', type: 'num', digits: 0, title: 'Neither the target nor the stop within 20 candles' },
-          { key: 'Still open', label: 'Open', type: 'num', digits: 0, title: 'Fewer than 20 candles since the signal' },
-          { key: 'Win Rate %', label: 'Win rate', html: function (r) { return isNum(r['Win Rate %']) ? '<b>' + F.num(r['Win Rate %'], 1) + '%</b>' : '–'; } },
-          { key: 'Avg R', label: 'Avg R', type: 'num', digits: 2, title: 'Average result in risk units (win +2, loss −1, no result = where it closed)' },
+          { key: 'Signals', label: 'Signals', type: 'num', digits: 0, title: 'Signals whose 30 days are over' },
+          pctCol('Avg Up % (30d)', 'Avg up', 'Average of the highest price in the 30 days vs the entry', true),
+          pctCol('Median Up % (30d)', 'Median up', 'Half the signals went up at least this much in 30 days', true),
+          pctCol('Hit 1R %', '1R', 'Target entry + 1 x risk reached before the stop'), pctCol('Hit 1.5R %', '1.5R'),
+          { key: 'Hit 2R %', label: '2R', type: 'num', html: function (r) { return '<b>' + sbtPct(r['Hit 2R %']) + '</b>'; } },
+          pctCol('Hit 3R %', '3R'), pctCol('Hit 5R %', '5R'),
+          pctCol('Stopped %', 'Stopped', 'A candle went under the Spring low within 30 days'),
+          { key: 'Avg Max R', label: 'Avg max R', type: 'num', digits: 2, title: 'The highest price before the stop, in R (average)' },
+          { key: 'Median Max R', label: 'Median max R', type: 'num', digits: 2 },
+          { key: 'Still open', label: 'Open', type: 'num', digits: 0, title: 'Signals of the last 30 days (not counted yet)' },
           { key: 'From', label: 'From' }, { key: 'To', label: 'To' }
         ]
       }).mount(sbox);
@@ -457,24 +469,27 @@
     if (!box) return;
     var all = ui.objRows(b.list);
     var t = new ui.Table({
-      rows: [], pageSize: 25, id: 'signals-spring-trades', empty: 'No trade with these filters',
+      rows: [], pageSize: 25, id: 'signals-spring-trades-30d', empty: 'No trade with these filters',
       columns: [
         { key: 'Candle', label: 'Spring candle' },
         { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
         { key: 'Timeframe', label: 'TF', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
         { key: 'Where', label: 'Where', get: function (r) { return (r.Zone || '') + ' ' + String(r.Where || '').toLowerCase(); } },
         { key: 'Touch', label: 'Touch', type: 'num', digits: 0 },
+        { key: 'Up % (30d)', label: 'Up in 30 days', type: 'num', html: function (r) { return sbtPct(r['Up % (30d)'], true); } },
+        { key: 'Max R', label: 'Max R', type: 'num', digits: 2, title: 'The highest price before the stop, in R' },
         { key: 'Result', label: 'Result', html: function (r) {
-          return ui.badge(r.Result || '–', r.Result === 'Win' ? 's-good' : r.Result === 'Loss' ? 's-bad' : ''); } },
-        { key: 'R', label: 'R', type: 'num', digits: 2 },
-        { key: 'Candles', label: 'Candles', type: 'num', digits: 0, title: 'Candles until the target / stop (20 = no result)' },
+          var x = String(r.Result || '');
+          return ui.badge(x || '–', /reached/.test(x) ? 's-good' : x === 'Stopped' ? 's-bad' : ''); } },
         { key: 'chart', label: 'Chart', get: function () { return null; },
           html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
       ]
     }).mount(box);
     function apply() {
       var rows = all.filter(function (r) {
-        return (ST.btTf === 'all' || r.Timeframe === ST.btTf) && (ST.btRes === 'all' || r.Result === ST.btRes) && ui.textMatch(ST.btQ2, [r.Symbol, r.Company]);
+        var res = String(r.Result || '');
+        var okRes = ST.btRes === 'all' || (ST.btRes === 'reached' ? /reached/.test(res) : res === ST.btRes);
+        return (ST.btTf === 'all' || r.Timeframe === ST.btTf) && okRes && ui.textMatch(ST.btQ2, [r.Symbol, r.Company]);
       });
       var c = $('#sg-sbt-count', el);
       if (c) c.textContent = F.int(rows.length) + ' of ' + F.int(all.length);
@@ -492,7 +507,7 @@
       '<ul class="sub" style="margin:8px 0 0 18px;padding:0;display:grid;gap:4px">' +
       '<li><b>Timeframe:</b> daily candles only - the FVG rules look up to 60 sessions back (History30 tab + History60\'s older days from NSE via your PC); the 10 / 21 EMA support tags use the last 30 (History30), like the sheet.</li>' +
       '<li><b>Bullish 3-candle FVG</b> on day i: Low[i] &gt; High[i−2], and the gap (Low[i] − High[i−2]) is at least 0.7 × the average High−Low range of the 14 days ending on day i. Zone = High[i−2] (bottom) to Low[i] (top). Needs 17+ candles.</li>' +
-      '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 10% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT, Control Panel). Zone = High[i−1] to Low[i]. The first later candle that trades down to the zone top (Low ≤ top, a wick is enough) <b>mitigates</b> it (one email); it stays watched until a later candle <b>closes below the bottom</b>. <b>Inside FVG</b> = the Gap-up zone lies in a 3-candle FVG. <b>Gap-up FVG + Spring</b> = a Spring on a Gap-up zone (FVG+Spring = on a 3-candle FVG).</li>' +
+      '<li><b>Gap-up FVG:</b> Low[i] &gt; High[i−1] by 3% to 10% (AB_GAPUP_MIN_PCT / AB_GAPUP_MAX_PCT, Control Panel). Zone = High[i−1] to Low[i]. The first later candle that trades down to the zone top (Low ≤ top, a wick is enough) <b>mitigates</b> it (one email); it stays watched until a later candle <b>closes below the bottom</b>. <b>Inside FVG</b> (your BSE chart, 09-Nov-2026) = candles A B C D: B and C green with a body of at least 2%, C opens above B\'s high (any gap size), A\'s high under B\'s, D\'s low over C\'s - the gap B-high .. C-low sits in the middle of the FVG A-high .. D-low; tracked even under 3%. <b>Gap-up FVG + Spring</b> = a Spring on a Gap-up zone (FVG+Spring = on a 3-candle FVG).</li>' +
       '<li><b>First touch:</b> a candle\'s low crosses below the zone top after the previous low was at or above it. <b>Confirmed:</b> after a touch, a close crosses back above the high of the touch candle. <b>FVG+Spring</b> (your rule of 08-Nov-2026): a Spring candle pair (big red candle, then a small candle that dips below its low and closes back above it) whose 2nd candle sits on a 3-candle FVG or a Gap-up zone formed before the pair that still holds (no close below its bottom before the pair): its low anywhere in the zone or below the bottom line (any depth), its close above the bottom line, and <b>no candle since the zone formed closed below the Spring candle\'s low</b> (the red candle excepted) - any touch. A later close below the Spring low takes the tag off. <b>Twin Star Bottom + FVG:</b> a red candle, then two small candles whose lows are within 1% of each other (the Twin Star Bottom pattern), with the stars reaching into an FVG formed before the red candle that still holds (both stars close at or above its bottom). These tags are reported for the last 4 candles.</li>' +
       '<li><b>Unmitigated:</b> the latest 3-candle FVG has not been touched since it formed. <b>Mitigated:</b> the price reached the zone - the sheet logs it (Mitigated FVG Log) and judges the next candle (held / swept / closed inside / broke below…).</li>' +
       '<li><b>Circuit-lock filter:</b> a candle whose High−Low range is ≤ 0.05% of its low is treated as locked at a price band; such candles cannot form a gap-up FVG and do not count as touches.</li>' +

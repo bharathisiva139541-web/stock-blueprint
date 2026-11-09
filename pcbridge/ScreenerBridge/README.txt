@@ -31,7 +31,8 @@ computer is on - no time limit:
  - KiteSetup.bat           one time: your Zerodha Kite Connect app's API key + secret, then the first Kite login
  - IntradayNow.bat         the Kite intraday / weekly / monthly pattern scan right now (opens the login page if needed)
  - IntradayCheck.bat       one stock's Spring check on Kite's candles, e.g. PARAGMILK 4H (sends nothing)
- - BacktestNow.bat         the FVG+Spring win rate on the Kite candles already on this computer -> the sheet (no login)
+ - BacktestNow.bat         the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1R-5R) on the Kite candles already here -> the sheet (no login)
+ - KiteHistoryNow.bat      read Kite's long history (daily ~20 years, 4H ~5 years) for the backtest all at once, then the backtest
  - LiveNow.bat             Kite LIVE prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -70,13 +71,19 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     08-Nov-2026); "Inside FVG" = Y when it lies inside a 3-candle FVG. During market hours the sheet watches them:
     price at or under a zone top = mitigated -> one combined "Mitigated FVG" email at most once an hour, together
     with the daily zones (inside-FVG Gap-ups listed first).
- 5. BACKTEST: after each scan it tests every Spring in FVG of 4H (13:15 candle), D and W on all the candles stored here
-    (4H ~6 months, D and W ~5 years): buy at the Spring candle's close, stop just under its low, WIN = the target
-    (2 x the risk) reached before the stop within 20 candles (a candle that does both = a loss); top / middle / bottom
-    and every Spring are counted too. The win rates go to
-    the sheet's "Spring Backtest" + "Spring Backtest Trades" tabs and the website (Patterns & FVG > FVG+Spring win
-    rate); bridge.log shows one line per timeframe ("Kite backtest ..."). BacktestNow.bat runs only the backtest, on
-    the candles already here - no Kite login needed.
+ 5. BACKTEST (your choices of 09-Nov-2026: "maximum number of days", "% movement upward within 30 days", not only 2R):
+    after each scan it tests every Spring in FVG and Gap-up FVG + Spring of 4H (13:15 candle), D and W on ALL the
+    candles stored here: buy at the Spring candle's close, stop just under its low, R = close - low. For the 30 days
+    after each signal: "Up %" = the highest price vs the entry, "Hit 1R / 1.5R / 2R / 3R / 5R" = that target reached
+    before any candle went under the stop, "Stopped" = it went under, "Max R" = the highest price before the stop.
+    Groups: FVG+Spring (top / middle / bottom), Gap-up FVG + Spring, Gap-up inside FVG + Spring, every Spring.
+    The numbers go to the sheet's "Spring Backtest" + "Spring Backtest Trades" tabs and the website (Patterns & FVG >
+    FVG+Spring backtest); bridge.log shows one line per timeframe ("Kite backtest ..."). BacktestNow.bat runs only the
+    backtest, on the candles already here - no Kite login needed.
+    LONG HISTORY: daily candles back ~20 years (or to the listing day) and 4H back ~5 years (built from Kite's
+    60-minute candles) are read once and kept here (folder intraday_data, about 250 MB) - the sheet never gets them,
+    only the summary, so the sheet is not loaded by it. The daily scan reads this history a part a day (20 minutes);
+    KiteHistoryNow.bat reads all of it at once (the first time about an hour), then runs the backtest.
  - The candles are kept in the folder intraday_data (only the new days are read after the first time); the day's
    Kite permission in kite_session.json. Both stay on this computer.
  - 4H candles = 09:15-13:15 and 13:15-15:30 (like TradingView); a week / month only once it has finished.

@@ -48,8 +48,10 @@ test('patterns (col W) match the sheet for every symbol', { skip: !H && 'no web/
 // Gap-up FVG + Spring split off): the saved export has the old rule (untouched gap-ups only), so the JS text is compared
 // in that old view - mitigated ones and Gap-up FVG + Spring left out, ", inside FVG" taken off. tests/codegs-gapup-life.test.js
 // checks the new rule Code.gs = JS.
+// (09-Nov-2026: inside-FVG gap-ups of any size are new too - a gap under 3 % is left out of the old view)
 function dropSpring(tags) {
   return P.splitTags(tags).filter((t) => !/^FVG\+Spring|^Twin Star Bottom \+ FVG|^Gap-up FVG \+ Spring|, mitigated/.test(t))
+    .filter((t) => { const m = /^Gap-up FVG ([\d.]+)%/.exec(t); return !m || +m[1] >= 3; })
     .map((t) => t.replace(', inside FVG)', ')')).join(', ');
 }
 

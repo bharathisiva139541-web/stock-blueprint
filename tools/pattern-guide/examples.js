@@ -488,29 +488,32 @@ const PAGES = [
   },
   {
     id: 'gapup2', section: 'X', title: 'Gap-up FVG - நீக்கம் & FVG-க்குள்', tags: [],
-    ta: 'Zone bottom-க்குக் கீழே ஒரு close = zone முடிந்தது. ஒரு 3-candle FVG-க்குள் இருக்கும் Gap-up zone = "inside FVG" - மிக வலுவானது (உங்கள் BSE / SBICARD charts).',
+    ta: 'Zone bottom-க்குக் கீழே ஒரு close = zone முடிந்தது. "Inside FVG" = இரண்டு பெரிய பச்சை candle-களுக்கு இடையிலான gap-up, ஒரு FVG-இன் நடுவில் - மிக வலுவானது (உங்கள் BSE chart, 09-Nov-2026).',
     rules: [
-      'Close < zone bottom → செல்லாது: GapUpFVG tab-இலிருந்தும் alert-இலிருந்தும் நீக்கம்',
-      'அதற்கு முன் mitigated email போகவில்லை என்றால் - அந்த முதல் தொடுதலுக்கு ஒரு email (EOD)',
-      'Inside FVG = Gap-up zone ஒரு 3-candle FVG-க்குள் (FVG bottom ≤ gap bottom, FVG top ≥ gap top; அந்த FVG உடையாமல்)',
-      'Inside FVG: tab-இல் "Inside FVG" = Y, FVG column-இல் "(…, inside FVG)", mitigated email-இல் முதலில்'
+      'Close < zone bottom → செல்லாது: GapUpFVG tab-இலிருந்தும் alert-இலிருந்தும் நீக்கம் (முன் email போகவில்லை என்றால் அந்தத் தொடுதலுக்கு ஒன்று)',
+      'Inside FVG = A B C D நான்கு candle: B, C பச்சை, body ≥ 2% (Control Panel); C low > B high (gap எவ்வளவு சிறியதானாலும் சரி, 5% வரை)',
+      'A high < B high, D low > C low → FVG = A high முதல் D low; gap-up zone = B high முதல் C low (நடுவில்)',
+      'D close ஆன பிறகே தெரியும்; tab-இல் "Inside FVG" = Y, FVG column-இல் "(…, inside FVG)", mitigated email-இல் முதலில்'
     ],
     examples: [
       { ok: false, label: 'Bottom-க்குக் கீழே close', why: 'close 100.0 < zone bottom 100.5 - zone செல்லாது',
         candles: flat(5, 100).concat([[100.2, 100.5, 99.8, 100.3], [104.2, 106.4, 104.0, 106.0], [106.0, 107.0, 105.0, 106.5], [106.5, 106.8, 103.8, 104.5], [104.5, 104.8, 99.6, 100.0]]),
         marks: { zone: { from: 6, bottom: 100.5, top: 104.0, label: 'Gap-up zone' }, hl: { 5: 'நேற்று', 6: 'gap' }, rings: [{ i: 9, at: 'close', color: '#ff5252' }] }, check: { type: 'gap' } },
-      { ok: true, label: 'FVG-க்குள் Gap-up (inside FVG)', why: 'Gap-up 102.0 - 105.4, FVG 100.5 - 105.4-க்குள்',
-        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2]]),
-        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 13: 'A', 14: 'நேற்று', 15: 'gap' },
-          lines: [{ y: 100.5, from: 13, to: 17, label: 'FVG bottom', dash: true }] }, check: { type: 'gap', inside: true } }
+      { ok: true, label: 'FVG-க்குள் Gap-up (inside FVG)', why: 'B, C பெரிய பச்சை; gap 0.78% (102.6 - 103.4) - FVG 100.5 - 104.8-இன் நடுவில்',
+        candles: flat(14, 100).concat([[100.4, 102.6, 100.3, 102.5], [103.6, 106.4, 103.4, 106.1], [106.1, 107.2, 104.8, 106.8], [106.8, 107.6, 105.6, 107.2]]),
+        marks: { zone: { from: 15, bottom: 102.6, top: 103.4, label: 'Gap-up zone' }, hl: { 13: 'A', 14: 'B', 15: 'C', 16: 'D' },
+          lines: [{ y: 100.5, from: 13, to: 17, label: 'FVG bottom', dash: true }, { y: 104.8, from: 13, to: 17, label: 'FVG top', dash: true }] }, check: { type: 'gap', inside: true } },
+      { ok: false, label: 'சிறிய candle - கணக்கில் இல்லை', why: 'B-இன் body 0.5% (2%-க்குக் கீழே): 0.78% gap எதுவும் இல்லை',
+        candles: flat(14, 100).concat([[102.1, 102.6, 100.3, 102.6], [103.6, 106.4, 103.4, 106.1], [106.1, 107.2, 104.8, 106.8], [106.8, 107.6, 105.6, 107.2]]),
+        marks: { hl: { 14: 'B', 15: 'C' }, rings: [{ i: 14, at: 'close', color: '#ff5252' }] }, check: { type: 'gap' } }
     ]
   },
   {
     id: 'gapupspring', section: 'X', title: 'Gap-up FVG + Spring', tags: ['Gap-up FVG + Spring'],
-    ta: 'FVG + Spring போலவே - ஆனால் zone ஒரு Gap-up zone (08-Nov-2026, தனியாகப் பிரிக்கப்பட்டது). Zone ஒரு 3-candle FVG-க்குள் இருந்தால் tag-இல் "inside FVG".',
+    ta: 'FVG + Spring போலவே - ஆனால் zone ஒரு Gap-up zone (3-5%, அல்லது inside FVG gap எந்த அளவிலும்). Inside FVG zone-இல் இருந்தால் tag-இல் "inside FVG".',
     rules: [
       'Spring = Spring பக்கத்தின் அதே 2-candle விதி',
-      'Zone = Gap-up (3-5%), சிவப்பு candle-க்கு முன் உருவானது',
+      'Zone = Gap-up (3-5%) அல்லது inside FVG gap-up, சிவப்பு candle-க்கு முன் உருவானது',
       'Spring candle low ≤ zone top (உள்ளே எங்கும், அல்லது கீழ்க்கோட்டுக்குக் கீழே); close > zone bottom',
       'Zone உருவானதிலிருந்து சிவப்பு candle வரை: எந்த close-உம் zone bottom-க்கோ Spring low-க்கோ கீழே இல்லை',
       'எத்தனையாவது தொடுதல் என்றாலும் சரி; பின்னர் ஒரு close Spring low-க்குக் கீழே = நீக்கம்',
@@ -518,20 +521,20 @@ const PAGES = [
       'Kite: 4H (13:15 candle), D, W - backtest-இல் தனி வரி'
     ],
     examples: [
-      { ok: true, label: 'மேல் (Top), inside FVG', why: 'low 104.6 gap zone மேல் பாதியில்; zone FVG 100.5 - 105.4-க்குள்',
-        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2],
-          [108.2, 108.4, 106.4, 106.6], [106.6, 106.8, 105.3, 105.5], [105.4, 105.9, 104.6, 105.6]]),
-        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 15: 'gap', 19: 'c1', 20: 'c2' },
-          lines: [{ y: 103.7, from: 15, to: 20, label: 'நடு', dash: true }] }, check: { type: 'x', tag: 'Gap-up FVG + Spring', where: 'top', inside: true } },
-      { ok: true, label: 'கீழ் (Bottom)', why: 'low 101.6 - zone bottom 102.0-க்குக் கீழே; close 102.9 மேலே',
-        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2],
-          [108.2, 108.4, 106.4, 106.6], [106.6, 106.8, 102.6, 102.8], [102.7, 103.6, 101.6, 102.9]]),
-        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 15: 'gap', 19: 'c1', 20: 'c2' } },
+      { ok: true, label: 'மேல் (Top), inside FVG', why: 'low 103.2 - gap zone 102.6 - 103.4-இன் மேல் பாதியில்; close 104.3',
+        candles: flat(14, 100).concat([[100.4, 102.6, 100.3, 102.5], [103.6, 106.4, 103.4, 106.1], [106.1, 107.2, 104.8, 106.8],
+          [106.8, 107.4, 106.0, 107.0], [107.0, 107.2, 105.6, 105.8], [105.8, 106.0, 104.0, 104.2], [104.1, 104.6, 103.2, 104.3]]),
+        marks: { zone: { from: 15, bottom: 102.6, top: 103.4, label: 'Gap-up zone' }, hl: { 14: 'B', 15: 'C', 19: 'c1', 20: 'c2' } },
+        check: { type: 'x', tag: 'Gap-up FVG + Spring', where: 'top', inside: true } },
+      { ok: true, label: 'கீழ் (Bottom), inside FVG', why: 'low 102.3 - zone bottom 102.6-க்குக் கீழே; close 103.2 மேலே',
+        candles: flat(14, 100).concat([[100.4, 102.6, 100.3, 102.5], [103.6, 106.4, 103.4, 106.1], [106.1, 107.2, 104.8, 106.8],
+          [106.8, 107.4, 106.0, 107.0], [107.0, 107.2, 105.6, 105.8], [105.8, 106.0, 102.9, 103.1], [103.0, 103.8, 102.3, 103.2]]),
+        marks: { zone: { from: 15, bottom: 102.6, top: 103.4, label: 'Gap-up zone' }, hl: { 14: 'B', 15: 'C', 19: 'c1', 20: 'c2' } },
         check: { type: 'x', tag: 'Gap-up FVG + Spring', where: 'bottom', inside: true } },
-      { ok: false, label: 'Zone உடைந்தது', why: 'முன் close 101.8 - zone bottom 102.0-க்குக் கீழே',
-        candles: flat(14, 100).concat([[100.4, 102.0, 100.3, 101.8], [105.6, 107.6, 105.4, 107.2], [107.2, 108.3, 106.4, 107.9], [107.9, 108.6, 107.0, 108.2],
-          [108.2, 108.4, 101.5, 101.8], [104.8, 105.0, 103.4, 103.6], [103.5, 104.2, 102.9, 103.7]]),
-        marks: { zone: { from: 15, bottom: 102.0, top: 105.4, label: 'Gap-up zone' }, hl: { 15: 'gap', 19: 'c1', 20: 'c2' }, rings: [{ i: 18, at: 'close', color: '#ff5252' }] },
+      { ok: false, label: 'Zone உடைந்தது', why: 'முன் close 102.4 - zone bottom 102.6-க்குக் கீழே',
+        candles: flat(14, 100).concat([[100.4, 102.6, 100.3, 102.5], [103.6, 106.4, 103.4, 106.1], [106.1, 107.2, 104.8, 106.8],
+          [106.8, 107.4, 106.0, 107.0], [107.0, 107.2, 102.0, 102.4], [104.6, 104.8, 103.4, 103.5], [103.4, 104.0, 103.0, 103.6]]),
+        marks: { zone: { from: 15, bottom: 102.6, top: 103.4, label: 'Gap-up zone' }, hl: { 14: 'B', 15: 'C', 19: 'c1', 20: 'c2' }, rings: [{ i: 18, at: 'close', color: '#ff5252' }] },
         check: { type: 'x', tag: 'Gap-up FVG + Spring' } }
     ]
   },

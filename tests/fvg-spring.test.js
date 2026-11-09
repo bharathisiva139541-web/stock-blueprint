@@ -102,18 +102,36 @@ test('a Gap-up zone: Gap-up FVG + Spring (owner, 08-Nov-2026: split from FVG+Spr
   g.push(c(109, 114, 108.2, 113));               // 18: gap-up 104 -> 108.2 (4.04 %)
   g.push(c(113, 115, 111, 114));                 // 19 (also a 3-candle FVG 104 - 111, formed later)
   const pair = [c(114, 114.5, 107.5, 107.8), c(108.0, 108.8, 106.5, 108.4)];   // low 106.5 in the upper half (>= 106.1)
-  assert.deepStrictEqual(gapEv(g.concat(pair)), [{ i: 21, zone: 'Gap-up', where: 'top', touch: 1, bottom: 104, top: 108.2, inside: true }],
-    'the gap-up 104 - 108.2 lies in the FVG 104 - 111 formed by the next candle: inside FVG');
+  assert.deepStrictEqual(gapEv(g.concat(pair)), [{ i: 21, zone: 'Gap-up', where: 'top', touch: 1, bottom: 104, top: 108.2, inside: false }],
+    'candle 17 is no big green candle: a plain Gap-up, not inside FVG');
   // ... and the same Spring sits in the lower half of that FVG: FVG+Spring too (a Spring on both kinds gets both tags)
   assert.deepStrictEqual(springEv(g.concat(pair)).map((e) => e.zone + ' ' + e.where), ['FVG middle']);
-  assert.deepStrictEqual(FVG.longFvgDetail(g.concat(pair)).tags.filter((t) => /Spring/.test(t)), ['FVG+Spring (Today)', 'Gap-up FVG + Spring (Today, inside FVG)']);
+  assert.deepStrictEqual(FVG.longFvgDetail(g.concat(pair)).tags.filter((t) => /Spring/.test(t)), ['FVG+Spring (Today)', 'Gap-up FVG + Spring (Today)']);
   // with AB_GAPUP_MAX_PCT 3 the gap is no zone: only FVG+Spring
   assert.deepStrictEqual(gapEv(g.concat(pair), { AB_GAPUP_MAX_PCT: 3 }), []);
-  // a Gap-up not inside an FVG (the next candle's low 108.3 is only 4.3 over candle 17's high - too small for a 3-candle FVG
-  // among these wide candles): no "inside FVG", and no FVG+Spring either
-  const h = g.slice(); h[19] = c(113, 115, 108.3, 114);
-  const t = FVG.longFvgDetail(h.concat(pair)).tags.filter((x) => /Spring/.test(x));
-  assert.deepStrictEqual(t, ['Gap-up FVG + Spring (Today)'], t.join(', '));
+});
+
+test('inside FVG (owner, 09-Nov-2026, BSE): two big green candles with a small gap between them - any size, tagged inside FVG', () => {
+  // A (16) high 104 < B (17) high 104.5; B and C green, bodies >= 2 %; C's low 104.9 over B's high (0.38 %); D's low 106 over C's
+  const g = [];
+  for (let i = 0; i < 17; i++) g.push(c(100, 104, 96, 100));
+  g.push(c(100, 104.5, 99.8, 104.3));            // 17: B
+  g.push(c(105, 110, 104.9, 109.5));             // 18: C - gap-up zone 104.5 - 104.9
+  g.push(c(109.5, 111, 106, 110.5));             // 19: D
+  const pair = [c(110.5, 110.8, 105.4, 105.6), c(105.5, 106.0, 104.7, 105.7)];   // Spring low 104.7 in the zone's upper half
+  assert.deepStrictEqual(gapEv(g.concat(pair)), [{ i: 21, zone: 'Gap-up', where: 'top', touch: 1, bottom: 104.5, top: 104.9, inside: true }]);
+  assert.deepStrictEqual(FVG.longFvgDetail(g.concat(pair)).tags.filter((t) => /Spring/.test(t)), ['Gap-up FVG + Spring (Today, inside FVG)']);
+  const z = FVG.gapUpFvgs(g.concat(pair));
+  assert.deepStrictEqual(z.map((x) => [x.bottom, x.top, x.pct, x.insideFvg, x.touchIdx]), [[104.5, 104.9, 0.38, true, 21]]);
+  // B's body under 2 %: a 0.38 % gap is no zone at all
+  const small = g.slice(); small[17] = c(103, 104.5, 99.8, 104.3);
+  assert.deepStrictEqual(FVG.gapUpFvgs(small.concat(pair)), []);
+  assert.deepStrictEqual(gapEv(small.concat(pair)), []);
+  // D's low under C's low: not inside (and not a Gap-up of 3 %)
+  const lowD = g.slice(); lowD[19] = c(109.5, 111, 104.8, 110.5);
+  assert.deepStrictEqual(FVG.gapUpFvgs(lowD.concat(pair)).map((x) => x.insideFvg), []);
+  // before D has closed the gap is not judged inside yet
+  assert.deepStrictEqual(FVG.gapUpFvgs(g.slice(0, 19)), []);
 });
 
 test('an older gap still counts after a newer one formed', () => {
