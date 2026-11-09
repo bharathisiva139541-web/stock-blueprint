@@ -1161,6 +1161,85 @@ function check(name, fn) {
     assert.deepStrictEqual(other.errors, [], 'console/page errors (PIN typed later)');
     await other.c.close();
   });
+  await check('the owner\'s Backtest Lab + bell: own rules -> the laptop runs them -> the result; the bell lists the sheet\'s notes', async () => {
+    const T = Date.UTC(2026, 10, 9, 10, 0);
+    const sheet = watchlistBackend(T);
+    sheet.gs.setProp('AB_BRIDGE_TOKEN', 'bridge-token');
+    sheet.gs.call('ab_noteAdd_', 'mitigated', 'Gap-up FVG (inside FVG) mitigated: ABC', 'Zone 100 - 104, price 103.5 (Live, Kite)', '#signals');
+    sheet.gs.call('ab_noteAdd_', 'results', 'Results: 1 new in Main - XYZ', 'XYZ: Rev YoY 12%', '#today');
+    const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
+    const open = async (pin, hash) => {
+      const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+      await c.addInitScript((pn) => { try { localStorage.setItem('sb:api', 'true'); if (pn) localStorage.setItem('sb:wlsync', JSON.stringify({ pin: pn })); } catch (e) { /* ignore */ } }, pin);
+      await routeAll(c, base, api({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), []);
+      const p = await c.newPage(), errors = watchErrors(p);
+      await p.goto(base + hash, { waitUntil: 'load' });
+      await p.waitForFunction(dataReady, null, { timeout: 15000 });
+      return { c, p, errors };
+    };
+    const none = await open(null, '#lab');
+    await none.p.waitForSelector('#app .page');
+    assert.match(await none.p.$eval('#app', (x) => x.innerText), /For you only: type your My Watchlists PIN/);
+    assert.ok(await none.p.$eval('#bell', (b) => b.hidden), 'no PIN: no bell');
+    await none.c.close();
+
+    const own = await open('Blue2026', '#lab');
+    await own.p.waitForSelector('#lab-form', { timeout: 15000 });
+    await own.p.waitForSelector('#lab-runs .empty');
+    // the owner's idea: 1 % under the zone, 2R, then the last 3 lows
+    await own.p.fill('[data-k="stopBuf"]', '1');
+    await own.p.fill('[data-k="trailN"]', '3');
+    await own.p.fill('[data-k="name"]', 'Zone stop 1%');
+    await own.p.dispatchEvent('[data-k="trailN"]', 'change');
+    assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /1% below the zone bottom.*At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
+    await own.p.click('#lab-run');
+    await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
+    // the laptop (backtest_lab.py) takes it and sends its result
+    const got = JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll' })));
+    assert.strictEqual(got.job.name, 'Zone stop 1%');
+    assert.deepStrictEqual([got.job.params.stopBuf, got.job.params.trailN, got.job.params.stop, got.job.params.targetR], [1, 3, 'zone', 2]);
+    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken'];
+    const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
+      stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
+               avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1 },
+      open: 1, skipped: { risk: 2 }, reasons: { stop: 1, trail: 2, open: 1 },
+      account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 4, skipped: 0, openNow: 1, openPnl: 500, years: 16.8,
+                 curve: [['2010-02-01', 990000], ['2015-01-01', 1012000], ['2026-10-20', 1036000]], blown: null },
+      years: [{ year: 2010, trades: 1, winPct: 0, avgR: -1, totalR: -1, pnl: -10000, taken: 1 }, { year: 2026, trades: 2, winPct: 100, avgR: 2.3, totalR: 4.6, pnl: 46000, taken: 2 }],
+      hist: [{ label: '-1R to 0', n: 1 }, { label: '1R to 2R', n: 1 }, { label: '3R to 5R', n: 1 }],
+      tradeCols: cols, tradesTotal: 4, secs: 1.2,
+      trades: [['ABC', '2026-10-30', 'Gap-up inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1],
+               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1],
+               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1],
+               ['LMN', '2010-01-04', 'FVG', 'top', 1, 20, 19, 5, 19, '2010-01-12', 'stop', -1, -5, 8, 0.2, 10000, -10000, 1]] };
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
+    // the page sees it done (it asks every 4 s) and opens it
+    await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
+    const view = await own.p.$eval('#lab-result', (x) => x.innerText);
+    assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
+    assert.match(view, /At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
+    assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
+    assert.ok(await own.p.$('#lab-curve svg'), 'the account curve');
+    assert.match(await own.p.$eval('#lab-runs', (x) => x.innerText), /Zone stop 1%[\s\S]*3 trades/);
+    // the bell: two unread notes from the sheet (+ "Backtest ready"), newest first
+    await own.p.waitForFunction(() => !document.querySelector('#bell').hidden, null, { timeout: 15000 });
+    await own.p.click('#bell');
+    await own.p.waitForFunction(() => document.querySelectorAll('.bell-pop .bell-item').length >= 3, null, { timeout: 15000 });
+    const bell = await own.p.$eval('.bell-pop', (x) => x.innerText);
+    assert.ok(/Backtest ready: Zone stop 1%/.test(bell) && /Results: 1 new in Main - XYZ/.test(bell) && /mitigated: ABC/.test(bell), bell);
+    assert.ok(/phone pop-ups|cannot show phone notifications|Home Screen|blocked/i.test(bell), 'the pop-ups switch: ' + bell.slice(-200));
+    assert.ok(await own.p.$eval('#bell', (b) => b.classList.contains('has-new')));
+    await own.p.click('.bell-pop [data-bell="read"]');
+    assert.ok(!(await own.p.$eval('#bell', (b) => b.classList.contains('has-new'))), 'all read');
+    assert.ok(sheet.bodies.some((b) => b.op === 'notes') && sheet.bodies.some((b) => b.op === 'lab' && b.lab.do === 'run'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
+    // phone width: no sideways scroll on the page
+    await own.p.setViewportSize({ width: 360, height: 780 });
+    await own.p.keyboard.press('Escape');
+    const over = await own.p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    assert.ok(over <= 1, 'no overflow at 360 px: ' + over);
+    assert.deepStrictEqual(own.errors, [], 'console/page errors');
+    await own.c.close();
+  });
   await check('my watchlists sync: a PC on Vercel and a phone on Firebase share the lists through api/watchlists + the sheet', async () => {
     const sheet = watchlistBackend();
     const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
@@ -1238,7 +1317,7 @@ function check(name, fn) {
     assert.ok(overflow <= 0, 'horizontal page overflow ' + overflow + 'px');
     assert.ok(allCalls.every((u) => u.indexOf('Blue2026') < 0), 'the PIN never goes in a URL');
     // 'kite' = the owner's Kite live prices, asked once the PIN is on the device (none come here: no Kite Live tab)
-    assert.ok(sheet.bodies.length >= 6 && sheet.bodies.every((b) => b.op === 'get' || b.op === 'put' || b.op === 'kite'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
+    assert.ok(sheet.bodies.length >= 6 && sheet.bodies.every((b) => b.op === 'get' || b.op === 'put' || b.op === 'kite' || b.op === 'notes'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
   });
 
   const preview = path.join(__dirname, '..', '..', 'dist', 'stock-blueprint-preview.html');

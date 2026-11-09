@@ -144,6 +144,32 @@ cached, CORS for the Firebase copy). Browser: `web/ui/watchlist-sync.js`
 (three-way merge `SB.wlModel.merge`, compare-and-swap on the sheet's
 revision, offline changes go with the next sync).
 
+### Step 9 - Backtest Lab, the bell and phone pop-ups, the app (09-Nov-2026)
+
+All three use the PIN of step 8 and the same `SHEET_FEED_URL` + `SHEET_FEED_TOKEN` -
+**no new Vercel setting**.
+
+- **Backtest Lab** (`#lab`): the page saves a run in the sheet (`api/watchlists` op
+  `lab` -> Code2.gs `ab_labFromSite_`); the PC bridge's background program
+  (`backtest_lab.py`, doPost action `lab` with the bridge token) runs it on the
+  Kite candles of the laptop and sends the result back (hidden tab `Backtest_Lab`).
+  Needs: the New version deploy (Code.gs routes action `lab`), the new
+  ScreenerBridge.zip, the laptop on.
+- **The bell 🔔** (header, owner only): the sheet's hidden tab `App_Notifications`
+  (every Mitigated FVG Log row, the Results Update email's new rows, finished
+  backtests) via `api/watchlists` op `notes`.
+- **Phone pop-ups**: in the bell, *Turn on phone pop-ups on this device*. The
+  phone's push address is kept in the sheet (`AB_PUSH_SUBS`); after each run that
+  adds notes, the sheet posts ONE signed request (HMAC-SHA256 of the feed token -
+  the token itself never travels) to `<this site>/api/push`, which encrypts the
+  message for each phone (Web Push, RFC 8291; the VAPID key is derived from
+  `SHEET_FEED_TOKEN`). A new feed token = a new key: open the app once and it
+  subscribes again by itself. iPhone: only from the Home Screen app (iOS 16.4+).
+- **The app**: iPhone - Safari → Share → *Add to Home Screen* (`web/manifest.webmanifest`,
+  `web/sw.js`, icons in `web/icons/`). Android - the APK (`android/`, a Trusted Web
+  Activity of the Vercel site; `web/.well-known/assetlinks.json` = its signing
+  key's SHA-256, so Chrome shows no address bar).
+
 ## 2. Saved copy (optional, on your PC)
 
 Only needed for localhost, the single-file preview, or as a newer fallback:

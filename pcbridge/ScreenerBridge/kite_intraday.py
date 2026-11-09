@@ -47,6 +47,11 @@ import webbrowser
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import sys  # noqa: E402
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:      # loaded by its path (the tests): find its neighbours
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import backtest_lab  # noqa: E402  (the Backtest Lab: the website's own-rules backtest, run here)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -1099,13 +1104,16 @@ def _slot_ok(slots, tf, c):
 
 
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
-            backtest=False):
+            backtest=False, lab=None):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
     last SCAN_KEEP candles -, the 4H FVG zones + the ones first touched in those sessions, and (backtest) the 30-day
     outcome (trade_30d) of every FVG+Spring / Gap-up FVG + Spring and Spring of BACKTEST_TFS on ALL stored candles.
     -> {'items': [{'tf', 'pattern', 'candle', 'session', 'low', 'close', 'zone'}], 'zones': [...], 'mitigated': [...],
         'trades': [...FVG+Spring...], 'springs': [(tf, outcome)...every Spring...],
-        'invalid': [{'tf', 'candle'}...Spring in FVG of the last KEEP_DAYS a later close under the Spring low broke]}"""
+        'invalid': [{'tf', 'candle'}...Spring in FVG of the last KEEP_DAYS a later close under the Spring low broke]}
+    `lab` (a backtest_lab.CacheWriter, with backtest): each backtest timeframe's candles + Spring rows go to the Backtest
+    Lab's cache too (owner, 09-Nov-2026)."""
+    turn = backtest_lab.turnover_fn(store.get('day') or []) if lab is not None and backtest else None
     out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': []}
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
     for tf in timeframes:
@@ -1163,10 +1171,13 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                     out['mitigated'].append(mo)
         if backtest and tf in BACKTEST_TFS:
             sig = bt_signals(full_c, cfg, win) if tf not in NO_FVG_SPRING_TFS else {}
+            lab_rows = [] if lab is not None else None
             for i in range(3, len(full_c)):
                 c = full_c[i]
                 if not _slot_ok(slots, tf, c) or not is_spring_pair(full_c[i - 1], c, cfg):
                     continue
+                if lab_rows is not None:
+                    lab_rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
                 o = trade_30d(full_c, i)
                 if o is None:
                     continue
@@ -1174,6 +1185,8 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 for z in sig.get(i, ()):
                     out['trades'].append(dict(o, tf=tf, candle=c['t'], session=c['day'], zone=z['kind'], where=z['where'],
                                               touch=z['touch'], inside=bool(z.get('inside'))))
+            if lab_rows is not None:
+                lab.add(store.get('sym') or '', tf, full_c, lab_rows)
     return out
 
 
@@ -1352,8 +1365,52 @@ def send_backtest(cfg, api, upto, trades, springs_bt):
         return None
 
 
+def backtest_pass(holidays, upto, slots, out=print, lab=True):
+    """Every stored stock (intraday_data): the backtest's trades + springs, and (lab) the Backtest Lab's cache.
+    -> (stocks read, trades, springs)."""
+    names = sorted(f for f in os.listdir(DATA_DIR) if f.endswith('.json.gz')) if os.path.isdir(DATA_DIR) else []
+    trades, springs_bt, t0 = [], [], time.time()
+    writer = backtest_lab.CacheWriter(upto) if lab and names else None
+    try:
+        for k, name in enumerate(names):
+            try:
+                with gzip.open(os.path.join(DATA_DIR, name), 'rt', encoding='utf-8') as f:
+                    store = json.load(f)
+            except (OSError, ValueError, EOFError):
+                continue
+            sym = str(store.get('sym') or name[:-8])
+            store['sym'] = sym
+            res = analyse(store, '9999-12-31', upto, holidays, BACKTEST_TFS, (), slots=slots, backtest=True, lab=writer)
+            for t in res['trades']:
+                t['sym'] = sym
+                trades.append(t)
+            springs_bt.extend(res['springs'])
+            if (k + 1) % 300 == 0:
+                out('  %d / %d stocks (%.0f s)' % (k + 1, len(names), time.time() - t0))
+        if writer:
+            writer.close()
+    finally:
+        if writer and not writer.done:
+            writer.abort()
+    return len(names), trades, springs_bt
+
+
+def lab_build_cache(out=print, holidays=None):
+    """The Backtest Lab's cache from the stored candles (its first run, before any BacktestNow / daily scan made it).
+    -> True when there were candles."""
+    holidays = set(holidays or ())
+    st = state_load()
+    try:
+        upto = date.fromisoformat(st['scanned']) if st.get('scanned') else completed_session(now_ist(), holidays)
+    except ValueError:
+        upto = completed_session(now_ist(), holidays)
+    n, _, _ = backtest_pass(holidays, upto, chosen_slots({}, list(BACKTEST_TFS)), out)
+    return n > 0
+
+
 def backtest_now(cfg, api, holidays=None, now=None, out=print):
-    """BacktestNow.bat: the backtest on the candles already stored in intraday_data (no Kite login), sent to the sheet."""
+    """BacktestNow.bat: the backtest on the candles already stored in intraday_data (no Kite login), sent to the sheet;
+    the Backtest Lab's cache is made in the same pass."""
     holidays = set(holidays or ())
     st = state_load()
     try:
@@ -1365,29 +1422,16 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
         out('No stored Kite candles yet - the first intraday scan (IntradayNow.bat) reads them.')
         return 1
     slots = chosen_slots(cfg, list(BACKTEST_TFS))
-    trades, springs_bt, t0 = [], [], time.time()
     out('Backtest of FVG+Spring / Gap-up FVG + Spring on %d stocks (4H, D, W - every stored candle; up to %s) ...'
         % (len(names), upto.isoformat()))
-    for k, name in enumerate(names):
-        try:
-            with gzip.open(os.path.join(DATA_DIR, name), 'rt', encoding='utf-8') as f:
-                store = json.load(f)
-        except (OSError, ValueError, EOFError):
-            continue
-        sym = str(store.get('sym') or name[:-8])
-        res = analyse(store, '9999-12-31', upto, holidays, BACKTEST_TFS, (), slots=slots, backtest=True)
-        for t in res['trades']:
-            t['sym'] = sym
-            trades.append(t)
-        springs_bt.extend(res['springs'])
-        if (k + 1) % 300 == 0:
-            out('  %d / %d stocks (%.0f s)' % (k + 1, len(names), time.time() - t0))
+    _, trades, springs_bt = backtest_pass(holidays, upto, slots, out)
     rows = send_backtest(cfg, api, upto, trades, springs_bt) or bt_summary(trades, springs_bt)
     out('\nIn the %d days after each signal: "up" = the highest price vs the Spring candle\'s close; "2R" = the target of 2 x the '
         'risk (close - low) reached before any candle went under the Spring low; "stopped" = it did go under:' % BT_DAYS)
     for line in bt_log(rows):
         out('  ' + line)
-    out('\nThe sheet\'s "Spring Backtest" tab has every number; the website shows them under Signals.')
+    out('\nThe sheet\'s "Spring Backtest" tab has every number; the website shows them under Signals. The website\'s '
+        'Backtest Lab (your own stop / target / trail rules) now uses these candles too.')
     return 0
 
 
@@ -1482,35 +1526,45 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         zones, mitigated, trades, springs_bt, invalid = [], [], [], [], []
         log('Kite: reading the candles of %d stocks up to %s (only new days after the first time) ...'
             % (len(syms), upto.isoformat()))
-        for k, sym in enumerate(syms):
-            tok = token_for(imap, sym)
-            if tok is None:
-                nokite.append(sym)
-                continue
-            try:
-                store, n = update_symbol(cfg, sess, sym, tok, upto)
-                reqs += n
-                in_row = 0
-            except NeedLogin:
-                log('Kite: the permission ended part-way (it ends at 6 AM) - the scan carries on after the next login.')
-                st['wait_login_until'] = 0
-                return None
-            except KiteError as e:
-                errors += 1
-                in_row += 1
-                log('Kite: %s - %s' % (sym, e))
-                if in_row >= ABORT_AFTER_ERRORS:
-                    log('Kite: %d errors in a row - stopping this scan (the next one carries on).' % in_row)
+        lab_w = backtest_lab.CacheWriter(upto)       # the Backtest Lab's cache, from the same candles
+        try:
+            for k, sym in enumerate(syms):
+                tok = token_for(imap, sym)
+                if tok is None:
+                    nokite.append(sym)
+                    continue
+                try:
+                    store, n = update_symbol(cfg, sess, sym, tok, upto)
+                    reqs += n
+                    in_row = 0
+                except NeedLogin:
+                    log('Kite: the permission ended part-way (it ends at 6 AM) - the scan carries on after the next login.')
+                    st['wait_login_until'] = 0
                     return None
-                continue
-            res = analyse(store, since, upto, holidays, tfs, fvg_only, slots=slots, backtest=True)
-            for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades), ('invalid', invalid)):
-                for f in res[key]:
-                    f['sym'] = sym
-                    dest.append(f)
-            springs_bt.extend(res['springs'])
-            if (k + 1) % 200 == 0:
-                log('Kite: %d / %d stocks (%d requests, %.0f min)' % (k + 1, len(syms), reqs, (time.time() - t0) / 60))
+                except KiteError as e:
+                    errors += 1
+                    in_row += 1
+                    log('Kite: %s - %s' % (sym, e))
+                    if in_row >= ABORT_AFTER_ERRORS:
+                        log('Kite: %d errors in a row - stopping this scan (the next one carries on).' % in_row)
+                        return None
+                    continue
+                store['sym'] = sym
+                res = analyse(store, since, upto, holidays, tfs, fvg_only, slots=slots, backtest=True, lab=lab_w)
+                for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades), ('invalid', invalid)):
+                    for f in res[key]:
+                        f['sym'] = sym
+                        dest.append(f)
+                springs_bt.extend(res['springs'])
+                if (k + 1) % 200 == 0:
+                    log('Kite: %d / %d stocks (%d requests, %.0f min)' % (k + 1, len(syms), reqs, (time.time() - t0) / 60))
+            try:
+                lab_w.close()
+            except OSError as e:
+                log('Kite: the Backtest Lab cache could not be written - %s' % e)
+        finally:
+            if not lab_w.done:
+                lab_w.abort()
         counts = {}
         for f in items:
             counts[f['tf'] + ' ' + f['pattern']] = counts.get(f['tf'] + ' ' + f['pattern'], 0) + 1

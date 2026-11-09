@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The signing key stays OUT of this public repo: KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD from the
+// environment (android/README.md). Its SHA-256 goes into web/.well-known/assetlinks.json - that is what lets Chrome open
+// the site without its address bar.
+android {
+    namespace 'com.stockblueprint.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.stockblueprint.app'
+        minSdk 21
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+        resValue 'string', 'appName', 'Stock Blueprint'
+        resValue 'string', 'launcherName', 'Blueprint'
+    }
+    signingConfigs {
+        release {
+            storeFile System.getenv('KEYSTORE_FILE') ? file(System.getenv('KEYSTORE_FILE')) : null
+            storePassword System.getenv('KEYSTORE_PASSWORD')
+            keyAlias System.getenv('KEY_ALIAS') ?: 'blueprint'
+            keyPassword System.getenv('KEY_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD')
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { checkReleaseBuilds false }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}

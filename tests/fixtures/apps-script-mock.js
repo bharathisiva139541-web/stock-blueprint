@@ -293,6 +293,7 @@ function createEnv(workbook, opts) {
         return sheet;
       },
       insertRowsBefore: function (before, n) { return sheet.insertRowsAfter(before - 1, n); },
+      insertRowBefore: function (before) { return sheet.insertRowsAfter(before - 1, 1); },
       deleteRows: function (at, n) {
         env.writes.push({ sheet: spec.name, kind: 'deleteRows', row: at, col: 1 });
         if (size) size.rows -= n;
@@ -487,6 +488,9 @@ function createEnv(workbook, opts) {
       computeDigest: function (alg, value) {
         return RealmArray.from(crypto.createHash(alg).update(String(value), 'utf8').digest(), function (b) { return b > 127 ? b - 256 : b; });
       },
+      computeHmacSha256Signature: function (value, key) {
+        return RealmArray.from(crypto.createHmac('sha256', String(key)).update(String(value), 'utf8').digest(), function (b) { return b > 127 ? b - 256 : b; });
+      },
       sleep: function () { /* no waiting in tests */ },
       base64Encode: function (s) { return Buffer.from(String(s)).toString('base64'); },
       base64Decode: function (s) { return Array.from(Buffer.from(String(s), 'base64')); }
@@ -520,7 +524,15 @@ function createEnv(workbook, opts) {
     }, env.calls),
     GmailApp: makeLenient('GmailApp', { sendEmail: function () { env.mails.push(Array.prototype.slice.call(arguments)); } }, env.calls),
     UrlFetchApp: makeLenient('UrlFetchApp', {
-      fetch: function () { throw new Error('UrlFetchApp is disabled in tests (no network)'); },
+      // opts.fetch(url, params) -> {code, text} answers a test's requests (env.fetches records them); no network
+      fetch: function (url, params) {
+        if (typeof opts.fetch !== 'function') throw new Error('UrlFetchApp is disabled in tests (no network)');
+        env.fetches = env.fetches || [];
+        env.fetches.push({ url: String(url), params: params || {} });
+        const r = opts.fetch(String(url), params || {}) || {};
+        return { getResponseCode: function () { return r.code === undefined ? 200 : r.code; },
+                 getContentText: function () { return r.text === undefined ? '' : String(r.text); } };
+      },
       fetchAll: function () { throw new Error('UrlFetchApp is disabled in tests (no network)'); }
     }, env.calls),
     ScriptApp: makeLenient('ScriptApp', {

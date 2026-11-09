@@ -25,6 +25,7 @@ K.SESSION_PATH = os.path.join(TMP, 'kite_session.json')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
 K.INSTR_PATH = os.path.join(TMP, 'kite_instruments.json')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
+K.backtest_lab.LAB_DIR = os.path.join(TMP, 'lab_cache')
 K.LIVE_MARK_PATH = os.path.join(TMP, 'kite_live.json')
 K.REQ_GAP_S = 0
 K.REDIRECT_PORT = 18765 + os.getpid() % 1000

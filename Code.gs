@@ -6637,6 +6637,8 @@ function ab_logMitigation_(label, symbol, bottom, top, pct, price, source, candl
   } catch (e) {
     Logger.log('Mitigated FVG Log write failed for ' + symbol + ' - ' + e.message);
   }
+  // the app's bell + phone pop-up (Code2.gs, owner 09-Nov-2026) - sent at the end of the run (ab_mitMailFlush_)
+  try { ab_noteMitigated_(label, symbol, bottom, top, pct, price, source); } catch (nErr) { Logger.log('Mitigated note: ' + nErr.message); }
 }
 
 /**
@@ -8951,6 +8953,10 @@ function doPost(e) {
   // for the script lock the alerts / results use
   if (req.action === 'kitelive') {
     try { return ab_bridgeJson_(ab_kiteLiveFromBridge_(req)); } catch (klErr) { return ab_bridgeJson_({ ok: false, error: klErr.message }); }
+  }
+  // the website's Backtest Lab (Code2.gs): the PC asks for a run / sends its result - its own small lock
+  if (req.action === 'lab') {
+    try { return ab_bridgeJson_(ab_labFromBridge_(req)); } catch (labErr) { return ab_bridgeJson_({ ok: false, error: labErr.message }); }
   }
 
   const lock = LockService.getScriptLock();
