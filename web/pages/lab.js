@@ -26,8 +26,15 @@
     // values = no extra rule; these only make the Spring stricter (c1 = the red candle, c2 = the Spring candle)
     upWickMax: 100, loWickMin: 0, closeMin: 0, c2BodyMin: 0, c2Color: 'any', c2BodyMax: 30,
     undercutMin: 0.1, undercutMax: 0, undAtr: 0, closeAbove: 0, recover: false,
-    c1BodyMin: 0.5, c1LoWickMax: 100, c1Atr: 0, lowestN: 0, fallN: 0, fallPct: 10
+    c1BodyMin: 0.5, c1LoWickMax: 100, c1Atr: 0, lowestN: 0, fallN: 0, fallPct: 10,
+    // market structure (owner, 10-Nov-2026: CHoCH after a downtrend, the FVG of that move, the first pullback into it;
+    // answers: 5 candles a swing, 3 lower highs / lows, the CHoCH candle closes above, zone in the move or after it, below
+    // the CHoCH level + first pullback, target R multiple or the last swing high) - off by default
+    structure: 'off', pivotN: 5, downN: 3, zoneWhen: 'both', belowChoch: true, firstPull: true, chochAge: 0,
+    targetMode: 'R', swingMinR: 1
   };
+  // the owner's CHoCH + FVG setup in one click (his answers of 10-Nov-2026)
+  var SMC = { group: 'entry', structure: 'only', pivotN: 5, downN: 3, zoneWhen: 'both', belowChoch: true, firstPull: true, chochAge: 0, stop: 'zone' };
   var SHAPE_KEYS = ['upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
     'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct'];
   // My recommendations (10-Nov-2026): starting points to TEST - each one is a reasoned idea, not a proven edge
@@ -50,7 +57,14 @@
     tf: [['D', 'Daily'], ['W', 'Weekly'], ['4H', '4 hour (13:15 candle)']],
     group: [['fvg', 'FVG+Spring'], ['fvg_top', 'FVG+Spring - Spring at the zone top'], ['fvg_middle', 'FVG+Spring - in the middle'],
       ['fvg_bottom', 'FVG+Spring - at / under the bottom'], ['gap', 'Gap-up FVG + Spring'], ['gapin', 'Gap-up FVG + Spring - inside FVG only'],
-      ['zone', 'FVG+Spring or Gap-up FVG + Spring'], ['spring', 'Every Spring (no zone - to compare)']],
+      ['zone', 'FVG+Spring or Gap-up FVG + Spring'], ['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'],
+      ['entry', 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed'], ['spring', 'Every Spring (no zone - to compare)']],
+    structure: [['off', 'Off - do not look at it'], ['show', 'Show it on every trade (nothing left out) - to compare'], ['only', 'Only my setup (the rules below)']],
+    pivotN: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
+    downN: [[1, 'At least 1'], [2, 'At least 2'], [3, 'At least 3'], [4, 'At least 4'], [5, 'At least 5']],
+    zoneWhen: [['both', 'In the CHoCH move or after it'], ['leg', 'Only in the CHoCH move'], ['after', 'Only after the CHoCH candle']],
+    chochAge: [[0, 'Any time after it'], [10, 'Within 10 candles'], [20, 'Within 20 candles'], [40, 'Within 40 candles'], [60, 'Within 60 candles'], [120, 'Within 120 candles']],
+    targetMode: [['R', 'R multiple (times the risk)'], ['swing', 'The last swing high']],
     entry: [['close', 'At the Spring candle\'s close'], ['next_open', 'At the next candle\'s open']],
     stop: [['zone', 'A little below the FVG / Gap-up zone bottom'], ['spring', 'A little below the Spring candle\'s low'],
       ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry']],
@@ -81,7 +95,12 @@
   var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN', 'maxDays',
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
-    'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct'];
+    'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR'];
+  // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
+  var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
+    bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level' };
+  var STAGE = { below: ['Below CHoCH, 1st pullback', 's-good'], above: ['At / above CHoCH level', 's-warn'], bos: ['After a BOS', 's-bad'],
+    old: ['Zone older than the CHoCH low', 's-info'], none: ['No CHoCH', ''] };
   // the first failed rule -> words (= backtest_lab.py SHAPE_WHY)
   var SHAPE_WHY = {
     data: 'no candle before it', history: 'too few candles before it for an ATR / swing-low / fall rule',
@@ -148,6 +167,20 @@
   }
   function shapeOn(p) { return SHAPE_KEYS.some(function (k) { return k !== 'fallPct' && p[k] !== DEF[k]; }); }
 
+  /** The market-structure rules in words ('' when off). */
+  function structWords(p) {
+    if (p.structure === 'off' || !p.structure) return '';
+    var head = 'Market structure (swings of ' + p.pivotN + ' candles each side): a CHoCH = a candle closing above the last swing high after at least ' +
+      p.downN + ' lower highs and ' + p.downN + ' lower lows';
+    if (p.structure === 'show') return head + ' - shown on every trade, nothing left out.';
+    var w = ['the zone formed after the CHoCH\'s final low, ' + (p.zoneWhen === 'leg' ? 'in the move that made the CHoCH' : p.zoneWhen === 'after' ? 'after the CHoCH candle' : 'in the CHoCH move or after it')];
+    if (p.belowChoch) w.push('the zone (no zone: the entry) below the CHoCH level');
+    if (p.firstPull) w.push('the first pullback - no BOS (a close above the highest swing high since the CHoCH) yet');
+    if (Number(p.chochAge)) w.push('at most ' + p.chochAge + ' candles after the CHoCH');
+    w.push('the CHoCH still alive (no close under its final low)');
+    return head + '. Only signals where ' + w.join('; ') + '.';
+  }
+
   function idxName(n) { return String(n || '').replace(/_/g, ' '); }
   function indexList(cur) {
     var l = ui.store.get('lab:indices', null);
@@ -169,6 +202,8 @@
     var s = [];
     s.push(choiceLabel('group', p.group) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
       (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
+    var struct = structWords(p);
+    if (struct) s.push(struct);
     var shape = shapeWords(p);
     if (shape) s.push(shape);
     var ema = emaWords(p);
@@ -179,9 +214,10 @@
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
       F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' : 'the zone bottom or the Spring low, whichever is lower')) +
       (p.maxRisk ? ' - trades risking more than ' + F.num(p.maxRisk, 1) + '% are skipped' : '') + '.');
-    if (p.after === 'fixed') s.push('Sell at ' + F.num(p.targetR, 2) + 'R (' + F.num(p.targetR, 2) + ' x the risk).');
+    var tgt = p.targetMode === 'swing' ? 'the last swing high (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' : F.num(p.targetR, 2) + 'R';
+    if (p.after === 'fixed') s.push('Sell at ' + tgt + (p.targetMode === 'swing' ? '' : ' (' + F.num(p.targetR, 2) + ' x the risk)') + '.');
     else {
-      s.push('At ' + F.num(p.targetR, 2) + 'R ' + (p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
+      s.push('At ' + tgt + ' ' + (p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
         (p.trail === 'lows' ? 'trail it under the lowest low of the last ' + p.trailN + ' candle' + (p.trailN === 1 ? '' : 's') :
           p.trail === 'pct' ? 'trail it ' + F.num(p.trailPct, 1) + '% under the highest price' :
             p.trail === 'ema' ? 'sell when a candle closes under the ' + p.emaN + ' EMA' : 'let it run with that stop') + '.');
@@ -209,12 +245,30 @@
     return '<label class="lab-check"><input type="checkbox" data-k="' + k + '"' + (v ? ' checked' : '') + '> ' + label + '</label>';
   }
 
-  /** Step 2: the hard Spring rules + my recommendations (owner, 10-Nov-2026). */
+  /** Step 2: market structure - CHoCH / BOS (owner, 10-Nov-2026). */
+  function structHtml(f) {
+    var on = f.structure !== 'off', mine = Object.keys(SMC).every(function (k) { return String(f[k]) === String(SMC[k]); });
+    return '<h3 class="lab-h">2 · Market structure - CHoCH / BOS (optional)</h3>' +
+      '<div class="lab-recs"><div class="lab-rec' + (mine ? ' on' : '') + '"><b>My CHoCH + FVG setup</b><span>A downtrend of at least 3 lower highs and 3 lower lows, ' +
+      'a candle CLOSES above the last lower high (CHoCH), an FVG / Gap-up zone formed in that move or after it, below the CHoCH level - and on the FIRST pullback ' +
+      'into it (no BOS yet) a Spring or an FVG First Touch / Confirmed = entry; stop under the zone.</span>' +
+      '<button class="btn sm" type="button" id="lab-smc">' + (mine ? 'In use' : 'Use this') + '</button></div></div>' +
+      '<div class="form-grid">' + field('Market structure', sel('structure', f.structure), 'wide') +
+      (on ? field('A swing high / low', sel('pivotN', f.pivotN)) + field('Lower highs and lower lows before the CHoCH', sel('downN', f.downN)) +
+        (f.structure === 'only' ? field('The zone formed', sel('zoneWhen', f.zoneWhen)) + field('The signal came', sel('chochAge', f.chochAge)) +
+          '<div class="field lab-checks">' + check('belowChoch', f.belowChoch, 'Zone below the CHoCH level') + check('firstPull', f.firstPull, 'First pullback only (no BOS yet)') + '</div>' : '') : '') +
+      '</div><p class="sub">A swing high = a candle whose high is above the candles on both sides (known only after those candles closed - the backtest never looks ahead). ' +
+      'CHoCH = the first candle that CLOSES above the last swing high after the lower highs and lower lows; BOS = after it, the first close above the highest swing high since. ' +
+      '"Show it on every trade" keeps every signal and adds a table "By market structure" to the result - your setup vs. after a BOS vs. above the CHoCH level vs. no CHoCH, in one run. ' +
+      'The first run with market structure takes about 10 seconds longer.</p>';
+  }
+
+  /** Step 3: the hard Spring rules + my recommendations (owner, 10-Nov-2026). */
   function shapeHtml(f) {
     var sameSet = function (r) {
       return SHAPE_KEYS.every(function (k) { return String(r.set[k] !== undefined ? r.set[k] : DEF[k]) === String(f[k]); });
     };
-    return '<h3 class="lab-h">2 · Spring candle shape (optional) - make the pattern stricter</h3>' +
+    return '<h3 class="lab-h">3 · Spring candle shape (optional) - make the pattern stricter</h3>' +
       '<p class="sub">The pattern\'s own rule is loose (a doji, a 2-tick dip or a weak close can all be a "Spring"). Here you add hard rules. ' +
       '<b>c1</b> = the red candle, <b>c2</b> = the Spring candle that dips under its low. Wicks, body and close are % of c2\'s own high-low range. ' +
       'Leave a box at its first choice to not use it.</p>' +
@@ -254,15 +308,15 @@
       num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
       num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
       num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
-      shapeHtml(f) +
-      '<h3 class="lab-h">3 · EMA confluence (optional) - take the signal only when the EMAs agree</h3><div class="form-grid">' +
+      structHtml(f) + shapeHtml(f) +
+      '<h3 class="lab-h">4 · EMA confluence (optional) - take the signal only when the EMAs agree</h3><div class="form-grid">' +
       field('The Spring candle took support at', sel('emaSupport', f.emaSupport), 'wide') +
       (Number(f.emaSupport) ? num('emaTouch', f.emaTouch, 'Its low within % above the EMA', ' min="0" step="0.25"') : '') +
       '<div class="field lab-checks lab-checks-row"><span>It closed above</span>' + check('above10', f.above10, '10 EMA') +
       check('above21', f.above21, '21 EMA') + check('above50', f.above50, '50 EMA') + '</div>' +
       '<div class="field lab-checks">' + check('emaStack', f.emaStack, 'EMAs in order: 10 > 21 > 50 (uptrend)') + '</div></div>' +
       '<p class="sub">EMAs of the same timeframe (daily / weekly / 4 hour), on the Spring candle. Leave everything off to test the pattern alone.</p>' +
-      '<h3 class="lab-h">4 · Market condition (optional) - trade only when the market agrees</h3><div class="form-grid">' +
+      '<h3 class="lab-h">5 · Market condition (optional) - trade only when the market agrees</h3><div class="form-grid">' +
       field('Index', '<select class="sel" data-k="mktIndex" id="lab-mkt-index"><option value="">Off - no market rule</option>' +
         indexList(f.mktIndex).map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === f.mktIndex ? ' selected' : '') + '>' + esc(idxName(n)) + '</option>';
@@ -271,13 +325,15 @@
         '<div class="field lab-checks">' + check('mktStack', f.mktStack, 'Its EMAs in order: 10 > 21 > 50') + '</div>' : '') + '</div>' +
       '<p class="sub">The index\'s daily candles on the Spring candle\'s day (your laptop reads them from Kite: your Indextracker indices + NIFTY 50 / 100 / 200 / 500, ' +
       'Bank, Midcap, Smallcap ...).</p>' +
-      '<h3 class="lab-h">5 · Entry and stop loss</h3><div class="form-grid">' +
+      '<h3 class="lab-h">6 · Entry and stop loss</h3><div class="form-grid">' +
       field('Buy', sel('entry', f.entry)) + field('Stop loss', sel('stop', f.stop), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
       num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') + '</div>' +
-      '<h3 class="lab-h">6 · Target and exit</h3><div class="form-grid">' +
-      num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"') + field('At the target', sel('after', f.after), 'wide') +
+      '<h3 class="lab-h">7 · Target and exit</h3><div class="form-grid">' +
+      field('Target', sel('targetMode', f.targetMode)) +
+      (f.targetMode === 'swing' ? num('swingMinR', f.swingMinR, 'At least this many R above the entry', ' min="0" step="0.25"') :
+        num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"')) + field('At the target', sel('after', f.after), 'wide') +
       (trailOn ? field('Then', sel('trail', f.trail), 'wide') : '') +
       (trailOn && f.trail === 'lows' ? num('trailN', f.trailN, 'N candles', ' min="1" step="1"') : '') +
       (trailOn && f.trail === 'pct' ? num('trailPct', f.trailPct, 'X %', ' min="0.5" step="0.5"') : '') +
@@ -285,7 +341,7 @@
       num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
       num('cost', f.cost, 'Costs per trade (%)', ' min="0" step="0.05"') +
       (trailOn ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>' +
-      '<h3 class="lab-h">7 · Money</h3><div class="form-grid">' +
+      '<h3 class="lab-h">8 · Money</h3><div class="form-grid">' +
       num('capital', f.capital, 'Account ₹', ' min="1000" step="10000"') + num('riskPct', f.riskPct, 'Risk per trade (% of the account)', ' min="0.05" step="0.25"') +
       num('maxPosPct', f.maxPosPct, 'One position at most (% of the account)', ' min="1" step="5"') +
       num('maxOpen', f.maxOpen, 'Trades open at once, at most', ' min="1" step="1"') +
@@ -423,10 +479,10 @@
     if (!total) return '';
     if (w.cap && w.cap >= total * 0.1) {
       h += '<p class="note warn">' + F.int(w.cap) + ' signals were not taken because one share cost more than your position limit (' + F.num(p.maxPosPct, 0) +
-        '% of the account). To take them: raise <b>One position at most</b> in 7 · Money.</p>';
+        '% of the account). To take them: raise <b>One position at most</b> in 8 · Money.</p>';
     }
     if (w.full && w.full >= total * 0.1) {
-      h += '<p class="note warn">' + F.int(w.full) + ' signals came while ' + F.int(p.maxOpen) + ' trades were already open. To take them: raise <b>Trades open at once, at most</b> in 7 · Money.</p>';
+      h += '<p class="note warn">' + F.int(w.full) + ' signals came while ' + F.int(p.maxOpen) + ' trades were already open. To take them: raise <b>Trades open at once, at most</b> in 8 · Money.</p>';
     }
     if (a.capped && a.capped >= (a.taken || 1) * 0.3) {
       h += '<p class="note">' + F.int(a.capped) + ' of the trades taken were made smaller by your position limit (' + F.num(p.maxPosPct, 0) + '%), so they risked less than ' +
@@ -435,6 +491,14 @@
     return h;
   }
   function tone(v) { return isNum(v) ? (v > 0 ? ' up' : v < 0 ? ' down' : '') : ''; }
+
+  /** With market structure 'only': how many signals each structure rule left out (the first one they failed). */
+  function structNote(res) {
+    var why = res.structWhy || {}, keys = Object.keys(why).filter(function (k) { return why[k]; });
+    if (!keys.length) return '';
+    return '<p class="note">Market structure: left out - ' + keys.sort(function (a, b) { return why[b] - why[a]; })
+      .map(function (k) { return F.int(why[k]) + ' ' + (STRUCT_WHY[k] || k); }).join('; ') + '.</p>';
+  }
 
   /** With hard Spring rules on: how many Springs each rule left out (the first rule a Spring failed), and a plain
    *  warning when few trades remain - an average over a handful of trades is mostly luck. */
@@ -470,6 +534,8 @@
     h += '<h3 class="lab-h">Every signal (each trade on its own, in R)</h3><div class="tiles">' +
       ui.tile('Trades', F.int(s.trades), (res.open ? F.int(res.open) + ' still running (not counted)' : 'all finished') +
         (res.skipped && res.skipped.risk ? ' · ' + F.int(res.skipped.risk) + ' skipped (risk too big)' : '') +
+        (res.skipped && res.skipped.struct ? ' · ' + F.int(res.skipped.struct) + ' left out by your market-structure rules' : '') +
+        (res.skipped && res.skipped.noswing ? ' · ' + F.int(res.skipped.noswing) + ' without a swing high above (target)' : '') +
         (res.skipped && res.skipped.shape ? ' · ' + F.int(res.skipped.shape) + ' Springs left out by your shape rules' : '') +
         (res.skipped && res.skipped.ema ? ' · ' + F.int(res.skipped.ema) + ' left out by your EMA rules' : '') +
         (res.skipped && res.skipped.mkt ? ' · ' + F.int(res.skipped.mkt) + ' left out by your market rule' : '')) +
@@ -480,7 +546,12 @@
       ui.tile('Average win / loss', r2(s.avgWinR) + ' / ' + r2(s.avgLossR), 'best ' + r2(s.bestR) + ' · worst ' + r2(s.worstR)) +
       ui.tile('Held', F.num(s.avgDays, 1) + ' days', 'on average · ' + F.int(s.maxLosingStreak) + ' losses in a row at worst') +
       ui.tile('Return per trade', F.pct(s.avgRet, 2), 'median ' + F.pct(s.medRet, 2) + ' · best move before the exit ' + r2(s.avgMaxR) + ' avg') + '</div>';
-    h += shapeNote(res, s);
+    h += structNote(res) + shapeNote(res, s);
+    if (res.stages && res.stages.length) {
+      h += '<h3 class="lab-h">By market structure - where each signal sat</h3><div id="lab-stages"></div>' +
+        '<p class="sub">Your setup = below the CHoCH level, on the first pullback. "After a BOS" = price had already made a new high after the CHoCH. ' +
+        'Compare the average R of the rows - with fewer than ~300 trades in a row, a difference can still be luck.</p>';
+    }
     h += '<h3 class="lab-h">Your account (' + F.inr(a.capital) + ', ' + F.num(p.riskPct, 2) + '% risk a trade, at most ' + F.int(p.maxOpen) + ' at once)</h3><div class="tiles">' +
       ui.tile('Account now', F.inr(a.final), '<span class="' + tone(a.pnl) + '">' + (a.pnl >= 0 ? '+' : '−') + F.inr(Math.abs(a.pnl)) + '</span>') +
       ui.tile('Return', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', isNum(a.cagr) ? F.pct(a.cagr) + ' a year over ' + F.num(a.years, 1) + ' years' : 'over ' + F.num(a.years, 1) + ' years') +
@@ -513,6 +584,19 @@
         { key: 'pnl', label: 'Account P/L ₹', type: 'num', digits: 0 }
       ]
     }).mount($('#lab-years', box));
+    if (res.stages && res.stages.length) {
+      new ui.Table({
+        rows: res.stages, pageSize: 10, id: 'lab-stages', tools: false,
+        columns: [
+          { key: 'stage', label: 'Where the signal sat', html: function (r) { var x = STAGE[r.stage] || [r.name, '']; return ui.badge(x[0], x[1]) + ' <span class="sub">' + esc(r.name) + '</span>'; } },
+          { key: 'trades', label: 'Trades', type: 'num', digits: 0 }, { key: 'winPct', label: 'Win %', type: 'num', digits: 1 },
+          { key: 'avgR', label: 'Avg R', type: 'num', digits: 2, html: function (r) { return '<span class="' + tone(r.avgR) + '">' + r2(r.avgR) + '</span>'; } },
+          { key: 'medR', label: 'Median R', type: 'num', digits: 2 }, { key: 'totalR', label: 'Total R', type: 'num', digits: 1 },
+          { key: 'hitPct', label: 'Reached target %', type: 'num', digits: 1 }, { key: 'avgMaxR', label: 'Avg best R', type: 'num', digits: 2 },
+          { key: 'open', label: 'Still running', type: 'num', digits: 0 }
+        ]
+      }).mount($('#lab-stages', box));
+    }
     var cols = res.tradeCols || [];
     var rows = (res.trades || []).map(function (r) { var o = {}; cols.forEach(function (c, i) { o[c] = r[i]; }); return o; });
     new ui.Table({
@@ -521,7 +605,14 @@
         { key: 'sym', label: 'Stock', type: 'sym' },
         { key: 'signal', label: 'Spring candle' },
         { key: 'zone', label: 'Zone', get: function (r) { return r.zone + (r.where ? ' · ' + r.where : ''); } },
+        { key: 'stage', label: 'Structure', get: function (r) { return r.stage ? (STAGE[r.stage] || [r.stage])[0] : ''; },
+          html: function (r) {
+            if (!r.stage) return '';
+            var x = STAGE[r.stage] || [r.stage, ''];
+            return r.struct ? '<span class="lab-acct" tabindex="0" data-tip="' + esc(r.struct) + '">' + ui.badge(x[0], x[1]) + '</span>' : ui.badge(x[0], x[1]);
+          }, title: 'Market structure at the signal (hover / tap for the CHoCH level, its date and the BOS)' },
         { key: 'entry', label: 'Entry', type: 'num', digits: 2 }, { key: 'stop', label: 'Stop', type: 'num', digits: 2 },
+        { key: 'target', label: 'Target', type: 'num', digits: 2, title: 'The target price (R multiple or the last swing high)' },
         { key: 'riskPct', label: 'Risk %', type: 'num', digits: 2 },
         { key: 'exit', label: 'Exit', type: 'num', digits: 2 }, { key: 'exitOn', label: 'Sold on' },
         { key: 'reason', label: 'Why', html: function (r) { var x = REASON[r.reason] || [r.reason, '']; return ui.badge(x[0], x[1]); } },
@@ -541,6 +632,8 @@
           } }
       ].filter(function (c) {
         if (c.key === 'ema') return rows.some(function (r) { return r.ema; });
+        if (c.key === 'stage') return rows.some(function (r) { return r.stage; });
+        if (c.key === 'target') return rows.some(function (r) { return isNum(r.target); });
         if (c.key === 'upW' || c.key === 'loW' || c.key === 'dip') return rows.some(function (r) { return isNum(r[c.key]); });   // runs before 10-Nov-2026 have none
         return true;
       })
@@ -573,13 +666,16 @@
       if (!k) return;
       var f = readForm(el);
       saveForm(f);
-      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN'].indexOf(k) >= 0 || SHAPE_KEYS.indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the recommendation cards follow
+      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group'].indexOf(k) >= 0 || SHAPE_KEYS.indexOf(k) >= 0 ||
+          Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the recommendation cards follow
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
     });
     host.addEventListener('input', function () { saveForm(readForm(el)); var pl = $('#lab-plain', el); if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(readForm(el))); });
     // my recommendations: fill the Spring boxes (every other rule of the form stays as it is)
     host.addEventListener('click', function (e) {
+      var smc = e.target.closest && e.target.closest('#lab-smc');
+      if (smc) { saveForm(Object.assign(readForm(el), SMC)); SB.route(true); return; }
       var b = e.target.closest && e.target.closest('[data-rec],#lab-shape-off');
       if (!b) return;
       var f = readForm(el);

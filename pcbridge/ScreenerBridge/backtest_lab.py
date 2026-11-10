@@ -34,14 +34,19 @@ import json
 import os
 import shutil
 import statistics
+import sys
 import threading
 import time
 from datetime import date, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2026)
+
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 TFS = ('D', 'W', '4H')
-CACHE_VERSION = 1
+CACHE_VERSION = 2               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row
 MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
@@ -87,16 +92,26 @@ DEFAULTS = {
     'c1Atr': 0.0,              # c1's body at least X x ATR(14) (0 = off): a big red candle for that stock
     'lowestN': 0,              # c2's low is under the lowest low of the last N candles (0 = off): a real swing low is taken out
     'fallN': 0, 'fallPct': 10.0,   # price fell at least fallPct % from the highest high of the last fallN candles to c1's close
+    # MARKET STRUCTURE (owner, 10-Nov-2026 - see structure.py): structure 'off' / 'show' (each trade labelled, nothing left
+    # out - the breakdown compares) / 'only' (the rules below); pivotN = candles each side of a swing, downN = lower highs and
+    # lower lows before the CHoCH, zoneWhen = the zone formed after the CHoCH's final low: 'both' (in the move up to the
+    # CHoCH or after it) / 'leg' (up to one candle after the CHoCH candle) / 'after' (after the CHoCH candle), belowChoch =
+    # the zone's top (no zone: the entry) under the CHoCH level, firstPull = no BOS yet (the first pullback), chochAge = the
+    # signal at most N candles after the CHoCH (0 = any). Target: targetMode 'R' (targetR) / 'swing' = the last swing high
+    # at least swingMinR R above the entry (trades without one are skipped).
+    'structure': 'off', 'pivotN': 5, 'downN': 3, 'zoneWhen': 'both', 'belowChoch': True, 'firstPull': True, 'chochAge': 0,
+    'targetMode': 'R', 'swingMinR': 1.0,
 }
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
-BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover')
+BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull')
 CHOICES = {
-    'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring'),
+    'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry'),
     'entry': ('close', 'next_open'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
-    'c2Color': ('any', 'green', 'red'),
+    'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
+    'targetMode': ('R', 'swing'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -108,15 +123,19 @@ LIMITS = {   # key: (min, max, integer)
     'c2BodyMax': (1, 30, False), 'undercutMin': (0.1, 20, False), 'undercutMax': (0, 50, False), 'undAtr': (0, 5, False),
     'closeAbove': (0, 20, False), 'c1BodyMin': (0.5, 30, False), 'c1LoWickMax': (0, 100, False), 'c1Atr': (0, 10, False),
     'lowestN': (0, 250, True), 'fallN': (0, 250, True), 'fallPct': (0.5, 90, False),
+    'pivotN': (2, 20, True), 'downN': (1, 8, True), 'chochAge': (0, 2000, True), 'swingMinR': (0, 20, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
     'fvg_bottom': 'FVG+Spring - zone bottom', 'gap': 'Gap-up FVG + Spring', 'gapin': 'Gap-up FVG + Spring - inside FVG',
     'zone': 'FVG+Spring or Gap-up FVG + Spring', 'spring': 'Every Spring',
+    'ft': 'FVG First Touch', 'conf': 'FVG First Touch Confirmed',
+    'entry': 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed',
 }
+SPRING_CODES = ('S', 'F', 'G')   # the Spring shape rules apply to these (T / C = FVG First Touch / Confirmed have no Spring pair)
 REASONS = ('stop', 'target', 'be', 'trail', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
-              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'acct']
+              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct']
 
 
 def _iso_date(s):
@@ -253,12 +272,25 @@ def turnover_fn(day_rows, days=20):
 
 
 def signal_rows(candles, i, zones, turn):
-    """The cache rows of a Spring on candle i: 'S' (every Spring) + one per zone it sits on ('F' FVG / 'G' Gap-up)."""
+    """The cache rows of a Spring on candle i: 'S' (every Spring) + one per zone it sits on ('F' FVG / 'G' Gap-up).
+    Row = [i, code, zone bottom, zone top, where t/m/b, touch, inside, turnover lakh, zone formed candle (-1 none)]."""
     t = turn(candles[i]['day']) if turn else 0.0
-    rows = [[i, 'S', None, None, '', 0, 0, t]]
+    rows = [[i, 'S', None, None, '', 0, 0, t, -1]]
     for z in zones or ():
         rows.append([i, 'G' if z['kind'] == 'Gap-up' else 'F', round(z['bottom'], 4), round(z['top'], 4),
-                     (z.get('where') or '')[:1], int(z.get('touch') or 0), 1 if z.get('inside') else 0, t])
+                     (z.get('where') or '')[:1], int(z.get('touch') or 0), 1 if z.get('inside') else 0, t, int(z['f'])])
+    return rows
+
+
+def touch_rows(candles, i, ft, cf, turn):
+    """The cache rows of the FVG patterns on candle i (owner, 10-Nov-2026: "if the price mitigated the FVG with FVG pattern
+    or spring candlestick pattern, i enter"): 'T' = FVG First Touch, 'C' = FVG First Touch Confirmed (the newest 3-candle
+    FVG; zone = {'f', 'bottom', 'top'})."""
+    rows = []
+    for code, z in (('T', ft), ('C', cf)):
+        if z and z.get('f') is not None and z.get('bottom') is not None:
+            t = turn(candles[i]['day']) if turn else 0.0
+            rows.append([i, code, round(z['bottom'], 4), round(z['top'], 4), '', 1, 0, t, int(z['f'])])
     return rows
 
 
@@ -505,8 +537,10 @@ def market_filter(meta, P):
     return ok
 
 
-def simulate(cs, row, P, ema=None):
-    """One signal row -> the trade under the rules P (see the module text), or (None, why skipped)."""
+def simulate(cs, row, P, ema=None, swing=None):
+    """One signal row -> the trade under the rules P (see the module text), or (None, why skipped). `swing` (target mode
+    'swing') = the Structure of these candles: the target is then the last swing high at least swingMinR R above the
+    entry (none = skipped, 'noswing')."""
     i, code, zb = row[0], row[1], row[2]
     n = cs.n
     if i >= n:
@@ -536,6 +570,11 @@ def simulate(cs, row, P, ema=None):
     if entry < P['minPrice']:
         return None, 'price'
     target = entry + P['targetR'] * risk
+    if swing is not None:
+        sh = swing.last_swing_high(i, entry + P['swingMinR'] * risk)
+        if sh is None:
+            return None, 'noswing'
+        target = _f(sh[1])
     end = cs.day[i] + P['maxDays']
     trail, fixed, be = P['trail'], P['after'] == 'fixed', P['breakeven']
     hit, cur, best = False, stop, entry
@@ -603,7 +642,7 @@ def simulate(cs, row, P, ema=None):
     return {'i': i, 'code': code, 'where': row[4], 'touch': row[5], 'inside': row[6], 'turn': row[7],
             'entry': entry, 'stop': round(stop, 2), 'risk': risk, 'riskPct': round(risk_pct, 2), 'exit': round(ex, 4), 'reason': why,
             'R': round(R, 3), 'ret': round((ex - entry - cost) / entry * 100, 2), 'days': cs.day[jx] - cs.day[i],
-            'maxR': round(max(0.0, best_r), 2), 'hit': hit,
+            'maxR': round(max(0.0, best_r), 2), 'hit': hit, 'tgt': round(target, 2),
             'ek': (cs.day[i if P['entry'] == 'close' else min(i + 1, n - 1)], cs.minute[i if P['entry'] == 'close' else min(i + 1, n - 1)]),
             'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i]}, None
 
@@ -619,7 +658,10 @@ def pick(rows, P):
               (g.startswith('fvg_') and code == 'F' and where == g[4]) or
               (g == 'gap' and code == 'G') or
               (g == 'gapin' and code == 'G' and inside) or
-              (g == 'zone' and code in ('F', 'G')))
+              (g == 'zone' and code in ('F', 'G')) or
+              (g == 'ft' and code == 'T') or
+              (g == 'conf' and code == 'C') or
+              (g == 'entry' and code in ('F', 'G', 'T', 'C')))
         if not ok or r[0] in seen:
             continue
         if P['maxTouch'] and code != 'S' and touch > P['maxTouch']:
@@ -773,7 +815,20 @@ def summarise(trades, P, skips, meta, secs):
                       'pnl': round(sum(t['pnl'] for t in taken)), 'taken': len(taken)})
     hist = [{'label': lab, 'n': sum(1 for t in closed if lo <= t['R'] < hi)} for lo, hi, lab in HIST_EDGES]
     reasons = {r: sum(1 for t in trades if t['reason'] == r) for r in REASONS}
-    zone_name = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring'}
+    # market structure: the same figures per stage (owner, 10-Nov-2026: "if FVG formed above the BOS means it is already
+    # moved heavily" - one run shows whether the setup below the CHoCH level beats the others)
+    stages = []
+    if any(t.get('stage') for t in trades):
+        for key in structure.STAGES:
+            ts = [t for t in closed if t.get('stage') == key]
+            n_open = sum(1 for t in trades if t.get('stage') == key and t['reason'] == 'open')
+            if not ts and not n_open:
+                continue
+            s = _stats(ts)
+            stages.append({'stage': key, 'name': structure.STAGE_NAMES[key], 'trades': s['trades'], 'open': n_open,
+                           'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'), 'totalR': s.get('totalR'),
+                           'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')})
+    zone_name = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed'}
     where_name = {'t': 'top', 'm': 'middle', 'b': 'bottom'}
     rows = []
     for t in sorted(trades, key=lambda t: (t['sigDay'], t['sigMin'], t['sym']), reverse=True)[:MAX_TRADES_OUT]:
@@ -781,14 +836,15 @@ def summarise(trades, P, skips, meta, secs):
                      zone_name[t['code']] + (' inside FVG' if t['code'] == 'G' and t['inside'] else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
-                     t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''), t.get('acct', '')])
+                     t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
+                     t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     return {'v': 1, 'params': P, 'groupName': GROUP_NAMES[P['group']], 'cacheUpto': meta.get('upto'),
             'from': date.fromordinal(first).isoformat() if first else '', 'to': date.fromordinal(last).isoformat() if last else '',
             'stats': _stats(closed), 'open': len(trades) - len(closed), 'skipped': skips, 'account': acct, 'years': years,
             'hist': hist, 'reasons': reasons, 'tradeCols': TRADE_COLS, 'trades': rows, 'tradesTotal': len(trades),
-            'secs': round(secs, 1)}
+            'stages': stages, 'secs': round(secs, 1)}
 
 
 def run_job(params, base=None, progress=None):
@@ -803,8 +859,11 @@ def run_job(params, base=None, progress=None):
     index = meta['index'].get(tf) or {}
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
-    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0}
-    shape_on, shape_why = shape_active(P), {}
+    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
+                         'noswing': 0}
+    shape_on, shape_why, struct_why = shape_active(P), {}, {}
+    smode = P['structure']
+    smap = _struct_map(d, tf, P['pivotN']) if smode != 'off' or P['targetMode'] == 'swing' else None
     lens = ema_lens(P)
     mkt = market_filter(meta, P)
     syms = sorted(sigs)
@@ -816,26 +875,42 @@ def run_job(params, base=None, progress=None):
             cs = Candles(f, index[sym][0], index[sym][1])
             ema = ema_series(cs.c, P['emaN']) if P['after'] == 'trail' and P['trail'] == 'ema' else None
             emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens}
+            st = None
+            if smap is not None:
+                st = smap.get(sym)
+                if st is None or st.size != cs.n:
+                    st = smap[sym] = _Struct(cs, P['pivotN'])
             for r in rows:
                 if r[0] >= cs.n or (lo and cs.day[r[0]] < lo) or (hi and cs.day[r[0]] > hi):
                     continue
                 if mkt and not mkt(cs.day[r[0]]):
                     skips['mkt'] += 1
                     continue
-                feats = spring_feats(cs, r[0], P, deep=shape_on)      # the Spring pair's shape (also the table's wick / dip columns)
-                if shape_on:
+                spring_row = r[1] in SPRING_CODES
+                feats = spring_feats(cs, r[0], P, deep=shape_on) if spring_row else None   # the Spring pair's shape
+                if shape_on and spring_row:
                     ok, why = shape_check(feats, P)
                     if not ok:
                         skips['shape'] += 1
                         shape_why[why] = shape_why.get(why, 0) + 1
                         continue
+                sj = None
+                if smode != 'off':
+                    zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
+                    sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'])
+                    if smode == 'only':
+                        why = struct_fail(sj, P)
+                        if why:
+                            skips['struct'] += 1
+                            struct_why[why] = struct_why.get(why, 0) + 1
+                            continue
                 note = ''
                 if lens:
                     ok, note = ema_check(cs, r[0], P, emas)
                     if not ok:
                         skips['ema'] = skips.get('ema', 0) + 1
                         continue
-                t, why = simulate(cs, r, P, ema)
+                t, why = simulate(cs, r, P, ema, st.s if P['targetMode'] == 'swing' else None)
                 if t is not None:
                     t['ema'] = note
                 if t is None:
@@ -844,13 +919,71 @@ def run_job(params, base=None, progress=None):
                 t['sym'] = sym
                 if feats:
                     t['upW'], t['loW'], t['dip'] = round(feats['upW'], 1), round(feats['loW'], 1), round(feats['dip'], 2)
+                if sj is not None:
+                    t['stage'] = sj['stage']
+                    t['struct'] = struct_text(st.s, sj, cs, P['tf'])
                 trades.append(t)
             if progress and (k + 1) % 300 == 0:
                 progress(int((k + 1) * 90 / max(1, len(syms))))
     res = summarise(trades, P, skips, meta, time.time() - t0)
     res['indexNames'] = sorted((meta.get('indices') or {}).keys())      # the page's list of indices
     res['shapeWhy'] = shape_why                                         # {rule: Springs it left out} (first failed rule)
+    res['structWhy'] = struct_why                                       # {rule: signals the structure rules left out}
     return res
+
+
+# ------------------------------------------------------------------ market structure (structure.py) in a run
+_STRUCT = {'key': None, 'map': {}}
+
+
+class _Struct:
+    """A stock's Structure + the candle count it was made from (a new cache build = new candles)."""
+    __slots__ = ('s', 'size')
+
+    def __init__(self, cs, n):
+        self.s = structure.Structure(cs.h, cs.l, cs.c, n)
+        self.size = cs.n
+
+
+def _struct_map(d, tf, n):
+    """{sym: _Struct} kept while the program runs (the same cache build, timeframe and swing size) - the first run with
+    market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
+    key = (d, tf, n)
+    if _STRUCT['key'] != key:
+        _STRUCT['key'], _STRUCT['map'] = key, {}
+    return _STRUCT['map']
+
+
+STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows you set)',
+              'zone': 'its zone did not form in the CHoCH move / after it', 'bos': 'a BOS came first (not the first pullback)',
+              'above': 'its zone is not below the CHoCH level'}
+
+
+def struct_fail(sj, P):
+    """The first market-structure rule a signal fails (a STRUCT_WHY key) or ''."""
+    if sj['k'] < 0:
+        return 'nochoch'
+    w = P['zoneWhen']
+    if not (sj['after_low'] and (w == 'both' or (w == 'leg' and sj['leg']) or (w == 'after' and sj['after']))):
+        return 'zone'
+    if P['firstPull'] and not sj['first']:
+        return 'bos'
+    if P['belowChoch'] and not sj['below']:
+        return 'above'
+    return ''
+
+
+def struct_text(s, sj, cs, tf):
+    """'CHoCH 207.00 on 2025-05-13 (3 lower highs / lows, final low 180.20) · BOS 219.30 on ...' for the trade list."""
+    if sj['k'] < 0:
+        return ''
+    b, hi, lvl, li, lf, dd = s.events[sj['k']]
+    txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f)' % (_f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf))
+    if not sj['first']:
+        k = s.st.get(sj['k'])
+        if k and k[5] >= 0:
+            txt += ' · BOS on %s' % _label(tf, cs.day[k[5]], cs.minute[k[5]])
+    return txt
 
 
 class LabError(Exception):
