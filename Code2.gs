@@ -12334,7 +12334,10 @@ const AB_ITD_TFS = ['M', 'W', 'D', '4H', '2H', '1H', '30m', '15m'];          // 
 // owner, 08-Nov-2026: FVG+Spring = the Spring candle anywhere on an FVG / Gap-up zone or under its bottom line, no earlier
 // close under the Spring low ('FVG Detail' says top / middle / bottom); on 4H also the other FVG patterns of col X (they count on every 4H candle - the
 // 13:15 rule is for the Spring patterns only)
-const AB_ITD_PATTERNS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
+// owner, 10-Nov-2026: 'CHoCH + FVG' = his SMC setup (the PC's structure.py: after >= 3 lower highs / lows a close above the last lower high,
+// an FVG / Gap-up zone of that move or after it below the CHoCH level, the first pullback into it with a Spring / FVG First Touch / Confirmed)
+const AB_ITD_CHOCH = 'CHoCH + FVG';
+const AB_ITD_PATTERNS = [AB_ITD_CHOCH, 'Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
 const AB_ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
 const AB_ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
 const AB_ITD_KEEP_DAYS = 30;
@@ -12396,6 +12399,12 @@ function ab_itdDetail_(z) {
   return kind + ' ' + where + (touch >= 1 && touch < 1000 ? ' (touch ' + Math.round(touch) + ')' : '') + (kind === 'Gap-up' && Number(z[6]) === 1 ? ', inside FVG' : '');
 }
 
+/** The PC's words for a CHoCH + FVG row ('Spring · CHoCH 2026-10-13 after 3 lower highs / lows · first pullback'): one line, short,
+ *  never a formula (the cell is text). */
+function ab_itdNote_(v) {
+  return String(v || '').replace(/[\r\n\t]+/g, ' ').replace(/^[=+\-@\s]+/, '').slice(0, 200).trim();
+}
+
 function ab_itdFromBridge_(req) {
   if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_(), indices: ab_klIndexSyms_() };
   if (req.op === 'zones') return ab_itdZonesFromBridge_(req);
@@ -12432,7 +12441,8 @@ function ab_itdFromBridge_(req) {
   const gone = {};
   (Array.isArray(req.invalid) ? req.invalid : []).forEach(function (x) {
     const sym = String(x && x.sym || '').trim().toUpperCase();
-    const pat = String(x.pattern || '') === 'Gap-up FVG + Spring' ? 'Gap-up FVG + Spring' : 'Spring in FVG';   // an older PC sends no pattern
+    const p0 = String(x.pattern || '');
+    const pat = p0 === 'Gap-up FVG + Spring' || p0 === AB_ITD_CHOCH ? p0 : 'Spring in FVG';   // an older PC sends no pattern
     if (sym) gone[sym + '|' + String(x.tf || '') + '|' + pat + '|' + String(x.candle || '')] = true;
   });
   let replaced = 0, removed = 0;
@@ -12453,7 +12463,7 @@ function ab_itdFromBridge_(req) {
     const r = { session: session, sym: sym, company: names[sym] || '', tf: tf, pattern: pattern, candle: candle,
                 formed: z && /^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(String(z[2])) ? String(z[2]) : '',
                 low: ab_itdNum_(it.low), close: ab_itdNum_(it.close), bottom: z ? ab_itdNum_(z[0]) : '', top: z ? ab_itdNum_(z[1]) : '', found: found,
-                detail: ab_itdDetail_(z) };
+                detail: ab_itdDetail_(z) + (pattern === AB_ITD_CHOCH && it.note ? ' · ' + ab_itdNote_(it.note) : '') };
     const k = key(r);
     if (gone[k]) { skipped++; return; }
     if (byKey[k]) r.found = byKey[k].found || found;
@@ -12486,6 +12496,8 @@ function ab_itdFromBridge_(req) {
     'Gap-up FVG + Spring = the same on a Gap-up zone, "inside FVG" when that zone lies in a 3-candle FVG - ' +
     'FVG Detail says top / middle / bottom; taken off when a later candle closes under the Spring low; not on the monthly chart). ' +
     (!tfs || tfs.indexOf('4H') !== -1 ? '4H also: FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' : '') +
+    'CHoCH + FVG (your SMC setup, 4H / D / W): after at least 3 lower highs and lower lows (swings of 5 candles) a candle closed above the last lower high, ' +
+    'an FVG / Gap-up zone of that move or after it below that level, and on the first pullback into it (no BOS yet) a Spring or an FVG First Touch / Confirmed. ' +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {
@@ -12503,7 +12515,7 @@ function ab_itdFromBridge_(req) {
   }
   sh.setFrozenRows(2);
   return { ok: true, received: items.length, added: added, skipped: skipped, kept: rows.length, dropped: dropped, replaced: replaced,
-           removed: removed, tfs: tfs, slots: hasSlots ? slots : {} };
+           removed: removed, tfs: tfs, slots: hasSlots ? slots : {}, choch: true };   // choch: this web app keeps CHoCH + FVG rows (10-Nov-2026)
 }
 
 // =====================================================================================================================

@@ -315,7 +315,16 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    first run makes it if it is missing (about 3 minutes, once).
  - This computer must be on and the background program running (it starts at Windows log-in). After installing this
    zip: sign out and in again (or restart), so the background program uses the new version.
- - Spring candle shape (10-Nov-2026): step 2 of the page - hard rules that only make the Spring STRICTER (the pattern's own
+ - Market structure - CHoCH / BOS (10-Nov-2026): step 2 of the page. "My CHoCH + FVG setup" = your rules in one click:
+   after at least 3 lower highs and 3 lower lows (a swing = 5 candles each side) a candle CLOSES above the last lower high
+   (CHoCH); an FVG / Gap-up zone formed in that move or after it, below the CHoCH level; on the FIRST pullback into it
+   (no BOS - no close above the highest swing high since the CHoCH) a Spring or an FVG First Touch / Confirmed = entry.
+   "Show it on every trade" keeps every signal and adds a table "By market structure" (your setup / after a BOS / above
+   the CHoCH level / no CHoCH) to compare in one run. Target: an R multiple or the last swing high. The first run after
+   this update rebuilds the candle cache (3-4 minutes, once); the first run with market structure ~10 seconds more.
+   The daily Zerodha scan also finds today's CHoCH + FVG setups -> the sheet's Intraday Patterns tab -> the website's
+   Patterns & FVG page ("CHoCH + FVG setups") and Strategy Settings ("CHoCH + FVG (your SMC setup)").
+ - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /
    red, body at most x % of the red candle's. The dip: how far under the red candle's low (at least / at most, or in
@@ -324,10 +333,10 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    from (Clean hammer, Real stop-hunt, Swing-low Spring, Washout after a fall, All of them) - ideas to test, not proven.
    The result says how many Springs passed and what left the rest out; the trade list shows each trade's wicks and dip.
    Needs this ScreenerBridge version on the laptop (restart it); no sheet change, no cache rebuild.
- - EMA confluence (09-Nov-2026): step 3 of the page - take a signal only when the Spring candle took support at the
+ - EMA confluence (09-Nov-2026): step 4 of the page - take a signal only when the Spring candle took support at the
    10 / 21 / 50 EMA (its low came down to it, or within x % above it, and it closed at or above it), closed above
    chosen EMAs, and / or the EMAs were in order 10 > 21 > 50. The trade list then shows what the EMAs did.
- - Market condition (09-Nov-2026): step 4 of the page - take a signal only on days when an index (NIFTY 50, 100, 200, 500,
+ - Market condition (09-Nov-2026): step 5 of the page - take a signal only on days when an index (NIFTY 50, 100, 200, 500,
    Bank, Midcap, Smallcap ... and every index of your Indextracker tab) closed above its 10 / 21 / 50 / 100 / 200 EMA
    and / or had its EMAs in order 10 > 21 > 50. The index candles (20 years, daily) come from Kite with the daily scan
    (after 15:40) or KiteHistoryNow.bat - kept in intraday_data\indices.

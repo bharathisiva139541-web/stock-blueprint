@@ -85,7 +85,9 @@ LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles
   rows: [['2026-10-20', FLAG_SYM, 'Flag Co', '4H', 'Spring in FVG', '2026-10-20 13:15', '2026-08-24 09:15', 'FVG bottom (touch 3)'],
     ['2026-10-20', FLAG_SYM, 'Flag Co', '1H', 'Spring', '2026-10-20 14:15', null, null],
     ['2026-10-20', SENT_SYM, null, '4H', 'FVG First Touch', '2026-10-20 09:15', '2026-10-14 13:15', 'FVG'],
-    ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null]] };
+    ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null],
+    // the owner's CHoCH + FVG setup (10-Nov-2026): the PC's words, no prices
+    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback']] };
 // format 10: 4H FVG zones (no prices) + the FVG+Spring backtest (R only)
 LIVE_MAIN.zones4h = { note: '4H FVG zones still untouched ...', cols: ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'],
   rows: [[FLAG_SYM, 'Flag Co', 'FVG', 3.52, '2026-10-14 13:15', 1.2, null], [SENT_SYM, null, 'Gap-up', 4.1, '2026-10-16 09:15', 6.5, null],
@@ -859,8 +861,8 @@ function check(name, fn) {
       note: document.querySelector('#sg-itd .card-head p').textContent,
       jump: !!document.querySelector('[data-jump="sg-itd"]')
     }));
-    assert.strictEqual(r.count, '4 of 4');
-    assert.deepStrictEqual(r.chips, ['All timeframes (4)', '1H (1)', '4H (2)', 'W (1)']);
+    assert.strictEqual(r.count, '5 of 5');
+    assert.deepStrictEqual(r.chips, ['All timeframes (5)', '1H (1)', '4H (2)', 'D (1)', 'W (1)']);
     assert.ok(r.links.some((l) => l[0] === 'TradingView 4H ↗' && l[1] === 'https://www.tradingview.com/chart/?symbol=NSE%3A' + encodeURIComponent(FLAG_SYM) + '&interval=240' && l[2] === '_blank'), JSON.stringify(r.links));
     assert.match(r.note, /Last scan: session 2026-10-20/);
     assert.ok(r.jump, 'in the page\'s jump chips');
@@ -877,11 +879,33 @@ function check(name, fn) {
     assert.ok(typeof dp.chg === 'number', 'the stock has a change %');
     assert.ok(dp.cell.includes(Math.abs(dp.chg).toFixed(2)), dp.cell + ' vs ' + dp.chg);
     await p.click('[data-chip="sgitdtf"][data-v="4H"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 4');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 5');
     await p.click('[data-chip="sgitdp"][data-v="FVG First Touch"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 4');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 5');
     await p.click('[data-chip="sgitdp"][data-v="Spring"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 4');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 5');
+    // the owner's CHoCH + FVG setups (10-Nov-2026): their own section first, with what triggered each one
+    await p.waitForSelector('#sg-ch-t table');
+    const ch = await p.evaluate(() => ({ count: document.querySelector('#sg-ch-count').textContent, text: document.querySelector('#sg-ch-t').textContent,
+      link: (document.querySelector('#sg-ch-t a.btn') || {}).textContent, jump: !!document.querySelector('[data-jump="sg-choch"]'),
+      first: document.querySelector('#app section.card').id, note: document.querySelector('#sg-choch .card-head p').textContent }));
+    assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['1 of 1', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
+    assert.ok(ch.text.includes('Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'), ch.text);
+    assert.match(ch.note, /3 lower highs and 3 lower lows.*closed above the last lower high \(CHoCH\).*below the CHoCH level.*first pullback/);
+    // ... and the strategy rule reads them (Strategy Settings preset 'CHoCH + FVG (your SMC setup)')
+    const st = await p.evaluate((sym) => {
+      const s = window.SB.ctx.bySym[sym], S = window.SB.strategy;
+      const r = S.run(S.PRESETS.chochFvg, [s], { [sym]: [{ t: '2026-10-19', o: 10, h: 11, l: 9, c: 10, v: 1e6 }, { t: '2026-10-20', o: 10, h: 11, l: 9, c: 10.5, v: 1e6 }] }, { refDate: '2026-10-21' });
+      return { n: (s.choch || []).length, pass: r.bySym[sym].checks.find((c) => c.id === 'chochFvg').res.pass };
+    }, FLAG_SYM);
+    assert.deepStrictEqual(st, { n: 1, pass: true });
+    await p.goto(base + '#strategy');
+    await p.waitForFunction(() => /Strategy|strategy/.test((document.querySelector('#app') || {}).textContent || ''), null, { timeout: 15000 });
+    const allBtn = await p.$('[data-style="all"]');
+    if (allBtn) await allBtn.click();
+    await p.waitForFunction(() => document.querySelector('#app').textContent.includes('CHoCH + FVG (your SMC setup)'), null, { timeout: 15000 });
+    await p.goto(base + '#signals');
+    await p.waitForSelector('#sg-z4-t table');
     // 4H FVG zones (format 10): kind chips, the "within 2%" chip, status, TradingView 4H
     await p.waitForSelector('#sg-z4-t table');
     const z = await p.evaluate(() => ({

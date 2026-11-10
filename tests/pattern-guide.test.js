@@ -11,6 +11,7 @@ const path = require('path');
 const P = require('../web/lib/patterns.js');
 const F = require('../web/lib/fvg.js');
 const mock = require('./fixtures/apps-script-mock.js');
+const { spawnSync } = require('child_process');
 const G = require('../tools/pattern-guide/examples.js');
 
 const day0 = Date.UTC(2026, 0, 5);
@@ -82,6 +83,41 @@ test('IPO base pages: Code.gs ab_ipoBaseSequence_ finds exactly the levels drawn
     if (k.broken) assert.deepStrictEqual(out.bases.map((b) => b.broken), k.broken, name + ' broken');
     if (k.types) k.types.forEach((t, i) => { if (t) assert.strictEqual(out.bases[i].type, t, name + ' type ' + i); });
     if ('sub' in k) assert.strictEqual(out.sub && out.sub.level, k.sub, name + ' 2A');
+  });
+});
+
+test('market structure pages: the PC program (structure.py + kite_intraday.choch_setups) answers as the charts say', () => {
+  const list = examples.filter((e) => e.ex.check.type === 'choch');
+  assert.ok(list.length >= 4, 'CHoCH + FVG has its pages');
+  const py = ['python3', 'python'].find((x) => spawnSync(x, ['--version']).status === 0);
+  assert.ok(py, 'python is needed for these checks');
+  const code = ['import importlib.util, json, os, sys',
+    'd = sys.argv[1]; sys.path.insert(0, d)',
+    'spec = importlib.util.spec_from_file_location("ki", os.path.join(d, "kite_intraday.py")); K = importlib.util.module_from_spec(spec); spec.loader.exec_module(K)',
+    'from datetime import date, timedelta',
+    'out = []',
+    'for rows in json.load(sys.stdin):',
+    '    cc = [{"t": (date(2026, 1, 1) + timedelta(days=k)).isoformat(), "day": (date(2026, 1, 1) + timedelta(days=k)).isoformat(), "o": r[0], "h": r[1], "l": r[2], "c": r[3], "v": 1e6} for k, r in enumerate(rows)]',
+    '    d0 = K.fvg_detail(cc, None, K.WINDOW.get("D", 300)); i = len(cc) - 1',
+    '    setups = K.choch_setups(cc, cc, d0, "D", None, "")',
+    '    trig = K.choch_trigger(d0, i, True); stage = "notrigger"; zone = None',
+    '    if trig:',
+    '        st = K.backtest_lab.structure.Structure([c["h"] for c in cc], [c["l"] for c in cc], [c["c"] for c in cc], K.CHOCH_PIVOT_N)',
+    '        stage = st.judge(i, trig[0]["f"], trig[0]["top"], cc[i]["c"], [c["c"] for c in cc], K.CHOCH_DOWN_N)["stage"]',
+    '        zone = [round(trig[0]["bottom"], 2), round(trig[0]["top"], 2), trig[0]["f"], trig[1]]',
+    '    out.append({"setup": i in setups, "stage": stage, "zone": zone, "note": setups[i][1] if i in setups else ""})',
+    'print(json.dumps(out))'].join('\n');
+  const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge')],
+    { input: JSON.stringify(list.map((e) => e.ex.candles)), encoding: 'utf8', timeout: 120000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const got = JSON.parse(r.stdout);
+  list.forEach(({ ex, name }, k) => {
+    const g = got[k];
+    assert.strictEqual(g.setup, ex.ok, name + ': ' + JSON.stringify(g));
+    if (ex.check.stage) assert.strictEqual(g.stage, ex.check.stage, name + ': ' + JSON.stringify(g));
+    // the drawn zone = the zone the entry Spring sat on
+    assert.deepStrictEqual(g.zone && [g.zone[0], g.zone[1], g.zone[2], g.zone[3]], [ex.marks.zone.bottom, ex.marks.zone.top, ex.marks.zone.from, 'Spring'], name + ': the drawn zone');
+    if (ex.ok) assert.match(g.note, /^Spring · CHoCH \S+ after 3 lower highs \/ lows · first pullback$/, name);
   });
 });
 

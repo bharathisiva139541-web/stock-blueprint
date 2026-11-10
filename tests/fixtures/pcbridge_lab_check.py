@@ -637,4 +637,61 @@ assert all(r[gcol] >= r[ecol] + (r[ecol] - r[stc]) * 0.999 for r in sw['trades']
 assert all(abs(r[L.TRADE_COLS.index('exit')] - r[gcol]) < 0.011 for r in sw['trades'] if r[rc] == 'target')
 assert len(L._STRUCT['map']) == 4, 'one structure per stock, kept for the next run'
 
+# ------------------------------------------------------------------ 11. the daily scan's live CHoCH + FVG rows (owner, 10-Nov-2026)
+def craft5(after=()):
+    """3 lower highs / lows with 5-candle swings, a CHoCH rally with an FVG in it, the first pullback with a Spring in it."""
+    rows, prev = [], 165.0
+    d0 = date(2026, 3, 2)
+
+    def put(o, h, l, c):
+        rows.append([(d0 + timedelta(days=len(rows))).isoformat(), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 900000])
+
+    def go(to, k=6):
+        nonlocal prev
+        for x in leg(prev, to, k):
+            put(prev, max(prev, x) + 0.3, min(prev, x) - 0.3, x)
+            prev = x
+    for to in (150, 160, 142, 152, 134, 144, 126, 136, 120):   # highs 160 > 152 > 144 > 136, lows 150 > 142 > 134 > 126 > 120
+        go(to)
+    put(120, 121.3, 119.7, 121)                                 # A
+    put(121, 130.3, 120.7, 130)                                 # B
+    put(130, 133.3, 126.5, 133)                                 # C: FVG 121.3 - 126.5
+    put(133, 138.3, 132.7, 138)                                 # D: closes above the last lower high 136.3 = CHoCH
+    prev = 138
+    go(146, 3)
+    go(128, 6)                                                  # the first pullback
+    put(128, 128.3, 124.8, 125)                                 # c1 red
+    put(125.3, 125.6, 123, 125.1)                               # c2 = the Spring, low 123 in the FVG
+    prev = 125.1
+    for o, h, l, c in after:
+        put(o, h, l, c)
+        prev = c
+    go(150, 8)
+    return rows
+
+
+rows5 = craft5()
+spring_day = rows5[-9][0]
+upto5 = date.fromisoformat(rows5[-1][0])
+since5 = (date.fromisoformat(spring_day) - timedelta(days=1)).isoformat()
+res5 = K.analyse({'sym': 'EEE', 'day': rows5, 'm15': [], 'h4': []}, since5, upto5, set(), ('D',), ())
+ch_items = [x for x in res5['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert len(ch_items) == 1 and ch_items[0]['candle'] == spring_day, [(x['pattern'], x['candle']) for x in res5['items']]
+it5 = ch_items[0]
+assert it5['note'].startswith('Spring · CHoCH ') and 'after 3 lower highs / lows · first pullback' in it5['note'], it5['note']
+assert it5['zone'][:2] == [121.3, 126.5] and it5['zone'][3] == 'FVG', it5['zone']
+import re
+assert not re.search(r'\d\.\d', it5['note']), 'no prices in the note (the website shows it): ' + it5['note']
+assert any(x['pattern'] == 'Spring in FVG' and x['candle'] == spring_day for x in res5['items']), 'the plain Spring in FVG row stays too'
+# only from the new sessions: a later scan does not send it again
+assert not [x for x in K.analyse({'sym': 'EEE', 'day': rows5, 'm15': [], 'h4': []}, spring_day, upto5, set(), ('D',), ())['items']
+            if x['pattern'] == K.CHOCH_PATTERN]
+# a later close under the Spring candle's low (123): not sent, and listed as invalid for the sheet (within KEEP_DAYS)
+rows_b = craft5(after=[(125.1, 125.5, 121.8, 122.0)])
+res_b = K.analyse({'sym': 'EEE', 'day': rows_b, 'm15': [], 'h4': []}, since5, date.fromisoformat(rows_b[-1][0]), set(), ('D',), ())
+assert not [x for x in res_b['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert {'tf': 'D', 'candle': spring_day, 'pattern': K.CHOCH_PATTERN} in res_b['invalid'], res_b['invalid']
+# the PC's rule = the Lab's default setup (the same structure.py)
+assert (K.CHOCH_PIVOT_N, K.CHOCH_DOWN_N) == (L.DEFAULTS['pivotN'], L.DEFAULTS['downN']) and K.RULES_VERSION == 5
+
 print('OK')

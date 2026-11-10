@@ -21,7 +21,7 @@
     btMin: 4, btType: 'all', btCat: '', btQ: '',
     mlQ: '', mlType: 'all',
     wlQ: '', wlSrc: 'all',
-    itdQ: '', itdTf: 'all', itdPat: 'all',
+    itdQ: '', itdTf: 'all', itdPat: 'all', chQ: '', chTf: 'all',
     z4Q: '', z4Kind: 'all', btTf: 'all', btRes: 'all', btQ2: ''
   };
   // Zerodha Kite patterns (owner, 07-Nov-2026: the 4H Spring in FVG of PARAGMILK missed for lack of intraday candles):
@@ -29,7 +29,8 @@
   var ITD_TFS = ['15m', '30m', '1H', '2H', '4H', 'D', 'W', 'M'];
   var ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
   var ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
-  var ITD_PATTERNS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'FVG First Touch', 'FVG First Touch Confirmed', 'Twin Star Bottom + FVG'];
+  var CHOCH = 'CHoCH + FVG';      // owner, 10-Nov-2026: his SMC setup (the PC's structure.py), its own section #sg-choch
+  var ITD_PATTERNS = [CHOCH, 'Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'FVG First Touch', 'FVG First Touch Confirmed', 'Twin Star Bottom + FVG'];
   function tvUrl(sym, tf) { return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '&interval=' + (ITD_TV[tf] || 'D'); }
   var CACHE = null;               // candle-derived results, computed once per history file
 
@@ -164,11 +165,12 @@
         'The top sections are recomputed in your browser from the daily candles with the same rules as your sheet; the lower sections are snapshots of the sheet\'s own tabs. ' +
         'These are chart conditions to research, not buy recommendations.</p></div></div>';
       h += '<nav class="chips" aria-label="On this page">' + [
-        ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-z4', '4H FVG zones'], ['sg-sbt', 'FVG+Spring backtest'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
+        ['sg-choch', 'CHoCH + FVG setups'], ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-z4', '4H FVG zones'], ['sg-sbt', 'FVG+Spring backtest'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
         ['sg-tabs', 'Sheet FVG tabs'], ['sg-bt', 'FVG backtest'], ['sg-ml', 'Mitigated log'], ['sg-wl', 'Signal log']
       ].map(function (j) { return '<button type="button" class="chip" data-jump="' + j[0] + '">' + esc(j[1]) + '</button>'; }).join('') + '</nav>';
 
       // 0. Zerodha Kite: intraday / weekly / monthly patterns found by the PC program, its 4H FVG zones and the backtest
+      h += chochSectionHtml(ctx);
       h += itdSectionHtml(ctx);
       h += z4SectionHtml(ctx);
       h += sbtSectionHtml(ctx);
@@ -241,6 +243,7 @@
         window.scrollTo(0, Math.max(0, y));
       });
 
+      drawChoch(el, ctx);
       drawItd(el, ctx);
       drawZ4(el, ctx);
       drawSbt(el, ctx);
@@ -268,6 +271,59 @@
   });
 
   function itdRows(ctx) { return ui.objRows(ctx.D.intraday); }
+
+  // the owner's CHoCH + FVG setups (10-Nov-2026): rows 'CHoCH + FVG' of the same tab, with what triggered them
+  function chochSectionHtml(ctx) {
+    var rows = itdRows(ctx).filter(function (r) { return r.Pattern === CHOCH; });
+    var sub = 'Your SMC setup, found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close: after at least ' +
+      '<b>3 lower highs and 3 lower lows</b> (swings of 5 candles) a candle <b>closed above the last lower high (CHoCH)</b>; an FVG / Gap-up zone formed in that move ' +
+      'or after it, <b>below the CHoCH level</b>; and on the <b>first pullback</b> into it (no BOS yet) a <b>Spring</b> or an <b>FVG First Touch / Confirmed</b>. ' +
+      'Taken off when a later candle closes below the entry candle\'s low. Use it in Strategy Settings ("CHoCH + FVG (your SMC setup)") and test it in the ' +
+      '<a href="#lab">Backtest Lab</a>. Research only, not a buy recommendation.';
+    var body;
+    if (!rows.length) {
+      body = '<p class="empty">No CHoCH + FVG setup in the last 30 days of your PC\'s scans yet. They come with the daily Zerodha Kite scan after the close ' +
+        '(the ScreenerBridge version of 10-Nov-2026 or later; the first scan after updating looks back 10 sessions).</p>';
+    } else {
+      var tfN = {};
+      rows.forEach(function (r) { tfN[r.Timeframe] = (tfN[r.Timeframe] || 0) + 1; });
+      body = '<div class="controls"><input class="search" id="sg-ch-q" type="search" placeholder="Search symbol or company" aria-label="Search CHoCH + FVG setups" value="' + esc(ST.chQ) + '">' +
+        '<span class="count" id="sg-ch-count"></span></div>' +
+        '<div class="controls">' + ui.chips('sgchtf', [['all', 'All timeframes (' + F.int(rows.length) + ')']].concat(ITD_TFS.filter(function (t) { return tfN[t]; })
+          .map(function (t) { return [t, t + ' (' + F.int(tfN[t]) + ')']; })), ST.chTf) + '</div><div id="sg-ch-t"></div>';
+    }
+    return sectionHtml('sg-choch', 'CHoCH + FVG setups (your SMC strategy)', sub, body);
+  }
+  function drawChoch(el, ctx) {
+    var box = $('#sg-ch-t', el);
+    if (!box) return;
+    var all = itdRows(ctx).filter(function (r) { return r.Pattern === CHOCH; });
+    var t = new ui.Table({
+      rows: [], pageSize: 25, id: 'signals-choch', empty: 'No setup with these filters',
+      columns: [
+        { key: 'Session', label: 'Session', type: 'date' },
+        { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
+        { key: 'chg', label: 'Daily %', type: 'pct', digits: 2, title: 'Today\'s change % (the Watchlist\'s Today column)',
+          get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
+        { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
+        { key: 'Candle', label: 'Entry candle', title: 'The candle of the entry pattern (start time, IST; W = the week starting that Monday)' },
+        { key: 'FVG Detail', label: 'Entry pattern & structure', title: 'The zone and where the entry candle sat in it, the entry pattern, the CHoCH candle and the lower highs / lows before it' },
+        { key: 'FVG Formed', label: 'Zone formed', title: 'When the FVG / Gap-up zone formed (same timeframe)' },
+        { key: 'chart', label: 'Chart', get: function () { return null; },
+          html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
+      ]
+    }).mount(box);
+    function apply() {
+      var rows = all.filter(function (r) { return (ST.chTf === 'all' || r.Timeframe === ST.chTf) && ui.textMatch(ST.chQ, [r.Symbol, r.Company]); });
+      var c = $('#sg-ch-count', el);
+      if (c) c.textContent = F.int(rows.length) + ' of ' + F.int(all.length);
+      t.setRows(rows);
+    }
+    ui.bindChips(el, 'sgchtf', function (v) { ST.chTf = v; apply(); });
+    var q = $('#sg-ch-q', el), timer;
+    if (q) q.addEventListener('input', function (e) { clearTimeout(timer); timer = setTimeout(function () { ST.chQ = e.target.value.trim(); apply(); }, 120); });
+    apply();
+  }
   function itdSectionHtml(ctx) {
     var it = ctx.D.intraday, rows = itdRows(ctx);
     // the timeframes in the data (owner, 08-Nov-2026: the PC reports only 4H, D, W, M)
@@ -312,7 +368,7 @@
           title: 'Today\'s change % of the stock - the same as the Watchlist\'s Today column (Zerodha Kite live on your devices with the PIN, else the sheet\'s delayed price)',
           get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
-        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' || r.Pattern === 'Gap-up FVG + Spring' ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
+        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' || r.Pattern === 'Gap-up FVG + Spring' || r.Pattern === CHOCH ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
         { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },
         { key: 'FVG Detail', label: 'Where', title: 'Spring in FVG: where its low sat - top (upper half) / middle / bottom (at or under the bottom line) of an FVG / Gap-up zone, with the touch number; the other FVG patterns: the zone kind' },
         { key: 'FVG Formed', label: 'Zone formed', title: 'When the zone formed (same timeframe)' },

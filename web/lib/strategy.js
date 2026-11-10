@@ -301,6 +301,24 @@
       return { pass: okS && okD, value: ago, detail: 'announced ' + ann + ' · result date ' + rd + when };
     } });
 
+  // the owner's CHoCH + FVG setup (10-Nov-2026): found by his PC program on Zerodha Kite candles (structure.py, 4H / D / W)
+  // once a trading day after the close - the sheet's Intraday Patterns rows 'CHoCH + FVG' (site feed part intraday),
+  // joined to each stock as stock.choch (chochIndex). Not point-in-time: the website's own backtests leave it out.
+  def('chochFvg', { label: 'CHoCH + FVG setup on {tfs}, found at most {days} trading day(s) before today', kind: 'sheet', setGroup: 'trigger', type: 'pullback', pit: false,
+    ref: 'PC program structure.py + the sheet\'s Intraday Patterns tab (pattern "CHoCH + FVG")',
+    params: [{ key: 'tfs', label: 'Timeframes', def: ['D', '4H', 'W'], options: ['4H', 'D', 'W'] },
+      { key: 'days', label: 'Found at most this many trading days before today (0 = today; the scan runs after the close)', def: 1 }],
+    eval: function (x, p) {
+      var rows = (x.stock || {}).choch || [];
+      if (!rows.length) return { pass: false, detail: 'no CHoCH + FVG setup in the last 30 days of your PC\'s scans' };
+      var tfs = p.tfs || [], hit = rows.filter(function (r) { return tfs.indexOf(r.tf) >= 0; })[0];
+      if (!hit) return { pass: false, detail: 'a setup only on ' + rows.map(function (r) { return r.tf; }).join(', ') };
+      var ago = weekdaysAfter(hit.session, x.refDate);
+      var when = ago == null ? '' : ago < 0 ? '' : ago === 0 ? ' (today)' : ' (' + ago + ' trading day' + (ago === 1 ? '' : 's') + ' ago)';
+      return { pass: ago != null && ago >= 0 && ago <= p.days, value: hit.tf + ' ' + hit.candle,
+        detail: hit.tf + ' candle ' + hit.candle + when + (hit.detail ? ' - ' + hit.detail : '') };
+    } });
+
   // standard rules (not in the sheet)
   def('breakout', { label: 'Close above the prior {length}-bar high', kind: 'std', setGroup: 'trigger', type: 'breakout', pit: true,
     params: [{ key: 'length', label: 'Lookback bars', def: 20 }, { key: 'minRelVol', label: 'Min relative volume', def: 1.5 }],
@@ -427,6 +445,23 @@
         'Result date at most 1 trading day before today (1 = yesterday; a Friday or weekend result counts as 1 on Monday). Only stocks whose new results are already in Main (Results Performance rows) are checked.',
         'OPM QoQ, OPM YoY (yearly) and OPM Qtr YoY: Aggressive Increase, Increasing, Slightly Increasing or Stagnant. FII: Increasing or Stagnant. TTM EPS growth: 0% or more. These defaults are assumptions - change or switch off any rule below.',
         'A screen: it lists stocks, it does not time an entry (no stop / target).'
+      ]
+    },
+    chochFvg: {
+      id: 'chochFvg', name: 'CHoCH + FVG (your SMC setup)', version: 1, source: 'request', mode: 'setup', style: 'swing', timeframe: '1d',
+      description: 'Your setup: after a downtrend of at least 3 lower highs and 3 lower lows (swings of 5 candles), a candle CLOSES above the last lower high ' +
+        '(CHoCH); an FVG / Gap-up zone formed in that move or after it, below the CHoCH level; on the FIRST pullback into it (no BOS yet) a Spring on the ' +
+        'zone or an FVG First Touch / Confirmed. Found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close. ' +
+        'Test it in the Backtest Lab (step 2 "My CHoCH + FVG setup").',
+      universe: { categories: [], minBars: 2 }, filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }],
+      triggers: [{ id: 'chochFvg', params: { tfs: ['D', '4H', 'W'], days: 1 } }],
+      confirms: [], qualify: { minTriggers: 1 },
+      exits: { stop: { method: 'swing', bars: 5 }, target: { method: 'rr', rr: 2 }, minRR: 0 }, events: { warnDays: 7 },
+      assumptions: [
+        'The setups come from your PC program (Zerodha Kite candles) after the close - with the laptop off, the list stops updating.',
+        'Found at most 1 trading day before today (the scan of yesterday evening counts the next morning).',
+        'Your real stop is a little under the FVG zone; the website does not receive Kite\'s zone prices, so the trade plan here uses the lowest low of the last 5 candles and 2R - the Backtest Lab uses your zone stop and your target (R multiple or the last swing high).',
+        'Liquidity filter: average daily turnover at least ₹50 lakh (the sheet\'s FVG rule).'
       ]
     },
     demo: {
@@ -682,6 +717,26 @@
     return out;
   }
 
+  /** The sheet's Intraday Patterns rows (feed part intraday, {cols, rows}) -> { SYM: [CHoCH + FVG setups, newest first] }
+   *  as stock.choch: {session, tf, candle, formed, detail}. */
+  function chochIndex(table) {
+    var out = {};
+    if (!table || !Array.isArray(table.cols) || !Array.isArray(table.rows)) return out;
+    var ix = {};
+    table.cols.forEach(function (c, i) { ix[c] = i; });
+    var g = function (r, c) { return ix[c] == null || r[ix[c]] == null ? '' : String(r[ix[c]]).trim(); };
+    table.rows.forEach(function (r) {
+      if (g(r, 'Pattern') !== 'CHoCH + FVG') return;
+      var sym = g(r, 'Symbol').toUpperCase();
+      if (!sym) return;
+      (out[sym] = out[sym] || []).push({ session: g(r, 'Session'), tf: g(r, 'Timeframe'), candle: g(r, 'Candle'), formed: g(r, 'FVG Formed'), detail: g(r, 'FVG Detail') });
+    });
+    Object.keys(out).forEach(function (k) {
+      out[k].sort(function (a, b) { return a.session < b.session ? 1 : a.session > b.session ? -1 : a.candle < b.candle ? 1 : a.candle > b.candle ? -1 : 0; });
+    });
+    return out;
+  }
+
   /** Exit / risk warnings for open positions [{sym, side, entry, stop, target, qty}] at the latest data.
    *  side 'short' mirrors every check (stop above, target below, close above the 21 EMA). */
   function positionWarnings(positions, stocksBySym, history) {
@@ -708,6 +763,6 @@
   return {
     CONDITIONS: C, PRESETS: PRESETS, BULLISH_PATTERNS: BULLISH_PATTERNS, buildContext: buildContext, evaluate: evaluate, run: run,
     validate: validate, diff: diff, label: label, ttmSignal: ttmSignal, positionWarnings: positionWarnings, clone: clone,
-    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES, ANN_SESSIONS: ANN_SESSIONS, weekdaysAfter: weekdaysAfter
+    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES, ANN_SESSIONS: ANN_SESSIONS, weekdaysAfter: weekdaysAfter, chochIndex: chochIndex
   };
 });

@@ -1152,8 +1152,15 @@ BACKTEST_TFS = ('4H', 'D', 'W')
 GAP_SPRING = 'Gap-up FVG + Spring'   # owner, 08-Nov-2026: split from Spring in FVG (= 3-candle FVG zones only)
 SPRING_PATTERNS = ('Spring in FVG', GAP_SPRING, 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
 FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed'), ('twin', 'Twin Star Bottom + FVG'))
-RULES_VERSION = 4                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
-                                   # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch)
+RULES_VERSION = 5                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
+                                   # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch, 5 = CHoCH + FVG)
+# the owner's CHoCH + FVG setup (10-Nov-2026, structure.py): after >= 3 lower highs / lows (swings of 5 candles) a candle
+# closes above the last lower high; an FVG / Gap-up zone formed in that move or after it, below the CHoCH level; on the
+# first pullback into it (no BOS yet) a Spring on the zone (4H: the 13:15 candle) or an FVG First Touch / Confirmed
+CHOCH_PATTERN = 'CHoCH + FVG'
+CHOCH_TFS = ('4H', 'D', 'W')
+CHOCH_PIVOT_N = 5
+CHOCH_DOWN_N = 3
 KEEP_DAYS = 30                     # = the sheet's AB_ITD_KEEP_DAYS: Spring in FVG rows a later close under the low takes off
 BT_DAYS = 30                       # backtest (owner, 09-Nov-2026: "use % movement to upward direction within 30 days from
                                    # pattern day" and "backtest should not be limited to 2R"): the 30 calendar days after it
@@ -1232,6 +1239,50 @@ def _slot_ok(slots, tf, c):
     return not (slots and slots.get(tf)) or c['t'][11:16] in slots[tf]
 
 
+def choch_trigger(d, i, spring_ok):
+    """The entry pattern on candle i of fvg_detail's events, for the CHoCH + FVG setup: (zone, words) or None - a Spring on
+    an FVG / Gap-up zone (`spring_ok` = the 4H 13:15 rule), else FVG First Touch Confirmed / First Touch. A later close
+    under that candle's low is judged by the caller (analyse: not sent / listed as invalid)."""
+    if spring_ok:
+        for key, words in (('spring', 'Spring'), ('gapspring', 'Spring')):
+            z = d[key].get(i)
+            if z:
+                return z, words
+    for key, words in (('conf', 'FVG First Touch Confirmed'), ('ft', 'FVG First Touch')):
+        z = d[key].get(i)
+        if z and z.get('f') is not None and z.get('bottom') is not None:
+            return z, words
+    return None
+
+
+def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None):
+    """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
+    {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). The note
+    has no prices (the website shows it): 'Spring · CHoCH 2026-10-13 after 3 lower highs / lows · first pullback'."""
+    off = len(full_c) - len(all_c)
+    cand = {}
+    for i in range(max(1, len(all_c) - WINDOW.get(tf, 300)), len(all_c)):
+        if all_c[i]['day'] <= from_iso:
+            continue
+        t = choch_trigger(d, i, _slot_ok(slots, tf, all_c[i]))
+        if t:
+            cand[i] = t
+    if not cand:
+        return {}
+    if st is None:
+        st = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c], CHOCH_PIVOT_N)
+    closes = [c['c'] for c in full_c]
+    out = {}
+    for i, (z, words) in cand.items():
+        j = st.judge(i + off, z['f'] + off, z['top'], all_c[i]['c'], closes, CHOCH_DOWN_N)
+        if j['stage'] != 'below':
+            continue
+        b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
+        out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · %s' % (words, full_c[b]['t'], dd,
+                                                                          'first pullback' if j['first'] else 'after a BOS'))
+    return out
+
+
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
             backtest=False, lab=None):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
@@ -1278,6 +1329,18 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 for i, sz in d[key].items():
                     if sz['broken'] is not None and all_c[i]['day'] >= keep_from and _slot_ok(slots, tf, all_c[i]):
                         out['invalid'].append({'tf': tf, 'candle': all_c[i]['t'], 'pattern': name})
+        if d and tf in CHOCH_TFS:
+            # the owner's CHoCH + FVG setup (10-Nov-2026): new ones + the ones of the last KEEP_DAYS a later close under
+            # the entry candle's low broke (they leave the sheet's list, like Spring in FVG)
+            lo_iso = min(since_iso, (upto - timedelta(days=KEEP_DAYS + 1)).isoformat())
+            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg).items()):
+                c = all_c[i]
+                broken = spring_broken(all_c, i)
+                if broken is None and c['day'] > since_iso:
+                    out['items'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
+                                         'pattern': CHOCH_PATTERN, 'zone': zone_out(all_c, z), 'note': note})
+                elif broken is not None and c['day'] >= keep_from:
+                    out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': CHOCH_PATTERN})
         if d and tf in FVG_PATTERN_TFS:
             day = [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto.isoformat()][-TURNOVER_DAYS:]
             t = avg_turnover(day)
@@ -1720,7 +1783,8 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             % (len(syms) - len(nokite), (time.time() - t0) / 60, reqs, ', %d errors' % errors if errors else '',
                ', not on Kite: ' + ', '.join(nokite[:12]) + (' ...' if len(nokite) > 12 else '') if nokite else '',
                len(items), ': ' + ', '.join('%s %d' % kv for kv in sorted(counts.items())) if counts else ''))
-        sent, old_app = 0, False
+        sent, old_app, no_choch = 0, False, False
+        has_choch = any(f['pattern'] == CHOCH_PATTERN for f in items)
         for p in range(0, max(1, len(items)), POST_ITEMS):
             part = items[p:p + POST_ITEMS]
             res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part, 'tfs': tfs, 'slots': slots,
@@ -1734,9 +1798,14 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             if p == 0 and res.get('removed'):
                 log('Kite: %d Spring in FVG row(s) taken off the sheet - a later candle closed below the Spring low.' % int(res['removed']))
             old_app = old_app or 'tfs' not in res or 'slots' not in res
+            no_choch = no_choch or (has_choch and not res.get('choch'))
         if old_app:
             log('Kite: the sheet\'s web app is an older version - rows of other timeframes / candles stay on the tab until you '
                 'paste the new Code2.gs and do the New version deploy (the next scan then clears them).')
+        if no_choch:     # CHoCH + FVG (10-Nov-2026): an older web app dropped them - this scan's rules are not marked done, so the
+                         # next scan (after the deploy) looks back the last sessions again and sends them
+            log('Kite: the sheet\'s web app does not know "CHoCH + FVG" yet - paste the new Code2.gs and do the New version deploy; '
+                'the next scan sends them again.')
         if '4H' in tfs:
             send_zones(cfg, api, upto, since, zones, mitigated)
         send_backtest(cfg, api, upto, trades, springs_bt)
@@ -1750,7 +1819,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         st['scanned'] = upto.isoformat()
         st['tfs'] = tfs
         st['slots'] = slots
-        st['rules'] = RULES_VERSION
+        st['rules'] = RULES_VERSION if not no_choch else min(st.get('rules') or 0, RULES_VERSION - 1)
         st['last'] = {'at': datetime.now().strftime('%Y-%m-%d %H:%M'), 'stocks': len(syms) - len(nokite), 'found': len(items),
                       'requests': reqs, 'errors': errors}
         log('Kite: the sheet\'s "Intraday Patterns" tab has %d new row(s).' % sent)
