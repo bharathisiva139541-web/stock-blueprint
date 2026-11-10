@@ -1536,3 +1536,11 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .lab-acct { cursor: help; white-space: nowrap; border-bottom: 1px dotted var(--border-strong); }
 .lab-acct.skip { color: var(--warn-text); }
 .lab-acct i { font-style: normal; font-size: 11px; opacity: 0.7; }
+/* Spring shape rules (owner, 10-Nov-2026): sub-headings + recommendation cards */
+.lab-sub { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.lab-recs { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 8px 0 4px; }
+.lab-rec { display: grid; grid-template-rows: auto 1fr auto; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; color: var(--ink-2); min-width: 0; }
+.lab-rec b { color: var(--ink); font-size: 13px; }
+.lab-rec .btn { justify-self: start; }
+.lab-rec.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22); }
+.lab-shape-why { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

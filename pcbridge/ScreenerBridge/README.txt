@@ -315,10 +315,19 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    first run makes it if it is missing (about 3 minutes, once).
  - This computer must be on and the background program running (it starts at Windows log-in). After installing this
    zip: sign out and in again (or restart), so the background program uses the new version.
- - EMA confluence (09-Nov-2026): step 2 of the page - take a signal only when the Spring candle took support at the
+ - Spring candle shape (10-Nov-2026): step 2 of the page - hard rules that only make the Spring STRICTER (the pattern's own
+   rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
+   x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /
+   red, body at most x % of the red candle's. The dip: how far under the red candle's low (at least / at most, or in
+   ATRs), how far it closed above that low, closed above the red candle's close. The red candle (c1): body size, lower
+   wick. Where: c2's low under the lowest low of the last N candles, price fell x % before. Five recommendations to start
+   from (Clean hammer, Real stop-hunt, Swing-low Spring, Washout after a fall, All of them) - ideas to test, not proven.
+   The result says how many Springs passed and what left the rest out; the trade list shows each trade's wicks and dip.
+   Needs this ScreenerBridge version on the laptop (restart it); no sheet change, no cache rebuild.
+ - EMA confluence (09-Nov-2026): step 3 of the page - take a signal only when the Spring candle took support at the
    10 / 21 / 50 EMA (its low came down to it, or within x % above it, and it closed at or above it), closed above
    chosen EMAs, and / or the EMAs were in order 10 > 21 > 50. The trade list then shows what the EMAs did.
- - Market condition (09-Nov-2026): step 3 of the page - take a signal only on days when an index (NIFTY 50, 100, 200, 500,
+ - Market condition (09-Nov-2026): step 4 of the page - take a signal only on days when an index (NIFTY 50, 100, 200, 500,
    Bank, Midcap, Smallcap ... and every index of your Indextracker tab) closed above its 10 / 21 / 50 / 100 / 200 EMA
    and / or had its EMAs in order 10 > 21 > 50. The index candles (20 years, daily) come from Kite with the daily scan
    (after 15:40) or KiteHistoryNow.bat - kept in intraday_data\indices.
