@@ -199,6 +199,7 @@ function slides(heights) {
     'ஒவ்வொரு படமும் Sheet-இன் அதே விதிகளால் சோதிக்கப்பட்டது - படம் சொல்வதும் Sheet செய்வதும் ஒன்றே.</p>' +
     '<div class="pills"><span class="pill"><b>' + G.PAGES.filter((p) => p.section === 'W').length + '</b> candle pattern பக்கங்கள்</span>' +
     '<span class="pill"><b>' + G.PAGES.filter((p) => p.section === 'X').length + '</b> FVG பக்கங்கள்</span>' +
+    '<span class="pill"><b>' + G.PAGES.filter((p) => p.section === 'S').length + '</b> market structure பக்கங்கள்</span>' +
     '<span class="pill"><b>' + G.PAGES.filter((p) => p.section === 'IPO').length + '</b> IPO base பக்கங்கள்</span>' +
     '<span class="pill"><b>' + exCount + '</b> எடுத்துக்காட்டு charts</span><span class="pill">' + today + '</span></div>' + footer(no, total) + '</section>');
   // 2. how to read

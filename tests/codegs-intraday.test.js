@@ -38,7 +38,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '06-11-2026', session: '2026-11-06' },               // a bad candle time
     { sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-09-01', session: '2026-09-01', low: 1, close: 2 }   // older than 30 days
   ]));
-  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {} });
+  assert.deepStrictEqual(r, { ok: true, received: 9, added: 5, skipped: 4, kept: 4, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {}, choch: true });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.match(rows[0][0], /^Spring, Spring in FVG and Gap-up FVG \+ Spring from Zerodha Kite candles .* Last scan: session 2026-11-06 \(2026-11-06 19:00\)\. Kept 30 days\./);
   assert.deepStrictEqual(rows[1], ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'Chart', 'Low', 'Close', 'FVG Bottom', 'FVG Top', 'Found', 'FVG Detail']);
@@ -54,7 +54,7 @@ test('intraday: the symbol list, then the patterns on the "Intraday Patterns" ta
   e.setNow(Date.UTC(2026, 10, 9, 12, 0));
   const r2 = e.post(put([PARA, { sym: 'FLAT', tf: '15m', pattern: 'Spring in FVG', candle: '2026-11-09 10:30', session: '2026-11-09', low: 100, close: 101,
     zone: [99.5, 100.5, '2026-11-05 11:00'] }], { upto: '2026-11-09' }));
-  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {} });
+  assert.deepStrictEqual(r2, { ok: true, received: 2, added: 1, skipped: 0, kept: 5, dropped: 0, replaced: 0, removed: 0, tfs: null, slots: {}, choch: true });
   const rows2 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows2[2].slice(0, 5), ['2026-11-09', 'FLAT', 'Flat Co', '15m', 'Spring in FVG']);
   assert.strictEqual(rows2.find((x) => x[1] === 'PARAGMILK')[12], '2026-11-06 19:00');
@@ -71,7 +71,7 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   assert.strictEqual(e.sheet('Intraday Patterns').rows.length, 5);
   const r = e.post(put([{ sym: 'FLAT', tf: 'D', pattern: 'Spring', candle: '2026-11-06', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '30m', pattern: 'Spring in FVG', candle: '2026-11-06 11:15', session: '2026-11-06', low: 99, close: 100 }], { tfs: ['4H', 'D', 'W', 'M', 'nope'] }));
-  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, replaced: 0, removed: 0, tfs: ['M', 'W', 'D', '4H'], slots: {} });
+  assert.deepStrictEqual(r, { ok: true, received: 2, added: 1, skipped: 1, kept: 2, dropped: 2, replaced: 0, removed: 0, tfs: ['M', 'W', 'D', '4H'], slots: {}, choch: true });
   const rows = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows.slice(2).map((x) => x[1] + ' ' + x[3]), ['FLAT D', 'PARAGMILK 4H'], 'the 15m and 1H rows are gone, the 30m one was not added');
   assert.match(rows[0][0], /candles \(your PC program\): 4H, D, W, M \(4H = 09:15-13:15 \/ 13:15-15:30\) - the sheet's/);
@@ -82,7 +82,7 @@ test('intraday: tfs = the timeframes the PC reports now (owner, 08-Nov-2026: "on
   const r3 = e.post(put([{ sym: 'FLAT', tf: '4H', pattern: 'Spring in FVG', candle: '2026-11-06 09:15', session: '2026-11-06', low: 99, close: 100 },
     { sym: 'FLAT', tf: '4H', pattern: 'Spring', candle: '2026-11-06 13:15', session: '2026-11-06', low: 99, close: 100 }],
   { tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'], D: ['10:00'], bad: ['13:15'], '1H': ['x'] } }));
-  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, replaced: 0, removed: 0, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] } });
+  assert.deepStrictEqual(r3, { ok: true, received: 2, added: 1, skipped: 1, kept: 3, dropped: 1, replaced: 0, removed: 0, tfs: ['M', 'W', 'D', '4H'], slots: { '4H': ['13:15'] }, choch: true });
   const rows3 = e.sheet('Intraday Patterns').rows;
   assert.deepStrictEqual(rows3.slice(2).map((x) => x[1] + ' ' + x[3] + ' ' + x[5]), ['FLAT D 2026-11-06', 'FLAT 4H 2026-11-06 13:15', 'PARAGMILK 4H 2026-10-30 13:15'],
     'the 09:15 4H rows are gone, the 13:15 ones and the daily one stay');
@@ -435,4 +435,32 @@ test('alerts use Kite\'s live price while the laptop sends it (fresh <= 3 min), 
   e.post({ token: TOKEN, action: 'kitelive', at: '2026-11-09 11:05:00', items: [['FLAT', 99, 100, 102, 98.5, 100]] });
   assert.deepStrictEqual(JSON.parse(e.run('(function () { const p = { FLAT: 101, PARAGMILK: 240 }; const u = ab_kiteLiveOverlay_(p); return JSON.stringify([p, u]); })()')),
     [{ FLAT: 99, PARAGMILK: 240 }, { FLAT: true }]);
+});
+
+test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s words in FVG Detail, no prices on the site, taken off when broken', () => {
+  const e = env();
+  const ch = { sym: 'PARAGMILK', tf: 'D', pattern: 'CHoCH + FVG', candle: '2026-11-05', session: '2026-11-05', low: 228.1, close: 233.7,
+    zone: [229.9, 238, '2026-10-20', 'FVG', 'middle', 1], note: '=Spring · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback\nX' };
+  const r = e.post(put([ch, PARA, Object.assign({}, ch, { tf: '4H', candle: '2026-11-05 09:15', note: 'FVG First Touch · CHoCH 2026-10-21 09:15 after 3 lower highs / lows · first pullback',
+    zone: [229.9, 238, '2026-10-20 13:15', 'FVG'] })]));
+  assert.strictEqual(r.added, 3, JSON.stringify(r));
+  const rows = e.sheet('Intraday Patterns').rows.slice(2);
+  assert.deepStrictEqual(rows.map((x) => x[3] + ' ' + x[4]), ['D CHoCH + FVG', '4H CHoCH + FVG', '4H Spring in FVG'], 'CHoCH + FVG first in its session');
+  assert.strictEqual(rows[0][13], 'FVG middle (touch 1) · Spring · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback X', 'one line, never a formula');
+  assert.strictEqual(rows[1][13], 'FVG · FVG First Touch · CHoCH 2026-10-21 09:15 after 3 lower highs / lows · first pullback');
+  assert.strictEqual(rows[1][5], '2026-11-05 09:15', 'a 4H CHoCH + FVG row may be any 4H candle (the PC applies the 13:15 rule to its Springs)');
+  assert.match(e.sheet('Intraday Patterns').rows[0][0], /CHoCH \+ FVG \(your SMC setup, 4H \/ D \/ W\)/);
+  // the site feed: the words come along, the prices do not
+  const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
+    ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
+  const row = data.intraday.rows.find((x) => x[4] === 'CHoCH + FVG' && x[3] === 'D');
+  assert.deepStrictEqual(row, ['2026-11-05', 'PARAGMILK', 'Parag Milk Foods Ltd.', 'D', 'CHoCH + FVG', '2026-11-05', '2026-10-20',
+    'FVG middle (touch 1) · Spring · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback X']);
+  assert.ok(!JSON.stringify(data.intraday).includes('229.9') && !JSON.stringify(data.intraday).includes('233.7'), 'no Kite prices');
+  const markers = require('../api/site.js').PERSONAL_MARKERS;
+  assert.ok(markers.every((m) => !m.test(JSON.stringify(data.intraday))), 'nothing the site\'s privacy guard would block');
+  // a later close under the entry candle's low: the PC lists it as invalid -> the row leaves the tab (the Spring in FVG row stays)
+  const r2 = e.post(put([], { invalid: [{ sym: 'PARAGMILK', tf: 'D', candle: '2026-11-05', pattern: 'CHoCH + FVG' }] }));
+  assert.strictEqual(r2.removed, 1, JSON.stringify(r2));
+  assert.deepStrictEqual(e.sheet('Intraday Patterns').rows.slice(2).map((x) => x[3] + ' ' + x[4]), ['4H CHoCH + FVG', '4H Spring in FVG']);
 });
