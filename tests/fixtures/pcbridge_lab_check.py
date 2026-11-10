@@ -389,4 +389,96 @@ except L.LabError as e:
     assert 'NIFTY BANK' in str(e) and 'it has: NIFTY_50' in str(e), e
 assert L.clean_params({'mktIndex': 'NIFTY 50; drop', 'mktAbove': 7})['mktIndex'] == '' and L.clean_params({'mktAbove': 7})['mktAbove'] == 0
 
+# ------------------------------------------------------------------ 9. hard Spring rules (owner, 10-Nov-2026)
+# the rules from the page: every one at its base value = no shape rule; out-of-range / wrong kinds are corrected
+d = P()
+assert not L.shape_active(d) and d['upWickMax'] == 100 and d['c2Color'] == 'any' and d['undercutMin'] == 0.1 and d['c2BodyMax'] == 30 \
+    and d['c1BodyMin'] == 0.5 and d['recover'] is False and d['lowestN'] == 0 and d['fallN'] == 0, d
+q = P(upWickMax=-5, loWickMin=250, c2Color='blue', c2BodyMax=80, undercutMin=0.01, recover='yes', lowestN=7.6, fallPct=0, undAtr=9, c1BodyMin=0.1)
+assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercutMin'], q['recover'], q['lowestN'], q['fallPct'], q['undAtr'], q['c1BodyMin']) \
+    == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
+assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
+    'fallPct alone (fallN = 0) is no rule'
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-1] == 'acct'
+assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
+
+# 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
+quiet = [[100, 101, 99, 100] for _ in range(20)]
+C1 = [100, 100.4, 96.8, 97]
+
+
+def pair(c2, before=quiet):
+    return CS(before + [C1, c2]), len(before) + 1
+
+
+def chk(c2, **kw):
+    p = P(**kw)
+    s, i = pair(c2)
+    f = L.spring_feats(s, i, p, deep=True)
+    return L.shape_check(f, p)[1] if not L.shape_check(f, p)[0] else 'ok'
+
+
+hammer = [96.9, 97.2, 95.8, 97.1]          # lower wick 79 %, upper wick 7 %, body 14 % of its range; dip 1.03 %; closes 0.31 % over c1's low
+s, i = pair(hammer)
+f = L.spring_feats(s, i, P(), deep=True)
+assert abs(f['upW'] - 100 * 0.1 / 1.4) < 1e-6 and abs(f['loW'] - 100 * 1.1 / 1.4) < 1e-6 and f['col'] == 'green' and f['recover'], f
+assert abs(f['dip'] - 100 * 1.0 / 96.8) < 1e-6 and abs(f['above'] - 100 * 0.3 / 96.8) < 1e-6 and abs(f['bodyVs'] - 100 * 0.2 / 3.0) < 1e-6, f
+assert abs(f['c1Body'] - 3.0) < 1e-6 and abs(f['c1Lo'] - 100 * 0.2 / 3.6) < 1e-6 and f['closePos'] > 92, f
+assert chk(hammer) == 'ok' and chk(hammer, upWickMax=10) == 'ok' and chk(hammer, upWickMax=5) == 'upwick', 'upper wick 7 %'
+assert chk(hammer, loWickMin=70) == 'ok' and chk(hammer, loWickMin=80) == 'lowick' and chk(hammer, closeMin=90) == 'ok' and chk(hammer, closeMin=95) == 'close'
+assert chk([96.9, 97.2, 95.8, 97.2], upWickMax=0) == 'ok', 'no upper wick at all'
+assert chk(hammer, upWickMax=0) == 'upwick'
+# "looks like a doji": a tiny body with long wicks both sides
+doji = [97.0, 97.8, 95.9, 97.05]
+assert chk(doji) == 'ok' and chk(doji, c2BodyMin=10) == 'doji' and chk(doji, upWickMax=20) == 'upwick' and chk(hammer, c2BodyMin=10) == 'ok'
+# colour
+red_h = [97.1, 97.2, 95.8, 96.9]
+assert chk(red_h, c2Color='green') == 'color' and chk(red_h, c2Color='red') == 'ok' and chk(hammer, c2Color='green') == 'ok' and chk(hammer, c2Color='red') == 'color'
+assert chk(red_h, recover=True) == 'recover' and chk(hammer, recover=True) == 'ok', 'c2 close 96.9 is under c1 close 97'
+# body against c1's body (c2 0.2 = 6.7 % of 3.0), the dip (1.03 %), the close above c1's low (0.31 %)
+assert chk(hammer, c2BodyMax=10) == 'ok' and chk(hammer, c2BodyMax=5) == 'c2body'
+assert chk(hammer, undercutMin=1) == 'ok' and chk(hammer, undercutMin=2) == 'dipmin' and chk(hammer, undercutMax=2) == 'ok' and chk(hammer, undercutMax=0.5) == 'dipmax'
+assert chk(hammer, closeAbove=0.25) == 'ok' and chk(hammer, closeAbove=0.5) == 'closeabove'
+# the red candle: body 3.0 %, lower wick 0.2 of its 3.6 range = 5.6 %
+assert chk(hammer, c1BodyMin=3) == 'ok' and chk(hammer, c1BodyMin=3.5) == 'c1body' and chk(hammer, c1LoWickMax=6) == 'ok' and chk(hammer, c1LoWickMax=5) == 'c1wick'
+# ATR(14) at c1 = (13 x 2 + 3.6) / 14 = 2.114: c1's body 3.0 = 1.42 ATR, the dip 1.0 = 0.47 ATR
+assert abs(L.atr14(CS(quiet + [C1]), 20) - (13 * 2 + 3.6) / 14) < 1e-9 and L.atr14(CS(quiet[:10] + [C1]), 10) is None
+assert chk(hammer, c1Atr=1.4) == 'ok' and chk(hammer, c1Atr=1.5) == 'c1atr' and chk(hammer, undAtr=0.4) == 'ok' and chk(hammer, undAtr=0.5) == 'dipatr'
+# the lowest low of the last N candles (the quiet candles' lows are 99, c1's 96.8, c2's 95.8) and the fall before c1
+assert chk(hammer, lowestN=20) == 'ok'
+low_before = [list(c) for c in quiet]
+low_before[12][2] = 95.0
+s2 = CS(low_before + [C1, hammer])
+assert L.shape_check(L.spring_feats(s2, 21, P(lowestN=20), True), P(lowestN=20)) == (False, 'lowest')
+assert L.shape_check(L.spring_feats(s2, 21, P(lowestN=5), True), P(lowestN=5)) == (True, ''), 'the 95.0 low is older than 5 candles'
+# the highest high of the last 10 candles is 101: the fall to c1's close 97 is 3.96 %
+assert chk(hammer, fallN=10, fallPct=3) == 'ok' and chk(hammer, fallN=10, fallPct=5) == 'fall'
+# too few candles before the pair for a rule that looks back
+s3 = CS([[100, 101, 99, 100]] * 3 + [C1, hammer])
+assert L.shape_check(L.spring_feats(s3, 4, P(lowestN=20), True), P(lowestN=20)) == (False, 'history')
+assert L.shape_check(L.spring_feats(s3, 4, P(c1Atr=1), True), P(c1Atr=1)) == (False, 'history')
+assert L.shape_check(None, P(upWickMax=1)) == (False, 'data') and L.spring_feats(CS([C1]), 0, P()) is None
+assert set(L.SHAPE_WHY) >= {'upwick', 'lowick', 'close', 'doji', 'color', 'c2body', 'dipmin', 'dipmax', 'dipatr', 'closeabove', 'recover',
+                            'c1body', 'c1wick', 'c1atr', 'lowest', 'fall', 'history', 'data'}
+
+# a run: the hard rules leave out Springs (counted by the first rule they failed), the rest are the same trades
+K.backtest_pass(set(), upto, {}, out=lambda m: None)
+base_run = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0})
+assert base_run['skipped']['shape'] == 0 and base_run['shapeWhy'] == {}, 'no shape rule: nothing left out'
+ucol, lcol, dcol = (L.TRADE_COLS.index(c) for c in ('upW', 'loW', 'dip'))
+assert all(isinstance(r[ucol], float) and 0 <= r[ucol] <= 100 and 0 <= r[lcol] <= 100 and r[dcol] > 0 for r in base_run['trades']), 'every trade carries its wicks + dip'
+hard = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'upWickMax': 10, 'loWickMin': 50})
+assert 0 < hard['tradesTotal'] < base_run['tradesTotal'], (hard['tradesTotal'], base_run['tradesTotal'])
+assert hard['tradesTotal'] + hard['skipped']['shape'] == base_run['tradesTotal'] and sum(hard['shapeWhy'].values()) == hard['skipped']['shape'], hard['shapeWhy']
+assert set(hard['shapeWhy']) <= {'upwick', 'lowick'} and hard['params']['upWickMax'] == 10
+assert all(r[ucol] <= 10 and r[lcol] >= 50 for r in hard['trades']), 'every trade passes its own rules'
+hard2 = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'upWickMax': 10, 'loWickMin': 50, 'c2Color': 'green', 'recover': True})
+assert hard2['tradesTotal'] <= hard['tradesTotal'] and hard2['tradesTotal'] + hard2['skipped']['shape'] == base_run['tradesTotal']
+# a rule at its base value changes nothing
+same = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'upWickMax': 100, 'undercutMin': 0.1, 'c2BodyMax': 30, 'c1BodyMin': 0.5})
+assert same['tradesTotal'] == base_run['tradesTotal'] and same['skipped']['shape'] == 0
+# with the EMA rules too: each left-out Spring counted once
+both = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'upWickMax': 10, 'above21': True})
+assert both['tradesTotal'] + both['skipped']['shape'] + both['skipped']['ema'] == base_run['tradesTotal']
+
 print('OK')

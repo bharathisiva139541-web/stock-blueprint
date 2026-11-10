@@ -22,6 +22,8 @@ How it works:
    `maxDays` calendar days, then sold at that day's close; a candle reaching both the stop and the target = the stop
    (conservative); a gap through the stop = sold at the open. Costs % per round trip. The account: capital, risk % per
    trade, a position at most `maxPosPct` % of the capital, at most `maxOpen` trades at once (later signals skipped).
+ - Hard Spring rules (10-Nov-2026): `spring_feats` / `shape_check` - the pattern's own rule stays the base, a run may
+   only tighten it (wicks, body, colour, the dip, the close, the red candle, a swing low taken out, a fall before).
 """
 import array
 import bisect
@@ -63,13 +65,38 @@ DEFAULTS = {
     # indices also"): mktIndex = an index name with underscores ('NIFTY_50', '' = off); on the signal's day its daily
     # close above its mktAbove EMA (0 off / 10 / 21 / 50 / 100 / 200) and / or its 10 > 21 > 50 EMA (mktStack)
     'mktIndex': '', 'mktAbove': 0, 'mktStack': False,
+    # HARD SPRING RULES (owner, 10-Nov-2026: "in our spring, sometimes c2 looks like a doji ... you should make hard rules for
+    # spring ... upperwick of c2 should be very negligible or no upperwick ... give more options to define spring and add
+    # your recommendations"): the pattern's own rule (Code.gs ab_isSpringPair_: c1 red with a body of 0.5 %, c2 under c1's low
+    # by 0.10 % and closing above it, c2's body under 30 % of c1's, c2's high at most half of c1's range above c1's low)
+    # stays the base - these only TIGHTEN it, per Spring pair (c1 = the candle before, c2 = the Spring candle). All at their
+    # base value = no shape rule. Wicks / body / close position are % of c2's own high-low range.
+    'upWickMax': 100.0,        # c2's upper wick at most X % of its range (0 = none at all)
+    'loWickMin': 0.0,          # c2's lower wick at least X % of its range (a hammer / pin bar)
+    'closeMin': 0.0,           # c2 closed in the top X % of its range (position of the close from its low)
+    'c2BodyMin': 0.0,          # c2's body at least X % of its range - not a doji
+    'c2Color': 'any',          # c2 closed green (above its open) / red / any
+    'c2BodyMax': 30.0,         # c2's body at most X % of c1's body (the pattern allows 30)
+    'undercutMin': 0.1,        # c2's low at least X % under c1's low (the pattern allows 0.10)
+    'undercutMax': 0.0,        # ... and at most X % under it (0 = no limit): a far deeper dip is a breakdown
+    'undAtr': 0.0,             # c2's low under c1's low by at least X x ATR(14) (0 = off) - the same on every price / timeframe
+    'closeAbove': 0.0,         # c2 closed at least X % above c1's low (a close just over the line is weak)
+    'recover': False,          # c2 closed above c1's CLOSE too
+    'c1BodyMin': 0.5,          # c1 (the red candle): body at least X % of its open (the pattern allows 0.5)
+    'c1LoWickMax': 100.0,      # c1's lower wick at most X % of its range (small = it closed near its low)
+    'c1Atr': 0.0,              # c1's body at least X x ATR(14) (0 = off): a big red candle for that stock
+    'lowestN': 0,              # c2's low is under the lowest low of the last N candles (0 = off): a real swing low is taken out
+    'fallN': 0, 'fallPct': 10.0,   # price fell at least fallPct % from the highest high of the last fallN candles to c1's close
 }
+SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
+              'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
-BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack')
+BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring'),
     'entry': ('close', 'next_open'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
+    'c2Color': ('any', 'green', 'red'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -77,6 +104,10 @@ LIMITS = {   # key: (min, max, integer)
     'trailPct': (0.5, 60, False), 'emaN': (2, 200, True), 'maxDays': (1, 3650, True), 'cost': (0, 5, False),
     'capital': (1000, 1e10, False), 'riskPct': (0.05, 100, False), 'maxPosPct': (1, 100, False), 'maxOpen': (1, 1000, True),
     'emaTouch': (0, 10, False),
+    'upWickMax': (0, 100, False), 'loWickMin': (0, 100, False), 'closeMin': (0, 100, False), 'c2BodyMin': (0, 100, False),
+    'c2BodyMax': (1, 30, False), 'undercutMin': (0.1, 20, False), 'undercutMax': (0, 50, False), 'undAtr': (0, 5, False),
+    'closeAbove': (0, 20, False), 'c1BodyMin': (0.5, 30, False), 'c1LoWickMax': (0, 100, False), 'c1Atr': (0, 10, False),
+    'lowestN': (0, 250, True), 'fallN': (0, 250, True), 'fallPct': (0.5, 90, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -85,7 +116,7 @@ GROUP_NAMES = {
 }
 REASONS = ('stop', 'target', 'be', 'trail', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
-              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'acct']
+              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'acct']
 
 
 def _iso_date(s):
@@ -326,6 +357,119 @@ def ema_check(cs, i, P, emas):
     if stack:
         parts.append('10>21>50')
     return ok, ' · '.join(parts)
+
+
+def shape_active(P):
+    """True when the run sets any hard Spring rule (anything but the pattern's own base values)."""
+    return any(P[k] != DEFAULTS[k] for k in SHAPE_KEYS)
+
+
+def atr14(cs, j):
+    """The average true range of the 14 candles ending at candle j (None when there are not 14 with a candle before)."""
+    if j < 14:
+        return None
+    tot = 0.0
+    for k in range(j - 13, j + 1):
+        h, l, pc = _f(cs.h[k]), _f(cs.l[k]), _f(cs.c[k - 1])
+        tot += max(h - l, abs(h - pc), abs(l - pc))
+    return tot / 14.0
+
+
+def spring_feats(cs, i, P, deep=False):
+    """The shape of the Spring pair (c1 = candle i-1, c2 = the Spring candle i) as numbers - the same candles
+    the pattern rule judged (prices to 2 decimals). The wick / body / close figures are % of c2's own range, the dip and
+    the close above are % of c1's low. `deep` adds the rules that look further back (ATR, lowest low, the fall before).
+    None when there is no candle before or a candle without a range."""
+    if i < 1 or i >= cs.n:
+        return None
+    o1, h1, l1, c1 = (_f(x[i - 1]) for x in (cs.o, cs.h, cs.l, cs.c))
+    o2, h2, l2, c2 = (_f(x[i]) for x in (cs.o, cs.h, cs.l, cs.c))
+    rng1, rng2, b1, b2 = h1 - l1, h2 - l2, o1 - c1, abs(c2 - o2)
+    if rng1 <= 0 or rng2 <= 0 or o1 <= 0 or l1 <= 0:
+        return None
+    f = {'upW': (h2 - max(o2, c2)) / rng2 * 100, 'loW': (min(o2, c2) - l2) / rng2 * 100, 'bodyR': b2 / rng2 * 100,
+         'closePos': (c2 - l2) / rng2 * 100, 'col': 'green' if c2 > o2 else 'red' if c2 < o2 else 'doji',
+         'bodyVs': b2 / b1 * 100 if b1 > 0 else 1e9, 'dip': (l1 - l2) / l1 * 100, 'above': (c2 - l1) / l1 * 100,
+         'recover': c2 > c1, 'c1Body': b1 / o1 * 100, 'c1Lo': (min(o1, c1) - l1) / rng1 * 100, 'b1': b1, 'd': l1 - l2}
+    if deep:
+        if P['undAtr'] or P['c1Atr']:
+            f['atr'] = atr14(cs, i - 1)
+        n = P['lowestN']
+        if n:
+            f['lowest'] = (l2 < _f(min(cs.l[i - n:i]))) if i >= n else None
+        n = P['fallN']
+        if n:
+            if i >= n:
+                hi = _f(max(cs.h[i - n:i]))
+                f['fall'] = (hi - c1) / hi * 100 if hi > 0 else 0.0
+            else:
+                f['fall'] = None
+    return f
+
+
+# why a Spring was left out by the hard rules (the first rule it failed) -> the page's words
+SHAPE_WHY = {
+    'data': 'no candle before it', 'history': 'too few candles before it for an ATR / swing-low / fall rule',
+    'c1body': 'the red candle was too small', 'c1wick': 'the red candle had a long lower wick', 'c1atr': 'the red candle was small for that stock (ATR)',
+    'dipmin': 'the dip under the red candle\'s low was too shallow', 'dipmax': 'the dip was too deep', 'dipatr': 'the dip was small for that stock (ATR)',
+    'closeabove': 'it closed too close to the red candle\'s low', 'recover': 'it did not close above the red candle\'s close',
+    'upwick': 'the upper wick was too long', 'lowick': 'the lower wick was too short', 'close': 'it did not close high enough in its range',
+    'doji': 'it was a doji (body too small)', 'color': 'wrong colour', 'c2body': 'its body was too big for the red candle',
+    'lowest': 'its low did not take out the lowest low of the last candles', 'fall': 'no fall before the red candle',
+}
+
+
+def shape_check(f, P):
+    """The hard Spring rules on one pair -> (ok, why) - `why` = the first rule it failed (a SHAPE_WHY key). A rule still
+    at the pattern's own value is not checked (the pattern already passed it)."""
+    if f is None:
+        return False, 'data'
+    e = 1e-9
+    if P['c1BodyMin'] > DEFAULTS['c1BodyMin'] and f['c1Body'] + e < P['c1BodyMin']:
+        return False, 'c1body'
+    if P['c1LoWickMax'] < 100 and f['c1Lo'] > P['c1LoWickMax'] + e:
+        return False, 'c1wick'
+    if P['c1Atr']:
+        if f.get('atr') is None:
+            return False, 'history'
+        if f['b1'] + e < P['c1Atr'] * f['atr']:
+            return False, 'c1atr'
+    if P['undercutMin'] > DEFAULTS['undercutMin'] and f['dip'] + e < P['undercutMin']:
+        return False, 'dipmin'
+    if P['undercutMax'] and f['dip'] > P['undercutMax'] + e:
+        return False, 'dipmax'
+    if P['undAtr']:
+        if f.get('atr') is None:
+            return False, 'history'
+        if f['d'] + e < P['undAtr'] * f['atr']:
+            return False, 'dipatr'
+    if P['closeAbove'] and f['above'] + e < P['closeAbove']:
+        return False, 'closeabove'
+    if P['recover'] and not f['recover']:
+        return False, 'recover'
+    if P['upWickMax'] < 100 and f['upW'] > P['upWickMax'] + e:
+        return False, 'upwick'
+    if P['loWickMin'] and f['loW'] + e < P['loWickMin']:
+        return False, 'lowick'
+    if P['closeMin'] and f['closePos'] + e < P['closeMin']:
+        return False, 'close'
+    if P['c2BodyMin'] and f['bodyR'] + e < P['c2BodyMin']:
+        return False, 'doji'
+    if P['c2Color'] != 'any' and f['col'] != P['c2Color']:
+        return False, 'color'
+    if P['c2BodyMax'] < DEFAULTS['c2BodyMax'] and f['bodyVs'] > P['c2BodyMax'] + e:
+        return False, 'c2body'
+    if P['lowestN']:
+        if f.get('lowest') is None:
+            return False, 'history'
+        if not f['lowest']:
+            return False, 'lowest'
+    if P['fallN']:
+        if f.get('fall') is None:
+            return False, 'history'
+        if f['fall'] + e < P['fallPct']:
+            return False, 'fall'
+    return True, ''
 
 
 def market_filter(meta, P):
@@ -637,7 +781,7 @@ def summarise(trades, P, skips, meta, secs):
                      zone_name[t['code']] + (' inside FVG' if t['code'] == 'G' and t['inside'] else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
-                     t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('acct', '')])
+                     t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''), t.get('acct', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     return {'v': 1, 'params': P, 'groupName': GROUP_NAMES[P['group']], 'cacheUpto': meta.get('upto'),
@@ -659,7 +803,8 @@ def run_job(params, base=None, progress=None):
     index = meta['index'].get(tf) or {}
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
-    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0}
+    trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0}
+    shape_on, shape_why = shape_active(P), {}
     lens = ema_lens(P)
     mkt = market_filter(meta, P)
     syms = sorted(sigs)
@@ -677,6 +822,13 @@ def run_job(params, base=None, progress=None):
                 if mkt and not mkt(cs.day[r[0]]):
                     skips['mkt'] += 1
                     continue
+                feats = spring_feats(cs, r[0], P, deep=shape_on)      # the Spring pair's shape (also the table's wick / dip columns)
+                if shape_on:
+                    ok, why = shape_check(feats, P)
+                    if not ok:
+                        skips['shape'] += 1
+                        shape_why[why] = shape_why.get(why, 0) + 1
+                        continue
                 note = ''
                 if lens:
                     ok, note = ema_check(cs, r[0], P, emas)
@@ -690,11 +842,14 @@ def run_job(params, base=None, progress=None):
                     skips[why] = skips.get(why, 0) + 1
                     continue
                 t['sym'] = sym
+                if feats:
+                    t['upW'], t['loW'], t['dip'] = round(feats['upW'], 1), round(feats['loW'], 1), round(feats['dip'], 2)
                 trades.append(t)
             if progress and (k + 1) % 300 == 0:
                 progress(int((k + 1) * 90 / max(1, len(syms))))
     res = summarise(trades, P, skips, meta, time.time() - t0)
     res['indexNames'] = sorted((meta.get('indices') or {}).keys())      # the page's list of indices
+    res['shapeWhy'] = shape_why                                         # {rule: Springs it left out} (first failed rule)
     return res
 
 
