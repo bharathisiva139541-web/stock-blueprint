@@ -961,6 +961,59 @@ def spring_broken(candles, i):
     return next((k for k in range(i + 1, len(candles)) if candles[k]['c'] < low), None)
 
 
+def fvg_touch_events(candles, up):
+    """web/lib/fvg.js longFvgDetail's 'FVG First Touch' / 'FVG First Touch Confirmed' (the newest 3-candle FVG: the first
+    candle whose low dips under its top; confirmed = a later close above that candle's high) on every candle ->
+    ({i: zone}, {i: zone}, cont2 flags); zone = {'kind': 'FVG', 'f', 'bottom', 'top'} (f = the FVG's 3rd candle)."""
+    n = len(candles)
+    ft, cf = {}, {}
+    top_at, bot_at, f_at = [None] * n, [None] * n, [None] * n
+    cur = (None, None, None)
+    for i in range(n):
+        if up[i]:
+            cur = (candles[i]['l'], candles[i - 2]['h'], i)
+        top_at[i], bot_at[i], f_at[i] = cur
+    cont2 = [False] * n
+    cont2_high = [None] * n
+    ch = None
+    for i in range(1, n):
+        if top_at[i - 1] is not None and top_at[i] is not None and candles[i - 1]['l'] >= top_at[i - 1] and candles[i]['l'] < top_at[i]:
+            cont2[i] = True
+        if cont2[i]:
+            ch = candles[i]['h']
+        cont2_high[i] = ch
+    conf = [False] * n
+    for i in range(1, n):
+        if cont2_high[i - 1] is not None and cont2_high[i] is not None and candles[i - 1]['c'] <= cont2_high[i - 1] and candles[i]['c'] > cont2_high[i]:
+            conf[i] = True
+
+    def active(i):
+        return {'kind': 'FVG', 'f': f_at[i], 'bottom': bot_at[i], 'top': top_at[i]}
+    st = 0
+    for i in range(n):
+        c = 0 if st == 2 else st
+        if up[i] and c == 0:
+            c = 1
+        if cont2[i] and c == 1:
+            c = 2
+        if c == 2:
+            ft[i] = active(i)
+        st = c
+    st = 0
+    for i in range(n):
+        c = 0 if st == 3 else st
+        if up[i] and c == 0:
+            c = 1
+        if cont2[i] and c == 1:
+            c = 2
+        if conf[i] and c == 2:
+            c = 3
+        if c == 3:
+            cf[i] = active(i)
+        st = c
+    return ft, cf, cont2
+
+
 def fvg_detail(candles, cfg=None, max_age=None):
     """web/lib/fvg.js longFvgDetail's events + gapUpFvgs on one timeframe's candles (oldest first):
     {'spring': {i: zone} (FVG+Spring = 3-candle FVGs), 'gapspring': {i: zone} (Gap-up FVG + Spring), 'ft': {i: zone},
@@ -997,28 +1050,7 @@ def fvg_detail(candles, cfg=None, max_age=None):
     if n < 17:
         return res
     up = fvg_gaps(candles)
-    top_at, bot_at, f_at = [None] * n, [None] * n, [None] * n
-    cur = (None, None, None)
-    for i in range(n):
-        if up[i]:
-            cur = (candles[i]['l'], candles[i - 2]['h'], i)
-        top_at[i], bot_at[i], f_at[i] = cur
-    cont2 = [False] * n
-    cont2_high = [None] * n
-    ch = None
-    for i in range(1, n):
-        if top_at[i - 1] is not None and top_at[i] is not None and candles[i - 1]['l'] >= top_at[i - 1] and candles[i]['l'] < top_at[i]:
-            cont2[i] = True
-        if cont2[i]:
-            ch = candles[i]['h']
-        cont2_high[i] = ch
-    conf = [False] * n
-    for i in range(1, n):
-        if cont2_high[i - 1] is not None and cont2_high[i] is not None and candles[i - 1]['c'] <= cont2_high[i - 1] and candles[i]['c'] > cont2_high[i]:
-            conf[i] = True
-
-    def active(i):
-        return {'kind': 'FVG', 'f': f_at[i], 'bottom': bot_at[i], 'top': top_at[i]}
+    res['ft'], res['conf'], cont2 = fvg_touch_events(candles, up)
     zones = spring_zones(candles, up)
     fz = [z for z in zones if z['kind'] == 'FVG']
     gz = [z for z in zones if z['kind'] == 'Gap-up']
@@ -1048,28 +1080,6 @@ def fvg_detail(candles, cfg=None, max_age=None):
             if all(candles[k]['c'] >= bottom for k in range(g + 1, i - 2)):
                 res['twin'][i] = {'kind': 'FVG', 'f': g, 'bottom': bottom, 'top': top}
                 break
-    st = 0
-    for i in range(n):
-        c = 0 if st == 2 else st
-        if up[i] and c == 0:
-            c = 1
-        if cont2[i] and c == 1:
-            c = 2
-        if c == 2:
-            res['ft'][i] = active(i)
-        st = c
-    st = 0
-    for i in range(n):
-        c = 0 if st == 3 else st
-        if up[i] and c == 0:
-            c = 1
-        if cont2[i] and c == 1:
-            c = 2
-        if conf[i] and c == 2:
-            c = 3
-        if c == 3:
-            res['conf'][i] = active(i)
-        st = c
     last = max((i for i in range(n) if up[i]), default=-1)
     if last != -1 and not any(cont2[i] for i in range(last + 1, n)):
         top, bottom = candles[last]['l'], candles[last - 2]['h']
@@ -1291,12 +1301,19 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
         if backtest and tf in BACKTEST_TFS:
             sig = bt_signals(full_c, cfg, win) if tf not in NO_FVG_SPRING_TFS else {}
             lab_rows = [] if lab is not None else None
+            ft_c, cf_c = {}, {}
+            if lab_rows is not None and tf not in NO_FVG_SPRING_TFS and len(full_c) >= 17:
+                ft_c, cf_c, _ = fvg_touch_events(full_c, fvg_gaps(full_c))   # the Lab's FVG First Touch / Confirmed signals
             for i in range(3, len(full_c)):
                 c = full_c[i]
-                if not _slot_ok(slots, tf, c) or not is_spring_pair(full_c[i - 1], c, cfg):
-                    continue
+                spring = _slot_ok(slots, tf, c) and is_spring_pair(full_c[i - 1], c, cfg)
                 if lab_rows is not None:
-                    lab_rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
+                    if spring:
+                        lab_rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
+                    if i in ft_c or i in cf_c:              # every candle (the 4H 13:15 rule is for the Springs only)
+                        lab_rows.extend(backtest_lab.touch_rows(full_c, i, ft_c.get(i), cf_c.get(i), turn))
+                if not spring:
+                    continue
                 o = trade_30d(full_c, i)
                 if o is None:
                     continue

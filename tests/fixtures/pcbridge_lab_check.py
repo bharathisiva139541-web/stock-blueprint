@@ -481,4 +481,160 @@ assert same['tradesTotal'] == base_run['tradesTotal'] and same['skipped']['shape
 both = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'upWickMax': 10, 'above21': True})
 assert both['tradesTotal'] + both['skipped']['shape'] + both['skipped']['ema'] == base_run['tradesTotal']
 
+# ------------------------------------------------------------------ 10. market structure: CHoCH / BOS (owner, 10-Nov-2026)
+S = L.structure
+
+
+def leg(a, b, n=6):
+    return [a + (b - a) * k / n for k in range(1, n + 1)]
+
+
+# a downtrend of lower highs (95 / 90 / 85) and lower lows (85 / 80 / 75), then a rally closing above the last lower
+# high (85) = CHoCH, a pullback, and a rally above the peak (96) = BOS
+path = [100]
+for top, bot in ((100, 90), (95, 85), (90, 80), (85, 75)):
+    path += (leg(path[-1], top) if path[-1] != top else []) + leg(top, bot)
+path += leg(75, 96, 8) + leg(96, 88, 5) + leg(88, 105, 6)
+zc = path[1:]
+zh = [max(a, b) + 0.2 for a, b in zip(path[:-1], zc)]
+zl = [min(a, b) - 0.2 for a, b in zip(path[:-1], zc)]
+st = S.Structure(zh, zl, zc, 3)
+assert [round(zh[p], 1) for p in st.ph] == [95.2, 90.2, 85.2, 96.2], st.ph
+assert len(st.events) == 1, st.events
+b, hi_, lvl, li, lf, dd = st.events[0]
+assert round(lvl, 1) == 85.2 and round(lf, 1) == 74.8 and dd == 2 and zc[b] > lvl and zc[b - 1] <= lvl, st.events
+assert st.dead_by(0, zc, len(zc)) == -1
+bos = st.bos_before(0, zc, len(zc))
+assert bos > b and zc[bos] > 96.2 >= max(zc[b:bos]) and round(st.peak_before(0, zc, len(zc)), 1) == 96.2, bos
+assert st.active(b, 1) == -1 and st.active(b + 1, 1) == 0 and st.active(b + 1, 3) == -1, 'a CHoCH counts from the next candle; d = 2'
+# a signal in the pullback (before the BOS) on a zone formed after the final low and under the CHoCH level = the setup
+pull = b + 9                                        # inside the 96 -> 88 pullback
+j = st.judge(pull, li + 2, 84.0, zc[pull], zc, 2)
+assert j['stage'] == 'below' and j['first'] and j['after_low'] and j['leg'] and not j['after'], j
+assert st.judge(pull, li + 2, 86.0, zc[pull], zc, 2)['stage'] == 'above'
+assert st.judge(pull, li - 3, 84.0, zc[pull], zc, 2)['stage'] == 'old', 'the zone formed before the final low'
+assert st.judge(bos + 1, li + 2, 84.0, zc[bos + 1], zc, 2)['stage'] == 'bos', 'after the BOS: already moved'
+assert st.judge(pull, li + 2, 84.0, zc[pull], zc, 3)['stage'] == 'none', 'needs 3 lower highs / lows: only 2 here'
+assert st.judge(pull, li + 2, 84.0, zc[pull], zc, 2, max_age=3)['stage'] == 'none', 'older than 3 candles'
+assert st.judge(pull, b + 3, 84.0, zc[pull], zc, 2)['after'], 'a zone formed after the CHoCH candle'
+# a close under the final low kills it
+dead_c = zc[:pull] + [74.0] + zc[pull + 1:]
+st2 = S.Structure(zh, [min(x, y) for x, y in zip(zl, dead_c)], dead_c, 3)
+assert st2.judge(pull + 1, li + 2, 84.0, 80, dead_c, 2)['stage'] == 'none'
+# the last swing high above a price (the swing-high target)
+assert round(st.last_swing_high(len(zc) - 1, 90)[1], 1) == 96.2 and st.last_swing_high(len(zc) - 1, 200) is None
+assert round(st.last_swing_high(b + 5, 80)[1], 1) == 85.2, 'the 96 peak is not confirmed yet at that candle'
+# nothing looks ahead: the events of any first part of a random chart = the full chart's events up to there,
+# and every signal is judged the same
+for seed in range(6):
+    w = walk(100 + seed, 700)
+    hh, ll, cc = [r[2] for r in w], [r[3] for r in w], [r[4] for r in w]
+    full = S.Structure(hh, ll, cc, 5)
+    assert full.events, 'a random chart has CHoCH events'
+    for cut in (150, 333, 500, 699):
+        part = S.Structure(hh[:cut], ll[:cut], cc[:cut], 5)
+        assert part.events == [e for e in full.events if e[0] < cut], (seed, cut)
+        for i in range(cut - 40, cut):
+            a = part.judge(i, i - 5, cc[i] * 0.99, cc[i], cc[:cut], 1)
+            bb = full.judge(i, i - 5, cc[i] * 0.99, cc[i], cc, 1)
+            assert a == bb, (seed, cut, i, a, bb)
+    assert all(e[5] >= 1 and e[3] > e[1] and e[0] > e[1] and cc[e[0]] > e[2] for e in full.events)
+
+# the cache now has the FVG First Touch / Confirmed signals (the same as the sheet's / 4H scan's rule) + the zone's candle
+meta, d = L.load_meta()
+assert meta['v'] == L.CACHE_VERSION == 2
+with open(os.path.join(d, 'D.bin'), 'rb') as f:
+    off, cnt = meta['index']['D']['AAA']
+    csa = L.Candles(f, off, cnt)
+rows_a = meta['signals']['D']['AAA']
+fc = [{'o': csa.o[k], 'h': csa.h[k], 'l': csa.l[k], 'c': csa.c[k]} for k in range(csa.n)]
+ftx, cfx, _ = K.fvg_touch_events(fc, K.fvg_gaps(fc))
+assert sorted(r[0] for r in rows_a if r[1] == 'T') == sorted(ftx) and sorted(r[0] for r in rows_a if r[1] == 'C') == sorted(cfx)
+assert all(len(r) == 9 for r in rows_a) and all(r[8] == -1 for r in rows_a if r[1] == 'S')
+assert all(0 <= r[8] <= r[0] - 2 for r in rows_a if r[1] in ('F', 'G')), 'the zone formed before the Spring pair'
+assert all(r[8] < r[0] for r in rows_a if r[1] in ('T', 'C'))
+for grp in ('ft', 'conf', 'entry'):
+    res = L.run_job({'tf': 'D', 'group': grp, 'maxRisk': 0})
+    assert res['tradesTotal'] > 0 and res['groupName'] == L.GROUP_NAMES[grp], grp
+ent = L.run_job({'tf': 'D', 'group': 'entry', 'maxRisk': 0})
+zcol = L.TRADE_COLS.index('zone')
+assert {r[zcol] for r in ent['trades']} >= {'FVG', 'FVG first touch'}, {r[zcol] for r in ent['trades']}
+# a shape rule leaves the FVG first touches alone (no Spring pair)
+ent_shape = L.run_job({'tf': 'D', 'group': 'ft', 'maxRisk': 0, 'upWickMax': 0})
+assert ent_shape['tradesTotal'] == L.run_job({'tf': 'D', 'group': 'ft', 'maxRisk': 0})['tradesTotal'] and ent_shape['skipped']['shape'] == 0
+
+# a run: 'show' labels every trade, 'only' keeps the setup; the per-stage figures add up
+q = P(structure='only', downN=9, zoneWhen='leg', targetMode='swing', swingMinR=2, pivotN=50)
+assert (q['structure'], q['downN'], q['zoneWhen'], q['targetMode'], q['swingMinR'], q['pivotN']) == ('only', 8, 'leg', 'swing', 2, 20), q
+assert P()['structure'] == 'off' and P()['belowChoch'] is True and P()['firstPull'] is True and P()['downN'] == 3 and P()['pivotN'] == 5
+# the owner's setup on a made chart (DDD, swings of 2 candles): 3 lower highs / lows, a CHoCH rally with an FVG in it,
+# the first pullback into that FVG with a Spring - stage 'below'
+def craft():
+    rows, prev = [], 130.0
+    d0 = date(2010, 1, 4)
+
+    def put(o, h, l, c):
+        rows.append([(d0 + timedelta(days=len(rows))).isoformat(), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 50000])
+
+    def go(to, k):
+        nonlocal prev
+        for x in leg(prev, to, k):
+            put(prev, max(prev, x) + 0.3, min(prev, x) - 0.3, x)
+            prev = x
+    for to in (122, 127, 117, 122, 112, 117, 106, 111, 100):    # highs 127 > 122 > 117 > 111, lows 122 > 117 > 112 > 106 > 100
+        go(to, 4)
+    put(100, 101.3, 99.7, 101)                                  # A
+    put(101, 108.3, 100.7, 108)                                 # B (big green)
+    put(108, 110.3, 106, 110)                                   # C: low 106 > A's high 101.3 -> FVG 101.3 - 106
+    put(110, 113.3, 109.7, 113)                                 # D: closes above the last lower high 111.3 = CHoCH
+    prev = 113
+    go(117, 2)                                                  # the rally's peak
+    go(108, 3)                                                  # the pullback
+    put(108, 108.3, 104.8, 105)                                 # c1 red
+    put(105.3, 105.6, 103, 105.1)                               # c2 = Spring, low 103 in the FVG
+    prev = 105.1
+    go(126, 10)
+    go(118, 10)
+    return rows
+
+
+K.store_save('DDD', {'v': 1, 'sym': 'DDD', 'm15': [], 'day': craft(), 'h4': []})
+K.backtest_pass(set(), upto, {}, out=lambda m: None)
+mine = L.run_job({'tf': 'D', 'group': 'fvg', 'maxRisk': 0, 'structure': 'only', 'pivotN': 2, 'downN': 3, 'targetMode': 'swing', 'swingMinR': 1})
+symc, scol, tcol, gcol = (L.TRADE_COLS.index(c) for c in ('sym', 'stage', 'struct', 'target'))
+dd = [r for r in mine['trades'] if r[symc] == 'DDD']
+assert len(dd) == 1 and dd[0][scol] == 'below' and dd[0][tcol].startswith('CHoCH 111.30 on ') and '3 lower highs / lows, final low 99.70' in dd[0][tcol], dd
+assert abs(dd[0][gcol] - 117.3) < 0.01, 'target = the rally peak, the last swing high above the entry'
+assert L.run_job({'tf': 'D', 'group': 'fvg', 'maxRisk': 0, 'structure': 'only', 'pivotN': 2, 'downN': 4})['trades'] == [] or \
+    all(r[symc] != 'DDD' for r in L.run_job({'tf': 'D', 'group': 'fvg', 'maxRisk': 0, 'structure': 'only', 'pivotN': 2, 'downN': 4})['trades']), \
+    'only 3 lower highs / lows on DDD'
+assert all(r[symc] != 'DDD' for r in L.run_job({'tf': 'D', 'group': 'fvg', 'maxRisk': 0, 'structure': 'only', 'pivotN': 2, 'zoneWhen': 'after'})['trades']), \
+    'its FVG formed in the CHoCH move, not after it'
+
+# 'show' labels every trade, 'only' keeps the setup; the per-stage figures add up
+other = lambda r: sum(v for k, v in r['skipped'].items() if k != 'struct')
+show = L.run_job({'tf': 'D', 'group': 'entry', 'maxRisk': 0, 'structure': 'show', 'downN': 1, 'pivotN': 2})
+base_e = L.run_job({'tf': 'D', 'group': 'entry', 'maxRisk': 0})
+assert show['tradesTotal'] == base_e['tradesTotal'] and show['skipped']['struct'] == 0, 'show = label only'
+assert {r[scol] for r in show['trades']} <= set(S.STAGES) and {'below', 'none'} <= {r[scol] for r in show['trades']}
+assert all((r[tcol] == '') == (r[scol] == 'none') for r in show['trades'])
+assert sum(x['trades'] + x['open'] for x in show['stages']) == show['tradesTotal'], show['stages']
+assert [x['stage'] for x in show['stages']] == [k for k in S.STAGES if any(x['stage'] == k for x in show['stages'])]
+assert show['stages'][0]['name'].startswith('Below the CHoCH level')
+only = L.run_job({'tf': 'D', 'group': 'entry', 'maxRisk': 0, 'structure': 'only', 'downN': 1, 'pivotN': 2})
+assert 0 < only['tradesTotal'] < show['tradesTotal'] and only['tradesTotal'] + only['skipped']['struct'] + other(only) == show['tradesTotal'] + other(show)
+assert {r[scol] for r in only['trades']} == {'below'} and sum(only['structWhy'].values()) == only['skipped']['struct']
+assert set(only['structWhy']) <= set(L.STRUCT_WHY), only['structWhy']
+n_below = sum(x['trades'] + x['open'] for x in show['stages'] if x['stage'] == 'below')
+assert only['tradesTotal'] == n_below, (only['tradesTotal'], n_below)
+loose = L.run_job({'tf': 'D', 'group': 'entry', 'maxRisk': 0, 'structure': 'only', 'downN': 1, 'pivotN': 2, 'belowChoch': False, 'firstPull': False})
+assert loose['tradesTotal'] >= only['tradesTotal'] and {r[scol] for r in loose['trades']} <= {'below', 'above', 'bos'}
+# the swing-high target: the most recent swing high at least swingMinR R above the entry, the trade's target
+sw = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'targetMode': 'swing', 'swingMinR': 1, 'after': 'fixed', 'cost': 0})
+ecol, stc, rc = L.TRADE_COLS.index('entry'), L.TRADE_COLS.index('stop'), L.TRADE_COLS.index('reason')
+assert sw['tradesTotal'] > 0 and sw['skipped']['noswing'] > 0, sw['skipped']
+assert all(r[gcol] >= r[ecol] + (r[ecol] - r[stc]) * 0.999 for r in sw['trades']), 'at least 1R above'
+assert all(abs(r[L.TRADE_COLS.index('exit')] - r[gcol]) < 0.011 for r in sw['trades'] if r[rc] == 'target')
+assert len(L._STRUCT['map']) == 4, 'one structure per stock, kept for the next run'
+
 print('OK')

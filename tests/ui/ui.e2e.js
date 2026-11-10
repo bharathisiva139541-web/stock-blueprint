@@ -1223,6 +1223,17 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('[data-k="upWickMax"]', (x) => x.value), '100');
     assert.ok(!/Only Springs where/.test(await plainText()), 'cleared');
     await own.p.click('[data-rec="hammer"]');
+    // market structure (owner, 10-Nov-2026): his CHoCH + FVG setup in one click, the plain words follow
+    await own.p.click('#lab-smc');
+    await own.p.waitForSelector('[data-k="downN"]');
+    assert.strictEqual(await own.p.$eval('[data-k="group"]', (x) => x.value), 'entry');
+    assert.deepStrictEqual(await own.p.$$eval('[data-k="structure"],[data-k="pivotN"],[data-k="downN"],[data-k="zoneWhen"]', (x) => x.map((e) => e.value)), ['only', '5', '3', 'both']);
+    assert.match(await plainText(), /Market structure \(swings of 5 candles each side\): a CHoCH = a candle closing above the last swing high after at least 3 lower highs and 3 lower lows\. Only signals where the zone formed after the CHoCH's final low, in the CHoCH move or after it; the zone \(no zone: the entry\) below the CHoCH level; the first pullback/);
+    assert.ok(await own.p.$('.lab-rec.on #lab-smc'), 'the setup card shows In use');
+    await own.p.selectOption('[data-k="targetMode"]', 'swing');
+    await own.p.waitForSelector('[data-k="swingMinR"]');
+    assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry/);
+    assert.ok(/Only Springs where the Spring candle has an upper wick of at most 5%/.test(await plainText()), 'the Spring rules stay');
     await own.p.click('#lab-run');
     await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
     // the laptop (backtest_lab.py) takes it and sends its result
@@ -1233,28 +1244,33 @@ function check(name, fn) {
     assert.deepStrictEqual([got.job.params.mktIndex, got.job.params.mktAbove, got.job.params.mktStack], ['NIFTY_50', 50, false]);
     assert.deepStrictEqual([got.job.params.upWickMax, got.job.params.loWickMin, got.job.params.c2Color, got.job.params.recover, got.job.params.fallN, got.job.params.undercutMin],
       [5, 60, 'any', false, 0, 0.1], 'the Spring shape rules reach the laptop (through the sheet\'s generic filter)');
-    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'acct'];
+    assert.deepStrictEqual([got.job.params.group, got.job.params.structure, got.job.params.pivotN, got.job.params.downN, got.job.params.zoneWhen,
+      got.job.params.belowChoch, got.job.params.firstPull, got.job.params.targetMode, got.job.params.swingMinR],
+    ['entry', 'only', 5, 3, 'both', true, true, 'swing', 1], 'the market-structure rules reach the laptop');
+    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
                avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1 },
-      open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
+      open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 30 },
+      stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
+      reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
       account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 3, skipped: 1, openNow: 1, openPnl: 500, years: 16.8,
                  curve: [['2010-02-01', 990000], ['2015-01-01', 1012000], ['2026-10-20', 1036000]], blown: null,
                  skipReasons: { full: 0, cap: 1, risk: 0, blown: 0 }, capped: 0 },
       years: [{ year: 2010, trades: 1, winPct: 0, avgR: -1, totalR: -1, pnl: -10000, taken: 1 }, { year: 2026, trades: 2, winPct: 100, avgR: 2.3, totalR: 4.6, pnl: 46000, taken: 2 }],
       hist: [{ label: '-1R to 0', n: 1 }, { label: '1R to 2R', n: 1 }, { label: '3R to 5R', n: 1 }],
       tradeCols: cols, tradesTotal: 4, secs: 1.2,
-      trades: [['ABC', '2026-10-30', 'Gap-up inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1, 'support 10 EMA · above 21', 3.2, 71.4, 1.3, '40 shares, Rs 9,284 invested, Rs 148 at risk.'],
-               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.'],
-               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', 4.8, 62.5, 0.6, '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.'],
-               ['LMN', '2010-01-04', 'FVG', 'top', 1, 30435, 28825, 5, 31290, '2010-01-12', 'trail', 0.5, 2.6, 8, 0.9, 0, 0, 0, 'support 10 EMA · above 21', 9.1, 55, 3.4,
+      trades: [['ABC', '2026-10-30', 'Gap-up inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1, 'support 10 EMA · above 21', 3.2, 71.4, 1.3, 'below', 'CHoCH 240.00 on 2026-10-10 (3 lower highs / lows, final low 220.00)', 250, '40 shares, Rs 9,284 invested, Rs 148 at risk.'],
+               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, 'below', 'CHoCH 110.00 on 2026-08-20 (4 lower highs / lows, final low 92.00)', 115.5, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.'],
+               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', 4.8, 62.5, 0.6, 'below', 'CHoCH 55.00 on 2026-02-20 (3 lower highs / lows, final low 45.00)', 53, '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.'],
+               ['LMN', '2010-01-04', 'FVG', 'top', 1, 30435, 28825, 5, 31290, '2010-01-12', 'trail', 0.5, 2.6, 8, 0.9, 0, 0, 0, 'support 10 EMA · above 21', 9.1, 55, 3.4, 'below', 'CHoCH 32000.00 on 2009-12-20 (3 lower highs / lows, final low 28000.00)', 31290,
                 'Not taken: one share costs Rs 30,435, more than your position limit of Rs 15,000 (5% of the account, Money: "One position at most").']] };
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
     // the page sees it done (it asks every 4 s) and opens it
     await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
     const view = await own.p.$eval('#lab-result', (x) => x.innerText);
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
-    assert.match(view, /At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
+    assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
     // why a signal was skipped: on the word itself (hover / tap), and counted in the account tile
     assert.match(view, /37 left out by your EMA rules · 12 left out by your market rule/);
@@ -1262,7 +1278,12 @@ function check(name, fn) {
     assert.match(view, /Spring shape rules: 4 of 144 Springs passed\. Left out - 90 the upper wick was too long; 40 the lower wick was too short; 10 it was a doji/);
     assert.match(view, /Only 3 trades are left\. An average of 1\.21R over so few trades can easily be luck/);
     assert.match(view, /Only Springs where the Spring candle has an upper wick of at most 5% of its range, a lower wick of at least 60% of its range\./);
-    for (const h of ['Upper wick %', 'Lower wick %', 'Dip %']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
+    for (const h of ['Upper wick %', 'Lower wick %', 'Dip %', 'Structure', 'Target']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
+    assert.match(view, /300 left out by your market-structure rules · 5 without a swing high above \(target\)/);
+    assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 30 its zone is not below the CHoCH level\./);
+    assert.match(view, /By market structure - where each signal sat/);
+    assert.match(await own.p.$eval('#lab-stages', (x) => x.innerText), /Below CHoCH, 1st pullback[\s\S]*1\.21R/);
+    assert.match(await own.p.$eval('#lab-trades .lab-acct:not(.skip)', (x) => x.getAttribute('data-tip')), /^CHoCH \d/);
     assert.match(view, /Only on days when NIFTY 50 closed above its 50 EMA/);
     assert.deepStrictEqual(await own.p.$$eval('#lab-mkt-index option', (o) => o.map((x) => x.value)), ['', 'NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
       'the Index list = the indices the laptop has');
