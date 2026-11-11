@@ -1260,6 +1260,27 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="discount"]', (e) => e.value), '0.5');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="entry"]', (e) => e.value), 'zone', 'an order at the zone top');
     assert.ok(await own.p.$('.lab-rec.on #lab-smc'), 'the setup card shows In use');
+    // the TradingView script with these rules (owner, 11-Nov-2026: "give option to copy the pinescript in this page that works
+    // with respect to the current setup before running the setup")
+    await own.p.evaluate(() => {
+      window.__pine = null;
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__pine = t; return Promise.resolve(); } } });
+    });
+    await own.p.selectOption('[data-k="pivotN"]', '8');
+    await own.p.click('#lab-pine');
+    await own.p.waitForSelector('#lab-pine-box .note.good');
+    const pine = await own.p.evaluate(() => window.__pine);
+    assert.match(pine, /^\/\/@version=5\n\/\/ -+ your Backtest Lab rules\n/);
+    for (const want of ['structOnly = input.bool(true,', 'pivN = input.int(8,', 'downN = input.int(3,', 'fibLvl = input.float(0.5,', 'discPart = input.string("Middle",',
+      'entryMode = input.string("Order at the zone top",', 'stopMode = input.string("Under the zone bottom",', 'belowChoch = input.bool(false,']) {
+      assert.ok(pine.includes('\n' + want), 'the script has ' + want);
+    }
+    assert.match(pine, /^\/\/ First touch of a zone - every FVG \/ Gap-up zone \(your SMC entry\) on the daily chart/m, 'the rules in words on top');
+    const pineBox = await own.p.$eval('#lab-pine-box', (x) => x.innerText);
+    assert.match(pineBox, /Copied[\s\S]*Pine Editor[\s\S]*Alt\+G/);
+    assert.match(pineBox, /Open the Daily \(1D\) chart on TradingView/);
+    assert.ok(await own.p.$('#lab-pine-box a[download$=".pine"]'), 'a download link too');
+    await own.p.selectOption('[data-k="pivotN"]', '5');
     await own.p.selectOption('[data-k="targetMode"]', 'swing');
     await own.p.waitForSelector('[data-k="swingMinR"]');
     assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry/);

@@ -9,23 +9,45 @@
 //  - BOS = after the CHoCH, the first close above the highest swing high confirmed after it; a close under the final low ends the CHoCH
 //  - zones: 3-candle FVG (gap >= 0.70 x the 14-candle average range), Gap-up zones (3 - 5 %, or any size between two big green candles = inside FVG)
 //  - BUY = the FIRST time price comes back to a zone that formed after the final low, on the first pullback (no BOS yet),
-//    with the zone's middle at least 50 % down the move (the discount); one BUY a candle (the zone price reaches first)
-// Kept in step with tradingview/pine_model.py - tests/tradingview-pine.test.js checks that model against the laptop's code.
+//    with the zone's middle at least 50 % down the move (the discount); one BUY a candle (the first zone price reaches that passes
+//    every rule - also the entry / stop / risk / target rules, like the Lab picks a candle's first row that passes)
+// The Backtest Lab page's "Copy TradingView script" button writes the run's rules into the inputs below (owner, 11-Nov-2026:
+// "give option to copy the pinescript in this page that works with respect to the current setup").
+// Kept in step with tradingview/pine_model.py - tests/tradingview-pine.test.js checks that model against the laptop's Lab runs.
 indicator("Stock Blueprint - CHoCH + FVG", shorttitle="SB CHoCH+FVG", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
 
 // ------------------------------------------------------------------ inputs (= the Backtest Lab's defaults)
 G1 = "Market structure (Backtest Lab step 2)"
+structOnly = input.bool(true, "Only my setup (the market-structure rules below)", group=G1)
 pivN = input.int(5, "A swing: candles each side", minval=2, maxval=20, group=G1)
 downN = input.int(3, "Lower highs and lower lows before the CHoCH, at least", minval=1, maxval=8, group=G1)
 zoneWhen = input.string("In the CHoCH move or after it", "The zone formed", options=["In the CHoCH move or after it", "Only in the CHoCH move", "Only after the CHoCH candle"], group=G1)
+chochAge = input.int(0, "The signal at most N candles after the CHoCH (0 = any)", minval=0, group=G1)
 fibLvl = input.float(0.5, "Discount: the zone at least this far down the move (0 = off)", options=[0.0, 0.382, 0.5, 0.618, 0.705, 0.786], group=G1)
 discPart = input.string("Middle", "... judged on the zone's", options=["Middle", "Top", "Bottom"], group=G1)
 firstPull = input.bool(true, "First pullback only (no BOS yet)", group=G1)
 belowChoch = input.bool(false, "Zone top below the CHoCH level (strict)", group=G1)
-G2 = "Entry, stop, target (drawn at each BUY)"
+G2 = "Entry, stop, target (Backtest Lab steps 6 - 7)"
 entryMode = input.string("Order at the zone top", "Buy", options=["Order at the zone top", "Touch candle's close"], group=G2)
-stopBuf = input.float(0.5, "Stop: % under the zone bottom", minval=0, step=0.1, group=G2)
+stopMode = input.string("Under the zone bottom", "Stop loss", options=["Under the zone bottom", "Under the touch candle's low", "Under whichever is lower", "% under the entry"], group=G2)
+stopBuf = input.float(0.5, "Stop: how far below it (%)", minval=0, step=0.1, group=G2)
+stopPct = input.float(5.0, "Stop: % under the entry (with that choice)", minval=0.1, step=0.5, group=G2)
+maxRisk = input.float(15.0, "Skip if the risk is more than % (0 = never)", minval=0, step=1, group=G2)
+minPrice = input.float(0.0, "Price at least Rs", minval=0, step=1, group=G2)
+targetMode = input.string("R multiple", "Target", options=["R multiple", "The last swing high"], group=G2)
 targetR = input.float(2.0, "Target (R = times the risk)", minval=0.25, step=0.25, group=G2)
+swingMinR = input.float(1.0, "Swing-high target: at least this many R above the entry", minval=0, step=0.25, group=G2)
+G6 = "Filters (Backtest Lab steps 1 and 4)"
+useDates = input.bool(false, "Only signals between these dates", group=G6)
+fromDate = input.time(timestamp("01 Jan 2020 00:00 +0530"), "From", group=G6)
+toDate = input.time(timestamp("31 Dec 2030 00:00 +0530"), "To", group=G6)
+minTurn = input.float(0.0, "Daily turnover at least Rs lakh (20-day average, 0 = off)", minval=0, step=10, group=G6)
+emaSup = input.string("Off", "The signal candle took support at", options=["Off", "10 EMA", "21 EMA", "50 EMA", "Any of 10 / 21 / 50"], group=G6)
+emaTouch = input.float(1.0, "... its low within % above the EMA", minval=0, step=0.25, group=G6)
+ab10 = input.bool(false, "It closed above the 10 EMA", group=G6)
+ab21 = input.bool(false, "It closed above the 21 EMA", group=G6)
+ab50 = input.bool(false, "It closed above the 50 EMA", group=G6)
+emaStack = input.bool(false, "EMAs in order 10 > 21 > 50", group=G6)
 G3 = "Zones"
 fvgK = input.float(0.70, "FVG: gap at least x the 14-candle average range", minval=0, step=0.05, group=G3)
 gapMin = input.float(3.0, "Gap-up zone: gap at least %", minval=0, step=0.5, group=G3)
@@ -102,6 +124,39 @@ bool gapAny = bar_index >= 1 and not lockNow and not lockPrev and high[1] > 0 an
 float gapPct = gapAny ? (low - high[1]) / high[1] * 100 : na
 float avgRange = ta.sma(high - low, 14)
 
+// the raw swing highs (for the swing-high target): pushed when confirmed, pivN candles later
+var phB = array.new_int()
+var phV = array.new_float()
+if ph
+    array.push(phB, bar_index - pivN)
+    array.push(phV, high[pivN])
+
+// EMAs like the Lab (seeded with the first close) and its confluence rules on the signal candle
+var float e10 = na
+var float e21 = na
+var float e50 = na
+e10 := na(e10) ? close : e10 + 2.0 / 11.0 * (close - e10)
+e21 := na(e21) ? close : e21 + 2.0 / 22.0 * (close - e21)
+e50 := na(e50) ? close : e50 + 2.0 / 51.0 * (close - e50)
+bool emaAny = emaSup != "Off" or ab10 or ab21 or ab50 or emaStack
+bool need50 = emaSup == "50 EMA" or emaSup == "Any of 10 / 21 / 50" or ab50 or emaStack
+bool need21 = emaSup == "21 EMA" or emaSup == "Any of 10 / 21 / 50" or ab21 or emaStack
+int emaLen = need50 ? 50 : need21 ? 21 : 10
+float tch = 1 + emaTouch / 100
+bool s10 = low <= e10 * tch and close >= e10
+bool s21 = low <= e21 * tch and close >= e21
+bool s50 = low <= e50 * tch and close >= e50
+bool supOk = emaSup == "Off" ? true : emaSup == "10 EMA" ? s10 : emaSup == "21 EMA" ? s21 : emaSup == "50 EMA" ? s50 : (s10 or s21 or s50)
+bool emaOk = not emaAny or (bar_index >= emaLen and supOk and (not ab10 or close > e10) and (not ab21 or close > e21) and (not ab50 or close > e50) and (not emaStack or (e10 > e21 and e21 > e50)))
+
+// the 20-day average daily turnover (close x volume) in Rs lakh, like the Lab (daily candles on any chart)
+float cvCum = ta.cum(close * volume)
+float turnHere = (cvCum - (bar_index >= 20 ? cvCum[20] : 0.0)) / math.min(bar_index + 1, 20) / 100000
+float turnDaily = request.security(syminfo.tickerid, "D", turnHere)
+float turnLakh = timeframe.isdaily ? turnHere : turnDaily
+bool turnOk = minTurn <= 0 or math.round(turnLakh * 10) / 10.0 >= minTurn
+bool dateOk = not useDates or (time >= fromDate and time < toDate + 86400000)
+
 // swings (alternating: a second high before a low keeps the higher one) and the CHoCH state
 var swP = array.new_int()
 var swV = array.new_float()
@@ -143,9 +198,16 @@ if alive and close < chLf
     alive := false
     label.new(bar_index, low, "CHoCH ended", yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny, tooltip="A close under the CHoCH's final low " + fmtP(chLf) + " - no more setups from this CHoCH")
 
-// 2. the zones this candle touches for the first time (low <= zone top; a Gap-up zone never on a circuit-locked candle)
+// 2. the zones this candle touches for the first time (low <= zone top; a Gap-up zone never on a circuit-locked candle) -
+//    the first one (highest top, FVG before Gap-up, older first) that passes every rule = the BUY
 array.clear(hitList)
 int best = -1
+float bEntry = na
+float bStop = na
+float bTgt = na
+float bDep = na
+string skipWhy = ""
+bool aliveOk = alive and (chochAge == 0 or bar_index - chB <= chochAge)
 int nz = array.size(zF)
 if nz > 0
     for k = 0 to nz - 1
@@ -153,10 +215,13 @@ if nz > 0
         bool zg = array.get(zGap, k)
         if low <= zt and (not zg or not lockNow)
             array.push(hitList, k)
-            if alive
-                int f = array.get(zF, k)
-                float zb = array.get(zBot, k)
-                bool ok = f >= chLi
+            int f = array.get(zF, k)
+            float zb = array.get(zBot, k)
+            float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
+            float dep = aliveOk and chH > chLf ? (chH - part) / (chH - chLf) : na
+            bool ok = true
+            if structOnly
+                ok := aliveOk and f >= chLi
                 if zoneWhen == "Only in the CHoCH move" and f > chB + 1
                     ok := false
                 if zoneWhen == "Only after the CHoCH candle" and f <= chB
@@ -165,53 +230,86 @@ if nz > 0
                     ok := false
                 if belowChoch and not (zt < chLvl)
                     ok := false
-                if fibLvl > 0
-                    float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
-                    float dep = chH > chLf ? (chH - part) / (chH - chLf) : na
-                    if na(dep) or dep < fibLvl - 0.000000001
+                if fibLvl > 0 and (na(dep) or dep < fibLvl - 0.000000001)
+                    ok := false
+            if ok and not dateOk
+                ok := false
+            if ok and not turnOk
+                skipWhy := "the daily turnover was under Rs " + str.tostring(minTurn) + " lakh"
+                ok := false
+            if ok and not emaOk
+                skipWhy := "the EMA rules did not agree"
+                ok := false
+            if ok
+                bool atTop = entryMode == "Order at the zone top"
+                float entry = atTop ? math.min(open, zt) : close
+                string sm = atTop and (stopMode == "Under the touch candle's low" or stopMode == "Under whichever is lower") ? "Under the zone bottom" : stopMode
+                float base = sm == "Under the touch candle's low" ? low : sm == "Under whichever is lower" ? math.min(low, zb) : zb
+                float stop = sm == "% under the entry" ? entry * (1 - stopPct / 100) : base * (1 - stopBuf / 100)
+                float risk = entry - stop
+                float tgt = entry + targetR * risk
+                if not (entry > 0 and risk > 0)
+                    skipWhy := "it opened under the stop (a gap)"
+                    ok := false
+                else if maxRisk > 0 and risk / entry * 100 > maxRisk
+                    skipWhy := "the risk was " + str.tostring(math.round(risk / entry * 1000) / 10.0) + "% (more than " + str.tostring(maxRisk) + "%)"
+                    ok := false
+                else if entry < minPrice
+                    skipWhy := "the price was under Rs " + str.tostring(minPrice)
+                    ok := false
+                else if targetMode == "The last swing high"
+                    float above = entry + swingMinR * risk
+                    float sw = na
+                    int np = array.size(phB)
+                    if np > 0
+                        for j = np - 1 to 0
+                            if array.get(phB, j) <= bar_index - pivN and array.get(phV, j) >= above
+                                sw := array.get(phV, j)
+                                break
+                    if na(sw)
+                        skipWhy := "no swing high at least " + str.tostring(swingMinR) + "R above the entry"
                         ok := false
-                if ok
-                    if best < 0
-                        best := k
                     else
+                        tgt := sw
+                if ok
+                    bool before = best < 0
+                    if not before
                         float bt = array.get(zTop, best)
                         bool bg = array.get(zGap, best)
-                        bool before = zt > bt or (zt == bt and not zg and bg) or (zt == bt and zg == bg and f < array.get(zF, best))
-                        if before
-                            best := k
+                        before := zt > bt or (zt == bt and not zg and bg) or (zt == bt and zg == bg and f < array.get(zF, best))
+                    if before
+                        best := k
+                        bEntry := entry
+                        bStop := stop
+                        bTgt := tgt
+                        bDep := dep
 
+string chTxt = structOnly and aliveOk ? "CHoCH " + fmtP(chLvl) + " on " + fmtT(chTime) + " (" + str.tostring(chD) + " lower highs / lows, final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ")\nmove high " + fmtP(chH) : "no market-structure rule"
 if best >= 0
     float zb = array.get(zBot, best)
     float zt = array.get(zTop, best)
     int f = array.get(zF, best)
     bool isGap = array.get(zGap, best)
     string kind = isGap ? (array.get(zIn, best) ? "Gap-up zone (inside FVG)" : "Gap-up zone") : "FVG"
-    float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
-    float dep = chH > chLf ? (chH - part) / (chH - chLf) : na
-    float entry = entryMode == "Order at the zone top" ? math.min(open, zt) : close
-    float stop = zb * (1 - stopBuf / 100)
-    float risk = entry - stop
-    string tip = "CHoCH " + fmtP(chLvl) + " on " + fmtT(chTime) + " (" + str.tostring(chD) + " lower highs / lows, final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ")\nmove high " + fmtP(chH) + "\n" + kind + " " + fmtP(zb) + " - " + fmtP(zt) + (na(dep) ? "" : ", its " + str.lower(discPart) + " " + str.tostring(math.round(dep * 100)) + "% down the move") + (fibLvl > 0 ? " (" + str.tostring(fibLvl * 100) + "% line " + fmtP(chH - fibLvl * (chH - chLf)) + ")" : "")
-    if risk > 0
-        float tgt = entry + targetR * risk
-        nBuys += 1
-        lastBuy := fmtT(time) + " at " + fmtP(entry)
-        tip := tip + "\nentry " + fmtP(entry) + " · stop " + fmtP(stop) + " · target " + fmtP(tgt) + " (" + str.tostring(targetR) + "R) · risk " + str.tostring(math.round(risk / entry * 1000) / 10.0) + "%"
-        label.new(bar_index, low, "BUY " + fmtP(entry), yloc=yloc.belowbar, style=label.style_label_up, color=C_BUY, textcolor=color.white, size=size.small, tooltip=tip)
-        line.new(bar_index, entry, bar_index + 8, entry, color=C_BUY, width=2)
-        line.new(bar_index, stop, bar_index + 8, stop, color=C_STOP, width=2)
-        line.new(bar_index, tgt, bar_index + 8, tgt, color=C_TGT, width=2, style=line.style_dashed)
-    else
-        label.new(bar_index, low, "gap", yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.gray, 20), textcolor=color.white, size=size.tiny, tooltip=tip + "\nopened under the stop - no trade")
+    string tip = chTxt + "\n" + kind + " " + fmtP(zb) + " - " + fmtP(zt) + (na(bDep) ? "" : ", its " + str.lower(discPart) + " " + str.tostring(math.round(bDep * 100)) + "% down the move") + (structOnly and fibLvl > 0 and aliveOk ? " (" + str.tostring(fibLvl * 100) + "% line " + fmtP(chH - fibLvl * (chH - chLf)) + ")" : "")
+    nBuys += 1
+    lastBuy := fmtT(time) + " at " + fmtP(bEntry)
+    tip := tip + "\nentry " + fmtP(bEntry) + " · stop " + fmtP(bStop) + " · target " + fmtP(bTgt) + (targetMode == "R multiple" ? " (" + str.tostring(targetR) + "R)" : " (the last swing high)") + " · risk " + str.tostring(math.round((bEntry - bStop) / bEntry * 1000) / 10.0) + "%"
+    label.new(bar_index, low, "BUY " + fmtP(bEntry), yloc=yloc.belowbar, style=label.style_label_up, color=C_BUY, textcolor=color.white, size=size.small, tooltip=tip)
+    line.new(bar_index, bEntry, bar_index + 8, bEntry, color=C_BUY, width=2)
+    line.new(bar_index, bStop, bar_index + 8, bStop, color=C_STOP, width=2)
+    line.new(bar_index, bTgt, bar_index + 8, bTgt, color=C_TGT, width=2, style=line.style_dashed)
     box bxb = array.get(zBox, best)
     if na(bxb)
-        box.new(isGap ? f - 1 : f - 2, zt, bar_index, zb, border_color=C_BUY, bgcolor=color.new(C_BUY, 80), text=(fibLvl > 0 ? "discount " : "") + kind, text_size=size.tiny, text_color=C_BUY, text_halign=text.align_left, text_valign=text.align_top)
+        box.new(isGap ? f - 1 : f - 2, zt, bar_index, zb, border_color=C_BUY, bgcolor=color.new(C_BUY, 80), text=(structOnly and fibLvl > 0 ? "discount " : "") + kind, text_size=size.tiny, text_color=C_BUY, text_halign=text.align_left, text_valign=text.align_top)
     else
         box.set_bgcolor(bxb, color.new(C_BUY, 80))
         box.set_border_color(bxb, C_BUY)
-        box.set_text(bxb, (fibLvl > 0 ? "discount " : "") + kind)
+        box.set_text(bxb, (structOnly and fibLvl > 0 ? "discount " : "") + kind)
         box.set_text_color(bxb, C_BUY)
         box.set_text_size(bxb, size.tiny)
+else if skipWhy != ""
+    label.new(bar_index, low, "skip", yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.gray, 20), textcolor=color.white, size=size.tiny, tooltip="A zone's first touch passed the market-structure rules, but the Lab would skip it: " + skipWhy + "\n" + chTxt)
 
 // touched zones leave the list (their box stops at this candle; grey = touched, not a setup)
 int nh = array.size(hitList)

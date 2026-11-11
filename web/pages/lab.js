@@ -376,11 +376,12 @@
       '<p class="note lab-plain" id="lab-plain"><b>In plain words:</b> ' + esc(plain(f)) + '</p>' +
       '<div class="lab-actions"><label class="field lab-name"><span>Name of this idea</span><input class="inp" type="text" maxlength="60" data-k="name" value="' + esc(f.name) + '"></label>' +
       '<button class="btn primary" type="button" id="lab-run">▶ Run on my laptop</button>' +
+      '<button class="btn" type="button" id="lab-pine" title="The TradingView indicator with these rules filled in - paste it in TradingView\'s Pine Editor">📋 Copy TradingView script</button>' +
       '<button class="btn" type="button" id="lab-save">Save as a preset</button>' +
       (presets().length ? '<select class="sel" id="lab-preset" aria-label="Load a preset"><option value="">Load a preset…</option>' +
         presets().map(function (p, i) { return '<option value="' + i + '">' + esc(p.name || 'Preset ' + (i + 1)) + '</option>'; }).join('') + '</select>' +
         '<button class="btn sm danger" type="button" id="lab-preset-del" title="Delete the chosen preset">Delete preset</button>' : '') +
-      '<button class="btn sm" type="button" id="lab-reset">Back to the default</button></div></section>';
+      '<button class="btn sm" type="button" id="lab-reset">Back to the default</button></div><div id="lab-pine-box" class="lab-pine"></div></section>';
   }
 
   function readForm(el) {
@@ -555,8 +556,9 @@
       '<p>' + esc(it.saved) + ' · candles up to ' + F.date(res.cacheUpto) + ' · signals ' + F.date(res.from) + ' – ' + F.date(res.to) +
       ' · worked out in ' + F.num(res.secs, 1) + ' s on your laptop</p></div>' +
       '<div class="actions"><button class="btn sm" type="button" id="lab-use">Use these rules</button>' +
+      '<button class="btn sm" type="button" id="lab-res-pine" title="The TradingView indicator with this run\'s rules - to check its trades on the chart">📋 TradingView script</button>' +
       '<button class="btn sm danger" type="button" id="lab-del">Delete this run</button></div></div>' +
-      '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>';
+      '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p><div id="lab-res-pine-box" class="lab-pine"></div>';
     if (!s.trades) {
       box.innerHTML = h + '<p class="empty">No trade matched these rules' + (res.open ? ' (' + res.open + ' still running)' : '') + '.</p></section>';
       bindResult(el, it);
@@ -679,7 +681,10 @@
   }
 
   function bindResult(el, it) {
-    var use = $('#lab-use', el), del = $('#lab-del', el);
+    var use = $('#lab-use', el), del = $('#lab-del', el), rp = $('#lab-res-pine', el);
+    if (rp) rp.addEventListener('click', function () {
+      copyPine(Object.assign({}, DEF, it.result.params || {}, { name: it.name || DEF.name }), $('#lab-res-pine-box', el));
+    });
     if (use) use.addEventListener('click', function () {
       var f = Object.assign({}, form(), it.result.params || {});
       f.name = it.name || f.name;
@@ -694,6 +699,38 @@
         location.hash = '#lab';
       }, function (e) { window.alert(e && e.message || 'could not delete'); });
     });
+  }
+
+  /** "Copy TradingView script" (owner, 11-Nov-2026: "give option to copy the pinescript in this page that works with respect
+   *  to the current setup before running the setup. i will copy the pinescript and will paste it in the trading view
+   *  pinescript"): the indicator (tradingview/StockBlueprint_CHoCH_FVG.pine) with the form's rules as its settings. */
+  function copyPine(f, box) {
+    if (!box) return;
+    var code;
+    try {
+      code = SB.pine.build(f, { name: f.name, plain: plain(f), when: F.date(new Date().toISOString().slice(0, 10)) });
+    } catch (e) {
+      box.innerHTML = '<p class="note bad">The TradingView script could not be made: ' + esc(e && e.message || 'unknown') + '</p>';
+      return;
+    }
+    var file = 'StockBlueprint_' + (String(f.name || 'rules').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'rules') + '.pine';
+    var url = '';
+    try { url = URL.createObjectURL(new Blob([code], { type: 'text/plain' })); } catch (e) { url = ''; }
+    var show = function (copied) {
+      box.innerHTML = (copied ? '<p class="note good"><b>Copied</b> - the TradingView script with these rules (' + F.int(code.split('\n').length) + ' lines).</p>' :
+        '<p class="note warn">This browser did not let the page copy it - select the script below (Ctrl+A in the box) and copy it (Ctrl+C).</p>') +
+        '<ol class="lab-pine-steps"><li>TradingView: open the stock\'s chart on the <b>' + esc(f.tf === 'W' ? 'weekly' : f.tf === '4H' ? '4 hour' : 'daily') + '</b> timeframe.</li>' +
+        '<li>At the bottom of the chart: <b>Pine Editor</b> → select everything there (Ctrl+A) → paste (Ctrl+V) → <b>Save</b> → <b>Add to chart</b>.</li>' +
+        '<li>Already on the chart from before? Remove it and add it again (an indicator on a chart keeps its old settings), or change them in its ⚙ Settings.</li>' +
+        '<li>Go to a trade\'s date: <b>Alt+G</b>. Hover a BUY label for the entry / stop / target and the CHoCH it came from; "skip" = the Lab would skip that touch (hover for why).</li></ol>' +
+        '<ul class="lab-pine-notes">' + SB.pine.notes(f).map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' +
+        '<details' + (copied ? '' : ' open') + '><summary>Show the script</summary><textarea class="inp lab-pine-code" id="lab-pine-text" readonly spellcheck="false">' + esc(code) + '</textarea></details>' +
+        (url ? '<p class="sub"><a href="' + url + '" download="' + esc(file) + '">Download it as ' + esc(file) + '</a></p>' : '');
+      var ta = $('#lab-pine-text', box);
+      if (!copied && ta) { ta.focus(); ta.select(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(function () { show(true); }, function () { show(false); });
+    else show(false);
   }
 
   function bindForm(el) {
@@ -744,6 +781,7 @@
         paintStatus(el);
       });
     });
+    $('#lab-pine', el).addEventListener('click', function () { var f = readForm(el); saveForm(f); copyPine(f, $('#lab-pine-box', el)); });
     $('#lab-save', el).addEventListener('click', function () {
       var f = readForm(el);
       var name = window.prompt('Name of this preset', f.name || 'My idea');

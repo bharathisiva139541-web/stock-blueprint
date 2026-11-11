@@ -15,6 +15,7 @@
     "test:ui": "node tests/ui/ui.e2e.js",
     "industries": "node tools/build_industry_data.js",
     "logos": "node tools/build_logos.js",
-    "guide": "node tools/pattern-guide/build.js"
+    "guide": "node tools/pattern-guide/build.js",
+    "pine": "node tools/build_pine.js"
   }
 }

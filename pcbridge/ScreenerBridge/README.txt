@@ -336,7 +336,8 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    once more (the Lab page shows "N of M stocks, about X min left"). The daily scan's CHoCH + FVG setups use the same rule.
  - TradingView indicator: StockBlueprint_CHoCH_FVG.pine (delivered with this zip) draws the same rules on the TradingView
    chart - swings, CHoCH, final low, the 50% line, BOS, the zones and a BUY label (hover it: entry / stop / target) - to
-   check a backtest trade with your own eyes. TradingView: Pine Editor > paste > Save > Add to chart.
+   check a backtest trade with your own eyes. TradingView: Pine Editor > paste > Save > Add to chart. Easier: the Backtest
+   Lab page's "Copy TradingView script" button gives the script with the rules of the form (or of a finished run).
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /
