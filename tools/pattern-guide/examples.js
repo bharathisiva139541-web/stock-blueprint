@@ -84,7 +84,11 @@ const IPO = {
 /** Market structure pages (owner, 10-Nov-2026 - the PC's structure.py with swings of 5 candles): a downtrend of lower
  *  highs / lows (legs of 6 candles), a CHoCH move with an FVG in it, then `kind`: 'ok' = the first pullback into that FVG
  *  with a Spring; 'bos' = a new high (BOS) first, then the pullback; 'above' = the Spring on an FVG formed above the CHoCH
- *  level; 'down2' = only 2 lower highs before. -> { candles, at: {highs, lows, lvl, hi, b, f, bottom, top, peak, bos, c2} } */
+ *  level, in the premium half of the move; 'slight' (11-Nov-2026) = an FVG reaching a little above the CHoCH level whose
+ *  middle is still under the 50 % line (discount); 'newer' (11-Nov-2026, the owner's SUPREMEIND) = a second FVG formed
+ *  above (premium), the pullback runs through it and FIRST touches the discount FVG of the CHoCH move (the last candle);
+ *  'down2' = only 2 lower highs before.
+ *  -> { candles, at: {highs, lows, lvl, hi, b, f, bottom, top, peak, bos, c2, low, f2, bottom2, top2} } */
 function smc(kind) {
   const out = [], at = { highs: [], lows: [] };
   let prev = 165;
@@ -107,16 +111,23 @@ function smc(kind) {
   put(L + 13, lvl + 2, L + 12.7, lvl + 1.7);                // D: CLOSES above the last lower high = CHoCH
   at.b = out.length - 1;
   prev = lvl + 1.7;
-  let base = L;
-  if (kind === 'above') {
-    put(prev, prev + 1.3, prev - 0.3, prev + 1);            // an FVG above the CHoCH level
+  let base = L, peak = 0;
+  if (kind === 'above' || kind === 'newer') {
+    put(prev, prev + 1.3, prev - 0.3, prev + 1);            // an FVG above the CHoCH level (the premium half of the move)
     put(prev + 1, prev + 7.3, prev + 0.7, prev + 7);
     put(prev + 7, prev + 9.3, prev + 4.5, prev + 9);
-    at.f = out.length - 1; at.bottom = r2(prev + 1.3); at.top = r2(prev + 4.5);
-    base = at.top - 6.5;
+    if (kind === 'above') { at.f = out.length - 1; at.bottom = r2(prev + 1.3); at.top = r2(prev + 4.5); base = at.top - 6.5; }
+    else { at.f2 = out.length - 1; at.bottom2 = r2(prev + 1.3); at.top2 = r2(prev + 4.5); }
     prev = prev + 9;
   }
-  const peak = prev + 8;
+  if (kind === 'slight') {
+    put(prev, prev + 3.3, prev, prev + 3);                  // E: its low over C's high = an FVG reaching above the CHoCH level
+    at.f = out.length - 1; at.bottom = out[at.f - 2][1]; at.top = out[at.f][2];
+    base = at.top - 6.5;
+    prev = prev + 3;
+    peak = 156;                                             // a move high far enough up: the zone's middle under the 50 % line
+  }
+  peak = peak || prev + 8;
   go(peak, 3);
   at.peak = out.length - 1;
   if (kind === 'bos') {
@@ -125,19 +136,29 @@ function smc(kind) {
     at.bos = out.findIndex((c, i) => i > at.peak + 5 && c[3] > peak + 0.3);
   }
   go(base + 8, 6);                                          // the pullback
-  put(base + 8, base + 8.3, base + 4.8, base + 5);          // c1 (red)
-  put(base + 5.3, base + 5.6, base + 3, base + 5.1);        // c2 = the Spring, its low in the zone
+  put(base + 8, base + 8.3, base + 4.8, base + 5);          // c1 (red) - 'newer': the first touch of the discount FVG, the end
   at.c2 = out.length - 1;
+  if (kind !== 'newer') {
+    put(base + 5.3, base + 5.6, base + 3, base + 5.1);      // c2 = the Spring, its low in the zone
+    at.c2 = out.length - 1;
+  }
+  // the move (owner, 11-Nov-2026): from the final low to the highest high before the entry candle - its 50 % line
+  at.moveHigh = Math.max.apply(null, out.slice(at.low, at.c2).map((c) => c[1]));
+  at.finalLow = Math.min.apply(null, out.slice(at.hi + 1, at.b + 1).map((c) => c[2]));
+  at.half = r2((at.moveHigh + at.finalLow) / 2);
   return { candles: out, at };
 }
 function smcMarks(x, extra) {
   const a = x.at, m = { zone: { from: a.f, bottom: a.bottom, top: a.top, label: 'FVG' },
-    lines: [{ y: a.lvl, from: a.hi, to: a.b, label: 'CHoCH ' + a.lvl, dash: true }],
-    hl: { [a.b]: 'CHoCH', [a.c2]: 'Spring' },
+    lines: [{ y: a.lvl, from: a.hi, to: a.b, label: 'CHoCH ' + a.lvl, dash: true },
+      { y: a.half, from: a.low, to: a.c2, label: '50% ' + a.half, dash: true, color: '#ffd166' }].concat(a.f2 ? [
+      { y: a.top2, from: a.f2, to: a.c2 - 1, label: 'FVG 2 (premium)', dash: true, color: '#ff8a80' },
+      { y: a.bottom2, from: a.f2, to: a.c2 - 1, dash: true, color: '#ff8a80' }] : []),
+    hl: { [a.b]: 'CHoCH', [a.c2]: a.f2 ? '1st touch' : 'Spring' },
     rings: a.highs.slice(1).map((i) => ({ i, at: 'high', color: '#8fb4ff' })).concat(a.lows.slice(1).map((i) => ({ i, at: 'low', color: '#8fb4ff' }))) };
   return Object.assign(m, extra || {});
 }
-const SMC = { ok: smc('ok'), bos: smc('bos'), above: smc('above'), down2: smc('down2') };
+const SMC = { ok: smc('ok'), bos: smc('bos'), above: smc('above'), down2: smc('down2'), slight: smc('slight'), newer: smc('newer') };
 
 // ---------------------------------------------------------------- the pages
 const SECTIONS = [
@@ -604,35 +625,41 @@ const PAGES = [
   {
     id: 'choch', section: 'S', title: 'CHoCH + FVG (உங்கள் SMC setup)', tags: ['CHoCH + FVG'],
     ta: 'Downtrend-இல் (குறைந்தது 3 lower high + 3 lower low) ஒரு candle கடைசி lower high-க்கு மேலே CLOSE ஆனால் = CHoCH. அந்த move-இல் (அல்லது பிறகு) ' +
-      'உருவான FVG, CHoCH level-க்குக் கீழே; அதற்கு வரும் முதல் pullback-இல் Spring / FVG First Touch = entry.',
+      'உருவான FVG, move-இன் 50% கோட்டுக்குக் கீழே (discount); அதற்கு price முதல் முறை திரும்பி வருவது / அங்கே Spring = entry.',
     rules: [
       'Swing high / low = இருபுறமும் 5 candle-களைவிட உயர்ந்த high / குறைந்த low (5 candle கழித்துதான் உறுதியாகும் - backtest முன்கூட்டிப் பார்க்காது)',
       'குறைந்தது 3 lower highs + 3 lower lows (ஒவ்வொன்றும் முந்தையதைவிடக் குறைவு; நீல வட்டங்கள்)',
       'CHoCH = கடைசி lower high-க்கு மேலே candle CLOSE (wick மட்டும் போதாது)',
-      'Zone = CHoCH-இன் கடைசி low-க்குப் பிறகு உருவான FVG / Gap-up (அந்த move-இல் அல்லது பிறகு), CHoCH level-க்குக் கீழே',
+      'Zone = CHoCH-இன் கடைசி low-க்குப் பிறகு உருவான FVG / Gap-up (அந்த move-இல் அல்லது பிறகு)',
+      'Discount: zone-இன் நடுப்பகுதி move-இன் 50% கோட்டுக்குக் கீழே (கடைசி low → entry-க்கு முந்தைய உச்சம்; மஞ்சள் கோடு = Fib 0.5). Zone சற்று CHoCH level-க்கு மேலே நீண்டாலும் OK',
       'முதல் pullback மட்டும்: CHoCH-க்குப் பின் புதிய உயரம் (BOS = உச்ச swing high-க்கு மேலே close) வருவதற்கு முன்',
-      'Entry = zone-இல் Spring (4H: 13:15 candle) அல்லது FVG First Touch / Confirmed; stop = zone-க்குக் கீழே',
+      'Entry = அந்த zone-க்கு price முதல் முறை வருவது (zone top-இல் limit order, அல்லது அந்த candle close) - மேலே புதிய FVG உருவானாலும்; அல்லது zone-இல் Spring (4H: 13:15 candle) / FVG First Touch Confirmed; stop = zone-க்குக் கீழே',
       'கடைசி low-க்குக் கீழே close = CHoCH செல்லாது; பின்னர் entry candle low-க்குக் கீழே close = பட்டியலிலிருந்து நீக்கம்'
     ],
     examples: [
-      { ok: true, label: 'முதல் pullback-இல் Spring', why: '3 lower highs / lows, CHoCH close, FVG அந்த move-இல், CHoCH level-க்குக் கீழே; BOS இன்னும் இல்லை',
-        candles: SMC.ok.candles, marks: smcMarks(SMC.ok), check: { type: 'choch', stage: 'below' } },
+      { ok: true, label: 'முதல் pullback-இல் Spring', why: '3 lower highs / lows, CHoCH close, FVG அந்த move-இல், 50% கோட்டுக்கு நன்றாகக் கீழே (discount); BOS இன்னும் இல்லை',
+        candles: SMC.ok.candles, marks: smcMarks(SMC.ok), check: { type: 'choch', stage: 'disc' } },
+      { ok: true, label: 'மேலே புதிய FVG - கீழே உள்ள zone-இன் முதல் touch', why: 'CHoCH-க்குப் பின் மேலே இன்னொரு FVG (premium, 50%-க்கு மேலே) - அதைத் தாண்டி, discount FVG-க்கு price முதல் முறை வந்ததே entry (SUPREMEIND)',
+        candles: SMC.newer.candles, marks: smcMarks(SMC.newer), check: { type: 'choch', stage: 'disc', trigger: 'Zone first touch' } },
       { ok: false, label: 'BOS-க்குப் பிறகு', why: 'CHoCH-க்குப் பின் price உச்சத்துக்கு மேலே close (BOS) - "ஏற்கனவே ஓடிவிட்டது"; இது முதல் pullback அல்ல',
-        candles: SMC.bos.candles, marks: smcMarks(SMC.bos, { lines: [{ y: SMC.bos.at.lvl, from: SMC.bos.at.hi, to: SMC.bos.at.b, label: 'CHoCH ' + SMC.bos.at.lvl, dash: true },
-          { y: SMC.bos.candles[SMC.bos.at.peak][1], from: SMC.bos.at.peak, to: SMC.bos.at.bos, label: 'BOS', color: '#ff8a80' }] }),
+        candles: SMC.bos.candles, marks: smcMarks(SMC.bos, { lines: smcMarks(SMC.bos).lines.concat([
+          { y: SMC.bos.candles[SMC.bos.at.peak][1], from: SMC.bos.at.peak, to: SMC.bos.at.bos, label: 'BOS', color: '#ff8a80' }]) }),
         check: { type: 'choch', stage: 'bos' } }
     ]
   },
   {
     id: 'choch2', section: 'S', title: 'CHoCH + FVG - செல்லாதவை', tags: [],
-    ta: 'இந்த இரண்டும் உங்கள் setup இல்லை: zone CHoCH level-க்கு மேலே, அல்லது downtrend-இல் 3 lower high / low இல்லை.',
+    ta: 'Zone move-இன் மேல் பாதியில் (premium) இருந்தால், அல்லது downtrend-இல் 3 lower high / low இல்லை என்றால் setup இல்லை. CHoCH level-க்குச் சற்று மேலே நீளும் zone, நடுப்பகுதி 50%-க்குக் கீழே என்றால் சரி.',
     rules: [
-      'Zone (FVG) CHoCH level-க்கு மேலே உருவானால் → செல்லாது (விலை ஏற்கனவே மேலே போய்விட்டது)',
+      'Zone-இன் நடுப்பகுதி 50% கோட்டுக்கு மேலே (premium) → செல்லாது (விலை ஏற்கனவே மேலே போய்விட்டது; risk அதிகம்)',
+      'Zone CHoCH level-க்குச் சற்று மேலே நீண்டாலும், நடுப்பகுதி 50%-க்குக் கீழே என்றால் → சரி (owner, 11-Nov-2026)',
       'CHoCH-க்கு முன் 3-க்குக் குறைவான lower highs / lows → செல்லாது (Lab-இல் இந்த எண்ணை மாற்றிச் சோதிக்கலாம்)'
     ],
     examples: [
-      { ok: false, label: 'Zone CHoCH level-க்கு மேலே', why: 'Spring, CHoCH-க்குப் பிறகு உருவான FVG-இல் - ஆனால் அந்த FVG CHoCH level-க்கு மேலே',
-        candles: SMC.above.candles, marks: smcMarks(SMC.above), check: { type: 'choch', stage: 'above' } },
+      { ok: false, label: 'Zone premium பகுதியில் (50%-க்கு மேலே)', why: 'Spring, CHoCH-க்குப் பிறகு உருவான FVG-இல் - ஆனால் அந்த FVG-இன் நடுப்பகுதி move-இன் 50% கோட்டுக்கு மேலே',
+        candles: SMC.above.candles, marks: smcMarks(SMC.above), check: { type: 'choch', stage: 'prem' } },
+      { ok: true, label: 'CHoCH-க்குச் சற்று மேலே - ஆனால் discount', why: 'FVG-இன் மேல் பகுதி CHoCH level-க்கு மேலே; நடுப்பகுதி 50% கோட்டுக்குக் கீழே → சரியான setup',
+        candles: SMC.slight.candles, marks: smcMarks(SMC.slight), check: { type: 'choch', stage: 'disc' } },
       { ok: false, label: '2 lower highs மட்டும்', why: 'CHoCH-க்கு முன் 2 lower highs / lows மட்டுமே - குறைந்தது 3 வேண்டும்',
         candles: SMC.down2.candles, marks: smcMarks(SMC.down2), check: { type: 'choch', stage: 'none' } }
     ]

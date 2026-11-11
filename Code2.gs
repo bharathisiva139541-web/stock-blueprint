@@ -12335,7 +12335,8 @@ const AB_ITD_TFS = ['M', 'W', 'D', '4H', '2H', '1H', '30m', '15m'];          // 
 // close under the Spring low ('FVG Detail' says top / middle / bottom); on 4H also the other FVG patterns of col X (they count on every 4H candle - the
 // 13:15 rule is for the Spring patterns only)
 // owner, 10-Nov-2026: 'CHoCH + FVG' = his SMC setup (the PC's structure.py: after >= 3 lower highs / lows a close above the last lower high,
-// an FVG / Gap-up zone of that move or after it below the CHoCH level, the first pullback into it with a Spring / FVG First Touch / Confirmed)
+// an FVG / Gap-up zone of that move or after it below the CHoCH level, the first pullback into it with a Spring / FVG First Touch / Confirmed;
+// 11-Nov-2026: the zone's middle in the discount half of the move instead, the first touch of any zone too - the PC decides, this only keeps the rows)
 const AB_ITD_CHOCH = 'CHoCH + FVG';
 const AB_ITD_PATTERNS = [AB_ITD_CHOCH, 'Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
 const AB_ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
@@ -12497,7 +12498,8 @@ function ab_itdFromBridge_(req) {
     'FVG Detail says top / middle / bottom; taken off when a later candle closes under the Spring low; not on the monthly chart). ' +
     (!tfs || tfs.indexOf('4H') !== -1 ? '4H also: FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' : '') +
     'CHoCH + FVG (your SMC setup, 4H / D / W): after at least 3 lower highs and lower lows (swings of 5 candles) a candle closed above the last lower high, ' +
-    'an FVG / Gap-up zone of that move or after it below that level, and on the first pullback into it (no BOS yet) a Spring or an FVG First Touch / Confirmed. ' +
+    'an FVG / Gap-up zone of that move or after it in the discount half of the move (its middle under the 50% line), and on the first pullback (no BOS yet) ' +
+    'the first touch of that zone, a Spring on it or an FVG First Touch / Confirmed. ' +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {

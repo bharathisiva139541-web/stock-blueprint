@@ -16,6 +16,11 @@ Rules (one timeframe's candles, oldest first; nothing looks ahead):
    between that swing high and the breaking candle (the "final low"). d = the smaller of the two counts.
  - after the CHoCH: BOS = the first close above the highest swing high confirmed after the CHoCH candle (a new higher
    high - "already moved"); the CHoCH is DEAD from the first close under its final low.
+ - the MOVE (11-Nov-2026): from the CHoCH's final low to the highest high since it, up to the candle before a signal (what a
+   trader draws the Fibonacci retracement on, at that moment); `depth` = how far down that move a price sits - 0 = at the
+   high, 1 = at the final low, 0.5 = the middle (TradingView's Fib levels drawn from the low to the high). The owner's
+   discount zone = a zone whose middle is at depth >= 0.5 (owner, 11-Nov-2026 on SUPREMEIND: "we always try to enter with
+   low risk, i.e. the zone in discount area. it is ok even the zone have some area slightly above the Choch").
 Pure Python (no numpy). A Structure keeps only its events and swing highs (small), not the candles: the checks that look
 at the candles after a CHoCH (dead / BOS) take the closes as an argument and go forward only as far as asked.
 """
@@ -104,13 +109,14 @@ class Structure:
         self.phv = array.array('d', [h[p] for p in ph])
         self.events = choch_events(h, l, c, n, ph, pl)
         self.bs = array.array('i', [e[0] for e in self.events])
-        self.st = {}                  # k -> [next candle to check for 'dead', dead, next candle for BOS, peak, next pivot, bos]
+        self.st = {}                  # k -> [next candle to check for 'dead', dead, next candle for BOS, peak, next pivot, bos,
+        #                                        next candle for the move high, the move high so far]
 
     def _state(self, k):
         s = self.st.get(k)
         if s is None:
             b = self.events[k][0]
-            s = self.st[k] = [b + 1, -1, b + 1, None, bisect.bisect_right(self.ph, b), -1]
+            s = self.st[k] = [b + 1, -1, b + 1, None, bisect.bisect_right(self.ph, b), -1, self.events[k][3], None]
         return s
 
     def dead_by(self, k, c, i):
@@ -162,6 +168,23 @@ class Structure:
             k -= 1
         return -1
 
+    def move_high(self, k, h, i):
+        """The highest high from CHoCH k's final low up to the candle BEFORE i (the top of the move a pullback into candle i
+        retraces - known before candle i opens). Candles are asked for in time order (forward, remembered); an earlier
+        candle than the last one asked is worked out from the start."""
+        s = self._state(k)
+        j, mx = s[6], s[7]
+        if i < j:
+            seg = h[self.events[k][3]:i]
+            return max(seg) if len(seg) else None
+        while j < i and j < len(h):
+            v = h[j]
+            if mx is None or v > mx:
+                mx = v
+            j += 1
+        s[6], s[7] = j, mx
+        return mx
+
     def last_swing_high(self, i, above):
         """The most recent swing high confirmed by candle i (its candle <= i - n) at or above `above`: (candle, price)."""
         k = bisect.bisect_right(self.ph, i - self.n) - 1
@@ -171,11 +194,14 @@ class Structure:
             k -= 1
         return None
 
-    def judge(self, i, zone_f, zone_top, price, c, down_n, max_age=0):
+    def judge(self, i, zone_f, zone_top, price, c, down_n, max_age=0, h=None, zone_bottom=None, part='mid', fib=None):
         """A signal on candle i (zone formed on candle zone_f, top zone_top; no zone: zone_f / zone_top None and `price` =
         the signal candle's close) -> {'k': CHoCH index or -1, 'stage', 'after_low', 'leg', 'after', 'below', 'first',
         'age'}. stage: 'none' (no live CHoCH before it), 'old' (the zone formed before the final low), 'bos' (a BOS came
-        before the signal), 'above' (zone / price at or above the CHoCH level), 'below' (= the owner's setup)."""
+        before the signal), 'above' (zone / price at or above the CHoCH level), 'below' (zone under the CHoCH level).
+        With the highs `h` also 'H' (the move high, move_high) and 'depth' = how far down the move the zone's `part`
+        ('mid' / 'top' / 'bottom'; no zone: `price`) sits (see depth()) - the discount rule; with `fib` (e.g. 0.5) the
+        stage says 'disc' (depth >= fib = the owner's discount zone, 11-Nov-2026) / 'prem' instead of 'below' / 'above'."""
         k = self.active(i, down_n)
         if k < 0:
             return {'k': -1, 'stage': 'none'}
@@ -190,9 +216,40 @@ class Structure:
                'after': zone_f is None or zone_f > b,
                'below': (zone_top if zone_top is not None else price) < lvl}
         out['stage'] = 'old' if not out['after_low'] else 'bos' if not first else 'above' if not out['below'] else 'below'
+        if h is not None:
+            H = self.move_high(k, h, i)
+            out['H'] = H
+            out['depth'] = depth(H, lf, zone_part(zone_bottom, zone_top, part, price))
+            if fib and out['stage'] in ('above', 'below'):
+                out['stage'] = 'disc' if out['depth'] is not None and out['depth'] >= fib - 1e-9 else 'prem'
         return out
 
 
-STAGES = ('below', 'above', 'bos', 'old', 'none')
+def zone_part(bottom, top, part, price):
+    """The price of a zone that the discount rule judges: its middle (default) / top / bottom; no zone = `price`."""
+    if top is None:
+        return price
+    if bottom is None or part == 'top':
+        return top
+    return bottom if part == 'bottom' else (bottom + top) / 2.0
+
+
+def depth(hi, lo, price):
+    """How far down the move from `lo` (the final low) to `hi` (the move high) `price` sits: 0 = at the high, 0.5 = the middle,
+    1 = at the final low (> 1 under it) - the Fibonacci retracement level as TradingView draws it from the low to the high.
+    None for a move without a range."""
+    if hi is None or lo is None or not hi > lo:
+        return None
+    return (hi - price) / float(hi - lo)
+
+
+def fib_line(hi, lo, level):
+    """The price of the Fib `level` line of the move (0.5 = the middle)."""
+    return hi - level * (hi - lo)
+
+
+STAGES = ('disc', 'below', 'prem', 'above', 'bos', 'old', 'none')
 STAGE_NAMES = {'none': 'No CHoCH before it', 'old': 'Zone older than the CHoCH low', 'bos': 'After a BOS (already moved)',
-               'above': 'At / above the CHoCH level', 'below': 'Below the CHoCH level, first pullback (your setup)'}
+               'above': 'At / above the CHoCH level', 'below': 'Below the CHoCH level, first pullback',
+               'disc': 'In the discount part of the move (under the Fib line), first pullback - your setup',
+               'prem': 'In the premium part of the move (above the Fib line)'}

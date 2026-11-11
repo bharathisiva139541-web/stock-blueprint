@@ -100,10 +100,13 @@ test('market structure pages: the PC program (structure.py + kite_intraday.choch
     '    cc = [{"t": (date(2026, 1, 1) + timedelta(days=k)).isoformat(), "day": (date(2026, 1, 1) + timedelta(days=k)).isoformat(), "o": r[0], "h": r[1], "l": r[2], "c": r[3], "v": 1e6} for k, r in enumerate(rows)]',
     '    d0 = K.fvg_detail(cc, None, K.WINDOW.get("D", 300)); i = len(cc) - 1',
     '    setups = K.choch_setups(cc, cc, d0, "D", None, "")',
-    '    trig = K.choch_trigger(d0, i, True); stage = "notrigger"; zone = None',
+    '    trig = (setups[i][0], setups[i][1].split(" · ")[0]) if i in setups else K.choch_trigger(d0, i, True, K.choch_touches(cc))',
+    '    stage = "notrigger"; zone = None',
     '    if trig:',
-    '        st = K.backtest_lab.structure.Structure([c["h"] for c in cc], [c["l"] for c in cc], [c["c"] for c in cc], K.CHOCH_PIVOT_N)',
-    '        stage = st.judge(i, trig[0]["f"], trig[0]["top"], cc[i]["c"], [c["c"] for c in cc], K.CHOCH_DOWN_N)["stage"]',
+    '        hs = [c["h"] for c in cc]',
+    '        st = K.backtest_lab.structure.Structure(hs, [c["l"] for c in cc], [c["c"] for c in cc], K.CHOCH_PIVOT_N)',
+    '        stage = st.judge(i, trig[0]["f"], trig[0]["top"], cc[i]["c"], [c["c"] for c in cc], K.CHOCH_DOWN_N, h=hs,',
+    '                         zone_bottom=trig[0]["bottom"], part=K.CHOCH_PART, fib=K.CHOCH_FIB)["stage"]',
     '        zone = [round(trig[0]["bottom"], 2), round(trig[0]["top"], 2), trig[0]["f"], trig[1]]',
     '    out.append({"setup": i in setups, "stage": stage, "zone": zone, "note": setups[i][1] if i in setups else ""})',
     'print(json.dumps(out))'].join('\n');
@@ -115,9 +118,12 @@ test('market structure pages: the PC program (structure.py + kite_intraday.choch
     const g = got[k];
     assert.strictEqual(g.setup, ex.ok, name + ': ' + JSON.stringify(g));
     if (ex.check.stage) assert.strictEqual(g.stage, ex.check.stage, name + ': ' + JSON.stringify(g));
-    // the drawn zone = the zone the entry Spring sat on
-    assert.deepStrictEqual(g.zone && [g.zone[0], g.zone[1], g.zone[2], g.zone[3]], [ex.marks.zone.bottom, ex.marks.zone.top, ex.marks.zone.from, 'Spring'], name + ': the drawn zone');
-    if (ex.ok) assert.match(g.note, /^Spring · CHoCH \S+ after 3 lower highs \/ lows · first pullback$/, name);
+    // the drawn zone = the zone the entry (a Spring, or the zone's first touch) sat on
+    assert.deepStrictEqual(g.zone && [g.zone[0], g.zone[1], g.zone[2], g.zone[3]], [ex.marks.zone.bottom, ex.marks.zone.top, ex.marks.zone.from, ex.check.trigger || 'Spring'], name + ': the drawn zone');
+    if (ex.ok) assert.match(g.note, /^(Spring|Zone first touch) · CHoCH \S+ after 3 lower highs \/ lows · first pullback · zone middle \d+% down the move$/, name);
+    // the drawn 50 % line = the move the PC judged (final low -> the highest high before the entry candle)
+    const half = ex.marks.lines.find((l) => /^50% /.test(l.label || ''));
+    assert.ok(half, name + ': the 50 % line is drawn');
   });
 });
 
