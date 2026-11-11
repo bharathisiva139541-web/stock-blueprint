@@ -325,6 +325,18 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    run, and the Lab page shows "N of M stocks, about X min left"); the first run with market structure ~10 seconds more.
    The daily Zerodha scan also finds today's CHoCH + FVG setups -> the sheet's Intraday Patterns tab -> the website's
    Patterns & FVG page ("CHoCH + FVG setups") and Strategy Settings ("CHoCH + FVG (your SMC setup)").
+ - The discount zone (11-Nov-2026, after your SUPREMEIND check): "My CHoCH + FVG setup" now takes the zone whose MIDDLE is
+   at least half way down the move (the 50% / Fib 0.5 line from the CHoCH's final low to the highest high before the
+   signal) - a part of the zone may be above the CHoCH level. The signal = the FIRST time price comes back to that zone
+   (Pattern "First touch of a zone" - every FVG / Gap-up zone, not only the newest one, so a newer FVG above it does not
+   hide it). Buy: "An order waiting at the zone top" (filled when price first comes down to the top, or at the open when
+   it opened under it) or the touch candle's close - run both to compare. Other choices: 38.2 / 61.8 / 70.5 / 78.6 % and
+   the zone's middle / top / bottom. Every trade's Structure badge shows the CHoCH, the final low, the move high and the
+   50% line; the TradingView button opens that stock's chart. The first run after this update rebuilds the candle cache
+   once more (the Lab page shows "N of M stocks, about X min left"). The daily scan's CHoCH + FVG setups use the same rule.
+ - TradingView indicator: StockBlueprint_CHoCH_FVG.pine (delivered with this zip) draws the same rules on the TradingView
+   chart - swings, CHoCH, final low, the 50% line, BOS, the zones and a BUY label (hover it: entry / stop / target) - to
+   check a backtest trade with your own eyes. TradingView: Pine Editor > paste > Save > Add to chart.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

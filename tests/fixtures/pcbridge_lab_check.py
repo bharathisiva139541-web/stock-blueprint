@@ -153,7 +153,7 @@ g = lambda **kw: [(r[0], r[1]) for r in L.pick(rows, P(**kw))]
 assert g(group='spring') == [(5, 'S'), (9, 'S')]
 assert g(group='fvg') == [(5, 'F')] and g(group='fvg_top') == [(5, 'F')] and g(group='fvg_bottom') == []
 assert g(group='gap') == [(5, 'G'), (9, 'G')] and g(group='gapin') == [(5, 'G')]
-assert g(group='zone') == [(5, 'F'), (9, 'G')], 'one per candle'
+assert g(group='zone') == [(5, 'F'), (5, 'G'), (9, 'G')], 'every row of a candle (run_job takes the first that passes)'
 assert g(group='gap', maxTouch=2) == [(9, 'G')] and g(group='gap', minTurnover=5) == [(5, 'G')]
 
 
@@ -542,7 +542,7 @@ for seed in range(6):
 
 # the cache now has the FVG First Touch / Confirmed signals (the same as the sheet's / 4H scan's rule) + the zone's candle
 meta, d = L.load_meta()
-assert meta['v'] == L.CACHE_VERSION == 2
+assert meta['v'] == L.CACHE_VERSION == 3
 with open(os.path.join(d, 'D.bin'), 'rb') as f:
     off, cnt = meta['index']['D']['AAA']
     csa = L.Candles(f, off, cnt)
@@ -550,6 +550,13 @@ rows_a = meta['signals']['D']['AAA']
 fc = [{'o': csa.o[k], 'h': csa.h[k], 'l': csa.l[k], 'c': csa.c[k]} for k in range(csa.n)]
 ftx, cfx, _ = K.fvg_touch_events(fc, K.fvg_gaps(fc))
 assert sorted(r[0] for r in rows_a if r[1] == 'T') == sorted(ftx) and sorted(r[0] for r in rows_a if r[1] == 'C') == sorted(cfx)
+# ... and the first touch of EVERY zone (11-Nov-2026): 'Z' FVG / 'Y' Gap-up = zone_first_touches, highest top first
+ztx = K.zone_first_touches(fc, K.spring_zones(fc, K.fvg_gaps(fc)))
+assert ztx and sorted((r[0], r[8], r[1]) for r in rows_a if r[1] in ('Z', 'Y')) == \
+    sorted((i, z['f'], 'Y' if z['kind'] == 'Gap-up' else 'Z') for i, zs in ztx.items() if i >= 3 for z in zs)
+for i, zs in ztx.items():
+    assert all(fc[i]['l'] <= z['top'] and all(fc[k]['l'] > z['top'] for k in range(z['f'] + 1, i)) for z in zs), 'the first touch'
+    assert [z['top'] for z in zs] == sorted((z['top'] for z in zs), reverse=True)
 assert all(len(r) == 9 for r in rows_a) and all(r[8] == -1 for r in rows_a if r[1] == 'S')
 assert all(0 <= r[8] <= r[0] - 2 for r in rows_a if r[1] in ('F', 'G')), 'the zone formed before the Spring pair'
 assert all(r[8] < r[0] for r in rows_a if r[1] in ('T', 'C'))
@@ -692,7 +699,7 @@ res_b = K.analyse({'sym': 'EEE', 'day': rows_b, 'm15': [], 'h4': []}, since5, da
 assert not [x for x in res_b['items'] if x['pattern'] == K.CHOCH_PATTERN]
 assert {'tf': 'D', 'candle': spring_day, 'pattern': K.CHOCH_PATTERN} in res_b['invalid'], res_b['invalid']
 # the PC's rule = the Lab's default setup (the same structure.py)
-assert (K.CHOCH_PIVOT_N, K.CHOCH_DOWN_N) == (L.DEFAULTS['pivotN'], L.DEFAULTS['downN']) and K.RULES_VERSION == 5
+assert (K.CHOCH_PIVOT_N, K.CHOCH_DOWN_N) == (L.DEFAULTS['pivotN'], L.DEFAULTS['downN']) and K.RULES_VERSION == 6
 
 # ------------------------------------------------------------------ 12. the candle cache after an update (owner, 11-Nov-2026:
 # "backtest for some setups is loading only. sheet feed error" - the first run after the update built the cache for 20+
@@ -739,5 +746,145 @@ shutil.rmtree(L.LAB_DIR)
 w.build = lambda out: K.lab_build_cache(out, set())
 w.loop({}, FakeSheet([]), rounds=1)
 assert L.load_meta()[0], 'the cache is made'
+
+# ------------------------------------------------------------------ 13. the discount zone + every zone's first touch + the zone-top
+# entry (owner, 11-Nov-2026, SUPREMEIND: "instead of taking the trade in FVG zone below the Choch, our backtest took the trade
+# above the choch. we always try to enter with low risk, i.e. the zone in discount area. it is ok even the zone have some
+# area slightly above the Choch"; answers: under the 50 % line of the move, the first return to that zone = the signal even
+# when a newer FVG formed above it, the entry at the zone top or the touch candle's close - both)
+# the move high: = max(high[final low .. i-1]) whichever order the candles are asked in
+for seed in range(4):
+    w = walk(300 + seed, 600)
+    hh, ll, cc = [r[2] for r in w], [r[3] for r in w], [r[4] for r in w]
+    stw = S.Structure(hh, ll, cc, 3)
+    rnd = random.Random(seed)
+    for k, e in enumerate(stw.events):
+        asks = sorted(rnd.sample(range(e[0] + 1, len(cc)), min(12, len(cc) - e[0] - 1)))
+        asks = asks + [asks[0]] if asks else asks        # an earlier candle again: from the start
+        for i in asks:
+            assert stw.move_high(k, hh, i) == max(hh[e[3]:i]), (seed, k, i)
+assert S.depth(150, 100, 125) == 0.5 and S.depth(150, 100, 150) == 0 and S.depth(150, 100, 100) == 1 and S.depth(100, 100, 90) is None
+assert S.fib_line(150, 100, 0.618) == 150 - 0.618 * 50 and S.zone_part(10, 20, 'mid', 0) == 15 and S.zone_part(10, 20, 'top', 0) == 20 \
+    and S.zone_part(10, 20, 'bottom', 0) == 10 and S.zone_part(None, None, 'mid', 7) == 7
+
+
+def craft6(big=False):
+    """SUPREMEIND-like: 3 lower highs / lows (5-candle swings), the CHoCH move with an FVG low in it (121.3 - 126.5, the
+    discount), the rally on with a second FVG ABOVE the CHoCH level (139.3 - 145.0, the premium), the peak 156.3, then the
+    pullback: first into the premium FVG, on into the discount FVG (big = one red candle through both at once), a Spring."""
+    rows, prev = [], 165.0
+    d0 = date(2026, 3, 2)
+
+    def put(o, h, l, c):
+        rows.append([(d0 + timedelta(days=len(rows))).isoformat(), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 900000])
+
+    def go(to, k=6):
+        nonlocal prev
+        for x in leg(prev, to, k):
+            put(prev, max(prev, x) + 0.3, min(prev, x) - 0.3, x)
+            prev = x
+    for to in (150, 160, 142, 152, 134, 144, 126, 136, 120):
+        go(to)
+    put(120, 121.3, 119.7, 121)                                 # A
+    put(121, 130.3, 120.7, 130)                                 # B
+    put(130, 133.3, 126.5, 133)                                 # C: FVG 121.3 - 126.5 (in the CHoCH move, the discount)
+    put(133, 138.3, 130.0, 138)                                 # D: closes above the last lower high 136.3 = CHoCH
+    put(138, 139.3, 133.0, 139)                                 # E
+    put(139, 148.3, 138.7, 148)                                 # F
+    put(148, 151.3, 145.0, 151)                                 # G: FVG 139.3 - 145.0 above the CHoCH level (premium)
+    prev = 151
+    go(156, 3)                                                  # the move high 156.3: the 50 % line = 138.0
+    go(147, 3)
+    if big:
+        put(147, 147.3, 124.8, 125.5)                           # one candle through the premium FVG into the discount FVG
+        prev = 125.5
+    else:
+        put(147, 147.3, 143.0, 144)                             # the first touch of the premium FVG
+        prev = 144
+        go(128, 6)
+        put(128, 128.3, 124.8, 125)                             # the first touch of the discount FVG
+        prev = 125
+    put(125.3, 125.6, 123, 125.1)                               # a Spring in it
+    prev = 125.1
+    go(160, 8)
+    return rows
+
+
+r6, r6b = craft6(), craft6(big=True)
+day6 = {r[0]: k for k, r in enumerate(r6)}
+t_prem = next(k for k, r in enumerate(r6) if r[3] == 143.0)
+t_disc = next(k for k, r in enumerate(r6) if r[3] == 124.8)
+K.store_save('SUP', {'v': 1, 'sym': 'SUP', 'm15': [], 'day': r6, 'h4': []})
+K.store_save('SUB', {'v': 1, 'sym': 'SUB', 'm15': [], 'day': r6b, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+meta6, _ = L.load_meta()
+zrows = [r for r in meta6['signals']['D']['SUP'] if r[1] == 'Z']
+assert [(r[0], r[2], r[3]) for r in zrows if r[0] in (t_prem, t_disc)] == [(t_prem, 139.3, 145.0), (t_disc, 121.3, 126.5)], zrows
+assert not [r for r in meta6['signals']['D']['SUP'] if r[1] == 'T' and r[0] == t_disc], 'not the newest FVG: no FVG First Touch there'
+big_rows = [r for r in meta6['signals']['D']['SUB'] if r[1] == 'Z' and r[3] in (145.0, 126.5)]
+assert len(big_rows) == 2 and big_rows[0][0] == big_rows[1][0] and big_rows[0][3] == 145.0, 'one candle, both zones, the higher top first'
+SMC6 = {'tf': 'D', 'group': 'touch', 'maxRisk': 0, 'structure': 'only', 'pivotN': 5, 'downN': 3, 'zoneWhen': 'both', 'belowChoch': False,
+        'firstPull': True, 'discount': 0.5, 'discPart': 'mid', 'stop': 'zone', 'cost': 0}
+sym6, sig6, ent6, st6, stage6, struct6, zone6 = (L.TRADE_COLS.index(c) for c in ('sym', 'signal', 'entry', 'stop', 'stage', 'struct', 'zone'))
+lab6 = lambda **kw: [r for r in L.run_job(dict(SMC6, **kw))['trades'] if r[sym6] in ('SUP', 'SUB')]
+mine6 = lab6(entry='zone')
+sup = [r for r in mine6 if r[sym6] == 'SUP']
+assert len(sup) == 1 and sup[0][sig6] == r6[t_disc][0] and sup[0][ent6] == 126.5 and abs(sup[0][st6] - round(121.3 * 0.995, 2)) < 0.006, sup
+assert sup[0][stage6] == 'disc' and sup[0][zone6] == 'FVG zone touch', sup
+assert 'CHoCH 136.30 on ' in sup[0][struct6] and 'move high 156.30' in sup[0][struct6] and 'zone middle 89% down the move (50% line 138.00)' in sup[0][struct6], sup[0][struct6]
+assert lab6(entry='close')[0][ent6] == 125.0, 'the touch candle\'s close'
+# one candle through both zones: the premium one fails the discount rule, the discount one is the trade (one a candle)
+sub = [r for r in mine6 if r[sym6] == 'SUB']
+assert len(sub) == 1 and sub[0][ent6] == 126.5 and abs(sub[0][st6] - round(121.3 * 0.995, 2)) < 0.006, sub
+# no discount rule: the premium zone's touch is taken first (what the SUPREMEIND run did); 'show' labels it premium
+loose6 = [r for r in lab6(discount=0) if r[sym6] == 'SUP']
+assert [r[sig6] for r in loose6][-1] == r6[t_prem][0] and len(loose6) == 2, loose6
+show6 = L.run_job(dict(SMC6, structure='show'))
+lab_st = {r[sig6]: r[stage6] for r in show6['trades'] if r[sym6] == 'SUP'}
+assert lab_st[r6[t_prem][0]] == 'prem' and lab_st[r6[t_disc][0]] == 'disc', lab_st
+assert {x['stage'] for x in show6['stages']} >= {'disc', 'prem'} and show6['stages'][0]['stage'] == 'disc'
+only6 = L.run_job(dict(SMC6))
+assert only6['structWhy'].get('premium', 0) >= 1, only6['structWhy']
+# discPart top: the whole zone under the line; bottom: any part
+assert [r[sym6] for r in lab6(discount=0.95, discPart='bottom')] == [] or all(r[sym6] != 'SUP' for r in lab6(discount=0.95, discPart='mid'))
+# the zone-top entry: first-touch signals only; a Spring row is skipped ('zoneentry')
+zs = L.run_job({'tf': 'D', 'group': 'fvg', 'maxRisk': 0, 'entry': 'zone'})
+assert zs['tradesTotal'] == 0 and zs['skipped']['zoneentry'] > 0, zs['skipped']
+
+# simulate with the zone-top entry (handmade): the zone 95 - 99, stop 95 x 0.995 = 94.525
+ZROW = [1, 'Z', 95.0, 99.0, 't', 1, 0, 50.0, 0]
+zbase = [cdl(0, 100, 101, 99.5, 100.5)]
+
+
+def zrun(c1, path=(), row=ZROW, **kw):
+    cs = cache_of({'X': (zbase + [c1] + list(path), [row])})['X']
+    return L.simulate(cs, row, P(cost=0, entry='zone', **kw))
+
+
+t, _ = zrun(cdl(1, 101, 101.5, 97, 98), [cdl(2, 98, 112, 97.5, 111)], after='fixed')
+assert t['entry'] == 99 and t['reason'] == 'target' and t['R'] == 2.0, t          # bought at the top 99, 2R = 107.95
+t, _ = zrun(cdl(1, 98, 98.5, 96, 97))
+assert t['entry'] == 98, 'opened under the top: filled at the open'
+t, _ = zrun(cdl(1, 101, 101.5, 94, 95))
+assert t['reason'] == 'stop' and t['exit'] == 94.525 and t['days'] == 0 and t['R'] == -1.0, 'the entry candle went under the stop after the fill'
+t, why = zrun(cdl(1, 94, 96, 93, 95))
+assert t is None and why == 'gap', 'opened under the stop: no trade'
+t, _ = zrun(cdl(1, 101, 101.5, 97, 109), after='fixed')
+assert t['reason'] == 'target' and t['days'] == 0 and round(t['exit'], 2) == 107.95, 'closed above the target on the entry candle'
+t, _ = zrun(cdl(1, 101, 101.5, 97, 98), stop='spring', stopBuf=0)
+assert t['stop'] == 95, 'with the zone-top entry the stop goes under the zone (the candle\'s low is not known at the fill)'
+t, why = zrun(cdl(1, 101, 101.5, 97, 98), row=[1, 'F', 95.0, 99.0, 't', 1, 0, 50.0, 0])
+assert t is None and why == 'zoneentry'
+assert P(entry='zone')['entry'] == 'zone' and P(discount=0.5, discPart='top')['discount'] == 0.5 and P(discount=7)['discount'] == 1 \
+    and P(discPart='x')['discPart'] == 'mid' and P(group='touch')['group'] == 'touch'
+
+# the daily scan's live CHoCH + FVG rows follow the same rule: the discount zone's first touch (and the Spring in it),
+# never the premium one
+res6 = K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), ())
+ch6 = [x for x in res6['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert [x['candle'] for x in ch6] == [r6[t_disc][0], r6[t_disc + 1][0]], [(x['candle'], x['note']) for x in ch6]
+assert ch6[0]['note'].startswith('Zone first touch · CHoCH ') and ch6[0]['note'].endswith('· first pullback · zone middle 89% down the move'), ch6[0]['note']
+assert ch6[1]['note'].startswith('Spring · CHoCH ') and ch6[0]['zone'][:2] == [121.3, 126.5], ch6
+assert not re.search(r'\d\.\d', ch6[0]['note'])
 
 print('OK')

@@ -73,7 +73,7 @@
     fvgConfirmed: 'Like FVG first touch, and the next candle closed higher - the gap held as support.',
     fvgSpring: 'A Spring (a dip below support that recovers at once) on a fair value gap or gap-up zone - anywhere in it or just below it - with no earlier close below the Spring low.',
     zoneApproach: 'The price is at or just above an untouched FVG zone - a possible support area. Usually "only watch".',
-    chochFvg: 'Your SMC setup, found by your PC on Zerodha candles: after lower highs and lower lows a candle closed above the last lower high (CHoCH), and on the first pullback into an FVG of that move - below the CHoCH level - a Spring or an FVG first touch formed.',
+    chochFvg: 'Your SMC setup, found by your PC on Zerodha candles: after lower highs and lower lows a candle closed above the last lower high (CHoCH), and on the first pullback price came back to an FVG of that move in its discount half (under the 50% line) - its first touch, a Spring or an FVG first touch confirmed.',
     emaSupport: 'The price dipped to this moving average (EMA) and held above it - a bounce off support.',
     ttmBuy: 'Main\'s TTM Signal is Buy: the TTM target is above today\'s price, EPS growth is not negative and EPS is positive.',
     qualityWatch: 'TTM Buy, EPS not negative, and the operating margin (OPM) rising both quarter-on-quarter and year-on-year.',

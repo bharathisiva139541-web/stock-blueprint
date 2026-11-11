@@ -277,7 +277,9 @@
     var rows = itdRows(ctx).filter(function (r) { return r.Pattern === CHOCH; });
     var sub = 'Your SMC setup, found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close: after at least ' +
       '<b>3 lower highs and 3 lower lows</b> (swings of 5 candles) a candle <b>closed above the last lower high (CHoCH)</b>; an FVG / Gap-up zone formed in that move ' +
-      'or after it, <b>below the CHoCH level</b>; and on the <b>first pullback</b> into it (no BOS yet) a <b>Spring</b> or an <b>FVG First Touch / Confirmed</b>. ' +
+      'or after it, in the <b>discount half</b> of the move (its middle under the 50% line from the final low to the high - a part may be above the CHoCH level); and on ' +
+      'the <b>first pullback</b> into it (no BOS yet) the <b>first touch</b> of the zone (even when a newer FVG formed above it), a <b>Spring</b> on it or an ' +
+      '<b>FVG First Touch / Confirmed</b>. ' +
       'Taken off when a later candle closes below the entry candle\'s low. Use it in Strategy Settings ("CHoCH + FVG (your SMC setup)") and test it in the ' +
       '<a href="#lab">Backtest Lab</a>. Research only, not a buy recommendation.';
     var body;

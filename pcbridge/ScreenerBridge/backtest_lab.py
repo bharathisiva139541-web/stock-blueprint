@@ -10,8 +10,9 @@ How it works:
  - The daily backtest pass (kite_intraday.backtest_now = BacktestNow.bat, and the daily scan) keeps, per timeframe
    (D / W / 4H), every stock's candles in one compact file (lab_cache/<build>/<tf>.bin: float32 open / high / low /
    close + the day + the minute) and every signal with its zone (signals.json.gz): 'F' = FVG+Spring (3-candle FVG
-   zone), 'G' = Gap-up FVG + Spring (+ inside FVG), 'S' = every Spring (no zone). 4H: only the 13:15 candle's Springs
-   (the owner's 4H rule), like the daily backtest.
+   zone), 'G' = Gap-up FVG + Spring (+ inside FVG), 'S' = every Spring (no zone), 'T' / 'C' = FVG First Touch /
+   Confirmed (the newest FVG), 'Z' / 'Y' = the first touch of EVERY FVG / Gap-up zone (11-Nov-2026). 4H: only the 13:15
+   candle's Springs (the owner's 4H rule), like the daily backtest; the touches on every 4H candle.
  - The website's Backtest Lab page (owner only, behind the PIN) saves a job in the sheet; the background program asks for
    it (LabWorker, every 10 s while the page is open, else every 2 minutes), runs it here on those files (seconds) and
    sends the summary + the trade list back. No candles leave this computer.
@@ -46,7 +47,8 @@ import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2
 
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 TFS = ('D', 'W', '4H')
-CACHE_VERSION = 2               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row
+CACHE_VERSION = 3               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
+                                # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y')
 MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
@@ -102,17 +104,25 @@ DEFAULTS = {
     # at least swingMinR R above the entry (trades without one are skipped).
     'structure': 'off', 'pivotN': 5, 'downN': 3, 'zoneWhen': 'both', 'belowChoch': True, 'firstPull': True, 'chochAge': 0,
     'targetMode': 'R', 'swingMinR': 1.0,
+    # DISCOUNT ZONE (owner, 11-Nov-2026, SUPREMEIND: "instead of taking the trade in FVG zone below the Choch, our backtest
+    # took the trade above the choch. we always try to enter with low risk, i.e. the zone in discount area. it is ok even the
+    # zone have some area slightly above the Choch"; answer: the zone under the 50 % line of the move): discount = the Fib
+    # level the zone must reach on the move from the CHoCH's final low to its high (0 = off, 0.5 = the middle, 0.618 ...),
+    # discPart = which price of the zone: 'mid' (half of it may be above the line) / 'top' (all of it under) / 'bottom'.
+    # Entry 'zone' = a buy order at the zone top, filled on the first touch (first-touch signals only).
+    'discount': 0.0, 'discPart': 'mid',
 }
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
 BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull')
 CHOICES = {
-    'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry'),
-    'entry': ('close', 'next_open'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
+    'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
+                         'touch'),
+    'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
-    'targetMode': ('R', 'swing'),
+    'targetMode': ('R', 'swing'), 'discPart': ('mid', 'top', 'bottom'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -125,6 +135,7 @@ LIMITS = {   # key: (min, max, integer)
     'closeAbove': (0, 20, False), 'c1BodyMin': (0.5, 30, False), 'c1LoWickMax': (0, 100, False), 'c1Atr': (0, 10, False),
     'lowestN': (0, 250, True), 'fallN': (0, 250, True), 'fallPct': (0.5, 90, False),
     'pivotN': (2, 20, True), 'downN': (1, 8, True), 'chochAge': (0, 2000, True), 'swingMinR': (0, 20, False),
+    'discount': (0, 1, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -132,8 +143,10 @@ GROUP_NAMES = {
     'zone': 'FVG+Spring or Gap-up FVG + Spring', 'spring': 'Every Spring',
     'ft': 'FVG First Touch', 'conf': 'FVG First Touch Confirmed',
     'entry': 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed',
+    'touch': 'First touch of a zone (every FVG / Gap-up zone)',
 }
 SPRING_CODES = ('S', 'F', 'G')   # the Spring shape rules apply to these (T / C = FVG First Touch / Confirmed have no Spring pair)
+TOUCH_CODES = ('T', 'Z', 'Y')    # first-touch signals: the zone-top entry (a buy order waiting at the top) fills on them
 REASONS = ('stop', 'target', 'be', 'trail', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct']
@@ -299,6 +312,15 @@ def touch_rows(candles, i, ft, cf, turn):
             t = turn(candles[i]['day']) if turn else 0.0
             rows.append([i, code, round(z['bottom'], 4), round(z['top'], 4), '', 1, 0, t, int(z['f'])])
     return rows
+
+
+def zone_touch_rows(candles, i, zones, turn):
+    """The cache rows of candle i's FIRST touches of zones (kite_intraday.zone_first_touches; owner, 11-Nov-2026: "the first
+    return of price to the discount zone"): 'Z' = a 3-candle FVG zone, 'Y' = a Gap-up zone (+ inside), the zones' order kept
+    (highest top first - a falling price reaches it first)."""
+    t = turn(candles[i]['day']) if turn else 0.0
+    return [[i, 'Y' if z['kind'] == 'Gap-up' else 'Z', round(z['bottom'], 4), round(z['top'], 4), (z.get('where') or '')[:1], 1,
+             1 if z.get('inside') else 0, t, int(z['f'])] for z in zones or ()]
 
 
 def current_dir(base=None):
@@ -552,7 +574,14 @@ def simulate(cs, row, P, ema=None, swing=None):
     n = cs.n
     if i >= n:
         return None, 'data'
-    if P['entry'] == 'close':
+    zone_in = P['entry'] == 'zone'
+    if zone_in:
+        # a buy order waiting at the zone top (owner, 11-Nov-2026): filled on the first touch at the top - or at the open
+        # when the candle opened under it; only first-touch signals (a Spring / Confirmed candle came after the touch)
+        if code not in TOUCH_CODES or row[3] is None:
+            return None, 'zoneentry'
+        entry = min(_f(cs.o[i]), _f(row[3]))
+    elif P['entry'] == 'close':
         entry = _f(cs.c[i])
     else:
         if i + 1 >= n:
@@ -563,6 +592,8 @@ def simulate(cs, row, P, ema=None, swing=None):
     mode = P['stop']
     if mode == 'zone' and zb is None:
         mode = 'spring'                       # every Spring has no zone: under its own low
+    if zone_in and mode in ('spring', 'lower'):
+        mode = 'zone'                         # the touch candle's low is not known when the order fills
     if mode == 'pct':
         stop = entry * (1 - P['stopPct'] / 100.0)
     else:
@@ -570,7 +601,7 @@ def simulate(cs, row, P, ema=None, swing=None):
         stop = base * (1 - P['stopBuf'] / 100.0)
     risk = entry - stop
     if not (entry > 0 and risk > 0):
-        return None, 'gap' if P['entry'] == 'next_open' else 'risk'
+        return None, 'gap' if P['entry'] in ('next_open', 'zone') else 'risk'
     risk_pct = risk / entry * 100
     if P['maxRisk'] and risk_pct > P['maxRisk']:
         return None, 'risk'
@@ -595,7 +626,23 @@ def simulate(cs, row, P, ema=None, swing=None):
             cur = max(cur, best * (1 - P['trailPct'] / 100.0))
         return cur
 
-    for j in range(j0, n):
+    if zone_in:
+        # the entry candle itself, after the fill: a low under the stop = stopped there; its close (surely after the fill)
+        # at / above the target = reached (its high may have come before the fill - not counted)
+        c0 = _f(cs.c[i])
+        if low < stop:
+            ex, why, jx = stop, 'stop', i
+        else:
+            best = max(best, c0)
+            if c0 >= target:
+                hit = True
+                if fixed:
+                    ex, why, jx = target, 'target', i
+                else:
+                    if be:
+                        cur = max(cur, entry)
+                    cur = trail_up(i, cur)
+    for j in (range(j0, n) if ex is None else ()):
         if cs.day[j] > end:
             ex, why, jx = _f(cs.c[j - 1]), 'time', j - 1
             break
@@ -638,10 +685,10 @@ def simulate(cs, row, P, ema=None, swing=None):
             break
         best = max(best, h)
         cur = trail_up(j, cur)
-    else:
+    if ex is None:
         jx = n - 1
         ex, why = _f(cs.c[jx]), 'open'        # the window is not over yet: still running (shown, not counted)
-    if jx <= i:                               # no candle inside the window: sold where bought
+    if jx <= i and not zone_in:               # no candle inside the window: sold where bought
         jx, ex = i, entry
     cost = P['cost'] / 100.0 * entry
     R = (ex - entry - cost) / risk
@@ -650,14 +697,16 @@ def simulate(cs, row, P, ema=None, swing=None):
             'entry': entry, 'stop': round(stop, 2), 'risk': risk, 'riskPct': round(risk_pct, 2), 'exit': round(ex, 4), 'reason': why,
             'R': round(R, 3), 'ret': round((ex - entry - cost) / entry * 100, 2), 'days': cs.day[jx] - cs.day[i],
             'maxR': round(max(0.0, best_r), 2), 'hit': hit, 'tgt': round(target, 2),
-            'ek': (cs.day[i if P['entry'] == 'close' else min(i + 1, n - 1)], cs.minute[i if P['entry'] == 'close' else min(i + 1, n - 1)]),
+            'ek': (cs.day[i if P['entry'] != 'next_open' else min(i + 1, n - 1)], cs.minute[i if P['entry'] != 'next_open' else min(i + 1, n - 1)]),
             'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i]}, None
 
 
 def pick(rows, P):
-    """The signal rows of the chosen group (and touch / turnover filters); one per candle."""
+    """The signal rows of the chosen group (and touch / turnover filters), in candle order - a candle may have several (a
+    Spring on an FVG and on a Gap-up zone, several zones first touched at once): run_job takes the first of a candle that
+    passes every rule (one trade a candle)."""
     g = P['group']
-    out, seen = [], set()
+    out = []
     for r in rows:
         code, where, touch, inside = r[1], r[4], r[5], r[6]
         ok = ((g == 'spring' and code == 'S') or
@@ -668,14 +717,14 @@ def pick(rows, P):
               (g == 'zone' and code in ('F', 'G')) or
               (g == 'ft' and code == 'T') or
               (g == 'conf' and code == 'C') or
-              (g == 'entry' and code in ('F', 'G', 'T', 'C')))
-        if not ok or r[0] in seen:
+              (g == 'entry' and code in ('F', 'G', 'T', 'C')) or
+              (g == 'touch' and code in ('Z', 'Y')))
+        if not ok:
             continue
         if P['maxTouch'] and code != 'S' and touch > P['maxTouch']:
             continue
         if P['minTurnover'] and (r[7] or 0) < P['minTurnover']:
             continue
-        seen.add(r[0])
         out.append(r)
     return out
 
@@ -835,12 +884,13 @@ def summarise(trades, P, skips, meta, secs):
             stages.append({'stage': key, 'name': structure.STAGE_NAMES[key], 'trades': s['trades'], 'open': n_open,
                            'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'), 'totalR': s.get('totalR'),
                            'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')})
-    zone_name = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed'}
+    zone_name = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
+                 'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch'}
     where_name = {'t': 'top', 'm': 'middle', 'b': 'bottom'}
     rows = []
     for t in sorted(trades, key=lambda t: (t['sigDay'], t['sigMin'], t['sym']), reverse=True)[:MAX_TRADES_OUT]:
         rows.append([t['sym'], _label(P['tf'], t['sigDay'], t['sigMin']),
-                     zone_name[t['code']] + (' inside FVG' if t['code'] == 'G' and t['inside'] else ''),
+                     zone_name[t['code']] + (' inside FVG' if t['code'] in ('G', 'Y') and t['inside'] else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
@@ -867,13 +917,14 @@ def run_job(params, base=None, progress=None):
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
     trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
-                         'noswing': 0}
+                         'noswing': 0, 'zoneentry': 0}
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
     smap = _struct_map(d, tf, P['pivotN']) if smode != 'off' or P['targetMode'] == 'swing' else None
     lens = ema_lens(P)
     mkt = market_filter(meta, P)
     syms = sorted(sigs)
+    fib = P['discount'] or None
     with open(os.path.join(d, tf + '.bin'), 'rb') as f:
         for k, sym in enumerate(syms):
             rows = pick(sigs[sym], P)
@@ -887,49 +938,68 @@ def run_job(params, base=None, progress=None):
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
                     st = smap[sym] = _Struct(cs, P['pivotN'])
-            for r in rows:
-                if r[0] >= cs.n or (lo and cs.day[r[0]] < lo) or (hi and cs.day[r[0]] > hi):
-                    continue
-                if mkt and not mkt(cs.day[r[0]]):
-                    skips['mkt'] += 1
-                    continue
+
+            def attempt(r):
+                """One signal row -> (trade, None) or (None, (skip key, rule))."""
                 spring_row = r[1] in SPRING_CODES
                 feats = spring_feats(cs, r[0], P, deep=shape_on) if spring_row else None   # the Spring pair's shape
                 if shape_on and spring_row:
                     ok, why = shape_check(feats, P)
                     if not ok:
-                        skips['shape'] += 1
-                        shape_why[why] = shape_why.get(why, 0) + 1
-                        continue
+                        return None, ('shape', why)
                 sj = None
                 if smode != 'off':
                     zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
-                    sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'])
+                    sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'],
+                                    h=cs.h, zone_bottom=r[2] if zf is not None else None, part=P['discPart'], fib=fib)
                     if smode == 'only':
                         why = struct_fail(sj, P)
                         if why:
-                            skips['struct'] += 1
-                            struct_why[why] = struct_why.get(why, 0) + 1
-                            continue
+                            return None, ('struct', why)
                 note = ''
                 if lens:
                     ok, note = ema_check(cs, r[0], P, emas)
                     if not ok:
-                        skips['ema'] = skips.get('ema', 0) + 1
-                        continue
+                        return None, ('ema', '')
                 t, why = simulate(cs, r, P, ema, st.s if P['targetMode'] == 'swing' else None)
-                if t is not None:
-                    t['ema'] = note
                 if t is None:
-                    skips[why] = skips.get(why, 0) + 1
-                    continue
+                    return None, (why, '')
+                t['ema'] = note
                 t['sym'] = sym
                 if feats:
                     t['upW'], t['loW'], t['dip'] = round(feats['upW'], 1), round(feats['loW'], 1), round(feats['dip'], 2)
                 if sj is not None:
                     t['stage'] = sj['stage']
-                    t['struct'] = struct_text(st.s, sj, cs, P['tf'])
-                trades.append(t)
+                    t['struct'] = struct_text(st.s, sj, cs, P['tf'], P)
+                return t, None
+
+            g = 0
+            while g < len(rows):
+                i = rows[g][0]
+                h = g
+                while h < len(rows) and rows[h][0] == i:
+                    h += 1
+                grp, g = rows[g:h], h
+                if i >= cs.n or (lo and cs.day[i] < lo) or (hi and cs.day[i] > hi):
+                    continue
+                if mkt and not mkt(cs.day[i]):
+                    skips['mkt'] += 1
+                    continue
+                fail = None
+                for r in grp:                          # the first row of the candle that passes every rule = its trade
+                    t, why = attempt(r)
+                    if t is not None:
+                        trades.append(t)
+                        fail = None
+                        break
+                    fail = fail or why
+                if fail:                               # none passed: counted once, under the first row's reason
+                    key, rule = fail
+                    skips[key] = skips.get(key, 0) + 1
+                    if key == 'shape':
+                        shape_why[rule] = shape_why.get(rule, 0) + 1
+                    elif key == 'struct':
+                        struct_why[rule] = struct_why.get(rule, 0) + 1
             if progress and (k + 1) % 300 == 0:
                 progress(int((k + 1) * 90 / max(1, len(syms))))
     res = summarise(trades, P, skips, meta, time.time() - t0)
@@ -963,7 +1033,8 @@ def _struct_map(d, tf, n):
 
 STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows you set)',
               'zone': 'its zone did not form in the CHoCH move / after it', 'bos': 'a BOS came first (not the first pullback)',
-              'above': 'its zone is not below the CHoCH level'}
+              'above': 'its zone is not below the CHoCH level',
+              'premium': 'its zone was not in the discount part of the move (above your Fib line)'}
 
 
 def struct_fail(sj, P):
@@ -977,15 +1048,30 @@ def struct_fail(sj, P):
         return 'bos'
     if P['belowChoch'] and not sj['below']:
         return 'above'
+    if P['discount'] and not (sj.get('depth') is not None and sj['depth'] >= P['discount'] - 1e-9):
+        return 'premium'
     return ''
 
 
-def struct_text(s, sj, cs, tf):
-    """'CHoCH 207.00 on 2025-05-13 (3 lower highs / lows, final low 180.20) · BOS 219.30 on ...' for the trade list."""
+PART_WORDS = {'mid': 'middle', 'top': 'top', 'bottom': 'bottom'}
+
+
+def struct_text(s, sj, cs, tf, P=None):
+    """'CHoCH 207.00 on 2025-05-13 (3 lower highs / lows, final low 180.20 on ...) · move high 230.10 · zone middle 62% down
+    the move (50% line 205.15) · BOS on ...' for the trade list (the owner checks it on the TradingView chart)."""
     if sj['k'] < 0:
         return ''
     b, hi, lvl, li, lf, dd = s.events[sj['k']]
-    txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f)' % (_f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf))
+    txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f on %s)' % (
+        _f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
+    if sj.get('H') is not None:
+        txt += ' · move high %.2f' % _f(sj['H'])
+        if sj.get('depth') is not None:
+            part = PART_WORDS.get((P or {}).get('discPart'), 'middle')
+            txt += ' · zone %s %d%% down the move' % (part, int(round(sj['depth'] * 100)))
+            fib = (P or {}).get('discount')
+            if fib:
+                txt += ' (%g%% line %.2f)' % (fib * 100, _f(structure.fib_line(sj['H'], lf, fib)))
     if not sj['first']:
         k = s.st.get(sj['k'])
         if k and k[5] >= 0:

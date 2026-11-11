@@ -32,6 +32,7 @@ import bisect
 import csv
 import gzip
 import hashlib
+import heapq
 import io
 import json
 import math
@@ -961,6 +962,33 @@ def spring_broken(candles, i):
     return next((k for k in range(i + 1, len(candles)) if candles[k]['c'] < low), None)
 
 
+def zone_first_touches(candles, zones):
+    """Every zone's FIRST touch (owner, 11-Nov-2026: "the first return of price to the discount zone = the signal, even when
+    a newer FVG formed above it" - fvg_touch_events looks at the newest FVG only): {i: [zone, ...]} - the first candle after
+    the zone's last candle (f) whose low reaches the zone top (a Gap-up zone: never a circuit-locked candle, like
+    fvg_detail's 'hit'). The zones of one candle highest top first (the one a falling price - a buy order at the top -
+    reaches first). zone = spring_zones' + 'where' = how deep that candle went (top / middle / bottom)."""
+    byf = {}
+    for z in zones:
+        byf.setdefault(z['f'], []).append(z)
+    hf, hg, out, seq = [], [], {}, 0
+    for i in range(len(candles)):
+        for z in byf.get(i - 1, ()):
+            seq += 1
+            heapq.heappush(hg if z['kind'] == 'Gap-up' else hf, (-z['top'], seq, z))
+        low, hit = candles[i]['l'], []
+        while hf and -hf[0][0] >= low:
+            hit.append(heapq.heappop(hf)[2])
+        if hg and not is_locked(candles[i]):
+            while hg and -hg[0][0] >= low:
+                hit.append(heapq.heappop(hg)[2])
+        if hit:
+            hit.sort(key=lambda z: (-z['top'], z['kind'] != 'FVG', z['f']))
+            out[i] = [dict(z, where='bottom' if low <= z['bottom'] else 'top' if low >= (z['bottom'] + z['top']) / 2 else 'middle',
+                           touch=1) for z in hit]
+    return out
+
+
 def fvg_touch_events(candles, up):
     """web/lib/fvg.js longFvgDetail's 'FVG First Touch' / 'FVG First Touch Confirmed' (the newest 3-candle FVG: the first
     candle whose low dips under its top; confirmed = a later close above that candle's high) on every candle ->
@@ -1152,15 +1180,21 @@ BACKTEST_TFS = ('4H', 'D', 'W')
 GAP_SPRING = 'Gap-up FVG + Spring'   # owner, 08-Nov-2026: split from Spring in FVG (= 3-candle FVG zones only)
 SPRING_PATTERNS = ('Spring in FVG', GAP_SPRING, 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
 FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed'), ('twin', 'Twin Star Bottom + FVG'))
-RULES_VERSION = 5                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
-                                   # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch, 5 = CHoCH + FVG)
+RULES_VERSION = 6                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
+                                   # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch, 5 = CHoCH + FVG,
+                                   # 6 = CHoCH + FVG in the discount half of the move + the first touch of any zone)
 # the owner's CHoCH + FVG setup (10-Nov-2026, structure.py): after >= 3 lower highs / lows (swings of 5 candles) a candle
-# closes above the last lower high; an FVG / Gap-up zone formed in that move or after it, below the CHoCH level; on the
-# first pullback into it (no BOS yet) a Spring on the zone (4H: the 13:15 candle) or an FVG First Touch / Confirmed
+# closes above the last lower high; an FVG / Gap-up zone formed in that move or after it; on the first pullback into it (no
+# BOS yet) a Spring on the zone (4H: the 13:15 candle), an FVG First Touch / Confirmed or the first touch of the zone.
+# 11-Nov-2026 (owner, SUPREMEIND: "we always try to enter with low risk, i.e. the zone in discount area. it is ok even the
+# zone have some area slightly above the Choch"): the zone's middle at / under the 50 % line of the move (final low -> the
+# high since; CHOCH_FIB, CHOCH_PART) instead of "the zone under the CHoCH level"
 CHOCH_PATTERN = 'CHoCH + FVG'
 CHOCH_TFS = ('4H', 'D', 'W')
 CHOCH_PIVOT_N = 5
 CHOCH_DOWN_N = 3
+CHOCH_FIB = 0.5
+CHOCH_PART = 'mid'
 KEEP_DAYS = 30                     # = the sheet's AB_ITD_KEEP_DAYS: Spring in FVG rows a later close under the low takes off
 BT_DAYS = 30                       # backtest (owner, 09-Nov-2026: "use % movement to upward direction within 30 days from
                                    # pattern day" and "backtest should not be limited to 2R"): the 30 calendar days after it
@@ -1206,13 +1240,14 @@ def trade_30d(cs, i, days=BT_DAYS):
             'maxR': round(max(0.0, (best - entry) / risk), 2), 'stopped': k is not None, 'hits': hits, 'bars': len(win)}
 
 
-def bt_signals(cs, cfg=None, max_age=None, springs=None):
+def bt_signals(cs, cfg=None, max_age=None, springs=None, zones=None):
     """FVG+Spring and Gap-up FVG + Spring of a long candle series, quickly (the backtest): {i: [zone, ...]} - the same
-    zones as fvg_detail's 'spring' / 'gapspring' (zones at most `max_age` candles old)."""
+    zones as fvg_detail's 'spring' / 'gapspring' (zones at most `max_age` candles old). `zones` = spring_zones(cs, ...)
+    when the caller has them already."""
     n = len(cs)
     if n < 17:
         return {}
-    zones = spring_zones(cs, fvg_gaps(cs))
+    zones = zones if zones is not None else spring_zones(cs, fvg_gaps(cs))
     fz = [z for z in zones if z['kind'] == 'FVG']
     gz = [z for z in zones if z['kind'] == 'Gap-up']
     ff, gf = [z['f'] for z in fz], [z['f'] for z in gz]
@@ -1239,47 +1274,72 @@ def _slot_ok(slots, tf, c):
     return not (slots and slots.get(tf)) or c['t'][11:16] in slots[tf]
 
 
-def choch_trigger(d, i, spring_ok):
-    """The entry pattern on candle i of fvg_detail's events, for the CHoCH + FVG setup: (zone, words) or None - a Spring on
-    an FVG / Gap-up zone (`spring_ok` = the 4H 13:15 rule), else FVG First Touch Confirmed / First Touch. A later close
-    under that candle's low is judged by the caller (analyse: not sent / listed as invalid)."""
+def choch_candidates(d, i, spring_ok, touches=None):
+    """The entry patterns on candle i for the CHoCH + FVG setup, in the order they are tried: [(zone, words)] - a Spring on
+    an FVG / Gap-up zone (`spring_ok` = the 4H 13:15 rule), FVG First Touch Confirmed / First Touch (fvg_detail's events),
+    then the first touch of ANY zone (`touches` = zone_first_touches; owner, 11-Nov-2026: the first return of price to the
+    discount zone = the signal, even when a newer FVG formed above it). A later close under that candle's low is judged by
+    the caller (analyse: not sent / listed as invalid)."""
+    out = []
     if spring_ok:
-        for key, words in (('spring', 'Spring'), ('gapspring', 'Spring')):
+        for key in ('spring', 'gapspring'):
             z = d[key].get(i)
             if z:
-                return z, words
+                out.append((z, 'Spring'))
     for key, words in (('conf', 'FVG First Touch Confirmed'), ('ft', 'FVG First Touch')):
         z = d[key].get(i)
         if z and z.get('f') is not None and z.get('bottom') is not None:
-            return z, words
-    return None
+            out.append((z, words))
+    for z in (touches or {}).get(i, ()):
+        out.append((z, 'Zone first touch'))
+    return out
 
 
-def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None):
+def choch_trigger(d, i, spring_ok, touches=None):
+    """The first entry pattern of candle i (choch_candidates) or None."""
+    c = choch_candidates(d, i, spring_ok, touches)
+    return c[0] if c else None
+
+
+def choch_touches(all_c):
+    """zone_first_touches of these candles' FVG / Gap-up zones ({} under 17 candles, like fvg_detail's FVG events)."""
+    return zone_first_touches(all_c, spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else {}
+
+
+def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None):
     """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
-    {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). The note
-    has no prices (the website shows it): 'Spring · CHoCH 2026-10-13 after 3 lower highs / lows · first pullback'."""
+    {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). A candle's
+    entry patterns (choch_candidates) are tried in turn - the first whose zone formed after the CHoCH's final low, on the
+    first pullback (no BOS yet) and with its middle in the discount half of the move (CHOCH_FIB) is the setup. The note has
+    no prices (the website shows it): 'Spring · CHoCH 2026-10-13 after 3 lower highs / lows · first pullback · zone middle
+    64% down the move'."""
     off = len(full_c) - len(all_c)
+    if touches is None:
+        touches = choch_touches(all_c)
     cand = {}
     for i in range(max(1, len(all_c) - WINDOW.get(tf, 300)), len(all_c)):
         if all_c[i]['day'] <= from_iso:
             continue
-        t = choch_trigger(d, i, _slot_ok(slots, tf, all_c[i]))
+        t = choch_candidates(d, i, _slot_ok(slots, tf, all_c[i]), touches)
         if t:
             cand[i] = t
     if not cand:
         return {}
+    highs = [c['h'] for c in full_c]
     if st is None:
-        st = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c], CHOCH_PIVOT_N)
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], CHOCH_PIVOT_N)
     closes = [c['c'] for c in full_c]
     out = {}
-    for i, (z, words) in cand.items():
-        j = st.judge(i + off, z['f'] + off, z['top'], all_c[i]['c'], closes, CHOCH_DOWN_N)
-        if j['stage'] != 'below':
-            continue
-        b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
-        out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · %s' % (words, full_c[b]['t'], dd,
-                                                                          'first pullback' if j['first'] else 'after a BOS'))
+    for i in sorted(cand):
+        for z, words in cand[i]:
+            j = st.judge(i + off, z['f'] + off, z['top'], all_c[i]['c'], closes, CHOCH_DOWN_N, h=highs, zone_bottom=z['bottom'],
+                         part=CHOCH_PART, fib=CHOCH_FIB)
+            if j['stage'] != 'disc':
+                continue
+            b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
+            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone middle %d%% down the move'
+                      % (words, full_c[b]['t'], dd, int(round(j['depth'] * 100))))
+            break
     return out
 
 
@@ -1367,11 +1427,15 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                         mo['inside'] = 1
                     out['mitigated'].append(mo)
         if backtest and tf in BACKTEST_TFS:
-            sig = bt_signals(full_c, cfg, win) if tf not in NO_FVG_SPRING_TFS else {}
+            fz = tf not in NO_FVG_SPRING_TFS and len(full_c) >= 17
+            up_f = fvg_gaps(full_c) if fz else None
+            zones_f = spring_zones(full_c, up_f) if fz else None
+            sig = bt_signals(full_c, cfg, win, zones=zones_f) if tf not in NO_FVG_SPRING_TFS else {}
             lab_rows = [] if lab is not None else None
-            ft_c, cf_c = {}, {}
-            if lab_rows is not None and tf not in NO_FVG_SPRING_TFS and len(full_c) >= 17:
-                ft_c, cf_c, _ = fvg_touch_events(full_c, fvg_gaps(full_c))   # the Lab's FVG First Touch / Confirmed signals
+            ft_c, cf_c, zt = {}, {}, {}
+            if lab_rows is not None and fz:
+                ft_c, cf_c, _ = fvg_touch_events(full_c, up_f)   # the Lab's FVG First Touch / Confirmed signals
+                zt = zone_first_touches(full_c, zones_f)         # ... and every zone's first touch (11-Nov-2026)
             for i in range(3, len(full_c)):
                 c = full_c[i]
                 spring = _slot_ok(slots, tf, c) and is_spring_pair(full_c[i - 1], c, cfg)
@@ -1380,6 +1444,8 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                         lab_rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
                     if i in ft_c or i in cf_c:              # every candle (the 4H 13:15 rule is for the Springs only)
                         lab_rows.extend(backtest_lab.touch_rows(full_c, i, ft_c.get(i), cf_c.get(i), turn))
+                    if i in zt:
+                        lab_rows.extend(backtest_lab.zone_touch_rows(full_c, i, zt[i], turn))
                 if not spring:
                     continue
                 o = trade_30d(full_c, i)
@@ -1396,22 +1462,29 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
 
 def lab_signal_rows(full_c, tf, slots, cfg, turn):
     """The Backtest Lab's cache rows of one timeframe = what analyse(backtest=True, lab=...) writes, without the rest:
-    every Spring (4H: the slot rule) with the FVG / Gap-up zones it sits on, and every FVG First Touch / Confirmed."""
+    every Spring (4H: the slot rule) with the FVG / Gap-up zones it sits on, every FVG First Touch / Confirmed and every
+    zone's first touch (zone_first_touches)."""
     n = len(full_c)
     sp = [i for i in range(3, n) if is_spring_pair(full_c[i - 1], full_c[i], cfg)]
-    sig = bt_signals(full_c, cfg, WINDOW.get(tf, 300), springs=sp) if tf not in NO_FVG_SPRING_TFS else {}
-    ft_c, cf_c = {}, {}
-    if tf not in NO_FVG_SPRING_TFS and n >= 17:
-        ft_c, cf_c, _ = fvg_touch_events(full_c, fvg_gaps(full_c))
+    fz = tf not in NO_FVG_SPRING_TFS and n >= 17
+    up_f = fvg_gaps(full_c) if fz else None
+    zones_f = spring_zones(full_c, up_f) if fz else None
+    sig = bt_signals(full_c, cfg, WINDOW.get(tf, 300), springs=sp, zones=zones_f) if tf not in NO_FVG_SPRING_TFS else {}
+    ft_c, cf_c, zt = {}, {}, {}
+    if fz:
+        ft_c, cf_c, _ = fvg_touch_events(full_c, up_f)
+        zt = zone_first_touches(full_c, zones_f)
     spring_at = set(i for i in sp if _slot_ok(slots, tf, full_c[i]))
     rows = []
-    for i in sorted(spring_at | set(ft_c) | set(cf_c)):
+    for i in sorted(spring_at | set(ft_c) | set(cf_c) | set(zt)):
         if i < 3:
             continue
         if i in spring_at:
             rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
         if i in ft_c or i in cf_c:
             rows.extend(backtest_lab.touch_rows(full_c, i, ft_c.get(i), cf_c.get(i), turn))
+        if i in zt:
+            rows.extend(backtest_lab.zone_touch_rows(full_c, i, zt[i], turn))
     return rows
 
 
