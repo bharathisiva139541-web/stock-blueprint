@@ -1189,6 +1189,8 @@ function check(name, fn) {
     const T = Date.UTC(2026, 10, 9, 10, 0);
     const sheet = watchlistBackend(T);
     sheet.gs.setProp('AB_BRIDGE_TOKEN', 'bridge-token');
+    // owner, 11-Nov-2026 ("loading only"): the laptop prepares its candles after an update - the page says so
+    sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'hello', note: 'preparing the candles on the laptop after an update (only once): 600 of 1800 stocks, about 12 min left' });
     sheet.gs.call('ab_noteAdd_', 'mitigated', 'Gap-up FVG (inside FVG) mitigated: ABC', 'Zone 100 - 104, price 103.5 (Live, Kite)', '#signals');
     sheet.gs.call('ab_noteAdd_', 'results', 'Results: 1 new in Main - XYZ', 'XYZ: Rev YoY 12%', '#today');
     const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
@@ -1210,6 +1212,7 @@ function check(name, fn) {
     const own = await open('Blue2026', '#lab');
     await own.p.waitForSelector('#lab-form', { timeout: 15000 });
     await own.p.waitForSelector('#lab-runs .empty');
+    assert.match(await own.p.$eval('#lab-pcnote', (x) => x.textContent), /600 of 1800 stocks, about 12 min left/);
     // the owner's idea: 1 % under the zone, 2R, then the last 3 lows
     await own.p.fill('[data-k="stopBuf"]', '1');
     await own.p.fill('[data-k="trailN"]', '3');

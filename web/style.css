@@ -1544,3 +1544,5 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .lab-rec .btn { justify-self: start; }
 .lab-rec.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22); }
 .lab-shape-why { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* the laptop's progress note (11-Nov-2026) wraps on a phone */
+.lab-pc .badge { white-space: normal; text-align: left; max-width: 100%; }

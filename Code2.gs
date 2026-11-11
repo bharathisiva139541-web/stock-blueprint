@@ -13118,6 +13118,8 @@ function ab_kiteLiveFromBridge_(req) {
 const AB_LAB_JOB_PROP = 'AB_LAB_JOB';
 const AB_LAB_SEEN_PROP = 'AB_LAB_SEEN';          // the PC's last poll (ms)
 const AB_LAB_PAGE_PROP = 'AB_LAB_PAGE';          // the page's last look (ms) - the PC then polls every 10 s
+const AB_LAB_PC_PROP = 'AB_LAB_PC';              // the PC's own words while it is busy without a run ({note, at}) - e.g. preparing the candles (11-Nov-2026)
+const AB_LAB_PC_FRESH_MS = 3 * 60000;
 const AB_LAB_TAB = 'Backtest_Lab';
 const AB_LAB_KEEP = 8;
 const AB_LAB_PART = 45000;
@@ -13155,7 +13157,9 @@ function ab_labSaveJob_(job) {
 function ab_labJobView_(now) {
   const j = ab_labJob_();
   if (!j) return null;
-  if (j.status === 'running' && now - Number(j.claimedAt || 0) > AB_LAB_STALE_MS) {
+  // owner, 11-Nov-2026: the first run after an update prepared the candles for ~20+ minutes and was called "stopped" - the
+  // laptop's progress messages (beat) now keep a run alive
+  if (j.status === 'running' && now - Math.max(Number(j.claimedAt || 0), Number(j.beat || 0)) > AB_LAB_STALE_MS) {
     j.status = 'failed';
     j.error = 'the laptop stopped while running it - run it again';
     ab_labSaveJob_(j);
@@ -13246,7 +13250,8 @@ function ab_labFromSite_(req) {
   }
   if (q.do === 'cancel') {
     const j = ab_labJob_();
-    if (j && j.status === 'waiting') { j.status = 'cancelled'; ab_labSaveJob_(j); }
+    // a running one too (11-Nov-2026): the laptop finishes its step; a new run is taken next
+    if (j && (j.status === 'waiting' || j.status === 'running')) { j.status = 'cancelled'; ab_labSaveJob_(j); }
     return ab_labStatus_(now);
   }
   if (q.do === 'result') {
@@ -13266,7 +13271,10 @@ function ab_labFromSite_(req) {
 
 function ab_labStatus_(now) {
   const seen = Number(PropertiesService.getScriptProperties().getProperty(AB_LAB_SEEN_PROP)) || 0;
-  return { ok: true, result: 'lab', job: ab_labJobView_(now), pcSeenSec: seen ? Math.round((now - seen) / 1000) : null, list: ab_labList_() };
+  let pc = null;
+  try { pc = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_LAB_PC_PROP) || 'null'); } catch (e) { pc = null; }
+  const pcNote = pc && pc.note && now - Number(pc.at || 0) <= AB_LAB_PC_FRESH_MS ? String(pc.note).slice(0, 200) : '';
+  return { ok: true, result: 'lab', job: ab_labJobView_(now), pcSeenSec: seen ? Math.round((now - seen) / 1000) : null, pcNote: pcNote, list: ab_labList_() };
 }
 
 /** The PC (doPost action 'lab', bridge token): poll (takes a waiting job) / progress / result / fail. */
@@ -13292,8 +13300,13 @@ function ab_labFromBridge_(req) {
       }
       return { ok: true, job: null, next: next };
     }
+    if (req.op === 'hello') {                  // busy without a run (preparing the candles): its words for the page
+      props.setProperty(AB_LAB_PC_PROP, JSON.stringify({ note: String(req.note || '').slice(0, 200), at: now }));
+      return { ok: true, next: next };
+    }
     if (!j || String(req.id) !== String(j.id)) return { ok: false, error: 'not the current run' };
     if (req.op === 'progress') {
+      j.beat = now;
       j.pct = Math.max(0, Math.min(99, Number(req.pct) || 0));
       j.note = String(req.note || '').slice(0, 200);
       ab_labSaveJob_(j);

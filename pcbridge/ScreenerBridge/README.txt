@@ -321,7 +321,8 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    (no BOS - no close above the highest swing high since the CHoCH) a Spring or an FVG First Touch / Confirmed = entry.
    "Show it on every trade" keeps every signal and adds a table "By market structure" (your setup / after a BOS / above
    the CHoCH level / no CHoCH) to compare in one run. Target: an R multiple or the last swing high. The first run after
-   this update rebuilds the candle cache (3-4 minutes, once); the first run with market structure ~10 seconds more.
+   this update rebuilds the candle cache once (10-20 minutes - the program now does it right after it starts, before any
+   run, and the Lab page shows "N of M stocks, about X min left"); the first run with market structure ~10 seconds more.
    The daily Zerodha scan also finds today's CHoCH + FVG setups -> the sheet's Intraday Patterns tab -> the website's
    Patterns & FVG page ("CHoCH + FVG setups") and Strategy Settings ("CHoCH + FVG (your SMC setup)").
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
