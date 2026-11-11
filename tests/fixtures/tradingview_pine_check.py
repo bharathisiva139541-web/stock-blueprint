@@ -1,19 +1,59 @@
 # -*- coding: utf-8 -*-
 """The TradingView indicator (tradingview/StockBlueprint_CHoCH_FVG.pine) = the laptop's backtest: its bar-by-bar logic
-(tradingview/pine_model.py, the .pine's steps in Python) finds exactly the CHoCH events of structure.py and the setups the
-Backtest Lab takes with group 'touch' + market structure 'only' (kite_intraday's zones + zone_first_touches, judged by
-Structure.judge + backtest_lab.struct_fail), on random charts and a made one; and the .pine's defaults = the Lab's.
+(tradingview/pine_model.py, the .pine's steps in Python) finds exactly the CHoCH events of structure.py and the TRADES the
+Backtest Lab's run_job takes with group 'First touch of a zone' (signal candle, entry, stop, target) for the same rules -
+market structure only / off, discount levels and zone parts, zone-top / close entry, every stop kind, max risk, min price,
+R / swing-high target, dates, turnover, EMA confluence - on random charts and a made one; the .pine's defaults = the Lab's;
+Pine v5 layout checks. `--lint FILE...` runs only the layout checks (tests/tradingview-pine.test.js lints the scripts the
+Lab page writes - web/lib/pine.js).
 Owner, 11-Nov-2026: "i open trading view chart and i go to that trade date. i check how our backtest enter the trade ...
-it would be helpful if i got pinescript indicator". Prints OK at the end."""
+it would be helpful if i got pinescript indicator"; "give option to copy the pinescript in this page that works with respect
+to the current setup". Prints OK at the end."""
 import importlib.util
 import os
 import random
 import re
 import sys
+import tempfile
 from datetime import date, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HERE = os.path.join(ROOT, 'pcbridge', 'ScreenerBridge')
+
+
+def lint(path):
+    """Pine v5 layout: no tabs, blocks indented by 4 spaces, one statement a line (no wrapped lines), brackets balanced,
+    guarded `for k = 0 to x - 1` loops (Pine counts DOWN when x - 1 < 0), no array access beside a size check in one
+    `and` (v5 evaluates both sides)."""
+    src = open(path, encoding='utf-8').read()
+    lines = src.split('\n')
+    assert lines[0] == '//@version=5', path
+    for k, ln in enumerate(lines, 1):
+        assert '\t' not in ln, (path, k)
+        lead = len(ln) - len(ln.lstrip(' '))
+        assert lead % 4 == 0, (path, k, ln)
+        code = re.sub(r'"[^"]*"', '""', ln.split('//')[0] if not ln.lstrip().startswith('//') else '')
+        assert code.count('(') == code.count(')') and code.count('[') == code.count(']'), (path, k, ln)
+        assert not re.search(r'(\band|\bor|[+\-*/,(])\s*$', code), ('a wrapped line', path, k, ln)
+        assert code.count('"') % 2 == 0, (path, k, ln)
+    for k, ln in enumerate(lines):
+        if re.search(r'for \w+ = 0 to (\w+) - 1', ln):
+            var = re.search(r'to (\w+) - 1', ln).group(1)
+            assert re.search(r'if %s > 0' % var, lines[k - 1]), ('unguarded loop', path, k + 1, ln)
+        if re.search(r'for \w+ = (\w+) - 1 to 0', ln):
+            var = re.search(r'= (\w+) - 1 to 0', ln).group(1)
+            assert re.search(r'if %s > 0' % var, lines[k - 1]), ('unguarded loop', path, k + 1, ln)
+    for k, ln in enumerate(lines, 1):
+        assert not re.search(r'(size\(\w+\) > 0|>= 0) and array\.get', ln), ('and is not lazy in v5', path, k, ln)
+    return src
+
+
+if len(sys.argv) > 2 and sys.argv[1] == '--lint':
+    for f in sys.argv[2:]:
+        lint(f)
+    print('OK')
+    sys.exit(0)
+
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, 'tradingview'))
 spec = importlib.util.spec_from_file_location('kite_intraday', os.path.join(HERE, 'kite_intraday.py'))
@@ -21,7 +61,11 @@ K = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(K)
 L = K.backtest_lab
 S = L.structure
+L.log = lambda m: None
+L.LAB_DIR = os.path.join(tempfile.mkdtemp(), 'lab_cache')
 import pine_model as M  # noqa: E402
+
+D0 = date(2016, 1, 4)
 
 
 def walk(seed, n, vol=0.05):
@@ -32,59 +76,82 @@ def walk(seed, n, vol=0.05):
         c = o * (1 + rnd.uniform(-vol, vol))
         h = max(o, c) * (1 + rnd.uniform(0, 0.03))
         lo = min(o, c) * (1 - rnd.uniform(0, 0.03))
-        out.append((round(o, 2), round(h, 2), round(lo, 2), round(c, 2)))
+        out.append((round(o, 2), round(h, 2), round(lo, 2), round(c, 2), rnd.randint(1000, 90000)))
         px = c
     return out
 
 
-def reference(rows, n, down, when, first, fib, part, below):
-    """What the laptop finds: CHoCH events + the Lab's 'touch' setups (one a candle, the first zone that passes)."""
-    cs = [{'o': o, 'h': h, 'l': lo, 'c': c} for o, h, lo, c in rows]
-    hh, ll, cc = [x['h'] for x in cs], [x['l'] for x in cs], [x['c'] for x in cs]
-    st = S.Structure(hh, ll, cc, n)
-    zt = K.zone_first_touches(cs, K.spring_zones(cs, K.fvg_gaps(cs)))
-    P = {'zoneWhen': when, 'firstPull': first, 'belowChoch': below, 'discount': fib}
-    setups = []
-    for i in sorted(zt):
-        for z in zt[i]:
-            j = st.judge(i, z['f'], z['top'], cc[i], cc, down, h=hh, zone_bottom=z['bottom'], part=part, fib=fib or None)
-            if j['k'] < 0 or L.struct_fail(j, P):
-                continue
-            setups.append([i, z['f'], z['bottom'], z['top'], z['kind'], bool(z.get('inside')), j['depth']])
-            break
-    bos = {}
-    for k, e in enumerate(st.events):
-        if e[5] >= down:
-            b = st.bos_before(k, cc, len(cc))
-            if b >= 0 and st.dead_by(k, cc, b) < 0:
-                bos[e[0]] = b
-    return S.choch_events(hh, ll, cc, n), setups, bos
+def candles(rows):
+    return [{'t': (D0 + timedelta(days=k)).isoformat(), 'day': (D0 + timedelta(days=k)).isoformat(), 'o': o, 'h': h, 'l': lo, 'c': c, 'v': v}
+            for k, (o, h, lo, c, v) in enumerate(rows)]
 
 
-def model(rows, n, down, when, first, fib, part, below):
-    m = M.Model(n, down, when, first, fib, part, below)
-    for r in rows:
-        m.bar(*r)
+def build_cache(charts):
+    """{sym: rows} -> the Lab's cache (the same rows a backtest pass writes for the daily chart)."""
+    w = L.CacheWriter(D0 + timedelta(days=5000))
+    for sym, rows in charts.items():
+        cs = candles(rows)
+        turn = L.turnover_fn([[c['day'], c['o'], c['h'], c['l'], c['c'], c['v']] for c in cs])
+        w.add(sym, 'D', cs, K.lab_signal_rows(cs, 'D', {}, None, turn))
+    w.close()
+
+
+def model(rows, P):
+    m = M.Model(P)
+    for k, (o, h, lo, c, v) in enumerate(rows):
+        m.bar(o, h, lo, c, v, (D0 + timedelta(days=k)).toordinal())
     return m
 
 
-# ------------------------------------------------------------------ 1. random charts, several rule sets
-total = 0
-combos = [(5, 3, 'both', True, 0.5, 'mid', False), (3, 1, 'both', True, 0.5, 'mid', False), (2, 2, 'leg', True, 0.618, 'top', False),
-          (3, 1, 'after', False, 0.0, 'mid', True), (2, 1, 'both', False, 0.382, 'bottom', False), (4, 2, 'both', True, 0.0, 'mid', False)]
-for seed in range(10):
-    rows = walk(seed, 1200, vol=0.05 if seed % 2 else 0.035)
-    for combo in combos:
-        ev, ref, bos_ref = reference(rows, *combo)
-        m = model(rows, *combo)
-        assert m.events == ev, (seed, combo, m.events[:3], ev[:3])
-        got = [[a, b, c, d, 'Gap-up' if e == 'Gap-up' else 'FVG', bool(f_), g] for a, b, c, d, e, f_, g in m.setups]
-        assert got == ref, (seed, combo, got[:4], ref[:4])
-        # a BOS the model saw = the laptop's (for the CHoCH that was current then)
-        for b, x in m.bos.items():
-            assert bos_ref.get(b) == x, (seed, combo, b, x, bos_ref.get(b))
-        total += len(ref)
-assert total > 40, 'the random charts give setups to compare: %d' % total
+def lab_trades(params):
+    res = L.run_job(dict(params, tf='D'))
+    cols = res['tradeCols']
+    ix = {c: cols.index(c) for c in ('sym', 'signal', 'entry', 'stop', 'target')}
+    assert res['tradesTotal'] == len(res['trades']), 'every trade listed'
+    return sorted((r[ix['sym']], r[ix['signal']], round(r[ix['entry']], 2), round(r[ix['stop']], 2), round(r[ix['target']], 2)) for r in res['trades'])
+
+
+def model_trades(charts, params):
+    P = L.clean_params(dict(params, tf='D'))
+    out = []
+    for sym, rows in charts.items():
+        for b in model(rows, P).buys:
+            out.append((sym, (D0 + timedelta(days=b[0])).isoformat(), round(b[6], 2), round(b[7], 2), round(b[8], 2)))
+    return sorted(out)
+
+
+# ------------------------------------------------------------------ 1. random charts: the model's BUYs = the Lab's trades
+charts = {'R%02d' % seed: walk(seed, 1500, vol=0.05 if seed % 2 else 0.035) for seed in range(30)}
+build_cache(charts)
+SMC = {'group': 'touch', 'structure': 'only', 'pivotN': 5, 'downN': 3, 'zoneWhen': 'both', 'belowChoch': False, 'discount': 0.5,
+       'discPart': 'mid', 'firstPull': True, 'chochAge': 0, 'stop': 'zone', 'entry': 'zone'}
+SETS = [SMC,
+        dict(SMC, pivotN=3, downN=1),
+        dict(SMC, pivotN=2, downN=1, zoneWhen='leg', discount=0.618, discPart='top', entry='close', stop='lower', stopBuf=1),
+        dict(SMC, pivotN=3, downN=1, zoneWhen='after', firstPull=False, discount=0, belowChoch=True, entry='close', stop='spring'),
+        dict(SMC, pivotN=2, downN=1, discount=0.382, discPart='bottom', stop='pct', stopPct=4, maxRisk=6, targetMode='swing', swingMinR=1.5),
+        dict(SMC, pivotN=3, downN=1, chochAge=40, targetR=3, minPrice=95, maxRisk=0, **{'from': '2017-06-01', 'to': '2018-12-31'}),
+        dict(SMC, pivotN=3, downN=1, emaSupport=1, emaTouch=2, above50=True, minTurnover=46),
+        dict(SMC, pivotN=2, downN=1, emaSupport=21, emaStack=True, entry='close'),
+        dict(SMC, structure='off', maxRisk=8),
+        dict(SMC, structure='off', entry='close', stop='lower', targetMode='swing', swingMinR=1, maxRisk=0)]
+counts = []
+for params in SETS:
+    lab, mod = lab_trades(params), model_trades(charts, params)
+    assert mod == lab, (params, [x for x in mod if x not in lab][:3], [x for x in lab if x not in mod][:3])
+    counts.append(len(lab))
+assert min(counts) >= 3 and sum(counts) > 600, counts
+# the CHoCH events of every chart = structure.py's
+for sym, rows in charts.items():
+    for n in (2, 3, 5):
+        m = model(rows, L.clean_params({'pivotN': n, 'structure': 'only'}))
+        assert m.events == S.choch_events([r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], n), (sym, n)
+        st = S.Structure([r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], n)
+        cc = [r[3] for r in rows]
+        for b, x in m.bos.items():                 # a BOS the model saw = the laptop's (the CHoCH current then)
+            k = next(k for k, e in enumerate(st.events) if e[0] == b)
+            assert st.bos_before(k, cc, len(cc)) == x, (sym, n, b, x)
+
 
 # ------------------------------------------------------------------ 2. the owner's SUPREMEIND case (made chart): the premium FVG's
 # touch is not a BUY, the discount FVG's first touch is - also when one candle goes through both
@@ -92,7 +159,7 @@ def craft(big=False):
     rows, prev = [], [165.0]
 
     def put(o, h, lo, c):
-        rows.append((round(o, 2), round(h, 2), round(lo, 2), round(c, 2)))
+        rows.append((round(o, 2), round(h, 2), round(lo, 2), round(c, 2), 900000))
 
     def go(to, k=6):
         for j in range(1, k + 1):
@@ -125,15 +192,16 @@ def craft(big=False):
     return rows
 
 
-for big in (False, True):
-    rows = craft(big)
-    m = model(rows, 5, 3, 'both', True, 0.5, 'mid', False)
-    ev, ref, _ = reference(rows, 5, 3, 'both', True, 0.5, 'mid', False)
-    assert m.events == ev and len(m.setups) == 1 and m.setups[0][2:4] == [121.3, 126.5], (big, m.setups)
-    assert rows[m.setups[0][0]][2] == 124.8 and round(m.setups[0][6], 2) == 0.89, m.setups
-    assert [s[:6] for s in m.setups] == [[a, b, c, d, e, f_] for a, b, c, d, e, f_, _ in ref]
-    loose = model(rows, 5, 3, 'both', True, 0.0, 'mid', False)
-    assert loose.setups[0][2:4] == [139.3, 145.0], loose.setups   # without the discount rule the premium zone is the BUY (the SUPREMEIND run)
+made = {'SUP': craft(), 'SUB': craft(big=True)}
+build_cache(made)
+P0 = L.clean_params(dict(SMC, tf='D'))
+for sym, rows in made.items():
+    m = model(rows, P0)
+    assert len(m.buys) == 1 and m.buys[0][2:4] == [121.3, 126.5] and rows[m.buys[0][0]][2] == 124.8, (sym, m.buys)
+    assert m.buys[0][6] == 126.5 and abs(m.buys[0][7] - 121.3 * 0.995) < 1e-9, m.buys     # an order at the zone top, stop under the zone
+    loose = model(rows, L.clean_params(dict(SMC, tf='D', discount=0)))
+    assert loose.buys[0][2:4] == [139.3, 145.0], loose.buys   # without the discount rule the premium zone is the BUY (the SUPREMEIND run)
+assert lab_trades(SMC) == model_trades(made, SMC) and lab_trades(dict(SMC, discount=0)) == model_trades(made, dict(SMC, discount=0))
 
 # ------------------------------------------------------------------ 3. the .pine itself: the Lab's defaults, the same numbers, Pine v5 layout
 src = open(os.path.join(ROOT, 'tradingview', 'StockBlueprint_CHoCH_FVG.pine'), encoding='utf-8').read()
@@ -158,20 +226,9 @@ assert float(default('spBody')) == K.SPRING_CFG['bodyMin'] and float(default('sp
 assert float(default('spBodyMax')) == K.SPRING_CFG['day2BodyMax'] and float(default('spReclaim')) == K.SPRING_CFG['reclaimMax']
 assert '<= 0.05' in src and K.CIRCUIT_LOCK_PCT == M.LOCK_PCT == 0.05 and 'ta.sma(high - low, 14)' in src
 assert 'if array.size(zF) > %d' % M.ZONES_KEPT in src
-# Pine layout: no tabs, blocks indented by 4 spaces, one statement a line (no wrapped lines), brackets balanced
-for k, ln in enumerate(lines, 1):
-    assert '\t' not in ln, k
-    lead = len(ln) - len(ln.lstrip(' '))
-    assert lead % 4 == 0, (k, ln)
-    code = re.sub(r'"[^"]*"', '""', ln.split('//')[0] if not ln.lstrip().startswith('//') else '')
-    assert code.count('(') == code.count(')') and code.count('[') == code.count(']'), (k, ln)
-    assert not re.search(r'(\band|\bor|[+\-*/,(])\s*$', code), ('a wrapped line', k, ln)
-# every "for i = 0 to x - 1" has a guard against an empty list (Pine counts DOWN when x - 1 < 0)
-for k, ln in enumerate(lines):
-    if re.search(r'for \w+ = 0 to (\w+) - 1', ln):
-        var = re.search(r'to (\w+) - 1', ln).group(1)
-        assert re.search(r'if %s > 0' % var, lines[k - 1]), ('unguarded loop', k + 1, ln)
-# no array access beside a size check on one line (Pine v5 evaluates both sides of and / or)
-for k, ln in enumerate(lines, 1):
-    assert not re.search(r'(size\(\w+\) > 0|>= 0) and array\.get', ln), ('and is not lazy in v5', k, ln)
+assert float(default('stopPct')) == D['stopPct'] and float(default('maxRisk')) == D['maxRisk'] and float(default('minPrice')) == D['minPrice']
+assert float(default('swingMinR')) == D['swingMinR'] and int(default('chochAge')) == D['chochAge'] and float(default('emaTouch')) == D['emaTouch']
+assert default('structOnly') == 'true' and default('entryMode') == 'Order at the zone top' and default('stopMode') == 'Under the zone bottom'
+assert default('targetMode') == 'R multiple' and default('emaSup') == 'Off' and float(default('minTurn')) == D['minTurnover'] == 0
+lint(os.path.join(ROOT, 'tradingview', 'StockBlueprint_CHoCH_FVG.pine'))
 print('OK')

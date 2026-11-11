@@ -1503,6 +1503,12 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .lab-check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
 .lab-plain { margin-top: 14px; }
 .lab-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-top: 14px; }
+.lab-pine:empty { display: none; }
+.lab-pine { margin-top: 14px; }
+.lab-pine-steps, .lab-pine-notes { margin: 8px 0; padding-left: 22px; line-height: 1.55; }
+.lab-pine-notes { color: var(--muted); font-size: 13px; }
+.lab-pine-code { display: block; width: 100%; max-width: 100%; box-sizing: border-box; min-height: 240px; margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; white-space: pre; overflow: auto; resize: vertical; }
 .lab-name { min-width: 220px; flex: 1 1 220px; max-width: 360px; }
 .lab-status { display: grid; gap: 8px; margin-bottom: 12px; }
 .lab-pc { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
 """The TradingView indicator's logic (tradingview/StockBlueprint_CHoCH_FVG.pine) in Python, bar by bar, the way Pine runs
 it - only what was known at each bar's close, kept in the same few variables / arrays. tests/tradingview-pine.test.js runs
-it on random and made charts and checks that it finds exactly what the laptop's backtest finds (structure.py's CHoCH
-events, kite_intraday's FVG / Gap-up zones and their first touches, the Backtest Lab's discount rule). Change the .pine and
-this file together.
+it on random and made charts and checks that it finds exactly what the laptop finds: structure.py's CHoCH events and the
+Backtest Lab's trades (group 'First touch of a zone' - signal candle, entry, stop, target) for the same rules. Change the
+.pine and this file together.
 
-Owner, 11-Nov-2026: "i have runned a backtest ... i open trading view chart and i go to that trade date. i check how our
-backtest enter the trade, how our backtest where it is marked Choch, FVG. i do this with bare eyes. it would be helpful if
-i got pinescript indicator to apply in trading view chart."
+Owner, 11-Nov-2026: "i open trading view chart and i go to that trade date. i check how our backtest enter the trade, how
+our backtest where it is marked Choch, FVG ... it would be helpful if i got pinescript indicator"; then "give option to copy
+the pinescript in this page that works with respect to the current setup" (the Lab page fills the .pine's inputs from its
+form - web/lib/pine.js).
+
+The rules come as the Lab's own params (backtest_lab.clean_params): structure ('only' = the market-structure rules),
+pivotN, downN, zoneWhen, chochAge, discount, discPart, firstPull, belowChoch, entry ('zone' / 'close'), stop, stopBuf,
+stopPct, maxRisk, minPrice, targetMode, targetR, swingMinR, from / to, minTurnover, emaSupport, emaTouch, above10 / 21 / 50,
+emaStack.
 """
+from datetime import date
 
 GAP_MIN, GAP_MAX, INSIDE_BODY, FVG_K, LOCK_PCT, ZONES_KEPT = 3.0, 5.0, 2.0, 0.70, 0.05, 300
 
@@ -17,15 +24,21 @@ def locked(h, l):
     return l > 0 and (h - l) / l * 100 <= LOCK_PCT
 
 
-class Model:
-    """Feed it candles with bar(o, h, l, c); read .events (every CHoCH with d >= 1: [b, hi, lvl, li, lf, d]), .setups
-    ([i, f, bottom, top, kind, inside, depth] - the first touch of a zone that passed the rules), .bos {b: bar}."""
+def _ord(iso):
+    return date.fromisoformat(iso).toordinal() if iso else None
 
-    def __init__(self, n=5, down_n=3, zone_when='both', first_pull=True, fib=0.5, part='mid', below_choch=False):
-        self.n, self.down_n, self.zone_when, self.first_pull = n, down_n, zone_when, first_pull
-        self.fib, self.part, self.below_choch = fib, part, below_choch
-        self.o, self.h, self.l, self.c = [], [], [], []
+
+class Model:
+    """Feed it candles with bar(o, h, l, c, v, day_ordinal); read .events (every CHoCH with d >= 1: [b, hi, lvl, li, lf, d]),
+    .buys ([i, f, bottom, top, kind, inside, entry, stop, target]) and .bos {CHoCH candle: BOS candle}."""
+
+    def __init__(self, P):
+        self.P = P
+        self.n, self.down_n = P['pivotN'], P['downN']
+        self.struct_only = P['structure'] == 'only'
+        self.o, self.h, self.l, self.c, self.v, self.day = [], [], [], [], [], []
         self.swP, self.swV, self.swH = [], [], []
+        self.phB, self.phV = [], []                     # raw swing highs (the swing-high target)
         self.last_used_hi = -1
         self.seg_hi, self.seg_min, self.seg_min_bar = -1, None, -1
         self.chB = -1                                   # the current CHoCH (the latest with d >= down_n)
@@ -34,7 +47,10 @@ class Model:
         self.chD, self.chDead, self.chBos = 0, True, -1
         self.zF, self.zBot, self.zTop, self.zGap, self.zIn = [], [], [], [], []
         self.gap_any, self.gap_pct = [], []             # the series Pine keeps for "the bar before"
-        self.events, self.setups, self.bos = [], [], {}
+        self.e = {10: None, 21: None, 50: None}
+        self.cv = []                                    # close x volume (the turnover)
+        self.lo, self.hi = _ord(P.get('from')), _ord(P.get('to'))
+        self.events, self.buys, self.bos = [], [], {}
 
     # ---- the helpers Pine computes on every bar
     def _pivot_high(self, i):
@@ -51,12 +67,47 @@ class Model:
         y = l[i - n]
         return all(y < l[i - n - k] and y <= l[i - n + k] for k in range(1, n + 1))
 
-    def bar(self, o, h, l, c):
-        self.o.append(o); self.h.append(h); self.l.append(l); self.c.append(c)
+    def _ema_ok(self, i, h, l, c):
+        P, e = self.P, self.e
+        sup_n = int(P['emaSupport'])
+        need = set()
+        if sup_n:
+            need.update((10, 21, 50) if sup_n == 1 else (sup_n,))
+        need.update(k for k in (10, 21, 50) if P['above%d' % k])
+        if P['emaStack']:
+            need.update((10, 21, 50))
+        if not need:
+            return True
+        if i < max(need):
+            return False
+        t = 1 + P['emaTouch'] / 100.0
+        sup = {k: l <= e[k] * t and c >= e[k] for k in (10, 21, 50)}
+        if sup_n and not any(sup[k] for k in ((10, 21, 50) if sup_n == 1 else (sup_n,))):
+            return False
+        if any(P['above%d' % k] and not c > e[k] for k in (10, 21, 50)):
+            return False
+        if P['emaStack'] and not e[10] > e[21] > e[50]:
+            return False
+        return True
+
+    def _turnover(self, i):
+        a = max(0, i + 1 - 20)
+        return round(sum(self.cv[a:i + 1]) / (i + 1 - a) / 1e5, 1)
+
+    def bar(self, o, h, l, c, v=0, day=None):
+        self.o.append(o); self.h.append(h); self.l.append(l); self.c.append(c); self.v.append(v); self.day.append(day)
+        self.cv.append(c * v)
         i = len(self.c) - 1
         H, L, C, O = self.h, self.l, self.c, self.o
-        n = self.n
+        n, P = self.n, self.P
         ph, pl = self._pivot_high(i), self._pivot_low(i)
+        if ph:
+            self.phB.append(i - n); self.phV.append(H[i - n])
+        for k in (10, 21, 50):
+            self.e[k] = c if self.e[k] is None else self.e[k] + 2.0 / (k + 1) * (c - self.e[k])
+        ema_ok = self._ema_ok(i, h, l, c)
+        turn_ok = not P['minTurnover'] or self._turnover(i) >= P['minTurnover']
+        date_ok = (self.lo is None or day >= self.lo) and (self.hi is None or day <= self.hi)
         lock_now = locked(h, l)
         lock_prev = i >= 1 and locked(H[i - 1], L[i - 1])
         gap_any = i >= 1 and not lock_now and not lock_prev and H[i - 1] > 0 and l > H[i - 1]
@@ -68,18 +119,27 @@ class Model:
         if alive and c < self.chLf:
             self.chDead = True
             alive = False
+        alive_ok = alive and (not P['chochAge'] or i - self.chB <= P['chochAge'])
 
-        # 2. the zones this bar touches for the first time (low <= top; a Gap-up zone not on a circuit-locked candle)
-        hit, best = [], -1
+        # 2. the zones this bar touches for the first time (low <= top; a Gap-up zone not on a circuit-locked candle); the
+        #    first one (highest top, FVG first, older) that passes every rule = the BUY
+        hit, best, bvals = [], -1, None
         for k in range(len(self.zF)):
-            if l <= self.zTop[k] and (not self.zGap[k] or not lock_now):
-                hit.append(k)
-                if alive and self._passes(k, i):
-                    if best < 0 or self._before(k, best):
-                        best = k
+            if not (l <= self.zTop[k] and (not self.zGap[k] or not lock_now)):
+                continue
+            hit.append(k)
+            if self.struct_only and not (alive_ok and self._passes(k)):
+                continue
+            if not (date_ok and turn_ok and ema_ok):
+                continue
+            t = self._trade(k, i, o, l, c)
+            if t is None:
+                continue
+            if best < 0 or self._before(k, best):
+                best, bvals = k, t
         if best >= 0:
-            f, bot, top = self.zF[best], self.zBot[best], self.zTop[best]
-            self.setups.append([i, f, bot, top, 'Gap-up' if self.zGap[best] else 'FVG', self.zIn[best], self._depth(bot, top)])
+            self.buys.append([i, self.zF[best], self.zBot[best], self.zTop[best], 'Gap-up' if self.zGap[best] else 'FVG',
+                              self.zIn[best]] + list(bvals))
         for k in reversed(hit):
             for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn):
                 a.pop(k)
@@ -121,26 +181,26 @@ class Model:
         # 6. swings (confirmed n bars later, alternating) and the CHoCH (a close above the last swing high)
         p = i - n
         if p >= n and ph != pl:
-            v = H[p] if ph else L[p]
+            v_ = H[p] if ph else L[p]
             if self.swP and self.swH[-1] == ph:
-                if (ph and v > self.swV[-1]) or (not ph and v < self.swV[-1]):
-                    self.swP[-1], self.swV[-1] = p, v
+                if (ph and v_ > self.swV[-1]) or (not ph and v_ < self.swV[-1]):
+                    self.swP[-1], self.swV[-1] = p, v_
             else:
-                self.swP.append(p); self.swV.append(v); self.swH.append(ph)
+                self.swP.append(p); self.swV.append(v_); self.swH.append(ph)
         if self.swP:
             q = len(self.swP) - 1 if self.swH[-1] else len(self.swP) - 2
             if q >= 0:
-                hi, lvl = self.swP[q], self.swV[q]
-                if hi != self.seg_hi:
-                    assert i - hi == n, 'the swing high changes only when one is confirmed (n bars back)'
-                    self.seg_hi, self.seg_min, self.seg_min_bar = hi, None, -1
-                    for k in range(hi + 1, i + 1):          # Pine: the n bars, oldest first
+                hi_, lvl = self.swP[q], self.swV[q]
+                if hi_ != self.seg_hi:
+                    assert i - hi_ == n, 'the swing high changes only when one is confirmed (n bars back)'
+                    self.seg_hi, self.seg_min, self.seg_min_bar = hi_, None, -1
+                    for k in range(hi_ + 1, i + 1):          # Pine: the n bars, oldest first
                         if self.seg_min is None or L[k] < self.seg_min:
                             self.seg_min, self.seg_min_bar = L[k], k
                 elif l < self.seg_min:
                     self.seg_min, self.seg_min_bar = l, i
-                if c > lvl and hi > self.last_used_hi:
-                    self.last_used_hi = hi
+                if c > lvl and hi_ > self.last_used_hi:
+                    self.last_used_hi = hi_
                     dh, k = 0, q
                     while k - 2 >= 0 and self.swV[k] < self.swV[k - 2]:
                         dh += 1
@@ -152,9 +212,9 @@ class Model:
                         k -= 2
                     d = min(dh, dl)
                     if d >= 1:
-                        self.events.append([i, hi, lvl, self.seg_min_bar, self.seg_min, d])
+                        self.events.append([i, hi_, lvl, self.seg_min_bar, self.seg_min, d])
                     if d >= self.down_n:
-                        self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi, lvl, self.seg_min_bar, self.seg_min, d
+                        self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi_, lvl, self.seg_min_bar, self.seg_min, d
                         self.chDead, self.chBos, self.chPeak = False, -1, None
                         self.chH = max(H[self.chLi:i + 1])
 
@@ -163,28 +223,58 @@ class Model:
 
     def _before(self, a, b):
         """Zone a comes before zone b on one bar: the higher top (a falling price reaches it first), FVG first, older."""
-        ka = (-self.zTop[a], self.zGap[a], self.zF[a])
-        kb = (-self.zTop[b], self.zGap[b], self.zF[b])
-        return ka < kb
+        return (-self.zTop[a], self.zGap[a], self.zF[a]) < (-self.zTop[b], self.zGap[b], self.zF[b])
 
     def _depth(self, bot, top):
-        part = (bot + top) / 2.0 if self.part == 'mid' else top if self.part == 'top' else bot
-        return (self.chH - part) / (self.chH - self.chLf) if self.chH > self.chLf else None
+        part = self.P['discPart']
+        x = (bot + top) / 2.0 if part == 'mid' else top if part == 'top' else bot
+        return (self.chH - x) / (self.chH - self.chLf) if self.chH > self.chLf else None
 
-    def _passes(self, k, i):
-        f = self.zF[k]
+    def _passes(self, k):
+        P, f = self.P, self.zF[k]
         if f < self.chLi:
             return False
-        if self.zone_when == 'leg' and f > self.chB + 1:
+        if P['zoneWhen'] == 'leg' and f > self.chB + 1:
             return False
-        if self.zone_when == 'after' and f <= self.chB:
+        if P['zoneWhen'] == 'after' and f <= self.chB:
             return False
-        if self.first_pull and self.chBos >= 0:
+        if P['firstPull'] and self.chBos >= 0:
             return False
-        if self.below_choch and not self.zTop[k] < self.chLvl:
+        if P['belowChoch'] and not self.zTop[k] < self.chLvl:
             return False
-        if self.fib:
+        if P['discount']:
             dep = self._depth(self.zBot[k], self.zTop[k])
-            if dep is None or dep < self.fib - 1e-9:
+            if dep is None or dep < P['discount'] - 1e-9:
                 return False
         return True
+
+    def _trade(self, k, i, o, l, c):
+        """(entry, stop, target) of zone k's touch on bar i, or None when the Lab would skip it (gap / risk / price / no
+        swing high above)."""
+        P = self.P
+        at_top = P['entry'] == 'zone'
+        entry = min(o, self.zTop[k]) if at_top else c
+        mode = P['stop']
+        if at_top and mode in ('spring', 'lower'):
+            mode = 'zone'
+        zb = self.zBot[k]
+        if mode == 'pct':
+            stop = entry * (1 - P['stopPct'] / 100.0)
+        else:
+            base = l if mode == 'spring' else zb if mode == 'zone' else min(l, zb)
+            stop = base * (1 - P['stopBuf'] / 100.0)
+        risk = entry - stop
+        if not (entry > 0 and risk > 0):
+            return None
+        if P['maxRisk'] and risk / entry * 100 > P['maxRisk']:
+            return None
+        if entry < P['minPrice']:
+            return None
+        target = entry + P['targetR'] * risk
+        if P['targetMode'] == 'swing':
+            above = entry + P['swingMinR'] * risk
+            sw = next((self.phV[j] for j in range(len(self.phB) - 1, -1, -1) if self.phB[j] <= i - self.n and self.phV[j] >= above), None)
+            if sw is None:
+                return None
+            target = sw
+        return entry, stop, target
