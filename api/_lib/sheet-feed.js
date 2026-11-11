@@ -77,6 +77,11 @@
                reason: 'sheet is updating' + (m ? ' (History30 has ' + m[1] + ' of ' + m[2] + ' symbols)' : '') +
                  ' - try again shortly' };
     }
+    // Backtest Lab (owner, 11-Nov-2026: "sheet feed error" hid that a run was still going on): fixed texts only
+    if (/a run is going on/i.test(e)) {
+      return { code: 'running', reason: 'a backtest is still running on your laptop - wait for it to finish, or press Cancel and run yours' };
+    }
+    if (/no longer kept/i.test(e)) return { code: 'gone', reason: 'that result is no longer kept (the sheet keeps the newest 8 runs)' };
     return { code: 'error', reason: 'sheet feed returned an error' };
   }
 

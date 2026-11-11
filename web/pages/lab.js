@@ -402,14 +402,18 @@
     var pc = seen === null ? '<span class="badge s-warn">laptop: not seen yet</span>' :
       seen <= 180 ? '<span class="badge s-good">laptop: online (asked ' + (seen < 60 ? seen + ' s' : Math.round(seen / 60) + ' min') + ' ago)</span>' :
         '<span class="badge s-warn">laptop: last asked ' + (seen < 3600 ? Math.round(seen / 60) + ' min' : Math.round(seen / 3600) + ' h') + ' ago - is it on?</span>';
+    // the laptop busy without a run - e.g. preparing the candles after an update (owner, 11-Nov-2026: "loading only")
+    if (s && s.pcNote) pc += ' <span class="badge s-info" id="lab-pcnote">' + esc(s.pcNote) + '</span>';
     if (ST.err) h += '<p class="note bad">' + esc(ST.err) + '</p>';
     if (j && (j.status === 'waiting' || j.status === 'running')) {
       var pct = j.status === 'running' ? Math.max(3, j.pct || 0) : 0;
       h += '<div class="lab-run-state"><div><b>' + esc(j.name || 'Your run') + '</b> - ' + (j.status === 'waiting' ? 'waiting for your laptop' +
-        (seen !== null && seen > 180 ? ' (it has not asked for a while - switch it on, it will pick this up)' : ' (it asks every 10 seconds while this page is open)') :
+        (s.pcNote ? ' - it is ' + esc(s.pcNote) + '; your run comes right after' :
+          seen !== null && seen > 180 ? ' (it has not asked for a while - switch it on, it will pick this up)' : ' (it asks every 10 seconds while this page is open)') :
         'running on your laptop' + (j.note ? ': ' + esc(j.note) : '')) + '</div>' +
         '<div class="lab-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></div>' +
-        (j.status === 'waiting' ? '<button class="btn sm" type="button" id="lab-cancel">Cancel</button>' : '') + '</div>';
+        '<button class="btn sm" type="button" id="lab-cancel" title="' + (j.status === 'running' ? 'Stop waiting for this run - the laptop finishes its current step, then takes your next run' : 'Cancel this run') +
+        '">Cancel</button></div>';
     } else if (j && j.status === 'failed') {
       h += '<p class="note bad"><b>' + esc(j.name || 'The last run') + '</b> did not finish: ' + esc(j.error || 'failed') + '</p>';
     }

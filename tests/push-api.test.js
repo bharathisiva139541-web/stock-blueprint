@@ -140,4 +140,15 @@
     }
     assert.equal(calls.length, n, 'never reached the sheet');
   });
+  test('api/watchlists op lab: the sheet\'s refusals reach the page in plain words (owner, 11-Nov-2026: "sheet feed error")', async () => {
+    const SF = require('../api/_lib/sheet-feed');
+    assert.deepEqual(SF.mapSheetError('a run is going on - wait for it (or cancel it)', { op: 'lab' }),
+      { code: 'running', reason: 'a backtest is still running on your laptop - wait for it to finish, or press Cancel and run yours' });
+    assert.deepEqual(SF.mapSheetError('that result is no longer kept', { op: 'lab' }).code, 'gone');
+    assert.equal(SF.mapSheetError('something odd <script>', { op: 'lab' }).reason, 'sheet feed returned an error', 'other texts are never copied');
+    const fetch = async () => new Response(JSON.stringify({ ok: false, error: 'a run is going on - wait for it (or cancel it)' }), { status: 200 });
+    const r = await call(wl.createHandler({ env: ENV, fetch: fetch }), { op: 'lab', pin: 'Blue2026', lab: { do: 'run', params: { tf: 'D' } } });
+    assert.equal(r.body.code, 'running');
+    assert.match(r.body.message, /still running on your laptop/);
+  });
 })();

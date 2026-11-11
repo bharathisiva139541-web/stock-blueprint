@@ -3883,7 +3883,7 @@ def run_after_login(cfg):
             log('Kite: could not start the scan - %s' % e)
         # the website's Backtest Lab (owner, 09-Nov-2026): asks the sheet for a run and does it here (its own thread)
         try:
-            if os.path.isdir(itd.DATA_DIR) and lab.maybe_start(cfg, api, build=lambda out: itd.lab_build_cache(out, nse_holidays())):
+            if os.path.isdir(itd.DATA_DIR) and lab.maybe_start(cfg, api, build=lambda out, tick=None: itd.lab_build_cache(out, nse_holidays(), tick)):
                 log('Backtest Lab: on - runs from the website\'s Backtest Lab page are done on this computer.')
         except Exception as e:
             log('Backtest Lab: could not start - %s' % e)

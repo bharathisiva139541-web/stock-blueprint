@@ -104,6 +104,39 @@ test('Backtest Lab: a run the laptop stopped part-way / nobody took is marked fa
   assert.equal(site(env, { op: 'lab', lab: { do: 'status' } }).pcSeenSec, 0);
 });
 
+test('Backtest Lab (owner, 11-Nov-2026: "loading only ... sheet feed error"): the laptop\'s progress keeps a long run alive, its note reaches the page, a running run can be cancelled', () => {
+  const env = load();
+  // the laptop prepares its candles before taking any run: its words reach the page while fresh
+  assert.equal(pc(env, { op: 'hello', note: 'preparing the candles on the laptop after an update (only once): 600 of 1800 stocks, about 12 min left' }).ok, true);
+  let st = site(env, { op: 'lab', lab: { do: 'status' } });
+  assert.equal(st.pcNote, 'preparing the candles on the laptop after an update (only once): 600 of 1800 stocks, about 12 min left');
+  assert.equal(st.pcSeenSec, 0);
+  env.setNow(T0 + 4 * 60000);
+  assert.equal(site(env, { op: 'lab', lab: { do: 'status' } }).pcNote, '', 'an old note is not shown');
+  pc(env, { op: 'hello', note: '' });
+  assert.equal(site(env, { op: 'lab', lab: { do: 'status' } }).pcNote, '');
+  // a run taken while the cache is made: progress every few minutes keeps it running past 20 minutes
+  site(env, { op: 'lab', lab: { do: 'run', name: 'slow first run', params: { tf: 'D' } } });
+  const j = pc(env, { op: 'poll' }).job;
+  for (let m = 5; m <= 40; m += 5) {
+    env.setNow(T0 + (4 + m) * 60000);
+    assert.equal(pc(env, { op: 'progress', id: j.id, pct: m, note: 'preparing the candles: ' + m * 40 + ' of 1800 stocks' }).ok, true);
+  }
+  st = site(env, { op: 'lab', lab: { do: 'status' } });
+  assert.equal(st.job.status, 'running', '44 minutes after it was taken, still alive');
+  assert.match(st.job.note, /1600 of 1800/);
+  env.setNow(T0 + 66 * 60000);
+  assert.equal(site(env, { op: 'lab', lab: { do: 'status' } }).job.status, 'failed', '21 minutes without a word: stopped');
+  // a running run can be cancelled from the page; the next run is accepted
+  site(env, { op: 'lab', lab: { do: 'run', params: {} } });
+  const j2 = pc(env, { op: 'poll' }).job;
+  assert.match(site(env, { op: 'lab', lab: { do: 'run', params: {} } }).error, /a run is going on/);
+  assert.equal(site(env, { op: 'lab', lab: { do: 'cancel' } }).job.status, 'cancelled');
+  st = site(env, { op: 'lab', lab: { do: 'run', name: 'next one', params: {} } });
+  assert.equal(st.job.status, 'waiting');
+  assert.equal(pc(env, { op: 'result', id: j2.id, result: RESULT }).error, 'not the current run', 'the cancelled run\'s late result is not kept over the new run');
+});
+
 function pushEnv(answer) {
   const sent = [];
   const env = load({ fetch: (url, params) => { sent.push({ url, params }); return answer ? answer(url, params) : { code: 200, text: JSON.stringify({ ok: true, sent: 1, gone: [] }) }; } });

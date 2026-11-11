@@ -261,7 +261,7 @@ built = []
 w.build = lambda out: built.append(1) or K.backtest_pass(set(), upto, {}, out=out)[0] > 0
 api = FakeSheet([{'id': 'L2', 'params': {'tf': 'W', 'group': 'spring'}}])
 w.loop({}, api, rounds=1)
-assert built and any(c['op'] == 'progress' for c in api.calls) and any(c['op'] == 'result' for c in api.calls), api.calls
+assert built and any(c['op'] == 'result' for c in api.calls), api.calls    # (an older build function: no progress to tell)
 # a run that fails tells the sheet
 shutil.rmtree(L.LAB_DIR)
 w.build = None
@@ -693,5 +693,51 @@ assert not [x for x in res_b['items'] if x['pattern'] == K.CHOCH_PATTERN]
 assert {'tf': 'D', 'candle': spring_day, 'pattern': K.CHOCH_PATTERN} in res_b['invalid'], res_b['invalid']
 # the PC's rule = the Lab's default setup (the same structure.py)
 assert (K.CHOCH_PIVOT_N, K.CHOCH_DOWN_N) == (L.DEFAULTS['pivotN'], L.DEFAULTS['downN']) and K.RULES_VERSION == 5
+
+# ------------------------------------------------------------------ 12. the candle cache after an update (owner, 11-Nov-2026:
+# "backtest for some setups is loading only. sheet feed error" - the first run after the update built the cache for 20+
+# minutes without a word, the sheet called it stopped and refused every other run meanwhile)
+K.backtest_pass(set(), upto, {}, out=lambda m: None)
+full_meta, _ = L.load_meta()
+ticks = []
+K.backtest_pass(set(), upto, {}, out=lambda m: None, lab_only=True, tick=lambda k, t: ticks.append((k, t)))
+fast_meta, _ = L.load_meta()
+assert fast_meta['signals'] == full_meta['signals'] and fast_meta['index'] == full_meta['index'], 'the Lab-only build = the full pass'
+assert ticks and ticks[-1][0] == ticks[-1][1] == len(ticks), ticks
+# the worker makes a missing / outdated cache right away, before taking a run, and tells the page how far it is
+shutil.rmtree(L.LAB_DIR)
+L.BUILD_SAY_S = 0
+made = []
+
+
+def build_new(out, tick=None):
+    made.append(1)
+    return K.lab_build_cache(out, set(), tick=tick)
+
+
+w = L.LabWorker()
+w.build = build_new
+api = FakeSheet([{'id': 'L9', 'name': 'after the update', 'params': {'tf': 'D', 'group': 'spring', 'maxRisk': 0}}])
+w.loop({}, api, rounds=1)
+ops = [c['op'] for c in api.calls]
+assert made == [1] and ops[0] == 'hello' and ops.index('poll') > ops.index('hello'), ops
+hellos = [c for c in api.calls if c['op'] == 'hello']
+assert 'preparing the candles on the laptop after an update' in hellos[0]['note'] and ' of ' in hellos[0]['note'], hellos[0]
+assert hellos[-1]['note'] == '', 'the note is cleared when the cache is ready'
+assert any(c['op'] == 'result' and c['id'] == 'L9' for c in api.calls) and not any(c['op'] == 'fail' for c in api.calls)
+w.loop({}, FakeSheet([]), rounds=1)
+assert made == [1], 'a cache is there: not made again'
+# a run taken while there is no cache: the build's progress goes to the run (it keeps the run alive on the sheet)
+shutil.rmtree(L.LAB_DIR)
+api = FakeSheet([])
+w.run_one({}, api, {'id': 'L10', 'params': {'tf': 'D', 'group': 'spring', 'maxRisk': 0}})
+prog = [c for c in api.calls if c['op'] == 'progress']
+assert prog and 'can take 10-30 minutes' in prog[0]['note'] and any(' of ' in c['note'] for c in prog), prog
+assert all(1 <= c['pct'] <= 99 for c in prog) and any(c['op'] == 'result' for c in api.calls), api.calls
+# an older kind of build function (no progress): still works
+shutil.rmtree(L.LAB_DIR)
+w.build = lambda out: K.lab_build_cache(out, set())
+w.loop({}, FakeSheet([]), rounds=1)
+assert L.load_meta()[0], 'the cache is made'
 
 print('OK')

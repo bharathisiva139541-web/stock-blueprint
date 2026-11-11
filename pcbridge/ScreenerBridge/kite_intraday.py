@@ -1206,7 +1206,7 @@ def trade_30d(cs, i, days=BT_DAYS):
             'maxR': round(max(0.0, (best - entry) / risk), 2), 'stopped': k is not None, 'hits': hits, 'bars': len(win)}
 
 
-def bt_signals(cs, cfg=None, max_age=None):
+def bt_signals(cs, cfg=None, max_age=None, springs=None):
     """FVG+Spring and Gap-up FVG + Spring of a long candle series, quickly (the backtest): {i: [zone, ...]} - the same
     zones as fvg_detail's 'spring' / 'gapspring' (zones at most `max_age` candles old)."""
     n = len(cs)
@@ -1218,8 +1218,8 @@ def bt_signals(cs, cfg=None, max_age=None):
     ff, gf = [z['f'] for z in fz], [z['f'] for z in gz]
     rmq = _RangeMin([c['c'] for c in cs])
     out = {}
-    for i in range(3, n):
-        if not is_spring_pair(cs[i - 1], cs[i], cfg):
+    for i in (springs if springs is not None else range(3, n)):
+        if springs is None and not is_spring_pair(cs[i - 1], cs[i], cfg):
             continue
         hits = [h for h in (spring_zone(cs, i, fz, max_age, rmq, ff), spring_zone(cs, i, gz, max_age, rmq, gf)) if h]
         if hits:
@@ -1284,7 +1284,7 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None):
 
 
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
-            backtest=False, lab=None):
+            backtest=False, lab=None, lab_only=False):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
     last SCAN_KEEP candles -, the 4H FVG zones + the ones first touched in those sessions, and (backtest) the 30-day
     outcome (trade_30d) of every FVG+Spring / Gap-up FVG + Spring and Spring of BACKTEST_TFS on ALL stored candles.
@@ -1292,13 +1292,18 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
         'trades': [...FVG+Spring...], 'springs': [(tf, outcome)...every Spring...],
         'invalid': [{'tf', 'candle'}...Spring in FVG of the last KEEP_DAYS a later close under the Spring low broke]}
     `lab` (a backtest_lab.CacheWriter, with backtest): each backtest timeframe's candles + Spring rows go to the Backtest
-    Lab's cache too (owner, 09-Nov-2026)."""
+    Lab's cache too (owner, 09-Nov-2026). `lab_only` (the Lab's own cache build, 11-Nov-2026): only that - no scan, no
+    30-day outcomes (the first run after an update took 20+ minutes on the owner's laptop)."""
     turn = backtest_lab.turnover_fn(store.get('day') or []) if lab is not None and backtest else None
     out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': []}
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
     for tf in timeframes:
         full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
         if len(full_c) < 2:
+            continue
+        if lab_only:
+            if lab is not None and tf in BACKTEST_TFS:
+                lab.add(store.get('sym') or '', tf, full_c, lab_signal_rows(full_c, tf, slots, cfg, turn))
             continue
         # the daily scan looks at the recent candles (as before the deep history); the backtest below at all of them
         all_c = full_c[-SCAN_KEEP[tf]:] if tf in SCAN_KEEP else full_c
@@ -1387,6 +1392,27 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             if lab_rows is not None:
                 lab.add(store.get('sym') or '', tf, full_c, lab_rows)
     return out
+
+
+def lab_signal_rows(full_c, tf, slots, cfg, turn):
+    """The Backtest Lab's cache rows of one timeframe = what analyse(backtest=True, lab=...) writes, without the rest:
+    every Spring (4H: the slot rule) with the FVG / Gap-up zones it sits on, and every FVG First Touch / Confirmed."""
+    n = len(full_c)
+    sp = [i for i in range(3, n) if is_spring_pair(full_c[i - 1], full_c[i], cfg)]
+    sig = bt_signals(full_c, cfg, WINDOW.get(tf, 300), springs=sp) if tf not in NO_FVG_SPRING_TFS else {}
+    ft_c, cf_c = {}, {}
+    if tf not in NO_FVG_SPRING_TFS and n >= 17:
+        ft_c, cf_c, _ = fvg_touch_events(full_c, fvg_gaps(full_c))
+    spring_at = set(i for i in sp if _slot_ok(slots, tf, full_c[i]))
+    rows = []
+    for i in sorted(spring_at | set(ft_c) | set(cf_c)):
+        if i < 3:
+            continue
+        if i in spring_at:
+            rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
+        if i in ft_c or i in cf_c:
+            rows.extend(backtest_lab.touch_rows(full_c, i, ft_c.get(i), cf_c.get(i), turn))
+    return rows
 
 
 def scan(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None):
@@ -1564,7 +1590,7 @@ def send_backtest(cfg, api, upto, trades, springs_bt):
         return None
 
 
-def backtest_pass(holidays, upto, slots, out=print, lab=True):
+def backtest_pass(holidays, upto, slots, out=print, lab=True, lab_only=False, tick=None):
     """Every stored stock (intraday_data): the backtest's trades + springs, and (lab) the Backtest Lab's cache.
     -> (stocks read, trades, springs)."""
     names = sorted(f for f in os.listdir(DATA_DIR) if f.endswith('.json.gz')) if os.path.isdir(DATA_DIR) else []
@@ -1579,13 +1605,15 @@ def backtest_pass(holidays, upto, slots, out=print, lab=True):
                 continue
             sym = str(store.get('sym') or name[:-8])
             store['sym'] = sym
-            res = analyse(store, '9999-12-31', upto, holidays, BACKTEST_TFS, (), slots=slots, backtest=True, lab=writer)
+            res = analyse(store, '9999-12-31', upto, holidays, BACKTEST_TFS, (), slots=slots, backtest=True, lab=writer, lab_only=lab_only)
             for t in res['trades']:
                 t['sym'] = sym
                 trades.append(t)
             springs_bt.extend(res['springs'])
             if (k + 1) % 300 == 0:
                 out('  %d / %d stocks (%.0f s)' % (k + 1, len(names), time.time() - t0))
+            if tick:
+                tick(k + 1, len(names))
         if writer:
             writer.indices = index_closes(upto)
             writer.close()
@@ -1595,8 +1623,9 @@ def backtest_pass(holidays, upto, slots, out=print, lab=True):
     return len(names), trades, springs_bt
 
 
-def lab_build_cache(out=print, holidays=None):
-    """The Backtest Lab's cache from the stored candles (its first run, before any BacktestNow / daily scan made it).
+def lab_build_cache(out=print, holidays=None, tick=None):
+    """The Backtest Lab's cache from the stored candles (its first run, before any BacktestNow / daily scan made it, or
+    after an update that changed it). Only the Lab's rows (`lab_only`); `tick(k, total)` after every stock.
     -> True when there were candles."""
     holidays = set(holidays or ())
     st = state_load()
@@ -1604,7 +1633,7 @@ def lab_build_cache(out=print, holidays=None):
         upto = date.fromisoformat(st['scanned']) if st.get('scanned') else completed_session(now_ist(), holidays)
     except ValueError:
         upto = completed_session(now_ist(), holidays)
-    n, _, _ = backtest_pass(holidays, upto, chosen_slots({}, list(BACKTEST_TFS)), out)
+    n, _, _ = backtest_pass(holidays, upto, chosen_slots({}, list(BACKTEST_TFS)), out, lab_only=True, tick=tick)
     return n > 0
 
 

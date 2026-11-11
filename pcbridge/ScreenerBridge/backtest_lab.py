@@ -51,6 +51,7 @@ MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
 POLL_FAST_S = 10                # ... and this often while the page is open (the sheet says which)
+BUILD_SAY_S = 30                # while the candle cache is made: its progress to the sheet at most this often
 log = print                     # screener_bridge sets its own
 
 # ------------------------------------------------------------------ the rules a run may set (and their limits)
@@ -248,8 +249,14 @@ class CacheWriter:
         os.replace(tmp, os.path.join(self.base, 'current.txt'))
         self.done = True
         for d in os.listdir(self.base):   # older builds (a file still open on Windows: left for the next build)
-            if d != self.name and d.startswith('b') and os.path.isdir(os.path.join(self.base, d)):
-                shutil.rmtree(os.path.join(self.base, d), ignore_errors=True)
+            full = os.path.join(self.base, d)
+            if d != self.name and d.startswith('b') and os.path.isdir(full):
+                try:                      # another build still being written (the daily scan + the Lab's own): left alone
+                    if d.endswith('.tmp') and time.time() - os.path.getmtime(full) < 6 * 3600:
+                        continue
+                except OSError:
+                    continue
+                shutil.rmtree(full, ignore_errors=True)
 
 
 def turnover_fn(day_rows, days=20):
@@ -1017,9 +1024,44 @@ class LabWorker:
         self.thread.start()
         return True
 
+    def _build(self, cfg, api, say):
+        """Makes the candle cache (the first time, or after an update changed it) - minutes for 1,800 stocks. `say(k, total,
+        note)` is called at most every BUILD_SAY_S with the progress. -> True when there is a cache now."""
+        if not self.build:
+            return False
+        t0, last = time.time(), [0.0]
+
+        def tick(k, total):
+            now = time.time()
+            if k < total and now - last[0] < BUILD_SAY_S:
+                return
+            last[0] = now
+            left = (now - t0) / k * (total - k) / 60 if k else 0
+            say(k, total, 'preparing the candles on the laptop after an update (only once): %d of %d stocks%s'
+                % (k, total, ', about %d min left' % max(1, round(left)) if k < total else ' - done'))
+        log('Backtest Lab: preparing the candle cache (the first time, or after an update) ...')
+        try:
+            ok = self.build(lambda m: log('Backtest Lab: ' + m), tick)
+        except TypeError:                    # a build function of the older kind (no progress)
+            ok = self.build(lambda m: log('Backtest Lab: ' + m))
+        log('Backtest Lab: candle cache %s in %.0f min.' % ('ready' if ok else 'not made (no Kite candles yet)', (time.time() - t0) / 60))
+        return bool(ok) and bool(load_meta()[0])
+
     def loop(self, cfg, api, rounds=None):
         old_app_said = False
         k = 0
+        # an update that changed the cache (or no cache yet): make it now, before any run is taken - the page shows the
+        # progress (op 'hello'); a run sent meanwhile waits and is taken right after (11-Nov-2026)
+        if self.build and not load_meta()[0]:
+            def hello(k, total, note):
+                try:
+                    api(cfg, 'lab', {'op': 'hello', 'note': note if k < total else ''}, tries=1, timeout=30)
+                except Exception:
+                    pass
+            try:
+                self._build(cfg, api, hello)
+            except Exception as e:
+                log('Backtest Lab: the candle cache could not be made - %s' % e)
         while rounds is None or k < rounds:
             k += 1
             wait = POLL_SLOW_S
@@ -1058,13 +1100,16 @@ class LabWorker:
         log('Backtest Lab: running "%s" ...' % (name or jid))
         try:
             meta, _ = load_meta()
+            base = 0
             if not meta:
                 if not self.build:
                     raise LabError('no backtest cache yet - run BacktestNow.bat once')
-                progress(1, 'first run: preparing the candles on the laptop (about 3 minutes, only once)')
-                if not self.build(lambda m: log('Backtest Lab: ' + m)):
+                progress(1, 'preparing the candles on the laptop after an update (only once) - this can take 10-30 minutes')
+                # the progress keeps the run alive on the sheet (it would call a run silent for 20 minutes "stopped")
+                if not self._build(cfg, api, lambda k, total, note: progress(max(1, int(k * 60 / max(1, total))), note)):
                     raise LabError('no Kite candles on this laptop yet - run KiteHistoryNow.bat')
-            res = run_job(job.get('params') or {}, progress=lambda p: progress(p))
+                base = 60
+            res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)))
             reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
             if not reply.get('ok'):
                 raise LabError('the sheet refused the result - %s' % reply.get('error'))
