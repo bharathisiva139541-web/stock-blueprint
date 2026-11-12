@@ -156,7 +156,7 @@ function html() {
   pages.push(page('Runs ஒப்பீடு மற்றும் TradingView script', img('14-runs', 'Your runs - ஒரே table-இல் ஒப்பிட. ஒரு வரிசையை click செய்தால் அந்த முடிவு திறக்கும்.') +
     p('ஒரு நேரத்தில் **ஒரே ஒரு** மாற்றம் செய்து ஓட்டுங்கள்; வரிசைகளை ஒப்பிடுங்கள். வரம்பு 0-க்கு மேல் + test பகுதி ஒத்துப்போனால் அந்த வரிசையை அதிகம் நம்பலாம். கடைசி 8 runs sheet-இல் (Backtest_Lab tab) வைக்கப்படும்.') +
     img('11-pine', '"Copy TradingView script" - இதே விதிகளுடன் indicator. TradingView → Pine Editor → Ctrl+A → Ctrl+V → Save → Add to chart.') +
-    p('Script வரையாத விதிகள் (உதா. ZigZag, weekly trend) பெட்டியில் சொல்லப்படும் - அவற்றை chart-இல் நீங்களே பாருங்கள்.'), 12));
+    p('Swings / CHoCH மாற்று வழிகளும் (ZigZag, x ATR, protected high, சம highs) script-இல் வரையப்படும். வரையாத விதிகள் (உதா. weekly trend, sweep) பெட்டியில் சொல்லப்படும் - அவற்றை chart-இல் நீங்களே பாருங்கள்.'), 12));
   // ---------------------------------------------------------------- testing routine
   pages.push(page('ஒரு நல்ல சோதனை முறை (E1 - E16)', list([
     '**Baseline (E1)**: "My CHoCH + FVG setup" → Test period from 2020-01-01 → Run → **Save as a preset** "Baseline E1".',

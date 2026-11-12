@@ -63,7 +63,13 @@
       minTurn: fl(Math.max(0, num(p.minTurnover, 0))),
       emaSup: str(EMA[num(p.emaSupport, 0)] || EMA[0]),
       emaTouch: fl(Math.max(0, num(p.emaTouch, 1))),
-      ab10: String(!!p.above10), ab21: String(!!p.above21), ab50: String(!!p.above50), emaStack: String(!!p.emaStack)
+      ab10: String(!!p.above10), ab21: String(!!p.above21), ab50: String(!!p.above50), emaStack: String(!!p.emaStack),
+      // how swings and the CHoCH are found (owner, 12-Nov-2026: the structure options drawn too)
+      swMode: str(p.swingMode === 'zigzag' ? 'ZigZag (ATR)' : 'Candles each side'),
+      zzAtr: fl(clamp(num(p.zzAtr, 2), 0.5, 10)),
+      swAtr: fl(clamp(num(p.swingAtr, 0), 0, 5)),
+      chMode: str(p.chochMode === 'protected' ? 'The protected high' : 'The last swing high'),
+      eqAtr: fl(clamp(num(p.eqAtr, 0), 0, 2))
     };
     if (stamp(p.from)) out.fromDate = stamp(p.from);
     if (stamp(p.to)) out.toDate = stamp(p.to);
@@ -83,13 +89,8 @@
       n.push('The Spring shape rules (step 3) are not drawn - they apply to Spring signals.');
     }
     if (num(p.maxTouch, 0)) n.push('"Zone touched at most" is not needed - every BUY is a first touch.');
-    // the structure engine options and the filters of 12-Nov-2026 (the review's E2-E16): the script keeps the usual swings / CHoCH
-    var eng = [];
-    if (p.swingMode === 'zigzag') eng.push('ZigZag swings');
-    if (num(p.swingAtr, 0)) eng.push('swings that stand out by x ATR');
-    if (p.chochMode === 'protected') eng.push('the protected-high CHoCH');
-    if (num(p.eqAtr, 0)) eng.push('equal highs / lows');
-    if (eng.length) n.push('The script draws the usual swings and CHoCH - not ' + eng.join(', ') + '.');
+    // the filters of 12-Nov-2026 (the review's E6-E11; the structure options - ZigZag, stand out by x ATR, protected high,
+    // equal highs / lows - are drawn: owner, 12-Nov-2026)
     var more = [];
     if (num(p.discountMax, 0)) more.push('the "zone at most" level');
     if (num(p.lagMin, 0)) more.push('the days after the CHoCH');

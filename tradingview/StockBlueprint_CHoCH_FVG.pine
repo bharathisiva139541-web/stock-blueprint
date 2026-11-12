@@ -3,8 +3,12 @@
 // Owner, 11-Nov-2026: "i open trading view chart and i go to that trade date. i check how our backtest enter the trade,
 // how our backtest where it is marked Choch, FVG ... it would be helpful if i got pinescript indicator".
 // The same rules as the laptop (pcbridge/ScreenerBridge/structure.py, kite_intraday.py, backtest_lab.py):
-//  - swing high / low = a candle above / below the N candles on both sides (known - and drawn - N candles later)
-//  - CHoCH = the first candle that CLOSES above the last swing high after at least M lower highs AND M lower lows
+//  - swing high / low = a candle above / below the N candles on both sides (known - and drawn - N candles later); or (the
+//    Lab's "Swings: ZigZag") the highest high since the last swing low, known when price fell x ATR(14) under it (a low
+//    mirrored); "A swing must stand out by x ATR" = a candles-each-side swing x ATR above the lowest low around it
+//  - CHoCH = the first candle that CLOSES above the last swing high (or the PROTECTED high = the swing high right before the
+//    lowest swing low since the last CHoCH) after at least M lower highs AND M lower lows ("Equal highs / lows": a high or
+//    low within x ATR of the one before is not lower)
 //  - the move = from the CHoCH's final low (the lowest low between that swing high and the CHoCH candle) to the highest high since
 //  - BOS = after the CHoCH, the first close above the highest swing high confirmed after it; a close under the final low ends the CHoCH
 //  - zones: 3-candle FVG (gap >= 0.70 x the 14-candle average range), Gap-up zones (3 - 5 %, or any size between two big green candles = inside FVG)
@@ -27,6 +31,12 @@ fibLvl = input.float(0.5, "Discount: the zone at least this far down the move (0
 discPart = input.string("Middle", "... judged on the zone's", options=["Middle", "Top", "Bottom"], group=G1)
 firstPull = input.bool(true, "First pullback only (no BOS yet)", group=G1)
 belowChoch = input.bool(false, "Zone top below the CHoCH level (strict)", group=G1)
+// how swings and the CHoCH are found (the Lab's More rules > Market structure; owner, 12-Nov-2026)
+swMode = input.string("Candles each side", "Swings", options=["Candles each side", "ZigZag (ATR)"], group=G1)
+zzAtr = input.float(2.0, "ZigZag: a turn of x ATR(14)", minval=0.5, maxval=10, step=0.5, group=G1)
+swAtr = input.float(0.0, "A swing must stand out by x ATR(14) (0 = not checked; candles-each-side swings)", minval=0, maxval=5, step=0.5, group=G1)
+chMode = input.string("The last swing high", "The CHoCH closes above", options=["The last swing high", "The protected high"], group=G1)
+eqAtr = input.float(0.0, "Equal highs / lows: within x ATR(14) (0 = exact)", minval=0, maxval=2, step=0.05, group=G1)
 G2 = "Entry, stop, target (Backtest Lab steps 6 - 7)"
 entryMode = input.string("Order at the zone top", "Buy", options=["Order at the zone top", "Touch candle's close"], group=G2)
 stopMode = input.string("Under the zone bottom", "Stop loss", options=["Under the zone bottom", "Under the touch candle's low", "Under whichever is lower", "% under the entry"], group=G2)
@@ -116,20 +126,89 @@ fmtP(float v) =>
     str.tostring(v, format.mintick)
 
 // ------------------------------------------------------------------ every bar
-bool ph = pivotHigh(pivN)
-bool pl = pivotLow(pivN)
+bool isZz = swMode == "ZigZag (ATR)"
+bool isProt = chMode == "The protected high"
+string swTxt = (isZz ? "ZigZag " + str.tostring(zzAtr) + " x ATR" : str.tostring(pivN) + " candles each side" + (swAtr > 0 ? ", standing out " + str.tostring(swAtr) + " x ATR" : "")) + (isProt ? " · protected high" : "") + (eqAtr > 0 ? " · equal within " + str.tostring(eqAtr) + " x ATR" : "")
+// ATR(14) like the laptop: the mean true range of the last 14 candles (of the ones there are at the start)
+float trNow = bar_index == 0 ? high - low : math.max(high - low, math.abs(high - close[1]), math.abs(low - close[1]))
+float trCum = ta.cum(trNow)
+float atrS = (trCum - (bar_index >= 14 ? trCum[14] : 0.0)) / math.min(bar_index + 1, 14)
+float loWin = ta.lowest(low, 2 * pivN + 1)
+float hiWin = ta.highest(high, 2 * pivN + 1)
+bool phRaw = pivotHigh(pivN)
+bool plRaw = pivotLow(pivN)
+// candles-each-side swings (not with ZigZag); "stand out by x ATR": above the lowest low / under the highest high around it
+bool ph = not isZz and phRaw and (swAtr <= 0 or high[pivN] - loWin >= swAtr * atrS[pivN])
+bool pl = not isZz and plRaw and (swAtr <= 0 or hiWin - low[pivN] >= swAtr * atrS[pivN])
+
+// the ATR ZigZag: a swing high = the highest high since the last swing low, known on the first candle whose low is zzAtr x
+// ATR under it (a swing low mirrored); then the other side starts from the lowest low / highest high after it (the latest of equals)
+var int zzD = 0
+var int zzHi = 0
+var float zzHiV = na
+var int zzLo = 0
+var float zzLoV = na
+bool zzNewHi = false
+bool zzNewLo = false
+int zzP = -1
+float zzV = na
+if isZz
+    if bar_index == 0
+        zzHiV := high
+        zzLoV := low
+    else
+        float zA = zzAtr * atrS
+        if zzD >= 0 and high > zzHiV
+            zzHi := bar_index
+            zzHiV := high
+        if zzD <= 0 and low < zzLoV
+            zzLo := bar_index
+            zzLoV := low
+        if zzD >= 0 and zzHi < bar_index and zzHiV - low >= zA and (zzD == 1 or zzHi >= zzLo)
+            zzNewHi := true
+            zzP := zzHi
+            zzV := zzHiV
+            zzD := -1
+            zzLo := bar_index
+            zzLoV := low
+            int m1 = bar_index - zzP - 1
+            if m1 > 0
+                for off = 1 to m1
+                    if low[off] < zzLoV
+                        zzLo := bar_index - off
+                        zzLoV := low[off]
+        else if zzD <= 0 and zzLo < bar_index and high - zzLoV >= zA and (zzD == -1 or zzLo > zzHi)
+            zzNewLo := true
+            zzP := zzLo
+            zzV := zzLoV
+            zzD := 1
+            zzHi := bar_index
+            zzHiV := high
+            int m2 = bar_index - zzP - 1
+            if m2 > 0
+                for off = 1 to m2
+                    if high[off] > zzHiV
+                        zzHi := bar_index - off
+                        zzHiV := high[off]
+
+// the swing confirmed on this candle (for the structure) and the swing high known now (the swing-high target and the BOS)
+bool swNew = isZz ? (zzNewHi or zzNewLo) : ph != pl
+bool swNewH = isZz ? zzNewHi : ph
+int swNewP = isZz ? zzP : bar_index - pivN
+float swNewV = isZz ? zzV : ph ? high[pivN] : low[pivN]
+bool hiNew = isZz ? zzNewHi : ph
+int hiNewP = isZz ? zzP : bar_index - pivN
+float hiNewV = isZz ? zzV : high[pivN]
 bool lockNow = isLocked(high, low)
 bool lockPrev = bar_index >= 1 and isLocked(high[1], low[1])
 bool gapAny = bar_index >= 1 and not lockNow and not lockPrev and high[1] > 0 and low > high[1]
 float gapPct = gapAny ? (low - high[1]) / high[1] * 100 : na
 float avgRange = ta.sma(high - low, 14)
 
-// the raw swing highs (for the swing-high target): pushed when confirmed, pivN candles later
-var phB = array.new_int()
+// the swing highs known so far (for the swing-high target): pushed when confirmed
 var phV = array.new_float()
-if ph
-    array.push(phB, bar_index - pivN)
-    array.push(phV, high[pivN])
+if hiNew
+    array.push(phV, hiNewV)
 
 // EMAs like the Lab (seeded with the first close) and its confluence rules on the signal candle
 var float e10 = na
@@ -161,6 +240,8 @@ bool dateOk = not useDates or (time >= fromDate and time < toDate + 86400000)
 var swP = array.new_int()
 var swV = array.new_float()
 var swH = array.new_bool()
+var swA = array.new_float()
+var int swBase = 0
 var int lastUsedHi = -1
 var int segHi = -1
 var float segMin = na
@@ -260,10 +341,10 @@ if nz > 0
                 else if targetMode == "The last swing high"
                     float above = entry + swingMinR * risk
                     float sw = na
-                    int np = array.size(phB)
+                    int np = array.size(phV)
                     if np > 0
                         for j = np - 1 to 0
-                            if array.get(phB, j) <= bar_index - pivN and array.get(phV, j) >= above
+                            if array.get(phV, j) >= above
                                 sw := array.get(phV, j)
                                 break
                     if na(sw)
@@ -332,10 +413,9 @@ if nh > 0
 
 // 3. BOS: a swing high confirmed now (after the CHoCH candle) raises the peak; a close above the peak = BOS
 if chB >= 0 and not chDead and chBos < 0 and bar_index > chB
-    int p3 = bar_index - pivN
-    if ph and p3 > chB and (na(chPeak) or high[pivN] > chPeak)
-        chPeak := high[pivN]
-        chPeakBar := p3
+    if hiNew and hiNewP > chB and (na(chPeak) or hiNewV > chPeak)
+        chPeak := hiNewV
+        chPeakBar := hiNewP
     if not na(chPeak) and close > chPeak
         chBos := bar_index
         line.new(chPeakBar, chPeak, bar_index, chPeak, color=C_STOP, width=1)
@@ -403,26 +483,42 @@ if array.size(zF) > 300
     array.shift(zGap)
     array.shift(zIn)
 
-// 6. swings (confirmed pivN candles later) and the CHoCH (a close above the last swing high)
-int p = bar_index - pivN
-if p >= pivN and ph != pl
-    float v = ph ? high[pivN] : low[pivN]
+// 6. swings (confirmed later, alternating: a second high before a low keeps the higher one) and the CHoCH (a close above the
+//    last swing high - or the protected high)
+if swNew
+    float swAt = atrS[bar_index - swNewP]
     int sz = array.size(swP)
     bool same = false
     if sz > 0
-        same := array.get(swH, sz - 1) == ph
+        same := array.get(swH, sz - 1) == swNewH
     if same
         float lastV = array.get(swV, sz - 1)
-        if (ph and v > lastV) or (not ph and v < lastV)
-            array.set(swP, sz - 1, p)
-            array.set(swV, sz - 1, v)
+        if (swNewH and swNewV > lastV) or (not swNewH and swNewV < lastV)
+            array.set(swP, sz - 1, swNewP)
+            array.set(swV, sz - 1, swNewV)
+            array.set(swA, sz - 1, swAt)
     else
-        array.push(swP, p)
-        array.push(swV, v)
-        array.push(swH, ph)
+        array.push(swP, swNewP)
+        array.push(swV, swNewV)
+        array.push(swH, swNewH)
+        array.push(swA, swAt)
 int sz6 = array.size(swP)
 if sz6 > 0
-    int q = array.get(swH, sz6 - 1) ? sz6 - 1 : sz6 - 2
+    int q = -1
+    if isProt
+        // the protected high: the swing high right before the lowest swing low since the last CHoCH (the latest of equal lows)
+        int kMin = -1
+        float vMin = na
+        if sz6 > swBase
+            for k = swBase to sz6 - 1
+                if not array.get(swH, k)
+                    float vk = array.get(swV, k)
+                    if kMin < 0 or vk <= vMin
+                        kMin := k
+                        vMin := vk
+        q := kMin >= 0 ? kMin - 1 : -1
+    else
+        q := array.get(swH, sz6 - 1) ? sz6 - 1 : sz6 - 2
     if q >= 0
         int hiBar = array.get(swP, q)
         float lvl = array.get(swV, q)
@@ -447,7 +543,7 @@ if sz6 > 0
             bool more = true
             while more
                 if kk - 2 >= 0
-                    if array.get(swV, kk) < array.get(swV, kk - 2)
+                    if array.get(swV, kk) < array.get(swV, kk - 2) - eqAtr * array.get(swA, kk)
                         dh += 1
                         kk -= 2
                     else
@@ -460,7 +556,7 @@ if sz6 > 0
             more := true
             while more
                 if kk >= 0
-                    if prevLow < array.get(swV, kk)
+                    if prevLow < array.get(swV, kk) - eqAtr * array.get(swA, kk)
                         dl += 1
                         prevLow := array.get(swV, kk)
                         kk -= 2
@@ -469,6 +565,8 @@ if sz6 > 0
                 else
                     more := false
             int d = math.min(dh, dl)
+            if d >= 1 and isProt
+                swBase := sz6
             if d >= downN
                 chB := bar_index
                 chHi := hiBar
@@ -488,7 +586,7 @@ if sz6 > 0
                     mh := na(mh) ? high[k] : math.max(mh, high[k])
                 chH := mh
                 line.new(chHi, chLvl, bar_index, chLvl, color=C_CHOCH, width=2, style=line.style_dashed)
-                label.new(bar_index, chLvl, "CHoCH (" + str.tostring(d) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 10), textcolor=color.white, size=size.small, tooltip="CHoCH " + fmtP(chLvl) + " on " + fmtT(time) + ": a close above the last swing high after " + str.tostring(d) + " lower highs and lower lows. Final low " + fmtP(chLf) + " on " + fmtT(chLiTime))
+                label.new(bar_index, chLvl, "CHoCH (" + str.tostring(d) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 10), textcolor=color.white, size=size.small, tooltip="CHoCH " + fmtP(chLvl) + " on " + fmtT(time) + ": a close above " + (isProt ? "the protected high (the swing high before the lowest low)" : "the last swing high") + " after " + str.tostring(d) + " lower highs and lower lows" + (eqAtr > 0 ? " (within " + str.tostring(eqAtr) + " x ATR = equal, not lower)" : "") + ". Final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ". Swings: " + swTxt)
                 label.new(chLi, chLf, "final low", yloc=yloc.price, style=label.style_label_up, color=color.new(C_CHOCH, 40), textcolor=color.white, size=size.tiny)
                 if fibLvl > 0
                     float fp0 = chH - fibLvl * (chH - chLf)
@@ -511,14 +609,25 @@ bool slotOk = not sp1315 or timeframe.period != "240" or (hour(time, TZ) == 13 a
 plotshape(showSpring and spring and slotOk, "Spring", shape.triangleup, location.belowbar, color.new(#26c6da, 0), size=size.tiny, text="S", textcolor=color.new(#26c6da, 0))
 plotshape(showSwings and ph, "Swing high", shape.circle, location.abovebar, color.new(C_SW, 0), offset=-pivN, size=size.tiny)
 plotshape(showSwings and pl, "Swing low", shape.circle, location.belowbar, color.new(C_SW, 0), offset=-pivN, size=size.tiny)
+// ZigZag swings: one line through them (its corners = the swings), redrawn on the last candle
+var zzPts = array.new<chart.point>()
+var polyline zzLine = na
+if isZz and showSwings and swNew
+    array.push(zzPts, chart.point.from_index(swNewP, swNewV))
+    if array.size(zzPts) > 9000
+        array.shift(zzPts)
+if isZz and showSwings and barstate.islast and array.size(zzPts) > 1
+    if not na(zzLine)
+        polyline.delete(zzLine)
+    zzLine := polyline.new(zzPts, line_color=color.new(C_SW, 10), line_width=1)
 bool marked = markOn and year(time, TZ) == year(markDate, TZ) and month(time, TZ) == month(markDate, TZ) and dayofmonth(time, TZ) == dayofmonth(markDate, TZ)
 bgcolor(marked ? color.new(#ffd600, 75) : na, title="Trade date")
 
-var table tb = table.new(position.top_right, 2, 7, bgcolor=color.new(#0f172a, 15), border_color=color.new(#334155, 0), border_width=1, frame_color=color.new(#334155, 0), frame_width=1)
+var table tb = table.new(position.top_right, 2, 8, bgcolor=color.new(#0f172a, 15), border_color=color.new(#334155, 0), border_width=1, frame_color=color.new(#334155, 0), frame_width=1)
 if showTable and barstate.islast
     string stTxt = chB < 0 ? "no CHoCH yet" : chDead ? "ended (a close under the final low)" : chBos >= 0 ? "after a BOS - no first-pullback BUY now" : "alive - waiting for price to come back to a discount zone"
     table.cell(tb, 0, 0, "Stock Blueprint", text_color=C_FIB, text_size=size.small)
-    table.cell(tb, 1, 0, "CHoCH + FVG (" + str.tostring(pivN) + " / " + str.tostring(downN) + ")", text_color=color.white, text_size=size.small)
+    table.cell(tb, 1, 0, "CHoCH + FVG (" + (isZz ? "ZigZag" : str.tostring(pivN)) + " / " + str.tostring(downN) + ")", text_color=color.white, text_size=size.small)
     table.cell(tb, 0, 1, "CHoCH", text_color=color.silver, text_size=size.small)
     table.cell(tb, 1, 1, chB < 0 ? "-" : fmtP(chLvl) + " on " + fmtT(chTime) + " (" + str.tostring(chD) + " lower highs / lows)", text_color=color.white, text_size=size.small)
     table.cell(tb, 0, 2, "Final low", text_color=color.silver, text_size=size.small)
@@ -531,3 +640,5 @@ if showTable and barstate.islast
     table.cell(tb, 1, 5, stTxt, text_color=color.white, text_size=size.small)
     table.cell(tb, 0, 6, "BUY signals", text_color=color.silver, text_size=size.small)
     table.cell(tb, 1, 6, str.tostring(nBuys) + " on this chart · last " + lastBuy, text_color=C_BUY, text_size=size.small)
+    table.cell(tb, 0, 7, "Swings", text_color=color.silver, text_size=size.small)
+    table.cell(tb, 1, 7, swTxt, text_color=color.white, text_size=size.small)

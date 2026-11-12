@@ -47,7 +47,9 @@ function readBack(src) {
     stopBuf: Number(get('stopBuf')), stopPct: Number(get('stopPct')), maxRisk: Number(get('maxRisk')), minPrice: Number(get('minPrice')),
     targetMode: get('targetMode') === 'R multiple' ? 'R' : 'swing', targetR: Number(get('targetR')), swingMinR: Number(get('swingMinR')),
     minTurnover: Number(get('minTurn')), emaSupport: Number(inv({ 0: 'Off', 10: '10 EMA', 21: '21 EMA', 50: '50 EMA', 1: 'Any of 10 / 21 / 50' }, get('emaSup'))),
-    emaTouch: Number(get('emaTouch')), above10: get('ab10') === 'true', above21: get('ab21') === 'true', above50: get('ab50') === 'true', emaStack: get('emaStack') === 'true'
+    emaTouch: Number(get('emaTouch')), above10: get('ab10') === 'true', above21: get('ab21') === 'true', above50: get('ab50') === 'true', emaStack: get('emaStack') === 'true',
+    swingMode: get('swMode') === 'ZigZag (ATR)' ? 'zigzag' : 'fractal', zzAtr: Number(get('zzAtr')), swingAtr: Number(get('swAtr')),
+    chochMode: get('chMode') === 'The protected high' ? 'protected' : 'last', eqAtr: Number(get('eqAtr'))
   };
   if (get('useDates') === 'true') { out.from = iso(get('fromDate')); out.to = iso(get('toDate')); }
   // the discount level must be one of the input's options (Pine refuses the script otherwise)
@@ -61,12 +63,14 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   const w = {}; new Function('window', src)(w);
   const base = { structure: 'only', pivotN: 5, downN: 3, zoneWhen: 'both', chochAge: 0, discount: 0.5, discPart: 'mid', firstPull: true, belowChoch: false,
     entry: 'zone', stop: 'zone', stopBuf: 0.5, stopPct: 5, maxRisk: 15, minPrice: 0, targetMode: 'R', targetR: 2, swingMinR: 1, minTurnover: 0,
-    emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false };
+    emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false,
+    swingMode: 'fractal', zzAtr: 2, swingAtr: 0, chochMode: 'last', eqAtr: 0 };
   const sets = [base,
     Object.assign({}, base, { pivotN: 8, downN: 4, discount: 0.382, targetR: 2.5, from: '2020-01-01', to: '2026-11-11' }),       // the owner's screenshot
     Object.assign({}, base, { structure: 'off', zoneWhen: 'leg', chochAge: 40, discount: 0.55, discPart: 'top', firstPull: false, belowChoch: true, entry: 'close',
-      stop: 'pct', stopPct: 4, maxRisk: 0, minPrice: 50, targetMode: 'swing', swingMinR: 1.5, minTurnover: 120, emaSupport: 1, emaTouch: 2, above50: true, emaStack: true }),
-    Object.assign({}, base, { entry: 'close', stop: 'lower', stopBuf: 1.25, emaSupport: 21, above10: true, above21: true, from: '2015-03-09' })];
+      stop: 'pct', stopPct: 4, maxRisk: 0, minPrice: 50, targetMode: 'swing', swingMinR: 1.5, minTurnover: 120, emaSupport: 1, emaTouch: 2, above50: true, emaStack: true,
+      swingMode: 'zigzag', zzAtr: 1.5, chochMode: 'protected', eqAtr: 0.25 }),
+    Object.assign({}, base, { entry: 'close', stop: 'lower', stopBuf: 1.25, emaSupport: 21, above10: true, above21: true, from: '2015-03-09', swingAtr: 1, eqAtr: 0.1 })];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pine-'));
   const files = sets.map((p, k) => {
     const code = PINE.build(p, { src: w.SB_PINE_SRC, name: 'Test "' + k + '"\nidea', plain: 'Rules in words.\nNext line', when: '11 Nov 2026' });
@@ -91,8 +95,9 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   assert.match(n.join(' '), /market condition \(NIFTY 50\)/);
   assert.match(n.join(' '), /Spring shape rules/);
   assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).length, 2, 'the timeframe + "only entry / stop / target"');
-  // the structure engine options / filters of 12-Nov-2026 are said, not drawn
-  const n2 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', chochMode: 'protected', lagMin: 10, wkAbove: 21, sweep: true }).join(' ');
-  assert.match(n2, /not ZigZag swings, the protected-high CHoCH/);
+  // the filters of 12-Nov-2026 are said, not drawn; the structure options are drawn (owner, 12-Nov-2026), so not listed
+  const n2 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', swingAtr: 1, chochMode: 'protected', eqAtr: 0.25, lagMin: 10, wkAbove: 21, sweep: true }).join(' ');
+  assert.doesNotMatch(n2, /ZigZag|protected|equal highs|stand out/);
   assert.match(n2, /Not drawn \(check them on the chart yourself\): the days after the CHoCH, the sweep of the low, the weekly trend\./);
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', chochMode: 'protected', eqAtr: 0.5 }).length, 2, 'nothing more to say');
 });

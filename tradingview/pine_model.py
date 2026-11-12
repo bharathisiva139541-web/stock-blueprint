@@ -13,7 +13,10 @@ form - web/lib/pine.js).
 The rules come as the Lab's own params (backtest_lab.clean_params): structure ('only' = the market-structure rules),
 pivotN, downN, zoneWhen, chochAge, discount, discPart, firstPull, belowChoch, entry ('zone' / 'close'), stop, stopBuf,
 stopPct, maxRisk, minPrice, targetMode, targetR, swingMinR, from / to, minTurnover, emaSupport, emaTouch, above10 / 21 / 50,
-emaStack.
+emaStack - and (owner, 12-Nov-2026: "புதிய structure options-ஐயும் (protected, equal highs, ZigZag) TradingView script வரையும்படி
+மாற்றுவது") the structure engine's options of structure.py: swingMode 'zigzag' + zzAtr (ATR ZigZag swings, known when price
+turned zzAtr x ATR), swingAtr (a candles-each-side swing must stand out by x ATR), chochMode 'protected' (the CHoCH breaks the
+swing high before the lowest swing low since the last CHoCH), eqAtr (highs / lows within x ATR of the one before are not lower).
 """
 from datetime import date
 
@@ -36,9 +39,17 @@ class Model:
         self.P = P
         self.n, self.down_n = P['pivotN'], P['downN']
         self.struct_only = P['structure'] == 'only'
+        self.zz = P.get('swingMode') == 'zigzag'
+        self.zz_k = float(P.get('zzAtr') or 2.0)
+        self.prom = 0.0 if self.zz else float(P.get('swingAtr') or 0)
+        self.prot = P.get('chochMode') == 'protected'
+        self.eq = float(P.get('eqAtr') or 0)
         self.o, self.h, self.l, self.c, self.v, self.day = [], [], [], [], [], []
-        self.swP, self.swV, self.swH = [], [], []
-        self.phB, self.phV = [], []                     # raw swing highs (the swing-high target)
+        self.tr, self.tr_tot, self.atr = [], 0.0, []    # ATR(14) like structure.atr_series
+        self.zd, self.zhi, self.zlo = 0, 0, 0           # the ZigZag's state (structure.zigzag, bar by bar)
+        self.swP, self.swV, self.swH, self.swA = [], [], [], []   # + the ATR at each swing's candle (equal highs / lows)
+        self.sw_base = 0                                # protected: the swings after the last CHoCH
+        self.phV = []                                   # the swing highs known so far (the swing-high target)
         self.last_used_hi = -1
         self.seg_hi, self.seg_min, self.seg_min_bar = -1, None, -1
         self.chB = -1                                   # the current CHoCH (the latest with d >= down_n)
@@ -94,15 +105,70 @@ class Model:
         a = max(0, i + 1 - 20)
         return round(sum(self.cv[a:i + 1]) / (i + 1 - a) / 1e5, 1)
 
+    def _atr_bar(self, i):
+        H, L, C = self.h, self.l, self.c
+        t = H[i] - L[i] if i == 0 else max(H[i] - L[i], abs(H[i] - C[i - 1]), abs(L[i] - C[i - 1]))
+        self.tr.append(t)
+        self.tr_tot += t
+        if i >= 14:
+            self.tr_tot -= self.tr[i - 14]
+        self.atr.append(self.tr_tot / min(i + 1, 14))
+
+    def _zigzag(self, i):
+        """structure.zigzag on bar i -> (pivot candle, is_high) when a swing is confirmed now, else None."""
+        H, L = self.h, self.l
+        if i == 0:
+            return None
+        a = self.zz_k * self.atr[i]
+        if self.zd >= 0 and H[i] > H[self.zhi]:
+            self.zhi = i
+        if self.zd <= 0 and L[i] < L[self.zlo]:
+            self.zlo = i
+        if self.zd >= 0 and self.zhi < i and H[self.zhi] - L[i] >= a and (self.zd == 1 or self.zhi >= self.zlo):
+            self.zd = -1
+            lo = i                                       # the lowest low after the high (the latest of equal ones)
+            for x in range(i - 1, self.zhi, -1):
+                if L[x] < L[lo]:
+                    lo = x
+            self.zlo = lo
+            return self.zhi, True
+        if self.zd <= 0 and self.zlo < i and H[i] - L[self.zlo] >= a and (self.zd == -1 or self.zlo > self.zhi):
+            self.zd = 1
+            hi = i
+            for x in range(i - 1, self.zlo, -1):
+                if H[x] > H[hi]:
+                    hi = x
+            self.zhi = hi
+            return self.zlo, False
+        return None
+
     def bar(self, o, h, l, c, v=0, day=None):
         self.o.append(o); self.h.append(h); self.l.append(l); self.c.append(c); self.v.append(v); self.day.append(day)
         self.cv.append(c * v)
         i = len(self.c) - 1
         H, L, C, O = self.h, self.l, self.c, self.o
         n, P = self.n, self.P
-        ph, pl = self._pivot_high(i), self._pivot_low(i)
-        if ph:
-            self.phB.append(i - n); self.phV.append(H[i - n])
+        self._atr_bar(i)
+        # the swings: n candles each side (+ standing out by x ATR) or the ATR ZigZag - `new_sw` = (pivot, is_high) confirmed
+        # now; `new_hi` = a swing high known now (the swing-high target and the BOS)
+        new_sw = new_hi = None
+        ph = pl = False
+        if self.zz:
+            new_sw = self._zigzag(i)
+            if new_sw and new_sw[1]:
+                new_hi = new_sw[0]
+        else:
+            ph, pl = self._pivot_high(i), self._pivot_low(i)
+            if self.prom and ph and not H[i - n] - min(L[i - 2 * n:i + 1]) >= self.prom * self.atr[i - n]:
+                ph = False
+            if self.prom and pl and not max(H[i - 2 * n:i + 1]) - L[i - n] >= self.prom * self.atr[i - n]:
+                pl = False
+            if ph != pl:
+                new_sw = (i - n, ph)
+            if ph:
+                new_hi = i - n
+        if new_hi is not None:
+            self.phV.append(H[new_hi])
         for k in (10, 21, 50):
             self.e[k] = c if self.e[k] is None else self.e[k] + 2.0 / (k + 1) * (c - self.e[k])
         ema_ok = self._ema_ok(i, h, l, c)
@@ -146,8 +212,8 @@ class Model:
 
         # 3. BOS: a pivot high confirmed now (after the CHoCH candle) raises the peak; a close above the peak = BOS
         if self.chB >= 0 and not self.chDead and self.chBos < 0 and i > self.chB:
-            p = i - n
-            if ph and p > self.chB and (self.chPeak is None or H[p] > self.chPeak):
+            p = new_hi
+            if p is not None and p > self.chB and (self.chPeak is None or H[p] > self.chPeak):
                 self.chPeak = H[p]
             if self.chPeak is not None and c > self.chPeak:
                 self.chBos = i
@@ -178,21 +244,27 @@ class Model:
             for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn):
                 a.pop(0)
 
-        # 6. swings (confirmed n bars later, alternating) and the CHoCH (a close above the last swing high)
-        p = i - n
-        if p >= n and ph != pl:
-            v_ = H[p] if ph else L[p]
-            if self.swP and self.swH[-1] == ph:
-                if (ph and v_ > self.swV[-1]) or (not ph and v_ < self.swV[-1]):
-                    self.swP[-1], self.swV[-1] = p, v_
+        # 6. swings (confirmed later, alternating) and the CHoCH (a close above the last swing high - or the protected one)
+        if new_sw:
+            p, is_h = new_sw
+            v_ = H[p] if is_h else L[p]
+            if self.swP and self.swH[-1] == is_h:
+                if (is_h and v_ > self.swV[-1]) or (not is_h and v_ < self.swV[-1]):
+                    self.swP[-1], self.swV[-1], self.swA[-1] = p, v_, self.atr[p]
             else:
-                self.swP.append(p); self.swV.append(v_); self.swH.append(ph)
+                self.swP.append(p); self.swV.append(v_); self.swH.append(is_h); self.swA.append(self.atr[p])
         if self.swP:
-            q = len(self.swP) - 1 if self.swH[-1] else len(self.swP) - 2
+            if self.prot:                 # the swing high right before the lowest swing low since the last CHoCH (the latest of equal ones)
+                kmin = -1
+                for k in range(self.sw_base, len(self.swP)):
+                    if not self.swH[k] and (kmin < 0 or self.swV[k] <= self.swV[kmin]):
+                        kmin = k
+                q = kmin - 1 if kmin >= 0 else -1
+            else:
+                q = len(self.swP) - 1 if self.swH[-1] else len(self.swP) - 2
             if q >= 0:
                 hi_, lvl = self.swP[q], self.swV[q]
                 if hi_ != self.seg_hi:
-                    assert i - hi_ == n, 'the swing high changes only when one is confirmed (n bars back)'
                     self.seg_hi, self.seg_min, self.seg_min_bar = hi_, None, -1
                     for k in range(hi_ + 1, i + 1):          # Pine: the n bars, oldest first
                         if self.seg_min is None or L[k] < self.seg_min:
@@ -201,18 +273,21 @@ class Model:
                     self.seg_min, self.seg_min_bar = l, i
                 if c > lvl and hi_ > self.last_used_hi:
                     self.last_used_hi = hi_
+                    eq, A = self.eq, self.swA
                     dh, k = 0, q
-                    while k - 2 >= 0 and self.swV[k] < self.swV[k - 2]:
+                    while k - 2 >= 0 and self.swV[k] < self.swV[k - 2] - eq * A[k]:
                         dh += 1
                         k -= 2
                     dl, prev, k = 0, self.seg_min, q - 1
-                    while k >= 0 and prev < self.swV[k]:
+                    while k >= 0 and prev < self.swV[k] - eq * A[k]:
                         dl += 1
                         prev = self.swV[k]
                         k -= 2
                     d = min(dh, dl)
                     if d >= 1:
                         self.events.append([i, hi_, lvl, self.seg_min_bar, self.seg_min, d])
+                        if self.prot:
+                            self.sw_base = len(self.swP)
                     if d >= self.down_n:
                         self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi_, lvl, self.seg_min_bar, self.seg_min, d
                         self.chDead, self.chBos, self.chPeak = False, -1, None
@@ -273,7 +348,7 @@ class Model:
         target = entry + P['targetR'] * risk
         if P['targetMode'] == 'swing':
             above = entry + P['swingMinR'] * risk
-            sw = next((self.phV[j] for j in range(len(self.phB) - 1, -1, -1) if self.phB[j] <= i - self.n and self.phV[j] >= above), None)
+            sw = next((self.phV[j] for j in range(len(self.phV) - 1, -1, -1) if self.phV[j] >= above), None)
             if sw is None:
                 return None
             target = sw

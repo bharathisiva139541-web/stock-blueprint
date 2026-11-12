@@ -3,7 +3,9 @@
 (tradingview/pine_model.py, the .pine's steps in Python) finds exactly the CHoCH events of structure.py and the TRADES the
 Backtest Lab's run_job takes with group 'First touch of a zone' (signal candle, entry, stop, target) for the same rules -
 market structure only / off, discount levels and zone parts, zone-top / close entry, every stop kind, max risk, min price,
-R / swing-high target, dates, turnover, EMA confluence - on random charts and a made one; the .pine's defaults = the Lab's;
+R / swing-high target, dates, turnover, EMA confluence, the structure engine's options (ZigZag swings, swings standing out by
+x ATR, the protected-high CHoCH, equal highs / lows - owner, 12-Nov-2026) - on random charts and a made one; the .pine's
+defaults = the Lab's;
 Pine v5 layout checks. `--lint FILE...` runs only the layout checks (tests/tradingview-pine.test.js lints the scripts the
 Lab page writes - web/lib/pine.js).
 Owner, 11-Nov-2026: "i open trading view chart and i go to that trade date. i check how our backtest enter the trade ...
@@ -134,23 +136,46 @@ SETS = [SMC,
         dict(SMC, pivotN=3, downN=1, emaSupport=1, emaTouch=2, above50=True, minTurnover=46),
         dict(SMC, pivotN=2, downN=1, emaSupport=21, emaStack=True, entry='close'),
         dict(SMC, structure='off', maxRisk=8),
-        dict(SMC, structure='off', entry='close', stop='lower', targetMode='swing', swingMinR=1, maxRisk=0)]
+        dict(SMC, structure='off', entry='close', stop='lower', targetMode='swing', swingMinR=1, maxRisk=0),
+        # the structure engine's options (owner, 12-Nov-2026: "புதிய structure options-ஐயும் (protected, equal highs, ZigZag)
+        # TradingView script வரையும்படி மாற்றுவது")
+        dict(SMC, swingMode='zigzag', zzAtr=2, downN=1),
+        dict(SMC, swingMode='zigzag', zzAtr=1, downN=2, discount=0.382, targetMode='swing', swingMinR=1),
+        dict(SMC, pivotN=3, downN=1, swingAtr=1),
+        dict(SMC, pivotN=2, downN=2, swingAtr=0.5, targetMode='swing', swingMinR=1.5, firstPull=False, discount=0),
+        dict(SMC, pivotN=3, downN=1, chochMode='protected'),
+        dict(SMC, pivotN=2, downN=1, chochMode='protected', eqAtr=0.25, discount=0.618),
+        dict(SMC, pivotN=3, downN=1, eqAtr=0.5),
+        dict(SMC, swingMode='zigzag', zzAtr=1.5, downN=1, chochMode='protected', eqAtr=0.1, entry='close', stop='lower')]
 counts = []
 for params in SETS:
     lab, mod = lab_trades(params), model_trades(charts, params)
     assert mod == lab, (params, [x for x in mod if x not in lab][:3], [x for x in lab if x not in mod][:3])
     counts.append(len(lab))
-assert min(counts) >= 3 and sum(counts) > 600, counts
-# the CHoCH events of every chart = structure.py's
+assert min(counts) >= 3 and sum(counts) > 900, counts
+# the CHoCH events of every chart = structure.py's - the baseline and every structure option
+OPTS = [{}, {'swingMode': 'zigzag', 'zzAtr': 2}, {'swingMode': 'zigzag', 'zzAtr': 1}, {'swingMode': 'zigzag', 'zzAtr': 3, 'chochMode': 'protected'},
+        {'swingAtr': 1}, {'swingAtr': 0.5, 'eqAtr': 0.25}, {'chochMode': 'protected'}, {'chochMode': 'protected', 'eqAtr': 0.5}, {'eqAtr': 0.1},
+        {'swingMode': 'zigzag', 'zzAtr': 1.5, 'eqAtr': 0.25, 'swingAtr': 2}]
+seen = {}
 for sym, rows in charts.items():
+    hh, ll, cc = [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows]
     for n in (2, 3, 5):
-        m = model(rows, L.clean_params({'pivotN': n, 'structure': 'only'}))
-        assert m.events == S.choch_events([r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], n), (sym, n)
-        st = S.Structure([r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], n)
-        cc = [r[3] for r in rows]
-        for b, x in m.bos.items():                 # a BOS the model saw = the laptop's (the CHoCH current then)
-            k = next(k for k, e in enumerate(st.events) if e[0] == b)
-            assert st.bos_before(k, cc, len(cc)) == x, (sym, n, b, x)
+        for opt in OPTS:
+            P = L.clean_params(dict(opt, pivotN=n, downN=1, structure='only'))
+            so = L.struct_opts(P)
+            m = model(rows, P)
+            assert m.events == S.choch_events(hh, ll, cc, n, opts=so or None), (sym, n, opt)
+            seen[str(opt)] = seen.get(str(opt), 0) + len(m.events)
+            st = S.Structure(hh, ll, cc, n, so or None)
+            assert m.phV == [hh[p] for p in st.ph], (sym, n, opt)        # the swing highs the target / BOS use
+            for b, x in m.bos.items():                 # a BOS the model saw = the laptop's (the CHoCH current then)
+                k = next(k for k, e in enumerate(st.events) if e[0] == b)
+                assert st.bos_before(k, cc, len(cc)) == x, (sym, n, opt, b, x)
+assert min(seen.values()) > 50, seen
+# the options change what is found (not the baseline under another name)
+base = seen[str({})]
+assert all(v != base for k, v in seen.items() if k != str({})), seen
 
 
 # ------------------------------------------------------------------ 2. the owner's SUPREMEIND case (made chart): the premium FVG's
@@ -230,5 +255,14 @@ assert float(default('stopPct')) == D['stopPct'] and float(default('maxRisk')) =
 assert float(default('swingMinR')) == D['swingMinR'] and int(default('chochAge')) == D['chochAge'] and float(default('emaTouch')) == D['emaTouch']
 assert default('structOnly') == 'true' and default('entryMode') == 'Order at the zone top' and default('stopMode') == 'Under the zone bottom'
 assert default('targetMode') == 'R multiple' and default('emaSup') == 'Off' and float(default('minTurn')) == D['minTurnover'] == 0
+# the structure options (owner, 12-Nov-2026): the Lab's defaults and limits, and the script's own steps = the model's
+assert default('swMode') == 'Candles each side' and D['swingMode'] == 'fractal' and default('chMode') == 'The last swing high' and D['chochMode'] == 'last'
+assert float(default('zzAtr')) == D['zzAtr'] and float(default('swAtr')) == D['swingAtr'] == 0 and float(default('eqAtr')) == D['eqAtr'] == 0
+for name, key in (('zzAtr', 'zzAtr'), ('swAtr', 'swingAtr'), ('eqAtr', 'eqAtr')):
+    mm = re.search(r'^%s = input\.float\([^\n]*minval=([\d.]+), maxval=([\d.]+)' % name, src, re.M)
+    assert mm and (float(mm.group(1)), float(mm.group(2))) == L.LIMITS[key][:2], (name, L.LIMITS[key])
+assert src.count('- eqAtr * array.get(swA, kk)') == 2 and 'swBase := sz6' in src and 'float zA = zzAtr * atrS' in src
+assert 'high[pivN] - loWin >= swAtr * atrS[pivN]' in src and 'hiWin - low[pivN] >= swAtr * atrS[pivN]' in src
+assert 'if hiNew and hiNewP > chB' in src and 'if array.get(phV, j) >= above' in src
 lint(os.path.join(ROOT, 'tradingview', 'StockBlueprint_CHoCH_FVG.pine'))
 print('OK')
