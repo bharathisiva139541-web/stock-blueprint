@@ -543,7 +543,7 @@ for seed in range(6):
 
 # the cache now has the FVG First Touch / Confirmed signals (the same as the sheet's / 4H scan's rule) + the zone's candle
 meta, d = L.load_meta()
-assert meta['v'] == L.CACHE_VERSION == 3
+assert meta['v'] == L.CACHE_VERSION == 4
 with open(os.path.join(d, 'D.bin'), 'rb') as f:
     off, cnt = meta['index']['D']['AAA']
     csa = L.Candles(f, off, cnt)
@@ -1095,5 +1095,106 @@ sup15 = [r for r in rr['trades'] if r[cols15.index('sym')] == 'SUP' and r[cols15
 assert (sup15[cols15.index('depth')], sup15[cols15.index('lhll')]) == (89, 3) and sup15[cols15.index('lag')] > 0, sup15
 off15 = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0})
 assert not {b['key'] for b in off15['breakdowns']} & {'depth', 'lhll', 'lag'} and off15['split'] is None, 'no structure: those need it'
+
+# ------------------------------------------------------------------ 16. the rest of the review's experiments (owner, 12-Nov-2026:
+# "Finish all the remaining updates") - each one an option next to the frozen baseline
+# E5 protected CHoCH: after the final low a minor high / higher low; the baseline sees no lower low there (no CHoCH), the
+# protected high (the lower high before the lowest low) is broken = a CHoCH
+pp = [100]
+for top, bot in ((100, 90), (95, 85), (90, 80), (85, 75)):
+    pp += (leg(pp[-1], top) if pp[-1] != top else []) + leg(top, bot)
+pp += leg(75, 79, 4) + leg(79, 76, 4) + leg(76, 92, 8) + leg(92, 86, 4) + leg(86, 100, 6)
+pc_ = pp[1:]
+ph_ = [max(a, b) + 0.2 for a, b in zip(pp[:-1], pc_)]
+pl_ = [min(a, b) - 0.2 for a, b in zip(pp[:-1], pc_)]
+assert S.Structure(ph_, pl_, pc_, 3).events == [], 'the baseline: no CHoCH on this chart'
+prot = S.Structure(ph_, pl_, pc_, 3, {'choch': 'protected'})
+assert [(round(e[2], 1), round(e[4], 1), e[5]) for e in prot.events] == [(85.2, 74.8, 2)] and prot.sweep == [False], prot.events
+li_ = prot.events[0][3]
+swc = list(pc_)
+swc[li_] = 80.5                                   # the final low candle closes back above the swing low before it (79.8)
+assert S.Structure(ph_, pl_, swc, 3, {'choch': 'protected'}).sweep == [True], 'a sweep of that low'
+# E5 equal highs: 94.9 after 95 is not a lower high with a 0.3 x ATR tolerance
+pq = [100]
+for top, bot in ((100, 90), (95, 85), (94.9, 80), (85, 75)):
+    pq += (leg(pq[-1], top) if pq[-1] != top else []) + leg(top, bot)
+pq += leg(75, 96, 8)
+qc = pq[1:]
+qh = [max(a, b) + 0.2 for a, b in zip(pq[:-1], qc)]
+ql = [min(a, b) - 0.2 for a, b in zip(pq[:-1], qc)]
+assert [e[5] for e in S.Structure(qh, ql, qc, 3).events] == [2] and [e[5] for e in S.Structure(qh, ql, qc, 3, {'eq': 0.3}).events] == [1]
+# E3 ZigZag + E2 prominence on random charts: alternating swings, each known only after the turn, nothing looks ahead
+for seed in range(5):
+    w = walk(500 + seed, 900)
+    hh, ll, cc = [r[2] for r in w], [r[3] for r in w], [r[4] for r in w]
+    atr_ = S.atr_series(hh, ll, cc)
+    zz = S.zigzag(hh, ll, atr_, 2.0)
+    assert zz and all(zz[k][2] != zz[k + 1][2] for k in range(len(zz) - 1)), 'highs and lows alternate'
+    for p_, j_, is_h in zz:
+        assert j_ > p_ and (hh[p_] - ll[j_] >= 2 * atr_[j_] - 1e-9 if is_h else hh[j_] - ll[p_] >= 2 * atr_[j_] - 1e-9), (p_, j_)
+    php, plp = S.pivots(hh, ll, 5, 3.0, atr_)
+    ph0, pl0 = S.pivots(hh, ll, 5)
+    assert set(php) <= set(ph0) and set(plp) <= set(pl0) and len(php) + len(plp) < len(ph0) + len(pl0)
+    assert all(hh[p_] - min(ll[p_ - 5:p_ + 6]) >= 3 * atr_[p_] for p_ in php)
+    for o in ({'swing': 'zigzag', 'zz': 2.0}, {'prom': 1.0}, {'choch': 'protected'}, {'eq': 0.25}):
+        full = S.Structure(hh, ll, cc, 5, o)
+        for cut in (300, 640):
+            assert S.Structure(hh[:cut], ll[:cut], cc[:cut], 5, o).events == [e for e in full.events if e[0] < cut], (seed, o, cut)
+    stz = S.Structure(hh, ll, cc, 5, {'swing': 'zigzag', 'zz': 2.0})
+    assert list(stz.ph) == [p_ for p_, j_, h_ in zz if h_] and list(stz.phc) == [j_ for p_, j_, h_ in zz if h_]
+    assert S.last_swing_low(stz, len(cc) - 1, 0) == stz.plv[-1] and S.last_swing_low(stz, len(cc) - 1, len(cc)) is None
+# the Lab: the new rules from the page, checked; struct_opts only for the ones away from the baseline
+q16 = P(swingMode='zigzag', zzAtr=99, swingAtr=-1, chochMode='protected', eqAtr=0.2, sweep=True, discountMax=0.9, lagMin=5.6, dispAtr=1,
+        dispVol=2, whereIn='tm', wkAbove=21, trail='atr', atrK=2, valFrom='2015-01-01', testFrom='2020-01-01', rollYears=2)
+assert (q16['zzAtr'], q16['swingAtr'], q16['lagMin'], q16['whereIn'], q16['wkAbove'], q16['trail'], q16['valFrom']) == (10, 0, 6, 'tm', 21, 'atr', '2015-01-01')
+assert L.struct_opts(q16) == {'swing': 'zigzag', 'zz': 10, 'choch': 'protected', 'eq': 0.2} and L.struct_opts(P()) == {}
+assert P(valFrom='2021-01-01', testFrom='2020-01-01')['valFrom'] == '' and P(valFrom='2015-01-01')['valFrom'] == '', 'needs a later test part'
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+meta16, d16 = L.load_meta()
+with open(os.path.join(d16, 'D.bin'), 'rb') as f:
+    o16, n16 = meta16['index']['D']['AAA']
+    v16 = list(L.Candles(f, o16, n16).v)
+assert v16 == [float(r[5]) for r in walk(3, 900)][:n16] and max(v16) > 0, 'the cache keeps the volume (version 4)'
+base16 = {'tf': 'D', 'group': 'touch', 'maxRisk': 0}
+b0 = L.run_job(base16)
+# E9: how deep the touch candle went - with the close entry only the top half; with the zone-top order the rule is not used
+w16 = L.run_job(dict(base16, whereIn='t'))
+wi16 = w16['tradeCols'].index('where')
+assert w16['skipped']['where'] > 0 and {r[wi16] for r in w16['trades']} <= {'top', ''} and w16['tradesTotal'] < b0['tradesTotal']
+assert L.run_job(dict(base16, whereIn='t', entry='zone'))['skipped']['where'] == 0
+# E11: the stock's last finished weekly close above its 21-week EMA
+k16 = L.run_job(dict(base16, wkAbove=21))
+assert k16['skipped']['wk'] > 0 and k16['tradesTotal'] + k16['skipped']['wk'] >= b0['tradesTotal'] - 5 and k16['tradesTotal'] < b0['tradesTotal']
+assert L.run_job(dict(base16, tf='W', wkAbove=21))['skipped']['wk'] == 0, 'a weekly run: not used'
+# the structure rules (market structure 'only'): each one leaves signals out with its own reason
+s16 = dict(base16, structure='only', discount=0)
+for extra, why in (({'dispAtr': 5}, 'disp'), ({'dispVol': 9}, 'vol'), ({'lagMin': 2000}, 'early'), ({'discountMax': 0.05}, 'deep'),
+                   ({'sweep': True}, 'sweep')):
+    rr16 = L.run_job(dict(s16, **extra))
+    assert rr16['structWhy'].get(why, 0) > 0, (extra, rr16['structWhy'])
+# the structure engines run and label every trade (zigzag / prominence / protected / equal highs)
+for extra in ({'swingMode': 'zigzag', 'zzAtr': 2}, {'swingAtr': 1}, {'chochMode': 'protected'}, {'eqAtr': 0.3}):
+    rr16 = L.run_job(dict(base16, structure='show', discount=0.5, **extra))
+    assert rr16['stages'] and all(r[rr16['tradeCols'].index('stage')] for r in rr16['trades']), extra
+# E15 / E16: the stop trails under the highest high - 2 x ATR, or under the newest swing low since the signal
+for tr in ('atr', 'swing'):
+    rr16 = L.run_job(dict(base16, trail=tr, atrK=2, targetR=1, structure='show'))
+    ci = rr16['tradeCols']
+    rows16 = [dict(zip(ci, r)) for r in rr16['trades']]
+    assert any(r['reason'] == 'trail' for r in rows16), tr
+    assert all(r['exit'] >= r['stop'] - 0.01 or r['reason'] in ('stop', 'gap') for r in rows16)
+assert L.run_job(dict(base16, trail='atr', targetR=1))['reasons'] != L.run_job(dict(base16, trail='swing', targetR=1))['reasons']
+# validation: development / validation / test, and every 2-year block
+v16r = L.run_job(dict(base16, structure='show', discount=0.5, valFrom='2010-12-01', testFrom='2011-06-01', rollYears=1))
+assert v16r['split']['val'] == '2010-12-01' and {'dev', 'valid', 'test'} <= set(v16r['split']), v16r['split']
+assert sum(v16r['split'][k].get('trades', 0) for k in ('dev', 'valid', 'test')) == v16r['stats']['trades']
+assert any('val' in r for b_ in v16r['breakdowns'] for r in b_['rows'])
+assert v16r['rolling'] and [x['from'] for x in v16r['rolling']] == sorted(x['from'] for x in v16r['rolling']) and \
+    sum(x['trades'] for x in v16r['rolling']) == v16r['stats']['trades']
+assert L.run_job(dict(base16, rollYears=0))['rolling'] is None
+assert 'before 2011-06-01' in L.headline(v16r)
+# the charts PDF draws the run's own swings (a ZigZag run here)
+zz16 = L.run_job(dict(base16, structure='show', swingMode='zigzag'), charts=L.CHARTS_DIR, name='zigzag')
+assert zz16['pdf'].get('file') and not zz16['pdf'].get('error'), zz16['pdf']
 
 print('OK')

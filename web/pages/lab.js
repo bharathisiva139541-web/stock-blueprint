@@ -37,8 +37,32 @@
     // move (final low -> its high) - off by default
     discount: 0, discPart: 'mid',
     // development / test split (owner, 12-Nov-2026, after a ChatGPT review of his run: "yes do it") - off by default
-    testFrom: ''
+    testFrom: '',
+    // the rest of the review's experiments (owner, 12-Nov-2026: "Finish all the remaining updates") - all off by default (= the
+    // frozen baseline): the structure engine (E2 / E3 / E5), more filters (E6-E11), the ATR / swing-low trails (E15 / E16),
+    // a validation part + the "steady over time?" blocks
+    swingMode: 'fractal', zzAtr: 2, swingAtr: 0, chochMode: 'last', eqAtr: 0, sweep: false,
+    discountMax: 0, lagMin: 0, dispAtr: 0, dispVol: 0, whereIn: 'any', wkAbove: 0, atrK: 3, valFrom: '', rollYears: 3
   };
+  // ready setups for the "Start here" cards (owner, 12-Nov-2026: "make bactest lab more user-friendly not to be complex")
+  var QUICK = [
+    { id: 'smc', name: 'My CHoCH + FVG setup', why: 'After lower highs and lower lows a candle closes above the last lower high (CHoCH); the first time price comes back to a zone in the discount half of that move = buy at the zone top, stop under the zone.' },
+    { id: 'fvg', name: 'FVG + Spring', why: 'A Spring candle on a 3-candle FVG zone (anywhere on it or under its bottom); buy at the Spring candle\'s close, stop under the zone.',
+      set: { group: 'fvg', structure: 'off', entry: 'close', stop: 'zone', discount: 0 } },
+    { id: 'gap', name: 'Gap-up FVG + Spring', why: 'The same on a Gap-up zone (a gap between two candles); buy at the Spring candle\'s close, stop under the zone.',
+      set: { group: 'gap', structure: 'off', entry: 'close', stop: 'zone', discount: 0 } }
+  ];
+  // the folded "More rules" sections: the keys each one holds (its header counts the ones you changed)
+  var SECTIONS = [
+    ['structure', 'Market structure - CHoCH / BOS', ['structure', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
+      'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep']],
+    ['shape', 'Spring candle shape', null],
+    ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
+    ['entry', 'Entry details', ['entry', 'maxRisk', 'whereIn', 'from', 'to', 'minPrice', 'minTurnover', 'maxTouch']],
+    ['exit', 'Exit details', ['targetMode', 'swingMinR', 'breakeven', 'maxDays', 'cost']],
+    ['money', 'Money details', ['maxPosPct', 'maxOpen', 'compound']],
+    ['check', 'Checking the result - validation part, steady over time', ['valFrom', 'rollYears']]
+  ];
   // the owner's CHoCH + FVG setup in one click (his answers of 10-Nov-2026, and 11-Nov-2026: the discount half of the move
   // instead of "below the CHoCH level", the first return to that zone = the signal, a buy order at the zone top)
   var SMC = { group: 'touch', structure: 'only', pivotN: 5, downN: 3, zoneWhen: 'both', belowChoch: false, discount: 0.5, discPart: 'mid',
@@ -75,7 +99,19 @@
     chochAge: [[0, 'Any time after it'], [10, 'Within 10 candles'], [20, 'Within 20 candles'], [40, 'Within 40 candles'], [60, 'Within 60 candles'], [120, 'Within 120 candles']],
     targetMode: [['R', 'R multiple (times the risk)'], ['swing', 'The last swing high']],
     discount: [[0, 'Off - not checked'], [0.382, '38.2% down the move'], [0.5, 'Half way down - the 50% line (discount)'], [0.618, '61.8% down the move'],
-      [0.705, '70.5% down the move'], [0.786, '78.6% down the move']],
+      [0.65, '65% down the move'], [0.7, '70% down the move'], [0.705, '70.5% down the move'], [0.75, '75% down the move'], [0.786, '78.6% down the move']],
+    discountMax: [[0, 'No limit'], [0.786, '78.6% down'], [0.9, '90% down'], [1, '100% - down to the final low']],
+    swingMode: [['fractal', 'Candles on each side (the usual)'], ['zigzag', 'ZigZag - price turned by x ATR']],
+    zzAtr: [[1, '1 x ATR'], [1.5, '1.5 x ATR'], [2, '2 x ATR'], [3, '3 x ATR'], [4, '4 x ATR']],
+    swingAtr: [[0, 'Not checked'], [0.5, 'At least 0.5 x ATR'], [1, 'At least 1 x ATR'], [1.5, 'At least 1.5 x ATR'], [2, 'At least 2 x ATR'], [3, 'At least 3 x ATR']],
+    chochMode: [['last', 'Above the last swing high (the usual)'], ['protected', 'Above the protected high (the one before the lowest low)']],
+    eqAtr: [[0, 'Exact (the usual)'], [0.1, 'Within 0.1 x ATR = equal'], [0.25, 'Within 0.25 x ATR = equal'], [0.5, 'Within 0.5 x ATR = equal']],
+    lagMin: [[0, 'Any time'], [5, 'At least 5 days after it'], [10, 'At least 10 days after it'], [20, 'At least 20 days after it'], [40, 'At least 40 days after it']],
+    dispAtr: [[0, 'Not checked'], [0.5, 'Body at least 0.5 x ATR'], [1, 'Body at least 1 x ATR'], [1.5, 'Body at least 1.5 x ATR'], [2, 'Body at least 2 x ATR']],
+    dispVol: [[0, 'Not checked'], [1.5, 'Volume at least 1.5 x average'], [2, 'Volume at least 2 x average'], [3, 'Volume at least 3 x average']],
+    whereIn: [['any', 'Anywhere in the zone (or under it)'], ['tm', 'Only the top or middle of the zone'], ['t', 'Only the top half of the zone']],
+    wkAbove: [[0, 'Off'], [10, 'Above its 10-week EMA'], [21, 'Above its 21-week EMA'], [50, 'Above its 50-week EMA']],
+    rollYears: [[0, 'Off'], [1, 'Every year'], [2, 'Every 2 years'], [3, 'Every 3 years'], [5, 'Every 5 years']],
     discPart: [['mid', 'Its middle (part of it may be above the line)'], ['top', 'All of it (its top)'], ['bottom', 'Any part of it (its bottom)']],
     entry: [['close', 'At the signal candle\'s close'], ['next_open', 'At the next candle\'s open'],
       ['zone', 'An order waiting at the zone top (first-touch signals)']],
@@ -83,7 +119,8 @@
       ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry']],
     after: [['trail', 'Keep the trade and trail the stop'], ['fixed', 'Sell at the target']],
     trail: [['lows', 'Under the lowest low of the last N candles'], ['pct', 'X % under the highest price since entry'],
-      ['ema', 'Sell when a candle closes under the N EMA'], ['none', 'No trail (the stop stays)']],
+      ['ema', 'Sell when a candle closes under the N EMA'], ['atr', 'x ATR under the highest price since entry'],
+      ['swing', 'Under the newest swing low since the entry'], ['none', 'No trail (the stop stays)']],
     emaSupport: [[0, 'Off - do not look at it'], [10, 'the 10 EMA'], [21, 'the 21 EMA'], [50, 'the 50 EMA'], [1, 'any of the 10 / 21 / 50 EMA']],
     mktAbove: [[0, 'Off'], [10, 'its 10 EMA'], [21, 'its 21 EMA'], [50, 'its 50 EMA'], [100, 'its 100 EMA'], [200, 'its 200 EMA']],
     // hard Spring rules - the first option of each is "not checked" / the pattern's own value
@@ -108,11 +145,15 @@
   var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN', 'maxDays',
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
-    'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount'];
+    'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
+    'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears'];
   // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
   var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
     bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level',
-    premium: 'its zone was not in the discount part of the move (above your Fib line)' };
+    premium: 'its zone was not in the discount part of the move (above your Fib line)',
+    deep: 'its zone was deeper in the move than your "at most" level', early: 'it came sooner after the CHoCH than your minimum days',
+    disp: 'the CHoCH candle\'s body was smaller than your ATR rule', vol: 'the CHoCH candle\'s volume was under your rule',
+    sweep: 'the final low did not sweep the low before it' };
   var STAGE = { disc: ['Discount, 1st pullback', 's-good'], below: ['Below CHoCH, 1st pullback', 's-good'], prem: ['Premium (above the Fib line)', 's-warn'],
     above: ['At / above CHoCH level', 's-warn'], bos: ['After a BOS', 's-bad'], old: ['Zone older than the CHoCH low', 's-info'], none: ['No CHoCH', ''] };
   var ITD_TV = { D: 'D', W: 'W', '4H': '240' };
@@ -183,12 +224,22 @@
   }
   function shapeOn(p) { return SHAPE_KEYS.some(function (k) { return k !== 'fallPct' && p[k] !== DEF[k]; }); }
 
+  /** The structure engine away from the usual (structure.py options; '' = the frozen baseline). */
+  function engineWords(p) {
+    var w = [];
+    if (p.swingMode === 'zigzag') w.push('swings by ZigZag (price turned by ' + pc(p.zzAtr) + ' x ATR)');
+    else if (Number(p.swingAtr)) w.push('a swing must stand out by ' + pc(p.swingAtr) + ' x ATR');
+    if (p.chochMode === 'protected') w.push('the CHoCH = a close above the protected high (the swing high before the lowest low)');
+    if (Number(p.eqAtr)) w.push('highs / lows within ' + pc(p.eqAtr) + ' x ATR count as equal');
+    return w.length ? ' (' + w.join('; ') + ')' : '';
+  }
+
   /** The market-structure rules in words ('' when off). */
   function structWords(p) {
     if (p.structure === 'off' || !p.structure) return '';
     var head = 'Market structure (swings of ' + p.pivotN + ' candles each side): a CHoCH = a candle closing above the last swing high after at least ' +
       p.downN + ' lower highs and ' + p.downN + ' lower lows';
-    if (p.structure === 'show') return head + ' - shown on every trade, nothing left out.';
+    if (p.structure === 'show') return head + engineWords(p) + ' - shown on every trade, nothing left out.';
     var w = ['the zone formed after the CHoCH\'s final low, ' + (p.zoneWhen === 'leg' ? 'in the move that made the CHoCH' : p.zoneWhen === 'after' ? 'after the CHoCH candle' : 'in the CHoCH move or after it')];
     if (Number(p.discount)) {
       w.push((p.discPart === 'top' ? 'all of the zone' : p.discPart === 'bottom' ? 'some of the zone' : 'the zone\'s middle') + ' (no zone: the entry) at least ' +
@@ -198,8 +249,13 @@
     if (p.belowChoch) w.push('the zone (no zone: the entry) below the CHoCH level');
     if (p.firstPull) w.push('the first pullback - no BOS (a close above the highest swing high since the CHoCH) yet');
     if (Number(p.chochAge)) w.push('at most ' + p.chochAge + ' candles after the CHoCH');
+    if (Number(p.discountMax)) w.push('the zone at most ' + pc(Number(p.discountMax) * 100) + '% down the move');
+    if (Number(p.lagMin)) w.push('at least ' + p.lagMin + ' days after the CHoCH candle');
+    if (Number(p.dispAtr)) w.push('the CHoCH candle\'s body at least ' + pc(p.dispAtr) + ' x ATR');
+    if (Number(p.dispVol)) w.push('the CHoCH candle\'s volume at least ' + pc(p.dispVol) + ' x its 20-candle average');
+    if (p.sweep) w.push('the final low swept the swing low before it and closed back above it');
     w.push('the CHoCH still alive (no close under its final low)');
-    return head + '. Only signals where ' + w.join('; ') + '.';
+    return head + engineWords(p) + '. Only signals where ' + w.join('; ') + '.';
   }
 
   function idxName(n) { return String(n || '').replace(/_/g, ' '); }
@@ -223,7 +279,11 @@
     var s = [];
     s.push(choiceLabel('group', p.group) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
       (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
-    if (p.testFrom) s.push('Development part: the signals before ' + F.date(p.testFrom) + '; test part: from ' + F.date(p.testFrom) + ' on.');
+    if (p.testFrom) {
+      s.push(p.valFrom && p.valFrom < p.testFrom ? 'Development part: the signals before ' + F.date(p.valFrom) + '; validation part: ' + F.date(p.valFrom) +
+        ' to ' + F.date(p.testFrom) + '; test part: from ' + F.date(p.testFrom) + ' on.' :
+        'Development part: the signals before ' + F.date(p.testFrom) + '; test part: from ' + F.date(p.testFrom) + ' on.');
+    }
     var struct = structWords(p);
     if (struct) s.push(struct);
     var shape = shapeWords(p);
@@ -232,6 +292,8 @@
     if (ema) s.push(ema);
     var mkt = mktWords(p);
     if (mkt) s.push(mkt);
+    if (Number(p.wkAbove) && p.tf !== 'W') s.push('Only when the stock\'s last finished weekly candle closed above its ' + p.wkAbove + '-week EMA.');
+    if (p.whereIn && p.whereIn !== 'any' && p.entry !== 'zone') s.push('Only when the signal candle stayed in the ' + (p.whereIn === 't' ? 'top half' : 'top or middle') + ' of its zone.');
     s.push(p.entry === 'zone' ? 'Buy with an order waiting at the zone top - filled when price first comes down to it (at the open when it opened under the top); ' +
       'only first-touch signals, the stop always under the zone.' : 'Buy ' + (p.entry === 'close' ? 'at the signal candle\'s close' : 'at the next candle\'s open') + '.');
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
@@ -243,7 +305,9 @@
       s.push('At ' + tgt + ' ' + (p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
         (p.trail === 'lows' ? 'trail it under the lowest low of the last ' + p.trailN + ' candle' + (p.trailN === 1 ? '' : 's') :
           p.trail === 'pct' ? 'trail it ' + F.num(p.trailPct, 1) + '% under the highest price' :
-            p.trail === 'ema' ? 'sell when a candle closes under the ' + p.emaN + ' EMA' : 'let it run with that stop') + '.');
+            p.trail === 'ema' ? 'sell when a candle closes under the ' + p.emaN + ' EMA' :
+              p.trail === 'atr' ? 'trail it ' + F.num(p.atrK, 1) + ' x ATR under the highest price' :
+                p.trail === 'swing' ? 'trail it under the newest swing low since the entry' : 'let it run with that stop') + '.');
     }
     s.push('Sold after ' + p.maxDays + ' days at the latest (that day\'s close). Costs ' + F.num(p.cost, 2) + '% a trade.');
     s.push('Account ' + F.inr(p.capital) + ', risk ' + F.num(p.riskPct, 2) + '% a trade, a position at most ' + F.num(p.maxPosPct, 0) +
@@ -268,44 +332,57 @@
     return '<label class="lab-check"><input type="checkbox" data-k="' + k + '"' + (v ? ' checked' : '') + '> ' + label + '</label>';
   }
 
-  /** Step 2: market structure - CHoCH / BOS (owner, 10-Nov-2026). */
+  /** A folded "More rules" section: its header says how many of its rules are away from the default (owner, 12-Nov-2026:
+   *  "make bactest lab more user-friendly not to be complex" - the basics stay open, everything else is one click away). */
+  function sectionOn(f, id) {
+    var sec = SECTIONS.filter(function (x) { return x[0] === id; })[0];
+    var keys = sec && sec[2] || SHAPE_KEYS;
+    return keys.filter(function (k) { return k !== 'fallPct' && String(f[k]) !== String(DEF[k]); }).length;
+  }
+  function openSet() { var o = ui.store.get('lab:open', []); return Array.isArray(o) ? o : []; }
+  function sec(id, title, body, f) {
+    var n = sectionOn(f, id);
+    return '<details class="lab-sec" data-sec="' + id + '"' + (openSet().indexOf(id) >= 0 ? ' open' : '') + '><summary><span>' + esc(title) + '</span>' +
+      (n ? '<span class="badge s-info">' + n + ' changed</span>' : '<span class="sub">default</span>') + '</summary><div class="lab-sec-body">' + body + '</div></details>';
+  }
+
+  /** Market structure - CHoCH / BOS (owner, 10-Nov-2026) + the structure engine and its filters (12-Nov-2026). */
   function structHtml(f) {
-    var on = f.structure !== 'off', mine = Object.keys(SMC).every(function (k) { return String(f[k]) === String(SMC[k]); });
-    return '<h3 class="lab-h">2 · Market structure - CHoCH / BOS (optional)</h3>' +
-      '<div class="lab-recs"><div class="lab-rec' + (mine ? ' on' : '') + '"><b>My CHoCH + FVG setup</b><span>A downtrend of at least 3 lower highs and 3 lower lows, ' +
-      'a candle CLOSES above the last lower high (CHoCH), an FVG / Gap-up zone formed in that move or after it, its middle in the discount half of the move ' +
-      '(under the 50% line - a part may be above the CHoCH level) - the FIRST time price comes back to it (no BOS yet, even when a newer FVG formed above) = ' +
-      'entry with an order at the zone top; stop under the zone. Change "Buy" in step 6 to the touch candle\'s close to compare.</span>' +
-      '<button class="btn sm" type="button" id="lab-smc">' + (mine ? 'In use' : 'Use this') + '</button></div></div>' +
-      '<div class="form-grid">' + field('Market structure', sel('structure', f.structure), 'wide') +
+    var on = f.structure !== 'off', only = f.structure === 'only';
+    return '<div class="form-grid">' + field('Market structure', sel('structure', f.structure), 'wide') +
       (on ? field('A swing high / low', sel('pivotN', f.pivotN)) + field('Lower highs and lower lows before the CHoCH', sel('downN', f.downN)) +
-        (f.structure === 'only' ? field('The zone formed', sel('zoneWhen', f.zoneWhen)) + field('The signal came', sel('chochAge', f.chochAge)) +
+        (only ? field('The zone formed', sel('zoneWhen', f.zoneWhen)) + field('The signal came', sel('chochAge', f.chochAge)) +
           field('Discount: the zone at least', sel('discount', f.discount), 'wide') +
           (Number(f.discount) ? field('… judged on', sel('discPart', f.discPart)) : '') +
           '<div class="field lab-checks">' + check('belowChoch', f.belowChoch, 'Zone top below the CHoCH level (strict)') + check('firstPull', f.firstPull, 'First pullback only (no BOS yet)') + '</div>' : '') : '') +
-      '</div><p class="sub">A swing high = a candle whose high is above the candles on both sides (known only after those candles closed - the backtest never looks ahead). ' +
+      '</div>' +
+      (on ? '<div class="lab-sub">How swings and the CHoCH are found (the usual = the frozen baseline)</div><div class="form-grid">' +
+        field('Swings', sel('swingMode', f.swingMode)) + (f.swingMode === 'zigzag' ? field('… a turn of', sel('zzAtr', f.zzAtr)) : field('A swing must stand out by', sel('swingAtr', f.swingAtr))) +
+        field('The CHoCH closes', sel('chochMode', f.chochMode), 'wide') + field('Equal highs / lows', sel('eqAtr', f.eqAtr)) + '</div>' : '') +
+      (only ? '<div class="lab-sub">More structure rules (optional)</div><div class="form-grid">' +
+        field('The zone at most', sel('discountMax', f.discountMax)) + field('Days after the CHoCH', sel('lagMin', f.lagMin)) +
+        field('The CHoCH candle (displacement)', sel('dispAtr', f.dispAtr)) + field('… and its volume', sel('dispVol', f.dispVol)) +
+        '<div class="field lab-checks">' + check('sweep', f.sweep, 'The final low swept the low before it (wick under, closed back above)') + '</div></div>' : '') +
+      '<p class="sub">A swing high = a candle whose high is above the candles on both sides (known only after those candles closed - the backtest never looks ahead). ' +
       'CHoCH = the first candle that CLOSES above the last swing high after the lower highs and lower lows; BOS = after it, the first close above the highest swing high since. ' +
       'The move = from the CHoCH\'s final low to the highest high before the signal candle (what you draw the Fibonacci on at that moment): 50% down = its middle. ' +
-      '"Show it on every trade" keeps every signal and adds a table "By market structure" to the result - your setup vs. after a BOS vs. above the CHoCH level vs. no CHoCH, in one run. ' +
-      'The first run with market structure takes about 10 seconds longer. ' +
-      'The daily scan\'s lists (CHoCH + FVG setups / waiting for the pullback) use the swing size, lower highs / lows, discount level, zone part and "zone formed" ' +
-      'set on your laptop with <b>ChochRules.bat</b> - type the same values there to make them match this run.</p>';
+      '"Show it on every trade" keeps every signal and adds a table "By market structure" to the result. ' +
+      'ZigZag / "stand out by" / protected high / equal highs are other ways to find the swings and the CHoCH - try one at a time against the usual. ' +
+      'The daily scan\'s lists use the values set on your laptop with <b>ChochRules.bat</b>.</p>';
   }
 
-  /** Step 3: the hard Spring rules + my recommendations (owner, 10-Nov-2026). */
+  /** The hard Spring rules + my recommendations (owner, 10-Nov-2026). */
   function shapeHtml(f) {
     var sameSet = function (r) {
       return SHAPE_KEYS.every(function (k) { return String(r.set[k] !== undefined ? r.set[k] : DEF[k]) === String(f[k]); });
     };
-    return '<h3 class="lab-h">3 · Spring candle shape (optional) - make the pattern stricter</h3>' +
-      '<p class="sub">The pattern\'s own rule is loose (a doji, a 2-tick dip or a weak close can all be a "Spring"). Here you add hard rules. ' +
-      '<b>c1</b> = the red candle, <b>c2</b> = the Spring candle that dips under its low. Wicks, body and close are % of c2\'s own high-low range. ' +
-      'Leave a box at its first choice to not use it.</p>' +
+    return '<p class="sub">Only for Spring patterns (FVG + Spring, Gap-up FVG + Spring, Every Spring). <b>c1</b> = the red candle, <b>c2</b> = the Spring candle that ' +
+      'dips under its low. Leave a box at its first choice to not use it.</p>' +
       '<div class="lab-recs" id="lab-recs">' + RECS.map(function (r) {
         return '<div class="lab-rec' + (sameSet(r) ? ' on' : '') + '"><b>' + esc(r.name) + '</b><span>' + esc(r.why) + '</span>' +
           '<button class="btn sm" type="button" data-rec="' + r.id + '">' + (sameSet(r) ? 'In use' : 'Use this') + '</button></div>';
       }).join('') + '</div>' +
-      '<p class="sub">These are <b>my starting ideas to test</b>, not proven edges. Run one, look at the number of trades and the average R, then change one box at a time. ' +
+      '<p class="sub">These are <b>my starting ideas to test</b>, not proven edges. ' +
         (shapeOn(f) ? '<button class="btn sm" type="button" id="lab-shape-off">Clear all Spring rules</button>' : '') + '</p>' +
       '<div class="lab-sub">The Spring candle (c2) - its shape</div><div class="form-grid">' +
       field('Upper wick - at most', sel('upWickMax', f.upWickMax)) + field('Lower wick - at least', sel('loWickMin', f.loWickMin)) +
@@ -322,66 +399,103 @@
       field('c2\'s low is under the lowest low of the', sel('lowestN', f.lowestN)) +
       field('Price fell before the red candle', sel('fallN', f.fallN)) +
       (Number(f.fallN) ? field('… by', sel('fallPct', f.fallPct)) : '') + '</div>' +
-      '<p class="sub">ATR 14 = the stock\'s average candle range over the 14 candles before - so "0.25 x ATR" means the same on a ₹50 stock, a ₹5,000 stock, daily or weekly. ' +
-      'A Spring with too few candles before it for an ATR / low / fall rule is left out.</p>';
+      '<p class="sub">ATR 14 = the stock\'s average candle range over the 14 candles before - "0.25 x ATR" means the same on a ₹50 stock and a ₹5,000 stock.</p>';
   }
 
-  function formHtml(f) {
-    var trailOn = f.after === 'trail';
-    return '<section class="card lab-form" id="lab-form"><div class="card-head"><div><h2>Your rules</h2><p>Change anything - it is kept on this device. ' +
-      'Your laptop runs it on the Kite candles kept there (daily ~20 years, 4 hour ~5 years, weekly from the daily).</p></div></div>' +
-      '<h3 class="lab-h">1 · Which signals</h3><div class="form-grid">' +
-      field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
-      field('From (optional)', '<input class="inp" type="date" data-k="from" value="' + esc(f.from) + '">') +
-      field('To (optional)', '<input class="inp" type="date" data-k="to" value="' + esc(f.to) + '">') +
-      field('Test period from (optional)', '<input class="inp" type="date" data-k="testFrom" id="lab-testfrom" value="' + esc(f.testFrom) + '" ' +
-        'title="Trades before this date = the development part (where you look for rules); from it = the test part (kept to check them)">') +
-      num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
-      num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
-      num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
-      '<p class="sub">Test period (optional): the result is split in two - trades before that date = the <b>development</b> part (look at it to choose your rules), ' +
-      'from it = the <b>test</b> part (kept aside to check them). Rules that only work in the development part fit the past by luck. E.g. 2020-01-01.</p>' +
-      structHtml(f) + shapeHtml(f) +
-      '<h3 class="lab-h">4 · EMA confluence (optional) - take the signal only when the EMAs agree</h3><div class="form-grid">' +
-      field('The Spring candle took support at', sel('emaSupport', f.emaSupport), 'wide') +
+  function trendHtml(f) {
+    return '<div class="lab-sub">EMA on the signal candle (its own timeframe)</div><div class="form-grid">' +
+      field('The signal candle took support at', sel('emaSupport', f.emaSupport), 'wide') +
       (Number(f.emaSupport) ? num('emaTouch', f.emaTouch, 'Its low within % above the EMA', ' min="0" step="0.25"') : '') +
       '<div class="field lab-checks lab-checks-row"><span>It closed above</span>' + check('above10', f.above10, '10 EMA') +
       check('above21', f.above21, '21 EMA') + check('above50', f.above50, '50 EMA') + '</div>' +
       '<div class="field lab-checks">' + check('emaStack', f.emaStack, 'EMAs in order: 10 > 21 > 50 (uptrend)') + '</div></div>' +
-      '<p class="sub">EMAs of the same timeframe (daily / weekly / 4 hour), on the Spring candle. Leave everything off to test the pattern alone.</p>' +
-      '<h3 class="lab-h">5 · Market condition (optional) - trade only when the market agrees</h3><div class="form-grid">' +
+      '<div class="lab-sub">The stock\'s weekly trend (daily / 4 hour runs)</div><div class="form-grid">' +
+      field('Its last finished weekly close', sel('wkAbove', f.wkAbove), 'wide') + '</div>' +
+      '<div class="lab-sub">The market (an index on the signal\'s day)</div><div class="form-grid">' +
       field('Index', '<select class="sel" data-k="mktIndex" id="lab-mkt-index"><option value="">Off - no market rule</option>' +
         indexList(f.mktIndex).map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === f.mktIndex ? ' selected' : '') + '>' + esc(idxName(n)) + '</option>';
         }).join('') + '</select>', 'wide') +
       (f.mktIndex ? field('The index closed above', sel('mktAbove', f.mktAbove)) +
-        '<div class="field lab-checks">' + check('mktStack', f.mktStack, 'Its EMAs in order: 10 > 21 > 50') + '</div>' : '') + '</div>' +
-      '<p class="sub">The index\'s daily candles on the Spring candle\'s day (your laptop reads them from Kite: your Indextracker indices + NIFTY 50 / 100 / 200 / 500, ' +
-      'Bank, Midcap, Smallcap ...).</p>' +
-      '<h3 class="lab-h">6 · Entry and stop loss</h3><div class="form-grid">' +
-      field('Buy', sel('entry', f.entry), 'wide') + field('Stop loss', sel('stop', f.stop), 'wide') +
+        '<div class="field lab-checks">' + check('mktStack', f.mktStack, 'Its EMAs in order: 10 > 21 > 50') + '</div>' : '') + '</div>';
+  }
+
+  function entryHtml(f) {
+    return '<div class="form-grid">' + field('Buy', sel('entry', f.entry), 'wide') +
+      num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') +
+      (f.entry === 'zone' ? '' : field('How deep the signal candle went into the zone', sel('whereIn', f.whereIn), 'wide')) +
+      field('Signals from (optional)', '<input class="inp" type="date" data-k="from" value="' + esc(f.from) + '">') +
+      field('… to (optional)', '<input class="inp" type="date" data-k="to" value="' + esc(f.to) + '">') +
+      num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
+      num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
+      num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
+      (f.entry === 'zone' ? '<p class="sub">The order at the zone top fills on a first-touch signal (Pattern "First touch of a zone" or "FVG First Touch"); ' +
+        'a Spring / Confirmed candle comes after the touch, so it is skipped. The stop goes under the zone; that candle can stop the trade out at once.</p>' : '');
+  }
+
+  function exitHtml(f) {
+    return '<div class="form-grid">' + field('Target', sel('targetMode', f.targetMode)) +
+      (f.targetMode === 'swing' ? num('swingMinR', f.swingMinR, 'At least this many R above the entry', ' min="0" step="0.25"') : '') +
+      num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
+      num('cost', f.cost, 'Costs per trade, buy + sell (%)', ' min="0" step="0.05"') +
+      (f.after === 'trail' ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>';
+  }
+
+  function moneyHtml(f) {
+    return '<div class="form-grid">' + num('maxPosPct', f.maxPosPct, 'One position at most (% of the account)', ' min="1" step="5"') +
+      num('maxOpen', f.maxOpen, 'Trades open at once, at most', ' min="1" step="1"') +
+      '<div class="field lab-checks">' + check('compound', f.compound, 'Re-invest the profits (risk % of the account as it grows)') + '</div></div>';
+  }
+
+  function checkHtml(f) {
+    return '<div class="form-grid">' +
+      field('Validation part from (optional)', '<input class="inp" type="date" data-k="valFrom" value="' + esc(f.valFrom) + '">') +
+      field('Steady over time? - figures', sel('rollYears', f.rollYears)) + '</div>' +
+      '<p class="sub">With a test period (the basics) and a validation date before it, the result is split in three: <b>development</b> (choose your rules there), ' +
+      '<b>validation</b> (check the rules you chose), <b>test</b> (look only at the very end). E.g. development to 2017, validation 2018 - 2021, test from 2022.</p>';
+  }
+
+  function quickHtml(f) {
+    var isOn = function (q) {
+      var set = q.id === 'smc' ? SMC : q.set;
+      return Object.keys(set).every(function (k) { return String(f[k]) === String(set[k]); });
+    };
+    return '<div class="lab-recs lab-quick">' + QUICK.map(function (q) {
+      var on = isOn(q);
+      return '<div class="lab-rec' + (on ? ' on' : '') + '"><b>' + esc(q.name) + '</b><span>' + esc(q.why) + '</span>' +
+        '<button class="btn sm" type="button" data-quick="' + q.id + '"' + (q.id === 'smc' ? ' id="lab-smc"' : '') + '>' + (on ? 'In use' : 'Use this') + '</button></div>';
+    }).join('') + '</div>';
+  }
+
+  function formHtml(f) {
+    var trailOn = f.after === 'trail';
+    var changed = SECTIONS.reduce(function (n, x) { return n + sectionOn(f, x[0]); }, 0);
+    return '<section class="card lab-form" id="lab-form"><div class="card-head"><div><h2>Your rules</h2><p>1 · pick a ready setup, 2 · check the basics, ' +
+      '3 · press ▶ Run. Everything else is optional under <b>More rules</b>. Kept on this device; your laptop runs it on its Kite candles ' +
+      '(daily ~20 years, 4 hour ~5 years).</p></div><div class="actions"><a class="btn sm" href="docs/Backtest-Lab-Guide.pdf" target="_blank" rel="noopener">📘 Guide (PDF)</a></div></div>' +
+      '<h3 class="lab-h">1 · Start from a ready setup</h3>' + quickHtml(f) +
+      '<h3 class="lab-h">2 · The basics</h3><div class="form-grid">' +
+      field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
+      field('Stop loss', sel('stop', f.stop), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
-      num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') + '</div>' +
-      (f.entry === 'zone' ? '<p class="sub">The order at the zone top fills on a first-touch signal (Pattern "First touch of a zone" or "FVG First Touch"); ' +
-        'a Spring / Confirmed candle comes after the touch, so it is skipped. The stop goes under the zone (the candle\'s own low is not known when the order fills); ' +
-        'that candle can stop the trade out at once.</p>' : '') +
-      '<h3 class="lab-h">7 · Target and exit</h3><div class="form-grid">' +
-      field('Target', sel('targetMode', f.targetMode)) +
-      (f.targetMode === 'swing' ? num('swingMinR', f.swingMinR, 'At least this many R above the entry', ' min="0" step="0.25"') :
-        num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"')) + field('At the target', sel('after', f.after), 'wide') +
+      (f.targetMode === 'swing' ? '' : num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"')) +
+      field('At the target', sel('after', f.after), 'wide') +
       (trailOn ? field('Then', sel('trail', f.trail), 'wide') : '') +
       (trailOn && f.trail === 'lows' ? num('trailN', f.trailN, 'N candles', ' min="1" step="1"') : '') +
       (trailOn && f.trail === 'pct' ? num('trailPct', f.trailPct, 'X %', ' min="0.5" step="0.5"') : '') +
       (trailOn && f.trail === 'ema' ? num('emaN', f.emaN, 'EMA length', ' min="2" step="1"') : '') +
-      num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
-      num('cost', f.cost, 'Costs per trade (%)', ' min="0" step="0.05"') +
-      (trailOn ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>' +
-      '<h3 class="lab-h">8 · Money</h3><div class="form-grid">' +
+      (trailOn && f.trail === 'atr' ? num('atrK', f.atrK, 'x ATR', ' min="0.5" step="0.5"') : '') +
       num('capital', f.capital, 'Account ₹', ' min="1000" step="10000"') + num('riskPct', f.riskPct, 'Risk per trade (% of the account)', ' min="0.05" step="0.25"') +
-      num('maxPosPct', f.maxPosPct, 'One position at most (% of the account)', ' min="1" step="5"') +
-      num('maxOpen', f.maxOpen, 'Trades open at once, at most', ' min="1" step="1"') +
-      '<div class="field lab-checks">' + check('compound', f.compound, 'Re-invest the profits (risk % of the account as it grows)') + '</div></div>' +
+      field('Test period from (optional)', '<input class="inp" type="date" data-k="testFrom" id="lab-testfrom" value="' + esc(f.testFrom) + '" ' +
+        'title="Trades before this date = the development part (where you look for rules); from it = the test part (kept to check them)">') + '</div>' +
+      '<p class="sub">Test period: trades before that date = the <b>development</b> part (choose your rules there), from it = the <b>test</b> part (kept aside to check them). ' +
+      'Rules that work only in the development part fit the past by luck. E.g. 2020-01-01.</p>' +
+      '<h3 class="lab-h">3 · More rules (optional)' + (changed ? ' - ' + changed + ' changed' : '') + '</h3><div class="lab-secs">' +
+      sec('structure', SECTIONS[0][1], structHtml(f), f) + sec('shape', SECTIONS[1][1], shapeHtml(f), f) + sec('trend', SECTIONS[2][1], trendHtml(f), f) +
+      sec('entry', SECTIONS[3][1], entryHtml(f), f) + sec('exit', SECTIONS[4][1], exitHtml(f), f) + sec('money', SECTIONS[5][1], moneyHtml(f), f) +
+      sec('check', SECTIONS[6][1], checkHtml(f), f) +
+      (changed ? '<button class="btn sm" type="button" id="lab-more-off">Clear all the "More rules"</button>' : '') + '</div>' +
       '<p class="note lab-plain" id="lab-plain"><b>In plain words:</b> ' + esc(plain(f)) + '</p>' +
       '<div class="lab-actions"><label class="field lab-name"><span>Name of this idea</span><input class="inp" type="text" maxlength="60" data-k="name" value="' + esc(f.name) + '"></label>' +
       '<button class="btn primary" type="button" id="lab-run">▶ Run on my laptop</button>' +
@@ -459,18 +573,25 @@
     if (c) c.addEventListener('click', function () { ask({ lab: { do: 'cancel' } }).then(function () { poll(el, ST.gen); }, function () {}); });
   }
 
+  /** Your runs as one comparison table (owner, 12-Nov-2026: test one change at a time and compare) - a click opens a run. */
   function paintRuns(el) {
     var box = $('#lab-runs', el);
     if (!box) return;
     var list = (ST.status && ST.status.list) || [];
-    if (!list.length) { box.innerHTML = '<p class="empty">No run yet - set your rules and press ▶ Run on my laptop.</p>'; return; }
-    box.innerHTML = '<div class="lab-runs">' + list.map(function (r) {
-      var h = r.head || {};
-      return '<a class="lab-run' + (r.id === ST.itemId ? ' on' : '') + '" href="#lab/' + esc(r.id) + '"><b>' + esc(r.name || h.group || 'Run') + '</b>' +
-        '<span class="sub">' + esc(r.saved) + ' · ' + esc(h.tf || '') + ' · ' + esc(h.group || '') + '</span>' +
-        '<span>' + F.int(h.trades) + ' trades · win ' + (isNum(h.winPct) ? F.num(h.winPct, 1) + '%' : '–') + ' · avg ' +
-        (isNum(h.avgR) ? F.num(h.avgR, 2) + 'R' : '–') + ' · account ' + (isNum(h.returnPct) ? F.pct(h.returnPct) : '–') + '</span></a>';
-    }).join('') + '</div>';
+    if (!list.length) { box.innerHTML = '<p class="empty">No run yet - pick a setup and press ▶ Run on my laptop.</p>'; return; }
+    box.innerHTML = '<div class="tbl-wrap"><table class="tbl lab-runs-t"><thead><tr><th>Run</th><th>Trades</th><th>Win %</th><th>Avg R a trade</th>' +
+      '<th>Likely range</th><th>Real or chance?</th><th>Test part avg R</th><th>Account</th></tr></thead><tbody>' + list.map(function (r) {
+        var h = r.head || {}, e = EDGE[h.edge] || null;
+        return '<tr class="lab-run' + (r.id === ST.itemId ? ' on' : '') + '"><th><a href="#lab/' + esc(r.id) + '"><b>' + esc(r.name || h.group || 'Run') + '</b></a>' +
+          '<div class="sub">' + esc(r.saved) + ' · ' + esc(h.tf || '') + ' · ' + esc(h.group || '') + '</div></th>' +
+          '<td>' + F.int(h.trades) + '</td><td>' + (isNum(h.winPct) ? F.num(h.winPct, 1) + '%' : '–') + '</td>' +
+          '<td class="' + tone(h.avgR) + '">' + r2(h.avgR) + '</td><td>' + rng(h.lo, h.hi) + '</td><td>' + (e ? ui.badge(e[0], e[1]) : '<span class="sub">–</span>') + '</td>' +
+          '<td class="' + tone(h.testAvgR) + '">' + (isNum(h.testAvgR) ? r2(h.testAvgR) + ' <span class="sub">(' + F.int(h.testTrades) + ')</span>' : '<span class="sub">–</span>') + '</td>' +
+          '<td class="' + tone(h.returnPct) + '">' + (isNum(h.returnPct) ? F.pct(h.returnPct) : '–') + '</td></tr>';
+      }).join('') + '</tbody></table></div><p class="sub">Change one thing at a time and compare the rows. Trust a row more when the range is clear of 0 and the test part agrees.</p>';
+    box.querySelectorAll('tr.lab-run').forEach(function (tr) {
+      tr.addEventListener('click', function (ev) { if (!ev.target.closest('a')) { var a = tr.querySelector('a'); if (a) location.hash = a.getAttribute('href'); } });
+    });
   }
 
   function openRun(el, id) {
@@ -585,6 +706,37 @@
     return '<p class="note' + (s.edge === 'real' ? '' : s.edge === 'losing' ? ' bad' : ' warn') + '" id="lab-edge">Real or chance? ' + ui.badge(e[0], e[1]) +
       ' the average per trade is likely between <b>' + rng(s.avgRLo, s.avgRHi) + '</b> (90% range from the spread of the trades) - ' + esc(e[2]) + '.</p>';
   }
+  /** A folded section of the result: Development vs test, What worked best and the trades open at first; the rest closed
+   *  (this device remembers what you opened). */
+  var RSEC_OPEN = ['split', 'bd', 'trades'];
+  function rsec(id, title, body) {
+    var mem = ui.store.get('lab:ropen', {}) || {};
+    var open = mem[id] !== undefined ? !!mem[id] : RSEC_OPEN.indexOf(id) >= 0;
+    return '<details class="lab-sec lab-rsec" data-rsec="' + id + '"' + (open ? ' open' : '') + '><summary><span>' + esc(title) + '</span></summary>' +
+      '<div class="lab-sec-body">' + body + '</div></details>';
+  }
+  /** The verdict's second line: does the test part agree with the development part? */
+  function verdictTest(res) {
+    var sp = res.split, d = sp && sp.dev, t = sp && sp.test;
+    if (!sp) return '<p class="sub">Tip: set a <b>Test period from</b> date (step 2) to check the rules on years you did not look at.</p>';
+    if (!(d && d.trades && t && t.trades)) return '';
+    var ok = d.avgR > 0 && t.avgR > 0;
+    return '<p class="note' + (ok ? '' : ' warn') + '">Test part (from ' + F.date(sp.at) + '): <b>' + r2(t.avgR) + '</b> a trade over ' + F.int(t.trades) +
+      ' trades - ' + (ok ? 'it agrees with the development part (' + r2(d.avgR) + ').' : d.avgR > 0 ? 'it does NOT agree with the development part (' + r2(d.avgR) +
+        ') - the rules may fit the past only.' : 'the development part itself (' + r2(d.avgR) + ') did not make money.') + '</p>';
+  }
+  /** "Steady over time?": the figures of every N-year block (the laptop's rolling blocks). */
+  function rollingHtml(res) {
+    var r = res.rolling;
+    if (!r || !r.length) return '';
+    return '<h3 class="lab-h">Steady over time? (every ' + (r[0].to - r[0].from + 1) + ' year' + (r[0].to === r[0].from ? '' : 's') + ')</h3>' +
+      '<div class="tbl-wrap"><table class="tbl" id="lab-rolling"><thead><tr><th>Years</th><th>Trades</th><th>Win %</th><th>Avg R</th><th>Likely range</th><th>Real or chance?</th></tr></thead><tbody>' +
+      r.map(function (x) {
+        var e = EDGE[x.edge] || ['', ''];
+        return '<tr><th>' + x.from + (x.to !== x.from ? ' - ' + x.to : '') + '</th><td>' + F.int(x.trades) + '</td><td>' + F.num(x.winPct, 1) + '%</td>' +
+          '<td class="' + tone(x.avgR) + '">' + r2(x.avgR) + '</td><td>' + rng(x.lo, x.hi) + '</td><td>' + ui.badge(e[0], e[1]) + '</td></tr>';
+      }).join('') + '</tbody></table></div><p class="sub">An edge that is real shows up in most blocks, not in one lucky stretch.</p>';
+  }
   function splitHtml(res) {
     var sp = res.split;
     if (!sp) return '';
@@ -601,17 +753,16 @@
         : d.avgR > 0 && !(t.avgR > 0) ? '<p class="note bad">The test part does NOT agree: the rules made money before ' + F.date(sp.at) + ' but not after - they may fit the past only.</p>'
           : '<p class="note warn">The development part itself did not make money per trade - change the rules there first (and do not look at the test part while choosing).</p>';
     }
-    return '<h3 class="lab-h">Development vs test (split on ' + F.date(sp.at) + ')</h3><div class="tbl-wrap"><table class="tbl" id="lab-split"><thead><tr><th>Part</th><th>Trades</th>' +
+    return '<div class="tbl-wrap"><table class="tbl" id="lab-split"><thead><tr><th>Part</th><th>Trades</th>' +
       '<th>Win %</th><th>Avg R</th><th>Likely range</th><th>Total R</th><th>Profit factor</th><th>Real or chance?</th></tr></thead><tbody>' +
-      row('Development (before)', d) + row('Test (from)', t) + '</tbody></table></div>' + say;
+      row('Development (before)', d) + (sp.val ? row('Validation (from ' + F.date(sp.val) + ')', sp.valid) : '') + row('Test (from)', t) + '</tbody></table></div>' + say;
   }
   function bdHtml(res) {
     var b = res.breakdowns || [];
     var noStruct = !res.params || res.params.structure === 'off';
     if (!b.length) return '';
     if (!ST.bd || !b.some(function (x) { return x.key === ST.bd; })) ST.bd = b[0].key;
-    return '<h3 class="lab-h">What worked best - one thing at a time</h3>' +
-      '<div class="controls">' + ui.chips('labbd', b.map(function (x) { return [x.key, BD_SHORT[x.key] || x.name]; }), ST.bd) + '</div><div id="lab-bd"></div>' +
+    return '<div class="controls">' + ui.chips('labbd', b.map(function (x) { return [x.key, BD_SHORT[x.key] || x.name]; }), ST.bd) + '</div><div id="lab-bd"></div>' +
       '<p class="sub">Each row = the finished trades with that feature. <b>Better / Worse</b> = their average R vs the rest of this run\'s trades, clear at 90%; ' +
       '<b>Could be chance</b> = the difference is within luck; under 30 trades = too few to say. ' +
       (res.split ? '<b>Held in test</b> = it beat (or trailed) the rest in the development part AND in the test part - trust those rows most. ' : 'Set a test period (step 1) to check a row on later years. ') +
@@ -636,10 +787,11 @@
         { key: 'verdict', label: 'vs the rest', get: function (r) { return (VERDICT[r.verdict] || [r.verdict])[0]; },
           html: function (r) { var v = VERDICT[r.verdict] || [r.verdict, '']; return ui.badge(v[0], v[1]); } },
         { key: 'dev', label: 'Development: avg R (trades)', get: function (r) { return r.dev ? r.dev.avgR : null; }, html: function (r) { return part(r.dev); } },
+        { key: 'val', label: 'Validation: avg R (trades)', get: function (r) { return r.val ? r.val.avgR : null; }, html: function (r) { return part(r.val); } },
         { key: 'test', label: 'Test: avg R (trades)', get: function (r) { return r.test ? r.test.avgR : null; }, html: function (r) { return part(r.test); } },
         { key: 'held', label: 'Held in test', get: function (r) { return r.held || ''; },
           html: function (r) { return r.held === 'yes' ? ui.badge('Yes', 's-good') : r.held === 'no' ? ui.badge('No', 's-bad') : '<span class="sub">too few</span>'; } }
-      ].filter(function (c) { return split || ['dev', 'test', 'held'].indexOf(c.key) < 0; })
+      ].filter(function (c) { return c.key === 'val' ? !!(res.split && res.split.val) : split || ['dev', 'test', 'held'].indexOf(c.key) < 0; })
     }).mount(host);
   }
 
@@ -660,15 +812,18 @@
       bindResult(el, it);
       return;
     }
-    h += '<h3 class="lab-h">Every signal (each trade on its own, in R)</h3><div class="tiles">' +
+    var sk = res.skipped || {};
+    var full = '<div class="tiles">' +
       ui.tile('Trades', F.int(s.trades), (res.open ? F.int(res.open) + ' still running (not counted)' : 'all finished') +
-        (res.skipped && res.skipped.risk ? ' · ' + F.int(res.skipped.risk) + ' skipped (risk too big)' : '') +
-        (res.skipped && res.skipped.struct ? ' · ' + F.int(res.skipped.struct) + ' left out by your market-structure rules' : '') +
-        (res.skipped && res.skipped.noswing ? ' · ' + F.int(res.skipped.noswing) + ' without a swing high above (target)' : '') +
-        (res.skipped && res.skipped.zoneentry ? ' · ' + F.int(res.skipped.zoneentry) + ' not first touches (the zone-top order fills on those only)' : '') +
-        (res.skipped && res.skipped.shape ? ' · ' + F.int(res.skipped.shape) + ' Springs left out by your shape rules' : '') +
-        (res.skipped && res.skipped.ema ? ' · ' + F.int(res.skipped.ema) + ' left out by your EMA rules' : '') +
-        (res.skipped && res.skipped.mkt ? ' · ' + F.int(res.skipped.mkt) + ' left out by your market rule' : '')) +
+        (sk.risk ? ' · ' + F.int(sk.risk) + ' skipped (risk too big)' : '') +
+        (sk.struct ? ' · ' + F.int(sk.struct) + ' left out by your market-structure rules' : '') +
+        (sk.noswing ? ' · ' + F.int(sk.noswing) + ' without a swing high above (target)' : '') +
+        (sk.zoneentry ? ' · ' + F.int(sk.zoneentry) + ' not first touches (the zone-top order fills on those only)' : '') +
+        (sk.shape ? ' · ' + F.int(sk.shape) + ' Springs left out by your shape rules' : '') +
+        (sk.ema ? ' · ' + F.int(sk.ema) + ' left out by your EMA rules' : '') +
+        (sk.mkt ? ' · ' + F.int(sk.mkt) + ' left out by your market rule' : '') +
+        (sk.wk ? ' · ' + F.int(sk.wk) + ' left out by the weekly trend rule' : '') +
+        (sk.where ? ' · ' + F.int(sk.where) + ' went too deep into the zone' : '')) +
       ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry (after costs)') +
       ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge' +
         (isNum(s.avgRLo) ? ' · likely ' + rng(s.avgRLo, s.avgRHi) : '')) +
@@ -676,33 +831,58 @@
       ui.tile('Reached ' + F.num(p.targetR, 2) + 'R', F.num(s.hitPct, 1) + '%', 'before the stop loss') +
       ui.tile('Average win / loss', r2(s.avgWinR) + ' / ' + r2(s.avgLossR), 'best ' + r2(s.bestR) + ' · worst ' + r2(s.worstR)) +
       ui.tile('Held', F.num(s.avgDays, 1) + ' days', 'on average · ' + F.int(s.maxLosingStreak) + ' losses in a row at worst') +
-      ui.tile('Return per trade', F.pct(s.avgRet, 2), 'median ' + F.pct(s.medRet, 2) + ' · best move before the exit ' + r2(s.avgMaxR) + ' avg') + '</div>';
-    h += edgeNote(s) + structNote(res) + shapeNote(res, s) + splitHtml(res);
+      ui.tile('Return per trade', F.pct(s.avgRet, 2), 'median ' + F.pct(s.medRet, 2) + ' · best move before the exit ' + r2(s.avgMaxR) + ' avg') + '</div>' +
+      structNote(res) + shapeNote(res, s);
+    // the answer first (owner, 12-Nov-2026: "make bactest lab more user-friendly not to be complex"): is there an edge, does the test
+    // part agree, what the account did - then the rest folded
+    h += '<div class="lab-verdict" id="lab-verdict">' + edgeNote(s) + verdictTest(res) +
+      '<div class="tiles">' + ui.tile('Trades', F.int(s.trades), res.open ? F.int(res.open) + ' still running' : 'all finished') +
+      ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry') +
+      ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', isNum(s.avgRLo) ? 'likely ' + rng(s.avgRLo, s.avgRHi) : 'median ' + r2(s.medR)) +
+      ui.tile('Total', '<span class="' + tone(s.totalR) + '">' + F.num(s.totalR, 1) + 'R</span>', 'all trades together') +
+      ui.tile('Account', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', 'max fall ' + F.num(a.maxDD, 1) + '%') + '</div></div>';
+    h += rsec('all', 'Every signal - all the figures', '<p class="sub">Each trade on its own, in R (R = the risk: entry - stop).</p>' + full);
+    if (res.split) h += rsec('split', 'Development vs test (split on ' + F.date(res.split.at) + ')', splitHtml(res));
+    h += rsec('bd', 'What worked best - one thing at a time', bdHtml(res));
     if (res.stages && res.stages.length) {
-      h += '<h3 class="lab-h">By market structure - where each signal sat</h3><div id="lab-stages"></div>' +
+      h += rsec('stages', 'By market structure - where each signal sat', '<div id="lab-stages"></div>' +
         '<p class="sub">Your setup = in the discount part of the move (with a Fib line set) or below the CHoCH level, on the first pullback. ' +
         '"Premium" = the zone sat above your Fib line. "After a BOS" = price had already made a new high after the CHoCH. ' +
-        'Compare the average R of the rows - with fewer than ~300 trades in a row, a difference can still be luck.</p>';
+        'Compare the average R of the rows - with fewer than ~300 trades in a row, a difference can still be luck.</p>');
     }
-    h += bdHtml(res);
-    h += '<h3 class="lab-h">Your account (' + F.inr(a.capital) + ', ' + F.num(p.riskPct, 2) + '% risk a trade, at most ' + F.int(p.maxOpen) + ' at once)</h3><div class="tiles">' +
+    h += rsec('account', 'Your account (' + F.inr(a.capital) + ', ' + F.num(p.riskPct, 2) + '% risk a trade, at most ' + F.int(p.maxOpen) + ' at once)', '<div class="tiles">' +
       ui.tile('Account now', F.inr(a.final), '<span class="' + tone(a.pnl) + '">' + (a.pnl >= 0 ? '+' : '−') + F.inr(Math.abs(a.pnl)) + '</span>') +
       ui.tile('Return', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', isNum(a.cagr) ? F.pct(a.cagr) + ' a year over ' + F.num(a.years, 1) + ' years' : 'over ' + F.num(a.years, 1) + ' years') +
       ui.tile('Max drawdown', F.num(a.maxDD, 1) + '%', 'the deepest fall from a peak') +
       ui.tile('Trades taken', F.int(a.taken), skipWords(a) + (a.openNow ? ' · ' + F.int(a.openNow) + ' still open' : '')) + '</div>' +
       skipHint(a, p) +
       (a.blown ? '<p class="note bad">The account ran out on ' + F.date(a.blown) + ' - no trades after that.</p>' : '') +
-      '<div id="lab-curve" class="lab-chart"></div>';
-    h += '<div class="lab-two"><div><h3 class="lab-h">How the trades ended</h3><div id="lab-reasons"></div></div>' +
-      '<div><h3 class="lab-h">Result of each trade (R)</h3><div id="lab-hist"></div></div></div>';
-    h += '<h3 class="lab-h">Year by year</h3><div id="lab-years"></div>';
-    h += '<h3 class="lab-h">The trades' + (res.tradesTotal > (res.trades || []).length ? ' (the newest ' + F.int(res.trades.length) + ' of ' + F.int(res.tradesTotal) + ')' : '') + '</h3><div id="lab-trades"></div>' +
-      '<p class="sub">R = profit or loss in units of the risk (entry - stop): -1R = the full stop loss, 2R = twice the risk. Prices are Kite\'s - for you only. ' +
-      'A candle reaching both the stop and the target counts as the stop; a gap through the stop sells at the open.</p></section>';
+      '<div id="lab-curve" class="lab-chart"></div>');
+    h += rsec('exits', 'How the trades ended', '<div class="lab-two"><div><h3 class="lab-h">Exit reasons</h3><div id="lab-reasons"></div></div>' +
+      '<div><h3 class="lab-h">Result of each trade (R)</h3><div id="lab-hist"></div></div></div>');
+    h += rsec('time', 'Year by year' + (res.rolling ? ' - steady over time?' : ''), rollingHtml(res) + '<div id="lab-years"></div>');
+    h += rsec('trades', 'The trades' + (res.tradesTotal > (res.trades || []).length ? ' (the newest ' + F.int(res.trades.length) + ' of ' + F.int(res.tradesTotal) + ')' : ''),
+      '<div id="lab-trades"></div>' +
+      '<p class="sub">R = profit or loss in units of the risk (entry - stop): -1R = the full stop loss, 2R = twice the risk. Prices are Kite\'s. ' +
+      'A candle reaching both the stop and the target counts as the stop; a gap through the stop sells at the open.</p>');
+    h += '</section>';
     box.innerHTML = h;
     var curve = (a.curve || []).map(function (c) { return { x: c[0], y: c[1] }; });
-    if (curve.length > 1) ui.lineChart($('#lab-curve', box), [{ name: 'Account', points: curve, color: 'var(--accent)' }], { height: 240, label: 'Account value', fmt: function (v) { return F.inr(v); } });
-    else $('#lab-curve', box).innerHTML = '';
+    var drawCurve = function () {
+      if (curve.length > 1) ui.lineChart($('#lab-curve', box), [{ name: 'Account', points: curve, color: 'var(--accent)' }], { height: 240, label: 'Account value', fmt: function (v) { return F.inr(v); } });
+      else $('#lab-curve', box).innerHTML = '';
+    };
+    var accSec = box.querySelector('[data-rsec="account"]');
+    if (accSec && accSec.open) drawCurve();
+    // a chart is drawn when its section first opens (a closed section has no width); the open ones are remembered
+    $('section.card', box).addEventListener('toggle', function (e) {
+      var d = e.target, id = d && d.getAttribute && d.getAttribute('data-rsec');
+      if (!id) return;
+      var mem = ui.store.get('lab:ropen', {}) || {};
+      mem[id] = d.open;
+      ui.store.set('lab:ropen', mem);
+      if (id === 'account' && d.open && !$('#lab-curve svg', box)) drawCurve();
+    }, true);
     var rs = res.reasons || {};
     $('#lab-reasons', box).innerHTML = ui.bars(Object.keys(REASON).filter(function (k) { return rs[k]; }).map(function (k) {
       return { label: REASON[k][0], value: rs[k] };
@@ -845,16 +1025,37 @@
       if (!k) return;
       var f = readForm(el);
       saveForm(f);
-      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group'].indexOf(k) >= 0 || SHAPE_KEYS.indexOf(k) >= 0 ||
-          Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the recommendation cards follow
+      var inSec = SECTIONS.some(function (x) { return (x[2] || SHAPE_KEYS).indexOf(k) >= 0; });
+      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry'].indexOf(k) >= 0 || inSec ||
+          Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the cards and "changed" counts follow
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
     });
     host.addEventListener('input', function () { saveForm(readForm(el)); var pl = $('#lab-plain', el); if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(readForm(el))); });
+    // the folded sections remember whether they are open (this device)
+    host.addEventListener('toggle', function (e) {
+      var d = e.target, id = d && d.getAttribute && d.getAttribute('data-sec');
+      if (!id) return;
+      var o = openSet().filter(function (x) { return x !== id; });
+      if (d.open) o.push(id);
+      ui.store.set('lab:open', o);
+    }, true);
     // my recommendations: fill the Spring boxes (every other rule of the form stays as it is)
     host.addEventListener('click', function (e) {
-      var smc = e.target.closest && e.target.closest('#lab-smc');
-      if (smc) { saveForm(Object.assign(readForm(el), SMC)); SB.route(true); return; }
+      var q = e.target.closest && e.target.closest('[data-quick]');
+      if (q) {
+        var qq = QUICK.filter(function (x) { return x.id === q.getAttribute('data-quick'); })[0];
+        saveForm(Object.assign(readForm(el), qq.id === 'smc' ? SMC : qq.set));
+        SB.route(true);
+        return;
+      }
+      if (e.target.closest && e.target.closest('#lab-more-off')) {
+        var g = readForm(el);
+        SECTIONS.forEach(function (x) { (x[2] || SHAPE_KEYS).forEach(function (k) { g[k] = DEF[k]; }); });
+        saveForm(g);
+        SB.route(true);
+        return;
+      }
       var b = e.target.closest && e.target.closest('[data-rec],#lab-shape-off');
       if (!b) return;
       var f = readForm(el);
@@ -874,6 +1075,7 @@
       if (!params.from) delete params.from;
       if (!params.to) delete params.to;
       if (!params.testFrom) delete params.testFrom;
+      if (!params.valFrom) delete params.valFrom;
       var b = this;
       b.disabled = true;
       ask({ lab: { do: 'run', name: f.name, params: params } }).then(function (j) {

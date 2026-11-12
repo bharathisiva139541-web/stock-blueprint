@@ -21,6 +21,17 @@ Rules (one timeframe's candles, oldest first; nothing looks ahead):
    high, 1 = at the final low, 0.5 = the middle (TradingView's Fib levels drawn from the low to the high). The owner's
    discount zone = a zone whose middle is at depth >= 0.5 (owner, 11-Nov-2026 on SUPREMEIND: "we always try to enter with
    low risk, i.e. the zone in discount area. it is ok even the zone have some area slightly above the Choch").
+OPTIONS (owner, 12-Nov-2026: "Finish all the remaining updates" - the ChatGPT review's experiments E2 / E3 / E5, each one a
+choice in the Backtest Lab next to the frozen baseline above; every option at its default = exactly the baseline):
+ - prom (E2, ATR prominence): a swing high counts only when it stands at least prom x ATR(14) above the lowest low of the
+   candles around it (n each side); a swing low mirrored.
+ - swing 'zigzag' (E3, ATR ZigZag / directional change): a swing high = the highest high since the last swing low, known on
+   the first candle whose low is zz x ATR(14) under it (a swing low mirrored) - instead of n candles each side.
+ - choch 'protected' (E5): the CHoCH = a close above the PROTECTED high - the swing high right before the lowest swing low of
+   the fall (the one that made the last lower low) - not the last (maybe minor) swing high.
+ - eq (E5, equal highs / lows): a high within eq x ATR(14) of the one before is not a LOWER high (the same for lows).
+ - sweeps (E5): `sweep[k]` = the final low of CHoCH k went under the swing low before it and CLOSED back above it (a sweep
+   of the sell-side liquidity, not a breakdown).
 Pure Python (no numpy). A Structure keeps only its events and swing highs (small), not the candles: the checks that look
 at the candles after a CHoCH (dead / BOS) take the closes as an argument and go forward only as far as asked.
 """
@@ -28,50 +39,136 @@ import array
 import bisect
 
 
-def pivots(h, l, n):
+def atr_series(h, l, c, n=14):
+    """The average true range of the n candles up to each candle (a simple mean; the first candles: of the ones there are)."""
+    out, tr, tot = [], [], 0.0
+    for i in range(len(h)):
+        t = h[i] - l[i] if i == 0 else max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1]))
+        tr.append(t)
+        tot += t
+        if i >= n:
+            tot -= tr[i - n]
+        out.append(tot / min(i + 1, n))
+    return out
+
+
+def pivots(h, l, n, prom=0.0, atr=None):
     """(swing-high candles, swing-low candles), oldest first: h[p] > the n highs before and >= the n after; l[p] < the n
-    lows before and <= the n after."""
+    lows before and <= the n after. prom > 0 (with `atr`): a high must also stand prom x ATR above the lowest low of the
+    candles p-n .. p+n (a low mirrored) - ATR prominence."""
     N = len(h)
     ph, pl = [], []
     for p in range(n, N - n):
         x = h[p]
         if x > h[p - 1] and x >= h[p + 1] and x > max(h[p - n:p]) and x >= max(h[p + 1:p + n + 1]):
-            ph.append(p)
+            if not prom or x - min(l[p - n:p + n + 1]) >= prom * atr[p]:
+                ph.append(p)
         y = l[p]
         if y < l[p - 1] and y <= l[p + 1] and y < min(l[p - n:p]) and y <= min(l[p + 1:p + n + 1]):
-            pl.append(p)
+            if not prom or max(h[p - n:p + n + 1]) - y >= prom * atr[p]:
+                pl.append(p)
     return ph, pl
 
 
-def choch_events(h, l, c, n, ph=None, pl=None):
+def zigzag(h, l, atr, k):
+    """ATR ZigZag (directional change): [(pivot candle, the candle it is known on, is_high)] alternating, oldest first. A
+    swing high = the highest high since the last swing low, known on the first later candle whose low is k x ATR under it
+    (the ATR of that candle); a swing low mirrored. Nothing looks ahead."""
+    N = len(h)
+    out = []
+    if N < 2:
+        return out
+    hi_i = lo_i = 0
+    d = 0                                     # 0 = not started, 1 = rising (looking for a high), -1 = falling
+    for j in range(1, N):
+        a = k * atr[j]
+        if d >= 0 and h[j] > h[hi_i]:
+            hi_i = j
+        if d <= 0 and l[j] < l[lo_i]:
+            lo_i = j
+        if d >= 0 and hi_i < j and h[hi_i] - l[j] >= a and (d == 1 or hi_i >= lo_i):
+            out.append((hi_i, j, True))
+            d = -1
+            lo_i = min(range(hi_i + 1, j + 1), key=lambda x: (l[x], -x))
+        elif d <= 0 and lo_i < j and h[j] - l[lo_i] >= a and (d == -1 or lo_i > hi_i):
+            out.append((lo_i, j, False))
+            d = 1
+            hi_i = max(range(lo_i + 1, j + 1), key=lambda x: (h[x], x))
+    return out
+
+
+def swing_points(h, l, c, n=5, opts=None):
+    """The swings the structure is built on -> {'ph', 'pl' (pivot candles), 'phc', 'plc' (the candle each is known on),
+    'conf' {candle: [(pivot, is_high), ...]}, 'atr' (or None)}. opts = {'swing': 'fractal' | 'zigzag', 'zz', 'prom',
+    'eq', ...} (see the module text); none = the baseline n-candle fractals."""
+    o = opts or {}
+    zz = o.get('swing') == 'zigzag'
+    atr = atr_series(h, l, c) if (zz or o.get('prom') or o.get('eq')) else None
+    conf = {}
+    if zz:
+        sw = zigzag(h, l, atr, float(o.get('zz') or 2.0))
+        ph = [p for p, j, hi in sw if hi]
+        phc = [j for p, j, hi in sw if hi]
+        pl = [p for p, j, hi in sw if not hi]
+        plc = [j for p, j, hi in sw if not hi]
+        for p, j, hi in sw:
+            conf.setdefault(j, []).append((p, hi))
+    else:
+        ph, pl = pivots(h, l, n, float(o.get('prom') or 0), atr)
+        phc, plc = [p + n for p in ph], [p + n for p in pl]
+        phs, pls = set(ph), set(pl)
+        for p in phs ^ pls:                     # an outside candle that is both is left out
+            conf.setdefault(p + n, []).append((p, p in phs))
+    return {'ph': ph, 'pl': pl, 'phc': phc, 'plc': plc, 'conf': conf, 'atr': atr}
+
+
+def choch_events(h, l, c, n, ph=None, pl=None, opts=None, pts=None):
     """The CHoCH events [b, hi, lvl, li, lf, d] in time order: b = the candle that closed above the swing high hi (price
-    lvl), li / lf = the final low's candle / price, d = lower highs / lows before (>= 1)."""
-    if ph is None:
-        ph, pl = pivots(h, l, n)
-    phs, pls = set(ph), set(pl)
+    lvl), li / lf = the final low's candle / price, d = lower highs / lows before (>= 1). opts: see the module text
+    (protected CHoCH, equal highs / lows, the swing kind); `pts` = swing_points (made here when missing)."""
+    o = opts or {}
+    if pts is None:
+        if ph is not None and not o:
+            phs, pls = set(ph), set(pl)
+            pts = {'conf': {}, 'atr': None}
+            for p in phs ^ pls:
+                pts['conf'].setdefault(p + n, []).append((p, p in phs))
+        else:
+            pts = swing_points(h, l, c, n, o)
+    conf, atr = pts['conf'], pts['atr']
+    eq = float(o.get('eq') or 0)
+    protected = o.get('choch') == 'protected'
+
+    def tol(k):
+        return eq * atr[sw[k][0]] if eq else 0.0
     sw = []                       # alternating confirmed swings [candle, price, is_high]
     used = set()                  # swing highs already broken by a close
+    base = 0                      # protected: the swings after the last CHoCH
     ev = []
     for i in range(len(c)):
-        p = i - n
-        if p >= n:
-            is_h, is_l = p in phs, p in pls
-            if is_h != is_l:                      # an outside candle that is both is left out
-                if is_h:
-                    if sw and sw[-1][2]:
-                        if h[p] > sw[-1][1]:
-                            sw[-1] = [p, h[p], True]
-                    else:
-                        sw.append([p, h[p], True])
+        for p, is_h in sorted(conf.get(i, ())):
+            if is_h:
+                if sw and sw[-1][2]:
+                    if h[p] > sw[-1][1]:
+                        sw[-1] = [p, h[p], True]
                 else:
-                    if sw and not sw[-1][2]:
-                        if l[p] < sw[-1][1]:
-                            sw[-1] = [p, l[p], False]
-                    else:
-                        sw.append([p, l[p], False])
+                    sw.append([p, h[p], True])
+            else:
+                if sw and not sw[-1][2]:
+                    if l[p] < sw[-1][1]:
+                        sw[-1] = [p, l[p], False]
+                else:
+                    sw.append([p, l[p], False])
         if not sw:
             continue
-        q = len(sw) - 1 if sw[-1][2] else len(sw) - 2
+        if protected:                 # the swing high right before the lowest swing low of the fall
+            lows = [k for k in range(base, len(sw)) if not sw[k][2]]
+            if not lows:
+                continue
+            kmin = min(lows, key=lambda k: (sw[k][1], -k))
+            q = kmin - 1
+        else:
+            q = len(sw) - 1 if sw[-1][2] else len(sw) - 2
         if q < 0:
             continue
         hi, lvl = sw[q][0], sw[q][1]
@@ -84,31 +181,44 @@ def choch_events(h, l, c, n, ph=None, pl=None):
         lf = min(seg)
         li = hi + 1 + list(seg).index(lf)
         dh, k = 0, q
-        while k - 2 >= 0 and sw[k][1] < sw[k - 2][1]:
+        while k - 2 >= 0 and sw[k][1] < sw[k - 2][1] - tol(k):
             dh += 1
             k -= 2
         dl, prev, k = 0, lf, q - 1
-        while k >= 0 and prev < sw[k][1]:
+        while k >= 0 and prev < sw[k][1] - tol(k):
             dl += 1
             prev = sw[k][1]
             k -= 2
         d = min(dh, dl)
         if d >= 1:
             ev.append([i, hi, lvl, li, lf, d])
+            if protected:
+                base = len(sw)
     return ev
 
 
 class Structure:
-    """The structure of one candle series (see the module text). events[k] = [b, hi, lvl, li, lf, d]."""
-    __slots__ = ('n', 'ph', 'phv', 'events', 'bs', 'st')
+    """The structure of one candle series (see the module text). events[k] = [b, hi, lvl, li, lf, d]; `opts` = the options
+    of the module text (none = the baseline)."""
+    __slots__ = ('n', 'ph', 'phv', 'phc', 'pl', 'plv', 'plc', 'events', 'bs', 'st', 'sweep')
 
-    def __init__(self, h, l, c, n=5):
+    def __init__(self, h, l, c, n=5, opts=None):
         self.n = n
-        ph, pl = pivots(h, l, n)
+        pts = swing_points(h, l, c, n, opts)
+        ph, pl = pts['ph'], pts['pl']
         self.ph = array.array('i', ph)
         self.phv = array.array('d', [h[p] for p in ph])
-        self.events = choch_events(h, l, c, n, ph, pl)
+        self.phc = array.array('i', pts['phc'])
+        self.pl = array.array('i', pl)
+        self.plv = array.array('d', [l[p] for p in pl])
+        self.plc = array.array('i', pts['plc'])
+        self.events = choch_events(h, l, c, n, opts=opts, pts=pts)
         self.bs = array.array('i', [e[0] for e in self.events])
+        # sweeps: the final low went under the swing low before the CHoCH's swing high and closed back above it
+        self.sweep = []
+        for e in self.events:
+            k = bisect.bisect_left(self.pl, e[1]) - 1
+            self.sweep.append(bool(k >= 0 and l[e[3]] < self.plv[k] < c[e[3]]))
         self.st = {}                  # k -> [next candle to check for 'dead', dead, next candle for BOS, peak, next pivot, bos,
         #                                        next candle for the move high, the move high so far]
 
@@ -138,10 +248,10 @@ class Structure:
         s = self._state(k)
         if s[5] >= 0:
             return s[5] if s[5] < i else -1
-        ph, phv, n = self.ph, self.phv, self.n
+        ph, phv, phc = self.ph, self.phv, self.phc
         j, peak, pj = s[2], s[3], s[4]
         while j < i and j < len(c):
-            while pj < len(ph) and ph[pj] + n <= j:
+            while pj < len(ph) and phc[pj] <= j:
                 v = phv[pj]
                 peak = v if peak is None or v > peak else peak
                 pj += 1
@@ -186,8 +296,8 @@ class Structure:
         return mx
 
     def last_swing_high(self, i, above):
-        """The most recent swing high confirmed by candle i (its candle <= i - n) at or above `above`: (candle, price)."""
-        k = bisect.bisect_right(self.ph, i - self.n) - 1
+        """The most recent swing high confirmed by candle i (known on a candle <= i) at or above `above`: (candle, price)."""
+        k = bisect.bisect_right(self.phc, i) - 1
         while k >= 0:
             if self.phv[k] >= above:
                 return self.ph[k], self.phv[k]
@@ -223,6 +333,13 @@ class Structure:
             if fib and out['stage'] in ('above', 'below'):
                 out['stage'] = 'disc' if out['depth'] is not None and out['depth'] >= fib - 1e-9 else 'prem'
         return out
+
+
+def last_swing_low(st, j, after):
+    """The newest swing low known by candle j whose candle is at or after `after` -> its price, or None (a trail under the
+    structure: only the swing lows made since the entry)."""
+    k = bisect.bisect_right(st.plc, j) - 1
+    return st.plv[k] if k >= 0 and st.pl[k] >= after else None
 
 
 def zone_part(bottom, top, part, price):

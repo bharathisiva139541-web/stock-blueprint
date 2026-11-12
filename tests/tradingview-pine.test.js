@@ -91,4 +91,8 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   assert.match(n.join(' '), /market condition \(NIFTY 50\)/);
   assert.match(n.join(' '), /Spring shape rules/);
   assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).length, 2, 'the timeframe + "only entry / stop / target"');
+  // the structure engine options / filters of 12-Nov-2026 are said, not drawn
+  const n2 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', chochMode: 'protected', lagMin: 10, wkAbove: 21, sweep: true }).join(' ');
+  assert.match(n2, /not ZigZag swings, the protected-high CHoCH/);
+  assert.match(n2, /Not drawn \(check them on the chart yourself\): the days after the CHoCH, the sweep of the low, the weekly trend\./);
 });

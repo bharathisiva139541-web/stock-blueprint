@@ -49,8 +49,9 @@ import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
 TFS = ('D', 'W', '4H')
-CACHE_VERSION = 3               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
-                                # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y')
+CACHE_VERSION = 4               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
+                                # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y');
+                                # 4 (12-Nov-2026): each candle's volume too (the CHoCH candle's volume rule, E10)
 MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
@@ -117,18 +118,39 @@ DEFAULTS = {
     # fit the past; "yes do it"): testFrom = a date - the trades with a signal before it are the DEVELOPMENT period (where
     # rules are looked for), the ones from it the TEST period (kept to check them); '' = off. Nothing is left out.
     'testFrom': '',
+    # THE REST OF THE CHATGPT REVIEW'S EXPERIMENTS (owner, 12-Nov-2026: "Finish all the remaining updates"), each one off by
+    # default (= the frozen baseline). STRUCTURE ENGINE (structure.py): swingMode 'fractal' (n candles each side) /
+    # 'zigzag' (E3: a swing confirmed when price turns zzAtr x ATR), swingAtr = ATR prominence of a swing (E2, 0 off),
+    # chochMode 'last' / 'protected' (E5: the CHoCH breaks the high before the lowest low), eqAtr = equal highs / lows
+    # tolerance in ATR (E5, 0 off), sweep = the final low swept the swing low before it and closed back above (E5).
+    'swingMode': 'fractal', 'zzAtr': 2.0, 'swingAtr': 0.0, 'chochMode': 'last', 'eqAtr': 0.0, 'sweep': False,
+    # MORE FILTERS: discountMax = the zone part at most this far down the move (E6-E8 "not too deep", 0 off), lagMin = at
+    # least N calendar days from the CHoCH candle to the signal (0 off), dispAtr / dispVol = the CHoCH candle's body at least
+    # x ATR(14) / its volume at least x the 20-candle average (E10 displacement, 0 off), whereIn = how deep the signal
+    # candle went into the zone: 'any' / 'tm' top or middle / 't' top half only (E9; not with the zone-top order - its
+    # depth is known only at the close), wkAbove = the stock's last finished WEEKLY close above its 10 / 21 / 50-week EMA
+    # (E11, daily / 4H runs, 0 off)
+    'discountMax': 0.0, 'lagMin': 0, 'dispAtr': 0.0, 'dispVol': 0.0, 'whereIn': 'any', 'wkAbove': 0,
+    # TRAILS: trail 'atr' = atrK x ATR(14) under the highest high since the entry (E15); 'swing' = under the newest swing
+    # low formed since the signal (E16, the run's swing settings, stopBuf % under it)
+    'atrK': 3.0,
+    # VALIDATION: valFrom (with testFrom) = three parts - development / validation / test; rollYears = the figures of every
+    # N-year block ("steady over time?", 0 off)
+    'valFrom': '', 'rollYears': 3,
 }
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
-BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull')
+BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull',
+         'sweep')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
                          'touch'),
     'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
-    'trail': ('lows', 'pct', 'ema', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
+    'trail': ('lows', 'pct', 'ema', 'atr', 'swing', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
     'targetMode': ('R', 'swing'), 'discPart': ('mid', 'top', 'bottom'),
+    'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -142,6 +164,8 @@ LIMITS = {   # key: (min, max, integer)
     'lowestN': (0, 250, True), 'fallN': (0, 250, True), 'fallPct': (0.5, 90, False),
     'pivotN': (2, 20, True), 'downN': (1, 8, True), 'chochAge': (0, 2000, True), 'swingMinR': (0, 20, False),
     'discount': (0, 1, False),
+    'zzAtr': (0.5, 10, False), 'swingAtr': (0, 5, False), 'eqAtr': (0, 2, False), 'discountMax': (0, 1.5, False),
+    'lagMin': (0, 2000, True), 'dispAtr': (0, 5, False), 'dispVol': (0, 10, False), 'atrK': (0.5, 10, False), 'rollYears': (0, 10, True),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -183,8 +207,10 @@ def clean_params(p):
     for k in BOOLS:
         if isinstance(p.get(k), bool):
             out[k] = p[k]
-    for k in ('from', 'to', 'testFrom'):
+    for k in ('from', 'to', 'testFrom', 'valFrom'):
         out[k] = _iso_date(p.get(k) or '')
+    if out['valFrom'] and not (out['testFrom'] and out['valFrom'] < out['testFrom']):
+        out['valFrom'] = ''                   # the validation part sits between the development part and the test part
     mk = str(p.get('mktIndex') or '').strip().upper().replace(' ', '_')
     out['mktIndex'] = mk if re.match(r'^[A-Z0-9_&.-]{2,40}$', mk) else ''
     return out
@@ -230,6 +256,7 @@ class CacheWriter:
     def _add(self, sym, tf, candles, rows):
         n = len(candles)
         parts = [array.array('f', [c[k] for c in candles]) for k in ('o', 'h', 'l', 'c')]
+        parts.append(array.array('f', [float(c.get('v') or 0) for c in candles]))
         parts.append(array.array('i', [date.fromisoformat(c['day'][:10]).toordinal() for c in candles]))
         parts.append(array.array('h', [_minute(c['t']) if tf == '4H' else 0 for c in candles]))
         f = self.files[tf]
@@ -354,20 +381,20 @@ def load_meta(base=None):
 
 
 class Candles:
-    __slots__ = ('o', 'h', 'l', 'c', 'day', 'minute', 'n')
+    __slots__ = ('o', 'h', 'l', 'c', 'v', 'day', 'minute', 'n')
 
     def __init__(self, f, off, n):
         self.n = n
         f.seek(off)
-        raw = f.read(n * 22 + 4)
+        raw = f.read(n * 26 + 4)
         vals = []
         p = 0
-        for code, size in (('f', 4), ('f', 4), ('f', 4), ('f', 4), ('i', 4), ('h', 2)):
+        for code, size in (('f', 4), ('f', 4), ('f', 4), ('f', 4), ('f', 4), ('i', 4), ('h', 2)):
             a = array.array(code)
             a.frombytes(raw[p:p + n * size])
             vals.append(a)
             p += n * size
-        self.o, self.h, self.l, self.c, self.day, self.minute = vals
+        self.o, self.h, self.l, self.c, self.v, self.day, self.minute = vals
 
 
 # ------------------------------------------------------------------ one trade
@@ -573,10 +600,11 @@ def market_filter(meta, P):
     return ok
 
 
-def simulate(cs, row, P, ema=None, swing=None):
+def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
     """One signal row -> the trade under the rules P (see the module text), or (None, why skipped). `swing` (target mode
     'swing') = the Structure of these candles: the target is then the last swing high at least swingMinR R above the
-    entry (none = skipped, 'noswing')."""
+    entry (none = skipped, 'noswing'). `atr` (trail 'atr') = the ATR(14) series; `lows` (trail 'swing') = the Structure
+    whose swing lows the stop trails under."""
     i, code, zb = row[0], row[1], row[2]
     n = cs.n
     if i >= n:
@@ -631,6 +659,12 @@ def simulate(cs, row, P, ema=None, swing=None):
             cur = max(cur, min(_f(cs.l[k]) for k in range(a, j + 1)))
         elif trail == 'pct':
             cur = max(cur, best * (1 - P['trailPct'] / 100.0))
+        elif trail == 'atr' and atr is not None:      # E15: atrK x ATR(14) under the highest high since the entry
+            cur = max(cur, best - P['atrK'] * atr[j])
+        elif trail == 'swing' and lows is not None:   # E16: under the newest swing low formed since the signal
+            v = structure.last_swing_low(lows, j, i)
+            if v is not None:
+                cur = max(cur, _f(v) * (1 - P['stopBuf'] / 100.0))
         return cur
 
     if zone_in:
@@ -911,11 +945,12 @@ def summarise(trades, P, skips, meta, secs):
         stats['avgRLo'], stats['avgRHi'] = lo_r, hi_r
         stats['edge'] = _edge(stats['trades'], lo_r, hi_r)
     split = _split(closed, P)
+    rolling = _rolling(closed, P['rollYears'])
     return {'v': 1, 'params': P, 'groupName': GROUP_NAMES[P['group']], 'cacheUpto': meta.get('upto'),
             'from': date.fromordinal(first).isoformat() if first else '', 'to': date.fromordinal(last).isoformat() if last else '',
             'stats': stats, 'open': len(trades) - len(closed), 'skipped': skips, 'account': acct, 'years': years,
             'hist': hist, 'reasons': reasons, 'tradeCols': TRADE_COLS, 'trades': rows, 'tradesTotal': len(trades),
-            'stages': stages, 'breakdowns': breakdowns(closed, P), 'split': split, 'secs': round(secs, 1)}
+            'stages': stages, 'breakdowns': breakdowns(closed, P), 'split': split, 'rolling': rolling, 'secs': round(secs, 1)}
 
 
 # ------------------------------------------------------------------ "real or chance?" + the breakdowns + the dev / test split
@@ -991,12 +1026,25 @@ def _vs_rest(a, b):
     return 'better' if z > Z90 else 'worse' if z < -Z90 else 'chance'
 
 
+def _parts(ts, P):
+    """[(part, trades)] of a run with testFrom set - ('dev', before valFrom / testFrom), ('val', valFrom .. testFrom, with
+    valFrom), ('test', from testFrom) - else None."""
+    if not P.get('testFrom'):
+        return None
+    at = date.fromisoformat(P['testFrom']).toordinal()
+    if P.get('valFrom'):
+        v = date.fromisoformat(P['valFrom']).toordinal()
+        return [('dev', [t for t in ts if t['sigDay'] < v]), ('val', [t for t in ts if v <= t['sigDay'] < at]),
+                ('test', [t for t in ts if t['sigDay'] >= at])]
+    return [('dev', [t for t in ts if t['sigDay'] < at]), ('test', [t for t in ts if t['sigDay'] >= at])]
+
+
 def _period(ts, P):
     """(development, test) trades of a run with testFrom set, else (None, None)."""
-    if not P.get('testFrom'):
+    parts = _parts(ts, P)
+    if parts is None:
         return None, None
-    at = date.fromisoformat(P['testFrom']).toordinal()
-    return [t for t in ts if t['sigDay'] < at], [t for t in ts if t['sigDay'] >= at]
+    return parts[0][1], parts[-1][1]
 
 
 def _brief(ts):
@@ -1011,8 +1059,8 @@ def _brief(ts):
 def breakdowns(closed, P):
     """The closed trades split by one feature at a time (BD_DIMS) -> [{'key', 'name', 'rows': [{'label', 'trades', 'winPct',
     'avgR', 'medR', 'totalR', 'hitPct', 'lo', 'hi', 'verdict' (vs the rest of the run: better / worse / chance / few),
-    with testFrom also 'dev' / 'test' ({trades, winPct, avgR, lo, hi}) and 'held' ('yes' / 'no' / '' = too few: the group
-    beat (or trailed) the rest in BOTH periods)}]}] - a feature with fewer than 2 groups of trades is left out."""
+    with testFrom also 'dev' / 'test' (+ 'val' with valFrom; {trades, winPct, avgR, lo, hi}) and 'held' ('yes' / 'no' / '' =
+    too few: the group beat (or trailed) the rest in EVERY part)}]}] - a feature with fewer than 2 groups of trades is left out."""
     out = []
     for key, name, kind, bins in BD_DIMS:
         groups = []
@@ -1037,15 +1085,13 @@ def breakdowns(closed, P):
             row = {'label': label, 'trades': s['trades'], 'winPct': s['winPct'], 'avgR': s['avgR'], 'medR': s['medR'],
                    'totalR': s['totalR'], 'hitPct': s['hitPct'], 'lo': lo, 'hi': hi,
                    'verdict': _vs_rest([t['R'] for t in ts], [t['R'] for t in rest])}
-            dev, test = _period(ts, P)
-            if dev is not None:
-                rdev, rtest = _period(rest, P)
-                row['dev'], row['test'] = _brief(dev), _brief(test)
-                ok = len(dev) >= BD_HELD_MIN and len(test) >= BD_HELD_MIN and len(rdev) >= 2 and len(rtest) >= 2
-                if ok:
-                    a = sum(t['R'] for t in dev) / len(dev) - sum(t['R'] for t in rdev) / len(rdev)
-                    b = sum(t['R'] for t in test) / len(test) - sum(t['R'] for t in rtest) / len(rtest)
-                    row['held'] = 'yes' if a * b > 0 else 'no'
+            mine, theirs = _parts(ts, P), _parts(rest, P)
+            if mine is not None:
+                for (part, a), (_, b) in zip(mine, theirs):
+                    row[part] = _brief(a)
+                if all(len(a) >= BD_HELD_MIN and len(b) >= 2 for (_, a), (_, b) in zip(mine, theirs)):
+                    sides = [sum(t['R'] for t in a) / len(a) - sum(t['R'] for t in b) / len(b) for (_, a), (_, b) in zip(mine, theirs)]
+                    row['held'] = 'yes' if all(x > 0 for x in sides) or all(x < 0 for x in sides) else 'no'
                 else:
                     row['held'] = ''
             rows.append(row)
@@ -1056,8 +1102,8 @@ def breakdowns(closed, P):
 def _split(closed, P):
     """testFrom set: {'at', 'dev': figures of the development period (signals before it), 'test': the test period} - each
     {trades, winPct, avgR, medR, totalR, pf, hitPct, avgRLo, avgRHi, edge, from, to}; else None."""
-    dev, test = _period(closed, P)
-    if dev is None:
+    parts = _parts(closed, P)
+    if parts is None:
         return None
 
     def part(ts):
@@ -1069,7 +1115,28 @@ def _split(closed, P):
                   'from': date.fromordinal(min(t['sigDay'] for t in ts)).isoformat(),
                   'to': date.fromordinal(max(t['sigDay'] for t in ts)).isoformat()})
         return s
-    return {'at': P['testFrom'], 'dev': part(dev), 'test': part(test)}
+    out = {'at': P['testFrom'], 'val': P.get('valFrom') or ''}
+    for key, ts in parts:
+        out[{'dev': 'dev', 'val': 'valid', 'test': 'test'}[key]] = part(ts)
+    return out
+
+
+def _rolling(closed, years):
+    """'Steady over time?': the figures of every `years`-year block from the first signal's year -> [{from, to, trades,
+    winPct, avgR, lo, hi, edge}] (None with `years` 0 or fewer than two blocks)."""
+    if not years or not closed:
+        return None
+    y0 = min(date.fromordinal(t['sigDay']).year for t in closed)
+    y1 = max(date.fromordinal(t['sigDay']).year for t in closed)
+    out = []
+    for a in range(y0, y1 + 1, years):
+        ts = [t for t in closed if a <= date.fromordinal(t['sigDay']).year < a + years]
+        if not ts:
+            continue
+        b = _brief(ts)
+        b.update({'from': a, 'to': min(a + years - 1, y1), 'edge': _edge(b['trades'], b['lo'], b['hi'])})
+        out.append(b)
+    return out if len(out) >= 2 else None
 
 
 def run_job(params, base=None, progress=None, charts=None, name=''):
@@ -1086,12 +1153,17 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
     trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
-                         'noswing': 0, 'zoneentry': 0}
+                         'noswing': 0, 'zoneentry': 0, 'where': 0, 'wk': 0}
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
-    smap = _struct_map(d, tf, P['pivotN']) if smode != 'off' or P['targetMode'] == 'swing' else None
+    sopts = struct_opts(P)
+    trail_on = P['after'] == 'trail'
+    smap = (_struct_map(d, tf, P['pivotN'], sopts) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
+            else None)
+    wk_index = (meta['index'].get('W') or {}) if P['wkAbove'] and tf != 'W' else None
     lens = ema_lens(P)
     mkt = market_filter(meta, P)
+    fw = open(os.path.join(d, 'W.bin'), 'rb') if wk_index is not None else None
     syms = sorted(sigs)
     fib = P['discount'] or None
     with open(os.path.join(d, tf + '.bin'), 'rb') as f:
@@ -1106,7 +1178,10 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
             if smap is not None:
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'])
+                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
+            atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
+                   if trail_on and P['trail'] == 'atr' else None)
+            wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
 
             def attempt(r):
                 """One signal row -> (trade, None) or (None, (skip key, rule))."""
@@ -1122,15 +1197,20 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'],
                                     h=cs.h, zone_bottom=r[2] if zf is not None else None, part=P['discPart'], fib=fib)
                     if smode == 'only':
-                        why = struct_fail(sj, P)
+                        why = struct_fail(sj, P) or struct_more(st.s, sj, cs, r[0], P)
                         if why:
                             return None, ('struct', why)
+                # E9: how deep the signal candle went into its zone (not with the zone-top order - known only at the close)
+                if P['whereIn'] != 'any' and P['entry'] != 'zone' and r[4] in ('t', 'm', 'b'):
+                    if not (r[4] == 't' or (P['whereIn'] == 'tm' and r[4] == 'm')):
+                        return None, ('where', '')
                 note = ''
                 if lens:
                     ok, note = ema_check(cs, r[0], P, emas)
                     if not ok:
                         return None, ('ema', '')
-                t, why = simulate(cs, r, P, ema, st.s if P['targetMode'] == 'swing' else None)
+                t, why = simulate(cs, r, P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
+                                  st.s if trail_on and P['trail'] == 'swing' else None)
                 if t is None:
                     return None, (why, '')
                 t['ema'] = note
@@ -1162,6 +1242,9 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 if mkt and not mkt(cs.day[i]):
                     skips['mkt'] += 1
                     continue
+                if wk is not None and not wk(cs.day[i]):
+                    skips['wk'] += 1
+                    continue
                 fail = None
                 for r in grp:                          # the first row of the candle that passes every rule = its trade
                     t, why = attempt(r)
@@ -1179,6 +1262,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         struct_why[rule] = struct_why.get(rule, 0) + 1
             if progress and (k + 1) % 300 == 0:
                 progress(int((k + 1) * 90 / max(1, len(syms))))
+    if fw is not None:
+        fw.close()
     res = summarise(trades, P, skips, meta, time.time() - t0)
     if charts:
         try:
@@ -1214,7 +1299,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
             by_sym.setdefault(t['sym'], []).append(t)
         tf = P['tf']
         index = meta['index'].get(tf) or {}
-        smap = _struct_map(d, tf, P['pivotN'])
+        sopts = struct_opts(P)
+        smap = _struct_map(d, tf, P['pivotN'], sopts)
         lens = ema_lens(P)
         done = 0
         with open(os.path.join(d, tf + '.bin'), 'rb') as f:
@@ -1224,8 +1310,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                 cs = Candles(f, index[sym][0], index[sym][1])
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'])
-                piv = structure.pivots(cs.h, cs.l, P['pivotN'])
+                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
+                piv = (list(st.s.ph), list(st.s.pl))      # the run's own swings (fractal / ATR / ZigZag)
                 emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens} or None
                 for t in by_sym[sym]:
                     if 'k' not in t:                  # structure not a rule in this run: the chart still shows the CHoCH, if any
@@ -1257,15 +1343,69 @@ class _Struct:
     """A stock's Structure + the candle count it was made from (a new cache build = new candles)."""
     __slots__ = ('s', 'size')
 
-    def __init__(self, cs, n):
-        self.s = structure.Structure(cs.h, cs.l, cs.c, n)
+    def __init__(self, cs, n, opts=None):
+        self.s = structure.Structure(cs.h, cs.l, cs.c, n, opts or None)
         self.size = cs.n
 
 
-def _struct_map(d, tf, n):
-    """{sym: _Struct} kept while the program runs (the same cache build, timeframe and swing size) - the first run with
-    market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
-    key = (d, tf, n)
+def struct_opts(P):
+    """The structure engine options of a run (structure.py; only the ones away from the baseline): {'swing', 'zz', 'prom',
+    'choch', 'eq'}."""
+    o = {}
+    if P['swingMode'] == 'zigzag':
+        o['swing'], o['zz'] = 'zigzag', P['zzAtr']
+    if P['swingAtr']:
+        o['prom'] = P['swingAtr']
+    if P['chochMode'] == 'protected':
+        o['choch'] = 'protected'
+    if P['eqAtr']:
+        o['eq'] = P['eqAtr']
+    return o
+
+
+def struct_more(s, sj, cs, i, P):
+    """The run's further structure rules (12-Nov-2026: the ChatGPT review's E6-E8 / E10 / E5) on a signal that passed
+    struct_fail -> the first one it fails (a STRUCT_WHY key) or ''."""
+    k = sj['k']
+    b = s.events[k][0]
+    if P['discountMax'] and sj.get('depth') is not None and sj['depth'] > P['discountMax'] + 1e-9:
+        return 'deep'
+    if P['lagMin'] and cs.day[i] - cs.day[b] < P['lagMin']:
+        return 'early'
+    if P['dispAtr']:
+        a = atr14(cs, b)
+        if a is None or _f(cs.c[b]) - _f(cs.o[b]) < P['dispAtr'] * a:
+            return 'disp'
+    if P['dispVol']:
+        vs = [float(x) for x in cs.v[max(0, b - 20):b] if x > 0]
+        if len(vs) < 10 or not float(cs.v[b]) >= P['dispVol'] * sum(vs) / len(vs):
+            return 'vol'
+    if P['sweep'] and not s.sweep[k]:
+        return 'sweep'
+    return ''
+
+
+def week_filter(fw, idx, n):
+    """E11 (12-Nov-2026): day ordinal -> True when the stock's last FINISHED weekly candle before that day's week closed
+    above its n-week EMA (the first n weeks never pass; no weekly candles = never)."""
+    if not idx:
+        return lambda day: False
+    w = Candles(fw, idx[0], idx[1])
+    closes = [_f(x) for x in w.c]
+    ema = ema_series(closes, n)
+    days = list(w.day)
+
+    def ok(day):
+        monday = day - date.fromordinal(day).weekday()
+        k = bisect.bisect_left(days, monday) - 1      # the weekly candle's day = its last session, before this week
+        return k >= n - 1 and closes[k] > ema[k]
+    return ok
+
+
+def _struct_map(d, tf, n, opts=None):
+    """{sym: _Struct} kept while the program runs (the same cache build, timeframe, swing size and structure options) - the
+    first run with market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
+    key = (d, tf, n, tuple(sorted((opts or {}).items())))
     if _STRUCT['key'] != key:
         _STRUCT['key'], _STRUCT['map'] = key, {}
     return _STRUCT['map']
@@ -1274,7 +1414,12 @@ def _struct_map(d, tf, n):
 STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows you set)',
               'zone': 'its zone did not form in the CHoCH move / after it', 'bos': 'a BOS came first (not the first pullback)',
               'above': 'its zone is not below the CHoCH level',
-              'premium': 'its zone was not in the discount part of the move (above your Fib line)'}
+              'premium': 'its zone was not in the discount part of the move (above your Fib line)',
+              'deep': 'its zone was deeper in the move than your "at most" level',
+              'early': 'it came sooner after the CHoCH than your minimum days',
+              'disp': 'the CHoCH candle\'s body was smaller than your ATR rule (no displacement)',
+              'vol': 'the CHoCH candle\'s volume was under your x-times-average rule',
+              'sweep': 'the final low did not sweep the swing low before it (closed back above)'}
 
 
 def struct_fail(sj, P):

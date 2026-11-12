@@ -16,6 +16,7 @@
     "industries": "node tools/build_industry_data.js",
     "logos": "node tools/build_logos.js",
     "guide": "node tools/pattern-guide/build.js",
-    "pine": "node tools/build_pine.js"
+    "pine": "node tools/build_pine.js",
+    "lab-guide": "node tools/lab-guide/build.js"
   }
 }
