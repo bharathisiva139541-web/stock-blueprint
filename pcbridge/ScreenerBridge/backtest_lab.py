@@ -1280,14 +1280,15 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
 
 # ------------------------------------------------------------------ the charts PDF (lab_charts.py)
 def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
-    """Every trade of a run as a chart page in one PDF in `folder` (owner, 12-Nov-2026: laptop folder only, every trade,
-    the losing ones first) -> {'file', 'folder', 'pages', 'trades', 'shown'}. Reads each stock's candles once."""
+    """Every trade of a run in one PDF in `folder` (owner, 12-Nov-2026: laptop folder only, every trade, the losing ones
+    first) - two pages a trade: the chart with the market structure (HH / HL / LH / LL, CHoCH, BOS, zone, BUY) and why it
+    was taken / how it ended -> {'file', 'folder', 'pages', 'trades', 'shown'}. Reads each stock's candles once."""
     import lab_charts as LC
     os.makedirs(folder, exist_ok=True)
     order = sorted(trades, key=LC.sort_key)
-    shown = order[:LC.MAX_PAGES]
-    total = len(shown) + 1
-    page_of = {id(t): k + 2 for k, t in enumerate(shown)}
+    shown = order[:LC.MAX_TRADES]
+    total = 2 * len(shown) + 1
+    page_of = {id(t): 2 * k + 2 for k, t in enumerate(shown)}
     made = datetime.now()
     title = name or ('Backtest Lab run - %s' % P['tf'])
     fname = made.strftime('%Y-%m-%d %H%M%S') + ' ' + LC.safe_name(title) + '.pdf'
@@ -1311,7 +1312,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
                     st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
-                piv = (list(st.s.ph), list(st.s.pl))      # the run's own swings (fractal / ATR / ZigZag)
+                extra = {'seq': LC.swing_seq(st.s),     # the run's own swings (fractal / ATR / ZigZag) as the structure saw them
+                         'atr': structure.atr_series(cs.h, cs.l, cs.c)}
                 emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens} or None
                 for t in by_sym[sym]:
                     if 'k' not in t:                  # structure not a rule in this run: the chart still shows the CHoCH, if any
@@ -1322,7 +1324,7 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                         t['k'], t['H'] = sj['k'], sj.get('H')
                         if sj['k'] >= 0 and not t.get('struct'):
                             t['struct'] = struct_text(st.s, sj, cs, tf, P)
-                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, P, page_of[id(t)], total, title, piv, emas)
+                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, P, page_of[id(t)], total, title, None, emas, extra)
                     done += 1
                     if progress and done % 200 == 0:
                         progress(90 + int(9 * done / max(1, len(shown))))

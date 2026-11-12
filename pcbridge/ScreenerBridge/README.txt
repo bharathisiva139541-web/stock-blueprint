@@ -338,11 +338,20 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    chart - swings, CHoCH, final low, the 50% line, BOS, the zones and a BUY label (hover it: entry / stop / target) - to
    check a backtest trade with your own eyes. TradingView: Pine Editor > paste > Save > Add to chart. Easier: the Backtest
    Lab page's "Copy TradingView script" button gives the script with the rules of the form (or of a finished run).
+   Since 12-Nov-2026 the script also follows the Lab's swing / CHoCH options (ZigZag swings, "a swing must stand out by
+   x ATR", the protected-high CHoCH, equal highs / lows) - its summary table says which ones are on (row "Swings").
  - Charts PDF (12-Nov-2026): with every Backtest Lab run this computer also makes ONE PDF with a chart page for every trade
    (the losing ones first, newest first; then the rest; then the open ones): the candles, swing highs / lows, the CHoCH
    level + final low, the Fib (discount) line, the BOS, the FVG / Gap-up zone, the entry / stop / target lines, the BUY
    and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file); the newest 20 PDFs are
-   kept; at most 3,000 trade pages a PDF. The Lab page shows the file name with each run. config "lab_charts": false = off.
+   kept. The Lab page shows the file name with each run. config "lab_charts": false = off.
+   Two pages a trade (12-Nov-2026): page 1 = the chart with every swing marked HH / HL / LH / LL (each high / low against
+   the one before), CHoCH, final low, move high, BOS, the FVG / Gap-up zone, BUY and the exit - the words are put where
+   they cover no candle; page 2 = plain sentences, no chart (the prices are on page 1): why the backtest took it (the
+   fall with its lower highs / lows, the CHoCH, the zone and how deep it sits in the rise, the first touch, no BOS yet,
+   how old the CHoCH was, your filters, the plan) and how it ended (for a stop loss: how far it went up first, a wick only
+   or a close under the stop, a big candle / heavy volume, whether the zone and the final low held, whether price reached
+   the target later). At most 1,500 trades (3,000 pages) a PDF.
  - Real or chance? + What worked best + Development / test (12-Nov-2026, after your ChatGPT review): every run now shows
    the likely range (90%) of its average R ("An edge" = the whole range above 0; "Could be chance" = it spans 0), and
    tables of the finished trades split one feature at a time - zone depth in the move, lower highs / lows before the
