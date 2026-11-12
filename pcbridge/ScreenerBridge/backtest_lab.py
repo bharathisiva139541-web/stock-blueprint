@@ -49,9 +49,11 @@ import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
 TFS = ('D', 'W', '4H')
-CACHE_VERSION = 4               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
+CACHE_VERSION = 5               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
                                 # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y');
                                 # 4 (12-Nov-2026): each candle's volume too (the CHoCH candle's volume rule, E10)
+                                # 5 (12-Nov-2026): zone touch rows carry the Gap-up zone inside an FVG / the FVG around a
+                                #   Gap-up zone; 'P' / 'Q' rows = a Spring / Bullish Harami + Inverted Hammer inside a zone
 MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
@@ -137,20 +139,50 @@ DEFAULTS = {
     # VALIDATION: valFrom (with testFrom) = three parts - development / validation / test; rollYears = the figures of every
     # N-year block ("steady over time?", 0 off)
     'valFrom': '', 'rollYears': 3,
+    # THE OWNER'S REFINEMENTS AFTER HIS FIRST CHARTS PDF (12-Nov-2026):
+    # zoneMin / zoneMax = the FVG's size, (top - bottom) / bottom in % (0 = no limit; "there should be control in FVG % size
+    # from 2% to 10%" - STUDDS 12-Jun-2026 had a 10 % zone; a Gap-up zone inside an FVG is judged by that FVG)
+    'zoneMin': 0.0, 'zoneMax': 0.0,
+    # stop 'final' = under the CHoCH's final low (LL) by stopBuf ("sometimes the market broke the FVG below and go near this
+    # LL final low and then started to move in our direction"); a signal without a live CHoCH is skipped
+    # lockTarget = once price reaches the target, the stop moves up to the target, then the trail goes on (SIGNPOST
+    # 28-Mar-2025: a gap opened above the target, closed under it and later under the stop - "It should be considered as Win";
+    # his answer: "Target தொட்டதும் stop = target"); a gap open above the target sells at the target the same day if it falls back
+    'lockTarget': True,
+    # gapEntry = an FVG zone with a Gap-up zone inside it (formed in the same move, kite_intraday.link_zones): the buy order
+    # waits at the Gap-up zone's top, the stop stays under the FVG's bottom ("Actual entry should be on the Top of the Gapup
+    # zone, not on the entire FVG zone"; GABRIEL 21-Nov-2007 "Entry should on Gap-up inside FVG if available")
+    'gapEntry': True,
+    # lineOk = a zone short of the discount level still counts when its top is at / under the CHoCH level (+ lineTol %)
+    # ("Even the Zone is above 0.382 level but zone top is at equal or below the Breakout Line (Choch) or it can be very
+    # slightly above the line. the Zone can be used" - SWIGGY)
+    'lineOk': False, 'lineTol': 0.5,
+    # fibPat = a Spring or a Bullish Harami + Inverted Hammer whose low is within fibTol % of the zone's fibLevel line (drawn
+    # from the zone bottom to its top like TradingView: top - level x height) and that closes above it - buy at its close,
+    # stop under the zone bottom (FINOPB 25-Apr-2025: "in this FVG, i have drawn Fibonacci, exactly 0.618 level, the price
+    # respected this level and formed Spring pattern"): 'off' / 'big' = only in zones bigger than zoneMax (else
+    # BIG_ZONE_PCT) - the smaller ones keep the zone-top entry / 'all' = every zone (group 'touch')
+    'fibPat': 'off', 'fibLevel': 0.618, 'fibTol': 1.0,
+    # darkCloud = the FVG's 3rd candle red, opening at / above the green FVG candle's close and closing under the middle of
+    # its body (RTNPOWER 14-Sep-2018: "trade in this type of FVG often fails ... It should be filterable option only"):
+    # 'any' / 'exclude' / 'only'
+    'darkCloud': 'any',
 }
+BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger than this
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
 BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull',
-         'sweep')
+         'sweep', 'lockTarget', 'gapEntry', 'lineOk')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
                          'touch'),
-    'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct'), 'after': ('trail', 'fixed'),
+    'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct', 'final'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'atr', 'swing', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
     'targetMode': ('R', 'swing'), 'discPart': ('mid', 'top', 'bottom'),
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
+    'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -166,6 +198,7 @@ LIMITS = {   # key: (min, max, integer)
     'discount': (0, 1, False),
     'zzAtr': (0.5, 10, False), 'swingAtr': (0, 5, False), 'eqAtr': (0, 2, False), 'discountMax': (0, 1.5, False),
     'lagMin': (0, 2000, True), 'dispAtr': (0, 5, False), 'dispVol': (0, 10, False), 'atrK': (0.5, 10, False), 'rollYears': (0, 10, True),
+    'zoneMin': (0, 50, False), 'zoneMax': (0, 100, False), 'lineTol': (0, 5, False), 'fibLevel': (0.2, 0.95, False), 'fibTol': (0, 5, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -177,10 +210,16 @@ GROUP_NAMES = {
 }
 SPRING_CODES = ('S', 'F', 'G')   # the Spring shape rules apply to these (T / C = FVG First Touch / Confirmed have no Spring pair)
 TOUCH_CODES = ('T', 'Z', 'Y')    # first-touch signals: the zone-top entry (a buy order waiting at the top) fills on them
-REASONS = ('stop', 'target', 'be', 'trail', 'ema', 'time', 'open')
+FIB_CODES = ('P', 'Q')           # a Spring / Bullish Harami + Inverted Hammer inside an FVG / a Gap-up zone (fibPat)
+FVG_CODES = ('F', 'Z', 'T', 'C', 'P')   # rows whose zone is a 3-candle FVG (the others: Gap-up zones)
+PAT_NAMES = {'S': 'Spring', 'H': 'Bullish Harami + Inverted Hammer'}
+ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
+              'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'FVG zone - pattern at the Fib line',
+              'Q': 'Gap-up zone - pattern at the Fib line'}
+REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag']
+              'depth', 'lhll', 'lag', 'zpct', 'pat']
 
 
 def _iso_date(s):
@@ -351,10 +390,39 @@ def touch_rows(candles, i, ft, cf, turn):
 def zone_touch_rows(candles, i, zones, turn):
     """The cache rows of candle i's FIRST touches of zones (kite_intraday.zone_first_touches; owner, 11-Nov-2026: "the first
     return of price to the discount zone"): 'Z' = a 3-candle FVG zone, 'Y' = a Gap-up zone (+ inside), the zones' order kept
-    (highest top first - a falling price reaches it first)."""
+    (highest top first - a falling price reaches it first). Row[9] (12-Nov-2026, kite_intraday.link_zones): a 'Z' row's
+    highest Gap-up zone inside it / a 'Y' row's widest FVG zone around it, formed before candle i - [bottom, top, candle]."""
     t = turn(candles[i]['day']) if turn else 0.0
-    return [[i, 'Y' if z['kind'] == 'Gap-up' else 'Z', round(z['bottom'], 4), round(z['top'], 4), (z.get('where') or '')[:1], 1,
-             1 if z.get('inside') else 0, t, int(z['f'])] for z in zones or ()]
+    out = []
+    for z in zones or ():
+        link = None
+        if z['kind'] == 'Gap-up':
+            o = [x for x in z.get('outer') or () if x['f'] < i]
+            if o:
+                x = min(o, key=lambda x: (x['bottom'], x['f']))
+                link = [round(x['bottom'], 4), round(x['top'], 4), int(x['f'])]
+        else:
+            g = [x for x in z.get('inner') or () if x['f'] < i]
+            if g:
+                x = max(g, key=lambda x: (x['top'], -x['f']))
+                link = [round(x['bottom'], 4), round(x['top'], 4), int(x['f'])]
+        out.append([i, 'Y' if z['kind'] == 'Gap-up' else 'Z', round(z['bottom'], 4), round(z['top'], 4), (z.get('where') or '')[:1],
+                    1, 1 if z.get('inside') else 0, t, int(z['f']), link])
+    return out
+
+
+def zone_pct(bottom, top):
+    """A zone's size: (top - bottom) / bottom in %."""
+    return (top - bottom) / bottom * 100.0 if bottom and bottom > 0 and top is not None else None
+
+
+def dark_cloud(cs, f):
+    """kite_intraday.is_dark_cloud on the cached candles: the FVG's 3rd candle f red, opening at / above the green candle
+    f-1's close and closing under the middle of its body."""
+    if f is None or f < 1 or f >= cs.n:
+        return False
+    bo, bc, co, cc = _f(cs.o[f - 1]), _f(cs.c[f - 1]), _f(cs.o[f]), _f(cs.c[f])
+    return bc > bo and cc < co and co >= bc and cc < (bo + bc) / 2.0
 
 
 def current_dir(base=None):
@@ -600,11 +668,13 @@ def market_filter(meta, P):
     return ok
 
 
-def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
+def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
     """One signal row -> the trade under the rules P (see the module text), or (None, why skipped). `swing` (target mode
     'swing') = the Structure of these candles: the target is then the last swing high at least swingMinR R above the
     entry (none = skipped, 'noswing'). `atr` (trail 'atr') = the ATR(14) series; `lows` (trail 'swing') = the Structure
-    whose swing lows the stop trails under."""
+    whose swing lows the stop trails under. `final` (stop 'final') = the CHoCH's final low (none = skipped, 'nofinal').
+    lockTarget (12-Nov-2026): once price reaches the target the stop moves up to it (a gap open above the target that falls
+    back the same candle = sold at the target; exit reason 'lock')."""
     i, code, zb = row[0], row[1], row[2]
     n = cs.n
     if i >= n:
@@ -631,6 +701,10 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
         mode = 'zone'                         # the touch candle's low is not known when the order fills
     if mode == 'pct':
         stop = entry * (1 - P['stopPct'] / 100.0)
+    elif mode == 'final':
+        if final is None:
+            return None, 'nofinal'
+        stop = _f(final) * (1 - P['stopBuf'] / 100.0)
     else:
         base = low if mode == 'spring' else zb if mode == 'zone' else min(low, zb if zb is not None else low)
         stop = base * (1 - P['stopBuf'] / 100.0)
@@ -650,6 +724,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
         target = _f(sh[1])
     end = cs.day[i] + P['maxDays']
     trail, fixed, be = P['trail'], P['after'] == 'fixed', P['breakeven']
+    lock = P.get('lockTarget') and not fixed
     hit, cur, best = False, stop, entry
     ex, why, jx = None, None, None
 
@@ -682,6 +757,8 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
                 else:
                     if be:
                         cur = max(cur, entry)
+                    if lock:
+                        cur = max(cur, target)
                     cur = trail_up(i, cur)
     for j in (range(j0, n) if ex is None else ()):
         if cs.day[j] > end:
@@ -697,8 +774,10 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
                     break
                 if be:
                     cur = max(cur, entry)
+                if lock:                          # the stop moves up to the target: falling back under it = sold there
+                    cur = max(cur, target)
                 if l < cur:
-                    ex, why, jx = cur, 'be' if cur >= entry else 'stop', j
+                    ex, why, jx = cur, _exit_why(cur, entry, target, lock), j
                     break
                 best = max(best, h)
                 cur = trail_up(j, cur)
@@ -714,11 +793,13 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
                     break
                 if be:
                     cur = max(cur, entry)
+                if lock:
+                    cur = max(cur, target)
                 cur = trail_up(j, cur)
             continue
         if l < cur:
             ex = min(o, cur)
-            why = 'trail' if cur > entry * (1 + 1e-9) else 'be' if cur >= entry * (1 - 1e-9) else 'stop'
+            why = _exit_why(cur, entry, target, lock)
             jx = j
             break
         if trail == 'ema' and ema is not None and c < ema[j]:
@@ -742,11 +823,27 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None):
             'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i]}, None
 
 
+def _exit_why(cur, entry, target, lock):
+    """The exit reason of a stop at `cur` after the target was reached."""
+    if lock and abs(cur - target) <= 1e-9 * max(1.0, abs(target)):
+        return 'lock'
+    return 'trail' if cur > entry * (1 + 1e-9) else 'be' if cur >= entry * (1 - 1e-9) else 'stop'
+
+
+def size_zone(r, P):
+    """(bottom, top) of the zone a row's size / dark-cloud rules look at: a Gap-up zone inside an FVG (gapEntry) = that FVG."""
+    if r[1] == 'Y' and P.get('gapEntry') and len(r) > 9 and r[9]:
+        return r[9][0], r[9][1]
+    return r[2], r[3]
+
+
 def pick(rows, P):
     """The signal rows of the chosen group (and touch / turnover filters), in candle order - a candle may have several (a
     Spring on an FVG and on a Gap-up zone, several zones first touched at once): run_job takes the first of a candle that
     passes every rule (one trade a candle)."""
     g = P['group']
+    fp = P.get('fibPat', 'off')
+    big_pct = P.get('zoneMax') or BIG_ZONE_PCT
     out = []
     for r in rows:
         code, where, touch, inside = r[1], r[4], r[5], r[6]
@@ -759,9 +856,17 @@ def pick(rows, P):
               (g == 'ft' and code == 'T') or
               (g == 'conf' and code == 'C') or
               (g == 'entry' and code in ('F', 'G', 'T', 'C')) or
-              (g == 'touch' and code in ('Z', 'Y')))
+              (g == 'touch' and code in ('Z', 'Y')) or
+              (g == 'touch' and code in FIB_CODES and fp != 'off'))
         if not ok:
             continue
+        if g == 'touch' and fp != 'off':
+            # Fib + pattern (12-Nov-2026): 'all' = every zone by the pattern at its Fib line; 'big' = the zones bigger than
+            # the size limit by the pattern, the rest by the zone-top touch
+            zb, zt = size_zone(r, P)
+            big = zone_pct(zb, zt) is not None and zone_pct(zb, zt) > big_pct
+            if (code in FIB_CODES) != (fp == 'all' or big):
+                continue
         if P['maxTouch'] and code != 'S' and touch > P['maxTouch']:
             continue
         if P['minTurnover'] and (r[7] or 0) < P['minTurnover']:
@@ -925,18 +1030,18 @@ def summarise(trades, P, skips, meta, secs):
             stages.append({'stage': key, 'name': structure.STAGE_NAMES[key], 'trades': s['trades'], 'open': n_open,
                            'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'), 'totalR': s.get('totalR'),
                            'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')})
-    zone_name = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
-                 'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch'}
+    zone_name = ZONE_NAMES
     where_name = {'t': 'top', 'm': 'middle', 'b': 'bottom'}
     rows = []
     for t in sorted(trades, key=lambda t: (t['sigDay'], t['sigMin'], t['sym']), reverse=True)[:MAX_TRADES_OUT]:
         rows.append([t['sym'], _label(P['tf'], t['sigDay'], t['sigMin']),
-                     zone_name[t['code']] + (' inside FVG' if t['code'] in ('G', 'Y') and t['inside'] else ''),
+                     zone_name[t['code']] + (' inside FVG' if t['code'] in ('G', 'Y', 'Q') and (t['inside'] or t.get('fz')) else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
                      t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', ''),
-                     int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', '')])
+                     int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
+                     t.get('zpct', ''), t.get('pat', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -976,6 +1081,8 @@ BD_DIMS = (
     ('touch', 'Touch of the zone', 'num', ((1, 2, '1st touch'), (2, 3, '2nd'), (3, 4, '3rd'), (4, 1e9, '4th or later'))),
     ('risk', 'Risk (entry to stop)', 'num',
      ((0, 2, 'under 2%'), (2, 4, '2 - 4%'), (4, 6, '4 - 6%'), (6, 8, '6 - 8%'), (8, 10, '8 - 10%'), (10, 15, '10 - 15%'), (15, 1e9, '15% or more'))),
+    ('zpct', 'Zone size (top - bottom, % of the bottom)', 'num',
+     ((0, 1, 'under 1%'), (1, 2, '1 - 2%'), (2, 4, '2 - 4%'), (4, 6, '4 - 6%'), (6, 8, '6 - 8%'), (8, 10, '8 - 10%'), (10, 1e9, '10% or more'))),
     ('turn', 'Average daily turnover (20 days)', 'num',
      ((0, 50, 'under ₹50 lakh'), (50, 200, '₹50 lakh - 2 Cr'), (200, 1000, '₹2 - 10 Cr'), (1000, 5000, '₹10 - 50 Cr'), (5000, 1e12, '₹50 Cr or more'))),
 )
@@ -983,8 +1090,8 @@ BD_DIMS = (
 
 def _bd_value(t, key):
     if key == 'zone':
-        return ('Gap-up inside FVG' if t.get('inside') else 'Gap-up') if t['code'] in ('G', 'Y') else 'FVG' \
-            if t['code'] in ('F', 'Z', 'T', 'C') else 'none'
+        return ('Gap-up inside FVG' if t.get('inside') or t.get('fz') else 'Gap-up') if t['code'] in ('G', 'Y', 'Q') else 'FVG' \
+            if t['code'] in FVG_CODES else 'none'
     if key == 'risk':
         return t.get('riskPct')
     if key == 'touch':
@@ -1153,13 +1260,16 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
     trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
-                         'noswing': 0, 'zoneentry': 0, 'where': 0, 'wk': 0}
+                         'noswing': 0, 'zoneentry': 0, 'where': 0, 'wk': 0, 'zsize': 0, 'dcloud': 0, 'gapin': 0, 'nofinal': 0,
+                         'fiblevel': 0}
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
     sopts = struct_opts(P)
     trail_on = P['after'] == 'trail'
+    final_stop = P['stop'] == 'final'
     smap = (_struct_map(d, tf, P['pivotN'], sopts) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
-            else None)
+            or final_stop else None)
+    PC = dict(P, entry='close') if P['fibPat'] != 'off' else P      # Fib + pattern rows: bought at the pattern candle's close
     wk_index = (meta['index'].get('W') or {}) if P['wkAbove'] and tf != 'W' else None
     lens = ema_lens(P)
     mkt = market_filter(meta, P)
@@ -1185,6 +1295,29 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
 
             def attempt(r):
                 """One signal row -> (trade, None) or (None, (skip key, rule))."""
+                code = r[1]
+                zone_row = r[2] is not None and r[3] is not None
+                link = r[9] if len(r) > 9 else None
+                outer = link if (code == 'Y' and P['gapEntry'] and link) else None   # the FVG around this Gap-up zone
+                if code == 'Z' and P['gapEntry'] and link:
+                    return None, ('gapin', '')         # the order waits at the Gap-up zone inside this FVG (that zone's row)
+                zp, dc, fline = None, None, None
+                if zone_row:
+                    zb_, zt_ = size_zone(r, P)
+                    zp = zone_pct(zb_, zt_)
+                    big_ok = code in FIB_CODES and P['fibPat'] == 'big'
+                    if zp is not None and ((P['zoneMin'] and zp < P['zoneMin'] - 1e-9) or
+                                           (P['zoneMax'] and zp > P['zoneMax'] + 1e-9 and not big_ok)):
+                        return None, ('zsize', '')
+                    ff = outer[2] if outer else (r[8] if code in FVG_CODES and len(r) > 8 else None)
+                    dc = ff is not None and ff >= 0 and dark_cloud(cs, ff)
+                    if P['darkCloud'] != 'any' and (P['darkCloud'] == 'exclude') == dc:
+                        return None, ('dcloud', '')
+                if code in FIB_CODES:
+                    fline = r[3] - P['fibLevel'] * (r[3] - r[2])
+                    lo_, cl_ = _f(cs.l[r[0]]), _f(cs.c[r[0]])
+                    if not (fline * (1 - P['fibTol'] / 100.0) <= lo_ <= fline * (1 + P['fibTol'] / 100.0) and cl_ > fline):
+                        return None, ('fiblevel', '')
                 spring_row = r[1] in SPRING_CODES
                 feats = spring_feats(cs, r[0], P, deep=shape_on) if spring_row else None   # the Spring pair's shape
                 if shape_on and spring_row:
@@ -1192,7 +1325,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     if not ok:
                         return None, ('shape', why)
                 sj = None
-                if smode != 'off':
+                if smode != 'off' or final_stop:
                     zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                     sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'],
                                     h=cs.h, zone_bottom=r[2] if zf is not None else None, part=P['discPart'], fib=fib)
@@ -1209,12 +1342,21 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     ok, note = ema_check(cs, r[0], P, emas)
                     if not ok:
                         return None, ('ema', '')
-                t, why = simulate(cs, r, P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
-                                  st.s if trail_on and P['trail'] == 'swing' else None)
+                final = st.s.events[sj['k']][4] if final_stop and sj is not None and sj['k'] >= 0 else None
+                rs = r if not outer else [r[0], r[1], outer[0]] + list(r[3:])      # the stop under the FVG's bottom
+                t, why = simulate(cs, rs, PC if code in FIB_CODES else P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
+                                  st.s if trail_on and P['trail'] == 'swing' else None, final)
                 if t is None:
                     return None, (why, '')
                 t['ema'] = note
                 t['sym'] = sym
+                t['zpct'] = round(zp, 2) if zp is not None else None
+                t['dc'] = bool(dc)
+                if code in FIB_CODES:
+                    t['pat'] = PAT_NAMES.get(r[10] if len(r) > 10 else '', '')
+                    t['fibLine'] = round(fline, 2)
+                if outer:
+                    t['fz'] = outer                       # the FVG around the Gap-up zone (the charts PDF draws both)
                 if feats:
                     t['upW'], t['loW'], t['dip'] = round(feats['upW'], 1), round(feats['loW'], 1), round(feats['dip'], 2)
                 if sj is not None:
@@ -1436,7 +1578,10 @@ def struct_fail(sj, P):
     if P['belowChoch'] and not sj['below']:
         return 'above'
     if P['discount'] and not (sj.get('depth') is not None and sj['depth'] >= P['discount'] - 1e-9):
-        return 'premium'
+        # lineOk (12-Nov-2026, SWIGGY): a zone whose top is at / under the CHoCH level (+ lineTol %) counts all the same
+        if not (P.get('lineOk') and sj.get('ztop') is not None and sj.get('lvl') is not None and
+                sj['ztop'] <= sj['lvl'] * (1 + (P.get('lineTol') or 0) / 100.0) + 1e-9):
+            return 'premium'
     return ''
 
 

@@ -39,7 +39,8 @@ chMode = input.string("The last swing high", "The CHoCH closes above", options=[
 eqAtr = input.float(0.0, "Equal highs / lows: within x ATR(14) (0 = exact)", minval=0, maxval=2, step=0.05, group=G1)
 G2 = "Entry, stop, target (Backtest Lab steps 6 - 7)"
 entryMode = input.string("Order at the zone top", "Buy", options=["Order at the zone top", "Touch candle's close"], group=G2)
-stopMode = input.string("Under the zone bottom", "Stop loss", options=["Under the zone bottom", "Under the touch candle's low", "Under whichever is lower", "% under the entry"], group=G2)
+gapEntry = input.bool(true, "An FVG with a Gap-up zone inside it: buy at the Gap-up zone top (the stop under the FVG)", group=G2)
+stopMode = input.string("Under the zone bottom", "Stop loss", options=["Under the zone bottom", "Under the touch candle's low", "Under whichever is lower", "% under the entry", "Under the CHoCH's final low"], group=G2)
 stopBuf = input.float(0.5, "Stop: how far below it (%)", minval=0, step=0.1, group=G2)
 stopPct = input.float(5.0, "Stop: % under the entry (with that choice)", minval=0.1, step=0.5, group=G2)
 maxRisk = input.float(15.0, "Skip if the risk is more than % (0 = never)", minval=0, step=1, group=G2)
@@ -124,6 +125,49 @@ fmtT(int t) =>
 
 fmtP(float v) =>
     str.tostring(v, format.mintick)
+
+// a new zone (f, Gap-up or FVG, bottom, top) linked with the zones of the last 3 candles (= kite_intraday.link_zones, 12-Nov-2026):
+// a Gap-up zone wholly inside an FVG zone - the FVG "has one inside" (its touch waits for the Gap-up zone), the Gap-up zone keeps
+// the widest FVG's bottom (its stop)
+linkZone(int f, bool g, float b, float t, array<int> zF_, array<bool> zGap_, array<bool> zInner_, array<float> zOutB_, array<int> zOutF_, array<int> rF_, array<bool> rGap_, array<float> rBot_, array<float> rTop_) =>
+    int me = array.size(zF_) - 1
+    int nr = array.size(rF_)
+    if nr > 0
+        for j = 0 to nr - 1
+            int rf = array.get(rF_, j)
+            bool rg = array.get(rGap_, j)
+            if rg != g and math.abs(rf - f) <= 3
+                float rb = array.get(rBot_, j)
+                float rt = array.get(rTop_, j)
+                float ib = g ? b : rb
+                float it = g ? t : rt
+                float ob = g ? rb : b
+                float ot = g ? rt : t
+                if ib >= ob - 0.000000001 and it <= ot + 0.000000001
+                    int target = g ? me : -1
+                    float nb = g ? rb : b
+                    int nf = g ? rf : f
+                    if not g
+                        array.set(zInner_, me, true)
+                    int nz = array.size(zF_)
+                    if nz > 0
+                        for k = 0 to nz - 1
+                            if array.get(zF_, k) == rf and array.get(zGap_, k) == rg
+                                if g
+                                    array.set(zInner_, k, true)
+                                else
+                                    target := k
+                    if target >= 0
+                        float cb = array.get(zOutB_, target)
+                        int cf = array.get(zOutF_, target)
+                        if na(cb) or nb < cb or (nb == cb and nf < cf)
+                            array.set(zOutB_, target, nb)
+                            array.set(zOutF_, target, nf)
+    array.push(rF_, f)
+    array.push(rGap_, g)
+    array.push(rBot_, b)
+    array.push(rTop_, t)
+    true
 
 // ------------------------------------------------------------------ every bar
 bool isZz = swMode == "ZigZag (ATR)"
@@ -269,6 +313,13 @@ var zBot = array.new_float()
 var zTop = array.new_float()
 var zGap = array.new_bool()
 var zIn = array.new_bool()
+var zInner = array.new_bool()
+var zOutB = array.new_float()
+var zOutF = array.new_int()
+var rF = array.new_int()
+var rGap = array.new_bool()
+var rBot = array.new_float()
+var rTop = array.new_float()
 var zBox = array.new_box()
 var hitList = array.new_int()
 
@@ -278,6 +329,45 @@ if alive and close < chLf
     chDead := true
     alive := false
     label.new(bar_index, low, "CHoCH ended", yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny, tooltip="A close under the CHoCH's final low " + fmtP(chLf) + " - no more setups from this CHoCH")
+
+// 1b. the candle before's gap between two big green candles (inside FVG - judged now that this candle closed); added before
+//     the touches so the FVG around it knows it (this candle cannot touch it: its low is over the gap's top). The zones of the
+//     last few candles are kept for the links.
+bool prune = true
+while prune
+    if array.size(rF) > 0
+        if array.get(rF, 0) < bar_index - 5
+            array.shift(rF)
+            array.shift(rGap)
+            array.shift(rBot)
+            array.shift(rTop)
+        else
+            prune := false
+    else
+        prune := false
+bool zoneBoxOn = showAll or (showZones and chB >= 0 and not chDead)
+if bar_index >= 3 and gapAny[1] and gapPct[1] <= gapMax
+    if bigGreen(open[2], close[2]) and bigGreen(open[1], close[1]) and low[1] > high[2] and high[3] < high[2] and low > low[1]
+        if gapPct[1] >= gapMin
+            int nz5 = array.size(zF)
+            if nz5 > 0
+                for k = 0 to nz5 - 1
+                    if array.get(zF, k) == bar_index - 1 and array.get(zGap, k)
+                        array.set(zIn, k, true)
+        else
+            array.push(zF, bar_index - 1)
+            array.push(zBot, high[2])
+            array.push(zTop, low[1])
+            array.push(zGap, true)
+            array.push(zIn, true)
+            array.push(zInner, false)
+            array.push(zOutB, na)
+            array.push(zOutF, -1)
+            box nb3 = na
+            if zoneBoxOn and (showAll or bar_index - 1 >= chLi)
+                nb3 := box.new(bar_index - 2, low[1], bar_index, high[2], border_color=color.new(C_GAP, 40), bgcolor=color.new(C_GAP, 88), extend=extend.right)
+            array.push(zBox, nb3)
+            linkZone(bar_index - 1, true, high[2], low[1], zF, zGap, zInner, zOutB, zOutF, rF, rGap, rBot, rTop)
 
 // 2. the zones this candle touches for the first time (low <= zone top; a Gap-up zone never on a circuit-locked candle) -
 //    the first one (highest top, FVG before Gap-up, older first) that passes every rule = the BUY
@@ -301,7 +391,13 @@ if nz > 0
             float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
             float dep = aliveOk and chH > chLf ? (chH - part) / (chH - chLf) : na
             bool ok = true
-            if structOnly
+            // an FVG with a Gap-up zone inside it: the order waits at the Gap-up zone top (its own touch); a Gap-up zone inside an
+            // FVG: the stop under the FVG's bottom
+            bool waitsInside = gapEntry and not zg and array.get(zInner, k)
+            float zbStop = gapEntry and zg and not na(array.get(zOutB, k)) ? array.get(zOutB, k) : zb
+            if waitsInside
+                ok := false
+            if structOnly and ok
                 ok := aliveOk and f >= chLi
                 if zoneWhen == "Only in the CHoCH move" and f > chB + 1
                     ok := false
@@ -325,11 +421,14 @@ if nz > 0
                 bool atTop = entryMode == "Order at the zone top"
                 float entry = atTop ? math.min(open, zt) : close
                 string sm = atTop and (stopMode == "Under the touch candle's low" or stopMode == "Under whichever is lower") ? "Under the zone bottom" : stopMode
-                float base = sm == "Under the touch candle's low" ? low : sm == "Under whichever is lower" ? math.min(low, zb) : zb
-                float stop = sm == "% under the entry" ? entry * (1 - stopPct / 100) : base * (1 - stopBuf / 100)
+                float base = sm == "Under the touch candle's low" ? low : sm == "Under whichever is lower" ? math.min(low, zbStop) : zbStop
+                float stop = sm == "% under the entry" ? entry * (1 - stopPct / 100) : sm == "Under the CHoCH's final low" ? chLf * (1 - stopBuf / 100) : base * (1 - stopBuf / 100)
                 float risk = entry - stop
                 float tgt = entry + targetR * risk
-                if not (entry > 0 and risk > 0)
+                if sm == "Under the CHoCH's final low" and not aliveOk
+                    skipWhy := "no live CHoCH (the stop goes under its final low)"
+                    ok := false
+                else if not (entry > 0 and risk > 0)
                     skipWhy := "it opened under the stop (a gap)"
                     ok := false
                 else if maxRisk > 0 and risk / entry * 100 > maxRisk
@@ -409,6 +508,9 @@ if nh > 0
         array.remove(zTop, k)
         array.remove(zGap, k)
         array.remove(zIn, k)
+        array.remove(zInner, k)
+        array.remove(zOutB, k)
+        array.remove(zOutF, k)
         array.remove(zBox, k)
 
 // 3. BOS: a swing high confirmed now (after the CHoCH candle) raises the peak; a close above the peak = BOS
@@ -431,47 +533,35 @@ if chB >= 0 and not chDead and fibLvl > 0 and not na(fibLn)
     label.set_xy(fibLb, bar_index, fpx)
     label.set_text(fibLb, str.tostring(fibLvl * 100) + "% " + fmtP(fpx))
 
-// 5. new zones: a 3-candle FVG on this candle, a Gap-up zone 3 - 5 % on this candle, the candle before's gap between two big
-//    green candles (inside FVG - judged now that the next candle closed)
-bool zoneBoxOn = showAll or (showZones and chB >= 0 and not chDead)
+// 5. new zones: a 3-candle FVG on this candle, a Gap-up zone 3 - 5 % on this candle (the inside-FVG gap: 1b)
 if bar_index >= 13 and low > high[2] and (low - high[2]) >= fvgK * avgRange
     array.push(zF, bar_index)
     array.push(zBot, high[2])
     array.push(zTop, low)
     array.push(zGap, false)
     array.push(zIn, false)
+    array.push(zInner, false)
+    array.push(zOutB, na)
+    array.push(zOutF, -1)
     box nb1 = na
     if zoneBoxOn and (showAll or bar_index >= chLi)
         nb1 := box.new(bar_index - 2, low, bar_index, high[2], border_color=color.new(C_FVG, 40), bgcolor=color.new(C_FVG, 88), extend=extend.right)
     array.push(zBox, nb1)
+    linkZone(bar_index, false, high[2], low, zF, zGap, zInner, zOutB, zOutF, rF, rGap, rBot, rTop)
 if gapAny and gapPct >= gapMin and gapPct <= gapMax
     array.push(zF, bar_index)
     array.push(zBot, high[1])
     array.push(zTop, low)
     array.push(zGap, true)
     array.push(zIn, false)
+    array.push(zInner, false)
+    array.push(zOutB, na)
+    array.push(zOutF, -1)
     box nb2 = na
     if zoneBoxOn and (showAll or bar_index >= chLi)
         nb2 := box.new(bar_index - 1, low, bar_index, high[1], border_color=color.new(C_GAP, 40), bgcolor=color.new(C_GAP, 88), extend=extend.right)
     array.push(zBox, nb2)
-if bar_index >= 3 and gapAny[1] and gapPct[1] <= gapMax
-    if bigGreen(open[2], close[2]) and bigGreen(open[1], close[1]) and low[1] > high[2] and high[3] < high[2] and low > low[1]
-        if gapPct[1] >= gapMin
-            int nz5 = array.size(zF)
-            if nz5 > 0
-                for k = 0 to nz5 - 1
-                    if array.get(zF, k) == bar_index - 1 and array.get(zGap, k)
-                        array.set(zIn, k, true)
-        else
-            array.push(zF, bar_index - 1)
-            array.push(zBot, high[2])
-            array.push(zTop, low[1])
-            array.push(zGap, true)
-            array.push(zIn, true)
-            box nb3 = na
-            if zoneBoxOn and (showAll or bar_index - 1 >= chLi)
-                nb3 := box.new(bar_index - 2, low[1], bar_index, high[2], border_color=color.new(C_GAP, 40), bgcolor=color.new(C_GAP, 88), extend=extend.right)
-            array.push(zBox, nb3)
+    linkZone(bar_index, true, high[1], low, zF, zGap, zInner, zOutB, zOutF, rF, rGap, rBot, rTop)
 // the oldest untouched zones go (they formed long before any CHoCH that could use them)
 if array.size(zF) > 300
     box old = array.shift(zBox)
@@ -482,6 +572,9 @@ if array.size(zF) > 300
     array.shift(zTop)
     array.shift(zGap)
     array.shift(zIn)
+    array.shift(zInner)
+    array.shift(zOutB)
+    array.shift(zOutF)
 
 // 6. swings (confirmed later, alternating: a second high before a low keeps the higher one) and the CHoCH (a close above the
 //    last swing high - or the protected high)

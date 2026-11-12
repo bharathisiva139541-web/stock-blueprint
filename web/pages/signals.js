@@ -360,7 +360,11 @@
       var live = !!(SB.livePrice && SB.livePrice(s));
       o.price = live ? s.price : r['Last Close'];
       o.priceLive = live;
-      o.dist = isNum(o.price) && o.price > 0 && isNum(r['Zone Top']) ? (o.price - r['Zone Top']) / o.price * 100 : r['Distance %'];
+      // where the order / the wait is (12-Nov-2026: the Gap-up zone top inside an FVG, or the zone's Fib line for a pattern entry);
+      // an older sheet sends the zone top only
+      o.buy = isNum(r['Buy At']) ? r['Buy At'] : r['Zone Top'];
+      o.stopAt = isNum(r['Stop Under']) ? r['Stop Under'] : r['Zone Bottom'];
+      o.dist = isNum(o.price) && o.price > 0 && isNum(o.buy) ? (o.price - o.buy) / o.price * 100 : r['Distance %'];
       return o;
     });
   }
@@ -374,9 +378,10 @@
     var cr = chochRules(ctx);
     var sub = 'The same setup <b>before</b> the entry: a CHoCH has formed (after ' + chochRulesHtml(cr) + '), no close under its final low ' +
       'and no BOS yet, and an FVG / Gap-up zone ' + chochZoneHtml(cr) + ' - but price has <b>not come back to it yet</b>. ' +
-      'The first touch of the zone is the entry (it then moves to "CHoCH + FVG setups" above, after that day\'s scan) - a buy order at the <b>zone top</b> is the low-risk way in, ' +
-      'the stop a little under the <b>zone bottom</b>. One row per stock and timeframe: the highest such zone (the one price reaches first; "More below" = further discount zones under it). ' +
-      'Prices from Zerodha Kite (your PC, after each day\'s close); Distance = how far the price shown now must fall to the zone top. ' +
+      'The first touch of the zone is the entry (it then moves to "CHoCH + FVG setups" above, after that day\'s scan) - a buy order at <b>Buy at</b> is the low-risk way in ' +
+      '(the zone top; the top of the Gap-up zone inside an FVG; or, with your Fib + pattern rule, the zone\'s Fib line where a Spring / Harami + Inverted Hammer is the entry - see "Entry"), ' +
+      'the stop a little under <b>Stop under</b> (the zone\'s / the FVG\'s bottom). One row per stock and timeframe: the highest such zone (the one price reaches first; "More below" = further discount zones under it). ' +
+      'Prices from Zerodha Kite (your PC, after each day\'s close); Distance = how far the price shown now must fall to Buy at. ' +
       'The discount line rises when price makes a new high after the scan - a zone can then also qualify. Research only, not a buy recommendation.' +
       (/session (\d{4}-\d{2}-\d{2})/.test(w.note || '') ? ' <span class="sub">(the scan of the session ' + esc(/session (\d{4}-\d{2}-\d{2})/.exec(w.note)[1]) + ')</span>' : '');
     var body;
@@ -408,13 +413,16 @@
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
         { key: 'price', label: 'Price', type: 'price', title: 'The price shown now (Kite live with your PIN / delayed); else the last close of the PC\'s scan',
           html: function (r) { return px(r.price) + (r.priceLive ? '' : ' <span class="sub">close</span>'); } },
-        { key: 'Zone Top', label: 'Buy at (zone top)', type: 'price' },
-        { key: 'Zone Bottom', label: 'Zone bottom', type: 'price', title: 'Your stop goes a little under it' },
-        { key: 'dist', label: 'Distance', type: 'pct', digits: 2, title: 'How far the price must fall to reach the zone top (0 or less = in the zone now)',
+        { key: 'buy', label: 'Buy at', type: 'price', title: 'Where the order waits: the zone top, the Gap-up zone top inside an FVG, or the zone\'s Fib line (pattern entry)' },
+        { key: 'stopAt', label: 'Stop under', type: 'price', title: 'Your stop goes a little under it (the zone\'s / the FVG\'s bottom)' },
+        { key: 'dist', label: 'Distance', type: 'pct', digits: 2, title: 'How far the price must fall to reach Buy at (0 or less = there now)',
           html: function (r) { return !isNum(r.dist) ? '–' : r.dist <= 0 ? ui.badge('In the zone', 's-good') : esc(F.num(r.dist, 2) + '%'); } },
         { key: 'Zone Kind', label: 'Zone', html: function (r) { return ui.badge(r['Zone Kind'] || '–', /inside/.test(r['Zone Kind']) ? 's-good' : 's-info'); } },
         { key: 'Zone Depth %', label: 'Zone depth', type: 'num', digits: 0, title: 'How far down the move the zone\'s middle sits (50% = the line; 100% = at the final low)',
           html: function (r) { return isNum(r['Zone Depth %']) ? esc(F.num(r['Zone Depth %'], 0) + '%') : '–'; } },
+        { key: 'Zone %', label: 'Zone size', type: 'num', digits: 1, title: 'The zone\'s size: top - bottom, % of the bottom (a Gap-up zone inside an FVG: that FVG)',
+          html: function (r) { return isNum(r['Zone %']) ? esc(F.num(r['Zone %'], 1) + '%') : '–'; } },
+        { key: 'Entry', label: 'Entry', title: 'How the entry comes: a buy order at the zone top / the Gap-up zone top inside the FVG, or a pattern at the zone\'s Fib line' },
         { key: 'Zone Formed', label: 'Zone formed' },
         { key: 'CHoCH Candle', label: 'CHoCH', title: 'The candle that closed above the last lower high (CHoCH Level)',
           html: function (r) { return esc(r['CHoCH Candle'] || '–') + (isNum(r['CHoCH Level']) ? ' <span class="sub">above ' + esc(F.price(r['CHoCH Level'])) + '</span>' : ''); } },

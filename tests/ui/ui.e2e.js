@@ -921,10 +921,12 @@ function check(name, fn) {
         second: [...document.querySelectorAll('#app section.card')][1].id, note: document.querySelector('#sg-chw .card-head p').textContent };
     });
     assert.deepStrictEqual([cw.count, cw.jump, cw.second], ['2 of 2', true, 'sg-chw'], JSON.stringify(cw));
-    const zi = cw.ths.indexOf('Buy at (zone top)'), bi = cw.ths.indexOf('Zone bottom'), ti = cw.ths.indexOf('Timeframe');
+    // 12-Nov-2026: "Buy at" (the zone top / the Gap-up zone top inside an FVG / the zone's Fib line) and "Stop under"; an older feed = the zone top / bottom
+    const zi = cw.ths.indexOf('Buy at'), bi = cw.ths.indexOf('Stop under'), ti = cw.ths.indexOf('Timeframe');
+    assert.ok(cw.ths.indexOf('Zone size') > 0 && cw.ths.indexOf('Entry') > 0, cw.ths.join(' | '));
     assert.ok(zi > 0 && bi > 0, cw.ths.join(' | '));
     assert.deepStrictEqual(cw.rows.map((r) => [r[ti], r[zi], r[bi]]).sort(), [['4H', '113.50', '112.00'], ['D', '108.24', '104.10']].sort(), JSON.stringify(cw.rows));
-    assert.match(cw.note, /after at least 10 lower highs and 10 lower lows \(swings of 8 candles\).*not come back to it yet.*zone top.*\(the scan of the session 2026-10-20\)/);
+    assert.match(cw.note, /after at least 10 lower highs and 10 lower lows \(swings of 8 candles\).*not come back to it yet.*Buy at.*Gap-up zone inside an FVG.*\(the scan of the session 2026-10-20\)/);
     await p.click('[data-chip="sgcwtf"][data-v="4H"]');
     assert.strictEqual(await p.$eval('#sg-cw-count', (x) => x.textContent), '1 of 2');
     await p.click('[data-chip="sgcwtf"][data-v="all"]');
@@ -936,7 +938,7 @@ function check(name, fn) {
     }, SENT_SYM);
     assert.strictEqual(cwd.n, 2);
     assert.strictEqual(cwd.res.pass, false);
-    assert.match(cwd.res.detail, /waiting for the pullback: D CHoCH 2026-10-15, discount zone 104.1 - 108.24 \(9.2% below the last close\); 4H CHoCH 2026-10-16 13:15/);
+    assert.match(cwd.res.detail, /waiting for the pullback: D CHoCH 2026-10-15, discount zone 104.1 - 108.24 - 9.2% below the last close; 4H CHoCH 2026-10-16 13:15/);
     // ... and the strategy rule reads them (Strategy Settings preset 'CHoCH + FVG (your SMC setup)')
     const st = await p.evaluate((sym) => {
       const s = window.SB.ctx.bySym[sym], S = window.SB.strategy;
@@ -1266,7 +1268,7 @@ function check(name, fn) {
       guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
     assert.deepStrictEqual(lay.quick, ['smc', 'fvg', 'gap']);
     await guideShot(own.p, '01-start', '#lab-form');
-    assert.deepStrictEqual(lay.secs, [['structure', false], ['shape', false], ['trend', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
+    assert.deepStrictEqual(lay.secs, [['structure', false], ['zone', false], ['shape', false], ['trend', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
     assert.ok(lay.basics, 'the basics are on show');
     assert.match(lay.guide, /Guide/);
     await own.p.click('[data-quick="fvg"]');
@@ -1291,7 +1293,7 @@ function check(name, fn) {
     await own.p.waitForSelector('[data-k="mktAbove"]');
     await own.p.selectOption('[data-k="mktAbove"]', '50');
     assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /Only on days when NIFTY 50 closed above its 50 EMA\./);
-    assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /1% below the zone bottom.*At 2R move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
+    assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /1% below the zone bottom.*At 2R move the stop up to the target \(a fall back to it = sold there, a win\), then trail it under the lowest low of the last 3 candles/);
     // hard Spring rules (owner, 10-Nov-2026): my recommendation fills the boxes, the plain words follow, the rest of the form stays
     const plainText = () => own.p.$eval('#lab-plain', (x) => x.textContent);
     await own.p.click('[data-rec="hammer"]');
@@ -1356,7 +1358,7 @@ function check(name, fn) {
     await own.p.selectOption('[data-k="pivotN"]', '5');
     await own.p.selectOption('[data-k="targetMode"]', 'swing');
     await own.p.waitForSelector('[data-k="swingMinR"]');
-    assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry/);
+    assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop up to the target/);
     assert.ok(/Only Springs where the Spring candle has an upper wick of at most 5%/.test(await plainText()), 'the Spring rules stay');
     // the development / test split (owner, 12-Nov-2026): a test period from 2020
     await own.p.fill('[data-k="testFrom"]', '2020-01-01');
@@ -1427,7 +1429,7 @@ function check(name, fn) {
     await guideShot(own.p, '13-folded', '#lab-result section.card');
     const view = await own.p.$eval('#lab-result', (x) => x.textContent);
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
-    assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
+    assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop up to the target \(a fall back to it = sold there, a win\), then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
     // why a signal was skipped: on the word itself (hover / tap), and counted in the account tile
     assert.match(view, /37 left out by your EMA rules · 12 left out by your market rule/);

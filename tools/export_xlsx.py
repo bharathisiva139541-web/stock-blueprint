@@ -248,9 +248,9 @@ def zones_4h(rows):
 # CHoCH + FVG setups waiting for the pullback (PC bridge, 12-Nov-2026) = Code.gs AB_SITE_CHW_COLS: WITH Kite's prices
 # (owner, 12-Nov-2026: "use kite price. no need to follow privacy rule")
 CHW_COLS = ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On',
-            'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle',
-            'Distance %', 'More Zones Below']
-CHW_KINDS = {'CHoCH Candle': 'str', 'Final Low On': 'str', 'Zone Formed': 'str', 'Last Candle': 'str'}
+            'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Zone %', 'Buy At', 'Stop Under',
+            'Entry', 'Last Close', 'Last Candle', 'Distance %', 'More Zones Below']
+CHW_KINDS = {'CHoCH Candle': 'str', 'Final Low On': 'str', 'Zone Formed': 'str', 'Last Candle': 'str', 'Entry': 'str'}
 CHW_MAX = 6000
 
 

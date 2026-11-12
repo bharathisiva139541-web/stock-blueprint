@@ -21,6 +21,7 @@ swing high before the lowest swing low since the last CHoCH), eqAtr (highs / low
 from datetime import date
 
 GAP_MIN, GAP_MAX, INSIDE_BODY, FVG_K, LOCK_PCT, ZONES_KEPT = 3.0, 5.0, 2.0, 0.70, 0.05, 300
+LINK_SPAN = 3          # = kite_intraday.ZONE_LINK_SPAN: a Gap-up zone inside an FVG zone formed at most this many candles apart
 
 
 def locked(h, l):
@@ -57,6 +58,11 @@ class Model:
         self.chLvl = self.chLf = self.chH = self.chPeak = None
         self.chD, self.chDead, self.chBos = 0, True, -1
         self.zF, self.zBot, self.zTop, self.zGap, self.zIn = [], [], [], [], []
+        # the Gap-up zone inside an FVG (12-Nov-2026, Lab gapEntry): an FVG zone's 'has a Gap-up zone inside' / a Gap-up zone's
+        # widest FVG around it (bottom, candle); recent = the zones of the last LINK_SPAN candles, touched or not
+        self.zInner, self.zOutB, self.zOutF = [], [], []
+        self.recent = []
+        self.gap_entry = P.get('gapEntry', True)
         self.gap_any, self.gap_pct = [], []             # the series Pine keeps for "the bar before"
         self.e = {10: None, 21: None, 50: None}
         self.cv = []                                    # close x volume (the turnover)
@@ -187,6 +193,20 @@ class Model:
             alive = False
         alive_ok = alive and (not P['chochAge'] or i - self.chB <= P['chochAge'])
 
+        # 1b. the bar before's gap between two big green candles (inside FVG - judged now that this bar closed). Added before the
+        #     touches (12-Nov-2026: the FVG around it knows it then, like kite_intraday's zones); this bar cannot touch it (its low
+        #     is over the gap's top)
+        self.recent = [x for x in self.recent if x[0] >= i - LINK_SPAN - 2]
+        if i >= 3 and self.gap_any[i - 1] and self.gap_pct[i - 1] <= GAP_MAX:
+            big = lambda k: O[k] > 0 and C[k] > O[k] and (C[k] - O[k]) / O[k] * 100 >= INSIDE_BODY
+            if big(i - 2) and big(i - 1) and L[i - 1] > H[i - 2] and H[i - 3] < H[i - 2] and l > L[i - 1]:
+                if self.gap_pct[i - 1] >= GAP_MIN:
+                    for k in range(len(self.zF)):
+                        if self.zF[k] == i - 1 and self.zGap[k]:
+                            self.zIn[k] = True
+                else:
+                    self._add(i - 1, H[i - 2], L[i - 1], True, True)
+
         # 2. the zones this bar touches for the first time (low <= top; a Gap-up zone not on a circuit-locked candle); the
         #    first one (highest top, FVG first, older) that passes every rule = the BUY
         hit, best, bvals = [], -1, None
@@ -194,11 +214,13 @@ class Model:
             if not (l <= self.zTop[k] and (not self.zGap[k] or not lock_now)):
                 continue
             hit.append(k)
+            if self.gap_entry and not self.zGap[k] and self.zInner[k]:
+                continue                                 # the order waits at the Gap-up zone inside this FVG
             if self.struct_only and not (alive_ok and self._passes(k)):
                 continue
             if not (date_ok and turn_ok and ema_ok):
                 continue
-            t = self._trade(k, i, o, l, c)
+            t = self._trade(k, i, o, l, c, alive_ok)
             if t is None:
                 continue
             if best < 0 or self._before(k, best):
@@ -207,7 +229,7 @@ class Model:
             self.buys.append([i, self.zF[best], self.zBot[best], self.zTop[best], 'Gap-up' if self.zGap[best] else 'FVG',
                               self.zIn[best]] + list(bvals))
         for k in reversed(hit):
-            for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn):
+            for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF):
                 a.pop(k)
 
         # 3. BOS: a pivot high confirmed now (after the CHoCH candle) raises the peak; a close above the peak = BOS
@@ -223,25 +245,15 @@ class Model:
         if self.chB >= 0 and not self.chDead and i > self.chB:
             self.chH = max(self.chH, h)
 
-        # 5. new zones: a 3-candle FVG on this bar; a Gap-up zone 3 - 5 % on this bar; the bar before's gap inside an FVG
-        #    (two big green candles, judged now that its next candle closed)
+        # 5. new zones: a 3-candle FVG on this bar; a Gap-up zone 3 - 5 % on this bar (the inside-FVG gap: 1b)
         if i >= 13:
             avg = sum(H[k] - L[k] for k in range(i - 13, i + 1)) / 14.0
             if l > H[i - 2] and (l - H[i - 2]) >= FVG_K * avg:
                 self._add(i, H[i - 2], l, False, False)
         if gap_any and GAP_MIN <= gap_pct <= GAP_MAX:
             self._add(i, H[i - 1], l, True, False)
-        if i >= 3 and self.gap_any[i - 1] and self.gap_pct[i - 1] <= GAP_MAX:
-            big = lambda k: O[k] > 0 and C[k] > O[k] and (C[k] - O[k]) / O[k] * 100 >= INSIDE_BODY
-            if big(i - 2) and big(i - 1) and L[i - 1] > H[i - 2] and H[i - 3] < H[i - 2] and l > L[i - 1]:
-                if self.gap_pct[i - 1] >= GAP_MIN:
-                    for k in range(len(self.zF)):
-                        if self.zF[k] == i - 1 and self.zGap[k]:
-                            self.zIn[k] = True
-                else:
-                    self._add(i - 1, H[i - 2], L[i - 1], True, True)
         while len(self.zF) > ZONES_KEPT:                   # the oldest untouched zones go (Pine keeps 300)
-            for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn):
+            for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF):
                 a.pop(0)
 
         # 6. swings (confirmed later, alternating) and the CHoCH (a close above the last swing high - or the protected one)
@@ -295,6 +307,39 @@ class Model:
 
     def _add(self, f, bot, top, gap, inside):
         self.zF.append(f); self.zBot.append(bot); self.zTop.append(top); self.zGap.append(gap); self.zIn.append(inside)
+        self.zInner.append(False); self.zOutB.append(None); self.zOutF.append(-1)
+        me = len(self.zF) - 1
+        # link with the zones of the same move (kite_intraday.link_zones): a Gap-up zone wholly inside an FVG zone
+        for (rf, rgap, rbot, rtop) in self.recent:
+            if rgap == gap or abs(rf - f) > LINK_SPAN:
+                continue
+            if gap:
+                inner, outer = (bot, top), (rbot, rtop)
+            else:
+                inner, outer = (rbot, rtop), (bot, top)
+            if not (inner[0] >= outer[0] - 1e-9 and inner[1] <= outer[1] + 1e-9):
+                continue
+            if gap:                                  # this Gap-up zone: the FVG around it; that FVG (if untouched): has one inside
+                self._outer(me, rbot, rf)
+                k = self._find(rf, False)
+                if k >= 0:
+                    self.zInner[k] = True
+            else:                                    # this FVG: has one inside; that Gap-up zone (if untouched): this FVG around it
+                self.zInner[me] = True
+                k = self._find(rf, True)
+                if k >= 0:
+                    self._outer(k, bot, f)
+        self.recent.append((f, gap, bot, top))
+
+    def _find(self, f, gap):
+        for k in range(len(self.zF)):
+            if self.zF[k] == f and self.zGap[k] == gap:
+                return k
+        return -1
+
+    def _outer(self, k, bot, f):
+        if self.zOutB[k] is None or (bot, f) < (self.zOutB[k], self.zOutF[k]):
+            self.zOutB[k], self.zOutF[k] = bot, f
 
     def _before(self, a, b):
         """Zone a comes before zone b on one bar: the higher top (a falling price reaches it first), FVG first, older."""
@@ -323,7 +368,7 @@ class Model:
                 return False
         return True
 
-    def _trade(self, k, i, o, l, c):
+    def _trade(self, k, i, o, l, c, alive_ok=True):
         """(entry, stop, target) of zone k's touch on bar i, or None when the Lab would skip it (gap / risk / price / no
         swing high above)."""
         P = self.P
@@ -333,8 +378,14 @@ class Model:
         if at_top and mode in ('spring', 'lower'):
             mode = 'zone'
         zb = self.zBot[k]
+        if self.gap_entry and self.zGap[k] and self.zOutB[k] is not None:
+            zb = self.zOutB[k]                           # a Gap-up zone inside an FVG: the stop under the FVG's bottom
         if mode == 'pct':
             stop = entry * (1 - P['stopPct'] / 100.0)
+        elif mode == 'final':                            # under the CHoCH's final low (12-Nov-2026); no live CHoCH = no trade
+            if not alive_ok:
+                return None
+            stop = self.chLf * (1 - P['stopBuf'] / 100.0)
         else:
             base = l if mode == 'spring' else zb if mode == 'zone' else min(l, zb)
             stop = base * (1 - P['stopBuf'] / 100.0)

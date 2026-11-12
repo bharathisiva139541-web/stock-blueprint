@@ -113,3 +113,39 @@ test('the Python Spring / Spring in FVG / 4H FVG patterns = the website\'s (and 
     ft > 20 && gapups > 5 && gapTouched >= 1 && gapInside >= 1 && twin > 5 && conf > 20,
     'the random candles exercise every rule: ' + JSON.stringify({ springs: springs, fvg: fvg, ft: ft, gapups: gapups, gapTouched: gapTouched, gapInside: gapInside, twin: twin, conf: conf }));
 });
+
+// The Fib + pattern entry of the Backtest Lab (owner, 12-Nov-2026, FINOPB: "we can use Fib level with patterns such as spring,
+// Bullish harami + Inverted Hammer"): the laptop's Bullish Harami + Inverted Hammer (kite_intraday.is_hih_pair) = the
+// website's / the sheet's (web/lib/patterns.js isHaramiInvHammerPair = Code.gs ab_isHaramiInvHammerPair_), on random pairs
+// around every limit (green and red inverted hammers).
+test('the Python Bullish Harami + Inverted Hammer = the website\'s rule, on random pairs', { skip: !py && 'python3 not installed' }, () => {
+  let s = 4242;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const pairs = [];
+  for (let k = 0; k < 6000; k++) {
+    const o1 = 100 + rnd() * 400, body = o1 * (0.005 + rnd() * 0.06), c1 = o1 - body;
+    const h1 = o1 + body * rnd() * 0.3, l1 = c1 - body * rnd() * 0.3;
+    const red = rnd() < 0.4, b2 = body * (0.05 + rnd() * 0.55);
+    const o2 = red ? c1 + body * (rnd() - 0.5) * 0.04 : c1 + c1 * (rnd() - 0.5) * 0.012;
+    const c2 = red ? o2 - b2 : o2 + b2;
+    const hi2 = Math.max(o2, c2) + body * (0.2 + rnd() * 1.3), lo2 = Math.min(o2, c2) - b2 * rnd() * 0.4;
+    pairs.push([{ o: r2(o1), h: r2(Math.max(h1, o1)), l: r2(Math.min(l1, c1)), c: r2(c1) }, { o: r2(o2), h: r2(Math.max(hi2, o2, c2)), l: r2(Math.min(lo2, o2, c2)), c: r2(c2) }]);
+  }
+  const sc = (c) => ({ Opn: c.o, High: c.h, Low: c.l, Cls: c.c });
+  const js = pairs.map((p) => P.isHaramiInvHammerPair(sc(p[0]), sc(p[1])));
+  const code = [
+    'import importlib.util, json, sys',
+    'spec = importlib.util.spec_from_file_location("k", sys.argv[1])',
+    'K = importlib.util.module_from_spec(spec); spec.loader.exec_module(K)',
+    'print(json.dumps([K.is_hih_pair(a, b) for a, b in json.load(sys.stdin)]))'
+  ].join('\n');
+  const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'kite_intraday.py')],
+    { input: JSON.stringify(pairs), encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const pyOut = JSON.parse(r.stdout);
+  pyOut.forEach((v, k) => assert.strictEqual(v, js[k], 'pair ' + k + ' ' + JSON.stringify(pairs[k])));
+  const yes = js.filter(Boolean).length;
+  const redYes = js.filter((v, k) => v && pairs[k][1].c < pairs[k][1].o).length;
+  assert.ok(yes > 100 && yes < js.length - 100 && redYes > 10, 'both answers, both colours: ' + yes + ' / ' + redYes);
+});

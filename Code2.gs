@@ -12414,17 +12414,32 @@ const AB_CHOCH_PART_WORDS = { mid: 'middle', top: 'top', bottom: 'bottom' };
 /** {pivotN, downN, fib, part, zoneWhen} from the PC's post, checked (anything missing / out of range = the default 5 / 3 / 0.5 / mid / both). */
 function ab_chochRules_(r) {
   r = r && typeof r === 'object' ? r : {};
-  const int = function (v, lo, hi, d) { const n = Number(v); return v !== null && v !== '' && isFinite(n) && n >= lo && n <= hi ? Math.round(n) : d; };
-  const fib = Number(r.fib);
-  return { pivotN: int(r.pivotN, 2, 20, 5), downN: int(r.downN, 1, 8, 3), fib: r.fib !== null && r.fib !== '' && isFinite(fib) && fib >= 0.2 && fib <= 0.95 ? fib : 0.5,
-    part: AB_CHOCH_PART_WORDS[r.part] ? String(r.part) : 'mid', zoneWhen: AB_CHOCH_WHEN_WORDS[r.zoneWhen] ? String(r.zoneWhen) : 'both' };
+  const int = function (v, lo, hi, d) { const n = Number(v); return v !== null && v !== '' && typeof v !== 'boolean' && isFinite(n) && n >= lo && n <= hi ? Math.round(n) : d; };
+  const flt = function (v, lo, hi, d) { const n = Number(v); return v !== null && v !== '' && typeof v !== 'boolean' && isFinite(n) && n >= lo && n <= hi ? n : d; };
+  const pick = function (v, opts, d) { return opts.indexOf(v) !== -1 ? v : d; };
+  // the owner's refinements of 12-Nov-2026 (kite_intraday.py CHOCH_MORE / CHOCH_BOOLS / CHOCH_PICKS: zone size, the Gap-up zone
+  // inside an FVG, the CHoCH-line rule, dark-cloud FVGs, a Spring / Harami + Inverted Hammer at the zone's Fib line)
+  return { pivotN: int(r.pivotN, 2, 20, 5), downN: int(r.downN, 1, 8, 3), fib: flt(r.fib, 0.2, 0.95, 0.5),
+    part: AB_CHOCH_PART_WORDS[r.part] ? String(r.part) : 'mid', zoneWhen: AB_CHOCH_WHEN_WORDS[r.zoneWhen] ? String(r.zoneWhen) : 'both',
+    zoneMin: flt(r.zoneMin, 0, 50, 0), zoneMax: flt(r.zoneMax, 0, 100, 0), lineTol: flt(r.lineTol, 0, 5, 0.5), fibLevel: flt(r.fibLevel, 0.2, 0.95, 0.618),
+    fibTol: flt(r.fibTol, 0, 5, 1), gapEntry: typeof r.gapEntry === 'boolean' ? r.gapEntry : true, lineOk: r.lineOk === true,
+    darkCloud: pick(r.darkCloud, ['any', 'exclude', 'only'], 'any'), fibPat: pick(r.fibPat, ['off', 'big', 'all'], 'off') };
 }
 
 /** 'swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH
  *  move or after it' (= kite_intraday.py choch_rules_words). */
 function ab_chochRulesText_(r) {
-  return 'swings of ' + r.pivotN + ' candles, at least ' + r.downN + ' lower highs / lows, the zone\'s ' + AB_CHOCH_PART_WORDS[r.part] + ' at least ' +
-    String(Math.round(r.fib * 1000) / 10) + '% down the move, the zone formed ' + AB_CHOCH_WHEN_WORDS[r.zoneWhen];
+  const w = function (v) { return String(Math.round(Number(v) * 10) / 10); };
+  let out = 'swings of ' + r.pivotN + ' candles, at least ' + r.downN + ' lower highs / lows, the zone\'s ' + AB_CHOCH_PART_WORDS[r.part] + ' at least ' +
+    w(r.fib * 100) + '% down the move, the zone formed ' + AB_CHOCH_WHEN_WORDS[r.zoneWhen];
+  if (r.zoneMin || r.zoneMax) out += ', zone size ' + (r.zoneMax ? w(r.zoneMin || 0) + ' - ' + w(r.zoneMax) + '%' : 'at least ' + w(r.zoneMin) + '%');
+  if (r.gapEntry === false) out += ', the whole FVG (not the Gap-up zone inside it)';
+  if (r.lineOk) out += ', or the zone top at / under the CHoCH level (+' + w(r.lineTol || 0) + '%)';
+  if (r.darkCloud === 'exclude' || r.darkCloud === 'only') out += ', dark-cloud FVGs ' + (r.darkCloud === 'exclude' ? 'left out' : 'only');
+  if (r.fibPat === 'big' || r.fibPat === 'all') {
+    out += ', ' + (r.fibPat === 'big' ? 'big zones' : 'every zone') + ': a Spring / Harami + Inverted Hammer at the zone\'s ' + w((r.fibLevel || 0.618) * 100) + '% line';
+  }
+  return out;
 }
 
 function ab_itdFromBridge_(req) {
@@ -12847,8 +12862,8 @@ function ab_itdZoneCheck_() {
 // =====================================================================================================================
 const AB_CHW_SHEET = 'CHoCH Waiting';
 const AB_CHW_HEADERS = ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On',
-  'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle', 'Distance %',
-  'More Zones Below', 'Chart', 'Updated'];
+  'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Zone %', 'Buy At', 'Stop Under', 'Entry',
+  'Last Close', 'Last Candle', 'Distance %', 'More Zones Below', 'Chart', 'Updated'];
 const AB_CHW_MAX = 6000;
 const AB_CHW_TFS = ['4H', 'D', 'W'];
 
@@ -12880,13 +12895,19 @@ function ab_chwFromBridge_(req) {
     const k = sym + '|' + tf;
     if (seen[k]) return;
     seen[k] = true;
+    // 12-Nov-2026: the zone's size, where the order / the wait is (the zone top, the Gap-up zone top inside an FVG, or the
+    // zone's Fib line for a Spring / Harami + Inverted Hammer) and the stop reference (the zone's / the FVG's bottom);
+    // an older PC sends none of them: the zone top / bottom
+    const buy = num(r.buy) !== '' ? num(r.buy) : top;
     out.push([sym, names[sym] || '', tf, String(r.choch), num(r.level), Math.max(0, Math.round(Number(r.d) || 0)), num(r.low),
       okT(r.lowAt) ? String(r.lowAt) : '', num(r.high), num(r.fib), kind === 'Gap-up' && Number(r.inside) === 1 ? 'Gap-up (inside FVG)' : kind,
-      bottom, top, String(z[2]), num(r.depth), num(r.close), String(r.last), num(r.dist), Math.max(0, Math.round(Number(r.more) || 0)),
+      bottom, top, String(z[2]), num(r.depth), num(r.pct), buy, num(r.stopAt) !== '' ? num(r.stopAt) : bottom,
+      ab_itdNote_(r.how || 'buy order at the zone top'), num(r.close), String(r.last), num(r.dist), Math.max(0, Math.round(Number(r.more) || 0)),
       '=HYPERLINK("' + ab_itdTvUrl_(sym, tf) + '","' + tf + ' chart")', updated]);
   });
+  const DI = AB_CHW_HEADERS.indexOf('Distance %');
   out.sort(function (a, b) {
-    const da = a[17] === '' ? 1e9 : a[17], db = b[17] === '' ? 1e9 : b[17];
+    const da = a[DI] === '' ? 1e9 : a[DI], db = b[DI] === '' ? 1e9 : b[DI];
     return da !== db ? da - db : a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : AB_CHW_TFS.indexOf(a[2]) - AB_CHW_TFS.indexOf(b[2]);
   });
   const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
@@ -12895,15 +12916,20 @@ function ab_chwFromBridge_(req) {
     '): a candle closed above the last lower high after the lower highs / lows, no close under the final low and no BOS since; Zone = the highest ' +
     'FVG / Gap-up zone that price has NOT touched yet, in the discount part of the move (final low -> Move High) - the first touch of it is the ' +
     'CHoCH + FVG entry (Intraday Patterns tab). Rules: ' + ab_chochRulesText_(rules) + '. ' +
-    'Distance % = how far the last close must fall to the zone top. Rebuilt after each daily scan. Updated ' + updated + '.';
+    'Buy At = where the order waits (the zone top, the Gap-up zone top inside an FVG, or the zone\'s Fib line for a Spring / Harami + Inverted Hammer), ' +
+    'Stop Under = the zone\'s (the FVG\'s) bottom, Zone % = its size. Distance % = how far the last close must fall to Buy At. ' +
+    'Rebuilt after each daily scan. Updated ' + updated + '.';
   const sh = ab_getOrCreateSheet_(AB_CHW_SHEET);
   sh.clearContents();
   sh.getRange(1, 1).setValue(note);
   sh.getRange(2, 1, 1, AB_CHW_HEADERS.length).setValues([AB_CHW_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
   if (out.length) {
     const n = out.length;
-    [1, 2, 3, 4, 8, 11, 14, 17, 21].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
-    [5, 7, 9, 10, 12, 13, 16, 18].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('0.00'); });
+    const col = function (h) { return AB_CHW_HEADERS.indexOf(h) + 1; };
+    ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'Final Low On', 'Zone Kind', 'Zone Formed', 'Entry', 'Last Candle', 'Updated']
+      .forEach(function (h) { sh.getRange(3, col(h), n, 1).setNumberFormat('@'); });
+    ['CHoCH Level', 'Final Low', 'Move High', '50% Line', 'Zone Bottom', 'Zone Top', 'Zone %', 'Buy At', 'Stop Under', 'Last Close', 'Distance %']
+      .forEach(function (h) { sh.getRange(3, col(h), n, 1).setNumberFormat('0.00'); });
     sh.getRange(3, 1, n, AB_CHW_HEADERS.length).setValues(out);
   }
   sh.setFrozenRows(2);

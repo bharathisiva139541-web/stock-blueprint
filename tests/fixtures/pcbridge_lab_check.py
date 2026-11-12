@@ -73,7 +73,7 @@ ROW = [1, 'F', 95.0, 99.0, 'b', 1, 0, 50.0]
 
 def run(path, row=ROW, **kw):
     cs = cache_of({'X': (base + path, [row])})['X']
-    params = dict(cost=0, **kw)
+    params = dict(dict(cost=0, lockTarget=False), **kw)      # the exit mechanics; the target lock (12-Nov-2026) below
     pp = P(**params)
     ema = L.ema_series(cs.c, pp['emaN']) if pp['trail'] == 'ema' else None
     return L.simulate(cs, row, pp, ema)
@@ -102,6 +102,24 @@ assert t['reason'] == 'be' and t['exit'] == 96.5 and t['R'] == 0.0, t
 # no breakeven, no trail: back under the original stop after the target = a loss
 t, _ = run([cdl(2, 96.5, 101, 96.6, 100), cdl(3, 100, 100.5, 93, 94)], breakeven=False, trail='none')
 assert t['reason'] == 'stop' and t['hit'] and t['R'] == -1.0, t
+# THE TARGET LOCK (owner, 12-Nov-2026, SIGNPOST: "The target was hit by price opening gap and price closed below the target
+# price, then price closed below the SL. our backtest took this as failed trade. It should be considered as Win"; his answer:
+# once the target is reached the stop = the target): back to the entry after the target = sold at the target, a win
+t, _ = run([cdl(2, 96.5, 101, 96.6, 100.7), cdl(3, 100.7, 100.9, 96, 96.2)], lockTarget=True)
+assert t['reason'] == 'lock' and round(t['exit'], 2) == 100.45 and t['R'] == 2.0, t
+t, _ = run([cdl(2, 96.5, 101, 96.6, 100.7), cdl(3, 100.7, 100.9, 93, 94)], lockTarget=True, breakeven=False, trail='none')
+assert t['reason'] == 'lock' and t['R'] == 2.0, t
+# SIGNPOST: a gap open above the target, a close under it the same day -> sold at the target that day (not a loss later)
+t, _ = run([cdl(2, 101.5, 102, 99, 99.5), cdl(3, 99.5, 100, 93, 94)], lockTarget=True)
+assert t['reason'] == 'lock' and round(t['exit'], 2) == 100.45 and t['days'] == 1 and t['R'] == 2.0, t
+t, _ = run([cdl(2, 101.5, 102, 99, 99.5), cdl(3, 99.5, 100, 93, 94)])           # the old way: breakeven, then 0R
+assert t['reason'] == 'be' and t['R'] == 0.0, t
+# a gap DOWN under the locked target: sold at the open (below the target)
+t, _ = run([cdl(2, 96.5, 101, 96.6, 100), cdl(3, 99, 99.5, 98, 98.2)], lockTarget=True)
+assert t['reason'] == 'lock' and t['exit'] == 99, t
+# the trail still runs above the target
+t, _ = run(path, lockTarget=True)
+assert t['reason'] == 'trail' and t['exit'] == 100.5, t
 # sell at the target ('fixed')
 t, _ = run(path, after='fixed')
 assert t['reason'] == 'target' and t['R'] == 2.0 and round(t['exit'], 2) == 100.45, t
@@ -333,7 +351,7 @@ x = T('X', o, o + 5, 500, 400, 600)
 acc2 = L.portfolio([x], P(capital=10000, riskPct=1, maxPosPct=100, maxOpen=5, cost=0))
 assert acc2['skipReasons']['risk'] == 1 and acc2['skipped'] == 1
 assert x['acct'] == 'Not taken: one share risks Rs 400 (entry 500 - stop 100), more than your risk per trade of Rs 100 (1% of the account).', x['acct']
-row = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'maxOpen': 1})['trades']
+row = L.run_job({'tf': 'D', 'group': 'spring', 'maxRisk': 0, 'maxOpen': 1, 'lockTarget': False})['trades']
 assert any(r[L.TRADE_COLS.index('taken')] == 0 and r[L.TRADE_COLS.index('acct')].startswith('Not taken: 1 trades were already open')
            for r in row), 'the list carries the reason'
 
@@ -400,7 +418,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-4:] == ['acct', 'depth', 'lhll', 'lag']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-6:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -543,7 +561,7 @@ for seed in range(6):
 
 # the cache now has the FVG First Touch / Confirmed signals (the same as the sheet's / 4H scan's rule) + the zone's candle
 meta, d = L.load_meta()
-assert meta['v'] == L.CACHE_VERSION == 4
+assert meta['v'] == L.CACHE_VERSION == 5
 with open(os.path.join(d, 'D.bin'), 'rb') as f:
     off, cnt = meta['index']['D']['AAA']
     csa = L.Candles(f, off, cnt)
@@ -558,7 +576,7 @@ assert ztx and sorted((r[0], r[8], r[1]) for r in rows_a if r[1] in ('Z', 'Y')) 
 for i, zs in ztx.items():
     assert all(fc[i]['l'] <= z['top'] and all(fc[k]['l'] > z['top'] for k in range(z['f'] + 1, i)) for z in zs), 'the first touch'
     assert [z['top'] for z in zs] == sorted((z['top'] for z in zs), reverse=True)
-assert all(len(r) == 9 for r in rows_a) and all(r[8] == -1 for r in rows_a if r[1] == 'S')
+assert all(len(r) == {'Z': 10, 'Y': 10, 'P': 11, 'Q': 11}.get(r[1], 9) for r in rows_a) and all(r[8] == -1 for r in rows_a if r[1] == 'S')
 assert all(0 <= r[8] <= r[0] - 2 for r in rows_a if r[1] in ('F', 'G')), 'the zone formed before the Spring pair'
 assert all(r[8] < r[0] for r in rows_a if r[1] in ('T', 'C'))
 for grp in ('ft', 'conf', 'entry'):
@@ -689,7 +707,8 @@ it5 = ch_items[0]
 assert it5['note'].startswith('Spring · CHoCH ') and 'after 3 lower highs / lows · first pullback' in it5['note'], it5['note']
 assert it5['zone'][:2] == [121.3, 126.5] and it5['zone'][3] == 'FVG', it5['zone']
 import re
-assert not re.search(r'\d\.\d', it5['note']), 'no prices in the note (the website shows it): ' + it5['note']
+assert not re.search(r'\d\.\d', re.sub(r' · zone [\d.]+% tall$', '', it5['note'])), 'no prices in the note (the website shows it): ' + it5['note']
+assert re.search(r' · zone [\d.]+% tall$', it5['note']), 'the zone size (a %, not a price) for the website\'s size rule'
 assert any(x['pattern'] == 'Spring in FVG' and x['candle'] == spring_day for x in res5['items']), 'the plain Spring in FVG row stays too'
 # only from the new sessions: a later scan does not send it again
 assert not [x for x in K.analyse({'sym': 'EEE', 'day': rows5, 'm15': [], 'h4': []}, spring_day, upto5, set(), ('D',), ())['items']
@@ -884,9 +903,9 @@ assert P(entry='zone')['entry'] == 'zone' and P(discount=0.5, discPart='top')['d
 res6 = K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), ())
 ch6 = [x for x in res6['items'] if x['pattern'] == K.CHOCH_PATTERN]
 assert [x['candle'] for x in ch6] == [r6[t_disc][0], r6[t_disc + 1][0]], [(x['candle'], x['note']) for x in ch6]
-assert ch6[0]['note'].startswith('Zone first touch · CHoCH ') and ch6[0]['note'].endswith('· first pullback · zone middle 89% down the move'), ch6[0]['note']
+assert ch6[0]['note'].startswith('Zone first touch · CHoCH ') and '· first pullback · zone middle 89% down the move · zone ' in ch6[0]['note'], ch6[0]['note']
 assert ch6[1]['note'].startswith('Spring · CHoCH ') and ch6[0]['zone'][:2] == [121.3, 126.5], ch6
-assert not re.search(r'\d\.\d', ch6[0]['note'])
+assert not re.search(r'\d\.\d', re.sub(r' · zone [\d.]+% tall$', '', ch6[0]['note']))
 # ... and while price has not come back yet the setup is WAITING (owner, 12-Nov-2026, IREDA: the CHoCH formed, the
 # discount zone below, no touch yet): the discount FVG (not the premium one above the 50 % line), until its first touch
 full6 = K.daily_candles(r6)
@@ -905,12 +924,14 @@ K.send_waiting({}, lambda cfg, action, body, **kw: sent6.append((action, body)) 
                date.fromisoformat(r6[t_prem - 1][0]), [dict(res6w['waiting'][0], sym='SUP'), dict(res6w['waiting'][0], sym='AAA', dist=2.5)])
 assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'] for r in sent6[0][1]['rows']] == ['AAA', 'SUP'], sent6
 assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
-assert sent6[0][1]['choch'] == {'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}
+NEW6 = {'zoneMin': 0.0, 'zoneMax': 0.0, 'lineTol': 0.5, 'fibLevel': 0.618, 'fibTol': 1.0, 'gapEntry': True, 'lineOk': False,
+        'darkCloud': 'any', 'fibPat': 'off'}       # the 12-Nov-2026 refinements' defaults
+assert sent6[0][1]['choch'] == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6)
 # the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
 D6 = K.choch_rules()
-assert D6 == {'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'} and K.choch_rules({}) == D6
+assert D6 == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6) and K.choch_rules({}) == D6
 mine6r = K.choch_rules({'choch_swing_candles': 10, 'choch_lower_highs': 4, 'choch_fib': 0.382, 'choch_zone_part': 'top', 'choch_zone_when': 'leg'})
-assert mine6r == {'pivotN': 10, 'downN': 4, 'fib': 0.382, 'part': 'top', 'zoneWhen': 'leg'}, mine6r
+assert mine6r == dict({'pivotN': 10, 'downN': 4, 'fib': 0.382, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6), mine6r
 assert K.choch_rules({'choch_swing_candles': 99, 'choch_lower_highs': True, 'choch_fib': 1.5, 'choch_zone_part': 'x', 'choch_zone_when': 2}) == D6
 assert K.choch_rules_words(D6) == "swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it"
 assert K.choch_rules_words(mine6r) == "swings of 10 candles, at least 4 lower highs / lows, the zone's top at least 38.2% down the move, the zone formed only in the CHoCH move"
@@ -925,12 +946,31 @@ for rr6, n6 in ((dict(D6, part='top'), 2), (dict(D6, downN=4), 0), (dict(D6, fib
                                  choch=rr6)['items'] if x['pattern'] == K.CHOCH_PATTERN]
     assert len(got6) == n6, (rr6, [(x['candle'], x['note']) for x in got6])
     if n6:
-        assert got6[0]['note'].endswith('· first pullback · zone top 81% down the move'), got6[0]['note']
+        assert '· first pullback · zone top 81% down the move · zone ' in got6[0]['note'], got6[0]['note']
 # ChochRules.bat: Enter keeps a value, a bad answer is asked again; config.json gets the five keys
-answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'])
+answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 6)
 saved6 = {}
 assert K.choch_setup({'url': 'x'}, lambda c: saved6.update(c), ask=lambda q: next(answers)) == 0
-assert K.choch_rules(saved6) == {'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'} and saved6['url'] == 'x', saved6
+assert K.choch_rules(saved6) == dict({'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6) and saved6['url'] == 'x', saved6
+# ... and the refinements of 12-Nov-2026: zone size 2 - 8 %, the FVG top, the CHoCH-line rule (+1 %), dark clouds left out,
+# the Fib + pattern entry in big zones at the 61.8 % line +/- 1.5 %
+answers = iter([''] * 5 + ['2', '8', '2', '2', '1', '2', '2', '', '1.5'])
+saved7 = {}
+assert K.choch_setup({}, lambda c: saved7.update(c), ask=lambda q: next(answers)) == 0
+r7 = K.choch_rules(saved7)
+assert (r7['zoneMin'], r7['zoneMax'], r7['gapEntry'], r7['lineOk'], r7['lineTol'], r7['darkCloud'], r7['fibPat'], r7['fibLevel'], r7['fibTol']) == \
+    (2.0, 8.0, False, True, 1.0, 'exclude', 'big', 0.618, 1.5), r7
+assert saved7['choch_zone_max_pct'] == 8.0 and saved7['choch_dark_cloud'] == 'exclude' and saved7['choch_gap_entry'] is False
+assert K.choch_rules_words(r7).endswith(", zone size 2 - 8%, the whole FVG (not the Gap-up zone inside it), or the zone top at / under the CHoCH level (+1%), "
+                                        "dark-cloud FVGs left out, big zones: a Spring / Harami + Inverted Hammer at the zone's 61.8% line"), K.choch_rules_words(r7)
+assert K.choch_rules({'choch_zone_max_pct': 500, 'choch_dark_cloud': 'x', 'choch_gap_entry': 1, 'choch_fib_pattern': 'some'}) == D6
+# the zone size rule in the daily scan: the SUPREMEIND chart's zone is 4.3 % tall
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMax=3)) is None and K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMin=5)) is None
+wz = K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMin=2, zoneMax=8))
+assert wz and wz['pct'] == 4.29 and wz['buy'] == 126.5 and wz['stopAt'] == 121.3 and wz['how'] == 'buy order at the zone top', wz
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, darkCloud='only')) is None, 'not a dark-cloud FVG'
+wf = K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, fibPat='all'))
+assert wf and wf['buy'] == round(126.5 - 0.618 * 5.2, 2) and 'at the zone\'s 61.8% line' in wf['how'], wf
 # the scan is due again when the rules change (and rescans the last sessions), not when they stay
 up6 = date.fromisoformat(r6[-1][0])
 st6 = {'scanned': '2999-01-01', 'tfs': K.chosen_tfs({}), 'slots': K.chosen_slots({}), 'rules': K.RULES_VERSION}
@@ -1263,12 +1303,12 @@ for extra in ({'swingMode': 'zigzag', 'zzAtr': 2}, {'swingAtr': 1}, {'chochMode'
     assert rr16['stages'] and all(r[rr16['tradeCols'].index('stage')] for r in rr16['trades']), extra
 # E15 / E16: the stop trails under the highest high - 2 x ATR, or under the newest swing low since the signal
 for tr in ('atr', 'swing'):
-    rr16 = L.run_job(dict(base16, trail=tr, atrK=2, targetR=1, structure='show'))
+    rr16 = L.run_job(dict(base16, trail=tr, atrK=2, targetR=1, structure='show', lockTarget=False))
     ci = rr16['tradeCols']
     rows16 = [dict(zip(ci, r)) for r in rr16['trades']]
     assert any(r['reason'] == 'trail' for r in rows16), tr
     assert all(r['exit'] >= r['stop'] - 0.01 or r['reason'] in ('stop', 'gap') for r in rows16)
-assert L.run_job(dict(base16, trail='atr', targetR=1))['reasons'] != L.run_job(dict(base16, trail='swing', targetR=1))['reasons']
+assert L.run_job(dict(base16, trail='atr', targetR=1, lockTarget=False))['reasons'] != L.run_job(dict(base16, trail='swing', targetR=1, lockTarget=False))['reasons']
 # validation: development / validation / test, and every 2-year block
 v16r = L.run_job(dict(base16, structure='show', discount=0.5, valFrom='2010-12-01', testFrom='2011-06-01', rollYears=1))
 assert v16r['split']['val'] == '2010-12-01' and {'dev', 'valid', 'test'} <= set(v16r['split']), v16r['split']
@@ -1281,5 +1321,101 @@ assert 'before 2011-06-01' in L.headline(v16r)
 # the charts PDF draws the run's own swings (a ZigZag run here)
 zz16 = L.run_job(dict(base16, structure='show', swingMode='zigzag'), charts=L.CHARTS_DIR, name='zigzag')
 assert zz16['pdf'].get('file') and not zz16['pdf'].get('error'), zz16['pdf']
+
+# ------------------------------------------------------------------ 17. the owner's refinements after his first charts PDF (12-Nov-2026)
+# hand-made candles + rows: an FVG zone 100 - 110 (formed on candle 3) with a Gap-up zone 104 - 108 inside it (same move)
+def r17(rows, dark=False, extra=None):
+    cs = [cdl(0, 98, 99, 97, 98.5), cdl(1, 98.5, 100, 98, 99.5), cdl(2, 99.5, 112, 99.4, 111.5),
+          cdl(3, 112.5, 113, 110, 111) if not dark else cdl(3, 112.5, 113, 110, 104.5),   # dark: red, opens over 111.5, closes < 105.45
+          cdl(4, 111, 115, 110.5, 114), cdl(5, 114, 116, 112, 113), cdl(6, 113, 113.5, 109, 109.5),   # 6: touches 110, not 108
+          cdl(7, 108.5, 109, 106, 107), cdl(8, 107, 107.5, 103.5, 105), cdl(9, 105, 112, 104.8, 111),
+          cdl(10, 111, 121, 110.5, 120), cdl(11, 120, 130, 119, 129), cdl(12, 129, 131, 127, 130)] + (extra or [])
+    cache_of({'X': (cs, rows)})
+
+
+Z17 = [6, 'Z', 100.0, 110.0, 't', 1, 0, 50.0, 3, [104.0, 108.0, 3]]
+Y17 = [7, 'Y', 104.0, 108.0, 't', 1, 1, 50.0, 3, [100.0, 110.0, 3]]
+P17 = [8, 'P', 100.0, 110.0, 'm', 0, 0, 50.0, 3, None, 'S']
+T17 = dict(tf='D', group='touch', entry='zone', maxRisk=0, cost=0, lockTarget=False)
+r17([Z17, Y17])
+g1 = L.run_job(dict(T17))                                   # gapEntry (default): the order at the Gap-up zone top
+c17 = g1['tradeCols']
+tr = [dict(zip(c17, r)) for r in g1['trades']]
+assert len(tr) == 1 and tr[0]['signal'] == (D0 + timedelta(days=7)).isoformat() and tr[0]['entry'] == 108.0, tr
+assert tr[0]['stop'] == round(100 * 0.995, 2) and tr[0]['zone'] == 'Gap-up zone touch inside FVG' and tr[0]['zpct'] == 10.0, tr
+assert g1['skipped']['gapin'] == 1 and L.DEFAULTS['gapEntry'] is True
+g0 = L.run_job(dict(T17, gapEntry=False))                   # the old way: the FVG's own touch on candle 6
+tr0 = sorted((dict(zip(c17, r)) for r in g0['trades']), key=lambda x: x['signal'])
+assert tr0[0]['signal'] == (D0 + timedelta(days=6)).isoformat() and tr0[0]['entry'] == 110.0 and tr0[0]['stop'] == 99.5, tr0
+assert len(tr0) == 2 and tr0[1]['stop'] == round(104 * 0.995, 2), 'and the Gap-up zone on its own (its own stop)'
+# the FVG's size (10 %): 2 - 8 % leaves it out, 2 - 12 % keeps it; the Gap-up zone inside is judged by its FVG
+assert L.run_job(dict(T17, zoneMin=2, zoneMax=8))['skipped']['zsize'] >= 1 and not L.run_job(dict(T17, zoneMin=2, zoneMax=8))['trades']
+assert len(L.run_job(dict(T17, zoneMin=2, zoneMax=12))['trades']) == 1 and not L.run_job(dict(T17, zoneMin=11))['trades']
+assert L.zone_pct(100, 110) == 10.0 and L.size_zone(Y17, P()) == (100.0, 110.0) and L.size_zone(Y17, P(gapEntry=False)) == (104.0, 108.0)
+# the dark-cloud FVG (its 3rd candle red, opening over the green candle's close, closing under the middle of its body)
+r17([Z17, Y17], dark=True)
+assert L.run_job(dict(T17, darkCloud='exclude'))['skipped']['dcloud'] >= 1 and not L.run_job(dict(T17, darkCloud='exclude'))['trades']
+assert len(L.run_job(dict(T17, darkCloud='only'))['trades']) == 1 and len(L.run_job(dict(T17))['trades']) == 1
+r17([Z17, Y17])
+assert not L.run_job(dict(T17, darkCloud='only'))['trades'] and len(L.run_job(dict(T17, darkCloud='exclude'))['trades']) == 1
+fc17 = [{'o': 99.5, 'h': 112, 'l': 99.4, 'c': 111.5}, {'o': 112.5, 'h': 113, 'l': 110, 'c': 104.5}]
+assert K.is_dark_cloud(fc17, 1) and not K.is_dark_cloud(fc17[:1] + [{'o': 112.5, 'h': 113, 'l': 110, 'c': 106}], 1)
+# Fib + pattern (FINOPB): the Spring on candle 8 - low 103.5 at the zone's 61.8 % line (110 - 0.618 x 10 = 103.82, +/- 1 %),
+# closing above it - bought at its close, the stop under the zone bottom
+r17([Z17, Y17, P17])
+fa = L.run_job(dict(T17, fibPat='all'))
+tra = [dict(zip(c17, r)) for r in fa['trades']]
+assert len(tra) == 1 and tra[0]['signal'] == (D0 + timedelta(days=8)).isoformat() and tra[0]['entry'] == 105.0 and tra[0]['stop'] == 99.5, tra
+assert tra[0]['pat'] == 'Spring' and tra[0]['zone'] == 'FVG zone - pattern at the Fib line', tra
+assert not L.run_job(dict(T17, fibPat='all', fibLevel=0.5))['trades'] and L.run_job(dict(T17, fibPat='all', fibLevel=0.5))['skipped']['fiblevel'] == 1
+assert not L.run_job(dict(T17, fibPat='all', fibLevel=0.5, fibTol=3))['trades'], 'the 50 % line 105: the close (105) is not above it'
+assert len(L.run_job(dict(T17, fibPat='all', fibLevel=0.55))['trades']) == 1     # the 55 % line 104.5: low within 1 %, close above
+# 'big': the 10 % zone is bigger than the 8 % limit -> the pattern; under a 12 % limit -> the zone-top (Gap-up) entry
+fb = [dict(zip(c17, r)) for r in L.run_job(dict(T17, fibPat='big', zoneMax=8))['trades']]
+assert len(fb) == 1 and fb[0]['pat'] == 'Spring', fb
+fs = [dict(zip(c17, r)) for r in L.run_job(dict(T17, fibPat='big', zoneMax=12))['trades']]
+assert len(fs) == 1 and fs[0]['entry'] == 108.0 and fs[0]['pat'] == '', fs
+assert not L.run_job(dict(T17, fibPat='off', zoneMax=8))['trades']
+# the target lock in a run (default on): the 2R target 125 reached on candle 11, the trade sold at 125 when price falls back
+r17([Z17, Y17], extra=[cdl(13, 130, 130.5, 124, 124.5), cdl(14, 124.5, 125, 120, 121)])
+lk = [dict(zip(c17, r)) for r in L.run_job(dict(T17, lockTarget=True, trail='none'))['trades']]
+assert lk[0]['reason'] == 'lock' and lk[0]['exit'] == 125.0 and lk[0]['R'] == 2.0, lk
+# the CHoCH-line rule (SWIGGY): a zone short of the discount line counts when its top is at / just above the CHoCH level
+sj17 = {'k': 0, 'after_low': True, 'leg': True, 'after': True, 'first': True, 'below': False, 'depth': 0.3, 'lvl': 100.0, 'ztop': 100.4}
+assert L.struct_fail(sj17, P(belowChoch=False, discount=0.382)) == 'premium' and L.struct_fail(sj17, P(belowChoch=False, discount=0.382, lineOk=True, lineTol=0.5)) == ''
+assert L.struct_fail(dict(sj17, ztop=100.6), P(belowChoch=False, discount=0.382, lineOk=True, lineTol=0.5)) == 'premium'
+assert L.struct_fail(dict(sj17, ztop=99.0), P(belowChoch=False, discount=0.382, lineOk=True, lineTol=0)) == ''
+# the stop under the CHoCH's final low (LL): every trade of the owner's setup on the made SUPREMEIND chart + random charts
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+fl = L.run_job(dict(SMC6, stop='final', stopBuf=0.5))
+ci = fl['tradeCols']
+assert fl['tradesTotal'] > 0
+for r in fl['trades']:
+    t_ = dict(zip(ci, r))
+    low = float(re.search(r'final low ([\d.]+)', t_['struct']).group(1))
+    assert abs(t_['stop'] - round(low * 0.995, 2)) <= 0.011, (t_['stop'], low)
+assert not L.run_job(dict(SMC6, structure='off', stop='final', minPrice=1e5))['trades']
+# the cache: every Gap-up zone row's FVG link / FVG zone row's Gap-up link is a zone of the same move, inside it, formed
+# before the touch; 'P' / 'Q' rows = a Spring / Bullish Harami + Inverted Hammer inside a zone that held
+meta17, d17 = L.load_meta()
+nlink = npq = 0
+for sym, rows in meta17['signals']['D'].items():
+    for r in rows:
+        if r[1] in ('Z', 'Y') and r[9]:
+            nlink += 1
+            inner, outer = (r[9], r[2:4]) if r[1] == 'Z' else (r[2:4], r[9])
+            assert inner[0] >= outer[0] - 1e-6 and inner[1] <= outer[1] + 1e-6 and abs(r[9][2] - r[8]) <= K.ZONE_LINK_SPAN and r[9][2] < r[0], r
+        if r[1] in ('P', 'Q'):
+            npq += 1
+            assert r[10] in ('S', 'H') and r[8] <= r[0] - 2 and r[9] is None, r
+assert npq > 0, 'Fib-pattern rows in the cache'
+# the Python Bullish Harami + Inverted Hammer (tests/pcbridge-intraday.test.js compares it with the website's on random pairs)
+assert K.is_hih_pair({'o': 100, 'h': 100.5, 'l': 91, 'c': 92}, {'o': 92, 'h': 97.5, 'l': 91.9, 'c': 93})
+assert not K.is_hih_pair({'o': 100, 'h': 100.5, 'l': 91, 'c': 92}, {'o': 92, 'h': 94, 'l': 91.9, 'c': 93}), 'the wick must reach 60 % up'
+# the charts PDF tells the new rules in words
+pdf17 = L.run_job(dict(SMC6, stop='final', lineOk=True), charts=L.CHARTS_DIR, name='refined')
+assert pdf17['pdf'].get('file') and not pdf17['pdf'].get('error'), pdf17['pdf']
+w17 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf17['pdf']['file'])))
+assert 'just under the final low (the lowest point before the CHoCH)' in w17 and 'under the CHoCH\'s final low (LL)' in w17
 
 print('OK')

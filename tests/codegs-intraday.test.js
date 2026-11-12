@@ -314,7 +314,7 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   assert.deepStrictEqual([days[0], days[9]], ['2026-10-30', '2026-10-14'], 'the newest 10 sessions');
   assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null]);
   assert.ok(!JSON.stringify(it).includes('228.05') && !JSON.stringify(it).includes('tradingview'), 'no Kite prices, no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 14);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 15);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
@@ -481,24 +481,36 @@ test('CHoCH + FVG waiting for the pullback (owner, 12-Nov-2026, IREDA): the "CHo
   const tab = e.sheet('CHoCH Waiting').rows;
   assert.match(tab[0][0], /WAITING for the pullback.*session 2026-11-06.*Rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it\./);
   assert.deepStrictEqual(tab[1].slice(0, 4), ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle']);
-  assert.deepStrictEqual(tab.slice(2).map((x) => [x[0], x[2], x[10], x[17]]), [['M&M', '4H', 'Gap-up (inside FVG)', 2.5], ['PARAGMILK', 'D', 'FVG', 9.23]], 'nearest first, one row a stock + timeframe');
-  assert.deepStrictEqual(tab[3].slice(0, 19), ['PARAGMILK', 'Parag Milk Foods Ltd.', 'D', '2026-11-03', 117.39, 4, 98.78, '2026-10-26', 123.99, 111.39, 'FVG',
-    104.1, 108.24, '2026-10-29', 83, 119.25, '2026-11-06', 9.23, 1]);
-  assert.match(tab[3][19], /^=HYPERLINK\("https:\/\/www\.tradingview\.com\/chart\/\?symbol=NSE%3APARAGMILK&interval=D","D chart"\)$/);
+  assert.deepStrictEqual(tab.slice(2).map((x) => [x[0], x[2], x[10], x[21]]), [['M&M', '4H', 'Gap-up (inside FVG)', 2.5], ['PARAGMILK', 'D', 'FVG', 9.23]], 'nearest first, one row a stock + timeframe');
+  // an older PC sends no buy / stop / entry / size: the zone top / bottom (12-Nov-2026 columns Zone % / Buy At / Stop Under / Entry)
+  assert.deepStrictEqual(tab[3].slice(0, 23), ['PARAGMILK', 'Parag Milk Foods Ltd.', 'D', '2026-11-03', 117.39, 4, 98.78, '2026-10-26', 123.99, 111.39, 'FVG',
+    104.1, 108.24, '2026-10-29', 83, '', 108.24, 104.1, 'buy order at the zone top', 119.25, '2026-11-06', 9.23, 1]);
+  assert.match(tab[3][23], /^=HYPERLINK\("https:\/\/www\.tradingview\.com\/chart\/\?symbol=NSE%3APARAGMILK&interval=D","D chart"\)$/);
+  // the owner's refinements (12-Nov-2026): the order at the Gap-up zone top inside an FVG, the stop under the FVG's bottom
+  e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-06', rows: [Object.assign(w('PARAGMILK', 'D', 4.1, 0),
+    { zone: [105.5, 107.4, '2026-10-29', 'Gap-up'], inside: 1, buy: 107.4, stopAt: 104.1, how: 'buy order at the Gap-up zone top (inside the FVG)', pct: 3.98 })],
+  choch: { pivotN: 5, downN: 3, fib: 0.5, part: 'mid', zoneWhen: 'both', zoneMin: 2, zoneMax: 8, gapEntry: true, lineOk: true, lineTol: 1,
+    darkCloud: 'exclude', fibPat: 'big', fibLevel: 0.618, fibTol: 1 } });
+  const t2 = e.sheet('CHoCH Waiting').rows;
+  assert.deepStrictEqual(t2[2].slice(10, 19), ['Gap-up (inside FVG)', 105.5, 107.4, '2026-10-29', 83, 3.98, 107.4, 104.1, 'buy order at the Gap-up zone top (inside the FVG)']);
+  assert.match(t2[0][0], /Rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it, zone size 2 - 8%, or the zone top at \/ under the CHoCH level \(\+1%\), dark-cloud FVGs left out, big zones: a Spring \/ Harami \+ Inverted Hammer at the zone's 61\.8% line\./);
+  assert.match(t2[0][0], /Buy At = where the order waits/);
+  e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-06', rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], inside: 1 })] });
   // the next scan replaces it all; the laptop's own CHoCH rules (ChochRules.bat, 12-Nov-2026) in the note
   e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('FLAT', 'W', 4, 0)],
     choch: { pivotN: 10, downN: 4, fib: 0.382, part: 'top', zoneWhen: 'leg' } });
   assert.deepStrictEqual(e.sheet('CHoCH Waiting').rows.slice(2).map((x) => x[0] + ' ' + x[2]), ['FLAT W']);
   assert.match(e.sheet('CHoCH Waiting').rows[0][0], /Rules: swings of 10 candles, at least 4 lower highs \/ lows, the zone's top at least 38\.2% down the move, the zone formed only in the CHoCH move\./);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_chochRules_({ pivotN: 99, downN: 0, fib: 3, part: "x", zoneWhen: "y" })'))),
-    { pivotN: 5, downN: 3, fib: 0.5, part: 'mid', zoneWhen: 'both' }, 'out of range = the defaults');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_chochRules_({ pivotN: 99, downN: 0, fib: 3, part: "x", zoneWhen: "y", zoneMax: 500, gapEntry: 1, darkCloud: "x", fibPat: "y", lineOk: "yes" })'))),
+    { pivotN: 5, downN: 3, fib: 0.5, part: 'mid', zoneWhen: 'both', zoneMin: 0, zoneMax: 0, lineTol: 0.5, fibLevel: 0.618, fibTol: 1, gapEntry: true,
+      lineOk: false, darkCloud: 'any', fibPat: 'off' }, 'out of range = the defaults');
   e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { inside: 1 })] });
   // the site feed: every column but the chart / time, Kite's prices included (the owner's choice)
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
-  assert.strictEqual(data.chochWait.cols.length, 19);
+  assert.strictEqual(data.chochWait.cols.length, 23);
   assert.deepStrictEqual(data.chochWait.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'D', '2026-11-03', 117.39, 4, 98.78, '2026-10-26', 123.99, 111.39, 'FVG',
-    104.1, 108.24, '2026-10-29', 83, 119.25, '2026-11-06', 9.23, 1]);
+    104.1, 108.24, '2026-10-29', 83, null, 108.24, 104.1, 'buy order at the zone top', 119.25, '2026-11-06', 9.23, 1]);
   assert.strictEqual(data.chochWait.rows[0][10], 'FVG', 'inside counts for a Gap-up zone only');
   const markers = require('../api/site.js').PERSONAL_MARKERS;
   assert.ok(markers.every((m) => !m.test(JSON.stringify(data))), 'nothing the site\'s privacy guard would block');

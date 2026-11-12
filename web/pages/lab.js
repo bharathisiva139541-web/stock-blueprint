@@ -42,7 +42,13 @@
     // frozen baseline): the structure engine (E2 / E3 / E5), more filters (E6-E11), the ATR / swing-low trails (E15 / E16),
     // a validation part + the "steady over time?" blocks
     swingMode: 'fractal', zzAtr: 2, swingAtr: 0, chochMode: 'last', eqAtr: 0, sweep: false,
-    discountMax: 0, lagMin: 0, dispAtr: 0, dispVol: 0, whereIn: 'any', wkAbove: 0, atrK: 3, valFrom: '', rollYears: 3
+    discountMax: 0, lagMin: 0, dispAtr: 0, dispVol: 0, whereIn: 'any', wkAbove: 0, atrK: 3, valFrom: '', rollYears: 3,
+    // the owner's refinements after his first charts PDF (12-Nov-2026): the zone's size (STUDDS: "control in FVG % size from 2%
+    // to 10%"), the stop under the CHoCH's final low, the target lock (SIGNPOST: "should be considered as Win" - "Target தொட்டதும்
+    // stop = target"), the order at the Gap-up zone top inside an FVG (GABRIEL), a zone short of the discount line but under the
+    // CHoCH level (SWIGGY), a Spring / Harami + Inverted Hammer at the zone's Fib line (FINOPB), dark-cloud FVGs (RTNPOWER)
+    zoneMin: 0, zoneMax: 0, lockTarget: true, gapEntry: true, lineOk: false, lineTol: 0.5, fibPat: 'off', fibLevel: 0.618, fibTol: 1,
+    darkCloud: 'any'
   };
   // ready setups for the "Start here" cards (owner, 12-Nov-2026: "make bactest lab more user-friendly not to be complex")
   var QUICK = [
@@ -55,11 +61,12 @@
   // the folded "More rules" sections: the keys each one holds (its header counts the ones you changed)
   var SECTIONS = [
     ['structure', 'Market structure - CHoCH / BOS', ['structure', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
-      'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep']],
+      'lineOk', 'lineTol', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep']],
     ['shape', 'Spring candle shape', null],
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
+    ['zone', 'Zone rules - size, Gap-up zone inside, Fib + pattern, dark cloud', ['zoneMin', 'zoneMax', 'gapEntry', 'fibPat', 'fibLevel', 'fibTol', 'darkCloud']],
     ['entry', 'Entry details', ['entry', 'maxRisk', 'whereIn', 'from', 'to', 'minPrice', 'minTurnover', 'maxTouch']],
-    ['exit', 'Exit details', ['targetMode', 'swingMinR', 'breakeven', 'maxDays', 'cost']],
+    ['exit', 'Exit details', ['targetMode', 'swingMinR', 'breakeven', 'lockTarget', 'maxDays', 'cost']],
     ['money', 'Money details', ['maxPosPct', 'maxOpen', 'compound']],
     ['check', 'Checking the result - validation part, steady over time', ['valFrom', 'rollYears']]
   ];
@@ -116,7 +123,14 @@
     entry: [['close', 'At the signal candle\'s close'], ['next_open', 'At the next candle\'s open'],
       ['zone', 'An order waiting at the zone top (first-touch signals)']],
     stop: [['zone', 'A little below the FVG / Gap-up zone bottom'], ['spring', 'A little below the Spring candle\'s low'],
-      ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry']],
+      ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry'], ['final', 'A little below the CHoCH\'s final low (LL)']],
+    zoneMin: [[0, 'No minimum'], [1, 'At least 1%'], [1.5, 'At least 1.5%'], [2, 'At least 2%'], [3, 'At least 3%'], [4, 'At least 4%']],
+    zoneMax: [[0, 'No limit'], [4, 'At most 4%'], [5, 'At most 5%'], [6, 'At most 6%'], [8, 'At most 8%'], [10, 'At most 10%'], [12, 'At most 12%'], [15, 'At most 15%']],
+    fibPat: [['off', 'Off - buy at the zone top as usual'], ['big', 'In zones bigger than "at most" (the rest at the zone top)'], ['all', 'In every zone (no zone-top orders)']],
+    fibLevel: [[0.5, 'The 50% line'], [0.618, 'The 61.8% line'], [0.705, 'The 70.5% line'], [0.786, 'The 78.6% line']],
+    fibTol: [[0.5, 'Within 0.5%'], [1, 'Within 1%'], [1.5, 'Within 1.5%'], [2, 'Within 2%'], [3, 'Within 3%']],
+    darkCloud: [['any', 'Take them like the others'], ['exclude', 'Leave them out'], ['only', 'Only these (to compare)']],
+    lineTol: [[0, 'Exactly at / under the line'], [0.5, 'Up to 0.5% above it'], [1, 'Up to 1% above it'], [2, 'Up to 2% above it']],
     after: [['trail', 'Keep the trade and trail the stop'], ['fixed', 'Sell at the target']],
     trail: [['lows', 'Under the lowest low of the last N candles'], ['pct', 'X % under the highest price since entry'],
       ['ema', 'Sell when a candle closes under the N EMA'], ['atr', 'x ATR under the highest price since entry'],
@@ -146,7 +160,8 @@
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
-    'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears'];
+    'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears',
+    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol'];
   // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
   var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
     bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level',
@@ -169,6 +184,7 @@
     lowest: 'its low did not take out the lowest low of the last candles', fall: 'no fall before the red candle'
   };
   var REASON = { stop: ['Stop loss', 's-bad'], target: ['Target', 's-good'], be: ['Breakeven (stop at entry)', ''], trail: ['Trailing stop', 's-good'],
+    lock: ['Target locked (the stop at the target)', 's-good'],
     ema: ['Close under EMA', 's-good'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
   var POLL_MS = 4000;
   var ST = { status: null, item: null, itemId: null, timer: 0, busy: false, err: '', host: null, gen: 0, bd: '' };
@@ -246,6 +262,7 @@
         pc(Number(p.discount) * 100) + '% down the move from the CHoCH\'s final low to its high before the signal - the discount' +
         (Number(p.discount) === 0.5 ? ' half' : ' part'));
     }
+    if (p.lineOk && Number(p.discount)) w.push('a zone short of that line counts too when its top is at or under the CHoCH level' + (Number(p.lineTol) ? ' (up to ' + pc(p.lineTol) + '% above it)' : ''));
     if (p.belowChoch) w.push('the zone (no zone: the entry) below the CHoCH level');
     if (p.firstPull) w.push('the first pullback - no BOS (a close above the highest swing high since the CHoCH) yet');
     if (Number(p.chochAge)) w.push('at most ' + p.chochAge + ' candles after the CHoCH');
@@ -274,6 +291,25 @@
     return 'Only on days when ' + idxName(p.mktIndex) + ' ' + w.join(' and ') + '.';
   }
 
+  /** The zone rules of 12-Nov-2026 in words ('' when all are at their defaults - the Gap-up zone entry is on by default). */
+  function zoneWords(p) {
+    var w = [];
+    if (Number(p.zoneMin) || Number(p.zoneMax)) {
+      w.push('Only zones ' + (Number(p.zoneMax) ? pc(p.zoneMin || 0) + '% to ' + pc(p.zoneMax) + '%' : 'at least ' + pc(p.zoneMin) + '%') +
+        ' tall (top - bottom, % of the bottom)' + (p.fibPat === 'big' ? ' - bigger ones by the pattern at their Fib line' : '') + '.');
+    }
+    if (p.gapEntry && (p.group === 'touch')) w.push('An FVG with a Gap-up zone inside it: the order waits at the Gap-up zone\'s top, the stop stays under the FVG\'s bottom.');
+    if (!p.gapEntry && p.group === 'touch') w.push('An FVG with a Gap-up zone inside it: bought at the FVG top as usual.');
+    if (p.fibPat === 'big' || p.fibPat === 'all') {
+      w.push((p.fibPat === 'big' ? 'In zones bigger than your limit' : 'In every zone') + ': no order at the zone top - wait for a Spring or a Bullish Harami + ' +
+        'Inverted Hammer whose low is within ' + pc(p.fibTol) + '% of the zone\'s ' + pc(Number(p.fibLevel) * 100) + '% Fib line (drawn from the zone bottom to ' +
+        'its top) and that closes above it; buy at its close, the stop under the zone bottom.');
+    }
+    if (p.darkCloud === 'exclude') w.push('FVGs whose 3rd candle is a dark cloud (red, opening over the green FVG candle\'s close, closing under the middle of its body) are left out.');
+    if (p.darkCloud === 'only') w.push('Only FVGs whose 3rd candle is a dark cloud (to compare).');
+    return w.join(' ');
+  }
+
   /** The rules in plain words (shown above the Run button and with each result). */
   function plain(p) {
     var s = [];
@@ -294,15 +330,19 @@
     if (mkt) s.push(mkt);
     if (Number(p.wkAbove) && p.tf !== 'W') s.push('Only when the stock\'s last finished weekly candle closed above its ' + p.wkAbove + '-week EMA.');
     if (p.whereIn && p.whereIn !== 'any' && p.entry !== 'zone') s.push('Only when the signal candle stayed in the ' + (p.whereIn === 't' ? 'top half' : 'top or middle') + ' of its zone.');
+    var zw = zoneWords(p);
+    if (zw) s.push(zw);
     s.push(p.entry === 'zone' ? 'Buy with an order waiting at the zone top - filled when price first comes down to it (at the open when it opened under the top); ' +
       'only first-touch signals, the stop always under the zone.' : 'Buy ' + (p.entry === 'close' ? 'at the signal candle\'s close' : 'at the next candle\'s open') + '.');
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
-      F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' : 'the zone bottom or the Spring low, whichever is lower')) +
+      F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' :
+        p.stop === 'final' ? 'the CHoCH\'s final low (LL - no live CHoCH = no trade)' : 'the zone bottom or the Spring low, whichever is lower')) +
       (p.maxRisk ? ' - trades risking more than ' + F.num(p.maxRisk, 1) + '% are skipped' : '') + '.');
     var tgt = p.targetMode === 'swing' ? 'the last swing high (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' : F.num(p.targetR, 2) + 'R';
     if (p.after === 'fixed') s.push('Sell at ' + tgt + (p.targetMode === 'swing' ? '' : ' (' + F.num(p.targetR, 2) + ' x the risk)') + '.');
     else {
-      s.push('At ' + tgt + ' ' + (p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
+      s.push('At ' + tgt + ' ' + (p.lockTarget ? 'move the stop up to the target (a fall back to it = sold there, a win), then ' :
+        p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
         (p.trail === 'lows' ? 'trail it under the lowest low of the last ' + p.trailN + ' candle' + (p.trailN === 1 ? '' : 's') :
           p.trail === 'pct' ? 'trail it ' + F.num(p.trailPct, 1) + '% under the highest price' :
             p.trail === 'ema' ? 'sell when a candle closes under the ' + p.emaN + ' EMA' :
@@ -339,6 +379,7 @@
     var keys = sec && sec[2] || SHAPE_KEYS;
     return keys.filter(function (k) { return k !== 'fallPct' && String(f[k]) !== String(DEF[k]); }).length;
   }
+  function secTitle(id) { return SECTIONS.filter(function (x) { return x[0] === id; })[0][1]; }
   function openSet() { var o = ui.store.get('lab:open', []); return Array.isArray(o) ? o : []; }
   function sec(id, title, body, f) {
     var n = sectionOn(f, id);
@@ -354,7 +395,9 @@
         (only ? field('The zone formed', sel('zoneWhen', f.zoneWhen)) + field('The signal came', sel('chochAge', f.chochAge)) +
           field('Discount: the zone at least', sel('discount', f.discount), 'wide') +
           (Number(f.discount) ? field('… judged on', sel('discPart', f.discPart)) : '') +
-          '<div class="field lab-checks">' + check('belowChoch', f.belowChoch, 'Zone top below the CHoCH level (strict)') + check('firstPull', f.firstPull, 'First pullback only (no BOS yet)') + '</div>' : '') : '') +
+          '<div class="field lab-checks">' + check('belowChoch', f.belowChoch, 'Zone top below the CHoCH level (strict)') + check('firstPull', f.firstPull, 'First pullback only (no BOS yet)') + '</div>' +
+          (Number(f.discount) ? '<div class="field lab-checks">' + check('lineOk', f.lineOk, 'A zone short of the discount line counts when its top is at / under the CHoCH level') + '</div>' +
+            (f.lineOk ? field('… its top at most', sel('lineTol', f.lineTol)) : '') : '') : '') : '') +
       '</div>' +
       (on ? '<div class="lab-sub">How swings and the CHoCH are found (the usual = the frozen baseline)</div><div class="form-grid">' +
         field('Swings', sel('swingMode', f.swingMode)) + (f.swingMode === 'zigzag' ? field('… a turn of', sel('zzAtr', f.zzAtr)) : field('A swing must stand out by', sel('swingAtr', f.swingAtr))) +
@@ -438,7 +481,21 @@
       (f.targetMode === 'swing' ? num('swingMinR', f.swingMinR, 'At least this many R above the entry', ' min="0" step="0.25"') : '') +
       num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
       num('cost', f.cost, 'Costs per trade, buy + sell (%)', ' min="0" step="0.05"') +
-      (f.after === 'trail' ? '<div class="field lab-checks">' + check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>';
+      (f.after === 'trail' ? '<div class="field lab-checks">' + check('lockTarget', f.lockTarget, 'At the target, move the stop up to the target (a fall back to it = a win)') +
+        check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>';
+  }
+
+  /** The zone rules (owner, 12-Nov-2026, after his first charts PDF). */
+  function zoneHtml(f) {
+    var touch = f.group === 'touch';
+    return '<div class="form-grid">' + field('Zone size - at least', sel('zoneMin', f.zoneMin)) + field('… at most', sel('zoneMax', f.zoneMax)) +
+      (touch ? '<div class="field lab-checks">' + check('gapEntry', f.gapEntry, 'An FVG with a Gap-up zone inside it: the order at the Gap-up zone top (stop under the FVG)') + '</div>' +
+        field('Fib + pattern: a Spring / Harami + Inverted Hammer at the zone\'s Fib line', sel('fibPat', f.fibPat), 'wide') +
+        (f.fibPat !== 'off' ? field('… the line', sel('fibLevel', f.fibLevel)) + field('… its low', sel('fibTol', f.fibTol)) : '') : '') +
+      field('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one)', sel('darkCloud', f.darkCloud), 'wide') + '</div>' +
+      '<p class="sub">Zone size = (top - bottom) ÷ bottom. The Fib line of a zone is drawn from its bottom to its top, like TradingView: the 61.8% line of ' +
+      '219.70 - 247.77 = 230.42. "Fib + pattern" buys at the pattern candle\'s close with the stop under the zone bottom. ' +
+      (touch ? '' : 'The Gap-up zone and Fib + pattern rules work with the Pattern "First touch of a zone". ') + 'The daily scan takes the same rules from <b>ChochRules.bat</b>.</p>';
   }
 
   function moneyHtml(f) {
@@ -492,9 +549,9 @@
       '<p class="sub">Test period: trades before that date = the <b>development</b> part (choose your rules there), from it = the <b>test</b> part (kept aside to check them). ' +
       'Rules that work only in the development part fit the past by luck. E.g. 2020-01-01.</p>' +
       '<h3 class="lab-h">3 · More rules (optional)' + (changed ? ' - ' + changed + ' changed' : '') + '</h3><div class="lab-secs">' +
-      sec('structure', SECTIONS[0][1], structHtml(f), f) + sec('shape', SECTIONS[1][1], shapeHtml(f), f) + sec('trend', SECTIONS[2][1], trendHtml(f), f) +
-      sec('entry', SECTIONS[3][1], entryHtml(f), f) + sec('exit', SECTIONS[4][1], exitHtml(f), f) + sec('money', SECTIONS[5][1], moneyHtml(f), f) +
-      sec('check', SECTIONS[6][1], checkHtml(f), f) +
+      sec('structure', secTitle('structure'), structHtml(f), f) + sec('zone', secTitle('zone'), zoneHtml(f), f) + sec('shape', secTitle('shape'), shapeHtml(f), f) +
+      sec('trend', secTitle('trend'), trendHtml(f), f) + sec('entry', secTitle('entry'), entryHtml(f), f) + sec('exit', secTitle('exit'), exitHtml(f), f) +
+      sec('money', secTitle('money'), moneyHtml(f), f) + sec('check', secTitle('check'), checkHtml(f), f) +
       (changed ? '<button class="btn sm" type="button" id="lab-more-off">Clear all the "More rules"</button>' : '') + '</div>' +
       '<p class="note lab-plain" id="lab-plain"><b>In plain words:</b> ' + esc(plain(f)) + '</p>' +
       '<div class="lab-actions"><label class="field lab-name"><span>Name of this idea</span><input class="inp" type="text" maxlength="60" data-k="name" value="' + esc(f.name) + '"></label>' +
@@ -823,7 +880,12 @@
         (sk.ema ? ' · ' + F.int(sk.ema) + ' left out by your EMA rules' : '') +
         (sk.mkt ? ' · ' + F.int(sk.mkt) + ' left out by your market rule' : '') +
         (sk.wk ? ' · ' + F.int(sk.wk) + ' left out by the weekly trend rule' : '') +
-        (sk.where ? ' · ' + F.int(sk.where) + ' went too deep into the zone' : '')) +
+        (sk.where ? ' · ' + F.int(sk.where) + ' went too deep into the zone' : '') +
+        (sk.zsize ? ' · ' + F.int(sk.zsize) + ' zones outside your size range' : '') +
+        (sk.gapin ? ' · ' + F.int(sk.gapin) + ' FVG touches skipped - the order waited at the Gap-up zone inside' : '') +
+        (sk.dcloud ? ' · ' + F.int(sk.dcloud) + ' left out by the dark-cloud rule' : '') +
+        (sk.fiblevel ? ' · ' + F.int(sk.fiblevel) + ' patterns not at the zone\'s Fib line' : '') +
+        (sk.nofinal ? ' · ' + F.int(sk.nofinal) + ' without a live CHoCH (final-low stop)' : '')) +
       ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry (after costs)') +
       ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge' +
         (isNum(s.avgRLo) ? ' · likely ' + rng(s.avgRLo, s.avgRHi) : '')) +
@@ -943,6 +1005,8 @@
         { key: 'depth', label: 'Depth %', type: 'num', digits: 0, title: 'How far down the move the zone sat (0% = the move high, 100% = the final low)' },
         { key: 'lhll', label: 'LH / LL', type: 'num', digits: 0, title: 'Lower highs / lows before the CHoCH' },
         { key: 'lag', label: 'Days from CHoCH', type: 'num', digits: 0, title: 'Calendar days from the CHoCH candle to the signal' },
+        { key: 'zpct', label: 'Zone %', type: 'num', digits: 1, title: 'The zone\'s size: top - bottom, % of the bottom (a Gap-up zone inside an FVG: that FVG)' },
+        { key: 'pat', label: 'Pattern', get: function (r) { return r.pat || ''; }, title: 'The pattern at the zone\'s Fib line (Fib + pattern entry)' },
         { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
           // owner, 09-Nov-2026: "show the reason if I place the cursor on the word skipped" (a tap on a phone)
           html: function (r) {
@@ -958,7 +1022,8 @@
         if (c.key === 'stage') return rows.some(function (r) { return r.stage; });
         if (c.key === 'target') return rows.some(function (r) { return isNum(r.target); });
         if (c.key === 'upW' || c.key === 'loW' || c.key === 'dip') return rows.some(function (r) { return isNum(r[c.key]); });   // runs before 10-Nov-2026 have none
-        if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure (12-Nov-2026)
+        if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag' || c.key === 'zpct') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure / a zone (12-Nov-2026)
+        if (c.key === 'pat') return rows.some(function (r) { return r.pat; });
         return true;
       })
     }).mount($('#lab-trades', box));

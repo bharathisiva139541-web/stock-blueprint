@@ -307,17 +307,27 @@
   def('chochFvg', { label: 'CHoCH + FVG setup on {tfs}, found at most {days} trading day(s) before today', kind: 'sheet', setGroup: 'trigger', type: 'pullback', pit: false,
     ref: 'PC program structure.py + the sheet\'s Intraday Patterns tab (pattern "CHoCH + FVG")',
     params: [{ key: 'tfs', label: 'Timeframes', def: ['D', '4H', 'W'], options: ['4H', 'D', 'W'] },
-      { key: 'days', label: 'Found at most this many trading days before today (0 = today; the scan runs after the close)', def: 1 }],
+      { key: 'days', label: 'Found at most this many trading days before today (0 = today; the scan runs after the close)', def: 1 },
+      // owner, 12-Nov-2026 (STUDDS: "there should be control in FVG % size from 2% to 10%"): the zone's size, (top - bottom) / bottom
+      // in % - the laptop's ChochRules.bat sets it for the scan itself; these narrow the list further (0 = no limit)
+      { key: 'zoneMin', label: 'Zone size at least % (0 = no limit)', def: 0 },
+      { key: 'zoneMax', label: 'Zone size at most % (0 = no limit)', def: 0 }],
     eval: function (x, p) {
-      var rows = (x.stock || {}).choch || [];
       var tfs = p.tfs || [];
+      var zmin = Number(p.zoneMin) || 0, zmax = Number(p.zoneMax) || 0;
+      var sizeOk = function (pct) { return !(zmin || zmax) || !isNum(pct) || ((!zmin || pct >= zmin - 1e-9) && (!zmax || pct <= zmax + 1e-9)); };
+      var sizeTxt = zmin || zmax ? ' (zone size ' + (zmax ? round(zmin, 1) + ' - ' + round(zmax, 1) + '%' : 'at least ' + round(zmin, 1) + '%') + ')' : '';
+      var rows = ((x.stock || {}).choch || []).filter(function (r) { return sizeOk(r.zpct); });
       // waiting for the pullback (owner, 12-Nov-2026, IREDA: "IREDA stock is not qualified. i don't know why"): the CHoCH has
       // formed and the discount zone is below, price has not come back yet - said in the detail (the rule still fails)
-      var wait = ((x.stock || {}).chochWait || []).filter(function (r) { return tfs.indexOf(r.tf) >= 0; });
+      var wait = ((x.stock || {}).chochWait || []).filter(function (r) { return tfs.indexOf(r.tf) >= 0 && sizeOk(r.pct); });
       var waitText = wait.length ? '; waiting for the pullback: ' + wait.map(function (r) {
-        return r.tf + ' CHoCH ' + r.choch + ', discount zone ' + round(r.bottom) + ' - ' + round(r.top) + (isNum(r.dist) ? ' (' + round(r.dist, 1) + '% below the last close)' : '');
-      }).join('; ') + ' - it qualifies on the day price touches the zone' : '';
-      if (!rows.length) return { pass: false, detail: 'no CHoCH + FVG setup in the last 30 days of your PC\'s scans' + waitText };
+        var at = isNum(r.buy) ? r.buy : r.top;
+        return r.tf + ' CHoCH ' + r.choch + ', discount zone ' + round(r.bottom) + ' - ' + round(r.top) + (isNum(r.pct) ? ' (' + round(r.pct, 1) + '% tall)' : '') +
+          (isNum(at) && at !== r.top ? ', ' + (r.how || 'buy at') + ' ' + round(at) : '') +
+          (isNum(r.dist) ? ' - ' + round(r.dist, 1) + '% below the last close' : '');
+      }).join('; ') + ' - it qualifies on the day price touches it' : '';
+      if (!rows.length) return { pass: false, detail: 'no CHoCH + FVG setup' + sizeTxt + ' in the last 30 days of your PC\'s scans' + waitText };
       var hit = rows.filter(function (r) { return tfs.indexOf(r.tf) >= 0; })[0];
       if (!hit) return { pass: false, detail: 'a setup only on ' + rows.map(function (r) { return r.tf; }).join(', ') + waitText };
       var ago = weekdaysAfter(hit.session, x.refDate);
@@ -461,7 +471,9 @@
         '(CHoCH); an FVG / Gap-up zone formed in that move or after it, its middle in the discount half of the move (under the 50% line from the final low ' +
         'to the high); on the FIRST pullback into it (no BOS yet) the first touch of the zone, a Spring on it or an FVG First Touch / Confirmed. ' +
         'Found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close - with the swing size, lower highs / lows ' +
-        'and discount level set on your laptop (ChochRules.bat; these numbers are its defaults). ' +
+        'and discount level set on your laptop (ChochRules.bat; these numbers are its defaults). An FVG with a Gap-up zone inside it is entered at the ' +
+        'Gap-up zone top (the stop under the FVG); the zone size, the CHoCH-line rule, dark-cloud FVGs and the Spring / Harami + Inverted Hammer at a big ' +
+        'zone\'s Fib line are set in ChochRules.bat too (12-Nov-2026) - the zone size can also be narrowed here. ' +
         'Test it in the Backtest Lab (step 2 "My CHoCH + FVG setup").',
       universe: { categories: [], minBars: 2 }, filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }],
       triggers: [{ id: 'chochFvg', params: { tfs: ['D', '4H', 'W'], days: 1 } }],
@@ -739,7 +751,10 @@
       if (g(r, 'Pattern') !== 'CHoCH + FVG') return;
       var sym = g(r, 'Symbol').toUpperCase();
       if (!sym) return;
-      (out[sym] = out[sym] || []).push({ session: g(r, 'Session'), tf: g(r, 'Timeframe'), candle: g(r, 'Candle'), formed: g(r, 'FVG Formed'), detail: g(r, 'FVG Detail') });
+      var detail = g(r, 'FVG Detail');
+      var zm = / · zone ([\d.]+)% tall\b/.exec(detail);           // the zone's size (12-Nov-2026 scans)
+      (out[sym] = out[sym] || []).push({ session: g(r, 'Session'), tf: g(r, 'Timeframe'), candle: g(r, 'Candle'), formed: g(r, 'FVG Formed'), detail: detail,
+        zpct: zm ? Number(zm[1]) : null });
     });
     Object.keys(out).forEach(function (k) {
       out[k].sort(function (a, b) { return a.session < b.session ? 1 : a.session > b.session ? -1 : a.candle < b.candle ? 1 : a.candle > b.candle ? -1 : 0; });
@@ -760,7 +775,8 @@
       var sym = g(r, 'Symbol').toUpperCase();
       if (!sym) return;
       (out[sym] = out[sym] || []).push({ tf: g(r, 'Timeframe'), choch: g(r, 'CHoCH Candle'), level: n(r, 'CHoCH Level'), bottom: n(r, 'Zone Bottom'),
-        top: n(r, 'Zone Top'), dist: n(r, 'Distance %'), depth: n(r, 'Zone Depth %'), kind: g(r, 'Zone Kind') });
+        top: n(r, 'Zone Top'), dist: n(r, 'Distance %'), depth: n(r, 'Zone Depth %'), kind: g(r, 'Zone Kind'),
+        pct: n(r, 'Zone %'), buy: n(r, 'Buy At'), stopAt: n(r, 'Stop Under'), how: g(r, 'Entry') });
     });
     return out;
   }

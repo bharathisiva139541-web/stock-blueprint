@@ -120,7 +120,7 @@ test('market structure pages: the PC program (structure.py + kite_intraday.choch
     if (ex.check.stage) assert.strictEqual(g.stage, ex.check.stage, name + ': ' + JSON.stringify(g));
     // the drawn zone = the zone the entry (a Spring, or the zone's first touch) sat on
     assert.deepStrictEqual(g.zone && [g.zone[0], g.zone[1], g.zone[2], g.zone[3]], [ex.marks.zone.bottom, ex.marks.zone.top, ex.marks.zone.from, ex.check.trigger || 'Spring'], name + ': the drawn zone');
-    if (ex.ok) assert.match(g.note, /^(Spring|Zone first touch) · CHoCH \S+ after 3 lower highs \/ lows · first pullback · zone middle \d+% down the move$/, name);
+    if (ex.ok) assert.match(g.note, /^(Spring|Zone first touch) · CHoCH \S+ after 3 lower highs \/ lows · first pullback · zone middle \d+% down the move · zone [\d.]+% tall$/, name);
     // the drawn 50 % line = the move the PC judged (final low -> the highest high before the entry candle)
     const half = ex.marks.lines.find((l) => /^50% /.test(l.label || ''));
     assert.ok(half, name + ': the 50 % line is drawn');

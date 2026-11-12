@@ -146,13 +146,18 @@ SETS = [SMC,
         dict(SMC, pivotN=3, downN=1, chochMode='protected'),
         dict(SMC, pivotN=2, downN=1, chochMode='protected', eqAtr=0.25, discount=0.618),
         dict(SMC, pivotN=3, downN=1, eqAtr=0.5),
-        dict(SMC, swingMode='zigzag', zzAtr=1.5, downN=1, chochMode='protected', eqAtr=0.1, entry='close', stop='lower')]
+        dict(SMC, swingMode='zigzag', zzAtr=1.5, downN=1, chochMode='protected', eqAtr=0.1, entry='close', stop='lower'),
+        # the owner's refinements of 12-Nov-2026 the script draws: the Gap-up zone entry inside an FVG (on by default above - and
+        # off here), the stop under the CHoCH's final low
+        dict(SMC, pivotN=3, downN=1, gapEntry=False), dict(SMC, pivotN=2, downN=1, gapEntry=False, entry='close', stop='lower'),
+        dict(SMC, pivotN=3, downN=1, stop='final', maxRisk=0), dict(SMC, structure='off', pivotN=3, downN=1, stop='final', entry='close', maxRisk=0)]
 counts = []
 for params in SETS:
     lab, mod = lab_trades(params), model_trades(charts, params)
     assert mod == lab, (params, [x for x in mod if x not in lab][:3], [x for x in lab if x not in mod][:3])
     counts.append(len(lab))
 assert min(counts) >= 3 and sum(counts) > 900, counts
+assert lab_trades(SMC) != lab_trades(dict(SMC, gapEntry=False)), 'the Gap-up zone entry changes some trades on these charts'
 # the CHoCH events of every chart = structure.py's - the baseline and every structure option
 OPTS = [{}, {'swingMode': 'zigzag', 'zzAtr': 2}, {'swingMode': 'zigzag', 'zzAtr': 1}, {'swingMode': 'zigzag', 'zzAtr': 3, 'chochMode': 'protected'},
         {'swingAtr': 1}, {'swingAtr': 0.5, 'eqAtr': 0.25}, {'chochMode': 'protected'}, {'chochMode': 'protected', 'eqAtr': 0.5}, {'eqAtr': 0.1},
@@ -258,6 +263,8 @@ assert default('targetMode') == 'R multiple' and default('emaSup') == 'Off' and 
 # the structure options (owner, 12-Nov-2026): the Lab's defaults and limits, and the script's own steps = the model's
 assert default('swMode') == 'Candles each side' and D['swingMode'] == 'fractal' and default('chMode') == 'The last swing high' and D['chochMode'] == 'last'
 assert float(default('zzAtr')) == D['zzAtr'] and float(default('swAtr')) == D['swingAtr'] == 0 and float(default('eqAtr')) == D['eqAtr'] == 0
+assert default('gapEntry') == 'true' and D['gapEntry'] is True and 'linkZone(' in src and 'bool waitsInside = gapEntry and not zg and array.get(zInner, k)' in src
+assert '"Under the CHoCH\'s final low"' in src and M.LINK_SPAN == K.ZONE_LINK_SPAN
 for name, key in (('zzAtr', 'zzAtr'), ('swAtr', 'swingAtr'), ('eqAtr', 'eqAtr')):
     mm = re.search(r'^%s = input\.float\([^\n]*minval=([\d.]+), maxval=([\d.]+)' % name, src, re.M)
     assert mm and (float(mm.group(1)), float(mm.group(2))) == L.LIMITS[key][:2], (name, L.LIMITS[key])
