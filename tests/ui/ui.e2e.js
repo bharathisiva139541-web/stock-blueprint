@@ -1246,6 +1246,22 @@ function check(name, fn) {
     await own.p.waitForSelector('#lab-form', { timeout: 15000 });
     await own.p.waitForSelector('#lab-runs .empty');
     assert.match(await own.p.$eval('#lab-pcnote', (x) => x.textContent), /600 of 1800 stocks, about 12 min left/);
+    // the simpler Lab (owner, 12-Nov-2026: "more user-friendly not to be complex"): ready setups, the basics, everything else folded
+    const lay = await own.p.evaluate(() => ({ quick: [...document.querySelectorAll('.lab-quick [data-quick]')].map((b) => b.getAttribute('data-quick')),
+      secs: [...document.querySelectorAll('#lab-form details.lab-sec')].map((d) => [d.getAttribute('data-sec'), d.open]),
+      basics: ['tf', 'group', 'stop', 'stopBuf', 'targetR', 'after', 'trail', 'trailN', 'capital', 'riskPct', 'testFrom'].every((k) => {
+        const e = document.querySelector('#lab-form [data-k="' + k + '"]'); return e && e.offsetParent !== null; }),
+      guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
+    assert.deepStrictEqual(lay.quick, ['smc', 'fvg', 'gap']);
+    assert.deepStrictEqual(lay.secs, [['structure', false], ['shape', false], ['trend', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
+    assert.ok(lay.basics, 'the basics are on show');
+    assert.match(lay.guide, /Guide/);
+    await own.p.click('[data-quick="fvg"]');
+    await own.p.waitForSelector('.lab-quick .lab-rec.on [data-quick="fvg"]');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="group"]', (e) => e.value), 'fvg');
+    // open every section (remembered on this device) for the steps below
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
+    await own.p.waitForSelector('details.lab-sec[data-sec="trend"][open]');
     // the owner's idea: 1 % under the zone, 2R, then the last 3 lows
     await own.p.fill('[data-k="stopBuf"]', '1');
     await own.p.fill('[data-k="trailN"]', '3');
@@ -1278,7 +1294,7 @@ function check(name, fn) {
     await own.p.selectOption('[data-k="c2Color"]', 'green');
     assert.match(await plainText(), /price had fallen at least 8% from the highest high of the last 10 candles/);
     assert.match(await plainText(), /a green close/);
-    assert.strictEqual(await own.p.$$eval('.lab-rec.on', (x) => x.length), 0, 'no recommendation matches any more');
+    assert.strictEqual(await own.p.$$eval('#lab-recs .lab-rec.on', (x) => x.length), 0, 'no recommendation matches any more');
     await own.p.click('#lab-shape-off');
     assert.strictEqual(await own.p.$eval('[data-k="upWickMax"]', (x) => x.value), '100');
     assert.ok(!/Only Springs where/.test(await plainText()), 'cleared');
@@ -1337,11 +1353,16 @@ function check(name, fn) {
       got.job.params.discPart, got.job.params.entry],
     ['touch', 'only', 5, 3, 'both', false, true, 'swing', 1, 0.5, 'mid', 'zone'], 'the market-structure rules reach the laptop');
     assert.strictEqual(got.job.params.testFrom, '2020-01-01', 'the test period reaches the laptop');
+    const missing = (await own.p.evaluate(() => Object.keys(window.SB.lab.DEF))).filter((k) => !(k in got.job.params));
+    assert.deepStrictEqual(missing, ['name', 'from', 'to', 'valFrom'], 'every rule reaches the laptop (empty dates left out)');
+    assert.ok(got.job.params.swingMode === 'fractal' && got.job.params.rollYears === 3 && got.job.params.atrK === 3);
     const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
                avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1, avgRLo: -0.4, avgRHi: 2.8, edge: 'few' },
       // "real or chance?" + the breakdowns + the dev / test split (owner, 12-Nov-2026)
+      rolling: [{ from: 2010, to: 2012, trades: 1, winPct: 0, avgR: -1, lo: null, hi: null, edge: 'few' },
+        { from: 2025, to: 2026, trades: 2, winPct: 100, avgR: 2.3, lo: 1.6, hi: 3.0, edge: 'few' }],
       split: { at: '2020-01-01', dev: { trades: 1, winPct: 0, avgR: -1, totalR: -1, pf: 0, avgRLo: null, avgRHi: null, edge: 'few', from: '2010-01-04', to: '2010-01-04' },
         test: { trades: 2, winPct: 100, avgR: 2.3, totalR: 4.6, pf: null, avgRLo: 1.6, avgRHi: 3.0, edge: 'few', from: '2026-03-02', to: '2026-09-01' } },
       breakdowns: [
@@ -1371,7 +1392,7 @@ function check(name, fn) {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
     // the page sees it done (it asks every 4 s) and opens it
     await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
-    const view = await own.p.$eval('#lab-result', (x) => x.innerText);
+    const view = await own.p.$eval('#lab-result', (x) => x.textContent);
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
     assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
@@ -1401,6 +1422,7 @@ function check(name, fn) {
     assert.match(view, /Development vs test \(split on/);
     assert.match(view, /The development part itself did not make money per trade/);
     assert.match(view, /What worked best - one thing at a time/);
+    assert.match(await own.p.$eval('#lab-rolling', (x) => x.textContent), /2010 - 2012[\s\S]*-1R[\s\S]*2025 - 2026[\s\S]*2\.3R/, 'steady over time');
     const bd1 = await own.p.$eval('#lab-bd', (x) => x.innerText);
     assert.match(bd1, /61\.8 - 70\.5%[\s\S]*-0\.31R[\s\S]*-0\.6R to -0\.02R[\s\S]*Worse[\s\S]*Yes/);
     assert.match(bd1, /78\.6 - 90%[\s\S]*Better[\s\S]*No/);
@@ -1409,7 +1431,11 @@ function check(name, fn) {
     const bd2 = await own.p.$eval('#lab-bd', (x) => x.innerText);
     assert.match(bd2, /Too few[\s\S]*too few/);
     assert.match(bd2, /Could be chance[\s\S]*Yes/);
-    assert.match(await own.p.$eval('#lab-stages', (x) => x.innerText), /Below CHoCH, 1st pullback[\s\S]*1\.21R/);
+    assert.match(await own.p.$eval('#lab-stages', (x) => x.textContent), /Below CHoCH, 1st pullback[\s\S]*1\.21R/);
+    // the answer first: the verdict card; the rest folded (Development vs test, What worked best and the trades open)
+    const rs = await own.p.$$eval('#lab-result details.lab-rsec', (d) => d.map((x) => [x.getAttribute('data-rsec'), x.open]));
+    assert.deepStrictEqual(rs, [['all', false], ['split', true], ['bd', true], ['stages', false], ['account', false], ['exits', false], ['time', false], ['trades', true]]);
+    assert.match(await own.p.$eval('#lab-verdict', (x) => x.innerText), /Real or chance\?[\s\S]*Test part \(from[\s\S]*2\.3R a trade over 2 trades[\s\S]*Account/);
     assert.match(await own.p.$eval('#lab-trades .lab-acct:not(.skip)', (x) => x.getAttribute('data-tip')), /^CHoCH \d/);
     assert.match(view, /Only on days when NIFTY 50 closed above its 50 EMA/);
     assert.deepStrictEqual(await own.p.$$eval('#lab-mkt-index option', (o) => o.map((x) => x.value)), ['', 'NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
@@ -1422,8 +1448,10 @@ function check(name, fn) {
     await own.p.mouse.move(bx[0] + 1, bx[1]);
     await own.p.waitForFunction(() => !document.querySelector('#tip').hidden && /position limit/.test(document.querySelector('#tip').textContent), null, { timeout: 5000 });
     assert.ok(await own.p.$('#lab-trades th:text-is("EMA")'), 'the EMA column (EMA rules on)');
-    assert.ok(await own.p.$('#lab-curve svg'), 'the account curve');
-    assert.match(await own.p.$eval('#lab-runs', (x) => x.innerText), /Zone stop 1%[\s\S]*3 trades/);
+    assert.ok(!(await own.p.$('#lab-curve svg')), 'the account section is folded: no chart yet');
+    await own.p.click('details[data-rsec="account"] > summary');
+    await own.p.waitForSelector('#lab-curve svg');
+    assert.match(await own.p.$eval('#lab-runs', (x) => x.innerText), /Zone stop 1%[\s\S]*Too few trades[\s\S]*2\.3R/, 'the runs comparison: the range verdict and the test part');
     // the bell: two unread notes from the sheet (+ "Backtest ready"), newest first
     await own.p.waitForFunction(() => !document.querySelector('#bell').hidden, null, { timeout: 15000 });
     await own.p.click('#bell');

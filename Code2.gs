@@ -13234,7 +13234,7 @@ const AB_LAB_HEADERS = ['Id', 'Saved', 'Name', 'Summary', 'Result (JSON, in part
 function ab_labParams_(p) {
   const out = {};
   if (!p || typeof p !== 'object' || Array.isArray(p)) return out;
-  Object.keys(p).slice(0, 80).forEach(function (k) {
+  Object.keys(p).slice(0, 120).forEach(function (k) {     // 120 (12-Nov-2026: ~86 rules now)
     const v = p[k];
     if (!/^[A-Za-z][A-Za-z0-9]{0,19}$/.test(k)) return;
     if ((typeof v === 'number' && isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && /^[A-Za-z0-9_.-]{0,20}$/.test(v))) out[k] = v;
@@ -13287,9 +13287,12 @@ function ab_labSheet_(create) {
 /** A small summary of a result for the list (no trades). */
 function ab_labHead_(res, job) {
   const s = (res && res.stats) || {}, a = (res && res.account) || {}, p = (res && res.params) || {};
+  const t = (res && res.split && res.split.test) || {};
   return { tf: p.tf || '', group: res && res.groupName || '', trades: s.trades || 0, winPct: s.winPct, avgR: s.avgR, totalR: s.totalR,
            returnPct: a.returnPct, cagr: a.cagr, maxDD: a.maxDD, from: res && res.from || '', to: res && res.to || '',
-           cacheUpto: res && res.cacheUpto || '', name: (job && job.name) || '' };
+           cacheUpto: res && res.cacheUpto || '', name: (job && job.name) || '',
+           // the runs comparison (owner, 12-Nov-2026): the likely range, real-or-chance and the test part
+           lo: s.avgRLo, hi: s.avgRHi, edge: s.edge || '', testAvgR: t.avgR, testTrades: t.trades || 0 };
 }
 
 function ab_labStore_(job, res) {

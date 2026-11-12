@@ -83,6 +83,21 @@
       n.push('The Spring shape rules (step 3) are not drawn - they apply to Spring signals.');
     }
     if (num(p.maxTouch, 0)) n.push('"Zone touched at most" is not needed - every BUY is a first touch.');
+    // the structure engine options and the filters of 12-Nov-2026 (the review's E2-E16): the script keeps the usual swings / CHoCH
+    var eng = [];
+    if (p.swingMode === 'zigzag') eng.push('ZigZag swings');
+    if (num(p.swingAtr, 0)) eng.push('swings that stand out by x ATR');
+    if (p.chochMode === 'protected') eng.push('the protected-high CHoCH');
+    if (num(p.eqAtr, 0)) eng.push('equal highs / lows');
+    if (eng.length) n.push('The script draws the usual swings and CHoCH - not ' + eng.join(', ') + '.');
+    var more = [];
+    if (num(p.discountMax, 0)) more.push('the "zone at most" level');
+    if (num(p.lagMin, 0)) more.push('the days after the CHoCH');
+    if (num(p.dispAtr, 0) || num(p.dispVol, 0)) more.push('the CHoCH candle\'s body / volume');
+    if (p.sweep) more.push('the sweep of the low');
+    if (p.whereIn && p.whereIn !== 'any') more.push('how deep the candle went into the zone');
+    if (num(p.wkAbove, 0)) more.push('the weekly trend');
+    if (more.length) n.push('Not drawn (check them on the chart yourself): ' + more.join(', ') + '.');
     n.push('Only the entry, stop and target are drawn - the trail, the time limit, the costs and the account are not.');
     return n;
   }
