@@ -66,3 +66,25 @@ test('the rule: a setup on a chosen timeframe found today / yesterday qualifies;
   const e = S.evaluate(S.PRESETS.chochFvg, x);
   assert.match(e.checks.find((c) => c.id === 'chochFvg').res.detail, /not used in backtests/);
 });
+
+// owner, 12-Nov-2026 (IREDA: "when i set strategy setting.. IREDA stock is not qualified. i don't know why"): the CHoCH had
+// formed and the discount zone was below, price had not come back yet - the rule still fails, its detail says so
+test('waiting for the pullback: chochWaitIndex (feed part chochWait) -> the rule\'s detail explains why it is not qualified yet', () => {
+  const W = { cols: ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On', 'Move High', '50% Line',
+    'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle', 'Distance %', 'More Zones Below'],
+  rows: [['IREDA', 'IREDA Ltd', 'D', '2026-11-09', 117.39, 4, 98.78, '2026-10-26', 123.99, 111.39, 'FVG', 104.1, 108.24, '2026-10-29', 83, 119.25, '2026-11-11', 9.23, 0],
+    ['IREDA', 'IREDA Ltd', 'W', '2026-11-09', 117.39, 3, 98.78, '2026-10-26', 123.99, 111.39, 'Gap-up', 100.5, 102, '2026-10-26', 95, 119.25, '2026-11-09', 14.47, 0]] };
+  const wi = S.chochWaitIndex(W);
+  assert.deepStrictEqual(wi.IREDA[0], { tf: 'D', choch: '2026-11-09', level: 117.39, bottom: 104.1, top: 108.24, dist: 9.23, depth: 83, kind: 'FVG' });
+  assert.deepStrictEqual(S.chochWaitIndex(null), {});
+  const stocks = [{ sym: 'IREDA', price: 119.25, choch: null, chochWait: wi.IREDA }];
+  const r = S.run(S.PRESETS.chochFvg, stocks, { IREDA: candles(40) }, { refDate: '2026-11-12' });
+  const chk = r.bySym.IREDA.checks.find((c) => c.id === 'chochFvg');
+  assert.strictEqual(chk.res.pass, false);
+  assert.strictEqual(chk.res.detail, 'no CHoCH + FVG setup in the last 30 days of your PC\'s scans; waiting for the pullback: D CHoCH 2026-11-09, discount zone 104.1 - 108.24 ' +
+    '(9.2% below the last close); W CHoCH 2026-11-09, discount zone 100.5 - 102 (14.5% below the last close) - it qualifies on the day price touches the zone');
+  // an older setup on the same stock: the detail says both
+  const ix = S.chochIndex(TABLE);
+  const r2 = S.run(S.PRESETS.chochFvg, [{ sym: 'ABC', price: 130, choch: ix.ABC, chochWait: wi.IREDA.slice(0, 1) }], { ABC: candles(40) }, { refDate: '2026-11-20' });
+  assert.match(r2.bySym.ABC.checks.find((c) => c.id === 'chochFvg').res.detail, /^D candle 2026-11-09 \(9 trading days ago\) - .*; waiting for the pullback: D CHoCH 2026-11-09/);
+});

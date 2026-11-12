@@ -35,7 +35,9 @@
     // the discount zone (owner, 11-Nov-2026, SUPREMEIND: "we always try to enter with low risk, i.e. the zone in discount
     // area. it is ok even the zone have some area slightly above the Choch"): the zone's middle under the Fib line of the
     // move (final low -> its high) - off by default
-    discount: 0, discPart: 'mid'
+    discount: 0, discPart: 'mid',
+    // development / test split (owner, 12-Nov-2026, after a ChatGPT review of his run: "yes do it") - off by default
+    testFrom: ''
   };
   // the owner's CHoCH + FVG setup in one click (his answers of 10-Nov-2026, and 11-Nov-2026: the discount half of the move
   // instead of "below the CHoCH level", the first return to that zone = the signal, a buy order at the zone top)
@@ -128,7 +130,7 @@
   var REASON = { stop: ['Stop loss', 's-bad'], target: ['Target', 's-good'], be: ['Breakeven (stop at entry)', ''], trail: ['Trailing stop', 's-good'],
     ema: ['Close under EMA', 's-good'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
   var POLL_MS = 4000;
-  var ST = { status: null, item: null, itemId: null, timer: 0, busy: false, err: '', host: null, gen: 0 };
+  var ST = { status: null, item: null, itemId: null, timer: 0, busy: false, err: '', host: null, gen: 0, bd: '' };
 
   function form() {
     var f = ui.store.get('lab:form', null);
@@ -221,6 +223,7 @@
     var s = [];
     s.push(choiceLabel('group', p.group) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
       (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
+    if (p.testFrom) s.push('Development part: the signals before ' + F.date(p.testFrom) + '; test part: from ' + F.date(p.testFrom) + ' on.');
     var struct = structWords(p);
     if (struct) s.push(struct);
     var shape = shapeWords(p);
@@ -329,9 +332,13 @@
       field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
       field('From (optional)', '<input class="inp" type="date" data-k="from" value="' + esc(f.from) + '">') +
       field('To (optional)', '<input class="inp" type="date" data-k="to" value="' + esc(f.to) + '">') +
+      field('Test period from (optional)', '<input class="inp" type="date" data-k="testFrom" id="lab-testfrom" value="' + esc(f.testFrom) + '" ' +
+        'title="Trades before this date = the development part (where you look for rules); from it = the test part (kept to check them)">') +
       num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
       num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
       num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
+      '<p class="sub">Test period (optional): the result is split in two - trades before that date = the <b>development</b> part (look at it to choose your rules), ' +
+      'from it = the <b>test</b> part (kept aside to check them). Rules that only work in the development part fit the past by luck. E.g. 2020-01-01.</p>' +
       structHtml(f) + shapeHtml(f) +
       '<h3 class="lab-h">4 · EMA confluence (optional) - take the signal only when the EMAs agree</h3><div class="form-grid">' +
       field('The Spring candle took support at', sel('emaSupport', f.emaSupport), 'wide') +
@@ -559,6 +566,81 @@
     return h;
   }
 
+  // "real or chance?", the breakdowns and the development / test split (owner, 12-Nov-2026, after a ChatGPT review of his
+  // 405-trade run: zone depth 60-70 % weak / 70-90 % strong, 4 lower highs / lows better than 3, the CHoCH-to-signal lag;
+  // "yes do it") - worked out on the laptop (backtest_lab.py breakdowns / _split)
+  var EDGE = { real: ['An edge', 's-good', 'the whole range is above 0 - not luck (in this period)'],
+    chance: ['Could be chance', 's-warn', 'the range spans 0 - the average could be luck'],
+    losing: ['Losing', 's-bad', 'the whole range is under 0'], few: ['Too few trades', 's-warn', 'under 30 trades - too few to say'] };
+  // short chip names (the full name heads the table) - a long chip would push a phone screen sideways
+  var BD_SHORT = { depth: 'Zone depth', lhll: 'Lower highs / lows', lag: 'Days from CHoCH', where: 'Into the zone', zone: 'Zone kind', touch: 'Touch',
+    risk: 'Risk %', turn: 'Turnover' };
+  var VERDICT = { better: ['Better', 's-good'], worse: ['Worse', 's-bad'], chance: ['Could be chance', ''], few: ['Too few', 's-warn'] };
+  function rng(lo, hi) { return isNum(lo) && isNum(hi) ? r2(lo) + ' to ' + r2(hi) : '–'; }
+  function edgeNote(s) {
+    if (!s || !s.edge || !EDGE[s.edge]) return '';
+    var e = EDGE[s.edge];
+    return '<p class="note' + (s.edge === 'real' ? '' : s.edge === 'losing' ? ' bad' : ' warn') + '" id="lab-edge">Real or chance? ' + ui.badge(e[0], e[1]) +
+      ' the average per trade is likely between <b>' + rng(s.avgRLo, s.avgRHi) + '</b> (90% range from the spread of the trades) - ' + esc(e[2]) + '.</p>';
+  }
+  function splitHtml(res) {
+    var sp = res.split;
+    if (!sp) return '';
+    var row = function (name, x) {
+      if (!x || !x.trades) return '<tr><th>' + name + '</th><td colspan="7" class="sub">no finished trade</td></tr>';
+      var e = EDGE[x.edge] || ['', ''];
+      return '<tr><th>' + name + '<div class="sub">' + F.date(x.from) + ' – ' + F.date(x.to) + '</div></th><td>' + F.int(x.trades) + '</td><td>' + F.num(x.winPct, 1) + '%</td>' +
+        '<td class="' + tone(x.avgR) + '">' + r2(x.avgR) + '</td><td>' + rng(x.avgRLo, x.avgRHi) + '</td><td>' + F.num(x.totalR, 1) + 'R</td>' +
+        '<td>' + (isNum(x.pf) ? F.num(x.pf, 2) : '–') + '</td><td>' + ui.badge(e[0], e[1]) + '</td></tr>';
+    };
+    var d = sp.dev || {}, t = sp.test || {}, say = '';
+    if (d.trades && t.trades) {
+      say = d.avgR > 0 && t.avgR > 0 ? '<p class="note">The test part agrees: both parts made money per trade.' + (t.edge === 'real' ? '' : ' (The test part alone is not yet clear of chance.)') + '</p>'
+        : d.avgR > 0 && !(t.avgR > 0) ? '<p class="note bad">The test part does NOT agree: the rules made money before ' + F.date(sp.at) + ' but not after - they may fit the past only.</p>'
+          : '<p class="note warn">The development part itself did not make money per trade - change the rules there first (and do not look at the test part while choosing).</p>';
+    }
+    return '<h3 class="lab-h">Development vs test (split on ' + F.date(sp.at) + ')</h3><div class="tbl-wrap"><table class="tbl" id="lab-split"><thead><tr><th>Part</th><th>Trades</th>' +
+      '<th>Win %</th><th>Avg R</th><th>Likely range</th><th>Total R</th><th>Profit factor</th><th>Real or chance?</th></tr></thead><tbody>' +
+      row('Development (before)', d) + row('Test (from)', t) + '</tbody></table></div>' + say;
+  }
+  function bdHtml(res) {
+    var b = res.breakdowns || [];
+    var noStruct = !res.params || res.params.structure === 'off';
+    if (!b.length) return '';
+    if (!ST.bd || !b.some(function (x) { return x.key === ST.bd; })) ST.bd = b[0].key;
+    return '<h3 class="lab-h">What worked best - one thing at a time</h3>' +
+      '<div class="controls">' + ui.chips('labbd', b.map(function (x) { return [x.key, BD_SHORT[x.key] || x.name]; }), ST.bd) + '</div><div id="lab-bd"></div>' +
+      '<p class="sub">Each row = the finished trades with that feature. <b>Better / Worse</b> = their average R vs the rest of this run\'s trades, clear at 90%; ' +
+      '<b>Could be chance</b> = the difference is within luck; under 30 trades = too few to say. ' +
+      (res.split ? '<b>Held in test</b> = it beat (or trailed) the rest in the development part AND in the test part - trust those rows most. ' : 'Set a test period (step 1) to check a row on later years. ') +
+      (noStruct ? 'Turn on market structure (step 2, "Show it on every trade") to also see the zone depth, the lower highs / lows and the days from the CHoCH.' : '') + '</p>';
+  }
+  function drawBd(box, res) {
+    var host = $('#lab-bd', box);
+    if (!host) return;
+    var b = (res.breakdowns || []).filter(function (x) { return x.key === ST.bd; })[0];
+    if (!b) { host.innerHTML = ''; return; }
+    var split = !!res.split;
+    var part = function (x) { return x && x.trades ? r2(x.avgR) + ' <span class="sub">(' + F.int(x.trades) + ')</span>' : '<span class="sub">–</span>'; };
+    host.innerHTML = '';
+    new ui.Table({
+      rows: b.rows, pageSize: 20, id: 'lab-bd-' + b.key, tools: false,
+      columns: [
+        { key: 'label', label: b.name, get: function (r) { return r.label; } },
+        { key: 'trades', label: 'Trades', type: 'num', digits: 0 }, { key: 'winPct', label: 'Win %', type: 'num', digits: 1 },
+        { key: 'avgR', label: 'Avg R', type: 'num', digits: 2, html: function (r) { return '<span class="' + tone(r.avgR) + '">' + r2(r.avgR) + '</span>'; } },
+        { key: 'lo', label: 'Likely range', get: function (r) { return r.lo; }, html: function (r) { return rng(r.lo, r.hi); }, title: 'The likely range (90%) of this group\'s average R' },
+        { key: 'totalR', label: 'Total R', type: 'num', digits: 1 }, { key: 'hitPct', label: 'Reached target %', type: 'num', digits: 1 },
+        { key: 'verdict', label: 'vs the rest', get: function (r) { return (VERDICT[r.verdict] || [r.verdict])[0]; },
+          html: function (r) { var v = VERDICT[r.verdict] || [r.verdict, '']; return ui.badge(v[0], v[1]); } },
+        { key: 'dev', label: 'Development: avg R (trades)', get: function (r) { return r.dev ? r.dev.avgR : null; }, html: function (r) { return part(r.dev); } },
+        { key: 'test', label: 'Test: avg R (trades)', get: function (r) { return r.test ? r.test.avgR : null; }, html: function (r) { return part(r.test); } },
+        { key: 'held', label: 'Held in test', get: function (r) { return r.held || ''; },
+          html: function (r) { return r.held === 'yes' ? ui.badge('Yes', 's-good') : r.held === 'no' ? ui.badge('No', 's-bad') : '<span class="sub">too few</span>'; } }
+      ].filter(function (c) { return split || ['dev', 'test', 'held'].indexOf(c.key) < 0; })
+    }).mount(host);
+  }
+
   function paintResult(el) {
     var box = $('#lab-result', el);
     var it = ST.item;
@@ -586,19 +668,21 @@
         (res.skipped && res.skipped.ema ? ' · ' + F.int(res.skipped.ema) + ' left out by your EMA rules' : '') +
         (res.skipped && res.skipped.mkt ? ' · ' + F.int(res.skipped.mkt) + ' left out by your market rule' : '')) +
       ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry (after costs)') +
-      ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge') +
+      ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', 'median ' + r2(s.medR) + ' · this is your edge' +
+        (isNum(s.avgRLo) ? ' · likely ' + rng(s.avgRLo, s.avgRHi) : '')) +
       ui.tile('Total', '<span class="' + tone(s.totalR) + '">' + F.num(s.totalR, 1) + 'R</span>', 'profit factor ' + (isNum(s.pf) ? F.num(s.pf, 2) : '–')) +
       ui.tile('Reached ' + F.num(p.targetR, 2) + 'R', F.num(s.hitPct, 1) + '%', 'before the stop loss') +
       ui.tile('Average win / loss', r2(s.avgWinR) + ' / ' + r2(s.avgLossR), 'best ' + r2(s.bestR) + ' · worst ' + r2(s.worstR)) +
       ui.tile('Held', F.num(s.avgDays, 1) + ' days', 'on average · ' + F.int(s.maxLosingStreak) + ' losses in a row at worst') +
       ui.tile('Return per trade', F.pct(s.avgRet, 2), 'median ' + F.pct(s.medRet, 2) + ' · best move before the exit ' + r2(s.avgMaxR) + ' avg') + '</div>';
-    h += structNote(res) + shapeNote(res, s);
+    h += edgeNote(s) + structNote(res) + shapeNote(res, s) + splitHtml(res);
     if (res.stages && res.stages.length) {
       h += '<h3 class="lab-h">By market structure - where each signal sat</h3><div id="lab-stages"></div>' +
         '<p class="sub">Your setup = in the discount part of the move (with a Fib line set) or below the CHoCH level, on the first pullback. ' +
         '"Premium" = the zone sat above your Fib line. "After a BOS" = price had already made a new high after the CHoCH. ' +
         'Compare the average R of the rows - with fewer than ~300 trades in a row, a difference can still be luck.</p>';
     }
+    h += bdHtml(res);
     h += '<h3 class="lab-h">Your account (' + F.inr(a.capital) + ', ' + F.num(p.riskPct, 2) + '% risk a trade, at most ' + F.int(p.maxOpen) + ' at once)</h3><div class="tiles">' +
       ui.tile('Account now', F.inr(a.final), '<span class="' + tone(a.pnl) + '">' + (a.pnl >= 0 ? '+' : '−') + F.inr(Math.abs(a.pnl)) + '</span>') +
       ui.tile('Return', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', isNum(a.cagr) ? F.pct(a.cagr) + ' a year over ' + F.num(a.years, 1) + ' years' : 'over ' + F.num(a.years, 1) + ' years') +
@@ -644,6 +728,9 @@
         ]
       }).mount($('#lab-stages', box));
     }
+    drawBd(box, res);
+    // on the result's own card (re-made with each paint), so listeners never pile up
+    ui.bindChips($('section.card', box), 'labbd', function (v) { ST.bd = v; drawBd(box, res); });
     var cols = res.tradeCols || [];
     var rows = (res.trades || []).map(function (r) { var o = {}; cols.forEach(function (c, i) { o[c] = r[i]; }); return o; });
     new ui.Table({
@@ -671,6 +758,9 @@
         { key: 'loW', label: 'Lower wick %', type: 'num', digits: 1, title: 'The Spring candle\'s lower wick, % of its high-low range' },
         { key: 'dip', label: 'Dip %', type: 'num', digits: 2, title: 'How far the Spring candle\'s low went under the red candle\'s low, % of that low' },
         { key: 'ema', label: 'EMA', get: function (r) { return r.ema || ''; }, title: 'What the EMAs showed on the Spring candle (with EMA rules on)' },
+        { key: 'depth', label: 'Depth %', type: 'num', digits: 0, title: 'How far down the move the zone sat (0% = the move high, 100% = the final low)' },
+        { key: 'lhll', label: 'LH / LL', type: 'num', digits: 0, title: 'Lower highs / lows before the CHoCH' },
+        { key: 'lag', label: 'Days from CHoCH', type: 'num', digits: 0, title: 'Calendar days from the CHoCH candle to the signal' },
         { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
           // owner, 09-Nov-2026: "show the reason if I place the cursor on the word skipped" (a tap on a phone)
           html: function (r) {
@@ -686,6 +776,7 @@
         if (c.key === 'stage') return rows.some(function (r) { return r.stage; });
         if (c.key === 'target') return rows.some(function (r) { return isNum(r.target); });
         if (c.key === 'upW' || c.key === 'loW' || c.key === 'dip') return rows.some(function (r) { return isNum(r[c.key]); });   // runs before 10-Nov-2026 have none
+        if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure (12-Nov-2026)
         return true;
       })
     }).mount($('#lab-trades', box));
@@ -780,6 +871,7 @@
       Object.keys(DEF).forEach(function (k) { if (k !== 'name') params[k] = f[k]; });
       if (!params.from) delete params.from;
       if (!params.to) delete params.to;
+      if (!params.testFrom) delete params.testFrom;
       var b = this;
       b.disabled = true;
       ask({ lab: { do: 'run', name: f.name, params: params } }).then(function (j) {

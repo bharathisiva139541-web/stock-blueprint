@@ -12410,6 +12410,7 @@ function ab_itdFromBridge_(req) {
   if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_(), indices: ab_klIndexSyms_() };
   if (req.op === 'zones') return ab_itdZonesFromBridge_(req);
   if (req.op === 'backtest') return ab_btFromBridge_(req);
+  if (req.op === 'waiting') return ab_chwFromBridge_(req);
   if (req.op !== 'put') return { ok: false, error: 'unknown intraday request - update screener_bridge.py + kite_intraday.py on the PC' };
   const items = Array.isArray(req.items) ? req.items : null;
   if (!items) return { ok: false, error: 'items missing' };
@@ -12811,6 +12812,81 @@ function ab_itdZoneCheck_() {
   }
   if (fired.length) Logger.log('4H FVG zones mitigated: ' + fired.map(function (r) { return r.sym; }).join(', '));
   return fired;
+}
+
+// =====================================================================================================================
+// CHoCH + FVG WAITING FOR THE PULLBACK (owner, 12-Nov-2026, IREDA: "when i set strategy setting.. IREDA stock is not
+// qualified. i don't know why" - the CHoCH had formed and the discount zone was below, but price had not come back yet:
+// the daily scan lists a setup only on the day price touches the zone). The PC (kite_intraday.py choch_waiting, after
+// each day's Zerodha scan) sends every live CHoCH (>= 3 lower highs / lows of 5-candle swings, no close under the final
+// low, no BOS yet) with an FVG / Gap-up zone formed after the final low that no candle has touched yet and whose middle is
+// in the discount half of the move as it stands now - the highest such zone (a buy order at its top is reached first).
+// Tab "CHoCH Waiting", rebuilt each scan. Kite's prices are on the website too (owner, 12-Nov-2026: "use kite price. no
+// need to follow privacy rule").
+// =====================================================================================================================
+const AB_CHW_SHEET = 'CHoCH Waiting';
+const AB_CHW_HEADERS = ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On',
+  'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle', 'Distance %',
+  'More Zones Below', 'Chart', 'Updated'];
+const AB_CHW_MAX = 6000;
+const AB_CHW_TFS = ['4H', 'D', 'W'];
+
+/** doPost action 'intraday' {op: 'waiting', upto, fib, pivotN, downN, rows: [{sym, tf, choch, level, d, low, lowAt, high, fib,
+ *  zone: [bottom, top, formed, kind], inside, depth, close, last, dist, more}]} -> the "CHoCH Waiting" tab. */
+function ab_chwFromBridge_(req) {
+  const rows = Array.isArray(req.rows) ? req.rows : null;
+  if (!rows) return { ok: false, error: 'rows missing' };
+  if (rows.length > AB_CHW_MAX) return { ok: false, error: 'too many rows in one post (at most ' + AB_CHW_MAX + ')' };
+  const want = {};
+  ab_p1Symbols_().forEach(function (x) { want[x] = true; });
+  const names = ab_itdNames_();
+  const updated = Utilities.formatDate(new Date(), AB_TZ, 'yyyy-MM-dd HH:mm');
+  const okT = function (t) { return /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(String(t || '')); };
+  const num = function (v) { const n = Number(v); return v !== null && v !== '' && isFinite(n) ? Math.round(n * 100) / 100 : ''; };
+  const seen = {};
+  let skipped = 0;
+  const out = [];
+  rows.forEach(function (r) {
+    const sym = String(r && r.sym || '').trim().toUpperCase();
+    const tf = String(r && r.tf || '');
+    const z = r && Array.isArray(r.zone) ? r.zone : null;
+    const kind = z && (String(z[3]) === 'FVG' || String(z[3]) === 'Gap-up') ? String(z[3]) : '';
+    const bottom = z ? ab_itdNum_(z[0]) : '', top = z ? ab_itdNum_(z[1]) : '';
+    if (!want[sym] || AB_CHW_TFS.indexOf(tf) === -1 || !kind || bottom === '' || top === '' || !(top > bottom) || !okT(r.choch) || !okT(z[2]) || !okT(r.last)) {
+      skipped++;
+      return;
+    }
+    const k = sym + '|' + tf;
+    if (seen[k]) return;
+    seen[k] = true;
+    out.push([sym, names[sym] || '', tf, String(r.choch), num(r.level), Math.max(0, Math.round(Number(r.d) || 0)), num(r.low),
+      okT(r.lowAt) ? String(r.lowAt) : '', num(r.high), num(r.fib), kind === 'Gap-up' && Number(r.inside) === 1 ? 'Gap-up (inside FVG)' : kind,
+      bottom, top, String(z[2]), num(r.depth), num(r.close), String(r.last), num(r.dist), Math.max(0, Math.round(Number(r.more) || 0)),
+      '=HYPERLINK("' + ab_itdTvUrl_(sym, tf) + '","' + tf + ' chart")', updated]);
+  });
+  out.sort(function (a, b) {
+    const da = a[17] === '' ? 1e9 : a[17], db = b[17] === '' ? 1e9 : b[17];
+    return da !== db ? da - db : a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : AB_CHW_TFS.indexOf(a[2]) - AB_CHW_TFS.indexOf(b[2]);
+  });
+  const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
+  const fib = Number(req.fib) > 0 && Number(req.fib) < 1 ? Math.round(Number(req.fib) * 1000) / 10 : 50;
+  const note = 'CHoCH + FVG setups WAITING for the pullback, from Zerodha Kite candles (your PC program' + (upto ? ', session ' + upto : '') +
+    '): a candle closed above the last lower high after at least ' + (Number(req.downN) || 3) + ' lower highs / lows (swings of ' + (Number(req.pivotN) || 5) +
+    ' candles), no close under the final low and no BOS since; Zone = the highest FVG / Gap-up zone formed after the final low that price has NOT touched ' +
+    'yet, its middle at least ' + fib + '% down the move (final low -> Move High) - the first touch of it is the CHoCH + FVG entry (Intraday Patterns tab). ' +
+    'Distance % = how far the last close must fall to the zone top. Rebuilt after each daily scan. Updated ' + updated + '.';
+  const sh = ab_getOrCreateSheet_(AB_CHW_SHEET);
+  sh.clearContents();
+  sh.getRange(1, 1).setValue(note);
+  sh.getRange(2, 1, 1, AB_CHW_HEADERS.length).setValues([AB_CHW_HEADERS]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+  if (out.length) {
+    const n = out.length;
+    [1, 2, 3, 4, 8, 11, 14, 17, 21].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('@'); });
+    [5, 7, 9, 10, 12, 13, 16, 18].forEach(function (c) { sh.getRange(3, c, n, 1).setNumberFormat('0.00'); });
+    sh.getRange(3, 1, n, AB_CHW_HEADERS.length).setValues(out);
+  }
+  sh.setFrozenRows(2);
+  return { ok: true, received: rows.length, kept: out.length, skipped: skipped };
 }
 
 // =====================================================================================================================

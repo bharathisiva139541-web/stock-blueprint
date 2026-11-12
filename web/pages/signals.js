@@ -21,7 +21,7 @@
     btMin: 4, btType: 'all', btCat: '', btQ: '',
     mlQ: '', mlType: 'all',
     wlQ: '', wlSrc: 'all',
-    itdQ: '', itdTf: 'all', itdPat: 'all', chQ: '', chTf: 'all',
+    itdQ: '', itdTf: 'all', itdPat: 'all', chQ: '', chTf: 'all', cwQ: '', cwTf: 'all', cwNear: 'all',
     z4Q: '', z4Kind: 'all', btTf: 'all', btRes: 'all', btQ2: ''
   };
   // Zerodha Kite patterns (owner, 07-Nov-2026: the 4H Spring in FVG of PARAGMILK missed for lack of intraday candles):
@@ -165,12 +165,13 @@
         'The top sections are recomputed in your browser from the daily candles with the same rules as your sheet; the lower sections are snapshots of the sheet\'s own tabs. ' +
         'These are chart conditions to research, not buy recommendations.</p></div></div>';
       h += '<nav class="chips" aria-label="On this page">' + [
-        ['sg-choch', 'CHoCH + FVG setups'], ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-z4', '4H FVG zones'], ['sg-sbt', 'FVG+Spring backtest'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
+        ['sg-choch', 'CHoCH + FVG setups'], ['sg-chw', 'Waiting for the pullback'], ['sg-itd', 'Intraday & weekly (Zerodha)'], ['sg-z4', '4H FVG zones'], ['sg-sbt', 'FVG+Spring backtest'], ['sg-live', 'Live recompute'], ['sg-zones', 'FVG zones'], ['sg-bear', 'Bearish FVG'], ['sg-pd', 'Pattern Dashboard snapshot'],
         ['sg-tabs', 'Sheet FVG tabs'], ['sg-bt', 'FVG backtest'], ['sg-ml', 'Mitigated log'], ['sg-wl', 'Signal log']
       ].map(function (j) { return '<button type="button" class="chip" data-jump="' + j[0] + '">' + esc(j[1]) + '</button>'; }).join('') + '</nav>';
 
       // 0. Zerodha Kite: intraday / weekly / monthly patterns found by the PC program, its 4H FVG zones and the backtest
       h += chochSectionHtml(ctx);
+      h += chwSectionHtml(ctx);
       h += itdSectionHtml(ctx);
       h += z4SectionHtml(ctx);
       h += sbtSectionHtml(ctx);
@@ -244,6 +245,7 @@
       });
 
       drawChoch(el, ctx);
+      drawChw(el, ctx);
       drawItd(el, ctx);
       drawZ4(el, ctx);
       drawSbt(el, ctx);
@@ -324,6 +326,99 @@
     ui.bindChips(el, 'sgchtf', function (v) { ST.chTf = v; apply(); });
     var q = $('#sg-ch-q', el), timer;
     if (q) q.addEventListener('input', function (e) { clearTimeout(timer); timer = setTimeout(function () { ST.chQ = e.target.value.trim(); apply(); }, 120); });
+    apply();
+  }
+
+  // CHoCH + FVG setups WAITING for the pullback (owner, 12-Nov-2026, IREDA: "when i set strategy setting.. IREDA stock is not
+  // qualified. i don't know why" - the CHoCH had formed, the discount zone was below, price had not come back yet): the sheet's
+  // "CHoCH Waiting" tab (feed part chochWait), made by the PC after each day's Zerodha scan - with Kite's prices (owner,
+  // 12-Nov-2026: "use kite price. no need to follow privacy rule"). Distance follows the price shown now.
+  var CW_NEAR = [['all', 'Any distance'], ['in', 'In the zone now'], ['2', 'Within 2%'], ['5', 'Within 5%'], ['10', 'Within 10%']];
+  function chwRows(ctx) {
+    return ui.objRows(ctx.D.chochWait).map(function (r) {
+      var s = ctx.bySym[r.Symbol], o = {};
+      Object.keys(r).forEach(function (k) { o[k] = r[k]; });
+      var live = !!(SB.livePrice && SB.livePrice(s));
+      o.price = live ? s.price : r['Last Close'];
+      o.priceLive = live;
+      o.dist = isNum(o.price) && o.price > 0 && isNum(r['Zone Top']) ? (o.price - r['Zone Top']) / o.price * 100 : r['Distance %'];
+      return o;
+    });
+  }
+  function chwNearOk(r, near) {
+    if (near === 'all') return true;
+    if (!isNum(r.dist)) return false;
+    return near === 'in' ? r.dist <= 0 : r.dist <= Number(near);
+  }
+  function chwSectionHtml(ctx) {
+    var rows = chwRows(ctx), w = ctx.D.chochWait || {};
+    var sub = 'The same setup <b>before</b> the entry: a CHoCH has formed (at least 3 lower highs and lower lows, swings of 5 candles), no close under its final low ' +
+      'and no BOS yet, and an FVG / Gap-up zone of that move sits in its <b>discount half</b> (its middle under the 50% line) - but price has <b>not come back to it yet</b>. ' +
+      'The first touch of the zone is the entry (it then moves to "CHoCH + FVG setups" above, after that day\'s scan) - a buy order at the <b>zone top</b> is the low-risk way in, ' +
+      'the stop a little under the <b>zone bottom</b>. One row per stock and timeframe: the highest such zone (the one price reaches first; "More below" = further discount zones under it). ' +
+      'Prices from Zerodha Kite (your PC, after each day\'s close); Distance = how far the price shown now must fall to the zone top. ' +
+      'The 50% line rises when price makes a new high after the scan - a zone can then also qualify. Research only, not a buy recommendation.' +
+      (/session (\d{4}-\d{2}-\d{2})/.test(w.note || '') ? ' <span class="sub">(the scan of the session ' + esc(/session (\d{4}-\d{2}-\d{2})/.exec(w.note)[1]) + ')</span>' : '');
+    var body;
+    if (!rows.length) {
+      body = '<p class="empty">Nothing waiting yet. The list comes with the daily Zerodha Kite scan after the close (the ScreenerBridge version of 12-Nov-2026 or later, ' +
+        'and the sheet\'s new version).</p>';
+    } else {
+      var tfN = {};
+      rows.forEach(function (r) { tfN[r.Timeframe] = (tfN[r.Timeframe] || 0) + 1; });
+      body = '<div class="controls"><input class="search" id="sg-cw-q" type="search" placeholder="Search symbol or company" aria-label="Search setups waiting for the pullback" value="' + esc(ST.cwQ) + '">' +
+        '<span class="count" id="sg-cw-count"></span></div>' +
+        '<div class="controls">' + ui.chips('sgcwtf', [['all', 'All timeframes (' + F.int(rows.length) + ')']].concat(['4H', 'D', 'W'].filter(function (t) { return tfN[t]; })
+          .map(function (t) { return [t, t + ' (' + F.int(tfN[t]) + ')']; })), ST.cwTf) + '</div>' +
+        '<div class="controls">' + ui.chips('sgcwnear', CW_NEAR, ST.cwNear) + '</div><div id="sg-cw-t"></div>';
+    }
+    return sectionHtml('sg-chw', 'CHoCH + FVG - waiting for the pullback', sub, body);
+  }
+  function drawChw(el, ctx) {
+    var box = $('#sg-cw-t', el);
+    if (!box) return;
+    var all = chwRows(ctx);
+    var px = function (v) { return isNum(v) ? F.price(v) : '–'; };
+    var t = new ui.Table({
+      rows: [], pageSize: 25, id: 'signals-choch-waiting', empty: 'No setup with these filters',
+      columns: [
+        { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
+        { key: 'chg', label: 'Daily %', type: 'pct', digits: 2, title: 'Today\'s change % (the Watchlist\'s Today column)',
+          get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
+        { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
+        { key: 'price', label: 'Price', type: 'price', title: 'The price shown now (Kite live with your PIN / delayed); else the last close of the PC\'s scan',
+          html: function (r) { return px(r.price) + (r.priceLive ? '' : ' <span class="sub">close</span>'); } },
+        { key: 'Zone Top', label: 'Buy at (zone top)', type: 'price' },
+        { key: 'Zone Bottom', label: 'Zone bottom', type: 'price', title: 'Your stop goes a little under it' },
+        { key: 'dist', label: 'Distance', type: 'pct', digits: 2, title: 'How far the price must fall to reach the zone top (0 or less = in the zone now)',
+          html: function (r) { return !isNum(r.dist) ? '–' : r.dist <= 0 ? ui.badge('In the zone', 's-good') : esc(F.num(r.dist, 2) + '%'); } },
+        { key: 'Zone Kind', label: 'Zone', html: function (r) { return ui.badge(r['Zone Kind'] || '–', /inside/.test(r['Zone Kind']) ? 's-good' : 's-info'); } },
+        { key: 'Zone Depth %', label: 'Zone depth', type: 'num', digits: 0, title: 'How far down the move the zone\'s middle sits (50% = the line; 100% = at the final low)',
+          html: function (r) { return isNum(r['Zone Depth %']) ? esc(F.num(r['Zone Depth %'], 0) + '%') : '–'; } },
+        { key: 'Zone Formed', label: 'Zone formed' },
+        { key: 'CHoCH Candle', label: 'CHoCH', title: 'The candle that closed above the last lower high (CHoCH Level)',
+          html: function (r) { return esc(r['CHoCH Candle'] || '–') + (isNum(r['CHoCH Level']) ? ' <span class="sub">above ' + esc(F.price(r['CHoCH Level'])) + '</span>' : ''); } },
+        { key: 'Lower Highs / Lows', label: 'Lower highs / lows', type: 'num', digits: 0 },
+        { key: 'Final Low', label: 'Final low', type: 'price', title: 'The lowest low before the CHoCH (the move starts here; a close under it ends the setup)' },
+        { key: 'Move High', label: 'Move high', type: 'price', title: 'The highest high since the final low (at the PC\'s scan)' },
+        { key: '50% Line', label: '50% line', type: 'price' },
+        { key: 'More Zones Below', label: 'More below', type: 'num', digits: 0, title: 'Further untouched discount zones under this one' },
+        { key: 'chart', label: 'Chart', get: function () { return null; },
+          html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
+      ]
+    }).mount(box);
+    function apply() {
+      var rows = all.filter(function (r) {
+        return (ST.cwTf === 'all' || r.Timeframe === ST.cwTf) && chwNearOk(r, ST.cwNear) && ui.textMatch(ST.cwQ, [r.Symbol, r.Company]);
+      });
+      var c = $('#sg-cw-count', el);
+      if (c) c.textContent = F.int(rows.length) + ' of ' + F.int(all.length);
+      t.setRows(rows);
+    }
+    ui.bindChips(el, 'sgcwtf', function (v) { ST.cwTf = v; apply(); });
+    ui.bindChips(el, 'sgcwnear', function (v) { ST.cwNear = v; apply(); });
+    var q = $('#sg-cw-q', el), timer;
+    if (q) q.addEventListener('input', function (e) { clearTimeout(timer); timer = setTimeout(function () { ST.cwQ = e.target.value.trim(); apply(); }, 120); });
     apply();
   }
   function itdSectionHtml(ctx) {

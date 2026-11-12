@@ -400,7 +400,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-1] == 'acct'
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-4:] == ['acct', 'depth', 'lhll', 'lag']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -887,6 +887,24 @@ assert [x['candle'] for x in ch6] == [r6[t_disc][0], r6[t_disc + 1][0]], [(x['ca
 assert ch6[0]['note'].startswith('Zone first touch · CHoCH ') and ch6[0]['note'].endswith('· first pullback · zone middle 89% down the move'), ch6[0]['note']
 assert ch6[1]['note'].startswith('Spring · CHoCH ') and ch6[0]['zone'][:2] == [121.3, 126.5], ch6
 assert not re.search(r'\d\.\d', ch6[0]['note'])
+# ... and while price has not come back yet the setup is WAITING (owner, 12-Nov-2026, IREDA: the CHoCH formed, the
+# discount zone below, no touch yet): the discount FVG (not the premium one above the 50 % line), until its first touch
+full6 = K.daily_candles(r6)
+for upto6, dist6 in ((t_prem - 1, 13.95), (t_prem, 12.15), (t_disc - 1, 1.17)):
+    w6 = K.choch_waiting(full6[:upto6 + 1], full6[:upto6 + 1], 'D')
+    assert w6 and w6['zone'] == [121.3, 126.5, next(r[0] for r in r6 if r[3] == 126.5), 'FVG'], w6
+    assert (w6['level'], w6['d'], w6['low'], w6['high'], w6['fib'], w6['depth'], w6['dist'], w6['more']) == (136.3, 3, 119.7, 156.3, 138.0, 89, dist6, 0), w6
+    assert w6['choch'] == r6[next(k for k, r in enumerate(r6) if r[3] == 130.0 and r[4] == 138)][0] and w6['last'] == r6[upto6][0]
+assert K.choch_waiting(full6[:t_disc + 1], full6[:t_disc + 1], 'D') is None, 'touched: now a CHoCH + FVG row, no longer waiting'
+assert K.choch_waiting(full6, full6, 'D') is None, 'after the BOS: nothing waiting'
+# the daily scan sends it (analyse 'waiting') - the scan of the session before the premium touch
+res6w = K.analyse({'sym': 'SUP', 'day': r6[:t_prem], 'm15': [], 'h4': []}, r6[t_prem - 2][0], date.fromisoformat(r6[t_prem - 1][0]), set(), ('D',), ())
+assert [(x['tf'], x['zone'][:2], x['dist']) for x in res6w['waiting']] == [('D', [121.3, 126.5], 13.95)], res6w['waiting']
+sent6 = []
+K.send_waiting({}, lambda cfg, action, body, **kw: sent6.append((action, body)) or {'ok': True, 'kept': len(body['rows'])},
+               date.fromisoformat(r6[t_prem - 1][0]), [dict(res6w['waiting'][0], sym='SUP'), dict(res6w['waiting'][0], sym='AAA', dist=2.5)])
+assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'] for r in sent6[0][1]['rows']] == ['AAA', 'SUP'], sent6
+assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
 
 # ------------------------------------------------------------------ 14. the charts PDF (owner, 12-Nov-2026: "a PDF should come with
 # it - a chart for every trade, with the swings, CHoCH, FVG area, target and stop loss ... like the TradingView view";
@@ -989,5 +1007,60 @@ LC.trade_page = lambda *a, **k: 1 / 0
 broken = L.run_job(dict(SMC6), charts=L.CHARTS_DIR, name='broken')
 LC.trade_page = real
 assert broken['pdf'].get('error') and broken['stats'] and not [f for f in os.listdir(L.CHARTS_DIR) if f.endswith('.tmp')]
+
+# ------------------------------------------------------------------ 15. "real or chance?", the breakdowns, the dev / test split
+# (owner, 12-Nov-2026, after a ChatGPT review of his run: zone depth 60-70 % weak / 70-90 % strong, 4 lower highs / lows better
+# than 3, the CHoCH-to-signal lag; "yes do it")
+import statistics
+assert L._range([1.0]) == (None, None)
+lo_, hi_ = L._range([1.0, -1.0, 2.0, 0.5])
+m_, e_ = 0.625, 1.645 * statistics.stdev([1.0, -1.0, 2.0, 0.5]) / 2
+assert abs(lo_ - (m_ - e_)) < 0.001 and abs(hi_ - (m_ + e_)) < 0.001
+assert L._edge(29, 0.1, 0.5) == 'few' and L._edge(30, 0.1, 0.5) == 'real' and L._edge(30, -0.5, -0.1) == 'losing' and L._edge(30, -0.1, 0.3) == 'chance'
+assert L._vs_rest([2.0, 2.5] * 20, [-1.0, -0.5] * 20) == 'better' and L._vs_rest([-1.0, -0.5] * 20, [2.0, 2.5] * 20) == 'worse'
+assert L._vs_rest([1.0, -1.0] * 20, [1.1, -0.9] * 20) == 'chance' and L._vs_rest([2.0] * 29, [0.0, 1.0]) == 'few'
+
+
+def ft(R, day, **kw):
+    t = {'R': R, 'sigDay': date.fromisoformat(day).toordinal(), 'code': 'Z', 'inside': 0, 'where': 'b', 'touch': 1, 'riskPct': 3.0,
+         'turn': 100.0, 'hit': R >= 2, 'ret': R * 3, 'days': 5, 'maxR': max(R, 0), 'ek': (date.fromisoformat(day).toordinal(), 0)}
+    t.update(kw)
+    return t
+
+
+rnd15 = random.Random(15)
+deep = [ft(rnd15.choice([2.5, 3.0, -1.0]), '20%02d-03-01' % (10 + k % 16), depth=0.8, lhll=4, lag=30) for k in range(60)]
+shallow = [ft(rnd15.choice([-1.0, -1.0, 0.5]), '20%02d-06-01' % (10 + k % 16), depth=0.65, lhll=3, lag=5, where='t') for k in range(60)]
+bd = {b['key']: b for b in L.breakdowns(deep + shallow, L.clean_params({}))}
+assert 'zone' not in bd and 'touch' not in bd, 'one group only: no comparison'
+dep = {r['label']: r for r in bd['depth']['rows']}
+assert set(dep) == {'61.8 - 70.5%', '78.6 - 90%'} and dep['78.6 - 90%']['verdict'] == 'better' and dep['61.8 - 70.5%']['verdict'] == 'worse', dep
+assert dep['78.6 - 90%']['trades'] == 60 and 'dev' not in dep['78.6 - 90%']
+assert [r['label'] for r in bd['lhll']['rows']] == ['3', '4'] and [r['label'] for r in bd['lag']['rows']] == ['0 - 5 days', '21 - 40 days']
+assert [r['label'] for r in bd['where']['rows']] == ['top half', 'to / under the bottom']
+# with the split: each group in both periods, 'held' = it beat (trailed) the rest in both
+P15 = L.clean_params({'testFrom': '2020-01-01'})
+assert P15['testFrom'] == '2020-01-01' and L.clean_params({'testFrom': 'x'})['testFrom'] == ''
+bd2 = {b['key']: b for b in L.breakdowns(deep + shallow, P15)}
+d2 = {r['label']: r for r in bd2['depth']['rows']}
+assert d2['78.6 - 90%']['held'] == 'yes' and d2['61.8 - 70.5%']['held'] == 'yes', d2
+assert d2['78.6 - 90%']['dev']['trades'] + d2['78.6 - 90%']['test']['trades'] == 60 and d2['78.6 - 90%']['test']['trades'] == 20
+flip = [ft(2.0 if day < '2020' else -1.0, day + '-03-01', depth=0.8) for day in ('2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2021', '2022', '2023', '2024')] * 3
+flip2 = [ft(-1.0 if day < '2020' else 2.0, day + '-03-01', depth=0.65) for day in ('2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2021', '2022', '2023', '2024')] * 3
+d3 = {r['label']: r for r in [b for b in L.breakdowns(flip + flip2, P15) if b['key'] == 'depth'][0]['rows']}
+assert d3['78.6 - 90%']['held'] == 'no', 'better before 2020, worse after: it did not hold'
+sp = L._split(deep + shallow, P15)
+assert sp['at'] == '2020-01-01' and sp['dev']['trades'] + sp['test']['trades'] == 120 and sp['dev']['to'] < '2020-01-01' <= sp['test']['from']
+assert sp['dev']['edge'] in ('real', 'chance', 'losing') and L._split(deep, L.clean_params({})) is None
+# a real run: the structure features on every trade, the breakdowns and the split in the result
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+rr = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0, 'structure': 'show', 'discount': 0.5, 'testFrom': '2011-01-01'})
+cols15 = rr['tradeCols']
+assert rr['stats']['edge'] in ('real', 'chance', 'losing', 'few') and rr['stats']['avgRLo'] <= rr['stats']['avgR'] <= rr['stats']['avgRHi']
+assert {b['key'] for b in rr['breakdowns']} >= {'where', 'risk'} and rr['split']['at'] == '2011-01-01', [b['key'] for b in rr['breakdowns']]
+sup15 = [r for r in rr['trades'] if r[cols15.index('sym')] == 'SUP' and r[cols15.index('stage')] == 'disc'][0]
+assert (sup15[cols15.index('depth')], sup15[cols15.index('lhll')]) == (89, 3) and sup15[cols15.index('lag')] > 0, sup15
+off15 = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0})
+assert not {b['key'] for b in off15['breakdowns']} & {'depth', 'lhll', 'lag'} and off15['split'] is None, 'no structure: those need it'
 
 print('OK')

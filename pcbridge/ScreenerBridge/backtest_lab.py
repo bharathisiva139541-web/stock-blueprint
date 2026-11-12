@@ -32,6 +32,7 @@ import re
 import gzip
 import heapq
 import json
+import math
 import os
 import shutil
 import statistics
@@ -112,6 +113,10 @@ DEFAULTS = {
     # discPart = which price of the zone: 'mid' (half of it may be above the line) / 'top' (all of it under) / 'bottom'.
     # Entry 'zone' = a buy order at the zone top, filled on the first touch (first-touch signals only).
     'discount': 0.0, 'discPart': 'mid',
+    # DEVELOPMENT / TEST SPLIT (owner, 12-Nov-2026, after a ChatGPT review of his run: rules picked after seeing the results
+    # fit the past; "yes do it"): testFrom = a date - the trades with a signal before it are the DEVELOPMENT period (where
+    # rules are looked for), the ones from it the TEST period (kept to check them); '' = off. Nothing is left out.
+    'testFrom': '',
 }
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
@@ -150,7 +155,8 @@ SPRING_CODES = ('S', 'F', 'G')   # the Spring shape rules apply to these (T / C 
 TOUCH_CODES = ('T', 'Z', 'Y')    # first-touch signals: the zone-top entry (a buy order waiting at the top) fills on them
 REASONS = ('stop', 'target', 'be', 'trail', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
-              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct']
+              'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
+              'depth', 'lhll', 'lag']
 
 
 def _iso_date(s):
@@ -177,7 +183,7 @@ def clean_params(p):
     for k in BOOLS:
         if isinstance(p.get(k), bool):
             out[k] = p[k]
-    for k in ('from', 'to'):
+    for k in ('from', 'to', 'testFrom'):
         out[k] = _iso_date(p.get(k) or '')
     mk = str(p.get('mktIndex') or '').strip().upper().replace(' ', '_')
     out['mktIndex'] = mk if re.match(r'^[A-Z0-9_&.-]{2,40}$', mk) else ''
@@ -895,14 +901,175 @@ def summarise(trades, P, skips, meta, secs):
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
-                     t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', '')])
+                     t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', ''),
+                     int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
+    stats = _stats(closed)
+    lo_r, hi_r = _range([t['R'] for t in closed])
+    if stats['trades']:
+        stats['avgRLo'], stats['avgRHi'] = lo_r, hi_r
+        stats['edge'] = _edge(stats['trades'], lo_r, hi_r)
+    split = _split(closed, P)
     return {'v': 1, 'params': P, 'groupName': GROUP_NAMES[P['group']], 'cacheUpto': meta.get('upto'),
             'from': date.fromordinal(first).isoformat() if first else '', 'to': date.fromordinal(last).isoformat() if last else '',
-            'stats': _stats(closed), 'open': len(trades) - len(closed), 'skipped': skips, 'account': acct, 'years': years,
+            'stats': stats, 'open': len(trades) - len(closed), 'skipped': skips, 'account': acct, 'years': years,
             'hist': hist, 'reasons': reasons, 'tradeCols': TRADE_COLS, 'trades': rows, 'tradesTotal': len(trades),
-            'stages': stages, 'secs': round(secs, 1)}
+            'stages': stages, 'breakdowns': breakdowns(closed, P), 'split': split, 'secs': round(secs, 1)}
+
+
+# ------------------------------------------------------------------ "real or chance?" + the breakdowns + the dev / test split
+# (owner, 12-Nov-2026, after a ChatGPT review of his 405-trade run: zone depth 60-70 % weak and 70-90 % strong, 4 lower highs /
+# lows better than 3, a signal 0-10 days after the CHoCH weak; "yes do it" to: the same figures in every run, with a range
+# that says whether a difference can be luck, and a development / test split)
+Z90 = 1.645                  # the likely range of an average = average +/- 1.645 x its standard error (90 %)
+BD_MIN = 30                  # a group with fewer closed trades: 'few' (no verdict)
+BD_HELD_MIN = 10             # the dev / test check needs this many trades in both periods
+BD_DIMS = (
+    ('depth', 'Zone depth in the move (0% = the move high, 100% = the final low)', 'num',
+     ((-1e9, 0.382, 'above the 38.2% line'), (0.382, 0.5, '38.2 - 50%'), (0.5, 0.618, '50 - 61.8%'), (0.618, 0.705, '61.8 - 70.5%'),
+      (0.705, 0.786, '70.5 - 78.6%'), (0.786, 0.9, '78.6 - 90%'), (0.9, 1.0 + 1e-9, '90 - 100%'), (1.0 + 1e-9, 1e9, 'under the final low'))),
+    ('lhll', 'Lower highs / lows before the CHoCH', 'num',
+     ((1, 2, '1'), (2, 3, '2'), (3, 4, '3'), (4, 5, '4'), (5, 6, '5'), (6, 1e9, '6 or more'))),
+    ('lag', 'Days from the CHoCH candle to the signal', 'num',
+     ((0, 6, '0 - 5 days'), (6, 11, '6 - 10 days'), (11, 21, '11 - 20 days'), (21, 41, '21 - 40 days'), (41, 61, '41 - 60 days'),
+      (61, 121, '61 - 120 days'), (121, 1e9, 'over 120 days'))),
+    ('where', 'How deep the signal candle went into the zone', 'cat',
+     (('t', 'top half'), ('m', 'middle (lower half)'), ('b', 'to / under the bottom'))),
+    ('zone', 'Zone kind', 'cat',
+     (('FVG', 'FVG'), ('Gap-up', 'Gap-up'), ('Gap-up inside FVG', 'Gap-up inside FVG'), ('none', 'no zone (Spring only)'))),
+    ('touch', 'Touch of the zone', 'num', ((1, 2, '1st touch'), (2, 3, '2nd'), (3, 4, '3rd'), (4, 1e9, '4th or later'))),
+    ('risk', 'Risk (entry to stop)', 'num',
+     ((0, 2, 'under 2%'), (2, 4, '2 - 4%'), (4, 6, '4 - 6%'), (6, 8, '6 - 8%'), (8, 10, '8 - 10%'), (10, 15, '10 - 15%'), (15, 1e9, '15% or more'))),
+    ('turn', 'Average daily turnover (20 days)', 'num',
+     ((0, 50, 'under ₹50 lakh'), (50, 200, '₹50 lakh - 2 Cr'), (200, 1000, '₹2 - 10 Cr'), (1000, 5000, '₹10 - 50 Cr'), (5000, 1e12, '₹50 Cr or more'))),
+)
+
+
+def _bd_value(t, key):
+    if key == 'zone':
+        return ('Gap-up inside FVG' if t.get('inside') else 'Gap-up') if t['code'] in ('G', 'Y') else 'FVG' \
+            if t['code'] in ('F', 'Z', 'T', 'C') else 'none'
+    if key == 'risk':
+        return t.get('riskPct')
+    if key == 'touch':
+        return t.get('touch') or None
+    if key == 'where':
+        return t.get('where') if t.get('where') in ('t', 'm', 'b') else None
+    v = t.get(key)
+    return v if isinstance(v, (int, float)) and v == v else None
+
+
+def _range(rs):
+    """The likely range (90 %) of the average R of these results: (low, high), (None, None) under 2."""
+    n = len(rs)
+    if n < 2:
+        return None, None
+    m = sum(rs) / float(n)
+    e = Z90 * statistics.stdev(rs) / math.sqrt(n)
+    return round(m - e, 3), round(m + e, 3)
+
+
+def _edge(n, lo, hi):
+    """'real' (the whole range above 0), 'losing' (all under 0), 'chance' (it spans 0), 'few' (under BD_MIN trades)."""
+    if n < BD_MIN or lo is None:
+        return 'few'
+    return 'real' if lo > 0 else 'losing' if hi < 0 else 'chance'
+
+
+def _vs_rest(a, b):
+    """Group a vs the rest b (R lists): 'better' / 'worse' when the difference of the averages is clear (90 %), else
+    'chance'; 'few' when a has under BD_MIN trades or b under 2."""
+    if len(a) < BD_MIN or len(b) < 2:
+        return 'few'
+    va, vb = statistics.variance(a), statistics.variance(b)
+    se = math.sqrt(va / len(a) + vb / len(b))
+    d = sum(a) / float(len(a)) - sum(b) / float(len(b))
+    if se <= 0:
+        return 'chance' if d == 0 else 'better' if d > 0 else 'worse'
+    z = d / se
+    return 'better' if z > Z90 else 'worse' if z < -Z90 else 'chance'
+
+
+def _period(ts, P):
+    """(development, test) trades of a run with testFrom set, else (None, None)."""
+    if not P.get('testFrom'):
+        return None, None
+    at = date.fromisoformat(P['testFrom']).toordinal()
+    return [t for t in ts if t['sigDay'] < at], [t for t in ts if t['sigDay'] >= at]
+
+
+def _brief(ts):
+    rs = [t['R'] for t in ts]
+    if not rs:
+        return {'trades': 0}
+    lo, hi = _range(rs)
+    return {'trades': len(rs), 'winPct': round(sum(1 for r in rs if r > 0) * 100.0 / len(rs), 1), 'avgR': round(sum(rs) / len(rs), 3),
+            'lo': lo, 'hi': hi}
+
+
+def breakdowns(closed, P):
+    """The closed trades split by one feature at a time (BD_DIMS) -> [{'key', 'name', 'rows': [{'label', 'trades', 'winPct',
+    'avgR', 'medR', 'totalR', 'hitPct', 'lo', 'hi', 'verdict' (vs the rest of the run: better / worse / chance / few),
+    with testFrom also 'dev' / 'test' ({trades, winPct, avgR, lo, hi}) and 'held' ('yes' / 'no' / '' = too few: the group
+    beat (or trailed) the rest in BOTH periods)}]}] - a feature with fewer than 2 groups of trades is left out."""
+    out = []
+    for key, name, kind, bins in BD_DIMS:
+        groups = []
+        for b in bins:
+            if kind == 'num':
+                lo, hi, label = b
+                ts = [t for t in closed if _bd_value(t, key) is not None and lo <= _bd_value(t, key) < hi]
+            else:
+                val, label = b
+                ts = [t for t in closed if _bd_value(t, key) == val]
+            if ts:
+                groups.append((label, ts))
+        if len(groups) < 2:
+            continue
+        rows = []
+        keyed = [t for _, ts in groups for t in ts]
+        for label, ts in groups:
+            ids = set(id(t) for t in ts)
+            rest = [t for t in keyed if id(t) not in ids]
+            s = _stats(ts)
+            lo, hi = _range([t['R'] for t in ts])
+            row = {'label': label, 'trades': s['trades'], 'winPct': s['winPct'], 'avgR': s['avgR'], 'medR': s['medR'],
+                   'totalR': s['totalR'], 'hitPct': s['hitPct'], 'lo': lo, 'hi': hi,
+                   'verdict': _vs_rest([t['R'] for t in ts], [t['R'] for t in rest])}
+            dev, test = _period(ts, P)
+            if dev is not None:
+                rdev, rtest = _period(rest, P)
+                row['dev'], row['test'] = _brief(dev), _brief(test)
+                ok = len(dev) >= BD_HELD_MIN and len(test) >= BD_HELD_MIN and len(rdev) >= 2 and len(rtest) >= 2
+                if ok:
+                    a = sum(t['R'] for t in dev) / len(dev) - sum(t['R'] for t in rdev) / len(rdev)
+                    b = sum(t['R'] for t in test) / len(test) - sum(t['R'] for t in rtest) / len(rtest)
+                    row['held'] = 'yes' if a * b > 0 else 'no'
+                else:
+                    row['held'] = ''
+            rows.append(row)
+        out.append({'key': key, 'name': name, 'rows': rows, 'trades': len(keyed)})
+    return out
+
+
+def _split(closed, P):
+    """testFrom set: {'at', 'dev': figures of the development period (signals before it), 'test': the test period} - each
+    {trades, winPct, avgR, medR, totalR, pf, hitPct, avgRLo, avgRHi, edge, from, to}; else None."""
+    dev, test = _period(closed, P)
+    if dev is None:
+        return None
+
+    def part(ts):
+        s = _stats(ts)
+        if not s['trades']:
+            return s
+        lo, hi = _range([t['R'] for t in ts])
+        s.update({'avgRLo': lo, 'avgRHi': hi, 'edge': _edge(s['trades'], lo, hi),
+                  'from': date.fromordinal(min(t['sigDay'] for t in ts)).isoformat(),
+                  'to': date.fromordinal(max(t['sigDay'] for t in ts)).isoformat()})
+        return s
+    return {'at': P['testFrom'], 'dev': part(dev), 'test': part(test)}
 
 
 def run_job(params, base=None, progress=None, charts=None, name=''):
@@ -974,6 +1141,11 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     t['stage'] = sj['stage']
                     t['struct'] = struct_text(st.s, sj, cs, P['tf'], P)
                     t['k'], t['H'] = sj['k'], sj.get('H')
+                    if sj['k'] >= 0:                   # for the breakdowns (12-Nov-2026)
+                        ev = st.s.events[sj['k']]
+                        t['lhll'], t['lag'] = ev[5], cs.day[r[0]] - cs.day[ev[0]]
+                        if sj.get('depth') is not None:
+                            t['depth'] = round(sj['depth'], 4)
                 zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                 t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
                 return t, None
@@ -1155,8 +1327,19 @@ def headline(res):
     s, a = res.get('stats') or {}, res.get('account') or {}
     if not s.get('trades'):
         return 'no trades'
-    return ('%d trades, win %.1f%%, avg %.2fR, total %.0fR; account %+.1f%% (max drawdown %.1f%%)'
-            % (s['trades'], s['winPct'], s['avgR'], s['totalR'], a.get('returnPct') or 0, a.get('maxDD') or 0))
+    out = ('%d trades, win %.1f%%, avg %.2fR, total %.0fR; account %+.1f%% (max drawdown %.1f%%)'
+           % (s['trades'], s['winPct'], s['avgR'], s['totalR'], a.get('returnPct') or 0, a.get('maxDD') or 0))
+    if s.get('avgRLo') is not None:
+        out += '; likely range of the average %.2fR to %.2fR (%s)' % (s['avgRLo'], s['avgRHi'], EDGE_WORDS.get(s.get('edge'), ''))
+    sp = res.get('split')
+    if sp and sp.get('dev', {}).get('trades') and sp.get('test', {}).get('trades'):
+        out += '; before %s: avg %.2fR (%d trades), from it: avg %.2fR (%d trades)' % (
+            sp['at'], sp['dev']['avgR'], sp['dev']['trades'], sp['test']['avgR'], sp['test']['trades'])
+    return out
+
+
+EDGE_WORDS = {'real': 'an edge - the whole range is above 0', 'losing': 'losing - the whole range is under 0',
+              'chance': 'could be chance - the range spans 0', 'few': 'too few trades to say'}
 
 
 # ------------------------------------------------------------------ the background worker

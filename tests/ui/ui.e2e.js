@@ -88,6 +88,12 @@ LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles
     ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null],
     // the owner's CHoCH + FVG setup (10-Nov-2026): the PC's words, no prices
     ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback']] };
+// format 14 (owner, 12-Nov-2026, IREDA): CHoCH + FVG setups waiting for the pullback - with Kite's prices (owner: "use kite price")
+LIVE_MAIN.chochWait = { note: 'CHoCH + FVG setups WAITING for the pullback, from Zerodha Kite candles (your PC program, session 2026-10-20): ...',
+  cols: ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On', 'Move High', '50% Line',
+    'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle', 'Distance %', 'More Zones Below'],
+  rows: [[SENT_SYM, null, 'D', '2026-10-15', 117.39, 4, 98.78, '2026-10-06', 123.99, 111.39, 'FVG', 104.1, 108.24, '2026-10-08', 83, 119.25, '2026-10-20', 9.23, 1],
+    [SENT_SYM, null, '4H', '2026-10-16 13:15', 120.5, 3, 110.2, '2026-10-14 09:15', 123.99, 117.1, 'Gap-up (inside FVG)', 112, 113.5, '2026-10-15 09:15', 78, 119.25, '2026-10-20 13:15', 4.82, 0]] };
 // format 10: 4H FVG zones (no prices) + the FVG+Spring backtest (R only)
 LIVE_MAIN.zones4h = { note: '4H FVG zones still untouched ...', cols: ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'],
   rows: [[FLAG_SYM, 'Flag Co', 'FVG', 3.52, '2026-10-14 13:15', 1.2, null], [SENT_SYM, null, 'Gap-up', 4.1, '2026-10-16 09:15', 6.5, null],
@@ -892,6 +898,31 @@ function check(name, fn) {
     assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['1 of 1', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
     assert.ok(ch.text.includes('Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'), ch.text);
     assert.match(ch.note, /3 lower highs and 3 lower lows.*closed above the last lower high \(CHoCH\).*discount half.*first pullback.*first touch/);
+    // waiting for the pullback (owner, 12-Nov-2026, IREDA): CHoCH formed, discount zone below - the zone top to buy at, the distance from the price shown
+    await p.waitForSelector('#sg-cw-t table');
+    const cw = await p.evaluate(() => {
+      const ths = [...document.querySelectorAll('#sg-cw-t thead th')].map((th) => th.textContent.replace(/[↑↓]/g, '').trim());
+      const rows = [...document.querySelectorAll('#sg-cw-t tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent.trim()));
+      return { ths, rows, count: document.querySelector('#sg-cw-count').textContent, jump: !!document.querySelector('[data-jump="sg-chw"]'),
+        second: [...document.querySelectorAll('#app section.card')][1].id, note: document.querySelector('#sg-chw .card-head p').textContent };
+    });
+    assert.deepStrictEqual([cw.count, cw.jump, cw.second], ['2 of 2', true, 'sg-chw'], JSON.stringify(cw));
+    const zi = cw.ths.indexOf('Buy at (zone top)'), bi = cw.ths.indexOf('Zone bottom'), ti = cw.ths.indexOf('Timeframe');
+    assert.ok(zi > 0 && bi > 0, cw.ths.join(' | '));
+    assert.deepStrictEqual(cw.rows.map((r) => [r[ti], r[zi], r[bi]]).sort(), [['4H', '113.50', '112.00'], ['D', '108.24', '104.10']].sort(), JSON.stringify(cw.rows));
+    assert.match(cw.note, /not come back to it yet.*zone top.*\(the scan of the session 2026-10-20\)/);
+    await p.click('[data-chip="sgcwtf"][data-v="4H"]');
+    assert.strictEqual(await p.$eval('#sg-cw-count', (x) => x.textContent), '1 of 2');
+    await p.click('[data-chip="sgcwtf"][data-v="all"]');
+    // the strategy rule's detail says why the stock is not qualified yet
+    const cwd = await p.evaluate((sym) => {
+      const s = window.SB.ctx.bySym[sym], S = window.SB.strategy;
+      const r = S.run(S.PRESETS.chochFvg, [s], { [sym]: [{ t: '2026-10-19', o: 10, h: 11, l: 9, c: 10, v: 1e6 }, { t: '2026-10-20', o: 10, h: 11, l: 9, c: 10.5, v: 1e6 }] }, { refDate: '2026-10-21' });
+      return { n: (s.chochWait || []).length, res: r.bySym[sym].checks.find((c) => c.id === 'chochFvg').res };
+    }, SENT_SYM);
+    assert.strictEqual(cwd.n, 2);
+    assert.strictEqual(cwd.res.pass, false);
+    assert.match(cwd.res.detail, /waiting for the pullback: D CHoCH 2026-10-15, discount zone 104.1 - 108.24 \(9.2% below the last close\); 4H CHoCH 2026-10-16 13:15/);
     // ... and the strategy rule reads them (Strategy Settings preset 'CHoCH + FVG (your SMC setup)')
     const st = await p.evaluate((sym) => {
       const s = window.SB.ctx.bySym[sym], S = window.SB.strategy;
@@ -1285,6 +1316,10 @@ function check(name, fn) {
     await own.p.waitForSelector('[data-k="swingMinR"]');
     assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry/);
     assert.ok(/Only Springs where the Spring candle has an upper wick of at most 5%/.test(await plainText()), 'the Spring rules stay');
+    // the development / test split (owner, 12-Nov-2026): a test period from 2020
+    await own.p.fill('[data-k="testFrom"]', '2020-01-01');
+    await own.p.dispatchEvent('[data-k="testFrom"]', 'change');
+    assert.match(await plainText(), /Development part: the signals before 01 Jan 2020|Development part: the signals before .*2020/);
     await own.p.click('#lab-run');
     await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
     // the laptop (backtest_lab.py) takes it and sends its result
@@ -1299,10 +1334,23 @@ function check(name, fn) {
       got.job.params.belowChoch, got.job.params.firstPull, got.job.params.targetMode, got.job.params.swingMinR, got.job.params.discount,
       got.job.params.discPart, got.job.params.entry],
     ['touch', 'only', 5, 3, 'both', false, true, 'swing', 1, 0.5, 'mid', 'zone'], 'the market-structure rules reach the laptop');
+    assert.strictEqual(got.job.params.testFrom, '2020-01-01', 'the test period reaches the laptop');
     const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
-               avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1 },
+               avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1, avgRLo: -0.4, avgRHi: 2.8, edge: 'few' },
+      // "real or chance?" + the breakdowns + the dev / test split (owner, 12-Nov-2026)
+      split: { at: '2020-01-01', dev: { trades: 1, winPct: 0, avgR: -1, totalR: -1, pf: 0, avgRLo: null, avgRHi: null, edge: 'few', from: '2010-01-04', to: '2010-01-04' },
+        test: { trades: 2, winPct: 100, avgR: 2.3, totalR: 4.6, pf: null, avgRLo: 1.6, avgRHi: 3.0, edge: 'few', from: '2026-03-02', to: '2026-09-01' } },
+      breakdowns: [
+        { key: 'depth', name: 'Zone depth in the move (0% = the move high, 100% = the final low)', trades: 3, rows: [
+          { label: '61.8 - 70.5%', trades: 40, winPct: 20, avgR: -0.31, medR: -1, totalR: -12.4, hitPct: 20, lo: -0.6, hi: -0.02, verdict: 'worse',
+            dev: { trades: 30, avgR: -0.35 }, test: { trades: 10, avgR: -0.2 }, held: 'yes' },
+          { label: '78.6 - 90%', trades: 60, winPct: 40, avgR: 0.45, medR: -0.5, totalR: 27, hitPct: 40, lo: 0.1, hi: 0.8, verdict: 'better',
+            dev: { trades: 45, avgR: 0.5 }, test: { trades: 15, avgR: -0.1 }, held: 'no' }] },
+        { key: 'lhll', name: 'Lower highs / lows before the CHoCH', trades: 3, rows: [
+          { label: '3', trades: 20, winPct: 30, avgR: 0.01, medR: -1, totalR: 0.2, hitPct: 30, lo: -0.4, hi: 0.4, verdict: 'few', dev: { trades: 12, avgR: 0 }, test: { trades: 8, avgR: 0.02 }, held: '' },
+          { label: '4', trades: 35, winPct: 35, avgR: 0.34, medR: -0.4, totalR: 11.9, hitPct: 35, lo: -0.1, hi: 0.78, verdict: 'chance', dev: { trades: 20, avgR: 0.3 }, test: { trades: 15, avgR: 0.4 }, held: 'yes' }] }],
       open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
       stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
       reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
@@ -1343,6 +1391,22 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('#lab-trades tbody tr:first-child a[href*="tradingview.com"]', (a) => a.getAttribute('href')),
       'https://www.tradingview.com/chart/?symbol=NSE%3AABC&interval=D');
     assert.match(view, /By market structure - where each signal sat/);
+    // "real or chance?", the dev / test split and the breakdowns (owner, 12-Nov-2026)
+    assert.match(await own.p.$eval('#lab-edge', (x) => x.innerText), /Real or chance\?\s*Too few trades[\s\S]*-0\.4R to 2\.8R/);
+    assert.match(view, /likely -0\.4R to 2\.8R/);
+    const spl = await own.p.$eval('#lab-split', (x) => x.innerText);
+    assert.match(spl, /Development \(before\)[\s\S]*-1R[\s\S]*Test \(from\)[\s\S]*2\.3R[\s\S]*1\.6R to 3R/);
+    assert.match(view, /Development vs test \(split on/);
+    assert.match(view, /The development part itself did not make money per trade/);
+    assert.match(view, /What worked best - one thing at a time/);
+    const bd1 = await own.p.$eval('#lab-bd', (x) => x.innerText);
+    assert.match(bd1, /61\.8 - 70\.5%[\s\S]*-0\.31R[\s\S]*-0\.6R to -0\.02R[\s\S]*Worse[\s\S]*Yes/);
+    assert.match(bd1, /78\.6 - 90%[\s\S]*Better[\s\S]*No/);
+    await own.p.click('[data-chip="labbd"][data-v="lhll"]');
+    await own.p.waitForFunction(() => /Lower highs \/ lows/.test(document.querySelector('#lab-bd').innerText));
+    const bd2 = await own.p.$eval('#lab-bd', (x) => x.innerText);
+    assert.match(bd2, /Too few[\s\S]*too few/);
+    assert.match(bd2, /Could be chance[\s\S]*Yes/);
     assert.match(await own.p.$eval('#lab-stages', (x) => x.innerText), /Below CHoCH, 1st pullback[\s\S]*1\.21R/);
     assert.match(await own.p.$eval('#lab-trades .lab-acct:not(.skip)', (x) => x.getAttribute('data-tip')), /^CHoCH \d/);
     assert.match(view, /Only on days when NIFTY 50 closed above its 50 EMA/);
