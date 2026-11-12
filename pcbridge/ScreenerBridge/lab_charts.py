@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Backtest Lab trade charts - one PDF per run, a chart page per trade (owner, 12-Nov-2026: "when the backtest result comes,
+"""Backtest Lab trade charts - one PDF per run, two pages per trade (owner, 12-Nov-2026: "when the backtest result comes,
 a PDF should come with it - a chart for every trade, with the swings, CHoCH, FVG area, target and stop loss of the
 conditions we gave, a snapshot like the TradingView view. We have the historical data, so we can draw the candlesticks
 ourselves ... then I need not go to the TradingView link every time"; choices: saved in the laptop folder only
-(ScreenerBridge\\lab_charts), every trade, the losing ones first).
+(ScreenerBridge\\lab_charts), every trade, the losing ones first). Then (owner, 12-Nov-2026: "difficult to understand why
+picked this trade setup. hence show market structure in the chart according to the setup like LL, LH, HL, HH, BoS, Choch, FVG
+Zone, buy. these words should not overwrited on the candle and price movement. Use 2 slides for each setup. one for chart.
+2 slide for why you took this trade. reason for hitting stoploss"): page 1 = the chart, every swing tagged against the one
+before of its kind, the words placed by `Placer` where no candle is; page 2 = every rule the trade passed with the candle's
+own numbers, how it ended (a stop loss: how close it came, the stop candle, the zone, the final low, what price did after).
+Then (owner, 12-Nov-2026: "why this trade should not numericals and with chart. it should be readable format like in
+sentences"): page 2 is plain sentences only - the story of the setup and of the exit, a few dates, no chart.
 
 Pure Python (no extra package): a small PDF writer (vector drawing, Helvetica, zlib-compressed pages, written page by page
 so thousands of pages never sit in memory) and the chart page. backtest_lab.run_job(..., charts=folder) calls
@@ -17,10 +24,11 @@ import zlib
 from datetime import date
 
 PAGE_W, PAGE_H = 842.0, 595.0          # A4 landscape, points
-MAX_PAGES = 3000                       # trade pages in one PDF (the rest are counted on the cover)
+MAX_TRADES = 1500                      # trades in one PDF - two pages each (the rest are counted on the cover)
 KEEP_FILES = 20                        # older PDFs in the folder are removed
 MAX_WINDOW = 260                       # candles on one chart at most
 FOLDER = 'lab_charts'
+WATCH = None                           # tests: a list that collects every Chart drawn (its words and candle columns)
 
 # Helvetica character widths (1/1000 em) for ASCII 32..126 - for right-aligned labels and label boxes
 _HW = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278] + [556] * 10 + \
@@ -198,133 +206,384 @@ def _labels_apart(items, lo, hi, gap=10.0):
     return [(max(lo, y),) + tuple(rest) for y, *rest in items]
 
 
-def window(t, cs, s):
-    """The candles a trade's chart shows: from before the CHoCH's swing high / the zone (else 60 candles before the
-    signal) to 15 candles after the exit, at most MAX_WINDOW."""
+# ------------------------------------------------------------------ words that keep off the candles
+class Placer:
+    """Puts the chart's words where they cover no candle (owner, 12-Nov-2026: "these words should not overwrited on the
+    candle and price movement"): a word starts next to its point and moves up (or down, or a little sideways) past every
+    candle, mark and earlier word in the way; lines (levels) are kept clear too when there is room. `cols` = (x of the first
+    column, column width, [(y bottom, y top) of each column's candle]) - a word never sits in a column's candle range."""
+
+    def __init__(self, box, cols=None):
+        self.x0, self.y0, self.x1, self.y1 = box
+        self.cols = cols
+        self.hard = []                       # words and marks already placed: (x0, x1, y0, y1)
+        self.soft = []                       # lines
+
+    def block(self, xa, xb, ya, yb, soft=False):
+        (self.soft if soft else self.hard).append((min(xa, xb), max(xa, xb), min(ya, yb), max(ya, yb)))
+
+    def _hit(self, xa, xb, ya, yb, soft):
+        if self.cols:
+            xl, slot, spans = self.cols
+            j0 = max(0, int((xa - xl) / slot))
+            j1 = min(len(spans) - 1, int((xb - xl) / slot))
+            for j in range(j0, j1 + 1):
+                ca, cb = spans[j]
+                if ca < yb and cb > ya:
+                    return ca, cb
+        for a, b, c, d in self.hard:
+            if a < xb and b > xa and c < yb and d > ya:
+                return c, d
+        if soft:
+            for a, b, c, d in self.soft:
+                if a < xb and b > xa and c < yb and d > ya:
+                    return c, d
+        return None
+
+    def _free(self, cx, w, h, y, up, soft):
+        xa, xb = cx - w / 2.0, cx + w / 2.0
+        for _ in range(300):
+            if y < self.y0 + 1 or y + h > self.y1 - 1:
+                return None
+            hit = self._hit(xa, xb, y, y + h, soft)
+            if hit is None:
+                return y
+            y = hit[1] + 0.8 if up else hit[0] - h - 0.8
+        return None
+
+    def place(self, ax, ay, w, h, up=True, gap=3.0):
+        """A w x h box for a word belonging to the point (ax, ay) -> (centre x, bottom y, free = it covers nothing)."""
+        best = None
+        for soft in (True, False):
+            for side in (up, not up):
+                for dx in (0.0, -0.6 * w, 0.6 * w, -1.2 * w, 1.2 * w):
+                    cx = min(max(ax + dx, self.x0 + w / 2.0 + 1), self.x1 - w / 2.0 - 1)
+                    y_0 = ay + gap if side else ay - gap - h
+                    y = self._free(cx, w, h, y_0, side, soft)
+                    if y is None:
+                        continue
+                    cost = abs(y - y_0) + abs(cx - ax) * 0.8 + (0 if side == up else 30)
+                    if best is None or cost < best[0]:
+                        best = (cost, cx, y)
+            if best:
+                break
+        if best is None:
+            cx, y = ax, (ay + gap if up else ay - gap - h)
+        else:
+            cx, y = best[1], best[2]
+        self.hard.append((cx - w / 2.0 - 1.2, cx + w / 2.0 + 1.2, y - 1.2, y + h + 1.2))
+        return cx, y, best is not None
+
+
+class Chart:
+    """Candles of cs[a .. b] in a box (several candles a bar when `max_bars` is smaller - the overview), the scales, and
+    marks / words / lines placed with a Placer."""
+
+    def __init__(self, cv, cs, a, b, box, levels=(), max_bars=0, intraday=False, pad=0.12, font=6.5):
+        self.cv, self.cs, self.a, self.b, self.intraday, self.font = cv, cs, a, b, intraday, font
+        self.x0, self.y0, self.x1, self.y1 = box
+        n = b - a + 1
+        self.m = m = 1 if not max_bars or n <= max_bars else -(-n // max_bars)
+        f2 = lambda v: round(float(v), 2)
+        bars = []
+        for s0 in range(a, b + 1, m):
+            s1 = min(b, s0 + m - 1)
+            bars.append((s0, s1, f2(cs.o[s0]), max(f2(cs.h[k]) for k in range(s0, s1 + 1)),
+                         min(f2(cs.l[k]) for k in range(s0, s1 + 1)), f2(cs.c[s1])))
+        self.bars = bars
+        self.slot = (self.x1 - self.x0) / float(len(bars))
+        vals = [x for x in [r[3] for r in bars] + [r[4] for r in bars] + [v for v in levels if v is not None] if x == x]
+        lo, hi = min(vals), max(vals)
+        sp = (hi - lo) or hi * 0.04 or 1
+        self.lo, self.hi = lo - sp * pad, hi + sp * pad
+        bw = max(0.6, self.slot * 0.62)
+        self.bw = bw
+        spans = []
+        for r in bars:
+            spans.append((self.Y(r[4]) - 1.5, self.Y(r[3]) + 1.5))
+        self.place = Placer(box, (self.x0, self.slot, spans))
+        self.words = []                      # (text, x0, x1, y0, y1, placed free)
+        if WATCH is not None:
+            WATCH.append(self)
+
+    def X(self, k):
+        k = min(max(k, self.a), self.b)
+        return self.x0 + ((k - self.a) // self.m + 0.5) * self.slot
+
+    def Y(self, p):
+        return self.y0 + (p - self.lo) / (self.hi - self.lo) * (self.y1 - self.y0)
+
+    def inside(self, k):
+        return self.a <= k <= self.b
+
+    def frame(self, dates=9):
+        cv = self.cv
+        cv.rect(self.x0, self.y0, self.x1 - self.x0, self.y1 - self.y0, fill=(1, 1, 1), stroke=(0.85, 0.87, 0.9))
+        step = _nice_step(self.hi - self.lo, 8 if self.y1 - self.y0 > 300 else 5)
+        p = (int(self.lo / step) + 1) * step
+        while p < self.hi:
+            cv.line(self.x0, self.Y(p), self.x1, self.Y(p), GRID, 0.4)
+            cv.text(self.x0 - 4, self.Y(p) - 2.5, money(p) if step < 1 else money(p)[:-3], self.font, AXIS, align='right')
+            p += step
+        nb = len(self.bars)
+        every = max(1, int(round(nb / float(dates))))
+        for j in range(0, nb, every):
+            k = self.bars[j][0]
+            x = self.x0 + (j + 0.5) * self.slot
+            cv.line(x, self.y0, x, self.y0 - 3, AXIS, 0.4)
+            cv.text(x, self.y0 - 11, day_text(self.cs.day[k], self.cs.minute[k], self.intraday and self.m == 1,
+                                              year=not (self.intraday and self.m == 1)), self.font, AXIS, align='center')
+
+    def candles(self):
+        cv, bw = self.cv, self.bw
+        for j, (s0, s1, o, h, l, c) in enumerate(self.bars):
+            x = self.x0 + (j + 0.5) * self.slot
+            col = UP if c >= o else DOWN
+            cv.line(x, self.Y(l), x, self.Y(h), WICK if self.slot < 3 else col, 0.5)
+            top, bot = max(o, c), min(o, c)
+            cv.rect(x - bw / 2, self.Y(bot), bw, max(0.5, self.Y(top) - self.Y(bot)), fill=col)
+
+    def zone(self, k1, k2, zb, zt, fill):
+        xa = self.X(k1) - self.slot / 2
+        xb = self.X(k2) + self.slot / 2
+        self.cv.rect(xa, self.Y(zb), xb - xa, max(0.6, self.Y(zt) - self.Y(zb)), fill=fill, stroke=(0.62, 0.72, 0.9), width=0.5)
+
+    def hline(self, k1, k2, p, color, width=1.0, dash=None, half=True):
+        xa = self.X(k1) - (self.slot / 2 if half else 0)
+        xb = self.X(k2) + (self.slot / 2 if half else 0)
+        self.cv.line(xa, self.Y(p), xb, self.Y(p), color, width, dash)
+        self.place.block(xa, xb, self.Y(p) - 1.5, self.Y(p) + 1.5, soft=True)
+
+    def tri(self, k, p, up, color, size=3.2, off=4.0):
+        """A triangle under (up = pointing up) / over a price - returns the y next to it for a word."""
+        x, y = self.X(k), self.Y(p) + (-off if up else off)
+        self.cv.tri(x, y, size, up, color)
+        ya, yb = (y - size, y) if up else (y, y + size)
+        self.place.block(x - size * 0.7, x + size * 0.7, min(ya, yb) - 0.5, max(ya, yb) + 0.5)
+        return y - size if up else y + size
+
+    def word(self, k, ay, text, color, up=True, size=None, bold=True, gap=2.5, leader=True):
+        """A word next to the point (X(k), ay) - moved off the candles; a thin line back to the point when moved away."""
+        size = size or self.font
+        w = text_width(text, size) * (1.06 if bold else 1.0)
+        h = size * 0.95
+        ax = self.X(k)
+        cx, y, free = self.place.place(ax, ay, w, h, up, gap)
+        self.words.append((text, cx - w / 2.0, cx + w / 2.0, y, y + h, free))
+        far = (y - (ay + gap)) if up else ((ay - gap - h) - y)
+        if leader and (far > 4 or abs(cx - ax) > w / 2.0 + 2):
+            ty = y if y > ay else y + h
+            tx = min(max(ax, cx - w / 2.0), cx + w / 2.0)
+            self.cv.line(ax, ay, tx, ty, color, 0.35, dash=(1, 1))
+        self.cv.text(cx, y + size * 0.2, text, size, color, bold=bold, align='center')
+        return cx, y
+
+
+# ------------------------------------------------------------------ the swings as the structure saw them
+def swing_seq(s, upto=None):
+    """The alternating swings structure.choch_events works on (a second high before a low keeps the higher one, a second
+    low the lower one), known by candle `upto` (None = all): [[candle, price, is_high, known on], ...]."""
+    if s is None:
+        return []
+    both = set(s.ph) & set(s.pl)
+    items = sorted([(c, p, True, v) for p, c, v in zip(s.ph, s.phc, s.phv) if p not in both] +
+                   [(c, p, False, v) for p, c, v in zip(s.pl, s.plc, s.plv) if p not in both])
+    sw = []
+    for c, p, is_h, v in items:
+        if upto is not None and c > upto:
+            break
+        if sw and sw[-1][2] == is_h:
+            if (is_h and v > sw[-1][1]) or (not is_h and v < sw[-1][1]):
+                sw[-1] = [p, v, is_h, c]
+        else:
+            sw.append([p, v, is_h, c])
+    return sw
+
+
+def swing_tags(sw, tol=None):
+    """Each swing against the one before of its kind: 'HH' / 'LH' (highs), 'HL' / 'LL' (lows), 'EQH' / 'EQL' within the
+    run's equal-highs tolerance (`tol(candle)` -> price); the first high / low of the list: 'H' / 'L'."""
+    out = []
+    for k, (p, v, is_h, c) in enumerate(sw):
+        prev = sw[k - 2][1] if k >= 2 else None
+        t = tol(p) if tol else 0.0
+        if prev is None:
+            out.append('H' if is_h else 'L')
+        elif v > prev + t:
+            out.append('HH' if is_h else 'HL')
+        elif v < prev - t:
+            out.append('LH' if is_h else 'LL')
+        else:
+            out.append('EQH' if is_h else 'EQL')
+    return out
+
+
+def context(t, cs, s, P, extra=None):
+    """What both pages of a trade need: the CHoCH, the swings it counted, the BOS, the move high, the Fib line."""
+    extra = extra or {}
+    f2 = lambda v: round(float(v), 2)
+    c = {'ev': None, 'highs': [], 'lows': [], 'seq': extra.get('seq') or [], 'atr': extra.get('atr')}
+    k = t.get('k', -1)
+    i = t['i']
+    if s is None or k is None or k < 0 or k >= len(s.events):
+        return c
+    ev = s.events[k]
+    b, hi_c, lvl, li, lf, d = ev
+    c['ev'] = ev
+    sb = swing_seq(s, upto=b)
+    q = next((x for x in range(len(sb) - 1, -1, -1) if sb[x][2] and sb[x][0] == hi_c), None)
+    if q is not None and q - 2 * d >= 0:
+        c['highs'] = [sb[x] for x in range(q - 2 * d, q + 1, 2)]
+    if q is not None and q - 1 - 2 * (d - 1) >= 0:
+        c['lows'] = [sb[x] for x in range(q - 1 - 2 * (d - 1), q, 2)]
+    # the BOS (any time after the CHoCH) and the BOS level known at the signal
+    bos = s.bos_before(k, cs.c, cs.n)
+    c['bos'] = bos
+    c['bosPeak'] = s.st[k][3] if k in s.st else None
+    peak_i = None
+    for p_, v_, kc in zip(s.ph, s.phv, s.phc):
+        if p_ > b and kc <= i - 1 and (peak_i is None or v_ > peak_i):
+            peak_i = v_
+    c['peakAtSignal'] = peak_i
+    c['dead'] = s.dead_by(k, cs.c, cs.n - 1)
+    H = t.get('H')
+    if H is None and li < i:
+        H = max(f2(cs.h[x]) for x in range(li, i))
+    c['H'] = H
+    c['mh'] = None
+    if H is not None and li < i:
+        c['mh'] = max(range(li, i), key=lambda x: (f2(cs.h[x]), -x))
+    fib = P.get('discount') or 0
+    c['fib'] = fib
+    c['fibLine'] = H - fib * (H - lf) if (H is not None and fib) else None
+    c['half'] = H - 0.5 * (H - lf) if H is not None else None
+    return c
+
+
+EXIT_WORD = {'stop': 'STOP HIT', 'target': 'TARGET', 'be': 'BREAKEVEN', 'trail': 'TRAIL EXIT', 'ema': 'EMA EXIT', 'time': 'TIME EXIT',
+             'open': 'STILL OPEN'}
+TAG_COL = {'HH': (0.10, 0.55, 0.30), 'HL': (0.10, 0.55, 0.30), 'LH': (0.80, 0.22, 0.22), 'LL': (0.80, 0.22, 0.22),
+           'EQH': MUTED, 'EQL': MUTED, 'H': MUTED, 'L': MUTED}
+
+
+def window(t, cs, s, cx=None):
+    """The candles a trade's chart shows: from before the counted lower highs / the CHoCH's swing high / the zone (else 60
+    candles before the signal) to 15 candles after the exit, at most MAX_WINDOW."""
     i, jx = t['i'], t.get('jx', t['i'])
     start = i - 60
     zf = t.get('zf')
     if zf is not None and zf >= 0:
         start = min(start, zf - 8)
-    if s is not None and t.get('k', -1) >= 0:
+    if s is not None and t.get('k', -1) is not None and t.get('k', -1) >= 0:
         b, hi, lvl, li, lf, d = s.events[t['k']]
         start = min(start, hi - 15)
+    if cx and cx.get('highs'):
+        start = min(start, cx['highs'][0][0] - 5)
     end = min(cs.n - 1, max(jx, i) + 15)
     start = max(0, start, end - MAX_WINDOW + 1)
     return start, end
 
 
-def trade_page(pdf, key, t, cs, s, P, page_no, pages, run_name, piv, emas=None):
-    """Draws one trade (a backtest_lab trade dict + its chart extras) on a new page."""
+def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
+    """Page 1 of a trade: its chart - every swing tagged HH / HL / LH / LL, the CHoCH, the final low, the move high, the
+    BOS, the zone, BUY and the exit, each word off the candles; the levels in the right-hand column."""
     cv = Canvas()
     tf = P.get('tf', 'D')
     intraday = tf == '4H'
-    start, end = window(t, cs, s)
-    n = end - start + 1
-    x0, x1, y0, y1 = 46.0, PAGE_W - 128.0, 52.0, PAGE_H - 92.0
-    slot = (x1 - x0) / float(n)
-
-    def X(k):
-        return x0 + (k - start + 0.5) * slot
+    start, end = window(t, cs, s, cx)
+    i, jx = t['i'], min(end, t.get('jx', t['i']))
     f2 = lambda v: round(float(v), 2)
-    lows = [f2(cs.l[k]) for k in range(start, end + 1)]
-    highs = [f2(cs.h[k]) for k in range(start, end + 1)]
-    levels = [t['entry'], t['stop'], t.get('tgt')]
-    ev = s.events[t['k']] if s is not None and t.get('k', -1) >= 0 else None
+    ev = cx['ev']
     zb, zt, zf = t.get('zb'), t.get('zt'), t.get('zf')
-    if zb is not None:
-        levels += [zb, zt]
+    levels = [t['entry'], t['stop'], t.get('tgt'), zb, zt]
     if ev:
         levels += [ev[2], ev[4]]
-    fib = P.get('discount') or 0
-    fib_line = None
-    if ev and t.get('H') is not None and fib:
-        fib_line = t['H'] - fib * (t['H'] - ev[4])
-        levels.append(fib_line)
-    lo = min([x for x in lows + levels if x is not None])
-    hi = max([x for x in highs + levels if x is not None])
-    pad = (hi - lo) * 0.05 or hi * 0.02 or 1
-    lo, hi = lo - pad, hi + pad
-
-    def Y(p):
-        return y0 + (p - lo) / (hi - lo) * (y1 - y0)
-
-    # frame, grid, price axis
-    cv.rect(x0, y0, x1 - x0, y1 - y0, fill=(1, 1, 1), stroke=(0.85, 0.87, 0.9))
-    step = _nice_step(hi - lo, 8)
-    p = (int(lo / step) + 1) * step
-    while p < hi:
-        cv.line(x0, Y(p), x1, Y(p), GRID, 0.4)
-        cv.text(x0 - 4, Y(p) - 2.5, money(p) if step < 1 else money(p)[:-3], 6.5, AXIS, align='right')
-        p += step
-    # date axis
-    every = max(1, int(round(n / 9.0)))
-    for k in range(start, end + 1, every):
-        cv.line(X(k), y0, X(k), y0 - 3, AXIS, 0.4)
-        cv.text(X(k), y0 - 12, day_text(cs.day[k], cs.minute[k], intraday, year=not intraday), 6.5, AXIS, align='center')
-    # the zone (from its first candle to the exit)
+    if cx.get('fibLine') is not None:
+        levels.append(cx['fibLine'])
+    x0, x1, y0, y1 = 46.0, PAGE_W - 128.0, 40.0, PAGE_H - 96.0
+    ch = Chart(cv, cs, start, end, (x0, y0, x1, y1), levels, intraday=intraday)
+    ch.frame()
+    gap_zone = t.get('code') in ('G', 'Y')
+    za = None
     if zb is not None and zt is not None and zf is not None and zf >= 0:
-        za = max(start, zf - (1 if t['code'] in ('G', 'Y') else 2))
-        zx2 = X(min(end, t.get('jx', t['i']))) + slot / 2
-        cv.rect(X(za) - slot / 2, Y(zb), zx2 - (X(za) - slot / 2), max(0.6, Y(zt) - Y(zb)),
-                fill=ZONE_GAP if t['code'] in ('G', 'Y') else ZONE_FVG, stroke=(0.62, 0.72, 0.9), width=0.5)
-    # EMAs (when the run used EMA rules)
+        za = max(start, zf - (1 if gap_zone else 2))
+        ch.zone(za, max(za, jx), zb, zt, ZONE_GAP if gap_zone else ZONE_FVG)
     for ln, series in sorted((emas or {}).items()):
-        cv.polyline([(X(k), Y(series[k])) for k in range(start, end + 1) if lo < series[k] < hi], EMA_COL.get(ln, MUTED), 0.6)
-    # candles
-    bw = max(0.6, slot * 0.62)
-    for k in range(start, end + 1):
-        o, h, l, c = f2(cs.o[k]), f2(cs.h[k]), f2(cs.l[k]), f2(cs.c[k])
-        col = UP if c >= o else DOWN
-        cv.line(X(k), Y(l), X(k), Y(h), WICK if slot < 3 else col, 0.5)
-        top, bot = max(o, c), min(o, c)
-        cv.rect(X(k) - bw / 2, Y(bot), bw, max(0.5, Y(top) - Y(bot)), fill=col)
-    # swings (the pivots of the run's swing size; known only n candles after them)
-    for k in piv[0]:
-        if start <= k <= end:
-            cv.tri(X(k), Y(f2(cs.h[k])) + 4, 3.2, False, SWING)
-    for k in piv[1]:
-        if start <= k <= end:
-            cv.tri(X(k), Y(f2(cs.l[k])) - 4, 3.2, True, SWING)
-    right = []                                # level labels in the right-hand column
-    # market structure: the CHoCH level, its candle, the final low, the BOS, the Fib line
+        cv.polyline([(ch.X(k), ch.Y(series[k])) for k in range(start, end + 1) if ch.lo < series[k] < ch.hi], EMA_COL.get(ln, MUTED), 0.6)
+    ch.candles()
+    right = []
+    # lines first (words keep clear of them when there is room)
     if ev:
         b, hi_c, lvl, li, lf, d = ev
         if b >= start:
-            cv.line(X(max(start, hi_c)), Y(lvl), X(b), Y(lvl), CHOCH, 1.0, dash=(4, 2))
-            cv.text(X(b), Y(f2(cs.h[b])) + 7, 'CHoCH (%d)' % d, 7, CHOCH, bold=True, align='center')
-        right.append((Y(lvl), 'CHoCH %s' % money(lvl), CHOCH))
-        if li >= start:
-            cv.text(X(li), Y(lf) - 16, 'final low', 6.5, CHOCH, align='center')
-        st = s.st.get(t['k'])
-        if st and st[5] >= 0 and start <= st[5] <= end and st[3] is not None:
-            peak = st[3]
-            cv.line(X(max(start, st[5] - 12)), Y(peak), X(st[5]), Y(peak), BOS, 0.8)
-            cv.text(X(st[5]), Y(peak) + 4, 'BOS', 7, BOS, bold=True, align='center')
-        if fib_line is not None:
-            cv.line(X(max(start, li)), Y(fib_line), X(t['i']), Y(fib_line), FIB, 0.9, dash=(1.5, 1.5))
-            right.append((Y(fib_line), '%g%% %s' % (fib * 100, money(fib_line)), FIB))
-    # the trade: entry / stop / target from the signal to the exit, the entry and exit marks
-    i, jx = t['i'], min(end, t.get('jx', t['i']))
-    xa, xb = X(i) - slot / 2, X(jx) + slot / 2
-    cv.line(xa, Y(t['entry']), xb, Y(t['entry']), ENTRY, 1.1)
-    cv.line(xa, Y(t['stop']), xb, Y(t['stop']), STOP, 1.1)
+            ch.hline(max(start, hi_c), b, lvl, CHOCH, 1.0, dash=(4, 2))
+        right.append((ch.Y(lvl), 'CHoCH %s' % money(lvl), CHOCH))
+        if cx.get('bos', -1) >= 0 and start <= cx['bos'] <= end and cx.get('bosPeak') is not None:
+            ch.hline(max(start, cx['bos'] - 12), cx['bos'], cx['bosPeak'], BOS, 0.8)
+        if cx.get('fibLine') is not None:
+            ch.hline(max(start, li), i, cx['fibLine'], FIB, 0.9, dash=(1.5, 1.5))
+            right.append((ch.Y(cx['fibLine']), '%g%% %s' % (cx['fib'] * 100, money(cx['fibLine'])), FIB))
+    ch.hline(i, jx, t['entry'], ENTRY, 1.1)
+    ch.hline(i, jx, t['stop'], STOP, 1.1)
     if t.get('tgt') is not None:
-        cv.line(xa, Y(t['tgt']), xb, Y(t['tgt']), TARGET, 1.1, dash=(4, 2))
-        right.append((Y(t['tgt']), 'Target %s' % money(t['tgt']), TARGET))
-    right.append((Y(t['entry']), 'Entry %s' % money(t['entry']), ENTRY))
-    right.append((Y(t['stop']), 'Stop %s' % money(t['stop']), STOP))
+        ch.hline(i, jx, t['tgt'], TARGET, 1.1, dash=(4, 2))
+        right.append((ch.Y(t['tgt']), 'Target %s' % money(t['tgt']), TARGET))
+    right.append((ch.Y(t['entry']), 'Entry %s' % money(t['entry']), ENTRY))
+    right.append((ch.Y(t['stop']), 'Stop %s' % money(t['stop']), STOP))
     if zb is not None:
-        right.append((Y(zt), 'Zone top %s' % money(zt), (0.35, 0.45, 0.7)))
-        right.append((Y(zb), 'Zone bottom %s' % money(zb), (0.35, 0.45, 0.7)))
-    cv.tri(X(i), Y(f2(cs.l[i])) - 12, 4.5, True, ENTRY)
-    cv.text(X(i), Y(f2(cs.l[i])) - 21, 'BUY', 7, ENTRY, bold=True, align='center')
+        right.append((ch.Y(zt), 'Zone top %s' % money(zt), (0.35, 0.45, 0.7)))
+        right.append((ch.Y(zb), 'Zone bottom %s' % money(zb), (0.35, 0.45, 0.7)))
+    # the trade's own marks first (they matter most), then the structure words
+    ya = ch.tri(i, f2(cs.l[i]), True, ENTRY, 4.2, 3.0)
+    ch.word(i, ya, 'BUY', ENTRY, up=False, size=7.5)
     ex = t['exit']
-    won = t['R'] > 0
-    ecol = TARGET if won else STOP if t['R'] < 0 else MUTED
-    cv.line(X(jx) - 3, Y(ex) - 3, X(jx) + 3, Y(ex) + 3, ecol, 1.4)
-    cv.line(X(jx) - 3, Y(ex) + 3, X(jx) + 3, Y(ex) - 3, ecol, 1.4)
-    right.append((Y(ex), 'Exit %s' % money(ex), ecol))
+    ecol = TARGET if t['R'] > 0 else STOP if t['R'] < 0 else MUTED
+    xx, yx = ch.X(jx), ch.Y(ex)
+    cv.line(xx - 3, yx - 3, xx + 3, yx + 3, ecol, 1.4)
+    cv.line(xx - 3, yx + 3, xx + 3, yx - 3, ecol, 1.4)
+    ch.place.block(xx - 3.5, xx + 3.5, yx - 3.5, yx + 3.5)
+    right.append((yx, 'Exit %s' % money(ex), ecol))
+    ch.word(jx, yx + (3 if t['R'] > 0 else -3), EXIT_WORD.get(t['reason'], t['reason'].upper()), ecol, up=t['R'] > 0, size=7)
+    if za is not None:
+        name = 'Gap-up zone' + (' (inside FVG)' if t.get('inside') else '') if gap_zone else 'FVG zone'
+        ch.word(za, ch.Y(zt), name, (0.30, 0.42, 0.75), up=True, size=7)
+    # swings: a triangle + HH / HL / LH / LL (the final low and the move high named too)
+    seq = cx.get('seq') or []
+    atr = cx.get('atr')
+    eq = P.get('eqAtr') or 0
+    tags = swing_tags(seq, (lambda p: eq * atr[p]) if eq and atr else None)
+    li = ev[3] if ev else None
+    mh = cx.get('mh')
+    for (p, v, is_h, kc), tag in zip(seq, tags):
+        if not start <= p <= end:
+            continue
+        name = tag
+        if not is_h and li is not None and p == li:
+            name += ' - final low'
+        if is_h and mh is not None and p == mh:
+            name += ' - move high'
+        col = TAG_COL.get(tag, MUTED)
+        if is_h:
+            yy = ch.tri(p, v, False, SWING)
+            ch.word(p, yy, name, col, up=True, size=6.5)
+        else:
+            yy = ch.tri(p, v, True, SWING)
+            ch.word(p, yy, name, col, up=False, size=6.5)
+    seq_lows = set(p for p, v, h_, kc in seq if not h_)
+    seq_highs = set(p for p, v, h_, kc in seq if h_)
+    if ev:
+        b, hi_c, lvl, li, lf, d = ev
+        if b >= start:
+            ch.word(b, ch.Y(f2(cs.h[b])) + 1.5, 'CHoCH', CHOCH, up=True, size=7.5)
+        if start <= li <= end and li not in seq_lows:
+            ch.word(li, ch.Y(lf) - 1.5, 'final low', CHOCH, up=False, size=6.5)
+        if mh is not None and start <= mh <= end and mh not in seq_highs:
+            ch.word(mh, ch.Y(f2(cs.h[mh])) + 1.5, 'move high', MUTED, up=True, size=6.5)
+        if cx.get('bos', -1) >= 0 and start <= cx['bos'] <= end and cx.get('bosPeak') is not None:
+            ch.word(cx['bos'], ch.Y(cx['bosPeak']) + 1.5, 'BOS', BOS, up=True, size=7.5)
+        if b < start:
+            cv.text(x0, y1 + 5, 'The CHoCH (%s) is before this chart - it came %s before this trade (page 2 tells the story).' % (
+                day_text(cs.day[b], cs.minute[b], intraday), _span(cs.day[t['i']] - cs.day[b])), 7, CHOCH, bold=True)
     for y, txt, col in _labels_apart(right, y0 + 2, y1 - 6):
         cv.text(x1 + 6, y - 2.5, txt, 7, col, bold=True)
     # header + footer
@@ -333,10 +592,11 @@ def trade_page(pdf, key, t, cs, s, P, page_no, pages, run_name, piv, emas=None):
     cv.text(x0, PAGE_H - 34, '%s  -  %s  -  signal %s' % (t['sym'], TF_NAME.get(tf, tf), day_text(cs.day[i], cs.minute[i], intraday)),
             14, INK, bold=True)
     cv.text(PAGE_W - 30, PAGE_H - 34, '%s   %s' % (r_txt, reason), 14, ecol, bold=True, align='right')
+    jx_full = t.get('jx', t['i'])
     line2 = '%s - entry %s - stop %s (risk %.2f%%) - target %s - exit %s on %s after %d day%s - best %.2fR - %s' % (
         ZONE_NAME.get(t['code'], t['code']) + (' (%s)' % WHERE.get(t.get('where'), '') if t.get('where') in WHERE else ''),
         money(t['entry']), money(t['stop']), t['riskPct'], money(t['tgt']) if t.get('tgt') is not None else '-', money(ex),
-        day_text(cs.day[jx], cs.minute[jx], intraday), t['days'], '' if t['days'] == 1 else 's', t['maxR'],
+        day_text(cs.day[jx_full], cs.minute[jx_full], intraday), t['days'], '' if t['days'] == 1 else 's', t['maxR'],
         'in the account' if t.get('taken') else 'not taken by the account')
     cv.text(x0, PAGE_H - 52, line2, 8, MUTED)
     if t.get('struct'):
@@ -346,11 +606,329 @@ def trade_page(pdf, key, t, cs, s, P, page_no, pages, run_name, piv, emas=None):
     if emas:
         lx = x1 - 4
         for ln in sorted(emas, reverse=True):
-            cv.text(lx, y1 - 10, '%d EMA' % ln, 6.5, EMA_COL.get(ln, MUTED), align='right')
+            cv.text(lx, y1 + 5, '%d EMA' % ln, 6.5, EMA_COL.get(ln, MUTED), align='right')
             lx -= 34
-    cv.text(x0, 22, 'Stock Blueprint Backtest Lab - %s - losing trades first, then the rest, newest first' % run_name[:60], 6.5, AXIS)
-    cv.text(PAGE_W - 30, 22, 'page %d of %d' % (page_no, pages), 6.5, AXIS, align='right')
+    cv.text(x0, 18, 'Stock Blueprint Backtest Lab - %s - page 1 of 2 of this trade: the chart (next page: why this trade, how it ended)' % run_name[:60],
+            6.5, AXIS)
+    cv.text(PAGE_W - 30, 18, 'page %d of %d' % (page_no, pages), 6.5, AXIS, align='right')
     pdf.page(cv, key)
+
+
+# ------------------------------------------------------------------ page 2: why this trade, how it ended
+def _wrap(s, width, size, bold=False):
+    out, line = [], ''
+    k = 1.06 if bold else 1.0
+    for word in str(s).split(' '):
+        cand = (line + ' ' + word) if line else word
+        if line and text_width(cand, size) * k > width:
+            out.append(line)
+            line = word
+        else:
+            line = cand
+    if line:
+        out.append(line)
+    return out
+
+
+def _check(cv, x, y, color):
+    cv.line(x, y + 3, x + 2.2, y + 0.6, color, 1.3)
+    cv.line(x + 2.2, y + 0.6, x + 6, y + 6, color, 1.3)
+
+
+def _cross(cv, x, y, color):
+    cv.line(x, y, x + 5.5, y + 5.5, color, 1.3)
+    cv.line(x, y + 5.5, x + 5.5, y, color, 1.3)
+
+
+def _list(words):
+    words = [w for w in words if w]
+    if len(words) < 2:
+        return ''.join(words)
+    return ', '.join(words[:-1]) + ' and ' + words[-1]
+
+
+def _span(days):
+    if days >= 730:
+        return 'about %d years' % round(days / 365.25)
+    if days >= 365:
+        return 'more than a year'
+    if days >= 60:
+        return 'about %d months' % round(days / 30.44)
+    if days >= 14:
+        return 'about %d weeks' % round(days / 7.0)
+    return '%d day%s' % (days, '' if days == 1 else 's')
+
+
+def _times(x):
+    """1.0 -> 'one time', 2 -> '2 times', 1.5 -> '1.5 times'."""
+    return 'one time' if abs(x - 1) < 1e-9 else '%g times' % x
+
+
+def why_story(t, cs, s, P, cx):
+    """Why the backtest took this trade, in plain sentences (owner, 12-Nov-2026: "why this trade should not numericals and
+    with chart. it should be readable format like in sentences") -> [paragraph, ...] in the order a trader reads the chart."""
+    tf = P.get('tf', 'D')
+    intraday = tf == '4H'
+    dt = lambda k: day_text(cs.day[k], cs.minute[k], intraday)
+    i = t['i']
+    out = []
+    ev = cx.get('ev')
+    only = P.get('structure') == 'only'
+    zb, zt, zf = t.get('zb'), t.get('zt'), t.get('zf')
+    gap = t.get('code') in ('G', 'Y')
+    zone_name = ('a gap-up zone (the price jumped up and left a gap between two candles%s)' % (
+        ', in the middle of two big green candles - an "inside FVG"' if t.get('inside') else '')) if gap else \
+        'an FVG zone (a fair value gap: the price moved up so fast that it skipped this price area)'
+    has_zone = zb is not None and zt is not None and zf is not None and zf >= 0
+    if ev:
+        b, hi_c, lvl, li, lf, d = ev
+        lh = '%d lower high%s and %d lower low%s' % (d, '' if d == 1 else 's', d, '' if d == 1 else 's')
+        out.append('The stock was falling. It made %s in a row - every bounce stopped lower than the one before, and every fall '
+                   'went lower. The fall ended at the final low on %s.%s' % (lh, dt(li), (' Your setup asks for at least %d.' % P.get('downN', 1)) if only else ''))
+        prot = P.get('chochMode') == 'protected'
+        out.append('Then the trend changed. On %s the price closed above %s. This is the CHoCH (change of character): the first sign '
+                   'that the fall is over and buyers are taking control.' % (dt(b), 'the protected high (the high that started the last '
+                                                                             'fall to the lowest low)' if prot else 'the last swing high'))
+        if has_zone:
+            when = 'In the rise that followed' if zf > b + 1 else 'In the same rise that made the CHoCH'
+            out.append('%s, the price left %s. It formed on %s, after the final low - so it belongs to the new up-move.' % (when, zone_name, dt(zf)))
+        mh = cx.get('mh')
+        if cx.get('H') is not None and mh is not None:
+            dep = t.get('depth')
+            fib = cx.get('fib') or 0
+            txt = 'The rise went up to its high on %s.' % dt(mh)
+            if dep is not None:
+                part = {'mid': 'middle', 'top': 'top', 'bottom': 'bottom'}.get(P.get('discPart'), 'middle')
+                where = 'the cheaper lower part' if dep >= 0.5 else 'the upper part'
+                txt += ' The zone sat in %s of that rise - its %s about %d%% of the way down from the high.' % (where, part, round(dep * 100))
+                if fib and only:
+                    txt += ' Your setup buys only when it is at least %g%% down (the discount part), where the risk is smaller.' % (fib * 100)
+            out.append(txt)
+    else:
+        out.append('Market structure was not part of this run, and there was no live CHoCH before this signal.' if not only else
+                   'The market structure rules of this run were met.')
+        if has_zone:
+            out.append('Before the signal the price left %s on %s.' % (zone_name, dt(zf)))
+    code = t.get('code')
+    if code in ('Z', 'Y', 'T'):
+        txt = 'On %s the price came back down to the zone for the first time since it formed.' % dt(i)
+    elif code == 'C':
+        txt = 'On %s the price came back to the zone for the first time and the candle closed back up (a confirmed first touch).' % dt(i)
+    elif code in ('S', 'F', 'G'):
+        txt = ('On %s a Spring candle formed%s: the price dipped below the red candle before it and closed back above its low - '
+               'sellers pushed down, buyers pushed back.' % (dt(i), ' on the zone' if has_zone else ''))
+    else:
+        txt = 'The signal came on %s.' % dt(i)
+    if ev:
+        bos = cx.get('bos', -1)
+        if 0 <= bos < i:
+            txt += ' A new higher high (BOS) had already come on %s, so it was not the first pullback - this run allowed that.' % dt(bos)
+        else:
+            txt += ' No new higher high (BOS) had come yet, so this was the first pullback after the CHoCH - the moment your setup waits for.'
+    out.append(txt)
+    if ev:
+        b = ev[0]
+        lag = cs.day[i] - cs.day[b]
+        txt = 'The CHoCH was %s before this trade.' % _span(lag)
+        if lag > 365 and not P.get('chochAge'):
+            txt += (' That is an old CHoCH - a lot can change in that time. The rule "The signal at most N candles after the CHoCH" '
+                    '(More rules > Market structure) would leave such trades out.')
+        out.append(txt)
+    extra = []
+    if t.get('ema'):
+        extra.append('the EMA rule (%s)' % t['ema'])
+    if P.get('mktIndex') and (P.get('mktAbove') or P.get('mktStack')):
+        extra.append('%s was %s' % (str(P['mktIndex']).replace('_', ' '), ('above its %s EMA' % P['mktAbove']) if P.get('mktAbove') else 'in an up-trend (EMAs 10 > 21 > 50)'))
+    if P.get('wkAbove'):
+        extra.append("the stock's weekly trend was up (above its %s-week EMA)" % P['wkAbove'])
+    if P.get('minTurnover'):
+        extra.append('the stock trades enough every day')
+    if P.get('minPrice'):
+        extra.append('the price was not too low')
+    if extra:
+        out.append('It also passed your other rules: %s.' % _list(extra))
+    # the plan
+    ent = {'zone': 'with an order waiting at the zone top', 'close': 'at the close of that candle',
+           'next_open': "at the next candle's open"}.get(P.get('entry'), '')
+    mode = P.get('stop')
+    if P.get('entry') == 'zone' and mode in ('spring', 'lower'):
+        mode = 'zone'
+    stop = {'zone': 'just under the zone bottom', 'spring': "just under that candle's low", 'lower': 'under the lower of the zone bottom and the candle low',
+            'pct': '%g%% under the buy price' % P.get('stopPct', 0)}.get(mode, '')
+    tgt = 'at the last swing high above' if P.get('targetMode') == 'swing' else 'at %s the risk (%gR)' % (_times(P.get('targetR', 2)), P.get('targetR', 2))
+    txt = 'The plan: buy %s, put the stop loss %s, and take the target %s.' % (ent, stop, tgt)
+    if P.get('after') != 'fixed':
+        trail = {'lows': 'under the lowest low of the last %s candles' % P.get('trailN'), 'pct': '%g%% under the highest price' % P.get('trailPct', 0),
+                 'ema': 'until a close under the %s EMA' % P.get('emaN'), 'atr': '%s x ATR under the highest price' % P.get('atrK'),
+                 'swing': 'under each new swing low'}.get(P.get('trail'))
+        if trail:
+            txt += ' After the target the trade stays open%s and the stop follows the price %s.' % (', the stop moves to the buy price' if P.get('breakeven') else '', trail)
+    out.append(txt)
+    return out
+
+
+def end_story(t, cs, s, P, cx):
+    """How the trade ended, in plain sentences -> (headline, [sentence, ...], won). For a stop loss: what happened around it."""
+    tf = P.get('tf', 'D')
+    intraday = tf == '4H'
+    dt = lambda k: day_text(cs.day[k], cs.minute[k], intraday)
+    f2 = lambda v: round(float(v), 2)
+    i, jx, n = t['i'], t.get('jx', t['i']), cs.n
+    why, R = t['reason'], t['R']
+    days = '%d day%s' % (t['days'], '' if t['days'] == 1 else 's')
+    res = ('a loss of about %gR' % round(abs(R), 1)) if R < -0.05 else ('a profit of about %gR' % round(R, 1)) if R > 0.05 else 'about no profit or loss'
+    hit_k = None
+    if t.get('tgt') is not None:
+        for j in range(i, jx + 1):
+            if f2(cs.h[j]) >= t['tgt'] - 1e-9 and (j > i or P.get('entry') == 'zone'):
+                hit_k = j
+                break
+    lines = []
+    if why == 'stop':
+        head = 'The stop loss was hit on %s, %s after buying - %s.' % (dt(jx), days, res)
+        if jx > i and f2(cs.o[jx]) < t['stop'] - 1e-9:
+            lines.append('The price opened below the stop (a gap down), so it was sold at the open, a little below the stop.')
+        if t.get('hit'):
+            lines.append('It had reached the target first; the trade was kept open, but the stop that followed was still below the buy price when the price turned.')
+        else:
+            m = t['maxR']
+            lines.append('It did not go up at all after buying.' if m < 0.1 else
+                         'It went up only a little (less than half of the risk) and then fell.' if m < 0.5 else
+                         'It went up, but not even one time the risk, and then fell.' if m < 1 else
+                         'It first went up about %.1f times the risk, but did not reach the target, and then turned down.' % m)
+        if f2(cs.c[jx]) >= t['stop']:
+            lines.append('Only the wick went below the stop - the same candle closed back above it. A short dip like this is often a shake-out.')
+        else:
+            lines.append('The candle closed below the stop - a real break, not just a wick.')
+        atr = cx.get('atr')
+        if atr and jx < len(atr) and atr[jx] > 0:
+            rng = (f2(cs.h[jx]) - f2(cs.l[jx])) / atr[jx]
+            vs = [float(x) for x in cs.v[max(0, jx - 20):jx] if x > 0] if hasattr(cs, 'v') else []
+            vol = float(cs.v[jx]) / (sum(vs) / len(vs)) if len(vs) >= 10 and cs.v[jx] > 0 else None
+            if rng >= 1.8:
+                lines.append('The fall came in one big candle - about %d times the usual candle size%s.' % (
+                    round(rng), (', with heavy volume (about %d times the usual)' % round(vol)) if vol and vol >= 1.5 else ''))
+            elif vol and vol >= 1.5:
+                lines.append('That day the volume was heavy - about %d times the usual.' % round(vol))
+            else:
+                lines.append('It was a normal-sized candle with normal volume - a slow slide, not a crash.')
+        zb = t.get('zb')
+        if zb is not None:
+            under = next((j for j in range(i, jx + 1) if f2(cs.c[j]) < zb), None)
+            lines.append(('The zone did not hold: the price closed below it on %s.' % dt(under)) if under is not None else
+                         'The price never closed below the zone before the stop.')
+        ev = cx.get('ev')
+        if ev:
+            dead = cx.get('dead', -1)
+            if 0 <= dead <= jx:
+                lines.append('The trend change failed: the price closed below the final low (where the new up-move started) on %s.' % dt(dead))
+            elif dead > jx:
+                lines.append('Later, on %s, the price also broke the final low - the new up-move failed.' % dt(dead))
+            else:
+                lines.append('The final low (where the new up-move started) was never broken afterwards.')
+        a, z = jx + 1, min(n - 1, jx + 30)
+        if a <= z and t.get('tgt') is not None:
+            tk = next((j for j in range(a, z + 1) if f2(cs.h[j]) >= t['tgt']), None)
+            if tk is not None:
+                lines.append('After the stop, the price turned up and reached the target on %s - the idea was right, but the stop came first.' % dt(tk))
+            else:
+                lines.append('After the stop, the price did not reach the target in the next %d candles.' % (z - a + 1))
+    elif why == 'target':
+        head = 'The target was reached on %s, %s after buying - %s.' % (dt(jx), days, res)
+        lines.append('The price went straight up to the target and the trade was closed there.')
+    elif why in ('trail', 'be'):
+        head = 'The trade was closed on %s, %s after buying - %s.' % (dt(jx), days, res)
+        if hit_k is not None:
+            lines.append('The price reached the target on %s. The trade was kept open and the stop followed the price up.' % dt(hit_k))
+        lines.append(('On %s the price fell back to the buy price, where the stop had moved, so the trade closed at about breakeven.' % dt(jx)) if why == 'be' else
+                     'On %s the price fell below that following stop, and the trade was closed.' % dt(jx))
+        if t['maxR'] >= 1:
+            lines.append('At its best the trade was about %.1f times the risk up.' % t['maxR'])
+    elif why == 'time':
+        head = 'The trade was closed on %s because of your time limit (%s days) - %s.' % (dt(jx), P.get('maxDays'), res)
+        lines.append('It reached neither the stop nor the target in that time.')
+    elif why == 'ema':
+        head = 'The trade was closed on %s when the price closed below the %s EMA - %s.' % (dt(jx), P.get('emaN'), res)
+    else:
+        head = 'The trade is still open.'
+        lines.append('So far it is %s.' % (('up about %.1f times the risk' % R) if R > 0.05 else ('down about %.1f times the risk' % abs(R)) if R < -0.05 else 'about where it was bought'))
+    return head, lines, R > 0
+
+
+def why_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx):
+    """Page 2 of a trade (owner, 12-Nov-2026: "2 slide for why you took this trade. reason for hitting stoploss"; then "why
+    this trade should not numericals and with chart. it should be readable format like in sentences"): the story of the
+    setup and of how the trade ended in plain sentences - the prices are on page 1."""
+    cv = Canvas()
+    tf = P.get('tf', 'D')
+    intraday = tf == '4H'
+    i = t['i']
+    ecol = TARGET if t['R'] > 0 else STOP if t['R'] < 0 else MUTED
+    r_txt = '%+.2fR' % t['R'] if t['reason'] != 'open' else 'still open (%+.2fR now)' % t['R']
+    cv.text(40, PAGE_H - 36, '%s  -  %s  -  signal %s  -  why this trade' % (t['sym'], TF_NAME.get(tf, tf), day_text(cs.day[i], cs.minute[i], intraday)),
+            15, INK, bold=True)
+    cv.text(PAGE_W - 30, PAGE_H - 36, '%s   %s' % (r_txt, REASON.get(t['reason'], t['reason'])), 15, ecol, bold=True, align='right')
+    cv.line(40, PAGE_H - 50, PAGE_W - 30, PAGE_H - 50, (0.85, 0.87, 0.9), 0.6)
+    top, floor = PAGE_H - 78, 44.0
+    SIZE, LINE, BODY = 10.4, 14.4, (0.20, 0.22, 0.28)
+    cols = [[40.0, 425.0, top], [490.0, PAGE_W - 490.0 - 30.0, top]]
+
+    def para(col, text, mark=None, color=BODY, bold=False, size=SIZE):
+        """A paragraph in a column (after a number / bullet `mark`); False when it does not fit."""
+        x, w, y = col
+        ind = 18 if mark is not None else 0
+        lines = _wrap(text, w - ind, size, bold)
+        if y - len(lines) * LINE < floor and y < top - 20:
+            return False
+        if mark is not None:
+            if isinstance(mark, str):
+                cv.text(x, y, mark, size, ecol if mark == '-' else (0.35, 0.45, 0.7), bold=True)
+            else:
+                mark(cv, x + 2, y - 1, color)
+        for ln in lines:
+            cv.text(x + ind, y, ln, size, color, bold=bold)
+            y -= LINE
+        col[2] = y - 6
+        return True
+
+    def heading(col, text):
+        cv.text(col[0], col[2], text, 12.5, INK, bold=True)
+        col[2] -= 22
+    heading(cols[0], 'Why the backtest took this trade')
+    story = why_story(t, cs, s, P, cx)
+    rest = []
+    for k, txt in enumerate(story):
+        if not para(cols[0], txt, '%d.' % (k + 1)):
+            rest = list(enumerate(story))[k:]
+            break
+    head, lines, won = end_story(t, cs, s, P, cx)
+    heading(cols[1], 'How it ended')
+    para(cols[1], head, _check if won else _cross if t['R'] < 0 else None, ecol, bold=True)
+    for txt in lines:
+        para(cols[1], txt, '-')
+    if t.get('acct'):
+        cols[1][2] -= 6
+        heading(cols[1], 'In your account' if t.get('taken') else 'Not in your account')
+        acct = t['acct'].replace('\u20b9', 'Rs ').replace(' - ', '. ').strip()
+        para(cols[1], acct if acct.endswith('.') else acct + '.')
+    if rest:
+        cols[1][2] -= 6
+        heading(cols[1], 'Why it was taken (continued)')
+        for k, txt in rest:
+            if not para(cols[1], txt, '%d.' % (k + 1)):
+                break
+    cv.text(40, 18, 'Stock Blueprint Backtest Lab - %s - page 2 of 2 of this trade: why it was taken and how it ended (the prices are on page 1; '
+                    'facts from the candles, not advice)' % run_name[:60], 6.5, AXIS)
+    cv.text(PAGE_W - 30, 18, 'page %d of %d' % (page_no, pages), 6.5, AXIS, align='right')
+    pdf.page(cv, key)
+
+
+def trade_page(pdf, key, t, cs, s, P, page_no, pages, run_name, piv=None, emas=None, extra=None):
+    """A trade's two pages (owner, 12-Nov-2026: "Use 2 slides for each setup. one for chart. 2 slide for why you took this
+    trade. reason for hitting stoploss"): `key` / `page_no` = the first; the second follows."""
+    cx = context(t, cs, s, P, extra)
+    chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas)
+    why_page(pdf, tuple(key) + (1,), t, cs, s, P, page_no + 1, pages, run_name, cx)
 
 
 REASON = {'stop': 'Stop loss', 'target': 'Target', 'be': 'Breakeven', 'trail': 'Trailing stop', 'ema': 'Close under EMA',
@@ -371,7 +949,7 @@ def cover_page(pdf, run_name, P, res, shown, total, made):
     y -= 20
     cv.text(50, y, 'Made %s on your laptop from its Kite candles - %s chart - %s' % (made, TF_NAME.get(P.get('tf'), P.get('tf')),
                                                                                  res.get('groupName', '')), 9, MUTED)
-    y -= 30
+    y -= 26
     if s.get('trades'):
         cv.text(50, y, '%d trades finished: win %.1f%%, average %.2fR, total %.1fR%s' % (
             s['trades'], s.get('winPct', 0), s.get('avgR', 0), s.get('totalR', 0), (', %d still open' % res['open']) if res.get('open') else ''),
@@ -379,6 +957,9 @@ def cover_page(pdf, run_name, P, res, shown, total, made):
         y -= 18
     cv.text(50, y, 'This PDF: %d trade%s - the losing ones first (newest first), then the rest (newest first), then the open ones.%s' % (
         shown, '' if shown == 1 else 's', ' The first %d of %d.' % (shown, total) if shown < total else ''), 9, MUTED)
+    y -= 13
+    cv.text(50, y, 'Two pages a trade: 1 = the chart with the market structure, 2 = why it was taken, how it ended (the reason for a stop loss) and the whole move.',
+            9, MUTED)
     y -= 34
     cv.text(50, y, 'The rules of this run', 11, INK, bold=True)
     y -= 16
@@ -392,7 +973,7 @@ def cover_page(pdf, run_name, P, res, shown, total, made):
               (CHOCH, 'CHoCH level (dashed) from the swing high it broke to the CHoCH candle, (n) = lower highs / lows; final low'),
               (FIB, 'The Fib line of the move (your discount level), from the final low to the signal'),
               (BOS, 'BOS: a close above the highest swing high after the CHoCH'),
-              (SWING, 'Swing highs / lows (triangles) - known only N candles after them'),
+              (SWING, 'Swing highs / lows (triangles) - known only after them; HH / LH = higher / lower high, HL / LL = higher / lower low'),
               (ZONE_FVG, 'The FVG / Gap-up zone (light box), from its first candle to the exit; X = the exit')]
     for col, txt in legend:
         cv.rect(60, y - 1, 16, 7, fill=col)

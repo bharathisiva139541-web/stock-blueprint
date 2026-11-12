@@ -941,7 +941,10 @@ assert K.due(dict(kc6, choch_lower_highs=4), set(), state=dict(st6, choch=K.choc
 
 # ------------------------------------------------------------------ 14. the charts PDF (owner, 12-Nov-2026: "a PDF should come with
 # it - a chart for every trade, with the swings, CHoCH, FVG area, target and stop loss ... like the TradingView view";
-# choices: the laptop folder only, every trade, the losing ones first)
+# choices: the laptop folder only, every trade, the losing ones first). Then two pages a trade (owner, 12-Nov-2026: "show market
+# structure in the chart according to the setup like LL, LH, HL, HH, BoS, Choch, FVG Zone, buy. these words should not
+# overwrited on the candle and price movement. Use 2 slides for each setup. one for chart. 2 slide for why you took this
+# trade. reason for hitting stoploss")
 import lab_charts as LC
 import zlib
 
@@ -981,25 +984,107 @@ K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)   
 smc_res = L.run_job(dict(SMC6, entry='zone'), charts=L.CHARTS_DIR, name='My (test) run')
 info = smc_res['pdf']
 assert info['file'].endswith(' My (test) run.pdf') and info['folder'] == 'lab_charts', info
-assert info['pages'] == info['shown'] + 1 == smc_res['tradesTotal'] + 1 and info['trades'] == smc_res['tradesTotal'], (info, smc_res['tradesTotal'])
+assert info['pages'] == 2 * info['shown'] + 1 == 2 * smc_res['tradesTotal'] + 1 and info['trades'] == smc_res['tradesTotal'], (info, smc_res['tradesTotal'])
 pages = pdf_pages(os.path.join(L.CHARTS_DIR, info['file']))
 assert pages[0][0] == 'Backtest Lab - trade charts' and pages[0][1] == 'My (test) run' and any(t.startswith('Market structure: swings of 5') for t in pages[0])
+assert any(t.startswith('Two pages a trade: 1 = the chart') for t in pages[0])
 def head(pg):
     """(the page's title 'SYM  -  Daily  -  signal ...', its result text '-1.00R   Stop loss' / 'still open ...')."""
     k = next(k for k, t in enumerate(pg) if '  -  Daily  -  signal ' in t)
     return pg[k], pg[k + 1]
 
 
-sup = [pg for pg in pages[1:] if head(pg)[0].startswith('SUP  -  Daily  -  signal ')]
-assert len(sup) == 1, [head(pg)[0] for pg in pages[1:]]
-want = ['Entry 126.50', 'Stop %s' % LC.money(round(121.3 * 0.995, 2)), 'Zone top 126.50', 'Zone bottom 121.30', 'CHoCH 136.30', '50% 138.00', 'BUY', 'final low', 'CHoCH (3)']
+chart_pages, why_pages = pages[1::2], pages[2::2]
+assert all(any(t.endswith('why this trade') for t in pg) for pg in why_pages) and not any(any(t.endswith('why this trade') for t in pg) for pg in chart_pages)
+sup_k = [k for k, pg in enumerate(chart_pages) if head(pg)[0].startswith('SUP  -  Daily  -  signal ')]
+assert len(sup_k) == 1, [head(pg)[0] for pg in chart_pages]
+sup = [chart_pages[sup_k[0]]]
+want = ['Entry 126.50', 'Stop %s' % LC.money(round(121.3 * 0.995, 2)), 'Zone top 126.50', 'Zone bottom 121.30', 'CHoCH 136.30', '50% 138.00', 'BUY', 'CHoCH',
+        'FVG zone']
 assert all(w in sup[0] for w in want), [w for w in want if w not in sup[0]]
+assert any(w in sup[0] for w in LC.EXIT_WORD.values()), (head(sup[0]), sup[0])
+assert any(t.endswith('final low') for t in sup[0]) and any(t.startswith('LL') for t in sup[0]) and any(t.startswith('LH') for t in sup[0]), sup[0]
 assert any(t.startswith('CHoCH 136.30 on ') and '50% line 138.00' in t for t in sup[0]), 'the Lab\'s own structure words'
 assert sup[0][-1].startswith('page ') and sup[0][-1].endswith(' of %d' % info['pages'])
+# its page 2: plain sentences, no chart, no price list (owner, 12-Nov-2026: "why this trade should not numericals and with chart. it
+# should be readable format like in sentences")
+why = why_pages[sup_k[0]]
+assert why[0].startswith('SUP  -  Daily  -  signal ') and why[0].endswith('why this trade') and why[-1] == 'page %d of %d' % (2 * sup_k[0] + 3, info['pages'])
+for w in ('Why the backtest took this trade', 'How it ended', '1.', '2.', '3.', '4.', '5.', '6.', '7.'):
+    assert w in why, (w, why)
+joined = ' '.join(why)
+for w in ('The stock was falling. It made 3 lower highs and 3 lower lows in a row', 'The fall ended at the final low on 24 Apr 2026. Your setup asks for at least 3.',
+          'Then the trend changed. On 28 Apr 2026 the price closed above the last swing high. This is the CHoCH (change of character)',
+          'the price left an FVG zone (a fair value gap', 'The rise went up to its high on 04 May 2026.', 'The zone sat in the cheaper lower part of that rise',
+          'Your setup buys only when it is at least 50% down (the discount part)', 'On 15 May 2026 the price came back down to the zone for the first time since it formed.',
+          'No new higher high (BOS) had come yet, so this was the first pullback after the CHoCH', 'The CHoCH was about 2 weeks before this trade.',
+          'The plan: buy with an order waiting at the zone top, put the stop loss just under the zone bottom, and take the target at 2 times the risk (2R).'):
+    assert w in joined, (w, joined)
+body = ' '.join(why[2:-2])                         # not the title / result / footer
+assert not re.search(r'\d+\.\d\d', body), ('no prices on page 2', re.findall(r'\d+\.\d\d', body))
+assert not set(why) & {'H', 'LH', 'LL', 'BUY', 'zone', 'CHoCH'}, 'no chart on page 2'
+# the swings the pages show = the ones the structure counted (choch_events' own list): for every CHoCH of random charts, the
+# swings known by its candle give back its swing high and its count d - with every structure option
+import random as _rnd
+for seed in range(8):
+    rr = _rnd.Random(seed)
+    px, hh, ll, cc = 100.0, [], [], []
+    for _ in range(900):
+        o = px * (1 + rr.uniform(-0.03, 0.03)); c = o * (1 + rr.uniform(-0.05, 0.05))
+        hh.append(round(max(o, c) * (1 + rr.uniform(0, 0.03)), 2)); ll.append(round(min(o, c) * (1 - rr.uniform(0, 0.03)), 2)); cc.append(round(c, 2)); px = c
+    for n_, opts in ((2, None), (5, None), (3, {'prom': 1.0}), (3, {'swing': 'zigzag', 'zz': 2.0}), (3, {'choch': 'protected'})):
+        st_ = S.Structure(hh, ll, cc, n_, opts)
+        assert st_.events, (seed, n_, opts)
+        for e in st_.events:
+            b_, hi_, lvl_, li_, lf_, d_ = e
+            sb = LC.swing_seq(st_, upto=b_)
+            q = max(x for x in range(len(sb)) if sb[x][2] and sb[x][0] == hi_)
+            assert sb[q][1] == lvl_
+            dh, k_ = 0, q
+            while k_ - 2 >= 0 and sb[k_][1] < sb[k_ - 2][1]:
+                dh, k_ = dh + 1, k_ - 2
+            dl, prev, k_ = 0, lf_, q - 1
+            while k_ >= 0 and prev < sb[k_][1]:
+                dl, prev, k_ = dl + 1, sb[k_][1], k_ - 2
+            assert min(dh, dl) == d_, (seed, n_, opts, e, dh, dl)
+        tags = LC.swing_tags(LC.swing_seq(st_))
+        assert set(tags) <= {'H', 'L', 'HH', 'LH', 'HL', 'LL', 'EQH', 'EQL'} and {'HH', 'LH', 'HL', 'LL'} <= set(tags)
+assert LC.swing_tags([[1, 10, True, 2], [3, 5, False, 4], [5, 12, True, 6], [7, 4, False, 8], [9, 11.9, True, 10], [11, 4.05, False, 12]],
+                     lambda p: 0.1) == ['H', 'L', 'HH', 'LL', 'EQH', 'EQL']
+
 # every trade of a bigger run, the losing ones first, newest first in each group, the open ones last
+LC.WATCH = []
 big = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0, 'structure': 'off'}, charts=L.CHARTS_DIR, name='every touch')
-pg = pdf_pages(os.path.join(L.CHARTS_DIR, big['pdf']['file']))[1:]
-assert len(pg) == big['tradesTotal'] > 20, (len(pg), big['tradesTotal'])
+watched, LC.WATCH = LC.WATCH, None
+allpg = pdf_pages(os.path.join(L.CHARTS_DIR, big['pdf']['file']))[1:]
+pg = allpg[0::2]
+assert len(pg) == big['tradesTotal'] > 20 and len(allpg) == 2 * len(pg), (len(pg), big['tradesTotal'])
+# no word on a candle, none on another word (owner: "these words should not overwrited on the candle and price movement")
+assert len(watched) == len(pg)
+nw, kinds = 0, set()
+for ch_ in watched:
+    xl, slot, spans = ch_.place.cols
+    for k_, (txt, xa, xb, ya, yb, free) in enumerate(ch_.words):
+        nw += 1
+        kinds.add(txt.split(' ')[0])
+        assert free, (txt, 'no free place')
+        assert ch_.x0 <= xa and xb <= ch_.x1 and ch_.y0 <= ya and yb <= ch_.y1, (txt, 'inside the chart')
+        for j in range(max(0, int((xa - xl) / slot)), min(len(spans) - 1, int((xb - xl) / slot)) + 1):
+            assert not (spans[j][0] < yb and spans[j][1] > ya), (txt, 'on a candle', j)
+        for txt2, xa2, xb2, ya2, yb2, _ in ch_.words[:k_]:
+            assert not (xa < xb2 and xb > xa2 and ya < yb2 and yb > ya2), (txt, txt2, 'on another word')
+assert nw > 10 * len(pg) and {'HH', 'HL', 'LH', 'LL', 'BUY', 'CHoCH', 'BOS', 'FVG', 'STOP'} <= kinds, (nw, len(pg), kinds)
+# the stop-loss pages say why in sentences: how far it went up, a wick or a close under the stop, the candle, the zone, what
+# price did after
+stops = [w_ for c_, w_ in zip(allpg[0::2], allpg[1::2]) if head(c_)[1].endswith('Stop loss')]
+sj = ' '.join(' '.join(w_) for w_ in stops)
+assert stops and sj.count('The stop loss was hit on ') == len(stops) and 'a loss of about 1R' in sj
+for alts in (('It did not go up at all after buying.', 'It went up only a little', 'not even one time the risk', 'It first went up about'),
+             ('Only the wick went below the stop', 'The candle closed below the stop - a real break'),
+             ('The fall came in one big candle', 'the volume was heavy', 'It was a normal-sized candle'),
+             ('The zone did not hold', 'The price never closed below the zone before the stop.'),
+             ('After the stop, the price turned up and reached the target on', 'After the stop, the price did not reach the target')):
+    assert any(a_ in sj for a_ in alts), alts
 groups = []
 for p_ in pg:
     r = head(p_)[1]
@@ -1011,10 +1096,10 @@ for g in (0, 1):
     ds = [day(p_) for p_, gg in zip(pg, groups) if gg == g]
     assert ds == sorted(ds, reverse=True), (g, ds[:5])
 # a page limit keeps the PDF small; the cover says how many
-LC.MAX_PAGES, keep_max = 5, LC.MAX_PAGES
+LC.MAX_TRADES, keep_max = 5, LC.MAX_TRADES
 few = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0, 'structure': 'off'}, charts=L.CHARTS_DIR, name='five')
-LC.MAX_PAGES = keep_max
-assert few['pdf']['pages'] == 6 and few['pdf']['shown'] == 5 and few['pdf']['trades'] == big['tradesTotal']
+LC.MAX_TRADES = keep_max
+assert few['pdf']['pages'] == 11 and few['pdf']['shown'] == 5 and few['pdf']['trades'] == big['tradesTotal']
 assert any('The first 5 of %d.' % big['tradesTotal'] in t for t in pdf_pages(os.path.join(L.CHARTS_DIR, few['pdf']['file']))[0])
 # pdftoppm (when there) reads it - a real PDF reader
 import shutil, subprocess

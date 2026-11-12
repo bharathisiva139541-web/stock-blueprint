@@ -1440,7 +1440,7 @@ function check(name, fn) {
     assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 20 its zone is not below the CHoCH level; 10 its zone was not in the discount part of the move \(above your Fib line\)\./);
     assert.match(view, /9 not first touches \(the zone-top order fills on those only\)/);
     // the charts PDF the laptop made with the run (owner, 12-Nov-2026: a chart page per trade, the losing ones first)
-    assert.match(view, /Charts PDF on your laptop - a chart page for every trade \(the losing ones first\): ScreenerBridge\\lab_charts\\2026-11-12 091500 Zone stop 1%\.pdf - 5 pages/);
+    assert.match(view, /Charts PDF on your laptop - two pages for every trade \(the chart with HH \/ HL \/ LH \/ LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended\) - the losing ones first: ScreenerBridge\\lab_charts\\2026-11-12 091500 Zone stop 1%\.pdf - 5 pages/);
     // the discount setup's badge + its words, and a TradingView button per trade (owner, 11-Nov-2026: "i open trading view chart and i go to that trade date")
     assert.match(await own.p.$eval('#lab-trades tbody tr:first-child', (x) => x.innerText), /Discount, 1st pullback/);
     assert.match(await own.p.$eval('#lab-trades tbody tr:first-child .lab-acct', (x) => x.getAttribute('data-tip')), /move high 251\.00 · zone middle 62% down the move \(50% line 235\.50\)/);

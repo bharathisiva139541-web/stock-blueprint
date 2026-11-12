@@ -152,7 +152,7 @@ function html() {
       '**In the account: skipped** மேல் cursor = ஏன் கணக்கில் எடுக்கவில்லை.',
       '**TradingView ↗** = அந்த stock-இன் chart; Alt+G அழுத்தி signal தேதியைத் தட்டுங்கள்.',
       '**⇅ Sort & filter**, **▦ Columns**, CSV - table-ஐ வரிசைப்படுத்த / வடிகட்ட / பதிவிறக்க.',
-      '**Charts PDF**: ஒவ்வொரு run-உடனும் laptop-இல் ஒரு PDF - ஒவ்வொரு trade-க்கும் ஒரு chart பக்கம் (நஷ்டமானவை முதலில்). இடம்: ScreenerBridge folder → `lab_charts`.']), 11));
+      '**Charts PDF**: ஒவ்வொரு run-உடனும் laptop-இல் ஒரு PDF - ஒவ்வொரு trade-க்கும் 2 பக்கங்கள்: 1 = chart (HH / HL / LH / LL, CHoCH, BOS, zone, BUY - candle மேல் எழுத்து இல்லை), 2 = ஏன் இந்த trade, எப்படி முடிந்தது (stop loss-க்குக் காரணங்கள்) - எளிய வாக்கியங்களில், chart இல்லாமல். நஷ்டமானவை முதலில். இடம்: ScreenerBridge folder → `lab_charts`.']), 11));
   pages.push(page('Runs ஒப்பீடு மற்றும் TradingView script', img('14-runs', 'Your runs - ஒரே table-இல் ஒப்பிட. ஒரு வரிசையை click செய்தால் அந்த முடிவு திறக்கும்.') +
     p('ஒரு நேரத்தில் **ஒரே ஒரு** மாற்றம் செய்து ஓட்டுங்கள்; வரிசைகளை ஒப்பிடுங்கள். வரம்பு 0-க்கு மேல் + test பகுதி ஒத்துப்போனால் அந்த வரிசையை அதிகம் நம்பலாம். கடைசி 8 runs sheet-இல் (Backtest_Lab tab) வைக்கப்படும்.') +
     img('11-pine', '"Copy TradingView script" - இதே விதிகளுடன் indicator. TradingView → Pine Editor → Ctrl+A → Ctrl+V → Save → Add to chart.') +
