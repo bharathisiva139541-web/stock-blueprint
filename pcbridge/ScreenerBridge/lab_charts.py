@@ -460,7 +460,7 @@ def context(t, cs, s, P, extra=None):
     return c
 
 
-EXIT_WORD = {'stop': 'STOP HIT', 'target': 'TARGET', 'be': 'BREAKEVEN', 'trail': 'TRAIL EXIT', 'ema': 'EMA EXIT', 'time': 'TIME EXIT',
+EXIT_WORD = {'stop': 'STOP HIT', 'target': 'TARGET', 'be': 'BREAKEVEN', 'trail': 'TRAIL EXIT', 'lock': 'TARGET LOCKED', 'ema': 'EMA EXIT', 'time': 'TIME EXIT',
              'open': 'STILL OPEN'}
 TAG_COL = {'HH': (0.10, 0.55, 0.30), 'HL': (0.10, 0.55, 0.30), 'LH': (0.80, 0.22, 0.22), 'LL': (0.80, 0.22, 0.22),
            'EQH': MUTED, 'EQL': MUTED, 'H': MUTED, 'L': MUTED}
@@ -495,7 +495,7 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     f2 = lambda v: round(float(v), 2)
     ev = cx['ev']
     zb, zt, zf = t.get('zb'), t.get('zt'), t.get('zf')
-    levels = [t['entry'], t['stop'], t.get('tgt'), zb, zt]
+    levels = [t['entry'], t['stop'], t.get('tgt'), zb, zt, t.get('fibLine')] + ([t['fz'][0], t['fz'][1]] if t.get('fz') else [])
     if ev:
         levels += [ev[2], ev[4]]
     if cx.get('fibLine') is not None:
@@ -507,6 +507,9 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     za = None
     if zb is not None and zt is not None and zf is not None and zf >= 0:
         za = max(start, zf - (1 if gap_zone else 2))
+        fz = t.get('fz')
+        if fz:                                # the FVG around the Gap-up zone the order waited in (12-Nov-2026)
+            ch.zone(max(start, fz[2] - 2), max(za, jx), fz[0], fz[1], ZONE_FVG)
         ch.zone(za, max(za, jx), zb, zt, ZONE_GAP if gap_zone else ZONE_FVG)
     for ln, series in sorted((emas or {}).items()):
         cv.polyline([(ch.X(k), ch.Y(series[k])) for k in range(start, end + 1) if ch.lo < series[k] < ch.hi], EMA_COL.get(ln, MUTED), 0.6)
@@ -523,6 +526,9 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
         if cx.get('fibLine') is not None:
             ch.hline(max(start, li), i, cx['fibLine'], FIB, 0.9, dash=(1.5, 1.5))
             right.append((ch.Y(cx['fibLine']), '%g%% %s' % (cx['fib'] * 100, money(cx['fibLine'])), FIB))
+    if t.get('fibLine') is not None and za is not None:        # the zone's Fib line the pattern held (12-Nov-2026)
+        ch.hline(za, i, t['fibLine'], FIB, 0.8, dash=(3, 1.5))
+        right.append((ch.Y(t['fibLine']), 'Zone %g%% %s' % (P.get('fibLevel', 0.618) * 100, money(t['fibLine'])), FIB))
     ch.hline(i, jx, t['entry'], ENTRY, 1.1)
     ch.hline(i, jx, t['stop'], STOP, 1.1)
     if t.get('tgt') is not None:
@@ -533,6 +539,8 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     if zb is not None:
         right.append((ch.Y(zt), 'Zone top %s' % money(zt), (0.35, 0.45, 0.7)))
         right.append((ch.Y(zb), 'Zone bottom %s' % money(zb), (0.35, 0.45, 0.7)))
+    if t.get('fz'):
+        right.append((ch.Y(t['fz'][0]), 'FVG bottom %s' % money(t['fz'][0]), (0.35, 0.45, 0.7)))
     # the trade's own marks first (they matter most), then the structure words
     ya = ch.tri(i, f2(cs.l[i]), True, ENTRY, 4.2, 3.0)
     ch.word(i, ya, 'BUY', ENTRY, up=False, size=7.5)
@@ -545,7 +553,7 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     right.append((yx, 'Exit %s' % money(ex), ecol))
     ch.word(jx, yx + (3 if t['R'] > 0 else -3), EXIT_WORD.get(t['reason'], t['reason'].upper()), ecol, up=t['R'] > 0, size=7)
     if za is not None:
-        name = 'Gap-up zone' + (' (inside FVG)' if t.get('inside') else '') if gap_zone else 'FVG zone'
+        name = 'Gap-up zone' + (' (inside FVG)' if t.get('inside') or t.get('fz') else '') if gap_zone else 'FVG zone'
         ch.word(za, ch.Y(zt), name, (0.30, 0.42, 0.75), up=True, size=7)
     # swings: a triangle + HH / HL / LH / LL (the final low and the move high named too)
     seq = cx.get('seq') or []
@@ -710,7 +718,16 @@ def why_story(t, cs, s, P, cx):
         if has_zone:
             out.append('Before the signal the price left %s on %s.' % (zone_name, dt(zf)))
     code = t.get('code')
-    if code in ('Z', 'Y', 'T'):
+    if t.get('fz'):
+        out.append('Inside that move\'s FVG there was a smaller gap-up zone, so your order waited at the top of the gap-up zone '
+                   'instead of the top of the whole FVG - the stop stays under the FVG\'s bottom.')
+    if code in ('P', 'Q'):
+        lvl = P.get('fibLevel', 0.618)
+        big = P.get('fibPat') == 'big'
+        txt = ('On %s a %s formed with its low right at the zone\'s %g%% Fibonacci line (drawn from the zone bottom to its top) '
+               'and closed above it - buyers defended that line.%s' % (dt(i), t.get('pat') or 'pattern', lvl * 100,
+               ' The zone was bigger than your size limit, so the backtest waited for this pattern instead of buying at the zone top.' if big else ''))
+    elif code in ('Z', 'Y', 'T'):
         txt = 'On %s the price came back down to the zone for the first time since it formed.' % dt(i)
     elif code == 'C':
         txt = 'On %s the price came back to the zone for the first time and the candle closed back up (a confirmed first touch).' % dt(i)
@@ -748,23 +765,36 @@ def why_story(t, cs, s, P, cx):
     if extra:
         out.append('It also passed your other rules: %s.' % _list(extra))
     # the plan
-    ent = {'zone': 'with an order waiting at the zone top', 'close': 'at the close of that candle',
-           'next_open': "at the next candle's open"}.get(P.get('entry'), '')
+    ent = {'zone': 'with an order waiting at the %s top' % ('gap-up zone\'s' if t.get('fz') else 'zone'),
+           'close': 'at the close of that candle', 'next_open': "at the next candle's open"}.get(P.get('entry'), '')
+    if code in ('P', 'Q'):
+        ent = 'at the close of the pattern candle'
     mode = P.get('stop')
-    if P.get('entry') == 'zone' and mode in ('spring', 'lower'):
+    if P.get('entry') == 'zone' and mode in ('spring', 'lower') and code not in ('P', 'Q'):
         mode = 'zone'
-    stop = {'zone': 'just under the zone bottom', 'spring': "just under that candle's low", 'lower': 'under the lower of the zone bottom and the candle low',
-            'pct': '%g%% under the buy price' % P.get('stopPct', 0)}.get(mode, '')
+    stop = {'zone': 'just under the %s bottom' % ('FVG\'s' if t.get('fz') else 'zone'), 'spring': "just under that candle's low",
+            'lower': 'under the lower of the zone bottom and the candle low', 'pct': '%g%% under the buy price' % P.get('stopPct', 0),
+            'final': 'just under the final low (the lowest point before the CHoCH)'}.get(mode, '')
     tgt = 'at the last swing high above' if P.get('targetMode') == 'swing' else 'at %s the risk (%gR)' % (_times(P.get('targetR', 2)), P.get('targetR', 2))
     txt = 'The plan: buy %s, put the stop loss %s, and take the target %s.' % (ent, stop, tgt)
     if P.get('after') != 'fixed':
         trail = {'lows': 'under the lowest low of the last %s candles' % P.get('trailN'), 'pct': '%g%% under the highest price' % P.get('trailPct', 0),
                  'ema': 'until a close under the %s EMA' % P.get('emaN'), 'atr': '%s x ATR under the highest price' % P.get('atrK'),
                  'swing': 'under each new swing low'}.get(P.get('trail'))
+        lock = P.get('lockTarget')
         if trail:
-            txt += ' After the target the trade stays open%s and the stop follows the price %s.' % (', the stop moves to the buy price' if P.get('breakeven') else '', trail)
+            txt += ' After the target the trade stays open%s and the stop follows the price %s.' % (
+                ', the stop moves up to the target' if lock else ', the stop moves to the buy price' if P.get('breakeven') else '', trail)
+        elif lock:
+            txt += ' After the target the trade stays open and the stop moves up to the target.'
     out.append(txt)
+    if t.get('zpct') is not None and (P.get('zoneMin') or P.get('zoneMax')):
+        out.append('The zone was %s tall - inside your size range.' % _pct_words(t['zpct']))
     return out
+
+
+def _pct_words(x):
+    return 'about %g%%' % (round(x, 1) if x < 10 else round(x))
 
 
 def end_story(t, cs, s, P, cx):
@@ -836,6 +866,12 @@ def end_story(t, cs, s, P, cx):
     elif why == 'target':
         head = 'The target was reached on %s, %s after buying - %s.' % (dt(jx), days, res)
         lines.append('The price went straight up to the target and the trade was closed there.')
+    elif why == 'lock':
+        head = 'The trade was closed on %s, %s after buying - %s.' % (dt(jx), days, res)
+        if hit_k is not None:
+            lines.append('The price reached the target on %s%s, so the stop moved up to the target.' % (
+                dt(hit_k), ' with a gap up at the open' if hit_k > i and f2(cs.o[hit_k]) >= t['tgt'] else ''))
+        lines.append('On %s the price fell back to the target and the trade was sold there - a win, as you trade it.' % dt(jx))
     elif why in ('trail', 'be'):
         head = 'The trade was closed on %s, %s after buying - %s.' % (dt(jx), days, res)
         if hit_k is not None:
@@ -931,11 +967,12 @@ def trade_page(pdf, key, t, cs, s, P, page_no, pages, run_name, piv=None, emas=N
     why_page(pdf, tuple(key) + (1,), t, cs, s, P, page_no + 1, pages, run_name, cx)
 
 
-REASON = {'stop': 'Stop loss', 'target': 'Target', 'be': 'Breakeven', 'trail': 'Trailing stop', 'ema': 'Close under EMA',
-          'time': 'Time limit', 'open': ''}
+REASON = {'stop': 'Stop loss', 'target': 'Target', 'be': 'Breakeven', 'trail': 'Trailing stop', 'lock': 'Target locked',
+          'ema': 'Close under EMA', 'time': 'Time limit', 'open': ''}
 TF_NAME = {'D': 'Daily', 'W': 'Weekly', '4H': '4 hour'}
 ZONE_NAME = {'F': 'FVG + Spring', 'G': 'Gap-up FVG + Spring', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
-             'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch'}
+             'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'Pattern at the Fib line of an FVG zone',
+             'Q': 'Pattern at the Fib line of a Gap-up zone'}
 WHERE = {'t': 'top', 'm': 'middle', 'b': 'bottom'}
 
 
@@ -996,8 +1033,20 @@ def rule_lines(P):
         out.append('Market structure: not a rule in this run (the charts still show the swings and any CHoCH)')
     out.append('Buy: %s' % {'zone': 'an order waiting at the zone top', 'close': "the signal candle's close",
                             'next_open': "the next candle's open"}.get(P.get('entry'), P.get('entry')))
+    if P.get('gapEntry'):
+        out.append('An FVG with a gap-up zone inside it: the order waits at the gap-up zone top, the stop under the FVG bottom')
+    if P.get('zoneMin') or P.get('zoneMax'):
+        out.append('Zone size: %s' % ('%g%% to %g%%' % (P.get('zoneMin') or 0, P['zoneMax']) if P.get('zoneMax') else 'at least %g%%' % P['zoneMin']))
+    if P.get('fibPat') in ('big', 'all'):
+        out.append('%s: a Spring or Bullish Harami + Inverted Hammer at the zone\'s %g%% Fib line (+/- %g%%), bought at its close' % (
+            'Zones bigger than the size limit' if P['fibPat'] == 'big' else 'Every zone', P.get('fibLevel', 0.618) * 100, P.get('fibTol', 1)))
+    if P.get('lineOk'):
+        out.append('A zone short of the discount line counts when its top is at / under the CHoCH level (+%g%%)' % P.get('lineTol', 0))
+    if P.get('darkCloud') in ('exclude', 'only'):
+        out.append('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one): %s' % (
+            'left out' if P['darkCloud'] == 'exclude' else 'only these'))
     stop = {'zone': 'under the zone bottom', 'spring': "under the signal candle's low", 'lower': 'under the lower of the two',
-            'pct': '%g%% under the entry' % P.get('stopPct', 0)}.get(P.get('stop'), P.get('stop'))
+            'pct': '%g%% under the entry' % P.get('stopPct', 0), 'final': 'under the CHoCH\'s final low (LL)'}.get(P.get('stop'), P.get('stop'))
     out.append('Stop loss: %s%s; trades risking more than %g%% skipped' % (
         stop, '' if P.get('stop') == 'pct' else ' by %g%%' % P.get('stopBuf', 0), P.get('maxRisk', 0)) if P.get('maxRisk') else
         'Stop loss: %s%s' % (stop, '' if P.get('stop') == 'pct' else ' by %g%%' % P.get('stopBuf', 0)))
@@ -1007,7 +1056,7 @@ def rule_lines(P):
     else:
         trail = {'lows': 'under the lowest low of the last %s candles' % P.get('trailN'), 'pct': '%g%% under the highest price' % P.get('trailPct', 0),
                  'ema': 'a close under the %s EMA' % P.get('emaN'), 'none': 'no trail'}.get(P.get('trail'), '')
-        out.append('Target: %s - then %s%s' % (tgt, 'the stop to the entry, ' if P.get('breakeven') else '', trail))
+        out.append('Target: %s - then %s%s' % (tgt, 'the stop to the target, ' if P.get('lockTarget') else 'the stop to the entry, ' if P.get('breakeven') else '', trail))
     out.append('Sold after %s days at the latest; costs %g%% a trade' % (P.get('maxDays'), P.get('cost', 0)))
     if P.get('from') or P.get('to'):
         out.append('Signals %s%s' % ('from %s ' % P['from'] if P.get('from') else '', 'to %s' % P['to'] if P.get('to') else ''))

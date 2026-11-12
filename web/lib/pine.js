@@ -13,7 +13,8 @@
 
   var ZONE_WHEN = { both: 'In the CHoCH move or after it', leg: 'Only in the CHoCH move', after: 'Only after the CHoCH candle' };
   var PART = { mid: 'Middle', top: 'Top', bottom: 'Bottom' };
-  var STOP = { zone: 'Under the zone bottom', spring: 'Under the touch candle\'s low', lower: 'Under whichever is lower', pct: '% under the entry' };
+  var STOP = { zone: 'Under the zone bottom', spring: 'Under the touch candle\'s low', lower: 'Under whichever is lower', pct: '% under the entry',
+    final: 'Under the CHoCH\'s final low' };
   var EMA = { 0: 'Off', 10: '10 EMA', 21: '21 EMA', 50: '50 EMA', 1: 'Any of 10 / 21 / 50' };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var TF = { D: 'Daily (1D)', W: 'Weekly (1W)', '4H': '4 hour (240)' };
@@ -64,6 +65,7 @@
       emaSup: str(EMA[num(p.emaSupport, 0)] || EMA[0]),
       emaTouch: fl(Math.max(0, num(p.emaTouch, 1))),
       ab10: String(!!p.above10), ab21: String(!!p.above21), ab50: String(!!p.above50), emaStack: String(!!p.emaStack),
+      gapEntry: String(p.gapEntry !== false),
       // how swings and the CHoCH are found (owner, 12-Nov-2026: the structure options drawn too)
       swMode: str(p.swingMode === 'zigzag' ? 'ZigZag (ATR)' : 'Candles each side'),
       zzAtr: fl(clamp(num(p.zzAtr, 2), 0.5, 10)),
@@ -96,10 +98,15 @@
     if (num(p.lagMin, 0)) more.push('the days after the CHoCH');
     if (num(p.dispAtr, 0) || num(p.dispVol, 0)) more.push('the CHoCH candle\'s body / volume');
     if (p.sweep) more.push('the sweep of the low');
+    // the owner's refinements of 12-Nov-2026 the script does not draw (the Gap-up zone entry and the final-low stop it does)
+    if (num(p.zoneMin, 0) || num(p.zoneMax, 0)) more.push('the zone size range');
+    if (p.lineOk) more.push('zones short of the discount line under the CHoCH level');
+    if (p.fibPat === 'big' || p.fibPat === 'all') more.push('the Spring / Harami + Inverted Hammer at the zone\'s Fib line');
+    if (p.darkCloud === 'exclude' || p.darkCloud === 'only') more.push('the dark-cloud FVG rule');
     if (p.whereIn && p.whereIn !== 'any') more.push('how deep the candle went into the zone');
     if (num(p.wkAbove, 0)) more.push('the weekly trend');
     if (more.length) n.push('Not drawn (check them on the chart yourself): ' + more.join(', ') + '.');
-    n.push('Only the entry, stop and target are drawn - the trail, the time limit, the costs and the account are not.');
+    n.push('Only the entry, stop and target are drawn - the trail, the target lock, the time limit, the costs and the account are not.');
     return n;
   }
 

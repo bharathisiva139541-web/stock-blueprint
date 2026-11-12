@@ -804,6 +804,38 @@ def is_spring_pair(c1, c2, cfg=None):
             (c2['h'] <= c1['l'] + (cfg['reclaimMax'] / 100) * c1_range))
 
 
+# Bullish Harami + Inverted Hammer = web/lib/patterns.js HIH / isHaramiInvHammerPair (Code.gs AB_HIH_*); red* = a red inverted
+# hammer (owner, 12-Nov-2026: "if FVG is big we can use Fib level with patterns such as spring, Bullish harami + Inverted Hammer")
+HIH = {'c1BodyMin': 0.65, 'bodyMin': 0.10, 'reachMin': 0.6, 'bodyMax': 0.50, 'openTol': 0.005, 'upperWickMin': 1.5,
+       'lowerWickMax': 0.10, 'highOverMax': 0.15, 'redBodyMin': 0.10, 'redOpenTol': 0.01, 'redLowerWickMax': 0.20}
+
+
+def is_hih_pair(c1, c2):
+    """web/lib/patterns.js isHaramiInvHammerPair = Code.gs ab_isHaramiInvHammerPair_: c1 a big red candle, c2 a small green
+    candle (body 10-50 % of c1's) in c1's lower body half with a long upper wick reaching 60 % up c1's body, almost no lower
+    wick, its low not under c1's low - or c2 a red inverted hammer opening at c1's close. Candles {'o','h','l','c'}."""
+    v = [c1.get('o'), c1.get('h'), c1.get('l'), c1.get('c'), c2.get('o'), c2.get('h'), c2.get('l'), c2.get('c')]
+    if any(not isinstance(x, (int, float)) or isinstance(x, bool) or x != x or not x for x in v):
+        return False
+    H = HIH
+    c1b, c1r = c1['o'] - c1['c'], c1['h'] - c1['l']
+    c2b, c2r = c2['c'] - c2['o'], c2['h'] - c2['l']
+    if not (c1b > 0 and c1r > 0 and c2r > 0):
+        return False
+    if c2b < 0:
+        rb = -c2b
+        return (c1b / c1r >= H['c1BodyMin'] and rb >= H['redBodyMin'] * c1b and rb <= H['bodyMax'] * c1b and
+                abs(c2['o'] - c1['c']) <= H['redOpenTol'] * c1['c'] and c2['o'] <= (c1['o'] + c1['c']) / 2 and
+                c2['h'] - c2['o'] >= H['upperWickMin'] * rb and c2['h'] >= c1['o'] and c2['h'] <= c1['h'] + H['highOverMax'] * c1b and
+                c2['c'] - c2['l'] <= H['redLowerWickMax'] * c2r and c2['l'] >= c1['l'])
+    if not c2b > 0:
+        return False
+    return (c1b / c1r >= H['c1BodyMin'] and c2b >= H['bodyMin'] * c1b and c2b <= H['bodyMax'] * c1b and
+            abs(c2['o'] - c1['c']) <= H['openTol'] * c1['c'] and c2['c'] <= (c1['o'] + c1['c']) / 2 and
+            c2['h'] - c2['c'] >= H['upperWickMin'] * c2b and c2['h'] >= c1['c'] + H['reachMin'] * c1b and
+            c2['h'] <= c1['h'] + H['highOverMax'] * c1b and c2['o'] - c2['l'] <= H['lowerWickMax'] * c2r and c2['l'] >= c1['l'])
+
+
 SPRING_STEPS = (
     ('candle 1 is red', lambda a, b, g: a['c'] < a['o']),
     ('candle 1 body is at least %(bodyMin)s%% of its open', lambda a, b, g: abs(a['c'] - a['o']) / a['o'] >= g['bodyMin'] / 100),
@@ -960,6 +992,87 @@ def spring_broken(candles, i):
     valid - the owner's rule: it leaves the sheet's list), or None."""
     low = candles[i]['l']
     return next((k for k in range(i + 1, len(candles)) if candles[k]['c'] < low), None)
+
+
+ZONE_LINK_SPAN = 3          # a Gap-up zone inside an FVG zone of the same move: formed at most this many candles apart
+
+
+def link_zones(zones):
+    """The Gap-up zones inside each FVG zone (owner, 12-Nov-2026: "there is gapup Zone in the marked FVG zone. Actual entry
+    should be on the Top of the Gapup zone, not on the entire FVG zone"; "Entry should on Gap-up inside FVG if available"):
+    a Gap-up zone wholly inside an FVG zone (bottom >= the FVG's bottom, top <= its top) formed at most ZONE_LINK_SPAN
+    candles from it. Adds 'inner' (FVG zone: those Gap-up zones) / 'outer' (Gap-up zone: those FVG zones) to the zone
+    dicts (spring_zones' own) and returns them."""
+    byf = {}
+    for z in zones:
+        z.pop('inner', None)
+        z.pop('outer', None)
+        if z['kind'] == 'FVG':
+            byf.setdefault(z['f'], []).append(z)
+    for g in zones:
+        if g['kind'] != 'Gap-up':
+            continue
+        for f in range(g['f'] - ZONE_LINK_SPAN, g['f'] + ZONE_LINK_SPAN + 1):
+            for z in byf.get(f, ()):
+                if g['bottom'] >= z['bottom'] - 1e-9 and g['top'] <= z['top'] + 1e-9:
+                    z.setdefault('inner', []).append(g)
+                    g.setdefault('outer', []).append(z)
+    return zones
+
+
+def is_dark_cloud(candles, f):
+    """The FVG of candles f-2 .. f with a dark-cloud 3rd candle (owner, 12-Nov-2026, RTNPOWER: "big red candle open above the
+    previous candle close price (FVG candle) and then closed penetrating the previous candle like darkcloud cover. trade in
+    this type of FVG often fails ... It should be filterable option only"): candle f red, opening at / above the close of the
+    green candle f-1 and closing under the middle of its body. Candles {'o','h','l','c'} (or a backtest_lab.Candles via
+    backtest_lab.dark_cloud)."""
+    if f < 1 or f >= len(candles):
+        return False
+    b, c = candles[f - 1], candles[f]
+    return b['c'] > b['o'] and c['c'] < c['o'] and c['o'] >= b['c'] and c['c'] < (b['o'] + b['c']) / 2.0
+
+
+FIB_PAT_LOW = 0.05          # Fib + pattern rows: the pattern's low down to 5 % under the zone bottom (the run picks the level)
+
+
+def fib_pattern_rows(full_c, tf, slots, cfg, turn, zones, max_age):
+    """The Backtest Lab's 'P' (FVG zone) / 'Q' (Gap-up zone) rows (owner, 12-Nov-2026, FINOPB: "in this FVG, i have drawn
+    Fibonacci, exactly 0.618 level, the price respected this level and formed Spring pattern. idea is if FVG is big we can use
+    Fib level with patterns such as spring, Bullish harami + Inverted Hammer"): every Spring (4H: the slot rule) or Bullish
+    Harami + Inverted Hammer candle whose low is inside a zone formed before the pair (at most max_age candles back) - down
+    to FIB_PAT_LOW under its bottom - closing above the zone bottom, while every close from the zone's candle to the one
+    before the pair stayed at / above the bottom (the zone holds). The run keeps the ones at its Fib level.
+    Row = [i, 'P'|'Q', bottom, top, where, 0, inside, turnover, zone candle, None, 'S'|'H'] (highest zone top first)."""
+    n = len(full_c)
+    if not zones or n < 4:
+        return []
+    rmq = _RangeMin([c['c'] for c in full_c])
+    fs = [z['f'] for z in zones]
+    rows = []
+    for i in range(3, n):
+        c1, c2 = full_c[i - 1], full_c[i]
+        pat = 'S' if _slot_ok(slots, tf, c2) and is_spring_pair(c1, c2, cfg) else 'H' if is_hih_pair(c1, c2) else None
+        if not pat:
+            continue
+        found = []
+        for z in zones[bisect.bisect_left(fs, i - max_age):]:
+            if z['f'] > i - 2:
+                break
+            bot, top = z['bottom'], z['top']
+            if not (c2['l'] <= top and c2['l'] >= bot * (1 - FIB_PAT_LOW) and c2['c'] > bot):
+                continue
+            if rmq.min(z['f'] + 1, i - 2) < bot:
+                continue
+            found.append(z)
+        if not found:
+            continue
+        found.sort(key=lambda z: (-z['top'], z['kind'] != 'FVG', z['f']))
+        t = turn(c2['day']) if turn else 0.0
+        for z in found:
+            where = 'b' if c2['l'] <= z['bottom'] else 't' if c2['l'] >= (z['bottom'] + z['top']) / 2 else 'm'
+            rows.append([i, 'Q' if z['kind'] == 'Gap-up' else 'P', round(z['bottom'], 4), round(z['top'], 4), where, 0,
+                         1 if z.get('inside') else 0, t, int(z['f']), None, pat])
+    return rows
 
 
 def zone_first_touches(candles, zones):
@@ -1211,10 +1324,21 @@ BT_TRADES = 500                    # newest FVG+Spring trades listed on the shee
 TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the last 30 daily candles
 
 
+# the owner's refinements of 12-Nov-2026 (the Backtest Lab's zoneMin / zoneMax / gapEntry / lineOk / lineTol / darkCloud /
+# fibPat / fibLevel / fibTol - backtest_lab.py DEFAULTS has the owner's words): (key, config name, default, low, high)
+CHOCH_MORE = (('zoneMin', 'choch_zone_min_pct', 0.0, 0.0, 50.0), ('zoneMax', 'choch_zone_max_pct', 0.0, 0.0, 100.0),
+              ('lineTol', 'choch_line_tol_pct', 0.5, 0.0, 5.0), ('fibLevel', 'choch_pattern_fib', 0.618, 0.2, 0.95),
+              ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0))
+CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False))
+CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')))
+
+
 def choch_rules(cfg=None):
     """The daily scan's CHoCH + FVG rules: config.json's choch_swing_candles / choch_lower_highs / choch_fib / choch_zone_part /
-    choch_zone_when (ChochRules.bat), each one outside its range left at the default -> {'pivotN', 'downN', 'fib', 'part',
-    'zoneWhen'} (the Backtest Lab's names)."""
+    choch_zone_when + (12-Nov-2026) choch_zone_min_pct / choch_zone_max_pct / choch_gap_entry / choch_line_ok /
+    choch_line_tol_pct / choch_dark_cloud / choch_fib_pattern / choch_pattern_fib / choch_pattern_tol_pct (ChochRules.bat),
+    each one outside its range left at the default -> {'pivotN', 'downN', 'fib', 'part', 'zoneWhen', 'zoneMin', 'zoneMax',
+    'gapEntry', 'lineOk', 'lineTol', 'darkCloud', 'fibPat', 'fibLevel', 'fibTol'} (the Backtest Lab's names)."""
     cfg = cfg or {}
     out = {'pivotN': CHOCH_PIVOT_N, 'downN': CHOCH_DOWN_N, 'fib': CHOCH_FIB, 'part': CHOCH_PART, 'zoneWhen': CHOCH_WHEN}
     for key, name, lo, hi in CHOCH_CFG:
@@ -1226,20 +1350,95 @@ def choch_rules(cfg=None):
         out['part'] = cfg['choch_zone_part']
     if cfg.get('choch_zone_when') in CHOCH_WHENS:
         out['zoneWhen'] = cfg['choch_zone_when']
+    for key, name, dflt, lo, hi in CHOCH_MORE:
+        v = cfg.get(name)
+        out[key] = round(float(v), 4) if not isinstance(v, bool) and isinstance(v, (int, float)) and v == v and lo <= v <= hi else dflt
+    for key, name, dflt in CHOCH_BOOLS:
+        out[key] = cfg[name] if isinstance(cfg.get(name), bool) else dflt
+    for key, name, dflt, opts in CHOCH_PICKS:
+        out[key] = cfg[name] if cfg.get(name) in opts else dflt
     return out
+
+
+def _num_words(v):
+    return ('%.1f' % v).rstrip('0').rstrip('.')
 
 
 def choch_rules_words(r):
     """'swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the
-    CHoCH move or after it' (= Code2.gs ab_chochRulesText_)."""
-    return ('swings of %d candles, at least %d lower highs / lows, the zone\'s %s at least %s%% down the move, the zone formed %s'
-            % (r['pivotN'], r['downN'], backtest_lab.PART_WORDS[r['part']], ('%.1f' % (r['fib'] * 100)).rstrip('0').rstrip('.'),
-               CHOCH_WHEN_WORDS[r['zoneWhen']]))
+    CHoCH move or after it[, ...the 12-Nov-2026 rules away from their defaults]' (= Code2.gs ab_chochRulesText_)."""
+    out = ('swings of %d candles, at least %d lower highs / lows, the zone\'s %s at least %s%% down the move, the zone formed %s'
+           % (r['pivotN'], r['downN'], backtest_lab.PART_WORDS[r['part']], _num_words(r['fib'] * 100), CHOCH_WHEN_WORDS[r['zoneWhen']]))
+    zmin, zmax = r.get('zoneMin') or 0, r.get('zoneMax') or 0
+    if zmin or zmax:
+        out += ', zone size %s' % ('%s - %s%%' % (_num_words(zmin), _num_words(zmax)) if zmax else 'at least %s%%' % _num_words(zmin))
+    if r.get('gapEntry', True) is False:
+        out += ', the whole FVG (not the Gap-up zone inside it)'
+    if r.get('lineOk'):
+        out += ', or the zone top at / under the CHoCH level (+%s%%)' % _num_words(r.get('lineTol') or 0)
+    if r.get('darkCloud') in ('exclude', 'only'):
+        out += ', dark-cloud FVGs %s' % ('left out' if r['darkCloud'] == 'exclude' else 'only')
+    if r.get('fibPat') in ('big', 'all'):
+        out += ', %s: a Spring / Harami + Inverted Hammer at the zone\'s %s%% line' % (
+            'big zones' if r['fibPat'] == 'big' else 'every zone', _num_words((r.get('fibLevel') or 0.618) * 100))
+    return out
 
 
 def _choch_fail(j, r):
     """The Backtest Lab's own 'only my setup' test (struct_fail) with these rules: '' = the setup."""
-    return backtest_lab.struct_fail(j, {'zoneWhen': r['zoneWhen'], 'firstPull': True, 'belowChoch': False, 'discount': r['fib']})
+    return backtest_lab.struct_fail(j, {'zoneWhen': r['zoneWhen'], 'firstPull': True, 'belowChoch': False, 'discount': r['fib'],
+                                        'lineOk': r.get('lineOk', False), 'lineTol': r.get('lineTol', 0.5)})
+
+
+def _size_zone(z, r):
+    """The zone the size / dark-cloud rules judge: a Gap-up zone inside an FVG (gapEntry) = that FVG."""
+    if z.get('kind') == 'Gap-up' and r.get('gapEntry', True) and z.get('outer'):
+        return min(z['outer'], key=lambda x: (x['bottom'], x['f']))
+    return z
+
+
+def _zone_ok(all_c, z, r, pattern=False):
+    """The daily scan's zone rules (12-Nov-2026): its size (zoneMin / zoneMax; a pattern entry in a big zone may be bigger)
+    and the dark-cloud FVG rule. '' = ok, else the rule."""
+    sz = _size_zone(z, r)
+    pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
+    big_ok = pattern and r.get('fibPat') == 'big'
+    if pct is not None and ((r.get('zoneMin') and pct < r['zoneMin'] - 1e-9) or (r.get('zoneMax') and pct > r['zoneMax'] + 1e-9 and not big_ok)):
+        return 'zsize'
+    dc = sz['kind'] == 'FVG' and is_dark_cloud(all_c, sz['f'])
+    if r.get('darkCloud') in ('exclude', 'only') and (r['darkCloud'] == 'exclude') == dc:
+        return 'dcloud'
+    return ''
+
+
+def _big_zone(z, r):
+    sz = _size_zone(z, r)
+    pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
+    return pct is not None and pct > (r.get('zoneMax') or backtest_lab.BIG_ZONE_PCT)
+
+
+def fib_pattern_at(all_c, i, zones, rmq, fs, max_age, cfg, slot_ok, level, tol):
+    """The Fib + pattern entry on candle i (backtest_lab fibPat): a Spring (slot rule) / Bullish Harami + Inverted Hammer whose
+    low is within tol % of a holding zone's `level` line (top - level x height) and that closes above it -> [(zone, kind)]
+    highest zone top first (kind 'S' / 'H')."""
+    if i < 3:
+        return []
+    c1, c2 = all_c[i - 1], all_c[i]
+    pat = 'S' if slot_ok and is_spring_pair(c1, c2, cfg) else 'H' if is_hih_pair(c1, c2) else None
+    if not pat:
+        return []
+    out = []
+    for z in zones[bisect.bisect_left(fs, i - max_age):]:
+        if z['f'] > i - 2:
+            break
+        line = z['top'] - level * (z['top'] - z['bottom'])
+        if not (line * (1 - tol / 100.0) <= c2['l'] <= line * (1 + tol / 100.0) and c2['c'] > line):
+            continue
+        if rmq.min(z['f'] + 1, i - 2) < z['bottom']:
+            continue
+        out.append((z, pat))
+    out.sort(key=lambda x: (-x[0]['top'], x[0]['kind'] != 'FVG', x[0]['f']))
+    return out
 
 
 def choch_setup(cfg, save_config, ask=input):
@@ -1280,8 +1479,29 @@ def choch_setup(cfg, save_config, ask=input):
     num('Discount - how far down the move (0.382 / 0.5 / 0.618 / 0.705 / 0.786)', 'fib', 'choch_fib', 0.2, 0.95, CHOCH_FIB_CHOICES)
     pick('Which part of the zone must be that deep', 'part', [('mid', 'its middle'), ('top', 'all of it (its top)'), ('bottom', 'any part (its bottom)')])
     pick('The zone formed', 'zoneWhen', [(w, CHOCH_WHEN_WORDS[w]) for w in CHOCH_WHENS])
+    # the refinements of 12-Nov-2026 (the Backtest Lab's names)
+    print('\nZone size = (top - bottom) / bottom in %. 0 = no limit.')
+    num('Zone size at least % (0 to 50)', 'zoneMin', 'choch_zone_min_pct', 0.0, 50.0)
+    num('Zone size at most % (0 = no limit, up to 100)', 'zoneMax', 'choch_zone_max_pct', 0.0, 100.0)
+    pick('An FVG with a Gap-up zone inside it - buy at', 'gapEntry', [(True, 'the Gap-up zone top'), (False, 'the FVG top')])
+    pick('A zone short of the discount line, but its top at / under the CHoCH level', 'lineOk', [(False, 'not taken'), (True, 'taken')])
+    if r['lineOk']:
+        num('... its top at most this % above the CHoCH level (0 to 5)', 'lineTol', 'choch_line_tol_pct', 0.0, 5.0)
+    pick('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one)', 'darkCloud',
+         [('any', 'taken like the others'), ('exclude', 'left out'), ('only', 'only these')])
+    pick('A Spring / Bullish Harami + Inverted Hammer at the zone\'s Fib line', 'fibPat',
+         [('off', 'not used'), ('big', 'in zones bigger than the size limit'), ('all', 'in every zone (no zone-top orders)')])
+    if r['fibPat'] != 'off':
+        num('... the zone\'s Fib line (0.5 / 0.618 / 0.705 / 0.786)', 'fibLevel', 'choch_pattern_fib', 0.2, 0.95, (0.5, 0.618, 0.705, 0.786))
+        num('... the pattern\'s low within % of that line (0 to 5)', 'fibTol', 'choch_pattern_tol_pct', 0.0, 5.0)
     cfg['choch_swing_candles'], cfg['choch_lower_highs'], cfg['choch_fib'] = r['pivotN'], r['downN'], r['fib']
     cfg['choch_zone_part'], cfg['choch_zone_when'] = r['part'], r['zoneWhen']
+    for key, name, _d, _lo, _hi in CHOCH_MORE:
+        cfg[name] = r[key]
+    for key, name, _d in CHOCH_BOOLS:
+        cfg[name] = r[key]
+    for key, name, _d, _o in CHOCH_PICKS:
+        cfg[name] = r[key]
     save_config(cfg)
     print('\nSaved: ' + choch_rules_words(choch_rules(cfg)) + '.')
     print('The next daily scan looks at the last %d sessions again with these rules (double-click IntradayNow.bat to do it now).'
@@ -1388,11 +1608,43 @@ def choch_trigger(d, i, spring_ok, touches=None):
 
 
 def choch_touches(all_c):
-    """zone_first_touches of these candles' FVG / Gap-up zones ({} under 17 candles, like fvg_detail's FVG events)."""
-    return zone_first_touches(all_c, spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else {}
+    """zone_first_touches of these candles' FVG / Gap-up zones, linked (link_zones; {} under 17 candles, like fvg_detail's FVG
+    events)."""
+    return zone_first_touches(all_c, link_zones(spring_zones(all_c, fvg_gaps(all_c)))) if len(all_c) >= 17 else {}
 
 
-def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None):
+TOUCH_WORDS = ('Zone first touch', 'FVG First Touch')    # entries at the zone top (a buy order waiting there)
+
+
+def choch_entries(all_c, d, i, slot_ok, touches, r, zones=None, pat=None):
+    """choch_candidates with the owner's refinements of 12-Nov-2026 (backtest_lab gapEntry / zoneMin / zoneMax / darkCloud /
+    fibPat): an FVG zone's touch is left out while a Gap-up zone inside it waits (its own first touch is the entry - 'Gap-up
+    zone (inside the FVG) first touch'); zones outside the size range or with a dark-cloud 3rd candle (as set) are left
+    out; with fibPat the zone-top touches of the big zones (or of every zone) give way to a Spring / Bullish Harami +
+    Inverted Hammer at the zone's Fib line (`pat` = (rmq, fs, max_age, cfg) for fib_pattern_at). -> [(zone, words)]."""
+    byf = {(z['kind'], z['f']): z for z in zones or ()}
+    out = []
+    for z, words in choch_candidates(d, i, slot_ok, touches):
+        zl = byf.get((z.get('kind'), z.get('f')), z)            # the linked zone (inner / outer)
+        if words in TOUCH_WORDS:
+            if zl.get('kind') == 'FVG' and r.get('gapEntry', True) and any(g['f'] < i for g in zl.get('inner') or ()):
+                continue                                         # the order waits at the Gap-up zone inside it
+            if r.get('fibPat') == 'all' or (r.get('fibPat') == 'big' and _big_zone(zl, r)):
+                continue                                         # this zone's entry = the pattern at its Fib line
+            if zl.get('kind') == 'Gap-up' and r.get('gapEntry', True) and zl.get('outer'):
+                words = 'Gap-up zone (inside the FVG) first touch'
+        if _zone_ok(all_c, zl, r):
+            continue
+        out.append((dict(z, outer=zl.get('outer')), words))
+    if r.get('fibPat') in ('big', 'all') and pat is not None and zones:
+        rmq, fs, max_age, cfg = pat
+        for z, kind in fib_pattern_at(all_c, i, zones, rmq, fs, max_age, cfg, slot_ok, r.get('fibLevel', 0.618), r.get('fibTol', 1.0)):
+            if (r['fibPat'] == 'all' or _big_zone(z, r)) and not _zone_ok(all_c, z, r, pattern=True):
+                out.append((z, '%s at the zone\'s %s%% Fib line' % (backtest_lab.PAT_NAMES[kind], _num_words(r.get('fibLevel', 0.618) * 100))))
+    return out
+
+
+def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None, zones=None):
     """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
     {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). A candle's
     entry patterns (choch_candidates) are tried in turn - the first whose zone formed after the CHoCH's final low, on the
@@ -1400,18 +1652,23 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
     no prices (the website shows it): 'Spring · CHoCH 2026-10-13 after 3 lower highs / lows · first pullback · zone middle
     64% down the move'. `rules` = choch_rules() (the defaults: swings of 5, 3 lower highs / lows, the middle 50 % down)."""
     off = len(full_c) - len(all_c)
+    r = rules or choch_rules()
+    if zones is None:
+        zones = link_zones(spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else []
     if touches is None:
-        touches = choch_touches(all_c)
+        touches = zone_first_touches(all_c, zones) if zones else {}
+    pat = None
+    if r.get('fibPat') in ('big', 'all') and zones:
+        pat = (_RangeMin([c['c'] for c in all_c]), [z['f'] for z in zones], WINDOW.get(tf, 300), cfg)
     cand = {}
     for i in range(max(1, len(all_c) - WINDOW.get(tf, 300)), len(all_c)):
         if all_c[i]['day'] <= from_iso:
             continue
-        t = choch_candidates(d, i, _slot_ok(slots, tf, all_c[i]), touches)
+        t = choch_entries(all_c, d, i, _slot_ok(slots, tf, all_c[i]), touches, r, zones, pat)
         if t:
             cand[i] = t
     if not cand:
         return {}
-    r = rules or choch_rules()
     highs = [c['h'] for c in full_c]
     if st is None:
         st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'])
@@ -1424,8 +1681,11 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
             if _choch_fail(j, r):
                 continue
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
-            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move'
-                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round(j['depth'] * 100))))
+            sz = _size_zone(z, r)
+            pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
+            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move%s'
+                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)),
+                         (' · zone %s%% tall' % _num_words(pct)) if pct is not None else ''))
             break
     return out
 
@@ -1449,7 +1709,7 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
         return None
     off = n - len(all_c)
     if zones is None:
-        zones = spring_zones(all_c, fvg_gaps(all_c))
+        zones = link_zones(spring_zones(all_c, fvg_gaps(all_c)))
     if touches is None:
         touches = zone_first_touches(all_c, zones)
     r = rules or choch_rules()
@@ -1466,22 +1726,39 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
     hit = set((z['kind'], z['f']) for v in touches.values() for z in v)
     price = closes[-1]
     found = []
+    gap_entry, fp = r.get('gapEntry', True), r.get('fibPat', 'off')
     for z in zones:
         if z['f'] + off < li or (z['kind'], z['f']) in hit or not z['top'] < price:
+            continue
+        if z['kind'] == 'FVG' and gap_entry and z.get('inner'):
+            continue                                  # the buy order waits at the Gap-up zone inside it (its own row)
+        pattern = fp == 'all' or (fp == 'big' and _big_zone(z, r))
+        if _zone_ok(all_c, z, r, pattern=pattern):
             continue
         j = st.judge(n, z['f'] + off, z['top'], price, closes, r['downN'], h=highs, zone_bottom=z['bottom'],
                      part=r['part'], fib=r['fib'])
         if j['k'] == k and not _choch_fail(j, r):
-            found.append((z, j))
+            # where the order / the wait is (12-Nov-2026): the zone top, the top of the Gap-up zone inside the FVG, or the
+            # zone's Fib line where a Spring / Harami + Inverted Hammer is the entry; the stop reference = the (FVG's) bottom
+            sz = _size_zone(z, r)
+            if pattern:
+                buy = z['top'] - r.get('fibLevel', 0.618) * (z['top'] - z['bottom'])
+                how = 'Spring / Harami + Inverted Hammer at the zone\'s %s%% line' % _num_words(r.get('fibLevel', 0.618) * 100)
+            else:
+                buy = z['top']
+                how = 'buy order at the Gap-up zone top (inside the FVG)' if sz is not z else 'buy order at the zone top'
+            found.append((z, j, buy, how, sz))
     if not found:
         return None
-    found.sort(key=lambda x: (-x[0]['top'], x[0]['kind'] != 'FVG', x[0]['f']))
-    z, j = found[0]
+    found.sort(key=lambda x: (-x[2], x[0]['kind'] != 'FVG', x[0]['f']))
+    z, j, buy, how, sz = found[0]
     H = j['H']
+    pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
     return {'tf': tf, 'choch': full_c[b]['t'], 'level': round(lvl, 2), 'd': dd, 'low': round(lf, 2), 'lowAt': full_c[li]['t'],
             'high': round(H, 2), 'fib': round(backtest_lab.structure.fib_line(H, lf, r['fib']), 2), 'zone': zone_out(all_c, z),
-            'inside': 1 if z.get('inside') else 0, 'depth': int(round(j['depth'] * 100)), 'close': round(price, 2),
-            'last': full_c[-1]['t'], 'dist': round((price - z['top']) / price * 100, 2), 'more': len(found) - 1, 'age': n - 1 - b}
+            'inside': 1 if z.get('inside') or sz is not z else 0, 'depth': int(round((j['depth'] or 0) * 100)), 'close': round(price, 2),
+            'last': full_c[-1]['t'], 'dist': round((price - buy) / price * 100, 2), 'more': len(found) - 1, 'age': n - 1 - b,
+            'buy': round(buy, 2), 'stopAt': round(sz['bottom'], 2), 'how': how, 'pct': round(pct, 2) if pct is not None else None}
 
 
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
@@ -1539,13 +1816,13 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             # the owner's CHoCH + FVG setup (10-Nov-2026): new ones + the ones of the last KEEP_DAYS a later close under
             # the entry candle's low broke (they leave the sheet's list, like Spring in FVG)
             lo_iso = min(since_iso, (upto - timedelta(days=KEEP_DAYS + 1)).isoformat())
-            zs_c = spring_zones(all_c, fvg_gaps(all_c)) if len(all_c) >= 17 else []
+            zs_c = link_zones(spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else []
             tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
             rules = choch or choch_rules()          # the daily scan's CHoCH rules (config.json / ChochRules.bat)
             st_c = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c],
                                                     rules['pivotN'])
             for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_c, touches=tch_c,
-                                                    rules=rules).items()):
+                                                    rules=rules, zones=zs_c).items()):
                 c = all_c[i]
                 broken = spring_broken(all_c, i)
                 if broken is None and c['day'] > since_iso:
@@ -1582,21 +1859,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             up_f = fvg_gaps(full_c) if fz else None
             zones_f = spring_zones(full_c, up_f) if fz else None
             sig = bt_signals(full_c, cfg, win, zones=zones_f) if tf not in NO_FVG_SPRING_TFS else {}
-            lab_rows = [] if lab is not None else None
-            ft_c, cf_c, zt = {}, {}, {}
-            if lab_rows is not None and fz:
-                ft_c, cf_c, _ = fvg_touch_events(full_c, up_f)   # the Lab's FVG First Touch / Confirmed signals
-                zt = zone_first_touches(full_c, zones_f)         # ... and every zone's first touch (11-Nov-2026)
+            if lab is not None:                     # the Lab's rows: the same code as its own build (lab_signal_rows)
+                lab.add(store.get('sym') or '', tf, full_c, lab_signal_rows(full_c, tf, slots, cfg, turn, up_f, zones_f, sig))
             for i in range(3, len(full_c)):
                 c = full_c[i]
                 spring = _slot_ok(slots, tf, c) and is_spring_pair(full_c[i - 1], c, cfg)
-                if lab_rows is not None:
-                    if spring:
-                        lab_rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
-                    if i in ft_c or i in cf_c:              # every candle (the 4H 13:15 rule is for the Springs only)
-                        lab_rows.extend(backtest_lab.touch_rows(full_c, i, ft_c.get(i), cf_c.get(i), turn))
-                    if i in zt:
-                        lab_rows.extend(backtest_lab.zone_touch_rows(full_c, i, zt[i], turn))
                 if not spring:
                     continue
                 o = trade_30d(full_c, i)
@@ -1606,28 +1873,34 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 for z in sig.get(i, ()):
                     out['trades'].append(dict(o, tf=tf, candle=c['t'], session=c['day'], zone=z['kind'], where=z['where'],
                                               touch=z['touch'], inside=bool(z.get('inside'))))
-            if lab_rows is not None:
-                lab.add(store.get('sym') or '', tf, full_c, lab_rows)
     return out
 
 
-def lab_signal_rows(full_c, tf, slots, cfg, turn):
-    """The Backtest Lab's cache rows of one timeframe = what analyse(backtest=True, lab=...) writes, without the rest:
-    every Spring (4H: the slot rule) with the FVG / Gap-up zones it sits on, every FVG First Touch / Confirmed and every
-    zone's first touch (zone_first_touches)."""
+def lab_signal_rows(full_c, tf, slots, cfg, turn, up_f=None, zones_f=None, sig=None):
+    """The Backtest Lab's cache rows of one timeframe (the Lab's own build and the backtest pass both write these): every
+    Spring (4H: the slot rule) with the FVG / Gap-up zones it sits on, every FVG First Touch / Confirmed, every zone's first
+    touch (zone_first_touches; an FVG zone's row carries the Gap-up zone inside it, a Gap-up zone's row the FVG zone around
+    it - link_zones) and every Spring / Bullish Harami + Inverted Hammer inside a zone (fib_pattern_rows). up_f / zones_f /
+    sig = already worked out by the caller."""
     n = len(full_c)
     sp = [i for i in range(3, n) if is_spring_pair(full_c[i - 1], full_c[i], cfg)]
     fz = tf not in NO_FVG_SPRING_TFS and n >= 17
-    up_f = fvg_gaps(full_c) if fz else None
-    zones_f = spring_zones(full_c, up_f) if fz else None
-    sig = bt_signals(full_c, cfg, WINDOW.get(tf, 300), springs=sp, zones=zones_f) if tf not in NO_FVG_SPRING_TFS else {}
-    ft_c, cf_c, zt = {}, {}, {}
+    if fz and up_f is None:
+        up_f = fvg_gaps(full_c)
+    if fz and zones_f is None:
+        zones_f = spring_zones(full_c, up_f)
+    if sig is None:
+        sig = bt_signals(full_c, cfg, WINDOW.get(tf, 300), springs=sp, zones=zones_f) if tf not in NO_FVG_SPRING_TFS else {}
+    ft_c, cf_c, zt, fp = {}, {}, {}, {}
     if fz:
+        link_zones(zones_f)
         ft_c, cf_c, _ = fvg_touch_events(full_c, up_f)
         zt = zone_first_touches(full_c, zones_f)
+        for r in fib_pattern_rows(full_c, tf, slots, cfg, turn, zones_f, WINDOW.get(tf, 300)):
+            fp.setdefault(r[0], []).append(r)
     spring_at = set(i for i in sp if _slot_ok(slots, tf, full_c[i]))
     rows = []
-    for i in sorted(spring_at | set(ft_c) | set(cf_c) | set(zt)):
+    for i in sorted(spring_at | set(ft_c) | set(cf_c) | set(zt) | set(fp)):
         if i < 3:
             continue
         if i in spring_at:
@@ -1636,6 +1909,7 @@ def lab_signal_rows(full_c, tf, slots, cfg, turn):
             rows.extend(backtest_lab.touch_rows(full_c, i, ft_c.get(i), cf_c.get(i), turn))
         if i in zt:
             rows.extend(backtest_lab.zone_touch_rows(full_c, i, zt[i], turn))
+        rows.extend(fp.get(i, ()))
     return rows
 
 

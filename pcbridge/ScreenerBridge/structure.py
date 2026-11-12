@@ -324,7 +324,8 @@ class Structure:
                'after_low': zone_f is None or zone_f >= li,
                'leg': zone_f is None or li <= zone_f <= b + 1,
                'after': zone_f is None or zone_f > b,
-               'below': (zone_top if zone_top is not None else price) < lvl}
+               'below': (zone_top if zone_top is not None else price) < lvl,
+               'lvl': lvl, 'ztop': zone_top if zone_top is not None else price}
         out['stage'] = 'old' if not out['after_low'] else 'bos' if not first else 'above' if not out['below'] else 'below'
         if h is not None:
             H = self.move_high(k, h, i)

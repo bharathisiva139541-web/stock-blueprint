@@ -378,6 +378,11 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    Saved in config.json (choch_swing_candles, choch_lower_highs, choch_fib, choch_zone_part, choch_zone_when). The next scan
    then looks at the last 10 sessions again with them (IntradayNow.bat = now); the sheet's tab notes and the website's
    texts say the rules in use. TestConnection line 9 and IntradayCheck.bat show them too.
+ - ChochRules.bat now also asks (12-Nov-2026, the owner's 10 points): zone size min / max %, buy at the Gap-up top
+   inside an FVG (yes), a zone slightly above the Fib line allowed when its top is at / near the CHoCH line,
+   dark-cloud FVGs (any / leave out / only), the Fib + Spring / Harami-Inverted-Hammer entry (off / big zones /
+   all) with its level (0.618) and tolerance (1%). Enter keeps a value. The Backtest Lab has the same options;
+   its cache rebuilds once by itself (version 5) on the first run after this update.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

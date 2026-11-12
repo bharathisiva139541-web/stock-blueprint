@@ -9321,8 +9321,9 @@ function ab_site_main_(cx, readAt) {
 const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG'];
 const AB_SITE_Z4_MAX = 6000;
 const AB_SITE_CHW_COLS = ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On',
-  'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle', 'Distance %', 'More Zones Below'];
-const AB_SITE_CHW_KINDS = { 'CHoCH Candle': 'str', 'Final Low On': 'str', 'Zone Formed': 'str', 'Last Candle': 'str' };
+  'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Zone %', 'Buy At', 'Stop Under', 'Entry',
+  'Last Close', 'Last Candle', 'Distance %', 'More Zones Below'];
+const AB_SITE_CHW_KINDS = { 'CHoCH Candle': 'str', 'Final Low On': 'str', 'Zone Formed': 'str', 'Last Candle': 'str', 'Entry': 'str' };
 const AB_SITE_CHW_MAX = 6000;
 const AB_SITE_BT_COLS = ['Timeframe', 'Group', 'Signals', 'Avg Up % (30d)', 'Median Up % (30d)', 'Hit 1R %', 'Hit 1.5R %', 'Hit 2R %',
   'Hit 3R %', 'Hit 5R %', 'Stopped %', 'Avg Max R', 'Median Max R', 'Still open', 'From', 'To'];
@@ -9859,7 +9860,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 14;   // 14: + chochWait (CHoCH Waiting tab, with Kite prices - 12-Nov-2026); 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 15;   // 15: chochWait + 'Zone %' / 'Buy At' / 'Stop Under' / 'Entry' (12-Nov-2026 refinements); 14: + chochWait (CHoCH Waiting tab, with Kite prices - 12-Nov-2026); 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;
