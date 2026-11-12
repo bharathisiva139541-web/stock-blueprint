@@ -106,7 +106,9 @@ function smc(kind) {
   at.lvl = lvl; at.hi = at.highs[at.highs.length - 1]; at.low = out.length - 1;
   put(L, L + 1.3, L - 0.3, L + 1);                          // A
   put(L + 1, L + 10.3, L + 0.7, L + 10);                    // B - a big green
-  put(L + 10, L + 13.3, L + 6.5, L + 13);                   // C: its low over A's high = the FVG
+  // C: its low over A's high = the FVG ('slight': no FVG here - its zone is the only discount zone of the move, so the 2nd-zone
+  // rule of 12-Nov-2026 does not wait for a deeper one)
+  put(L + 10, L + 13.3, kind === 'slight' ? L + 1.2 : L + 6.5, L + 13);
   at.f = out.length - 1; at.bottom = r2(L + 1.3); at.top = r2(L + 6.5);
   put(L + 13, lvl + 2, L + 12.7, lvl + 1.7);                // D: CLOSES above the last lower high = CHoCH
   at.b = out.length - 1;
@@ -634,6 +636,7 @@ const PAGES = [
       'Discount: zone-இன் நடுப்பகுதி move-இன் 50% கோட்டுக்குக் கீழே (கடைசி low → entry-க்கு முந்தைய உச்சம்; மஞ்சள் கோடு = Fib 0.5). Zone சற்று CHoCH level-க்கு மேலே நீண்டாலும் OK',
       'முதல் pullback மட்டும்: CHoCH-க்குப் பின் புதிய உயரம் (BOS = உச்ச swing high-க்கு மேலே close) வருவதற்கு முன்',
       'Entry = அந்த zone-க்கு price முதல் முறை வருவது (zone top-இல் limit order, அல்லது அந்த candle close) - மேலே புதிய FVG உருவானாலும்; அல்லது zone-இல் Spring (4H: 13:15 candle) / FVG First Touch Confirmed; stop = zone-க்குக் கீழே',
+      'Move-இல் இரண்டு discount zone இருந்தால்: price முதலில் தொடும் (மேலே உள்ள) zone-ஐக் கவனிக்க மட்டும்; trade 2-வது zone-இல் (3-வது zone = trade இல்லை) - owner, 12-Nov-2026',
       'கடைசி low-க்குக் கீழே close = CHoCH செல்லாது; பின்னர் entry candle low-க்குக் கீழே close = பட்டியலிலிருந்து நீக்கம்'
     ],
     examples: [

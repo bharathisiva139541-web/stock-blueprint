@@ -383,6 +383,10 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    dark-cloud FVGs (any / leave out / only), the Fib + Spring / Harami-Inverted-Hammer entry (off / big zones /
    all) with its level (0.618) and tolerance (1%). Enter keeps a value. The Backtest Lab has the same options;
    its cache rebuilds once by itself (version 5) on the first run after this update.
+ - 12-Nov-2026 (later): when a CHoCH move has two discount zones, the one price reaches first is only watched - the
+   trade / the buy order is on the 2nd (ChochRules.bat asks "Two discount zones in the CHoCH move": 1 = trade the 2nd,
+   2 = every zone). The Backtest Lab can also ask for big volume in the CHoCH move, and every chart in the charts PDF
+   now has the volume under it. The Lab's cache rebuilds once more by itself (version 6).
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

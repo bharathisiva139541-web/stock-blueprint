@@ -66,6 +66,8 @@
       emaTouch: fl(Math.max(0, num(p.emaTouch, 1))),
       ab10: String(!!p.above10), ab21: String(!!p.above21), ab50: String(!!p.above50), emaStack: String(!!p.emaStack),
       gapEntry: String(p.gapEntry !== false),
+      // of two discount zones in the CHoCH move: the 2nd traded, the 1st only watched (owner, 12-Nov-2026)
+      zonePick: str(p.zonePick === 'every' ? 'Trade every zone' : 'Trade the 2nd (the 1st only watched)'),
       // how swings and the CHoCH are found (owner, 12-Nov-2026: the structure options drawn too)
       swMode: str(p.swingMode === 'zigzag' ? 'ZigZag (ATR)' : 'Candles each side'),
       zzAtr: fl(clamp(num(p.zzAtr, 2), 0.5, 10)),
@@ -97,6 +99,7 @@
     if (num(p.discountMax, 0)) more.push('the "zone at most" level');
     if (num(p.lagMin, 0)) more.push('the days after the CHoCH');
     if (num(p.dispAtr, 0) || num(p.dispVol, 0)) more.push('the CHoCH candle\'s body / volume');
+    if (num(p.moveVol, 0)) more.push('the big-volume candles in the CHoCH move');
     if (p.sweep) more.push('the sweep of the low');
     // the owner's refinements of 12-Nov-2026 the script does not draw (the Gap-up zone entry and the final-low stop it does)
     if (num(p.zoneMin, 0) || num(p.zoneMax, 0)) more.push('the zone size range');

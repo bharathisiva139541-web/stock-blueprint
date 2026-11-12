@@ -39,6 +39,7 @@ _HW = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278
 UP, DOWN, WICK = (0.13, 0.62, 0.45), (0.89, 0.30, 0.30), (0.35, 0.38, 0.45)
 GRID, AXIS, MUTED, INK = (0.92, 0.93, 0.95), (0.55, 0.58, 0.64), (0.42, 0.45, 0.52), (0.10, 0.12, 0.18)
 ZONE_FVG, ZONE_GAP = (0.86, 0.92, 1.0), (0.93, 0.88, 1.0)
+WATCHED = (0.92, 0.92, 0.93)                # the 1st discount zone of the move - only watched (12-Nov-2026)
 CHOCH, FIB, BOS = (0.50, 0.33, 0.93), (0.85, 0.62, 0.05), (0.95, 0.45, 0.10)
 ENTRY, STOP, TARGET, SWING = (0.15, 0.40, 0.90), (0.88, 0.20, 0.20), (0.10, 0.60, 0.35), (0.98, 0.65, 0.25)
 EMA_COL = {10: (0.95, 0.55, 0.10), 21: (0.20, 0.55, 0.85), 50: (0.55, 0.35, 0.75)}
@@ -275,6 +276,11 @@ class Placer:
         return cx, y, best is not None
 
 
+def _short(v):
+    """A volume in few characters: 2.3 Cr / 45.1 L / 8,200."""
+    return '%.1f Cr' % (v / 1e7) if v >= 1e7 else '%.1f L' % (v / 1e5) if v >= 1e5 else '{:,}'.format(int(round(v)))
+
+
 class Chart:
     """Candles of cs[a .. b] in a box (several candles a bar when `max_bars` is smaller - the overview), the scales, and
     marks / words / lines placed with a Placer."""
@@ -316,8 +322,9 @@ class Chart:
     def inside(self, k):
         return self.a <= k <= self.b
 
-    def frame(self, dates=9):
+    def frame(self, dates=9, dates_y=None):
         cv = self.cv
+        dy = self.y0 if dates_y is None else dates_y      # the date axis (under the volume panel when there is one)
         cv.rect(self.x0, self.y0, self.x1 - self.x0, self.y1 - self.y0, fill=(1, 1, 1), stroke=(0.85, 0.87, 0.9))
         step = _nice_step(self.hi - self.lo, 8 if self.y1 - self.y0 > 300 else 5)
         p = (int(self.lo / step) + 1) * step
@@ -330,9 +337,39 @@ class Chart:
         for j in range(0, nb, every):
             k = self.bars[j][0]
             x = self.x0 + (j + 0.5) * self.slot
-            cv.line(x, self.y0, x, self.y0 - 3, AXIS, 0.4)
-            cv.text(x, self.y0 - 11, day_text(self.cs.day[k], self.cs.minute[k], self.intraday and self.m == 1,
+            cv.line(x, dy, x, dy - 3, AXIS, 0.4)
+            cv.text(x, dy - 11, day_text(self.cs.day[k], self.cs.minute[k], self.intraday and self.m == 1,
                                               year=not (self.intraday and self.m == 1)), self.font, AXIS, align='center')
+
+    def volume(self, y0, y1, mark=None, note=''):
+        """The volume of every bar in a panel under the chart (y0 .. y1, owner, 12-Nov-2026: "Add volumes in our backtest
+        chart too"): green / red like the candles, the CHoCH move's bars (`mark` = candle range) darker, the 20-bar average
+        as a line, `note` written in the panel."""
+        cv, cs = self.cv, self.cs
+        cv.rect(self.x0, y0, self.x1 - self.x0, y1 - y0, fill=(1, 1, 1), stroke=(0.85, 0.87, 0.9))
+        v = getattr(cs, 'v', None)
+        vols = [sum(float(v[k]) for k in range(r[0], r[1] + 1)) if v is not None else 0.0 for r in self.bars]
+        top = max(vols) if vols else 0.0
+        if not top > 0:
+            cv.text(self.x0 + 4, y1 - 9, 'Volume - not in the data of this stock', 6.5, AXIS)
+            return
+        sc = (y1 - y0 - 12) / top
+        for j, (s0, s1, o, h, l, c) in enumerate(self.bars):
+            x = self.x0 + (j + 0.5) * self.slot
+            col = UP if c >= o else DOWN
+            strong = mark is not None and s0 <= mark[1] and s1 >= mark[0]
+            fill = tuple(1 - (1 - q) * (0.95 if strong else 0.45) for q in col)
+            cv.rect(x - self.bw / 2, y0, self.bw, max(0.3, vols[j] * sc), fill=fill)
+        pts = []
+        for j in range(len(vols)):
+            w = vols[max(0, j - 20):j]
+            if len(w) >= 10:
+                pts.append((self.x0 + (j + 0.5) * self.slot, y0 + sum(w) / len(w) * sc))
+        if len(pts) > 1:
+            cv.polyline(pts, AXIS, 0.6)
+        cv.text(self.x0 + 4, y1 - 8, 'Volume (grey line = 20-candle average%s)%s' % (
+            '; the CHoCH move darker' if mark is not None else '', ('  -  ' + note) if note else ''), 6.5, MUTED)
+        cv.text(self.x0 - 4, y0 + top * sc - 2.5, _short(top), self.font, AXIS, align='right')
 
     def candles(self):
         cv, bw = self.cv, self.bw
@@ -496,13 +533,18 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     ev = cx['ev']
     zb, zt, zf = t.get('zb'), t.get('zt'), t.get('zf')
     levels = [t['entry'], t['stop'], t.get('tgt'), zb, zt, t.get('fibLine')] + ([t['fz'][0], t['fz'][1]] if t.get('fz') else [])
+    z1 = t.get('z1')                          # the 1st discount zone of the move, only watched (the 2nd-zone rule)
+    if z1 and z1[2] is not None and z1[2] >= start:
+        levels += [z1[0], z1[1]]
     if ev:
         levels += [ev[2], ev[4]]
     if cx.get('fibLine') is not None:
         levels.append(cx['fibLine'])
-    x0, x1, y0, y1 = 46.0, PAGE_W - 128.0, 40.0, PAGE_H - 96.0
+    x0, x1, y0, y1 = 46.0, PAGE_W - 128.0, 98.0, PAGE_H - 96.0
     ch = Chart(cv, cs, start, end, (x0, y0, x1, y1), levels, intraday=intraday)
-    ch.frame()
+    ch.frame(dates_y=40.0)
+    mark = (ev[3], ev[0]) if ev else None
+    ch.volume(40.0, 92.0, mark, ('the CHoCH move\'s biggest volume = %s the 20 candles before it' % _times_x(t['mv'])) if t.get('mv') else '')
     gap_zone = t.get('code') in ('G', 'Y')
     za = None
     if zb is not None and zt is not None and zf is not None and zf >= 0:
@@ -511,6 +553,9 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
         if fz:                                # the FVG around the Gap-up zone the order waited in (12-Nov-2026)
             ch.zone(max(start, fz[2] - 2), max(za, jx), fz[0], fz[1], ZONE_FVG)
         ch.zone(za, max(za, jx), zb, zt, ZONE_GAP if gap_zone else ZONE_FVG)
+    if z1 and z1[2] is not None and z1[2] >= start:
+        z1a = max(start, z1[2] - 2)
+        ch.zone(z1a, max(z1a, i), z1[0], z1[1], WATCHED)
     for ln, series in sorted((emas or {}).items()):
         cv.polyline([(ch.X(k), ch.Y(series[k])) for k in range(start, end + 1) if ch.lo < series[k] < ch.hi], EMA_COL.get(ln, MUTED), 0.6)
     ch.candles()
@@ -552,6 +597,8 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     ch.place.block(xx - 3.5, xx + 3.5, yx - 3.5, yx + 3.5)
     right.append((yx, 'Exit %s' % money(ex), ecol))
     ch.word(jx, yx + (3 if t['R'] > 0 else -3), EXIT_WORD.get(t['reason'], t['reason'].upper()), ecol, up=t['R'] > 0, size=7)
+    if z1 and z1[2] is not None and z1[2] >= start:
+        ch.word(max(start, z1[2] - 2), ch.Y(z1[1]), '1st zone (watched only)', MUTED, up=True, size=6.5)
     if za is not None:
         name = 'Gap-up zone' + (' (inside FVG)' if t.get('inside') or t.get('fz') else '') if gap_zone else 'FVG zone'
         ch.word(za, ch.Y(zt), name, (0.30, 0.42, 0.75), up=True, size=7)
@@ -717,6 +764,14 @@ def why_story(t, cs, s, P, cx):
                    'The market structure rules of this run were met.')
         if has_zone:
             out.append('Before the signal the price left %s on %s.' % (zone_name, dt(zf)))
+    if ev and t.get('zn') == 2:
+        out.append('Price had already come down to a higher discount zone of the same rise. Your rule only watches that 1st '
+                   'zone; the trade is taken in the 2nd zone under it - this one.')
+    if ev and t.get('mv'):
+        mv = P.get('moveVol') or 0
+        out.append('Volume in the rise that made the CHoCH: its biggest candle traded %s the normal volume (the 20 candles '
+                   'before the rise).%s' % (_times_x(t['mv']), (' Your rule asks for at least %s on %d candle%s.' % (
+                       _times_x(mv), P.get('moveVolN', 1), '' if P.get('moveVolN', 1) == 1 else 's')) if mv and only else ''))
     code = t.get('code')
     if t.get('fz'):
         out.append('Inside that move\'s FVG there was a smaller gap-up zone, so your order waited at the top of the gap-up zone '
@@ -791,6 +846,11 @@ def why_story(t, cs, s, P, cx):
     if t.get('zpct') is not None and (P.get('zoneMin') or P.get('zoneMax')):
         out.append('The zone was %s tall - inside your size range.' % _pct_words(t['zpct']))
     return out
+
+
+def _times_x(x):
+    """2 -> 'twice', 3.4 -> '3.4 times'."""
+    return 'twice' if abs(x - 2) < 0.05 else ('%g times' % round(x, 1))
 
 
 def _pct_words(x):
@@ -1045,6 +1105,12 @@ def rule_lines(P):
     if P.get('darkCloud') in ('exclude', 'only'):
         out.append('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one): %s' % (
             'left out' if P['darkCloud'] == 'exclude' else 'only these'))
+    if P.get('structure') == 'only':
+        out.append('Two discount zones in the CHoCH move: %s' % ('every zone traded' if P.get('zonePick') == 'every' else
+                                                               'the 2nd traded, the 1st only watched'))
+        if P.get('moveVol'):
+            out.append('Volume in the CHoCH move: at least %d candle%s with %gx the volume of the 20 candles before it' % (
+                P.get('moveVolN', 1), '' if P.get('moveVolN', 1) == 1 else 's', P['moveVol']))
     stop = {'zone': 'under the zone bottom', 'spring': "under the signal candle's low", 'lower': 'under the lower of the two',
             'pct': '%g%% under the entry' % P.get('stopPct', 0), 'final': 'under the CHoCH\'s final low (LL)'}.get(P.get('stop'), P.get('stop'))
     out.append('Stop loss: %s%s; trades risking more than %g%% skipped' % (

@@ -12423,7 +12423,8 @@ function ab_chochRules_(r) {
     part: AB_CHOCH_PART_WORDS[r.part] ? String(r.part) : 'mid', zoneWhen: AB_CHOCH_WHEN_WORDS[r.zoneWhen] ? String(r.zoneWhen) : 'both',
     zoneMin: flt(r.zoneMin, 0, 50, 0), zoneMax: flt(r.zoneMax, 0, 100, 0), lineTol: flt(r.lineTol, 0, 5, 0.5), fibLevel: flt(r.fibLevel, 0.2, 0.95, 0.618),
     fibTol: flt(r.fibTol, 0, 5, 1), gapEntry: typeof r.gapEntry === 'boolean' ? r.gapEntry : true, lineOk: r.lineOk === true,
-    darkCloud: pick(r.darkCloud, ['any', 'exclude', 'only'], 'any'), fibPat: pick(r.fibPat, ['off', 'big', 'all'], 'off') };
+    darkCloud: pick(r.darkCloud, ['any', 'exclude', 'only'], 'any'), fibPat: pick(r.fibPat, ['off', 'big', 'all'], 'off'),
+    zonePick: pick(r.zonePick, ['second', 'every'], 'second') };
 }
 
 /** 'swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH
@@ -12439,6 +12440,8 @@ function ab_chochRulesText_(r) {
   if (r.fibPat === 'big' || r.fibPat === 'all') {
     out += ', ' + (r.fibPat === 'big' ? 'big zones' : 'every zone') + ': a Spring / Harami + Inverted Hammer at the zone\'s ' + w((r.fibLevel || 0.618) * 100) + '% line';
   }
+  // owner, 12-Nov-2026: of two discount zones in the CHoCH move the 2nd is traded, the 1st only watched
+  out += r.zonePick === 'every' ? ', every discount zone' : ', the 2nd discount zone when the move has two (the 1st only watched)';
   return out;
 }
 
@@ -12914,7 +12917,7 @@ function ab_chwFromBridge_(req) {
   const rules = ab_chochRules_(req.choch || req);
   const note = 'CHoCH + FVG setups WAITING for the pullback, from Zerodha Kite candles (your PC program' + (upto ? ', session ' + upto : '') +
     '): a candle closed above the last lower high after the lower highs / lows, no close under the final low and no BOS since; Zone = the highest ' +
-    'FVG / Gap-up zone that price has NOT touched yet, in the discount part of the move (final low -> Move High) - the first touch of it is the ' +
+    'FVG / Gap-up zone that price has NOT touched yet, in the discount part of the move (final low -> Move High; of two such zones the 2nd - the 1st only watched) - the first touch of it is the ' +
     'CHoCH + FVG entry (Intraday Patterns tab). Rules: ' + ab_chochRulesText_(rules) + '. ' +
     'Buy At = where the order waits (the zone top, the Gap-up zone top inside an FVG, or the zone\'s Fib line for a Spring / Harami + Inverted Hammer), ' +
     'Stop Under = the zone\'s (the FVG\'s) bottom, Zone % = its size. Distance % = how far the last close must fall to Buy At. ' +

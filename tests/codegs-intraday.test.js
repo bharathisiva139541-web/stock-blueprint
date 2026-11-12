@@ -451,7 +451,7 @@ test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s
   assert.strictEqual(rows[1][5], '2026-11-05 09:15', 'a 4H CHoCH + FVG row may be any 4H candle (the PC applies the 13:15 rule to its Springs)');
   assert.match(e.sheet('Intraday Patterns').rows[0][0], /CHoCH \+ FVG \(your SMC setup, 4H \/ D \/ W\).*rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move/);
   e.post(put([], { choch: { pivotN: 8, downN: 10, fib: 0.618, part: 'bottom', zoneWhen: 'after' } }));
-  assert.match(e.sheet('Intraday Patterns').rows[0][0], /rules: swings of 8 candles, at least 3 lower highs \/ lows, the zone's bottom at least 61\.8% down the move, the zone formed only after the CHoCH candle\./,
+  assert.match(e.sheet('Intraday Patterns').rows[0][0], /rules: swings of 8 candles, at least 3 lower highs \/ lows, the zone's bottom at least 61\.8% down the move, the zone formed only after the CHoCH candle, the 2nd discount zone when the move has two \(the 1st only watched\)\./,
     'the laptop\'s rules (downN 10 is out of range: the default 3)');
   // the site feed: the words come along, the prices do not
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
@@ -479,7 +479,7 @@ test('CHoCH + FVG waiting for the pullback (owner, 12-Nov-2026, IREDA): the "CHo
       w('PARAGMILK', 'D', 1, 0)] });
   assert.deepStrictEqual([r.ok, r.received, r.kept, r.skipped], [true, 6, 2, 3], JSON.stringify(r));
   const tab = e.sheet('CHoCH Waiting').rows;
-  assert.match(tab[0][0], /WAITING for the pullback.*session 2026-11-06.*Rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it\./);
+  assert.match(tab[0][0], /WAITING for the pullback.*session 2026-11-06.*Rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it, the 2nd discount zone when the move has two \(the 1st only watched\)\./);
   assert.deepStrictEqual(tab[1].slice(0, 4), ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle']);
   assert.deepStrictEqual(tab.slice(2).map((x) => [x[0], x[2], x[10], x[21]]), [['M&M', '4H', 'Gap-up (inside FVG)', 2.5], ['PARAGMILK', 'D', 'FVG', 9.23]], 'nearest first, one row a stock + timeframe');
   // an older PC sends no buy / stop / entry / size: the zone top / bottom (12-Nov-2026 columns Zone % / Buy At / Stop Under / Entry)
@@ -493,17 +493,17 @@ test('CHoCH + FVG waiting for the pullback (owner, 12-Nov-2026, IREDA): the "CHo
     darkCloud: 'exclude', fibPat: 'big', fibLevel: 0.618, fibTol: 1 } });
   const t2 = e.sheet('CHoCH Waiting').rows;
   assert.deepStrictEqual(t2[2].slice(10, 19), ['Gap-up (inside FVG)', 105.5, 107.4, '2026-10-29', 83, 3.98, 107.4, 104.1, 'buy order at the Gap-up zone top (inside the FVG)']);
-  assert.match(t2[0][0], /Rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it, zone size 2 - 8%, or the zone top at \/ under the CHoCH level \(\+1%\), dark-cloud FVGs left out, big zones: a Spring \/ Harami \+ Inverted Hammer at the zone's 61\.8% line\./);
+  assert.match(t2[0][0], /Rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it, zone size 2 - 8%, or the zone top at \/ under the CHoCH level \(\+1%\), dark-cloud FVGs left out, big zones: a Spring \/ Harami \+ Inverted Hammer at the zone's 61\.8% line, the 2nd discount zone when the move has two \(the 1st only watched\)\./);
   assert.match(t2[0][0], /Buy At = where the order waits/);
   e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-06', rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], inside: 1 })] });
   // the next scan replaces it all; the laptop's own CHoCH rules (ChochRules.bat, 12-Nov-2026) in the note
   e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('FLAT', 'W', 4, 0)],
     choch: { pivotN: 10, downN: 4, fib: 0.382, part: 'top', zoneWhen: 'leg' } });
   assert.deepStrictEqual(e.sheet('CHoCH Waiting').rows.slice(2).map((x) => x[0] + ' ' + x[2]), ['FLAT W']);
-  assert.match(e.sheet('CHoCH Waiting').rows[0][0], /Rules: swings of 10 candles, at least 4 lower highs \/ lows, the zone's top at least 38\.2% down the move, the zone formed only in the CHoCH move\./);
+  assert.match(e.sheet('CHoCH Waiting').rows[0][0], /Rules: swings of 10 candles, at least 4 lower highs \/ lows, the zone's top at least 38\.2% down the move, the zone formed only in the CHoCH move, the 2nd discount zone when the move has two \(the 1st only watched\)\./);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_chochRules_({ pivotN: 99, downN: 0, fib: 3, part: "x", zoneWhen: "y", zoneMax: 500, gapEntry: 1, darkCloud: "x", fibPat: "y", lineOk: "yes" })'))),
     { pivotN: 5, downN: 3, fib: 0.5, part: 'mid', zoneWhen: 'both', zoneMin: 0, zoneMax: 0, lineTol: 0.5, fibLevel: 0.618, fibTol: 1, gapEntry: true,
-      lineOk: false, darkCloud: 'any', fibPat: 'off' }, 'out of range = the defaults');
+      lineOk: false, darkCloud: 'any', fibPat: 'off', zonePick: 'second' }, 'out of range = the defaults');
   e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { inside: 1 })] });
   // the site feed: every column but the chart / time, Kite's prices included (the owner's choice)
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
