@@ -274,16 +274,35 @@
 
   function itdRows(ctx) { return ui.objRows(ctx.D.intraday); }
 
+  // the daily scan's CHoCH rules (owner, 12-Nov-2026: "Build 2" - set on the laptop with ChochRules.bat): the words the sheet
+  // writes in its tab notes (Code2.gs ab_chochRulesText_ = kite_intraday.py choch_rules_words), read back; else the defaults
+  var CH_RULES_RX = /swings of (\d+) candles, at least (\d+) lower highs \/ lows, the zone's (middle|top|bottom) at least ([\d.]+)% down the move, the zone formed (in the CHoCH move or after it|only in the CHoCH move|only after the CHoCH candle)/;
+  function chochRules(ctx) {
+    var notes = [(ctx.D.chochWait || {}).note, (ctx.D.intraday || {}).note];
+    for (var k = 0; k < notes.length; k++) {
+      var m = CH_RULES_RX.exec(String(notes[k] || ''));
+      if (m) return { swing: +m[1], lower: +m[2], part: m[3], fib: +m[4], when: m[5] };
+    }
+    return { swing: 5, lower: 3, part: 'middle', fib: 50, when: 'in the CHoCH move or after it' };
+  }
+  function chochRulesHtml(r) {
+    return 'at least <b>' + r.lower + ' lower highs and ' + r.lower + ' lower lows</b> (swings of ' + r.swing + ' candles)';
+  }
+  function chochZoneHtml(r) {
+    return 'formed ' + esc(r.when) + ', in the <b>discount part</b> of the move (its ' + esc(r.part) + ' at least ' + r.fib + '% down from the high to the final low' +
+      (r.part === 'middle' ? ' - a part may be above the CHoCH level' : '') + ')';
+  }
+
   // the owner's CHoCH + FVG setups (10-Nov-2026): rows 'CHoCH + FVG' of the same tab, with what triggered them
   function chochSectionHtml(ctx) {
     var rows = itdRows(ctx).filter(function (r) { return r.Pattern === CHOCH; });
-    var sub = 'Your SMC setup, found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close: after at least ' +
-      '<b>3 lower highs and 3 lower lows</b> (swings of 5 candles) a candle <b>closed above the last lower high (CHoCH)</b>; an FVG / Gap-up zone formed in that move ' +
-      'or after it, in the <b>discount half</b> of the move (its middle under the 50% line from the final low to the high - a part may be above the CHoCH level); and on ' +
+    var cr = chochRules(ctx);
+    var sub = 'Your SMC setup, found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close: after ' +
+      chochRulesHtml(cr) + ' a candle <b>closed above the last lower high (CHoCH)</b>; an FVG / Gap-up zone ' + chochZoneHtml(cr) + '; and on ' +
       'the <b>first pullback</b> into it (no BOS yet) the <b>first touch</b> of the zone (even when a newer FVG formed above it), a <b>Spring</b> on it or an ' +
       '<b>FVG First Touch / Confirmed</b>. ' +
       'Taken off when a later candle closes below the entry candle\'s low. Use it in Strategy Settings ("CHoCH + FVG (your SMC setup)") and test it in the ' +
-      '<a href="#lab">Backtest Lab</a>. Research only, not a buy recommendation.';
+      '<a href="#lab">Backtest Lab</a>. The swing size, lower highs / lows and the discount level are set on your laptop (<b>ChochRules.bat</b>). Research only, not a buy recommendation.';
     var body;
     if (!rows.length) {
       body = '<p class="empty">No CHoCH + FVG setup in the last 30 days of your PC\'s scans yet. They come with the daily Zerodha Kite scan after the close ' +
@@ -352,12 +371,13 @@
   }
   function chwSectionHtml(ctx) {
     var rows = chwRows(ctx), w = ctx.D.chochWait || {};
-    var sub = 'The same setup <b>before</b> the entry: a CHoCH has formed (at least 3 lower highs and lower lows, swings of 5 candles), no close under its final low ' +
-      'and no BOS yet, and an FVG / Gap-up zone of that move sits in its <b>discount half</b> (its middle under the 50% line) - but price has <b>not come back to it yet</b>. ' +
+    var cr = chochRules(ctx);
+    var sub = 'The same setup <b>before</b> the entry: a CHoCH has formed (after ' + chochRulesHtml(cr) + '), no close under its final low ' +
+      'and no BOS yet, and an FVG / Gap-up zone ' + chochZoneHtml(cr) + ' - but price has <b>not come back to it yet</b>. ' +
       'The first touch of the zone is the entry (it then moves to "CHoCH + FVG setups" above, after that day\'s scan) - a buy order at the <b>zone top</b> is the low-risk way in, ' +
       'the stop a little under the <b>zone bottom</b>. One row per stock and timeframe: the highest such zone (the one price reaches first; "More below" = further discount zones under it). ' +
       'Prices from Zerodha Kite (your PC, after each day\'s close); Distance = how far the price shown now must fall to the zone top. ' +
-      'The 50% line rises when price makes a new high after the scan - a zone can then also qualify. Research only, not a buy recommendation.' +
+      'The discount line rises when price makes a new high after the scan - a zone can then also qualify. Research only, not a buy recommendation.' +
       (/session (\d{4}-\d{2}-\d{2})/.test(w.note || '') ? ' <span class="sub">(the scan of the session ' + esc(/session (\d{4}-\d{2}-\d{2})/.exec(w.note)[1]) + ')</span>' : '');
     var body;
     if (!rows.length) {

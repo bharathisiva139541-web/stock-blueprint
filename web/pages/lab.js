@@ -287,7 +287,9 @@
       'CHoCH = the first candle that CLOSES above the last swing high after the lower highs and lower lows; BOS = after it, the first close above the highest swing high since. ' +
       'The move = from the CHoCH\'s final low to the highest high before the signal candle (what you draw the Fibonacci on at that moment): 50% down = its middle. ' +
       '"Show it on every trade" keeps every signal and adds a table "By market structure" to the result - your setup vs. after a BOS vs. above the CHoCH level vs. no CHoCH, in one run. ' +
-      'The first run with market structure takes about 10 seconds longer.</p>';
+      'The first run with market structure takes about 10 seconds longer. ' +
+      'The daily scan\'s lists (CHoCH + FVG setups / waiting for the pullback) use the swing size, lower highs / lows, discount level, zone part and "zone formed" ' +
+      'set on your laptop with <b>ChochRules.bat</b> - type the same values there to make them match this run.</p>';
   }
 
   /** Step 3: the hard Spring rules + my recommendations (owner, 10-Nov-2026). */

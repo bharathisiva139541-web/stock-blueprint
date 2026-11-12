@@ -12406,6 +12406,27 @@ function ab_itdNote_(v) {
   return String(v || '').replace(/[\r\n\t]+/g, ' ').replace(/^[=+\-@\s]+/, '').slice(0, 200).trim();
 }
 
+// the daily scan's CHoCH + FVG rules (owner, 12-Nov-2026: "Build 2" - set on the laptop with ChochRules.bat = his Backtest Lab /
+// TradingView values); the PC sends them with every post, the tab notes say them (web/pages/signals.js chochRules reads the words back)
+const AB_CHOCH_WHEN_WORDS = { both: 'in the CHoCH move or after it', leg: 'only in the CHoCH move', after: 'only after the CHoCH candle' };
+const AB_CHOCH_PART_WORDS = { mid: 'middle', top: 'top', bottom: 'bottom' };
+
+/** {pivotN, downN, fib, part, zoneWhen} from the PC's post, checked (anything missing / out of range = the default 5 / 3 / 0.5 / mid / both). */
+function ab_chochRules_(r) {
+  r = r && typeof r === 'object' ? r : {};
+  const int = function (v, lo, hi, d) { const n = Number(v); return v !== null && v !== '' && isFinite(n) && n >= lo && n <= hi ? Math.round(n) : d; };
+  const fib = Number(r.fib);
+  return { pivotN: int(r.pivotN, 2, 20, 5), downN: int(r.downN, 1, 8, 3), fib: r.fib !== null && r.fib !== '' && isFinite(fib) && fib >= 0.2 && fib <= 0.95 ? fib : 0.5,
+    part: AB_CHOCH_PART_WORDS[r.part] ? String(r.part) : 'mid', zoneWhen: AB_CHOCH_WHEN_WORDS[r.zoneWhen] ? String(r.zoneWhen) : 'both' };
+}
+
+/** 'swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH
+ *  move or after it' (= kite_intraday.py choch_rules_words). */
+function ab_chochRulesText_(r) {
+  return 'swings of ' + r.pivotN + ' candles, at least ' + r.downN + ' lower highs / lows, the zone\'s ' + AB_CHOCH_PART_WORDS[r.part] + ' at least ' +
+    String(Math.round(r.fib * 1000) / 10) + '% down the move, the zone formed ' + AB_CHOCH_WHEN_WORDS[r.zoneWhen];
+}
+
 function ab_itdFromBridge_(req) {
   if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_(), indices: ab_klIndexSyms_() };
   if (req.op === 'zones') return ab_itdZonesFromBridge_(req);
@@ -12498,9 +12519,9 @@ function ab_itdFromBridge_(req) {
     'Gap-up FVG + Spring = the same on a Gap-up zone, "inside FVG" when that zone lies in a 3-candle FVG - ' +
     'FVG Detail says top / middle / bottom; taken off when a later candle closes under the Spring low; not on the monthly chart). ' +
     (!tfs || tfs.indexOf('4H') !== -1 ? '4H also: FVG First Touch / Confirmed / Twin Star Bottom + FVG (every 4H candle). ' : '') +
-    'CHoCH + FVG (your SMC setup, 4H / D / W): after at least 3 lower highs and lower lows (swings of 5 candles) a candle closed above the last lower high, ' +
-    'an FVG / Gap-up zone of that move or after it in the discount half of the move (its middle under the 50% line), and on the first pullback (no BOS yet) ' +
-    'the first touch of that zone, a Spring on it or an FVG First Touch / Confirmed. ' +
+    'CHoCH + FVG (your SMC setup, 4H / D / W): after the lower highs and lower lows a candle closed above the last lower high, ' +
+    'an FVG / Gap-up zone of that move in the discount part of the move, and on the first pullback (no BOS yet) ' +
+    'the first touch of that zone, a Spring on it or an FVG First Touch / Confirmed - rules: ' + ab_chochRulesText_(ab_chochRules_(req.choch)) + '. ' +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {
@@ -12869,11 +12890,11 @@ function ab_chwFromBridge_(req) {
     return da !== db ? da - db : a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : AB_CHW_TFS.indexOf(a[2]) - AB_CHW_TFS.indexOf(b[2]);
   });
   const upto = /^\d{4}-\d{2}-\d{2}$/.test(String(req.upto || '')) ? String(req.upto) : '';
-  const fib = Number(req.fib) > 0 && Number(req.fib) < 1 ? Math.round(Number(req.fib) * 1000) / 10 : 50;
+  const rules = ab_chochRules_(req.choch || req);
   const note = 'CHoCH + FVG setups WAITING for the pullback, from Zerodha Kite candles (your PC program' + (upto ? ', session ' + upto : '') +
-    '): a candle closed above the last lower high after at least ' + (Number(req.downN) || 3) + ' lower highs / lows (swings of ' + (Number(req.pivotN) || 5) +
-    ' candles), no close under the final low and no BOS since; Zone = the highest FVG / Gap-up zone formed after the final low that price has NOT touched ' +
-    'yet, its middle at least ' + fib + '% down the move (final low -> Move High) - the first touch of it is the CHoCH + FVG entry (Intraday Patterns tab). ' +
+    '): a candle closed above the last lower high after the lower highs / lows, no close under the final low and no BOS since; Zone = the highest ' +
+    'FVG / Gap-up zone that price has NOT touched yet, in the discount part of the move (final low -> Move High) - the first touch of it is the ' +
+    'CHoCH + FVG entry (Intraday Patterns tab). Rules: ' + ab_chochRulesText_(rules) + '. ' +
     'Distance % = how far the last close must fall to the zone top. Rebuilt after each daily scan. Updated ' + updated + '.';
   const sh = ab_getOrCreateSheet_(AB_CHW_SHEET);
   sh.clearContents();

@@ -905,6 +905,39 @@ K.send_waiting({}, lambda cfg, action, body, **kw: sent6.append((action, body)) 
                date.fromisoformat(r6[t_prem - 1][0]), [dict(res6w['waiting'][0], sym='SUP'), dict(res6w['waiting'][0], sym='AAA', dist=2.5)])
 assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'] for r in sent6[0][1]['rows']] == ['AAA', 'SUP'], sent6
 assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
+assert sent6[0][1]['choch'] == {'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}
+# the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
+D6 = K.choch_rules()
+assert D6 == {'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'} and K.choch_rules({}) == D6
+mine6r = K.choch_rules({'choch_swing_candles': 10, 'choch_lower_highs': 4, 'choch_fib': 0.382, 'choch_zone_part': 'top', 'choch_zone_when': 'leg'})
+assert mine6r == {'pivotN': 10, 'downN': 4, 'fib': 0.382, 'part': 'top', 'zoneWhen': 'leg'}, mine6r
+assert K.choch_rules({'choch_swing_candles': 99, 'choch_lower_highs': True, 'choch_fib': 1.5, 'choch_zone_part': 'x', 'choch_zone_when': 2}) == D6
+assert K.choch_rules_words(D6) == "swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it"
+assert K.choch_rules_words(mine6r) == "swings of 10 candles, at least 4 lower highs / lows, the zone's top at least 38.2% down the move, the zone formed only in the CHoCH move"
+w_at = full6[:t_prem]
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, part='top'))['depth'] == 81, 'the zone top 126.50: 81% down the move'
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, downN=4)) is None, 'only 3 lower highs / lows on this chart'
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, fib=0.9)) is None, 'the zone middle is 89% down: not 90%'
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneWhen='after')) is None, 'the zone formed before the CHoCH candle'
+assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneWhen='leg'))['zone'][:2] == [121.3, 126.5], 'in the CHoCH move'
+for rr6, n6 in ((dict(D6, part='top'), 2), (dict(D6, downN=4), 0), (dict(D6, fib=0.9), 0), (dict(D6, zoneWhen='after'), 0)):
+    got6 = [x for x in K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), (),
+                                 choch=rr6)['items'] if x['pattern'] == K.CHOCH_PATTERN]
+    assert len(got6) == n6, (rr6, [(x['candle'], x['note']) for x in got6])
+    if n6:
+        assert got6[0]['note'].endswith('· first pullback · zone top 81% down the move'), got6[0]['note']
+# ChochRules.bat: Enter keeps a value, a bad answer is asked again; config.json gets the five keys
+answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'])
+saved6 = {}
+assert K.choch_setup({'url': 'x'}, lambda c: saved6.update(c), ask=lambda q: next(answers)) == 0
+assert K.choch_rules(saved6) == {'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'} and saved6['url'] == 'x', saved6
+# the scan is due again when the rules change (and rescans the last sessions), not when they stay
+up6 = date.fromisoformat(r6[-1][0])
+st6 = {'scanned': '2999-01-01', 'tfs': K.chosen_tfs({}), 'slots': K.chosen_slots({}), 'rules': K.RULES_VERSION}
+kc6 = {'kite_api_key': 'abcdef', 'kite_api_secret': 'abcdefghijkl'}
+assert K.due(kc6, set(), state=dict(st6))[0] is False, 'an older state (no choch) = the defaults'
+assert K.due(dict(kc6, choch_lower_highs=4), set(), state=dict(st6))[0] is True
+assert K.due(dict(kc6, choch_lower_highs=4), set(), state=dict(st6, choch=K.choch_rules({'choch_lower_highs': 4})))[0] is False
 
 # ------------------------------------------------------------------ 14. the charts PDF (owner, 12-Nov-2026: "a PDF should come with
 # it - a chart for every trade, with the swings, CHoCH, FVG area, target and stop loss ... like the TradingView view";
