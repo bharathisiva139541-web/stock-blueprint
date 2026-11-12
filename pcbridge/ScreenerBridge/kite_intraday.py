@@ -1343,6 +1343,59 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
     return out
 
 
+CHOCH_WAIT_MAX = 6000             # rows of the sheet's "CHoCH Waiting" tab (nearest first)
+
+
+def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None):
+    """The owner's CHoCH + FVG setup still WAITING for the pullback (owner, 12-Nov-2026, IREDA: "when i set strategy
+    setting.. IREDA stock is not qualified" - the CHoCH had formed, the discount zone was below and price had not come back
+    yet; he puts a buy order at the zone top): the live CHoCH of the newest candle (at least CHOCH_DOWN_N lower highs /
+    lows, at most WINDOW candles old, no close under its final low, no BOS yet) and the FVG / Gap-up zones of all_c formed
+    after its final low that NO candle has touched yet (zone_first_touches) with their middle in the discount part of the
+    move as it stands now (CHOCH_FIB; the move high up to the newest candle) = what choch_setups takes when the next candle
+    touches one. -> None or {'tf', 'choch' (candle), 'level', 'd', 'low', 'lowAt', 'high', 'fib' (the 50 % line), 'zone'
+    (zone_out: [bottom, top, formed, kind]), 'inside', 'depth' (% down the move), 'close', 'last' (candle), 'dist' (% the
+    price must fall to the zone top), 'more' (more such zones under it), 'age' (candles since the CHoCH)} for the highest
+    such zone (the one a falling price reaches first)."""
+    n = len(full_c)
+    if len(all_c) < 17 or n < 2:
+        return None
+    off = n - len(all_c)
+    if zones is None:
+        zones = spring_zones(all_c, fvg_gaps(all_c))
+    if touches is None:
+        touches = zone_first_touches(all_c, zones)
+    highs = [c['h'] for c in full_c]
+    closes = [c['c'] for c in full_c]
+    if st is None:
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], closes, CHOCH_PIVOT_N)
+    k = st.active(n, CHOCH_DOWN_N)
+    if k < 0:
+        return None
+    b, _hi, lvl, li, lf, dd = st.events[k]
+    if n - 1 - b > WINDOW.get(tf, 300) or st.dead_by(k, closes, n) >= 0 or st.bos_before(k, closes, n) >= 0:
+        return None
+    hit = set((z['kind'], z['f']) for v in touches.values() for z in v)
+    price = closes[-1]
+    found = []
+    for z in zones:
+        if z['f'] + off < li or (z['kind'], z['f']) in hit or not z['top'] < price:
+            continue
+        j = st.judge(n, z['f'] + off, z['top'], price, closes, CHOCH_DOWN_N, h=highs, zone_bottom=z['bottom'],
+                     part=CHOCH_PART, fib=CHOCH_FIB)
+        if j['stage'] == 'disc' and j['k'] == k:
+            found.append((z, j))
+    if not found:
+        return None
+    found.sort(key=lambda x: (-x[0]['top'], x[0]['kind'] != 'FVG', x[0]['f']))
+    z, j = found[0]
+    H = j['H']
+    return {'tf': tf, 'choch': full_c[b]['t'], 'level': round(lvl, 2), 'd': dd, 'low': round(lf, 2), 'lowAt': full_c[li]['t'],
+            'high': round(H, 2), 'fib': round(backtest_lab.structure.fib_line(H, lf, CHOCH_FIB), 2), 'zone': zone_out(all_c, z),
+            'inside': 1 if z.get('inside') else 0, 'depth': int(round(j['depth'] * 100)), 'close': round(price, 2),
+            'last': full_c[-1]['t'], 'dist': round((price - z['top']) / price * 100, 2), 'more': len(found) - 1, 'age': n - 1 - b}
+
+
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
             backtest=False, lab=None, lab_only=False):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
@@ -1355,7 +1408,7 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
     Lab's cache too (owner, 09-Nov-2026). `lab_only` (the Lab's own cache build, 11-Nov-2026): only that - no scan, no
     30-day outcomes (the first run after an update took 20+ minutes on the owner's laptop)."""
     turn = backtest_lab.turnover_fn(store.get('day') or []) if lab is not None and backtest else None
-    out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': []}
+    out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': [], 'waiting': []}
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
     for tf in timeframes:
         full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
@@ -1398,7 +1451,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             # the owner's CHoCH + FVG setup (10-Nov-2026): new ones + the ones of the last KEEP_DAYS a later close under
             # the entry candle's low broke (they leave the sheet's list, like Spring in FVG)
             lo_iso = min(since_iso, (upto - timedelta(days=KEEP_DAYS + 1)).isoformat())
-            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg).items()):
+            zs_c = spring_zones(all_c, fvg_gaps(all_c)) if len(all_c) >= 17 else []
+            tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
+            st_c = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c],
+                                                    CHOCH_PIVOT_N)
+            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_c, touches=tch_c).items()):
                 c = all_c[i]
                 broken = spring_broken(all_c, i)
                 if broken is None and c['day'] > since_iso:
@@ -1406,6 +1463,10 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                                          'pattern': CHOCH_PATTERN, 'zone': zone_out(all_c, z), 'note': note})
                 elif broken is not None and c['day'] >= keep_from:
                     out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': CHOCH_PATTERN})
+            # ... and the ones still waiting for the pullback (owner, 12-Nov-2026: the sheet's "CHoCH Waiting" tab)
+            w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c)
+            if w:
+                out['waiting'].append(w)
         if d and tf in FVG_PATTERN_TFS:
             day = [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto.isoformat()][-TURNOVER_DAYS:]
             t = avg_turnover(day)
@@ -1643,6 +1704,26 @@ def send_zones(cfg, api, upto, since, zones, mitigated):
         log('Kite: 4H FVG zones not sent - %s' % e)
 
 
+def send_waiting(cfg, api, upto, rows):
+    """The CHoCH + FVG setups still waiting for the pullback (choch_waiting; owner, 12-Nov-2026) -> the sheet's "CHoCH
+    Waiting" tab, rebuilt each scan (nearest zone first, at most CHOCH_WAIT_MAX). Never raises."""
+    try:
+        rows = sorted(rows, key=lambda r: (r['dist'], r['sym'], r['tf']))[:CHOCH_WAIT_MAX]
+        res = api(cfg, 'intraday', {'op': 'waiting', 'upto': upto.isoformat(), 'fib': CHOCH_FIB, 'pivotN': CHOCH_PIVOT_N,
+                                    'downN': CHOCH_DOWN_N, 'rows': rows}, tries=3, timeout=180)
+        if res.get('ok'):
+            n = {}
+            for r in rows:
+                n[r['tf']] = n.get(r['tf'], 0) + 1
+            log('Kite: CHoCH + FVG waiting for the pullback -> the sheet: %d (%s).'
+                % (int(res.get('kept') or 0), ', '.join('%s %d' % (t, n[t]) for t in CHOCH_TFS if n.get(t)) or 'none'))
+        else:
+            log('Kite: the sheet refused the CHoCH waiting list - %s (paste the new Code2.gs and do the New version deploy)'
+                % res.get('error'))
+    except Exception as e:          # never stop the scan
+        log('Kite: CHoCH waiting list not sent - %s' % e)
+
+
 def send_backtest(cfg, api, upto, trades, springs_bt):
     """The backtest of every FVG+Spring / Gap-up FVG + Spring (4H / D / W, all stored candles) -> the sheet's "Spring
     Backtest" tabs (the summary rows + the newest BT_TRADES trades, no prices)."""
@@ -1829,7 +1910,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         fvg_only = tuple(t for t in (cfg.get('intraday_fvg_only') if cfg.get('intraday_fvg_only') is not None
                                      else DEFAULT_FVG_ONLY) if t in TIMEFRAMES)
         t0, reqs, errors, in_row, nokite, items = time.time(), 0, 0, 0, [], []
-        zones, mitigated, trades, springs_bt, invalid = [], [], [], [], []
+        zones, mitigated, trades, springs_bt, invalid, waiting = [], [], [], [], [], []
         log('Kite: reading the candles of %d stocks up to %s (only new days after the first time) ...'
             % (len(syms), upto.isoformat()))
         lab_w = backtest_lab.CacheWriter(upto)       # the Backtest Lab's cache, from the same candles
@@ -1857,7 +1938,8 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                     continue
                 store['sym'] = sym
                 res = analyse(store, since, upto, holidays, tfs, fvg_only, slots=slots, backtest=True, lab=lab_w)
-                for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades), ('invalid', invalid)):
+                for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades), ('invalid', invalid),
+                                  ('waiting', waiting)):
                     for f in res[key]:
                         f['sym'] = sym
                         dest.append(f)
@@ -1910,6 +1992,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                 'the next scan sends them again.')
         if '4H' in tfs:
             send_zones(cfg, api, upto, since, zones, mitigated)
+        send_waiting(cfg, api, upto, waiting)
         send_backtest(cfg, api, upto, trades, springs_bt)
         try:                            # the deep history for the backtest, a part a day (KiteHistoryNow.bat: all at once)
             done, left, n = deep_fill(cfg, sess, imap, syms, upto, DEEP_BUDGET_S, every=100)
@@ -1993,6 +2076,17 @@ def check(cfg, args, holidays=None, out=print, now=None):
                                                               ' mitigated %s' % cs[z['hit']]['t'] if z.get('hit') is not None else '',
                                                               ' (inside FVG)' if z.get('inside') else '')
                              for z in zs) or 'none'))
+    if tf in CHOCH_TFS:
+        full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
+        w = choch_waiting(full_c, full_c[-SCAN_KEEP.get(tf, len(full_c)):], tf)
+        out('CHoCH + FVG (%d-candle swings, %d lower highs / lows, zone middle under the %d%% line): %s'
+            % (CHOCH_PIVOT_N, CHOCH_DOWN_N, int(CHOCH_FIB * 100),
+               'WAITING for the pullback - CHoCH %s above %.2f (%d lower highs / lows, final low %.2f on %s), move high %.2f, '
+               '%d%% line %.2f; zone %s %.2f - %.2f formed %s (%d%% down the move), last close %.2f = %.2f%% above the zone top%s'
+               % (w['choch'], w['level'], w['d'], w['low'], w['lowAt'], w['high'], int(CHOCH_FIB * 100), w['fib'], w['zone'][3],
+                  w['zone'][0], w['zone'][1], w['zone'][2], w['depth'], w['close'], w['dist'],
+                  ', %d more discount zone(s) under it' % w['more'] if w['more'] else '')
+               if w else 'nothing waiting (no live CHoCH, or no untouched zone in the discount part of its move)'))
     pairs = [i for i in range(1, len(cs)) if (on and cs[i]['day'] == on) or (not on and cs[i - 1]['c'] < cs[i - 1]['o'])]
     if not on:
         pairs = pairs[-20:]

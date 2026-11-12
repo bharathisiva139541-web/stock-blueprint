@@ -314,7 +314,7 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   assert.deepStrictEqual([days[0], days[9]], ['2026-10-30', '2026-10-14'], 'the newest 10 sessions');
   assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null]);
   assert.ok(!JSON.stringify(it).includes('228.05') && !JSON.stringify(it).includes('tradingview'), 'no Kite prices, no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 13);
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 14);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
@@ -463,4 +463,44 @@ test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s
   const r2 = e.post(put([], { invalid: [{ sym: 'PARAGMILK', tf: 'D', candle: '2026-11-05', pattern: 'CHoCH + FVG' }] }));
   assert.strictEqual(r2.removed, 1, JSON.stringify(r2));
   assert.deepStrictEqual(e.sheet('Intraday Patterns').rows.slice(2).map((x) => x[3] + ' ' + x[4]), ['4H CHoCH + FVG', '4H Spring in FVG']);
+});
+
+test('CHoCH + FVG waiting for the pullback (owner, 12-Nov-2026, IREDA): the "CHoCH Waiting" tab, rebuilt each scan; the site feed WITH Kite prices = export_xlsx.py', () => {
+  const e = env();
+  const w = (sym, tf, dist, more) => ({ sym: sym, tf: tf, choch: tf === '4H' ? '2026-11-03 13:15' : '2026-11-03', level: 117.39, d: 4, low: 98.78,
+    lowAt: tf === '4H' ? '2026-10-26 09:15' : '2026-10-26', high: 123.99, fib: 111.385, zone: [104.1, 108.24, tf === '4H' ? '2026-10-29 09:15' : '2026-10-29', 'FVG'],
+    inside: 0, depth: 83, close: 119.25, last: tf === '4H' ? '2026-11-06 13:15' : '2026-11-06', dist: dist, more: more });
+  const r = e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-06', fib: 0.5, pivotN: 5, downN: 3,
+    rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'], inside: 1 }),
+      w('NOPE', 'D', 1, 0), Object.assign(w('FLAT', 'M', 1, 0)), Object.assign(w('FLAT', 'D', 1, 0), { zone: [5, 4, '2026-10-29', 'FVG'] }),
+      w('PARAGMILK', 'D', 1, 0)] });
+  assert.deepStrictEqual([r.ok, r.received, r.kept, r.skipped], [true, 6, 2, 3], JSON.stringify(r));
+  const tab = e.sheet('CHoCH Waiting').rows;
+  assert.match(tab[0][0], /WAITING for the pullback.*session 2026-11-06.*at least 3 lower highs \/ lows \(swings of 5 candles\).*at least 50% down the move/);
+  assert.deepStrictEqual(tab[1].slice(0, 4), ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle']);
+  assert.deepStrictEqual(tab.slice(2).map((x) => [x[0], x[2], x[10], x[17]]), [['M&M', '4H', 'Gap-up (inside FVG)', 2.5], ['PARAGMILK', 'D', 'FVG', 9.23]], 'nearest first, one row a stock + timeframe');
+  assert.deepStrictEqual(tab[3].slice(0, 19), ['PARAGMILK', 'Parag Milk Foods Ltd.', 'D', '2026-11-03', 117.39, 4, 98.78, '2026-10-26', 123.99, 111.39, 'FVG',
+    104.1, 108.24, '2026-10-29', 83, 119.25, '2026-11-06', 9.23, 1]);
+  assert.match(tab[3][19], /^=HYPERLINK\("https:\/\/www\.tradingview\.com\/chart\/\?symbol=NSE%3APARAGMILK&interval=D","D chart"\)$/);
+  // the next scan replaces it all
+  e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('FLAT', 'W', 4, 0)] });
+  assert.deepStrictEqual(e.sheet('CHoCH Waiting').rows.slice(2).map((x) => x[0] + ' ' + x[2]), ['FLAT W']);
+  e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { inside: 1 })] });
+  // the site feed: every column but the chart / time, Kite's prices included (the owner's choice)
+  const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
+    ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
+  assert.strictEqual(data.chochWait.cols.length, 19);
+  assert.deepStrictEqual(data.chochWait.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'D', '2026-11-03', 117.39, 4, 98.78, '2026-10-26', 123.99, 111.39, 'FVG',
+    104.1, 108.24, '2026-10-29', 83, 119.25, '2026-11-06', 9.23, 1]);
+  assert.strictEqual(data.chochWait.rows[0][10], 'FVG', 'inside counts for a Gap-up zone only');
+  const markers = require('../api/site.js').PERSONAL_MARKERS;
+  assert.ok(markers.every((m) => !m.test(JSON.stringify(data))), 'nothing the site\'s privacy guard would block');
+  const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
+  if (!py) return;
+  const rows = e.sheet('CHoCH Waiting').rows.map((x) => x.map((v) => (typeof v === 'string' && v.startsWith('=HYPERLINK') ? 'D chart' : v === '' ? null : v)));
+  const code = ['import importlib.util, json, sys', 'spec = importlib.util.spec_from_file_location("ex", sys.argv[1])',
+    'ex = importlib.util.module_from_spec(spec); spec.loader.exec_module(ex)', 'print(json.dumps(ex.choch_waiting(ex.Rows(json.load(sys.stdin)))))'].join('\n');
+  const out = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'tools', 'export_xlsx.py')], { input: JSON.stringify(rows), encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(out.status, 0, out.stderr);
+  assert.deepStrictEqual(JSON.parse(out.stdout), data.chochWait);
 });

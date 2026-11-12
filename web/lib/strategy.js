@@ -310,13 +310,21 @@
       { key: 'days', label: 'Found at most this many trading days before today (0 = today; the scan runs after the close)', def: 1 }],
     eval: function (x, p) {
       var rows = (x.stock || {}).choch || [];
-      if (!rows.length) return { pass: false, detail: 'no CHoCH + FVG setup in the last 30 days of your PC\'s scans' };
-      var tfs = p.tfs || [], hit = rows.filter(function (r) { return tfs.indexOf(r.tf) >= 0; })[0];
-      if (!hit) return { pass: false, detail: 'a setup only on ' + rows.map(function (r) { return r.tf; }).join(', ') };
+      var tfs = p.tfs || [];
+      // waiting for the pullback (owner, 12-Nov-2026, IREDA: "IREDA stock is not qualified. i don't know why"): the CHoCH has
+      // formed and the discount zone is below, price has not come back yet - said in the detail (the rule still fails)
+      var wait = ((x.stock || {}).chochWait || []).filter(function (r) { return tfs.indexOf(r.tf) >= 0; });
+      var waitText = wait.length ? '; waiting for the pullback: ' + wait.map(function (r) {
+        return r.tf + ' CHoCH ' + r.choch + ', discount zone ' + round(r.bottom) + ' - ' + round(r.top) + (isNum(r.dist) ? ' (' + round(r.dist, 1) + '% below the last close)' : '');
+      }).join('; ') + ' - it qualifies on the day price touches the zone' : '';
+      if (!rows.length) return { pass: false, detail: 'no CHoCH + FVG setup in the last 30 days of your PC\'s scans' + waitText };
+      var hit = rows.filter(function (r) { return tfs.indexOf(r.tf) >= 0; })[0];
+      if (!hit) return { pass: false, detail: 'a setup only on ' + rows.map(function (r) { return r.tf; }).join(', ') + waitText };
       var ago = weekdaysAfter(hit.session, x.refDate);
       var when = ago == null ? '' : ago < 0 ? '' : ago === 0 ? ' (today)' : ' (' + ago + ' trading day' + (ago === 1 ? '' : 's') + ' ago)';
-      return { pass: ago != null && ago >= 0 && ago <= p.days, value: hit.tf + ' ' + hit.candle,
-        detail: hit.tf + ' candle ' + hit.candle + when + (hit.detail ? ' - ' + hit.detail : '') };
+      var okDays = ago != null && ago >= 0 && ago <= p.days;
+      return { pass: okDays, value: hit.tf + ' ' + hit.candle,
+        detail: hit.tf + ' candle ' + hit.candle + when + (hit.detail ? ' - ' + hit.detail : '') + (okDays ? '' : waitText) };
     } });
 
   // standard rules (not in the sheet)
@@ -738,6 +746,24 @@
     return out;
   }
 
+  /** The sheet's "CHoCH Waiting" rows (feed part chochWait, {cols, rows}; owner, 12-Nov-2026) -> { SYM: [{tf, choch, level,
+   *  bottom, top, dist, depth, kind}] } as stock.chochWait: the CHoCH + FVG setups still waiting for the pullback. */
+  function chochWaitIndex(table) {
+    var out = {};
+    if (!table || !Array.isArray(table.cols) || !Array.isArray(table.rows)) return out;
+    var ix = {};
+    table.cols.forEach(function (c, i) { ix[c] = i; });
+    var g = function (r, c) { return ix[c] == null || r[ix[c]] == null ? '' : String(r[ix[c]]).trim(); };
+    var n = function (r, c) { var v = ix[c] == null ? null : r[ix[c]]; return typeof v === 'number' && isFinite(v) ? v : null; };
+    table.rows.forEach(function (r) {
+      var sym = g(r, 'Symbol').toUpperCase();
+      if (!sym) return;
+      (out[sym] = out[sym] || []).push({ tf: g(r, 'Timeframe'), choch: g(r, 'CHoCH Candle'), level: n(r, 'CHoCH Level'), bottom: n(r, 'Zone Bottom'),
+        top: n(r, 'Zone Top'), dist: n(r, 'Distance %'), depth: n(r, 'Zone Depth %'), kind: g(r, 'Zone Kind') });
+    });
+    return out;
+  }
+
   /** Exit / risk warnings for open positions [{sym, side, entry, stop, target, qty}] at the latest data.
    *  side 'short' mirrors every check (stop above, target below, close above the 21 EMA). */
   function positionWarnings(positions, stocksBySym, history) {
@@ -764,6 +790,7 @@
   return {
     CONDITIONS: C, PRESETS: PRESETS, BULLISH_PATTERNS: BULLISH_PATTERNS, buildContext: buildContext, evaluate: evaluate, run: run,
     validate: validate, diff: diff, label: label, ttmSignal: ttmSignal, positionWarnings: positionWarnings, clone: clone,
-    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES, ANN_SESSIONS: ANN_SESSIONS, weekdaysAfter: weekdaysAfter, chochIndex: chochIndex
+    rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES, ANN_SESSIONS: ANN_SESSIONS, weekdaysAfter: weekdaysAfter, chochIndex: chochIndex,
+    chochWaitIndex: chochWaitIndex
   };
 });

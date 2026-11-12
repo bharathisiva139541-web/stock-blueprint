@@ -100,6 +100,9 @@
     // the owner's CHoCH + FVG setups found by his PC program (Intraday Patterns rows) - the chochFvg strategy rule reads s.choch
     var ch = SB.strategy.chochIndex ? SB.strategy.chochIndex(data.intraday) : {};
     stocks.forEach(function (s) { s.choch = ch[s.sym] || null; });
+    // ... and the ones still waiting for the pullback (CHoCH Waiting tab, 12-Nov-2026) - the rule's detail says so
+    var cw = SB.strategy.chochWaitIndex ? SB.strategy.chochWaitIndex(data.chochWait) : {};
+    stocks.forEach(function (s) { s.chochWait = cw[s.sym] || null; });
     // the newest result flags of each stock (Results Tracker 'Flags') - shown in the stock drawer
     var fl = SB.results && SB.results.flagIndex ? SB.results.flagIndex(ui.objRows(data.resultsTracker)) : {};
     stocks.forEach(function (s) { s.rflags = fl[s.sym] || null; });

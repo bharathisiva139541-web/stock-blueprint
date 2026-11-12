@@ -343,6 +343,19 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    level + final low, the Fib (discount) line, the BOS, the FVG / Gap-up zone, the entry / stop / target lines, the BUY
    and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file); the newest 20 PDFs are
    kept; at most 3,000 trade pages a PDF. The Lab page shows the file name with each run. config "lab_charts": false = off.
+ - Real or chance? + What worked best + Development / test (12-Nov-2026, after your ChatGPT review): every run now shows
+   the likely range (90%) of its average R ("An edge" = the whole range above 0; "Could be chance" = it spans 0), and
+   tables of the finished trades split one feature at a time - zone depth in the move, lower highs / lows before the
+   CHoCH, days from the CHoCH to the signal (these three need market structure "Show" or "Only"), how deep the candle
+   went into the zone, zone kind, touch, risk %, turnover - each row Better / Worse than the rest of the run (clear at
+   90%), Could be chance, or Too few (under 30 trades). Step 1 "Test period from" (e.g. 2020-01-01) splits the run in a
+   development part (before - choose your rules there) and a test part (from it - the check); every row then also says
+   whether it held in the test part. The trade list has Depth %, LH / LL and Days from CHoCH (also in the CSV).
+ - CHoCH + FVG waiting for the pullback (12-Nov-2026, your IREDA question): after each daily Zerodha scan this computer
+   also sends every live CHoCH (no close under its final low, no BOS yet) whose discount zone price has NOT touched yet
+   -> the sheet's "CHoCH Waiting" tab -> the website's Patterns & FVG page ("CHoCH + FVG - waiting for the pullback":
+   the zone top = where to put a buy order, the zone bottom, the distance, with Kite's prices). Strategy Settings then
+   says "waiting for the pullback" for such a stock. IntradayCheck.bat SYMBOL D shows the stock's waiting status too.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

@@ -245,6 +245,19 @@ def zones_4h(rows):
     return pick(note_table(rows, 'Symbol', stop_blank=False, kinds={'Formed': 'str'}), Z4_COLS, Z4_MAX)
 
 
+# CHoCH + FVG setups waiting for the pullback (PC bridge, 12-Nov-2026) = Code.gs AB_SITE_CHW_COLS: WITH Kite's prices
+# (owner, 12-Nov-2026: "use kite price. no need to follow privacy rule")
+CHW_COLS = ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On',
+            'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Last Close', 'Last Candle',
+            'Distance %', 'More Zones Below']
+CHW_KINDS = {'CHoCH Candle': 'str', 'Final Low On': 'str', 'Zone Formed': 'str', 'Last Candle': 'str'}
+CHW_MAX = 6000
+
+
+def choch_waiting(rows):
+    return pick(note_table(rows, 'Symbol', stop_blank=False, kinds=CHW_KINDS), CHW_COLS, CHW_MAX)
+
+
 def spring_backtest(rows, trade_rows):
     # 'list', never 'trades': api/site.js / tools/build.js treat a "trades" key as the owner's Trade Log and block it
     return {'summary': pick(note_table(rows, 'Timeframe', stop_blank=False, kinds={'From': 'str', 'To': 'str'}), BT_COLS, 100),
@@ -419,6 +432,8 @@ def export(path):
         data['intraday'] = intraday_patterns(rows_of(wb['Intraday Patterns']))
     if '4H FVG Zones' in wb.sheetnames:
         data['zones4h'] = zones_4h(rows_of(wb['4H FVG Zones']))
+    if 'CHoCH Waiting' in wb.sheetnames:
+        data['chochWait'] = choch_waiting(rows_of(wb['CHoCH Waiting']))
     if 'Spring Backtest' in wb.sheetnames:
         data['springBacktest'] = spring_backtest(rows_of(wb['Spring Backtest']),
                                                  rows_of(wb['Spring Backtest Trades']) if 'Spring Backtest Trades' in wb.sheetnames else None)
