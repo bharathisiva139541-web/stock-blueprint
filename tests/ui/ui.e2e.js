@@ -217,7 +217,19 @@ const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestio
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
   'strategy', 'signals', 'excel', 'results', 'today', 'alerts', 'backtest', 'markets'];
 let failures = 0;
+// tools/lab-guide/build.js (the Backtest Lab guide, 12-Nov-2026) runs only the Lab check (E2E_ONLY) and keeps its screenshots (GUIDE_SHOTS)
+const GUIDE = process.env.GUIDE_SHOTS || '';
+async function guideShot(page, name, selector) {
+  if (!GUIDE) return;
+  fs.mkdirSync(GUIDE, { recursive: true });
+  // the sticky header / ticker would cover a long element's picture
+  await page.addStyleTag({ content: '.top, header.top { position: static !important; } #ticker { display: none !important; }' });
+  const el = selector ? await page.$(selector) : null;
+  if (el) { await el.scrollIntoViewIfNeeded(); await page.waitForTimeout(150); await el.screenshot({ path: path.join(GUIDE, name + '.png') }); }
+  else if (!selector) await page.screenshot({ path: path.join(GUIDE, name + '.png') });
+}
 function check(name, fn) {
+  if (process.env.E2E_ONLY && !new RegExp(process.env.E2E_ONLY).test(name)) return Promise.resolve();
   return Promise.resolve().then(fn).then(() => console.log('  ✓ ' + name), (e) => { failures++; console.log('  ✗ ' + name + '\n    ' + e.message); });
 }
 
@@ -1228,7 +1240,7 @@ function check(name, fn) {
     sheet.gs.call('ab_noteAdd_', 'results', 'Results: 1 new in Main - XYZ', 'XYZ: Rev YoY 12%', '#today');
     const api = (o) => { const site = liveApi(o); return (u, req) => (u.pathname === '/api/watchlists' ? sheet.answer(req) : site(u)); };
     const open = async (pin, hash) => {
-      const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+      const c = await browser.newContext({ viewport: { width: 1366, height: 900 }, deviceScaleFactor: GUIDE ? 2 : 1 });
       await c.addInitScript((pn) => { try { localStorage.setItem('sb:api', 'true'); if (pn) localStorage.setItem('sb:wlsync', JSON.stringify({ pin: pn })); } catch (e) { /* ignore */ } }, pin);
       await routeAll(c, base, api({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), []);
       const p = await c.newPage(), errors = watchErrors(p);
@@ -1253,6 +1265,7 @@ function check(name, fn) {
         const e = document.querySelector('#lab-form [data-k="' + k + '"]'); return e && e.offsetParent !== null; }),
       guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
     assert.deepStrictEqual(lay.quick, ['smc', 'fvg', 'gap']);
+    await guideShot(own.p, '01-start', '#lab-form');
     assert.deepStrictEqual(lay.secs, [['structure', false], ['shape', false], ['trend', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
     assert.ok(lay.basics, 'the basics are on show');
     assert.match(lay.guide, /Guide/);
@@ -1300,6 +1313,16 @@ function check(name, fn) {
     assert.ok(!/Only Springs where/.test(await plainText()), 'cleared');
     await own.p.click('[data-rec="hammer"]');
     // market structure (owner, 10-Nov-2026): his CHoCH + FVG setup in one click, the plain words follow
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', '[]'); window.SB.route(true); });
+    await own.p.waitForSelector('details.lab-sec[data-sec="trend"]:not([open])');
+    await own.p.click('#lab-smc');
+    await own.p.waitForSelector('.lab-rec.on #lab-smc');
+    await guideShot(own.p, '02-ready', '.lab-quick');
+    await guideShot(own.p, '03-basics', '#lab-form .form-grid');
+    await guideShot(own.p, '04-more', '.lab-secs');
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
+    await own.p.waitForSelector('details.lab-sec[data-sec="trend"][open]');
+    await guideShot(own.p, '05-structure', 'details.lab-sec[data-sec="structure"]');
     await own.p.click('#lab-smc');
     await own.p.waitForSelector('[data-k="downN"]');
     assert.deepStrictEqual(await own.p.$$eval('[data-k="structure"],[data-k="pivotN"],[data-k="downN"],[data-k="zoneWhen"]', (x) => x.map((e) => e.value)), ['only', '5', '3', 'both']);
@@ -1318,6 +1341,7 @@ function check(name, fn) {
     await own.p.selectOption('[data-k="pivotN"]', '8');
     await own.p.click('#lab-pine');
     await own.p.waitForSelector('#lab-pine-box .note.good');
+    await guideShot(own.p, '11-pine', '#lab-pine-box');
     const pine = await own.p.evaluate(() => window.__pine);
     assert.match(pine, /^\/\/@version=5\n\/\/ -+ your Backtest Lab rules\n/);
     for (const want of ['structOnly = input.bool(true,', 'pivN = input.int(8,', 'downN = input.int(3,', 'fibLvl = input.float(0.5,', 'discPart = input.string("Middle",',
@@ -1338,8 +1362,11 @@ function check(name, fn) {
     await own.p.fill('[data-k="testFrom"]', '2020-01-01');
     await own.p.dispatchEvent('[data-k="testFrom"]', 'change');
     assert.match(await plainText(), /Development part: the signals before 01 Jan 2020|Development part: the signals before .*2020/);
+    await guideShot(own.p, '06-plain', '#lab-plain');
+    await guideShot(own.p, '06b-actions', '.lab-actions');
     await own.p.click('#lab-run');
     await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
+    await guideShot(own.p, '07-status', '#lab-status');
     // the laptop (backtest_lab.py) takes it and sends its result
     const got = JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll' })));
     assert.strictEqual(got.job.name, 'Zone stop 1%');
@@ -1392,6 +1419,12 @@ function check(name, fn) {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
     // the page sees it done (it asks every 4 s) and opens it
     await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
+    await guideShot(own.p, '08-verdict', '#lab-verdict');
+    await guideShot(own.p, '08b-head', '#lab-result .card-head');
+    await guideShot(own.p, '09-split', 'details[data-rsec="split"]');
+    await guideShot(own.p, '10-bd', 'details[data-rsec="bd"]');
+    await guideShot(own.p, '12-trades', 'details[data-rsec="trades"]');
+    await guideShot(own.p, '13-folded', '#lab-result section.card');
     const view = await own.p.$eval('#lab-result', (x) => x.textContent);
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
     assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop to the entry, then trail it under the lowest low of the last 3 candles/);
@@ -1452,6 +1485,8 @@ function check(name, fn) {
     await own.p.click('details[data-rsec="account"] > summary');
     await own.p.waitForSelector('#lab-curve svg');
     assert.match(await own.p.$eval('#lab-runs', (x) => x.innerText), /Zone stop 1%[\s\S]*Too few trades[\s\S]*2\.3R/, 'the runs comparison: the range verdict and the test part');
+    await guideShot(own.p, '14-runs', '#lab-runs');
+    await guideShot(own.p, '15-account', 'details[data-rsec="account"]');
     // the bell: two unread notes from the sheet (+ "Backtest ready"), newest first
     await own.p.waitForFunction(() => !document.querySelector('#bell').hidden, null, { timeout: 15000 });
     await own.p.click('#bell');

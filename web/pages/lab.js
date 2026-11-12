@@ -753,7 +753,7 @@
         : d.avgR > 0 && !(t.avgR > 0) ? '<p class="note bad">The test part does NOT agree: the rules made money before ' + F.date(sp.at) + ' but not after - they may fit the past only.</p>'
           : '<p class="note warn">The development part itself did not make money per trade - change the rules there first (and do not look at the test part while choosing).</p>';
     }
-    return '<h3 class="lab-h">Development vs test (split on ' + F.date(sp.at) + ')</h3><div class="tbl-wrap"><table class="tbl" id="lab-split"><thead><tr><th>Part</th><th>Trades</th>' +
+    return '<div class="tbl-wrap"><table class="tbl" id="lab-split"><thead><tr><th>Part</th><th>Trades</th>' +
       '<th>Win %</th><th>Avg R</th><th>Likely range</th><th>Total R</th><th>Profit factor</th><th>Real or chance?</th></tr></thead><tbody>' +
       row('Development (before)', d) + (sp.val ? row('Validation (from ' + F.date(sp.val) + ')', sp.valid) : '') + row('Test (from)', t) + '</tbody></table></div>' + say;
   }
@@ -762,8 +762,7 @@
     var noStruct = !res.params || res.params.structure === 'off';
     if (!b.length) return '';
     if (!ST.bd || !b.some(function (x) { return x.key === ST.bd; })) ST.bd = b[0].key;
-    return '<h3 class="lab-h">What worked best - one thing at a time</h3>' +
-      '<div class="controls">' + ui.chips('labbd', b.map(function (x) { return [x.key, BD_SHORT[x.key] || x.name]; }), ST.bd) + '</div><div id="lab-bd"></div>' +
+    return '<div class="controls">' + ui.chips('labbd', b.map(function (x) { return [x.key, BD_SHORT[x.key] || x.name]; }), ST.bd) + '</div><div id="lab-bd"></div>' +
       '<p class="sub">Each row = the finished trades with that feature. <b>Better / Worse</b> = their average R vs the rest of this run\'s trades, clear at 90%; ' +
       '<b>Could be chance</b> = the difference is within luck; under 30 trades = too few to say. ' +
       (res.split ? '<b>Held in test</b> = it beat (or trailed) the rest in the development part AND in the test part - trust those rows most. ' : 'Set a test period (step 1) to check a row on later years. ') +
@@ -843,7 +842,7 @@
       ui.tile('Total', '<span class="' + tone(s.totalR) + '">' + F.num(s.totalR, 1) + 'R</span>', 'all trades together') +
       ui.tile('Account', '<span class="' + tone(a.returnPct) + '">' + F.pct(a.returnPct) + '</span>', 'max fall ' + F.num(a.maxDD, 1) + '%') + '</div></div>';
     h += rsec('all', 'Every signal - all the figures', '<p class="sub">Each trade on its own, in R (R = the risk: entry - stop).</p>' + full);
-    if (res.split) h += rsec('split', 'Development vs test', splitHtml(res));
+    if (res.split) h += rsec('split', 'Development vs test (split on ' + F.date(res.split.at) + ')', splitHtml(res));
     h += rsec('bd', 'What worked best - one thing at a time', bdHtml(res));
     if (res.stages && res.stages.length) {
       h += rsec('stages', 'By market structure - where each signal sat', '<div id="lab-stages"></div>' +

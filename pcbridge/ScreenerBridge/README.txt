@@ -356,6 +356,12 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    -> the sheet's "CHoCH Waiting" tab -> the website's Patterns & FVG page ("CHoCH + FVG - waiting for the pullback":
    the zone top = where to put a buy order, the zone bottom, the distance, with Kite's prices). Strategy Settings then
    says "waiting for the pullback" for such a stock. IntradayCheck.bat SYMBOL D shows the stock's waiting status too.
+ - The rest of ChatGPT's experiments (12-Nov-2026), each one an option on the Lab page, all off by default (= the
+   baseline): ATR swings / ZigZag / protected CHoCH / equal highs / sweep (More rules > Market structure), the zone at most,
+   days after the CHoCH, the CHoCH candle's body (ATR) and volume, how deep the candle went into the zone, the stock's
+   weekly trend, ATR and swing-low trails, a validation part and "steady over time" blocks. The candle cache keeps the
+   volume now, so this computer rebuilds it once by itself after the update (the page shows "preparing the candles").
+   The guide: the Lab page's "Guide (PDF)" button (Tamil, with pictures).
  - ChochRules.bat (12-Nov-2026): the CHoCH + FVG rules of the daily Zerodha scan - swing size (candles each side),
    lower highs / lows before the CHoCH, the discount level (0.382 / 0.5 / 0.618 / 0.705 / 0.786), which part of the zone must
    be that deep (middle / top / bottom) and where the zone formed (in the CHoCH move or after it / only in the move / only
