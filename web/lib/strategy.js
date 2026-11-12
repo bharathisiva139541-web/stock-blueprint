@@ -460,7 +460,8 @@
       description: 'Your setup: after a downtrend of at least 3 lower highs and 3 lower lows (swings of 5 candles), a candle CLOSES above the last lower high ' +
         '(CHoCH); an FVG / Gap-up zone formed in that move or after it, its middle in the discount half of the move (under the 50% line from the final low ' +
         'to the high); on the FIRST pullback into it (no BOS yet) the first touch of the zone, a Spring on it or an FVG First Touch / Confirmed. ' +
-        'Found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close. ' +
+        'Found by your PC program on Zerodha Kite candles (4 hour, daily, weekly) once a trading day after the close - with the swing size, lower highs / lows ' +
+        'and discount level set on your laptop (ChochRules.bat; these numbers are its defaults). ' +
         'Test it in the Backtest Lab (step 2 "My CHoCH + FVG setup").',
       universe: { categories: [], minBars: 2 }, filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }],
       triggers: [{ id: 'chochFvg', params: { tfs: ['D', '4H', 'W'], days: 1 } }],

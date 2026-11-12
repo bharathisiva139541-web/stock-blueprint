@@ -62,6 +62,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py kitesetup  your Kite Connect API key + secret, then the first Kite login
   python screener_bridge.py intraday   the Kite intraday / weekly / monthly pattern scan now (asks for the login if needed)
   python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
+  python screener_bridge.py chochrules the CHoCH + FVG rules of the daily scan (swing size, lower highs / lows, discount level, zone part)
   python screener_bridge.py backtest   the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1-5R) on the stored Kite candles -> the sheet (no login)
   python screener_bridge.py kitehistory  Kite's long history (daily ~20 years, 4H ~5 years) for the backtest at once, then the backtest
   python screener_bridge.py lab [D|W|4H]  the Backtest Lab with its default rules on this computer (a check; the website's page sends its own)
@@ -4064,6 +4065,8 @@ def main(argv):
         return 0
     if cmd == 'kitesetup':
         return itd.setup(cfg, save_config)
+    if cmd == 'chochrules':
+        return itd.choch_setup(cfg, save_config)
     if cmd == 'intraday':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

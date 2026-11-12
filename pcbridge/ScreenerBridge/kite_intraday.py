@@ -1195,12 +1195,98 @@ CHOCH_PIVOT_N = 5
 CHOCH_DOWN_N = 3
 CHOCH_FIB = 0.5
 CHOCH_PART = 'mid'
+CHOCH_WHEN = 'both'
+# the daily scan's CHoCH rules can be the owner's own (12-Nov-2026: "Build 2" - the same rules as his Backtest Lab / TradingView
+# settings, e.g. 10-candle swings, 4 lower highs / lows, 38.2 %): config.json, written by ChochRules.bat (command chochrules)
+CHOCH_CFG = (('pivotN', 'choch_swing_candles', 2, 20), ('downN', 'choch_lower_highs', 1, 8), ('fib', 'choch_fib', 0.2, 0.95))
+CHOCH_PARTS = ('mid', 'top', 'bottom')
+CHOCH_WHENS = ('both', 'leg', 'after')
+CHOCH_FIB_CHOICES = (0.382, 0.5, 0.618, 0.705, 0.786)
+CHOCH_WHEN_WORDS = {'both': 'in the CHoCH move or after it', 'leg': 'only in the CHoCH move', 'after': 'only after the CHoCH candle'}
 KEEP_DAYS = 30                     # = the sheet's AB_ITD_KEEP_DAYS: Spring in FVG rows a later close under the low takes off
 BT_DAYS = 30                       # backtest (owner, 09-Nov-2026: "use % movement to upward direction within 30 days from
                                    # pattern day" and "backtest should not be limited to 2R"): the 30 calendar days after it
 BT_TARGETS = (1, 1.5, 2, 3, 5)     # R targets reached before the stop (R = the Spring candle's close - its low)
 BT_TRADES = 500                    # newest FVG+Spring trades listed on the sheet
 TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the last 30 daily candles
+
+
+def choch_rules(cfg=None):
+    """The daily scan's CHoCH + FVG rules: config.json's choch_swing_candles / choch_lower_highs / choch_fib / choch_zone_part /
+    choch_zone_when (ChochRules.bat), each one outside its range left at the default -> {'pivotN', 'downN', 'fib', 'part',
+    'zoneWhen'} (the Backtest Lab's names)."""
+    cfg = cfg or {}
+    out = {'pivotN': CHOCH_PIVOT_N, 'downN': CHOCH_DOWN_N, 'fib': CHOCH_FIB, 'part': CHOCH_PART, 'zoneWhen': CHOCH_WHEN}
+    for key, name, lo, hi in CHOCH_CFG:
+        v = cfg.get(name)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or not lo <= v <= hi:
+            continue
+        out[key] = int(round(v)) if isinstance(lo, int) else round(float(v), 4)
+    if cfg.get('choch_zone_part') in CHOCH_PARTS:
+        out['part'] = cfg['choch_zone_part']
+    if cfg.get('choch_zone_when') in CHOCH_WHENS:
+        out['zoneWhen'] = cfg['choch_zone_when']
+    return out
+
+
+def choch_rules_words(r):
+    """'swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the
+    CHoCH move or after it' (= Code2.gs ab_chochRulesText_)."""
+    return ('swings of %d candles, at least %d lower highs / lows, the zone\'s %s at least %s%% down the move, the zone formed %s'
+            % (r['pivotN'], r['downN'], backtest_lab.PART_WORDS[r['part']], ('%.1f' % (r['fib'] * 100)).rstrip('0').rstrip('.'),
+               CHOCH_WHEN_WORDS[r['zoneWhen']]))
+
+
+def _choch_fail(j, r):
+    """The Backtest Lab's own 'only my setup' test (struct_fail) with these rules: '' = the setup."""
+    return backtest_lab.struct_fail(j, {'zoneWhen': r['zoneWhen'], 'firstPull': True, 'belowChoch': False, 'discount': r['fib']})
+
+
+def choch_setup(cfg, save_config, ask=input):
+    """ChochRules.bat: the daily scan's CHoCH + FVG rules -> config.json (Enter keeps a value)."""
+    r = choch_rules(cfg)
+    print('=' * 64)
+    print(' CHoCH + FVG rules of the daily Zerodha scan')
+    print('=' * 64)
+    print('Now: ' + choch_rules_words(r) + '.')
+    print('Use the same values as in your Backtest Lab / TradingView settings. Press Enter to keep a value.\n')
+
+    def num(label, key, name, lo, hi, choices=None):
+        while True:
+            a = ask('%s [%s]: ' % (label, r[key])).strip()
+            if not a:
+                return
+            try:
+                v = float(a)
+            except ValueError:
+                v = None
+            if v is not None and lo <= v <= hi and (choices is None or any(abs(v - c) < 1e-9 for c in choices)):
+                r[key] = int(round(v)) if isinstance(lo, int) else v
+                return
+            print('  Please type %s.' % (' / '.join(str(c) for c in choices) if choices else 'a number from %s to %s' % (lo, hi)))
+
+    def pick(label, key, opts):
+        while True:
+            a = ask('%s - %s [%d]: ' % (label, ', '.join('%d = %s' % (k + 1, w) for k, (_, w) in enumerate(opts)),
+                                       [o for o, _ in opts].index(r[key]) + 1)).strip()
+            if not a:
+                return
+            if a in [str(k + 1) for k in range(len(opts))]:
+                r[key] = opts[int(a) - 1][0]
+                return
+            print('  Please type 1 to %d.' % len(opts))
+    num('Swing size - candles on each side of a swing high / low (2 to 20)', 'pivotN', 'choch_swing_candles', 2, 20)
+    num('Lower highs and lower lows before the CHoCH, at least (1 to 8)', 'downN', 'choch_lower_highs', 1, 8)
+    num('Discount - how far down the move (0.382 / 0.5 / 0.618 / 0.705 / 0.786)', 'fib', 'choch_fib', 0.2, 0.95, CHOCH_FIB_CHOICES)
+    pick('Which part of the zone must be that deep', 'part', [('mid', 'its middle'), ('top', 'all of it (its top)'), ('bottom', 'any part (its bottom)')])
+    pick('The zone formed', 'zoneWhen', [(w, CHOCH_WHEN_WORDS[w]) for w in CHOCH_WHENS])
+    cfg['choch_swing_candles'], cfg['choch_lower_highs'], cfg['choch_fib'] = r['pivotN'], r['downN'], r['fib']
+    cfg['choch_zone_part'], cfg['choch_zone_when'] = r['part'], r['zoneWhen']
+    save_config(cfg)
+    print('\nSaved: ' + choch_rules_words(choch_rules(cfg)) + '.')
+    print('The next daily scan looks at the last %d sessions again with these rules (double-click IntradayNow.bat to do it now).'
+          % FIRST_RUN_SESSIONS)
+    return 0
 
 
 def zone_out(cs, z):
@@ -1306,13 +1392,13 @@ def choch_touches(all_c):
     return zone_first_touches(all_c, spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else {}
 
 
-def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None):
+def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None):
     """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
     {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). A candle's
     entry patterns (choch_candidates) are tried in turn - the first whose zone formed after the CHoCH's final low, on the
     first pullback (no BOS yet) and with its middle in the discount half of the move (CHOCH_FIB) is the setup. The note has
     no prices (the website shows it): 'Spring · CHoCH 2026-10-13 after 3 lower highs / lows · first pullback · zone middle
-    64% down the move'."""
+    64% down the move'. `rules` = choch_rules() (the defaults: swings of 5, 3 lower highs / lows, the middle 50 % down)."""
     off = len(full_c) - len(all_c)
     if touches is None:
         touches = choch_touches(all_c)
@@ -1325,20 +1411,21 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
             cand[i] = t
     if not cand:
         return {}
+    r = rules or choch_rules()
     highs = [c['h'] for c in full_c]
     if st is None:
-        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], CHOCH_PIVOT_N)
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'])
     closes = [c['c'] for c in full_c]
     out = {}
     for i in sorted(cand):
         for z, words in cand[i]:
-            j = st.judge(i + off, z['f'] + off, z['top'], all_c[i]['c'], closes, CHOCH_DOWN_N, h=highs, zone_bottom=z['bottom'],
-                         part=CHOCH_PART, fib=CHOCH_FIB)
-            if j['stage'] != 'disc':
+            j = st.judge(i + off, z['f'] + off, z['top'], all_c[i]['c'], closes, r['downN'], h=highs, zone_bottom=z['bottom'],
+                         part=r['part'], fib=r['fib'])
+            if _choch_fail(j, r):
                 continue
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
-            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone middle %d%% down the move'
-                      % (words, full_c[b]['t'], dd, int(round(j['depth'] * 100))))
+            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move'
+                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round(j['depth'] * 100))))
             break
     return out
 
@@ -1346,7 +1433,7 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
 CHOCH_WAIT_MAX = 6000             # rows of the sheet's "CHoCH Waiting" tab (nearest first)
 
 
-def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None):
+def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=None):
     """The owner's CHoCH + FVG setup still WAITING for the pullback (owner, 12-Nov-2026, IREDA: "when i set strategy
     setting.. IREDA stock is not qualified" - the CHoCH had formed, the discount zone was below and price had not come back
     yet; he puts a buy order at the zone top): the live CHoCH of the newest candle (at least CHOCH_DOWN_N lower highs /
@@ -1365,11 +1452,12 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None):
         zones = spring_zones(all_c, fvg_gaps(all_c))
     if touches is None:
         touches = zone_first_touches(all_c, zones)
+    r = rules or choch_rules()
     highs = [c['h'] for c in full_c]
     closes = [c['c'] for c in full_c]
     if st is None:
-        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], closes, CHOCH_PIVOT_N)
-    k = st.active(n, CHOCH_DOWN_N)
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], closes, r['pivotN'])
+    k = st.active(n, r['downN'])
     if k < 0:
         return None
     b, _hi, lvl, li, lf, dd = st.events[k]
@@ -1381,9 +1469,9 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None):
     for z in zones:
         if z['f'] + off < li or (z['kind'], z['f']) in hit or not z['top'] < price:
             continue
-        j = st.judge(n, z['f'] + off, z['top'], price, closes, CHOCH_DOWN_N, h=highs, zone_bottom=z['bottom'],
-                     part=CHOCH_PART, fib=CHOCH_FIB)
-        if j['stage'] == 'disc' and j['k'] == k:
+        j = st.judge(n, z['f'] + off, z['top'], price, closes, r['downN'], h=highs, zone_bottom=z['bottom'],
+                     part=r['part'], fib=r['fib'])
+        if j['k'] == k and not _choch_fail(j, r):
             found.append((z, j))
     if not found:
         return None
@@ -1391,13 +1479,13 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None):
     z, j = found[0]
     H = j['H']
     return {'tf': tf, 'choch': full_c[b]['t'], 'level': round(lvl, 2), 'd': dd, 'low': round(lf, 2), 'lowAt': full_c[li]['t'],
-            'high': round(H, 2), 'fib': round(backtest_lab.structure.fib_line(H, lf, CHOCH_FIB), 2), 'zone': zone_out(all_c, z),
+            'high': round(H, 2), 'fib': round(backtest_lab.structure.fib_line(H, lf, r['fib']), 2), 'zone': zone_out(all_c, z),
             'inside': 1 if z.get('inside') else 0, 'depth': int(round(j['depth'] * 100)), 'close': round(price, 2),
             'last': full_c[-1]['t'], 'dist': round((price - z['top']) / price * 100, 2), 'more': len(found) - 1, 'age': n - 1 - b}
 
 
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
-            backtest=False, lab=None, lab_only=False):
+            backtest=False, lab=None, lab_only=False, choch=None):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
     last SCAN_KEEP candles -, the 4H FVG zones + the ones first touched in those sessions, and (backtest) the 30-day
     outcome (trade_30d) of every FVG+Spring / Gap-up FVG + Spring and Spring of BACKTEST_TFS on ALL stored candles.
@@ -1453,9 +1541,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             lo_iso = min(since_iso, (upto - timedelta(days=KEEP_DAYS + 1)).isoformat())
             zs_c = spring_zones(all_c, fvg_gaps(all_c)) if len(all_c) >= 17 else []
             tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
+            rules = choch or choch_rules()          # the daily scan's CHoCH rules (config.json / ChochRules.bat)
             st_c = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c],
-                                                    CHOCH_PIVOT_N)
-            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_c, touches=tch_c).items()):
+                                                    rules['pivotN'])
+            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_c, touches=tch_c,
+                                                    rules=rules).items()):
                 c = all_c[i]
                 broken = spring_broken(all_c, i)
                 if broken is None and c['day'] > since_iso:
@@ -1464,7 +1554,7 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 elif broken is not None and c['day'] >= keep_from:
                     out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': CHOCH_PATTERN})
             # ... and the ones still waiting for the pullback (owner, 12-Nov-2026: the sheet's "CHoCH Waiting" tab)
-            w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c)
+            w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c, rules=rules)
             if w:
                 out['waiting'].append(w)
         if d and tf in FVG_PATTERN_TFS:
@@ -1678,13 +1768,18 @@ def due(cfg, holidays, now=None, state=None):
     st = state if state is not None else state_load()
     upto = completed_session(now, holidays)
     if ((st.get('scanned') or '') >= upto.isoformat() and st.get('tfs') == chosen_tfs(cfg) and (st.get('slots') or {}) == chosen_slots(cfg)
-            and st.get('rules') == RULES_VERSION):
+            and st.get('rules') == RULES_VERSION and _choch_state(st) == choch_rules(cfg)):
         return False, upto
     if st.get('wait_login_until') and time.time() < float(st['wait_login_until']) and not session_valid(session_load()):
         return False, upto
     if time.time() - float(st.get('tried') or 0) < RETRY_S and not st.get('wait_login_until'):
         return False, upto
     return True, upto
+
+
+def _choch_state(st):
+    """The CHoCH rules of the last scan (a state from before 12-Nov-2026 = the defaults)."""
+    return st.get('choch') or choch_rules()
 
 
 def send_zones(cfg, api, upto, since, zones, mitigated):
@@ -1704,13 +1799,14 @@ def send_zones(cfg, api, upto, since, zones, mitigated):
         log('Kite: 4H FVG zones not sent - %s' % e)
 
 
-def send_waiting(cfg, api, upto, rows):
+def send_waiting(cfg, api, upto, rows, rules=None):
     """The CHoCH + FVG setups still waiting for the pullback (choch_waiting; owner, 12-Nov-2026) -> the sheet's "CHoCH
     Waiting" tab, rebuilt each scan (nearest zone first, at most CHOCH_WAIT_MAX). Never raises."""
     try:
         rows = sorted(rows, key=lambda r: (r['dist'], r['sym'], r['tf']))[:CHOCH_WAIT_MAX]
-        res = api(cfg, 'intraday', {'op': 'waiting', 'upto': upto.isoformat(), 'fib': CHOCH_FIB, 'pivotN': CHOCH_PIVOT_N,
-                                    'downN': CHOCH_DOWN_N, 'rows': rows}, tries=3, timeout=180)
+        r = rules or choch_rules(cfg)
+        res = api(cfg, 'intraday', {'op': 'waiting', 'upto': upto.isoformat(), 'choch': r, 'fib': r['fib'], 'pivotN': r['pivotN'],
+                                    'downN': r['downN'], 'rows': rows}, tries=3, timeout=180)
         if res.get('ok'):
             n = {}
             for r in rows:
@@ -1865,7 +1961,9 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         upto = completed_session(now, holidays)
         tfs = chosen_tfs(cfg)
         slots = chosen_slots(cfg, tfs)
-        changed = bool(st.get('scanned')) and (st.get('tfs') != tfs or (st.get('slots') or {}) != slots or st.get('rules') != RULES_VERSION)
+        rules = choch_rules(cfg)
+        changed = bool(st.get('scanned')) and (st.get('tfs') != tfs or (st.get('slots') or {}) != slots or st.get('rules') != RULES_VERSION
+                                               or _choch_state(st) != rules)
         if not force and not changed and (st.get('scanned') or '') >= upto.isoformat():
             log('Kite: the session of %s is already scanned.' % upto.isoformat())
             return 0
@@ -1902,7 +2000,9 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         since = (st.get('scanned') if not changed else None) or sessions_back(upto, FIRST_RUN_SESSIONS, holidays).isoformat()
         if changed:
             log('Kite: %s - the last %d sessions are scanned again, and the sheet keeps only these.'
-                % ('new pattern rules (FVG+Spring: anywhere on the zone or under it, no earlier close under the Spring low; 4H FVG patterns + zones)'
+                % ('new CHoCH + FVG rules (%s)' % choch_rules_words(rules)
+                   if _choch_state(st) != rules and st.get('rules') == RULES_VERSION and st.get('tfs') == tfs and (st.get('slots') or {}) == slots else
+                   'new pattern rules (FVG+Spring: anywhere on the zone or under it, no earlier close under the Spring low; 4H FVG patterns + zones)'
                    if st.get('rules') != RULES_VERSION and st.get('tfs') == tfs and (st.get('slots') or {}) == slots else
                    'the timeframes are now %s%s' % (', '.join(tfs), ''.join(' (%s: only the %s candle)' % (t, ' / '.join(v))
                                                                           for t, v in sorted(slots.items()))),
@@ -1913,6 +2013,8 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         zones, mitigated, trades, springs_bt, invalid, waiting = [], [], [], [], [], []
         log('Kite: reading the candles of %d stocks up to %s (only new days after the first time) ...'
             % (len(syms), upto.isoformat()))
+        if rules != choch_rules():
+            log('Kite: your CHoCH + FVG rules (ChochRules.bat) - ' + choch_rules_words(rules) + '.')
         lab_w = backtest_lab.CacheWriter(upto)       # the Backtest Lab's cache, from the same candles
         try:
             for k, sym in enumerate(syms):
@@ -1937,7 +2039,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                         return None
                     continue
                 store['sym'] = sym
-                res = analyse(store, since, upto, holidays, tfs, fvg_only, slots=slots, backtest=True, lab=lab_w)
+                res = analyse(store, since, upto, holidays, tfs, fvg_only, slots=slots, backtest=True, lab=lab_w, choch=rules)
                 for key, dest in (('items', items), ('zones', zones), ('mitigated', mitigated), ('trades', trades), ('invalid', invalid),
                                   ('waiting', waiting)):
                     for f in res[key]:
@@ -1973,7 +2075,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
             part = items[p:p + POST_ITEMS]
             res = api(cfg, 'intraday', {'op': 'put', 'upto': upto.isoformat(), 'since': since, 'items': part, 'tfs': tfs, 'slots': slots,
                                         'first': p == 0, 'last': p + POST_ITEMS >= len(items), 'rules': RULES_VERSION,
-                                        'invalid': invalid if p == 0 else []},
+                                        'invalid': invalid if p == 0 else [], 'choch': rules},
                       tries=3, timeout=180)
             if not res.get('ok'):
                 log('Kite: the sheet refused the patterns - %s' % res.get('error'))
@@ -1992,7 +2094,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
                 'the next scan sends them again.')
         if '4H' in tfs:
             send_zones(cfg, api, upto, since, zones, mitigated)
-        send_waiting(cfg, api, upto, waiting)
+        send_waiting(cfg, api, upto, waiting, rules)
         send_backtest(cfg, api, upto, trades, springs_bt)
         try:                            # the deep history for the backtest, a part a day (KiteHistoryNow.bat: all at once)
             done, left, n = deep_fill(cfg, sess, imap, syms, upto, DEEP_BUDGET_S, every=100)
@@ -2005,6 +2107,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         st['tfs'] = tfs
         st['slots'] = slots
         st['rules'] = RULES_VERSION if not no_choch else min(st.get('rules') or 0, RULES_VERSION - 1)
+        st['choch'] = rules
         st['last'] = {'at': datetime.now().strftime('%Y-%m-%d %H:%M'), 'stocks': len(syms) - len(nokite), 'found': len(items),
                       'requests': reqs, 'errors': errors}
         log('Kite: the sheet\'s "Intraday Patterns" tab has %d new row(s).' % sent)
@@ -2078,12 +2181,13 @@ def check(cfg, args, holidays=None, out=print, now=None):
                              for z in zs) or 'none'))
     if tf in CHOCH_TFS:
         full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
-        w = choch_waiting(full_c, full_c[-SCAN_KEEP.get(tf, len(full_c)):], tf)
-        out('CHoCH + FVG (%d-candle swings, %d lower highs / lows, zone middle under the %d%% line): %s'
-            % (CHOCH_PIVOT_N, CHOCH_DOWN_N, int(CHOCH_FIB * 100),
+        rules = choch_rules(cfg)
+        w = choch_waiting(full_c, full_c[-SCAN_KEEP.get(tf, len(full_c)):], tf, rules=rules)
+        out('CHoCH + FVG (%s): %s'
+            % (choch_rules_words(rules),
                'WAITING for the pullback - CHoCH %s above %.2f (%d lower highs / lows, final low %.2f on %s), move high %.2f, '
                '%d%% line %.2f; zone %s %.2f - %.2f formed %s (%d%% down the move), last close %.2f = %.2f%% above the zone top%s'
-               % (w['choch'], w['level'], w['d'], w['low'], w['lowAt'], w['high'], int(CHOCH_FIB * 100), w['fib'], w['zone'][3],
+               % (w['choch'], w['level'], w['d'], w['low'], w['lowAt'], w['high'], int(round(rules['fib'] * 100)), w['fib'], w['zone'][3],
                   w['zone'][0], w['zone'][1], w['zone'][2], w['depth'], w['close'], w['dist'],
                   ', %d more discount zone(s) under it' % w['more'] if w['more'] else '')
                if w else 'nothing waiting (no live CHoCH, or no untouched zone in the discount part of its move)'))
@@ -2348,7 +2452,8 @@ def status_line(cfg):
     return ('%s; last scan: %s' % ('logged in today as %s' % (s.get('user') or 'you') if session_valid(s) else
                                    'not logged in today (the program asks when it needs to)',
                                    ('%s - %s stocks, %s pattern(s)' % (last.get('at'), last.get('stocks'), last.get('found')))
-                                   if last else 'none yet'))
+                                   if last else 'none yet')) + (
+        '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '')
 
 
 class Runner:

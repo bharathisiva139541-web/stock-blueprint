@@ -356,6 +356,13 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    -> the sheet's "CHoCH Waiting" tab -> the website's Patterns & FVG page ("CHoCH + FVG - waiting for the pullback":
    the zone top = where to put a buy order, the zone bottom, the distance, with Kite's prices). Strategy Settings then
    says "waiting for the pullback" for such a stock. IntradayCheck.bat SYMBOL D shows the stock's waiting status too.
+ - ChochRules.bat (12-Nov-2026): the CHoCH + FVG rules of the daily Zerodha scan - swing size (candles each side),
+   lower highs / lows before the CHoCH, the discount level (0.382 / 0.5 / 0.618 / 0.705 / 0.786), which part of the zone must
+   be that deep (middle / top / bottom) and where the zone formed (in the CHoCH move or after it / only in the move / only
+   after the CHoCH candle). Type the same values as in your Backtest Lab run / TradingView indicator; Enter keeps a value.
+   Saved in config.json (choch_swing_candles, choch_lower_highs, choch_fib, choch_zone_part, choch_zone_when). The next scan
+   then looks at the last 10 sessions again with them (IntradayNow.bat = now); the sheet's tab notes and the website's
+   texts say the rules in use. TestConnection line 9 and IntradayCheck.bat show them too.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /
