@@ -524,6 +524,18 @@
   }
   function tone(v) { return isNum(v) ? (v > 0 ? ' up' : v < 0 ? ' down' : '') : ''; }
 
+  /** The run's charts PDF on the laptop (owner, 12-Nov-2026: "a PDF should come with it - a chart for every trade ... the
+   *  swings, CHoCH, FVG area, target and stop loss"; choices: the laptop folder only, every trade, the losing ones first). */
+  function pdfNote(pdf) {
+    if (!pdf) return '';
+    if (pdf.error) return '<p class="note warn">The charts PDF could not be made on your laptop: ' + esc(pdf.error) + '</p>';
+    if (!pdf.file) return '';
+    return '<p class="note lab-pdf">📄 <b>Charts PDF on your laptop</b> - a chart page for every trade (the losing ones first): <code>ScreenerBridge\\' +
+      esc(pdf.folder || 'lab_charts') + '\\' + esc(pdf.file) + '</code> - ' + F.int(pdf.pages) + ' pages' +
+      (pdf.shown < pdf.trades ? ' (the first ' + F.int(pdf.shown) + ' of ' + F.int(pdf.trades) + ' trades)' : '') +
+      '. On the laptop: File Explorer → the ScreenerBridge folder → <b>lab_charts</b> (the newest 20 PDFs are kept).</p>';
+  }
+
   /** With market structure 'only': how many signals each structure rule left out (the first one they failed). */
   function structNote(res) {
     var why = res.structWhy || {}, keys = Object.keys(why).filter(function (k) { return why[k]; });
@@ -558,7 +570,7 @@
       '<div class="actions"><button class="btn sm" type="button" id="lab-use">Use these rules</button>' +
       '<button class="btn sm" type="button" id="lab-res-pine" title="The TradingView indicator with this run\'s rules - to check its trades on the chart">📋 TradingView script</button>' +
       '<button class="btn sm danger" type="button" id="lab-del">Delete this run</button></div></div>' +
-      '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p><div id="lab-res-pine-box" class="lab-pine"></div>';
+      '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>' + pdfNote(res.pdf) + '<div id="lab-res-pine-box" class="lab-pine"></div>';
     if (!s.trades) {
       box.innerHTML = h + '<p class="empty">No trade matched these rules' + (res.open ? ' (' + res.open + ' still running)' : '') + '.</p></section>';
       bindResult(el, it);

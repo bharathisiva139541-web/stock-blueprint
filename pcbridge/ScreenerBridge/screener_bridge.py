@@ -4099,8 +4099,11 @@ def main(argv):
             if not itd.lab_build_cache(print, nse_holidays()):
                 print('No Kite candles on this computer yet - run KiteHistoryNow.bat first.')
                 return 1
-        res = itd.backtest_lab.run_job({'tf': tf if tf in itd.backtest_lab.TFS else 'D'})
+        res = itd.backtest_lab.run_job({'tf': tf if tf in itd.backtest_lab.TFS else 'D'},
+                                       charts=itd.backtest_lab.CHARTS_DIR, name='Default rules ' + tf)
         print(itd.backtest_lab.headline(res) + ' (%.1f s)' % res['secs'])
+        if (res.get('pdf') or {}).get('file'):
+            print('Charts PDF: lab_charts\\%s (%d pages)' % (res['pdf']['file'], res['pdf']['pages']))
         return 0
     if cmd == 'intradaycheck':
         print('Kite candle check - Spring / Spring in FVG of one stock (nothing is sent to the sheet)')

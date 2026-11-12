@@ -338,6 +338,11 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    chart - swings, CHoCH, final low, the 50% line, BOS, the zones and a BUY label (hover it: entry / stop / target) - to
    check a backtest trade with your own eyes. TradingView: Pine Editor > paste > Save > Add to chart. Easier: the Backtest
    Lab page's "Copy TradingView script" button gives the script with the rules of the form (or of a finished run).
+ - Charts PDF (12-Nov-2026): with every Backtest Lab run this computer also makes ONE PDF with a chart page for every trade
+   (the losing ones first, newest first; then the rest; then the open ones): the candles, swing highs / lows, the CHoCH
+   level + final low, the Fib (discount) line, the BOS, the FVG / Gap-up zone, the entry / stop / target lines, the BUY
+   and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file); the newest 20 PDFs are
+   kept; at most 3,000 trade pages a PDF. The Lab page shows the file name with each run. config "lab_charts": false = off.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

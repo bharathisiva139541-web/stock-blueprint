@@ -46,6 +46,7 @@ if HERE not in sys.path:
 import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2026)
 
 LAB_DIR = os.path.join(HERE, 'lab_cache')
+CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
 TFS = ('D', 'W', '4H')
 CACHE_VERSION = 3               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
                                 # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y')
@@ -696,7 +697,7 @@ def simulate(cs, row, P, ema=None, swing=None):
     return {'i': i, 'code': code, 'where': row[4], 'touch': row[5], 'inside': row[6], 'turn': row[7],
             'entry': entry, 'stop': round(stop, 2), 'risk': risk, 'riskPct': round(risk_pct, 2), 'exit': round(ex, 4), 'reason': why,
             'R': round(R, 3), 'ret': round((ex - entry - cost) / entry * 100, 2), 'days': cs.day[jx] - cs.day[i],
-            'maxR': round(max(0.0, best_r), 2), 'hit': hit, 'tgt': round(target, 2),
+            'maxR': round(max(0.0, best_r), 2), 'hit': hit, 'tgt': round(target, 2), 'jx': jx,
             'ek': (cs.day[i if P['entry'] != 'next_open' else min(i + 1, n - 1)], cs.minute[i if P['entry'] != 'next_open' else min(i + 1, n - 1)]),
             'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i]}, None
 
@@ -904,8 +905,9 @@ def summarise(trades, P, skips, meta, secs):
             'stages': stages, 'secs': round(secs, 1)}
 
 
-def run_job(params, base=None, progress=None):
-    """One Backtest Lab run on the cache -> the result (summarise). Raises LabError when there is no cache yet."""
+def run_job(params, base=None, progress=None, charts=None, name=''):
+    """One Backtest Lab run on the cache -> the result (summarise). Raises LabError when there is no cache yet. `charts` = a
+    folder: a PDF with a chart page per trade is made there (lab_charts.py; result 'pdf')."""
     t0 = time.time()
     P = clean_params(params)
     meta, d = load_meta(base)
@@ -971,6 +973,9 @@ def run_job(params, base=None, progress=None):
                 if sj is not None:
                     t['stage'] = sj['stage']
                     t['struct'] = struct_text(st.s, sj, cs, P['tf'], P)
+                    t['k'], t['H'] = sj['k'], sj.get('H')
+                zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
+                t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
                 return t, None
 
             g = 0
@@ -1003,10 +1008,73 @@ def run_job(params, base=None, progress=None):
             if progress and (k + 1) % 300 == 0:
                 progress(int((k + 1) * 90 / max(1, len(syms))))
     res = summarise(trades, P, skips, meta, time.time() - t0)
+    if charts:
+        try:
+            res['pdf'] = make_charts(charts, d, P, trades, res, meta, progress, name)
+        except Exception as e:            # the run's figures still go to the page
+            log('Backtest Lab: the charts PDF could not be made - %s' % e)
+            res['pdf'] = {'error': str(e)[:200]}
+        res['secs'] = round(time.time() - t0, 1)
     res['indexNames'] = sorted((meta.get('indices') or {}).keys())      # the page's list of indices
     res['shapeWhy'] = shape_why                                         # {rule: Springs it left out} (first failed rule)
     res['structWhy'] = struct_why                                       # {rule: signals the structure rules left out}
     return res
+
+
+# ------------------------------------------------------------------ the charts PDF (lab_charts.py)
+def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
+    """Every trade of a run as a chart page in one PDF in `folder` (owner, 12-Nov-2026: laptop folder only, every trade,
+    the losing ones first) -> {'file', 'folder', 'pages', 'trades', 'shown'}. Reads each stock's candles once."""
+    import lab_charts as LC
+    os.makedirs(folder, exist_ok=True)
+    order = sorted(trades, key=LC.sort_key)
+    shown = order[:LC.MAX_PAGES]
+    total = len(shown) + 1
+    page_of = {id(t): k + 2 for k, t in enumerate(shown)}
+    made = datetime.now()
+    title = name or ('Backtest Lab run - %s' % P['tf'])
+    fname = made.strftime('%Y-%m-%d %H%M%S') + ' ' + LC.safe_name(title) + '.pdf'
+    pdf = LC.PdfWriter(os.path.join(folder, fname))
+    try:
+        LC.cover_page(pdf, title, P, res, len(shown), len(trades), made.strftime('%d %b %Y %H:%M'))
+        by_sym = {}
+        for t in shown:
+            by_sym.setdefault(t['sym'], []).append(t)
+        tf = P['tf']
+        index = meta['index'].get(tf) or {}
+        smap = _struct_map(d, tf, P['pivotN'])
+        lens = ema_lens(P)
+        done = 0
+        with open(os.path.join(d, tf + '.bin'), 'rb') as f:
+            for sym in sorted(by_sym):
+                if sym not in index:
+                    continue
+                cs = Candles(f, index[sym][0], index[sym][1])
+                st = smap.get(sym)
+                if st is None or st.size != cs.n:
+                    st = smap[sym] = _Struct(cs, P['pivotN'])
+                piv = structure.pivots(cs.h, cs.l, P['pivotN'])
+                emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens} or None
+                for t in by_sym[sym]:
+                    if 'k' not in t:                  # structure not a rule in this run: the chart still shows the CHoCH, if any
+                        zf = t.get('zf')
+                        sj = st.s.judge(t['i'], zf, t.get('zt') if zf is not None else None, _f(cs.c[t['i']]), cs.c, P['downN'],
+                                        P['chochAge'], h=cs.h, zone_bottom=t.get('zb') if zf is not None else None,
+                                        part=P['discPart'], fib=P['discount'] or None)
+                        t['k'], t['H'] = sj['k'], sj.get('H')
+                        if sj['k'] >= 0 and not t.get('struct'):
+                            t['struct'] = struct_text(st.s, sj, cs, tf, P)
+                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, P, page_of[id(t)], total, title, piv, emas)
+                    done += 1
+                    if progress and done % 200 == 0:
+                        progress(90 + int(9 * done / max(1, len(shown))))
+        pages = pdf.close()
+    except Exception:
+        pdf.abort()
+        raise
+    LC.tidy(folder)
+    log('Backtest Lab: charts PDF %s (%d pages) in %s' % (fname, pages, folder))
+    return {'file': fname, 'folder': LC.FOLDER, 'pages': pages, 'trades': len(trades), 'shown': len(shown)}
 
 
 # ------------------------------------------------------------------ market structure (structure.py) in a run
@@ -1195,7 +1263,8 @@ class LabWorker:
                 if not self._build(cfg, api, lambda k, total, note: progress(max(1, int(k * 60 / max(1, total))), note)):
                     raise LabError('no Kite candles on this laptop yet - run KiteHistoryNow.bat')
                 base = 60
-            res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)))
+            charts = CHARTS_DIR if cfg.get('lab_charts') is not False else None
+            res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)), charts=charts, name=name)
             reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
             if not reply.get('ok'):
                 raise LabError('the sheet refused the result - %s' % reply.get('error'))
