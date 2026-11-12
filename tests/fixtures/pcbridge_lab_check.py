@@ -21,6 +21,7 @@ LOGS = []
 L.log = lambda m: LOGS.append(m)
 TMP = tempfile.mkdtemp()
 L.LAB_DIR = os.path.join(TMP, 'lab_cache')
+L.CHARTS_DIR = os.path.join(TMP, 'lab_charts')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
 
@@ -886,5 +887,107 @@ assert [x['candle'] for x in ch6] == [r6[t_disc][0], r6[t_disc + 1][0]], [(x['ca
 assert ch6[0]['note'].startswith('Zone first touch · CHoCH ') and ch6[0]['note'].endswith('· first pullback · zone middle 89% down the move'), ch6[0]['note']
 assert ch6[1]['note'].startswith('Spring · CHoCH ') and ch6[0]['zone'][:2] == [121.3, 126.5], ch6
 assert not re.search(r'\d\.\d', ch6[0]['note'])
+
+# ------------------------------------------------------------------ 14. the charts PDF (owner, 12-Nov-2026: "a PDF should come with
+# it - a chart for every trade, with the swings, CHoCH, FVG area, target and stop loss ... like the TradingView view";
+# choices: the laptop folder only, every trade, the losing ones first)
+import lab_charts as LC
+import zlib
+
+
+def pdf_pages(path):
+    """-> [[texts of the page] ...] in page order (Kids of object 2), after checking the xref offsets."""
+    raw = open(path, 'rb').read()
+    assert raw.startswith(b'%PDF-1.4') and raw.rstrip().endswith(b'%%EOF'), path
+    start = int(raw.rsplit(b'startxref', 1)[1].split()[0])
+    assert raw[start:start + 4] == b'xref'
+    head, body = raw[start:].split(b'\n', 2)[1], raw[start:].split(b'\n', 2)[2]
+    count = int(head.split()[1])
+    offs = {}
+    for k in range(count):
+        row = body[k * 20:(k + 1) * 20]
+        if row[17:18] == b'n':
+            offs[k] = int(row[:10])
+            assert raw[offs[k]:].startswith(b'%d 0 obj' % k), ('xref offset', k)
+
+    def obj(k):
+        return raw[offs[k]:raw.index(b'endobj', offs[k])]
+    kids = [int(x) for x in re.findall(rb'(\d+) 0 R', obj(2).split(b'/Kids')[1].split(b']')[0])]
+    pages = []
+    for p in kids:
+        c = int(re.search(rb'/Contents (\d+) 0 R', obj(p)).group(1))
+        o = obj(c)
+        data = zlib.decompress(o[o.index(b'stream\n') + 7:o.rindex(b'\nendstream')])
+        pages.append([t.replace(b'\\(', b'(').replace(b'\\)', b')').decode('latin-1') for t in re.findall(rb'\(((?:\\.|[^\\)])*)\) Tj', data)])
+    return pages
+
+
+assert LC.money(1234567.5) == '12,34,567.50' and LC.money(-12.3) == '-12.30' and LC.money(999) == '999.00'
+assert LC._pdf_str('a(b)c\\') == '(a\\(b\\)c\\\\)' and LC._pdf_str('x · y') == '(x \xb7 y)' and LC._pdf_str('₹ 5') == '(Rs  5)'
+assert LC.safe_name('My/run: "x"') == 'My_run_ _x' and LC.safe_name('') == 'run'
+# the owner's setup on the made SUPREMEIND chart: the discount FVG's first touch, its chart with the CHoCH and the 50 % line
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)     # (section 13's handmade cache replaced it)
+smc_res = L.run_job(dict(SMC6, entry='zone'), charts=L.CHARTS_DIR, name='My (test) run')
+info = smc_res['pdf']
+assert info['file'].endswith(' My (test) run.pdf') and info['folder'] == 'lab_charts', info
+assert info['pages'] == info['shown'] + 1 == smc_res['tradesTotal'] + 1 and info['trades'] == smc_res['tradesTotal'], (info, smc_res['tradesTotal'])
+pages = pdf_pages(os.path.join(L.CHARTS_DIR, info['file']))
+assert pages[0][0] == 'Backtest Lab - trade charts' and pages[0][1] == 'My (test) run' and any(t.startswith('Market structure: swings of 5') for t in pages[0])
+def head(pg):
+    """(the page's title 'SYM  -  Daily  -  signal ...', its result text '-1.00R   Stop loss' / 'still open ...')."""
+    k = next(k for k, t in enumerate(pg) if '  -  Daily  -  signal ' in t)
+    return pg[k], pg[k + 1]
+
+
+sup = [pg for pg in pages[1:] if head(pg)[0].startswith('SUP  -  Daily  -  signal ')]
+assert len(sup) == 1, [head(pg)[0] for pg in pages[1:]]
+want = ['Entry 126.50', 'Stop %s' % LC.money(round(121.3 * 0.995, 2)), 'Zone top 126.50', 'Zone bottom 121.30', 'CHoCH 136.30', '50% 138.00', 'BUY', 'final low', 'CHoCH (3)']
+assert all(w in sup[0] for w in want), [w for w in want if w not in sup[0]]
+assert any(t.startswith('CHoCH 136.30 on ') and '50% line 138.00' in t for t in sup[0]), 'the Lab\'s own structure words'
+assert sup[0][-1].startswith('page ') and sup[0][-1].endswith(' of %d' % info['pages'])
+# every trade of a bigger run, the losing ones first, newest first in each group, the open ones last
+big = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0, 'structure': 'off'}, charts=L.CHARTS_DIR, name='every touch')
+pg = pdf_pages(os.path.join(L.CHARTS_DIR, big['pdf']['file']))[1:]
+assert len(pg) == big['tradesTotal'] > 20, (len(pg), big['tradesTotal'])
+groups = []
+for p_ in pg:
+    r = head(p_)[1]
+    groups.append(2 if r.startswith('still open') else 0 if r.startswith('-') else 1)
+assert groups == sorted(groups) and groups[0] == 0 and 1 in groups, groups
+day = lambda p_: date(int(head(p_)[0].split()[-1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].index(head(p_)[0].split()[-2]) + 1,
+                       int(head(p_)[0].split()[-3]))
+for g in (0, 1):
+    ds = [day(p_) for p_, gg in zip(pg, groups) if gg == g]
+    assert ds == sorted(ds, reverse=True), (g, ds[:5])
+# a page limit keeps the PDF small; the cover says how many
+LC.MAX_PAGES, keep_max = 5, LC.MAX_PAGES
+few = L.run_job({'tf': 'D', 'group': 'touch', 'maxRisk': 0, 'structure': 'off'}, charts=L.CHARTS_DIR, name='five')
+LC.MAX_PAGES = keep_max
+assert few['pdf']['pages'] == 6 and few['pdf']['shown'] == 5 and few['pdf']['trades'] == big['tradesTotal']
+assert any('The first 5 of %d.' % big['tradesTotal'] in t for t in pdf_pages(os.path.join(L.CHARTS_DIR, few['pdf']['file']))[0])
+# pdftoppm (when there) reads it - a real PDF reader
+import shutil, subprocess
+if shutil.which('pdftoppm'):
+    out = os.path.join(TMP, 'pg')
+    r = subprocess.run(['pdftoppm', '-r', '20', '-png', '-f', '1', '-l', '3', os.path.join(L.CHARTS_DIR, info['file']), out], capture_output=True)
+    assert r.returncode == 0 and not r.stderr, r.stderr
+# the folder keeps the newest KEEP_FILES PDFs
+for k in range(LC.KEEP_FILES + 3):
+    open(os.path.join(L.CHARTS_DIR, 'old %02d.pdf' % k), 'w').close()
+LC.tidy(L.CHARTS_DIR)
+assert len([f for f in os.listdir(L.CHARTS_DIR) if f.endswith('.pdf')]) == LC.KEEP_FILES
+# the background worker makes it with every run (config "lab_charts": false = no PDF); a failure never stops the result
+api = FakeSheet([{'id': 'L20', 'name': 'with charts', 'params': dict(SMC6)}])
+L.LabWorker().loop({}, api, rounds=1)
+sent = [c for c in api.calls if c['op'] == 'result'][0]['result']
+assert sent['pdf']['file'].endswith(' with charts.pdf') and os.path.isfile(os.path.join(L.CHARTS_DIR, sent['pdf']['file']))
+api = FakeSheet([{'id': 'L21', 'name': 'no charts', 'params': dict(SMC6)}])
+L.LabWorker().loop({'lab_charts': False}, api, rounds=1)
+assert 'pdf' not in [c for c in api.calls if c['op'] == 'result'][0]['result']
+real = LC.trade_page
+LC.trade_page = lambda *a, **k: 1 / 0
+broken = L.run_job(dict(SMC6), charts=L.CHARTS_DIR, name='broken')
+LC.trade_page = real
+assert broken['pdf'].get('error') and broken['stats'] and not [f for f in os.listdir(L.CHARTS_DIR) if f.endswith('.tmp')]
 
 print('OK')

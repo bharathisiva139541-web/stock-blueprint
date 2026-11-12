@@ -18,6 +18,7 @@ pcbridge/ScreenerBridge/kite_instruments.json
 pcbridge/ScreenerBridge/intraday_state.json
 pcbridge/ScreenerBridge/intraday_data/
 pcbridge/ScreenerBridge/lab_cache/
+pcbridge/ScreenerBridge/lab_charts/
 pcbridge/ScreenerBridge/kite_live.json
 .clasprc.json
 *.token
