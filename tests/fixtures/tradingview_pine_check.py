@@ -150,7 +150,10 @@ SETS = [SMC,
         # the owner's refinements of 12-Nov-2026 the script draws: the Gap-up zone entry inside an FVG (on by default above - and
         # off here), the stop under the CHoCH's final low
         dict(SMC, pivotN=3, downN=1, gapEntry=False), dict(SMC, pivotN=2, downN=1, gapEntry=False, entry='close', stop='lower'),
-        dict(SMC, pivotN=3, downN=1, stop='final', maxRisk=0), dict(SMC, structure='off', pivotN=3, downN=1, stop='final', entry='close', maxRisk=0)]
+        dict(SMC, pivotN=3, downN=1, stop='final', maxRisk=0), dict(SMC, structure='off', pivotN=3, downN=1, stop='final', entry='close', maxRisk=0),
+        # the 2nd-zone rule (owner, 12-Nov-2026: on by default above) - off, and with every zone counting (no discount rule)
+        dict(SMC, pivotN=3, downN=1, zonePick='every'), dict(SMC, pivotN=2, downN=1, discount=0, zoneWhen='leg'),
+        dict(SMC, pivotN=3, downN=1, discount=0.382, discPart='top', entry='close', stop='lower')]
 counts = []
 for params in SETS:
     lab, mod = lab_trades(params), model_trades(charts, params)
@@ -158,6 +161,7 @@ for params in SETS:
     counts.append(len(lab))
 assert min(counts) >= 3 and sum(counts) > 900, counts
 assert lab_trades(SMC) != lab_trades(dict(SMC, gapEntry=False)), 'the Gap-up zone entry changes some trades on these charts'
+assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, zonePick='every')), 'the 2nd-zone rule changes trades'
 # the CHoCH events of every chart = structure.py's - the baseline and every structure option
 OPTS = [{}, {'swingMode': 'zigzag', 'zzAtr': 2}, {'swingMode': 'zigzag', 'zzAtr': 1}, {'swingMode': 'zigzag', 'zzAtr': 3, 'chochMode': 'protected'},
         {'swingAtr': 1}, {'swingAtr': 0.5, 'eqAtr': 0.25}, {'chochMode': 'protected'}, {'chochMode': 'protected', 'eqAtr': 0.5}, {'eqAtr': 0.1},
@@ -229,9 +233,13 @@ for sym, rows in made.items():
     m = model(rows, P0)
     assert len(m.buys) == 1 and m.buys[0][2:4] == [121.3, 126.5] and rows[m.buys[0][0]][2] == 124.8, (sym, m.buys)
     assert m.buys[0][6] == 126.5 and abs(m.buys[0][7] - 121.3 * 0.995) < 1e-9, m.buys     # an order at the zone top, stop under the zone
-    loose = model(rows, L.clean_params(dict(SMC, tf='D', discount=0)))
+    loose = model(rows, L.clean_params(dict(SMC, tf='D', discount=0, zonePick='every')))
     assert loose.buys[0][2:4] == [139.3, 145.0], loose.buys   # without the discount rule the premium zone is the BUY (the SUPREMEIND run)
-assert lab_trades(SMC) == model_trades(made, SMC) and lab_trades(dict(SMC, discount=0)) == model_trades(made, dict(SMC, discount=0))
+    # the owner's 2nd-zone rule (12-Nov-2026): both zones count without the discount rule - the higher one is only watched
+    two = model(rows, L.clean_params(dict(SMC, tf='D', discount=0)))
+    assert [b[2:4] for b in two.buys][:1] == [[121.3, 126.5]], two.buys
+for extra in ({}, {'discount': 0}, {'discount': 0, 'zonePick': 'every'}):
+    assert lab_trades(dict(SMC, **extra)) == model_trades(made, dict(SMC, **extra)), extra
 
 # ------------------------------------------------------------------ 3. the .pine itself: the Lab's defaults, the same numbers, Pine v5 layout
 src = open(os.path.join(ROOT, 'tradingview', 'StockBlueprint_CHoCH_FVG.pine'), encoding='utf-8').read()
@@ -265,6 +273,7 @@ assert default('swMode') == 'Candles each side' and D['swingMode'] == 'fractal' 
 assert float(default('zzAtr')) == D['zzAtr'] and float(default('swAtr')) == D['swingAtr'] == 0 and float(default('eqAtr')) == D['eqAtr'] == 0
 assert default('gapEntry') == 'true' and D['gapEntry'] is True and 'linkZone(' in src and 'bool waitsInside = gapEntry and not zg and array.get(zInner, k)' in src
 assert '"Under the CHoCH\'s final low"' in src and M.LINK_SPAN == K.ZONE_LINK_SPAN
+assert default('zonePick') == 'Trade the 2nd (the 1st only watched)' and D['zonePick'] == 'second' and 'zPass(fj, bj, tj, chLi' in src
 for name, key in (('zzAtr', 'zzAtr'), ('swAtr', 'swingAtr'), ('eqAtr', 'eqAtr')):
     mm = re.search(r'^%s = input\.float\([^\n]*minval=([\d.]+), maxval=([\d.]+)' % name, src, re.M)
     assert mm and (float(mm.group(1)), float(mm.group(2))) == L.LIMITS[key][:2], (name, L.LIMITS[key])

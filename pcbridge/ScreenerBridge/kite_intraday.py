@@ -1330,7 +1330,8 @@ CHOCH_MORE = (('zoneMin', 'choch_zone_min_pct', 0.0, 0.0, 50.0), ('zoneMax', 'ch
               ('lineTol', 'choch_line_tol_pct', 0.5, 0.0, 5.0), ('fibLevel', 'choch_pattern_fib', 0.618, 0.2, 0.95),
               ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0))
 CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False))
-CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')))
+CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')),
+               ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')))
 
 
 def choch_rules(cfg=None):
@@ -1381,6 +1382,7 @@ def choch_rules_words(r):
     if r.get('fibPat') in ('big', 'all'):
         out += ', %s: a Spring / Harami + Inverted Hammer at the zone\'s %s%% line' % (
             'big zones' if r['fibPat'] == 'big' else 'every zone', _num_words((r.get('fibLevel') or 0.618) * 100))
+    out += ', every discount zone' if r.get('zonePick') == 'every' else ', the 2nd discount zone when the move has two (the 1st only watched)'
     return out
 
 
@@ -1479,6 +1481,8 @@ def choch_setup(cfg, save_config, ask=input):
     num('Discount - how far down the move (0.382 / 0.5 / 0.618 / 0.705 / 0.786)', 'fib', 'choch_fib', 0.2, 0.95, CHOCH_FIB_CHOICES)
     pick('Which part of the zone must be that deep', 'part', [('mid', 'its middle'), ('top', 'all of it (its top)'), ('bottom', 'any part (its bottom)')])
     pick('The zone formed', 'zoneWhen', [(w, CHOCH_WHEN_WORDS[w]) for w in CHOCH_WHENS])
+    pick('Two discount zones in the CHoCH move', 'zonePick', [('second', 'trade the 2nd (the 1st only watched)'),
+                                                            ('every', 'trade every zone\'s first touch')])
     # the refinements of 12-Nov-2026 (the Backtest Lab's names)
     print('\nZone size = (top - bottom) / bottom in %. 0 = no limit.')
     num('Zone size at least % (0 to 50)', 'zoneMin', 'choch_zone_min_pct', 0.0, 50.0)
@@ -1644,6 +1648,29 @@ def choch_entries(all_c, d, i, slot_ok, touches, r, zones=None, pat=None):
     return out
 
 
+def _zone_list(zones, touches):
+    """backtest_lab.zone_rank's zone list from spring_zones' zones + zone_first_touches: [(f, bottom, top, first touch or
+    None)] by f."""
+    ft = {}
+    for i, v in (touches or {}).items():
+        for z in v:
+            ft[(z['kind'], z['f'])] = i
+    return sorted(((z['f'], z['bottom'], z['top'], ft.get((z['kind'], z['f']))) for z in zones or ()), key=lambda x: x[0])
+
+
+def _choch_rank(st, k, i, off, z, zl, all_c, closes, highs, r, price):
+    """The owner's 2nd-zone rule (backtest_lab.zone_rank, 12-Nov-2026) for zone z on candle i of all_c (full_c = all_c with
+    `off` older candles) under CHoCH k -> ('' | 'zone1' | 'zone3', number, the nearest area above)."""
+    a = z                         # (a Gap-up zone inside an FVG: the FVG overlaps it - the same area)
+    li = st.events[k][3] - off
+
+    def ok(f, b, t):
+        jj = st.judge(i + off, f + off, t, price, closes, r['downN'], h=highs, zone_bottom=b, part=r['part'], fib=r['fib'])
+        return jj['k'] == k and not _choch_fail(jj, r)
+    return backtest_lab.zone_rank(zl, i, a['bottom'], a['top'], li, ok,
+                                  lambda f, b: any(all_c[q]['c'] < b for q in range(f + 1, min(i, len(all_c)))))
+
+
 def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None, zones=None):
     """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
     {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). A candle's
@@ -1673,6 +1700,7 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
     if st is None:
         st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'])
     closes = [c['c'] for c in full_c]
+    zl = _zone_list(zones, touches) if r.get('zonePick', 'second') == 'second' else None
     out = {}
     for i in sorted(cand):
         for z, words in cand[i]:
@@ -1680,11 +1708,17 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
                          part=r['part'], fib=r['fib'])
             if _choch_fail(j, r):
                 continue
+            nth = ''
+            if zl is not None:          # of two discount zones the 2nd is traded, the 1st only watched (owner, 12-Nov-2026)
+                why, n_z, _a = _choch_rank(st, j['k'], i, off, z, zl, all_c, closes, highs, r, all_c[i]['c'])
+                if why:
+                    continue
+                nth = ' · 2nd discount zone (the 1st only watched)' if n_z == 2 else ''
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
             sz = _size_zone(z, r)
             pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
-            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move%s'
-                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)),
+            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move%s%s'
+                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)), nth,
                          (' · zone %s%% tall' % _num_words(pct)) if pct is not None else ''))
             break
     return out
@@ -1751,13 +1785,27 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
     if not found:
         return None
     found.sort(key=lambda x: (-x[2], x[0]['kind'] != 'FVG', x[0]['f']))
-    z, j, buy, how, sz = found[0]
+    pick_at = 0
+    if r.get('zonePick', 'second') == 'second':
+        # of two discount zones in the move the order waits at the 2nd - the 1st (the higher) is only watched (owner, 12-Nov-2026)
+        zl, pick_at = _zone_list(zones, touches), None
+        for q, (zq, _jq, _bq, _hq, _sq) in enumerate(found):
+            why, n_z, above = _choch_rank(st, k, len(all_c), off, zq, zl, all_c, closes, highs, r, price)
+            if not why:
+                pick_at = q
+                if n_z == 2 and above:
+                    found[q] = found[q][:3] + (found[q][3] + ' - the 2nd discount zone (the 1st, %.2f - %.2f, only watched)'
+                                               % (above[0], above[1]),) + found[q][4:]
+                break
+        if pick_at is None:
+            return None
+    z, j, buy, how, sz = found[pick_at]
     H = j['H']
     pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
     return {'tf': tf, 'choch': full_c[b]['t'], 'level': round(lvl, 2), 'd': dd, 'low': round(lf, 2), 'lowAt': full_c[li]['t'],
             'high': round(H, 2), 'fib': round(backtest_lab.structure.fib_line(H, lf, r['fib']), 2), 'zone': zone_out(all_c, z),
             'inside': 1 if z.get('inside') or sz is not z else 0, 'depth': int(round((j['depth'] or 0) * 100)), 'close': round(price, 2),
-            'last': full_c[-1]['t'], 'dist': round((price - buy) / price * 100, 2), 'more': len(found) - 1, 'age': n - 1 - b,
+            'last': full_c[-1]['t'], 'dist': round((price - buy) / price * 100, 2), 'more': len(found) - 1 - pick_at, 'age': n - 1 - b,
             'buy': round(buy, 2), 'stopAt': round(sz['bottom'], 2), 'how': how, 'pct': round(pct, 2) if pct is not None else None}
 
 
@@ -1891,17 +1939,23 @@ def lab_signal_rows(full_c, tf, slots, cfg, turn, up_f=None, zones_f=None, sig=N
         zones_f = spring_zones(full_c, up_f)
     if sig is None:
         sig = bt_signals(full_c, cfg, WINDOW.get(tf, 300), springs=sp, zones=zones_f) if tf not in NO_FVG_SPRING_TFS else {}
-    ft_c, cf_c, zt, fp = {}, {}, {}, {}
+    ft_c, cf_c, zt, fp, vz = {}, {}, {}, {}, {}
     if fz:
         link_zones(zones_f)
         ft_c, cf_c, _ = fvg_touch_events(full_c, up_f)
         zt = zone_first_touches(full_c, zones_f)
         for r in fib_pattern_rows(full_c, tf, slots, cfg, turn, zones_f, WINDOW.get(tf, 300)):
             fp.setdefault(r[0], []).append(r)
+        hit = set((z['kind'], z['f']) for v in zt.values() for z in v)
+        for z in zones_f:                     # the zones never touched (cache v6: the 2nd-zone rule needs every zone)
+            if (z['kind'], z['f']) not in hit:
+                t = turn(full_c[min(z['f'] + 1, n - 1)]['day']) if turn else 0.0
+                vz.setdefault(z['f'] + 1, []).append([z['f'] + 1, 'V', round(z['bottom'], 4), round(z['top'], 4), '', 0,
+                                                      1 if z.get('inside') else 0, t, int(z['f']), None])
     spring_at = set(i for i in sp if _slot_ok(slots, tf, full_c[i]))
     rows = []
-    for i in sorted(spring_at | set(ft_c) | set(cf_c) | set(zt) | set(fp)):
-        if i < 3:
+    for i in sorted(spring_at | set(ft_c) | set(cf_c) | set(zt) | set(fp) | set(vz)):
+        if i < 3 and i not in vz:
             continue
         if i in spring_at:
             rows.extend(backtest_lab.signal_rows(full_c, i, sig.get(i), turn))
@@ -1910,6 +1964,7 @@ def lab_signal_rows(full_c, tf, slots, cfg, turn, up_f=None, zones_f=None, sig=N
         if i in zt:
             rows.extend(backtest_lab.zone_touch_rows(full_c, i, zt[i], turn))
         rows.extend(fp.get(i, ()))
+        rows.extend(vz.get(i, ()))
     return rows
 
 

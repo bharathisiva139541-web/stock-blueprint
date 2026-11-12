@@ -418,7 +418,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-6:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-8:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -561,7 +561,7 @@ for seed in range(6):
 
 # the cache now has the FVG First Touch / Confirmed signals (the same as the sheet's / 4H scan's rule) + the zone's candle
 meta, d = L.load_meta()
-assert meta['v'] == L.CACHE_VERSION == 5
+assert meta["v"] == L.CACHE_VERSION == 6
 with open(os.path.join(d, 'D.bin'), 'rb') as f:
     off, cnt = meta['index']['D']['AAA']
     csa = L.Candles(f, off, cnt)
@@ -576,7 +576,7 @@ assert ztx and sorted((r[0], r[8], r[1]) for r in rows_a if r[1] in ('Z', 'Y')) 
 for i, zs in ztx.items():
     assert all(fc[i]['l'] <= z['top'] and all(fc[k]['l'] > z['top'] for k in range(z['f'] + 1, i)) for z in zs), 'the first touch'
     assert [z['top'] for z in zs] == sorted((z['top'] for z in zs), reverse=True)
-assert all(len(r) == {'Z': 10, 'Y': 10, 'P': 11, 'Q': 11}.get(r[1], 9) for r in rows_a) and all(r[8] == -1 for r in rows_a if r[1] == 'S')
+assert all(len(r) == {'Z': 10, 'Y': 10, 'V': 10, 'P': 11, 'Q': 11}.get(r[1], 9) for r in rows_a) and all(r[8] == -1 for r in rows_a if r[1] == 'S')
 assert all(0 <= r[8] <= r[0] - 2 for r in rows_a if r[1] in ('F', 'G')), 'the zone formed before the Spring pair'
 assert all(r[8] < r[0] for r in rows_a if r[1] in ('T', 'C'))
 for grp in ('ft', 'conf', 'entry'):
@@ -857,8 +857,15 @@ assert lab6(entry='close')[0][ent6] == 125.0, 'the touch candle\'s close'
 sub = [r for r in mine6 if r[sym6] == 'SUB']
 assert len(sub) == 1 and sub[0][ent6] == 126.5 and abs(sub[0][st6] - round(121.3 * 0.995, 2)) < 0.006, sub
 # no discount rule: the premium zone's touch is taken first (what the SUPREMEIND run did); 'show' labels it premium
-loose6 = [r for r in lab6(discount=0) if r[sym6] == 'SUP']
+loose6 = [r for r in lab6(discount=0, zonePick='every') if r[sym6] == 'SUP']
 assert [r[sig6] for r in loose6][-1] == r6[t_prem][0] and len(loose6) == 2, loose6
+# the owner's 2nd-zone rule (12-Nov-2026: "No trade only on 2nd FVG. 1st FVG can be watched but not to be traded"): with both
+# zones counting (no discount rule) the higher one is only watched, the trade is the 2nd; with the discount rule only one counts
+zn6 = L.TRADE_COLS.index('zn')
+run2 = L.run_job(dict(SMC6, discount=0))
+two6 = [r for r in run2['trades'] if r[sym6] == 'SUP']
+assert len(two6) == 1 and two6[0][sig6] == r6[t_disc][0] and two6[0][zn6] == 2 and run2['structWhy'].get('zone1', 0) >= 1, (two6, run2['structWhy'])
+assert sup[0][zn6] == 1 and L.DEFAULTS['zonePick'] == 'second', 'the premium zone does not count - the discount one is the only one'
 show6 = L.run_job(dict(SMC6, structure='show'))
 lab_st = {r[sig6]: r[stage6] for r in show6['trades'] if r[sym6] == 'SUP'}
 assert lab_st[r6[t_prem][0]] == 'prem' and lab_st[r6[t_disc][0]] == 'disc', lab_st
@@ -925,7 +932,7 @@ K.send_waiting({}, lambda cfg, action, body, **kw: sent6.append((action, body)) 
 assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'] for r in sent6[0][1]['rows']] == ['AAA', 'SUP'], sent6
 assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
 NEW6 = {'zoneMin': 0.0, 'zoneMax': 0.0, 'lineTol': 0.5, 'fibLevel': 0.618, 'fibTol': 1.0, 'gapEntry': True, 'lineOk': False,
-        'darkCloud': 'any', 'fibPat': 'off'}       # the 12-Nov-2026 refinements' defaults
+        'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second'}       # the 12-Nov-2026 refinements' defaults
 assert sent6[0][1]['choch'] == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6)
 # the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
 D6 = K.choch_rules()
@@ -933,8 +940,8 @@ assert D6 == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen
 mine6r = K.choch_rules({'choch_swing_candles': 10, 'choch_lower_highs': 4, 'choch_fib': 0.382, 'choch_zone_part': 'top', 'choch_zone_when': 'leg'})
 assert mine6r == dict({'pivotN': 10, 'downN': 4, 'fib': 0.382, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6), mine6r
 assert K.choch_rules({'choch_swing_candles': 99, 'choch_lower_highs': True, 'choch_fib': 1.5, 'choch_zone_part': 'x', 'choch_zone_when': 2}) == D6
-assert K.choch_rules_words(D6) == "swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it"
-assert K.choch_rules_words(mine6r) == "swings of 10 candles, at least 4 lower highs / lows, the zone's top at least 38.2% down the move, the zone formed only in the CHoCH move"
+assert K.choch_rules_words(D6) == "swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH move or after it, the 2nd discount zone when the move has two (the 1st only watched)"
+assert K.choch_rules_words(mine6r) == "swings of 10 candles, at least 4 lower highs / lows, the zone's top at least 38.2% down the move, the zone formed only in the CHoCH move, the 2nd discount zone when the move has two (the 1st only watched)"
 w_at = full6[:t_prem]
 assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, part='top'))['depth'] == 81, 'the zone top 126.50: 81% down the move'
 assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, downN=4)) is None, 'only 3 lower highs / lows on this chart'
@@ -948,21 +955,23 @@ for rr6, n6 in ((dict(D6, part='top'), 2), (dict(D6, downN=4), 0), (dict(D6, fib
     if n6:
         assert '· first pullback · zone top 81% down the move · zone ' in got6[0]['note'], got6[0]['note']
 # ChochRules.bat: Enter keeps a value, a bad answer is asked again; config.json gets the five keys
-answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 6)
+answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 7)
 saved6 = {}
 assert K.choch_setup({'url': 'x'}, lambda c: saved6.update(c), ask=lambda q: next(answers)) == 0
 assert K.choch_rules(saved6) == dict({'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6) and saved6['url'] == 'x', saved6
 # ... and the refinements of 12-Nov-2026: zone size 2 - 8 %, the FVG top, the CHoCH-line rule (+1 %), dark clouds left out,
 # the Fib + pattern entry in big zones at the 61.8 % line +/- 1.5 %
-answers = iter([''] * 5 + ['2', '8', '2', '2', '1', '2', '2', '', '1.5'])
+answers = iter([''] * 5 + ['2', '2', '8', '2', '2', '1', '2', '2', '', '1.5'])
 saved7 = {}
 assert K.choch_setup({}, lambda c: saved7.update(c), ask=lambda q: next(answers)) == 0
 r7 = K.choch_rules(saved7)
-assert (r7['zoneMin'], r7['zoneMax'], r7['gapEntry'], r7['lineOk'], r7['lineTol'], r7['darkCloud'], r7['fibPat'], r7['fibLevel'], r7['fibTol']) == \
-    (2.0, 8.0, False, True, 1.0, 'exclude', 'big', 0.618, 1.5), r7
+assert (r7['zoneMin'], r7['zoneMax'], r7['gapEntry'], r7['lineOk'], r7['lineTol'], r7['darkCloud'], r7['fibPat'], r7['fibLevel'], r7['fibTol'],
+        r7['zonePick']) == (2.0, 8.0, False, True, 1.0, 'exclude', 'big', 0.618, 1.5, 'every'), r7
+assert saved7['choch_zone_pick'] == 'every'
 assert saved7['choch_zone_max_pct'] == 8.0 and saved7['choch_dark_cloud'] == 'exclude' and saved7['choch_gap_entry'] is False
 assert K.choch_rules_words(r7).endswith(", zone size 2 - 8%, the whole FVG (not the Gap-up zone inside it), or the zone top at / under the CHoCH level (+1%), "
-                                        "dark-cloud FVGs left out, big zones: a Spring / Harami + Inverted Hammer at the zone's 61.8% line"), K.choch_rules_words(r7)
+                                        "dark-cloud FVGs left out, big zones: a Spring / Harami + Inverted Hammer at the zone's 61.8% line, "
+                                        "every discount zone"), K.choch_rules_words(r7)
 assert K.choch_rules({'choch_zone_max_pct': 500, 'choch_dark_cloud': 'x', 'choch_gap_entry': 1, 'choch_fib_pattern': 'some'}) == D6
 # the zone size rule in the daily scan: the SUPREMEIND chart's zone is 4.3 % tall
 assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMax=3)) is None and K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMin=5)) is None
@@ -1417,5 +1426,61 @@ pdf17 = L.run_job(dict(SMC6, stop='final', lineOk=True), charts=L.CHARTS_DIR, na
 assert pdf17['pdf'].get('file') and not pdf17['pdf'].get('error'), pdf17['pdf']
 w17 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf17['pdf']['file'])))
 assert 'just under the final low (the lowest point before the CHoCH)' in w17 and 'under the CHoCH\'s final low (LL)' in w17
+
+# ------------------------------------------------------------------ 18. the 2nd discount zone + the CHoCH move's volume (owner, 12-Nov-2026:
+# "No trade only on 2nd FVG. 1st FVG can be watched but not to be traded"; "In the move of Choch, volumes are at least twice")
+ok18, nb18 = (lambda f, b, t: True), (lambda f, b: False)
+zs18 = [(10, 140.0, 145.0, 30), (12, 121.0, 126.0, None), (14, 100.0, 105.0, None)]
+assert L.zone_rank(zs18, 40, 140.0, 145.0, 5, ok18, nb18)[:2] == ('zone1', 1), 'the higher of two: only watched'
+assert L.zone_rank(zs18, 40, 121.0, 126.0, 5, ok18, nb18)[:3] == ('', 2, (140.0, 145.0, 10)), 'the 2nd: the trade'
+assert L.zone_rank(zs18, 50, 100.0, 105.0, 5, ok18, nb18)[:2] == ('zone3', 3), 'a 3rd: not traded'
+assert L.zone_rank(zs18[:1], 40, 140.0, 145.0, 5, ok18, nb18)[:2] == ('', 1), 'one zone: traded as before'
+assert L.zone_rank(zs18[:2], 40, 140.0, 145.0, 5, ok18, lambda f, b: True)[0] == '', 'a broken lower zone does not count'
+assert L.zone_rank([zs18[0], (12, 121.0, 126.0, 35)], 40, 140.0, 145.0, 5, ok18, nb18)[0] == '', 'nor one already reached'
+assert L.zone_rank(zs18[:2], 40, 140.0, 145.0, 5, lambda f, b, t: b > 130, nb18)[0] == '', 'nor one the rules leave out'
+assert L.zone_rank(zs18[:2], 40, 140.0, 145.0, 13, ok18, nb18)[0] == '', 'nor one older than the final low'
+assert L.zone_rank([(8, 130.0, 135.0, 20), (9, 133.0, 138.0, 22), (12, 121.0, 126.0, None)], 40, 121.0, 126.0, 5, ok18, nb18)[:2] == ('', 2), \
+    'overlapping zones above = one area'
+assert L.zone_rank([(10, 120.0, 130.0, None), (11, 124.0, 126.0, None)], 40, 120.0, 130.0, 5, ok18, nb18)[:2] == ('', 1), \
+    'a Gap-up zone inside the FVG is the same area'
+# the CHoCH move's volume: each candle from the final low to the CHoCH candle vs the 20 candles before the final low
+
+
+class _V18:
+    def __init__(self, v):
+        self.v, self.n = v, len(v)
+
+
+assert L.move_volumes(_V18([100.0] * 20 + [100, 250, 90, 300]), 20, 23) == [1.0, 2.5, 0.9, 3.0]
+assert L.move_volumes(_V18([0.0] * 20 + [100, 250]), 20, 21) is None, 'no volume to compare with'
+mvc = L.TRADE_COLS.index('mv')
+base18 = L.run_job(dict(SMC6))
+assert base18['tradesTotal'] > 0 and all(isinstance(r[mvc], float) and r[mvc] > 0 for r in base18['trades']), [r[mvc] for r in base18['trades']]
+hi18 = L.run_job(dict(SMC6, moveVol=20))
+assert hi18['tradesTotal'] < base18['tradesTotal'] and hi18['structWhy'].get('mvol', 0) >= 1, hi18['structWhy']
+assert L.run_job(dict(SMC6, moveVol=0.01))['tradesTotal'] == base18['tradesTotal']
+assert L.run_job(dict(SMC6, moveVol=0.01, moveVolN=500))['tradesTotal'] < base18['tradesTotal'], 'N candles at least'
+assert P(moveVol=50, moveVolN=0, zonePick='x') ['moveVol'] == 20 and P(moveVolN=0)['moveVolN'] == 1 and P(zonePick='x')['zonePick'] == 'second'
+# the daily scan + the waiting list follow it (the made SUPREMEIND chart: the premium zone 139.30 - 145.00 above the discount one)
+loose18 = dict(D6, fib=0.2)
+got18 = [x for x in K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), (),
+                              choch=loose18)['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert got18[0]['candle'][:10] == r6[t_disc][0] and r6[t_prem][0] not in [x['candle'][:10] for x in got18] and \
+    all('· 2nd discount zone (the 1st only watched)' in x['note'] for x in got18), \
+    [(x['candle'], x['note']) for x in got18]
+every18 = [x for x in K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), (),
+                                choch=dict(loose18, zonePick='every'))['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert every18[0]['candle'][:10] == r6[t_disc][0] and not any('2nd discount zone' in x['note'] for x in every18), [(x['candle'], x['note']) for x in every18]
+pre18 = [dict(zip(('day', 'o', 'h', 'l', 'c', 'v'), r)) for r in r6[:t_prem]]
+cs18 = [{'t': r['day'], 'day': r['day'], 'o': r['o'], 'h': r['h'], 'l': r['l'], 'c': r['c']} for r in pre18]
+wt18 = K.choch_waiting(cs18, cs18, 'D', rules=loose18)
+assert wt18 and wt18['zone'][:2] == [121.3, 126.5] and 'the 2nd discount zone (the 1st, 139.30 - 145.00, only watched)' in wt18['how'], wt18
+assert K.choch_waiting(cs18, cs18, 'D', rules=dict(loose18, zonePick='every'))['zone'][:2] == [139.3, 145.0]
+# the charts PDF: volume under every chart, the watched 1st zone + the sentence
+pdf18 = L.run_job(dict(SMC6, discount=0, moveVol=0.01), charts=L.CHARTS_DIR, name='second zone')
+w18 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf18['pdf']['file'])))
+for txt in ('Volume (grey line = 20-candle average; the CHoCH move darker)', '1st zone (watched only)', 'Your rule only watches that 1st',
+            'the 2nd traded, the 1st only watched', 'Volume in the rise that made the CHoCH', 'Volume in the CHoCH move: at least 1 candle'):
+    assert txt in w18, txt
 
 print('OK')

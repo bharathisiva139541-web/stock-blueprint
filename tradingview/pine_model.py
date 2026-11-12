@@ -68,6 +68,9 @@ class Model:
         self.cv = []                                    # close x volume (the turnover)
         self.lo, self.hi = _ord(P.get('from')), _ord(P.get('to'))
         self.events, self.buys, self.bos = [], [], {}
+        # the 2nd-zone rule (12-Nov-2026, the Lab's zonePick): the zones price has touched (f, bottom, top), newest last
+        self.second = self.struct_only and P.get('zonePick', 'second') == 'second'
+        self.tz = []
 
     # ---- the helpers Pine computes on every bar
     def _pivot_high(self, i):
@@ -209,15 +212,15 @@ class Model:
 
         # 2. the zones this bar touches for the first time (low <= top; a Gap-up zone not on a circuit-locked candle); the
         #    first one (highest top, FVG first, older) that passes every rule = the BUY
-        hit, best, bvals = [], -1, None
-        for k in range(len(self.zF)):
-            if not (l <= self.zTop[k] and (not self.zGap[k] or not lock_now)):
-                continue
-            hit.append(k)
+        hit = [k for k in range(len(self.zF)) if l <= self.zTop[k] and (not self.zGap[k] or not lock_now)]
+        best, bvals = -1, None
+        for k in hit:
             if self.gap_entry and not self.zGap[k] and self.zInner[k]:
                 continue                                 # the order waits at the Gap-up zone inside this FVG
             if self.struct_only and not (alive_ok and self._passes(k)):
                 continue
+            if self.second and self._rank(k, i, hit):
+                continue                                 # the 1st of two discount zones (watched) / a 3rd
             if not (date_ok and turn_ok and ema_ok):
                 continue
             t = self._trade(k, i, o, l, c, alive_ok)
@@ -228,6 +231,9 @@ class Model:
         if best >= 0:
             self.buys.append([i, self.zF[best], self.zBot[best], self.zTop[best], 'Gap-up' if self.zGap[best] else 'FVG',
                               self.zIn[best]] + list(bvals))
+        for k in hit:
+            self.tz.append((self.zF[k], self.zBot[k], self.zTop[k]))
+        del self.tz[:-ZONES_KEPT]
         for k in reversed(hit):
             for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF):
                 a.pop(k)
@@ -350,8 +356,30 @@ class Model:
         x = (bot + top) / 2.0 if part == 'mid' else top if part == 'top' else bot
         return (self.chH - x) / (self.chH - self.chLf) if self.chH > self.chLf else None
 
+    def _rank(self, k, i, hit):
+        """backtest_lab.zone_rank on this bar: 'zone1' (an untouched discount zone waits under it - this one only watched) /
+        'zone3' (two areas above already) / ''."""
+        kb, kt = self.zBot[k], self.zTop[k]
+        above = [(b, t) for f, b, t in self.tz + [(self.zF[j], self.zBot[j], self.zTop[j]) for j in hit if j != k]
+                 if self.chLi <= f < i and b >= kt - 1e-9 and self._passes_z(f, b, t)]
+        areas, top = 0, None
+        for b, t in sorted(above):
+            if top is not None and b <= top + 1e-9:
+                top = max(top, t)
+            else:
+                areas, top = areas + 1, t
+        if areas >= 2:
+            return 'zone3'
+        if areas == 0 and any(j != k and self.chLi <= self.zF[j] < i and self.zTop[j] <= kb + 1e-9 and
+                              self._passes_z(self.zF[j], self.zBot[j], self.zTop[j]) for j in range(len(self.zF))):
+            return 'zone1'
+        return ''
+
     def _passes(self, k):
-        P, f = self.P, self.zF[k]
+        return self._passes_z(self.zF[k], self.zBot[k], self.zTop[k])
+
+    def _passes_z(self, f, bot, top):
+        P = self.P
         if f < self.chLi:
             return False
         if P['zoneWhen'] == 'leg' and f > self.chB + 1:
@@ -360,10 +388,10 @@ class Model:
             return False
         if P['firstPull'] and self.chBos >= 0:
             return False
-        if P['belowChoch'] and not self.zTop[k] < self.chLvl:
+        if P['belowChoch'] and not top < self.chLvl:
             return False
         if P['discount']:
-            dep = self._depth(self.zBot[k], self.zTop[k])
+            dep = self._depth(bot, top)
             if dep is None or dep < P['discount'] - 1e-9:
                 return False
         return True

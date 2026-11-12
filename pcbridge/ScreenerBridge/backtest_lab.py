@@ -49,11 +49,13 @@ import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
 TFS = ('D', 'W', '4H')
-CACHE_VERSION = 5               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
+CACHE_VERSION = 6               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
                                 # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y');
                                 # 4 (12-Nov-2026): each candle's volume too (the CHoCH candle's volume rule, E10)
                                 # 5 (12-Nov-2026): zone touch rows carry the Gap-up zone inside an FVG / the FVG around a
                                 #   Gap-up zone; 'P' / 'Q' rows = a Spring / Bullish Harami + Inverted Hammer inside a zone
+                                # 6 (12-Nov-2026): 'V' rows = the zones price never came back to (the 2nd-zone rule needs
+                                #   every zone of a CHoCH move, touched or not)
 MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
@@ -167,6 +169,17 @@ DEFAULTS = {
     # its body (RTNPOWER 14-Sep-2018: "trade in this type of FVG often fails ... It should be filterable option only"):
     # 'any' / 'exclude' / 'only'
     'darkCloud': 'any',
+    # zonePick (owner, 12-Nov-2026: "in the move of Choch, if there is two FVG formed ... both under 50% line" -> "No trade
+    # only on 2nd FVG. 1st FVG can be watched but not to be traded"): 'second' = when the CHoCH move has two (or more)
+    # discount zones, the one price reaches first (the higher) is only watched and the trade is on the next one under it (a
+    # 3rd or deeper zone is not traded); a move with one discount zone trades it as before / 'every' = every zone's first
+    # touch (before 12-Nov-2026). Only with structure 'only' (zone_rank).
+    'zonePick': 'second',
+    # moveVol / moveVolN (owner, 12-Nov-2026: "In the move of Choch, volumes are at least twice or big volumes can be seen in
+    # any of the candle or multiple candles in that swing that created Choch. Add this option"): at least moveVolN candles
+    # from the final low to the CHoCH candle with a volume of moveVol x the average of the 20 candles before the final low
+    # (0 = off; structure 'only')
+    'moveVol': 0.0, 'moveVolN': 1,
 }
 BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger than this
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
@@ -182,7 +195,7 @@ CHOICES = {
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
     'targetMode': ('R', 'swing'), 'discPart': ('mid', 'top', 'bottom'),
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
-    'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'),
+    'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -199,6 +212,7 @@ LIMITS = {   # key: (min, max, integer)
     'zzAtr': (0.5, 10, False), 'swingAtr': (0, 5, False), 'eqAtr': (0, 2, False), 'discountMax': (0, 1.5, False),
     'lagMin': (0, 2000, True), 'dispAtr': (0, 5, False), 'dispVol': (0, 10, False), 'atrK': (0.5, 10, False), 'rollYears': (0, 10, True),
     'zoneMin': (0, 50, False), 'zoneMax': (0, 100, False), 'lineTol': (0, 5, False), 'fibLevel': (0.2, 0.95, False), 'fibTol': (0, 5, False),
+    'moveVol': (0, 20, False), 'moveVolN': (1, 20, True),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -219,7 +233,7 @@ ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 
 REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag', 'zpct', 'pat']
+              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv']
 
 
 def _iso_date(s):
@@ -1041,7 +1055,7 @@ def summarise(trades, P, skips, meta, secs):
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
                      t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', ''),
                      int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
-                     t.get('zpct', ''), t.get('pat', '')])
+                     t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1083,6 +1097,9 @@ BD_DIMS = (
      ((0, 2, 'under 2%'), (2, 4, '2 - 4%'), (4, 6, '4 - 6%'), (6, 8, '6 - 8%'), (8, 10, '8 - 10%'), (10, 15, '10 - 15%'), (15, 1e9, '15% or more'))),
     ('zpct', 'Zone size (top - bottom, % of the bottom)', 'num',
      ((0, 1, 'under 1%'), (1, 2, '1 - 2%'), (2, 4, '2 - 4%'), (4, 6, '4 - 6%'), (6, 8, '6 - 8%'), (8, 10, '8 - 10%'), (10, 1e9, '10% or more'))),
+    ('mv', 'Biggest volume in the CHoCH move (x the 20 candles before it)', 'num',
+     ((0, 1.5, 'under 1.5x'), (1.5, 2, '1.5 - 2x'), (2, 3, '2 - 3x'), (3, 5, '3 - 5x'), (5, 10, '5 - 10x'), (10, 1e12, '10x or more'))),
+    ('zn', 'Which discount zone of the CHoCH move', 'num', ((1, 2, '1st (the only / the higher one)'), (2, 3, '2nd'), (3, 1e9, '3rd or deeper'))),
     ('turn', 'Average daily turnover (20 days)', 'num',
      ((0, 50, 'under ₹50 lakh'), (50, 200, '₹50 lakh - 2 Cr'), (200, 1000, '₹2 - 10 Cr'), (1000, 5000, '₹10 - 50 Cr'), (5000, 1e12, '₹50 Cr or more'))),
 )
@@ -1292,6 +1309,28 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
             atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
                    if trail_on and P['trail'] == 'atr' else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
+            zl_memo = []
+
+            def zone_list():
+                """Every zone of the stock [(f, bottom, top, first touch candle or None)] by f (the 2nd-zone rule)."""
+                if not zl_memo:
+                    zl_memo.append(sorted(((int(x[8]), x[2], x[3], None if x[1] == 'V' else x[0]) for x in sigs[sym]
+                                           if x[1] in ('Z', 'Y', 'V') and len(x) > 8 and x[8] is not None and x[8] >= 0),
+                                          key=lambda z: z[0]))
+                return zl_memo[0]
+
+            def rank(r, sj, zf, outer):
+                """zone_rank of a signal row whose structure is judged."""
+                k_, i_ = sj['k'], r[0]
+                pr = _f(cs.c[i_])
+                ab, at_ = r[2], r[3]                     # (a Gap-up zone inside an FVG: the FVG overlaps it - the same area)
+
+                def jok(f2, b2, t2):
+                    j2 = st.s.judge(i_, f2, t2, pr, cs.c, P['downN'], P['chochAge'], h=cs.h, zone_bottom=b2, part=P['discPart'],
+                                    fib=fib)
+                    return j2['k'] == k_ and not struct_fail(j2, P)
+                return zone_rank(zone_list(), i_, ab, at_, st.s.events[k_][3], jok,
+                                 lambda f2, b2: any(cs.c[j] < b2 for j in range(f2 + 1, i_)))
 
             def attempt(r):
                 """One signal row -> (trade, None) or (None, (skip key, rule))."""
@@ -1333,6 +1372,11 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         why = struct_fail(sj, P) or struct_more(st.s, sj, cs, r[0], P)
                         if why:
                             return None, ('struct', why)
+                zrank = None
+                if smode != 'off' and sj is not None and sj['k'] >= 0 and len(r) > 8 and r[8] is not None and r[8] >= 0:
+                    zrank = rank(r, sj, r[8], outer)          # which discount zone of the CHoCH move (owner, 12-Nov-2026)
+                    if smode == 'only' and P['zonePick'] == 'second' and zrank[0]:
+                        return None, ('struct', zrank[0])
                 # E9: how deep the signal candle went into its zone (not with the zone-top order - known only at the close)
                 if P['whereIn'] != 'any' and P['entry'] != 'zone' and r[4] in ('t', 'm', 'b'):
                     if not (r[4] == 't' or (P['whereIn'] == 'tm' and r[4] == 'm')):
@@ -1366,10 +1410,17 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     if sj['k'] >= 0:                   # for the breakdowns (12-Nov-2026)
                         ev = st.s.events[sj['k']]
                         t['lhll'], t['lag'] = ev[5], cs.day[r[0]] - cs.day[ev[0]]
+                        mv = move_volumes(cs, ev[3], ev[0])
+                        if mv:
+                            t['mv'] = round(max(mv), 1)
                         if sj.get('depth') is not None:
                             t['depth'] = round(sj['depth'], 4)
                 zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                 t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
+                if zrank is not None:
+                    t['zn'] = zrank[1]
+                    if zrank[2]:
+                        t['z1'] = list(zrank[2])          # the nearest zone above (the charts PDF: "the 1st zone, only watched")
                 return t, None
 
             g = 0
@@ -1526,7 +1577,56 @@ def struct_more(s, sj, cs, i, P):
             return 'vol'
     if P['sweep'] and not s.sweep[k]:
         return 'sweep'
+    if P.get('moveVol'):
+        ratios = move_volumes(cs, s.events[k][3], b)
+        if ratios is None or sum(1 for x in ratios if x >= P['moveVol'] - 1e-9) < P.get('moveVolN', 1):
+            return 'mvol'
     return ''
+
+
+def move_volumes(cs, li, b):
+    """The CHoCH move's candles (the final low li .. the CHoCH candle b) -> each one's volume / the average volume of the 20
+    candles before the final low (at least 10 with a volume), or None (no volume to compare with)."""
+    vs = [float(x) for x in cs.v[max(0, li - 20):li] if x > 0]
+    if len(vs) < 10:
+        return None
+    avg = sum(vs) / len(vs)
+    return [float(cs.v[j]) / avg for j in range(li, min(b, cs.n - 1) + 1)]
+
+
+def zone_rank(zones, i, zb, zt, li, judge_ok, broken):
+    """The owner's 2nd-zone rule (12-Nov-2026, zonePick 'second'): a signal on candle i in the area zb .. zt (a Gap-up zone
+    inside an FVG = that FVG) of a CHoCH whose final low is candle li. `zones` = every zone of the stock [(f, bottom, top,
+    first touch candle or None)] by f; `judge_ok(f, bottom, top)` = that zone passes the run's structure rules for the same
+    CHoCH on candle i; `broken(f, bottom)` = a close under its bottom from f+1 to i-1. The discount zones of the move above
+    this area (bottom >= its top; overlapping ones merged into one area) and under it (top <= its bottom, not reached yet,
+    not broken) -> ('' trade | 'zone1' the higher of two or more - only watched | 'zone3' a 3rd or deeper one, number of
+    the areas above + 1, the nearest area above (bottom, top, candle) or None)."""
+    above, below = [], False
+    for f, b2, t2, ft in zones:
+        if f < li:
+            continue
+        if f >= i:
+            break
+        if b2 >= zt - 1e-9:
+            if judge_ok(f, b2, t2):
+                above.append((b2, t2, f))
+        elif t2 <= zb + 1e-9 and not below:
+            if (ft is None or ft >= i) and not broken(f, b2) and judge_ok(f, b2, t2):
+                below = True
+    areas = []
+    for b2, t2, f in sorted(above):
+        if areas and b2 <= areas[-1][1] + 1e-9:
+            a = areas[-1]
+            areas[-1] = (a[0], max(a[1], t2), min(a[2], f))
+        else:
+            areas.append((b2, t2, f))
+    n = len(areas) + 1
+    if n >= 3:
+        return 'zone3', n, areas[0]
+    if n == 1 and below:
+        return 'zone1', 1, None
+    return '', n, areas[0] if areas else None
 
 
 def week_filter(fw, idx, n):
@@ -1563,7 +1663,10 @@ STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows 
               'early': 'it came sooner after the CHoCH than your minimum days',
               'disp': 'the CHoCH candle\'s body was smaller than your ATR rule (no displacement)',
               'vol': 'the CHoCH candle\'s volume was under your x-times-average rule',
-              'sweep': 'the final low did not sweep the swing low before it (closed back above)'}
+              'sweep': 'the final low did not sweep the swing low before it (closed back above)',
+              'zone1': 'the 1st (higher) of two discount zones in the CHoCH move - only watched, the trade is on the 2nd',
+              'zone3': 'a 3rd (or deeper) discount zone of the CHoCH move - only the 2nd is traded',
+              'mvol': 'no big-volume candle (your x-times rule) in the CHoCH move'}
 
 
 def struct_fail(sj, P):

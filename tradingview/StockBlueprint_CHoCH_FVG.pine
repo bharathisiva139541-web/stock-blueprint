@@ -31,6 +31,7 @@ fibLvl = input.float(0.5, "Discount: the zone at least this far down the move (0
 discPart = input.string("Middle", "... judged on the zone's", options=["Middle", "Top", "Bottom"], group=G1)
 firstPull = input.bool(true, "First pullback only (no BOS yet)", group=G1)
 belowChoch = input.bool(false, "Zone top below the CHoCH level (strict)", group=G1)
+zonePick = input.string("Trade the 2nd (the 1st only watched)", "Two discount zones in the CHoCH move", options=["Trade the 2nd (the 1st only watched)", "Trade every zone"], group=G1)
 // how swings and the CHoCH are found (the Lab's More rules > Market structure; owner, 12-Nov-2026)
 swMode = input.string("Candles each side", "Swings", options=["Candles each side", "ZigZag (ATR)"], group=G1)
 zzAtr = input.float(2.0, "ZigZag: a turn of x ATR(14)", minval=0.5, maxval=10, step=0.5, group=G1)
@@ -168,6 +169,24 @@ linkZone(int f, bool g, float b, float t, array<int> zF_, array<bool> zGap_, arr
     array.push(rBot_, b)
     array.push(rTop_, t)
     true
+
+// the market-structure rules of a zone (candle f, bottom, top) under the current CHoCH - the BUY's own test (the 2nd-zone rule)
+zPass(int f, float zb, float zt, int li, int cb, int bos, float lvl, float hh, float lf) =>
+    bool ok = f >= li
+    if zoneWhen == "Only in the CHoCH move" and f > cb + 1
+        ok := false
+    if zoneWhen == "Only after the CHoCH candle" and f <= cb
+        ok := false
+    if firstPull and bos >= 0
+        ok := false
+    if belowChoch and not (zt < lvl)
+        ok := false
+    if fibLvl > 0
+        float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
+        float dep = hh > lf ? (hh - part) / (hh - lf) : na
+        if na(dep) or dep < fibLvl - 0.000000001
+            ok := false
+    ok
 
 // ------------------------------------------------------------------ every bar
 bool isZz = swMode == "ZigZag (ATR)"
@@ -322,6 +341,12 @@ var rBot = array.new_float()
 var rTop = array.new_float()
 var zBox = array.new_box()
 var hitList = array.new_int()
+// the zones price has touched (the 2nd-zone rule: "1st FVG can be watched but not to be traded" - owner, 12-Nov-2026)
+var tzF = array.new_int()
+var tzB = array.new_float()
+var tzT = array.new_float()
+var abB = array.new_float()
+var abT = array.new_float()
 
 // 1. a close under the final low ends the CHoCH (this candle too)
 bool alive = chB >= 0 and not chDead and chB < bar_index
@@ -379,90 +404,145 @@ float bTgt = na
 float bDep = na
 string skipWhy = ""
 bool aliveOk = alive and (chochAge == 0 or bar_index - chB <= chochAge)
+bool pick2nd = structOnly and zonePick == "Trade the 2nd (the 1st only watched)"
 int nz = array.size(zF)
 if nz > 0
     for k = 0 to nz - 1
+        if low <= array.get(zTop, k) and (not array.get(zGap, k) or not lockNow)
+            array.push(hitList, k)
+int nh0 = array.size(hitList)
+if nh0 > 0
+    for q = 0 to nh0 - 1
+        int k = array.get(hitList, q)
         float zt = array.get(zTop, k)
         bool zg = array.get(zGap, k)
-        if low <= zt and (not zg or not lockNow)
-            array.push(hitList, k)
-            int f = array.get(zF, k)
-            float zb = array.get(zBot, k)
-            float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
-            float dep = aliveOk and chH > chLf ? (chH - part) / (chH - chLf) : na
-            bool ok = true
-            // an FVG with a Gap-up zone inside it: the order waits at the Gap-up zone top (its own touch); a Gap-up zone inside an
-            // FVG: the stop under the FVG's bottom
-            bool waitsInside = gapEntry and not zg and array.get(zInner, k)
-            float zbStop = gapEntry and zg and not na(array.get(zOutB, k)) ? array.get(zOutB, k) : zb
-            if waitsInside
+        int f = array.get(zF, k)
+        float zb = array.get(zBot, k)
+        float part = discPart == "Top" ? zt : discPart == "Bottom" ? zb : (zb + zt) / 2
+        float dep = aliveOk and chH > chLf ? (chH - part) / (chH - chLf) : na
+        bool ok = true
+        // an FVG with a Gap-up zone inside it: the order waits at the Gap-up zone top (its own touch); a Gap-up zone inside an
+        // FVG: the stop under the FVG's bottom
+        bool waitsInside = gapEntry and not zg and array.get(zInner, k)
+        float zbStop = gapEntry and zg and not na(array.get(zOutB, k)) ? array.get(zOutB, k) : zb
+        if waitsInside
+            ok := false
+        if structOnly and ok
+            ok := aliveOk and f >= chLi
+            if zoneWhen == "Only in the CHoCH move" and f > chB + 1
                 ok := false
-            if structOnly and ok
-                ok := aliveOk and f >= chLi
-                if zoneWhen == "Only in the CHoCH move" and f > chB + 1
-                    ok := false
-                if zoneWhen == "Only after the CHoCH candle" and f <= chB
-                    ok := false
-                if firstPull and chBos >= 0
-                    ok := false
-                if belowChoch and not (zt < chLvl)
-                    ok := false
-                if fibLvl > 0 and (na(dep) or dep < fibLvl - 0.000000001)
-                    ok := false
-            if ok and not dateOk
+            if zoneWhen == "Only after the CHoCH candle" and f <= chB
                 ok := false
-            if ok and not turnOk
-                skipWhy := "the daily turnover was under Rs " + str.tostring(minTurn) + " lakh"
+            if firstPull and chBos >= 0
                 ok := false
-            if ok and not emaOk
-                skipWhy := "the EMA rules did not agree"
+            if belowChoch and not (zt < chLvl)
                 ok := false
-            if ok
-                bool atTop = entryMode == "Order at the zone top"
-                float entry = atTop ? math.min(open, zt) : close
-                string sm = atTop and (stopMode == "Under the touch candle's low" or stopMode == "Under whichever is lower") ? "Under the zone bottom" : stopMode
-                float base = sm == "Under the touch candle's low" ? low : sm == "Under whichever is lower" ? math.min(low, zbStop) : zbStop
-                float stop = sm == "% under the entry" ? entry * (1 - stopPct / 100) : sm == "Under the CHoCH's final low" ? chLf * (1 - stopBuf / 100) : base * (1 - stopBuf / 100)
-                float risk = entry - stop
-                float tgt = entry + targetR * risk
-                if sm == "Under the CHoCH's final low" and not aliveOk
-                    skipWhy := "no live CHoCH (the stop goes under its final low)"
-                    ok := false
-                else if not (entry > 0 and risk > 0)
-                    skipWhy := "it opened under the stop (a gap)"
-                    ok := false
-                else if maxRisk > 0 and risk / entry * 100 > maxRisk
-                    skipWhy := "the risk was " + str.tostring(math.round(risk / entry * 1000) / 10.0) + "% (more than " + str.tostring(maxRisk) + "%)"
-                    ok := false
-                else if entry < minPrice
-                    skipWhy := "the price was under Rs " + str.tostring(minPrice)
-                    ok := false
-                else if targetMode == "The last swing high"
-                    float above = entry + swingMinR * risk
-                    float sw = na
-                    int np = array.size(phV)
-                    if np > 0
-                        for j = np - 1 to 0
-                            if array.get(phV, j) >= above
-                                sw := array.get(phV, j)
-                                break
-                    if na(sw)
-                        skipWhy := "no swing high at least " + str.tostring(swingMinR) + "R above the entry"
-                        ok := false
+            if fibLvl > 0 and (na(dep) or dep < fibLvl - 0.000000001)
+                ok := false
+        if structOnly and ok and pick2nd
+            // the 2nd-zone rule: the discount zones above this one (touched before or now; overlapping ones = one area) and an
+            // untouched one under it - of two the 1st is only watched, a 3rd is not traded
+            array.clear(abB)
+            array.clear(abT)
+            int ntz = array.size(tzF)
+            if ntz > 0
+                for j = 0 to ntz - 1
+                    int fj = array.get(tzF, j)
+                    float bj = array.get(tzB, j)
+                    float tj = array.get(tzT, j)
+                    if fj >= chLi and fj < bar_index and bj >= zt - 0.000000001 and zPass(fj, bj, tj, chLi, chB, chBos, chLvl, chH, chLf)
+                        array.push(abB, bj)
+                        array.push(abT, tj)
+            if nh0 > 0
+                for j = 0 to nh0 - 1
+                    int kj = array.get(hitList, j)
+                    if kj != k
+                        int fj = array.get(zF, kj)
+                        float bj = array.get(zBot, kj)
+                        float tj = array.get(zTop, kj)
+                        if fj >= chLi and fj < bar_index and bj >= zt - 0.000000001 and zPass(fj, bj, tj, chLi, chB, chBos, chLvl, chH, chLf)
+                            array.push(abB, bj)
+                            array.push(abT, tj)
+            bool lowerZ = false
+            if nz > 0
+                for j = 0 to nz - 1
+                    if j != k and not lowerZ
+                        int fj = array.get(zF, j)
+                        float tj = array.get(zTop, j)
+                        if fj >= chLi and fj < bar_index and tj <= zb + 0.000000001 and zPass(fj, array.get(zBot, j), tj, chLi, chB, chBos, chLvl, chH, chLf)
+                            lowerZ := true
+            int areas = 0
+            int nab = array.size(abB)
+            int[] ordA = array.sort_indices(abB, order.ascending)
+            float curT = na
+            if nab > 0
+                for j = 0 to nab - 1
+                    int x = array.get(ordA, j)
+                    if na(curT) or array.get(abB, x) > curT + 0.000000001
+                        areas += 1
+                        curT := array.get(abT, x)
                     else
-                        tgt := sw
-                if ok
-                    bool before = best < 0
-                    if not before
-                        float bt = array.get(zTop, best)
-                        bool bg = array.get(zGap, best)
-                        before := zt > bt or (zt == bt and not zg and bg) or (zt == bt and zg == bg and f < array.get(zF, best))
-                    if before
-                        best := k
-                        bEntry := entry
-                        bStop := stop
-                        bTgt := tgt
-                        bDep := dep
+                        curT := math.max(curT, array.get(abT, x))
+            if areas >= 2
+                skipWhy := "a 3rd discount zone of the CHoCH move - only the 2nd is traded"
+                ok := false
+            else if areas == 0 and lowerZ
+                skipWhy := "the 1st of two discount zones of the CHoCH move - only watched (your rule: the trade is on the 2nd, under it)"
+                ok := false
+        if ok and not dateOk
+            ok := false
+        if ok and not turnOk
+            skipWhy := "the daily turnover was under Rs " + str.tostring(minTurn) + " lakh"
+            ok := false
+        if ok and not emaOk
+            skipWhy := "the EMA rules did not agree"
+            ok := false
+        if ok
+            bool atTop = entryMode == "Order at the zone top"
+            float entry = atTop ? math.min(open, zt) : close
+            string sm = atTop and (stopMode == "Under the touch candle's low" or stopMode == "Under whichever is lower") ? "Under the zone bottom" : stopMode
+            float base = sm == "Under the touch candle's low" ? low : sm == "Under whichever is lower" ? math.min(low, zbStop) : zbStop
+            float stop = sm == "% under the entry" ? entry * (1 - stopPct / 100) : sm == "Under the CHoCH's final low" ? chLf * (1 - stopBuf / 100) : base * (1 - stopBuf / 100)
+            float risk = entry - stop
+            float tgt = entry + targetR * risk
+            if sm == "Under the CHoCH's final low" and not aliveOk
+                skipWhy := "no live CHoCH (the stop goes under its final low)"
+                ok := false
+            else if not (entry > 0 and risk > 0)
+                skipWhy := "it opened under the stop (a gap)"
+                ok := false
+            else if maxRisk > 0 and risk / entry * 100 > maxRisk
+                skipWhy := "the risk was " + str.tostring(math.round(risk / entry * 1000) / 10.0) + "% (more than " + str.tostring(maxRisk) + "%)"
+                ok := false
+            else if entry < minPrice
+                skipWhy := "the price was under Rs " + str.tostring(minPrice)
+                ok := false
+            else if targetMode == "The last swing high"
+                float above = entry + swingMinR * risk
+                float sw = na
+                int np = array.size(phV)
+                if np > 0
+                    for j = np - 1 to 0
+                        if array.get(phV, j) >= above
+                            sw := array.get(phV, j)
+                            break
+                if na(sw)
+                    skipWhy := "no swing high at least " + str.tostring(swingMinR) + "R above the entry"
+                    ok := false
+                else
+                    tgt := sw
+            if ok
+                bool before = best < 0
+                if not before
+                    float bt = array.get(zTop, best)
+                    bool bg = array.get(zGap, best)
+                    before := zt > bt or (zt == bt and not zg and bg) or (zt == bt and zg == bg and f < array.get(zF, best))
+                if before
+                    best := k
+                    bEntry := entry
+                    bStop := stop
+                    bTgt := tgt
+                    bDep := dep
 
 string chTxt = structOnly and aliveOk ? "CHoCH " + fmtP(chLvl) + " on " + fmtT(chTime) + " (" + str.tostring(chD) + " lower highs / lows, final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ")\nmove high " + fmtP(chH) : "no market-structure rule"
 if best >= 0
@@ -496,6 +576,9 @@ int nh = array.size(hitList)
 if nh > 0
     for j = nh - 1 to 0
         int k = array.get(hitList, j)
+        array.push(tzF, array.get(zF, k))
+        array.push(tzB, array.get(zBot, k))
+        array.push(tzT, array.get(zTop, k))
         box bx = array.get(zBox, k)
         if not na(bx)
             box.set_right(bx, bar_index)
