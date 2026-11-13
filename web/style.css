@@ -1534,7 +1534,8 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 /* the Pattern library (owner, 13-Nov-2026): a pattern's exact rules, folded under its fields */
 .lab-rules { grid-column: 1 / -1; border: 1px dashed var(--border); border-radius: 10px; padding: 8px 12px; background: var(--surface); }
 .lab-rules > summary { cursor: pointer; color: var(--muted); font-size: 0.86rem; }
-.lab-rules ol { margin: 8px 0 0; padding-left: 20px; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.lab-rules ol, .lab-rules ul { margin: 8px 0 0; padding-left: 20px; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.lab-rules p { margin: 8px 0 0; font-size: 0.86rem; overflow-wrap: anywhere; }
 #lab-lib .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 #lab-lib .controls .inp { max-width: 260px; }
 .lab-rsec { margin-top: 10px; }

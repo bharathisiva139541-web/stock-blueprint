@@ -404,6 +404,9 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    engine (indicators.py, pattern_registry.py, pattern_detect.py). Built so far: K08 Bullish Engulfing, B01-B04 20-day /
    50-day / 52-week / all-time high breakouts, I01 RSI bullish divergence. The page lists all 194 patterns with their state.
    Every result now notes that delisted stocks are not in the data (survivorship bias).
+ - 13-Nov-2026 (pattern engine, step 2): 70 patterns in the Pattern library now - every candlestick pattern, the breakouts
+   (Darvas box, NR4 / NR7, squeezes, base breakouts ...), the moving-average patterns (pullbacks, crosses, Supertrend,
+   weekly + daily alignment) and the basic volume patterns. Reversal patterns can be kept "Only after a fall".
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

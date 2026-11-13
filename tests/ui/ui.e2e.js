@@ -1318,7 +1318,7 @@ function check(name, fn) {
     // state; an implemented one goes into the form with "Use", its own fields and exact rules show, the plain words follow
     await own.p.click('#lab-lib summary');
     await own.p.waitForSelector('#lab-lib-table table');
-    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(6 built in the new engine so far\)/);
+    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(70 built in the new engine so far\)/);
     await own.p.fill('#lab-lib-q', 'engulf');
     await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 1);
     assert.match(await own.p.$eval('#lab-lib-table tbody tr', (x) => x.textContent), /K08\s*Bullish Engulfing\s*Candlestick patterns\s*Implemented/);
@@ -1346,6 +1346,15 @@ function check(name, fn) {
     await own.p.waitForSelector('[data-k="boVol"]');
     await own.p.selectOption('[data-k="boVol"]', '2');
     assert.match(await plainText(), /Pattern library: B03 52-Week High Breakout \(a fresh close above the level, volume at least 2 x the 20-candle average\)/);
+    // phase 2 (13-Nov-2026): 70 patterns in the picker, grouped; a reversal pattern can be kept only after a fall
+    assert.ok(await own.p.$$eval('#lab-form select[data-k="pattern"] optgroup', (x) => x.length) >= 4, 'grouped by category');
+    assert.strictEqual(await own.p.$$eval('#lab-form select[data-k="pattern"] option', (x) => x.length), 70);
+    assert.ok(!(await own.p.$('#lab-form select[data-k="patCtx"]')), 'a breakout has no trend-context choice');
+    await own.p.selectOption('[data-k="pattern"]', 'K01');
+    await own.p.waitForSelector('#lab-form select[data-k="patCtx"]');
+    await own.p.selectOption('[data-k="patCtx"]', 'down');
+    assert.match(await plainText(), /Pattern library: K01 Hammer \(only after a fall - the candle before it closed under its falling 20-SMA\)/);
+    assert.match(await own.p.$eval('#lab-form details.lab-rules', (x) => x.textContent), /Shared definitions:[\s\S]*Long body = body >= 0\.7 x ATR/);
     // market structure (owner, 10-Nov-2026): his CHoCH + FVG setup in one click, the plain words follow
     await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', '[]'); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"]:not([open])');

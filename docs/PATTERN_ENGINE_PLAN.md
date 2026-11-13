@@ -423,8 +423,17 @@ unchanged.
 per pattern for a whole run (the events are remembered while the program runs; a second run with other exit rules does not
 detect again).
 
-Next (phase 2, the agreed order): candlesticks K01-K27, breakouts B05-B20 (not B15), moving averages M01-M12, basic
-volume patterns.
+Phase 2 - built 13-Nov-2026 ("Yes do it"): candlesticks K01-K27, breakouts B05-B20 (not B15 - data), moving averages
+M01-M12, basic volume V01-V08 / V12 / V13 / V15 = 64 more, **70 implemented**. Shared definitions in the registry (`COMMON`:
+the ATR yardstick, long / small / doji, fresh, relative volume, trend context, invalidation); every pattern has its own
+written rules + a plain sentence (docs/PATTERN_SPECS.md). Tests run (all pass): a made chart per pattern (on / not on a
+changed copy), independent counts for the cross / state / reclaim / multi-timeframe patterns, Supertrend by hand,
+CAUSALITY for all 70 x D / W / 4H (random charts + each made chart), K09 / K10 / K12 / K17 = the sheet's column W rules.
+*Measured*: all 70 together ~47 s per million candles (B10 inside-bar clusters ~3 s, most under 1.4 s) - a single
+pattern on the laptop's whole daily history stays within seconds; the full leaderboard (phase 6) ~5 minutes for daily.
+
+Next (phase 3, the agreed order): price action / structure P, SMC S, then volume (the rest) / momentum I / quant Q,
+classical chart patterns C last.
 
 ## 12. Known limits (will stay)
 

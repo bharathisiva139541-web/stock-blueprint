@@ -806,7 +806,7 @@ def why_story(t, cs, s, P, cx):
         txt = ('On %s a Spring candle formed%s: the price dipped below the red candle before it and closed back above its low - '
                'sellers pushed down, buyers pushed back.' % (dt(i), ' on the zone' if has_zone else ''))
     elif code == 'K':
-        txt = 'On %s the backtest found %s (Pattern library). %s' % (dt(i), t.get('pname') or 'a pattern', PAT_WORDS.get(t.get('pid'), ''))
+        txt = 'On %s the backtest found %s (Pattern library). %s' % (dt(i), t.get('pname') or 'a pattern', pat_words(t.get('pid')))
     else:
         txt = 'The signal came on %s.' % dt(i)
     if ev:
@@ -891,22 +891,13 @@ def target_words(P):
     return 'at %s the risk (%gR)' % (_times(P.get('targetR', 2)), P.get('targetR', 2))
 
 
-# the Pattern library's patterns in plain words (page 2 - no prices; owner, 13-Nov-2026, the bullish pattern engine)
-PAT_WORDS = {
-    'K08': 'A red candle was followed by a bigger green candle whose body covered all of the red body - buyers took over the '
-           'whole of the day before. The stop goes under the lower of the two lows.',
-    'B01': 'The close went above the highest high of the 20 candles before it, for the first time - a fresh 20-candle breakout. '
-           'The stop goes under that candle\'s low.',
-    'B02': 'The close went above the highest high of the 50 candles before it, for the first time - a fresh 50-candle breakout. '
-           'The stop goes under that candle\'s low.',
-    'B03': 'The close went above the highest high of the 52 weeks before it, for the first time - a fresh 52-week high. '
-           'The stop goes under that candle\'s low.',
-    'B04': 'The close went above every high since the history starts (20 years or the listing) - an all-time high. '
-           'The stop goes under that candle\'s low.',
-    'I01': 'Price made a lower swing low but RSI made a higher low - the fall was losing strength (a bullish divergence). '
-           'The signal came only when the second low was confirmed by the candles after it, never on the low itself. '
-           'The stop goes under that second low.',
-}
+def pat_words(pid):
+    """The Pattern library's pattern in plain words (page 2 - no prices): pattern_registry.SPECS 'words' (owner, 13-Nov-2026)."""
+    try:
+        import pattern_registry
+        return (pattern_registry.SPECS.get(pid) or {}).get('words', '')
+    except ImportError:
+        return ''
 
 
 def _times_x(x):

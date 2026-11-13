@@ -164,3 +164,33 @@ def rel_volume(v, n=20):
             tot -= v[i - n]
         tot += v[i]
     return out
+
+
+def prior_low(l, n):
+    """out[i] = the lowest low of the n candles BEFORE candle i (None while fewer than n exist)."""
+    neg = prior_high([-x for x in l], n)
+    return [None if x is None else -x for x in neg]
+
+
+def stdev(values, n):
+    """The population standard deviation of the last n values (None before n) - as Bollinger Bands use it."""
+    out, s, q = [], 0.0, 0.0
+    for i, x in enumerate(values):
+        s += x
+        q += x * x
+        if i >= n:
+            y = values[i - n]
+            s -= y
+            q -= y * y
+        if i >= n - 1:
+            m = s / n
+            out.append(max(0.0, q / n - m * m) ** 0.5)
+        else:
+            out.append(None)
+    return out
+
+
+def clv(o, h, l, c, tick=TICK):
+    """The close location value of one candle: +1 = at the high, -1 = at the low."""
+    rng = h - l
+    return (2 * c - h - l) / (rng if rng > tick else tick)

@@ -42,6 +42,8 @@
     // the Pattern library (owner, 13-Nov-2026 - the bullish pattern engine, M1): the pattern + its own parameters
     // (= pcbridge/ScreenerBridge/pattern_registry.py SPECS params)
     pattern: 'K08', engBody: 0, boBuf: 0, boVol: 0, rsiN: 14, divPivot: 5, divMaxGap: 60, divRsiMax: 100,
+    // phase 2 (13-Nov-2026): a reversal pattern anywhere / only after a fall (= backtest_lab patCtx)
+    patCtx: 'any',
     // the discount zone (owner, 11-Nov-2026, SUPREMEIND: "we always try to enter with low risk, i.e. the zone in discount
     // area. it is ok even the zone have some area slightly above the Choch"): the zone's middle under the Fib line of the
     // move (final low -> its high) - off by default
@@ -124,6 +126,7 @@
     divPivot: [[3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
     divMaxGap: [[30, 'At most 30 candles apart'], [60, 'At most 60 candles apart'], [100, 'At most 100 candles apart'], [150, 'At most 150 candles apart']],
     divRsiMax: [[100, 'Any RSI'], [30, 'RSI at most 30 (oversold)'], [40, 'RSI at most 40'], [50, 'RSI at most 50']],
+    patCtx: [['any', 'Anywhere'], ['down', 'Only after a fall (under a falling 20-SMA)']],
     stopPat: [['zone', 'Under the pattern\'s low (its stop reference)'], ['spring', 'Under the signal candle\'s low'], ['lower', 'Under whichever is lower'],
       ['pct', '% under the entry'], ['final', 'Under the CHoCH\'s final low']],
     structure: [['off', 'Off - do not look at it'], ['show', 'Show it on every trade (nothing left out) - to compare'], ['only', 'Only my setup (the rules below)']],
@@ -435,21 +438,40 @@
       x.push('RSI(' + p.rsiN + '), swing lows of ' + p.divPivot + ' candles each side, at most ' + p.divMaxGap + ' candles apart' +
         (Number(p.divRsiMax) < 100 ? ', RSI at the 1st low at most ' + F.num(p.divRsiMax, 0) : '') + ' - the signal comes when the 2nd low is confirmed (' + p.divPivot + ' candles after it)');
     }
+    if (e && e.ctx && p.patCtx === 'down') x.push('only after a fall - the candle before it closed under its falling 20-SMA');
     return w + (x.length ? ' (' + x.join(', ') + ')' : '');
   }
 
   /** The Pattern library's own fields (the basics, Pattern = "Pattern library"). */
   function patHtml(f) {
     var id = f.pattern, e = patOf(id);
-    var h = field('Which pattern', sel('pattern', f.pattern), 'wide');
+    var h = field('Which pattern', patSelect(f.pattern), 'wide');
+    if (e && e.ctx) h += field('Before the pattern', sel('patCtx', f.patCtx), 'wide');
     if (id === 'K08') h += field('Green candle body', sel('engBody', f.engBody));
     if (/^B0[1-4]$/.test(id)) h += field('Close above the level', sel('boBuf', f.boBuf)) + field('Volume on that candle', sel('boVol', f.boVol), 'wide');
     if (id === 'I01') {
       h += field('Swing lows', sel('divPivot', f.divPivot)) + field('The two lows', sel('divMaxGap', f.divMaxGap)) +
         field('At the 1st low', sel('divRsiMax', f.divRsiMax)) + num('rsiN', f.rsiN, 'RSI length', ' min="2" step="1"');
     }
-    return h + (e && e.rules ? '<details class="lab-rules field wide"><summary>The exact rules of ' + esc(id + ' ' + e.name) + ' (version ' + e.version + ')</summary><ol>' +
-      e.rules.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ol></details>' : '');
+    var common = (window.SB_PATTERNS && window.SB_PATTERNS.common) || [];
+    return h + (e && e.rules ? '<details class="lab-rules field wide"><summary>The exact rules of ' + esc(id + ' ' + e.name) + ' (version ' + e.version + ')</summary>' +
+      (e.words ? '<p>' + esc(e.words) + '</p>' : '') + '<ol>' + e.rules.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ol>' +
+      (common.length ? '<p class="sub">Shared definitions:</p><ul>' + common.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' : '') +
+      '</details>' : '');
+  }
+
+  /** The implemented patterns, grouped by category (a long list - 70 after phase 2). */
+  function patSelect(v) {
+    var ps = patReg().filter(function (p) { return p.status === 'implemented'; });
+    var cats = (window.SB_PATTERNS && window.SB_PATTERNS.categories) || {};
+    var known = ps.some(function (p) { return p.id === v; });
+    return '<select class="sel" data-k="pattern">' + (known ? '' : '<option value="' + esc(v) + '" selected>' + esc(v) + '</option>') +
+      Object.keys(cats).map(function (c) {
+        var inCat = ps.filter(function (p) { return p.category === c; });
+        return inCat.length ? '<optgroup label="' + esc(cats[c]) + '">' + inCat.map(function (p) {
+          return '<option value="' + esc(p.id) + '"' + (p.id === v ? ' selected' : '') + '>' + esc(p.id + ' · ' + p.name) + '</option>';
+        }).join('') + '</optgroup>' : '';
+      }).join('') + '</select>';
   }
 
   function sel(k, v, own) {
@@ -1278,7 +1300,7 @@
       var f = readForm(el);
       saveForm(f);
       var inSec = SECTIONS.some(function (x) { return (x[2] || SHAPE_KEYS).indexOf(k) >= 0; });
-      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN', 'pattern'].indexOf(k) >= 0 || inSec ||
+      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN', 'pattern', 'patCtx'].indexOf(k) >= 0 || inSec ||
           Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the cards and "changed" counts follow
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));

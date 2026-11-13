@@ -21,7 +21,7 @@ test('pattern engine M1 (python, offline): indicators, registry, detectors, caus
   assert.match(r.stdout, /OK\s*$/);
 });
 
-test('K08 Bullish Engulfing = the sheet\'s column W "Bullish Engulfing" (web/lib/patterns.js)', { skip: !py && 'python3 not installed' }, () => {
+test('K08 / K09 / K10 / K12 / K17 = the sheet\'s column W rules (web/lib/patterns.js)', { skip: !py && 'python3 not installed' }, () => {
   let seed = 7;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const r2 = (x) => Math.round(x * 100) / 100;
@@ -41,13 +41,15 @@ test('K08 Bullish Engulfing = the sheet\'s column W "Bullish Engulfing" (web/lib
   charts.push([{ o: 10, h: 10.5, l: 8.9, c: 9 }, { o: 9, h: 10.6, l: 8.8, c: 10 }, { o: 10, h: 10.5, l: 8.9, c: 9 },
     { o: 9, h: 10.6, l: 8.8, c: 10.01 }, { o: 10, h: 10.5, l: 8.9, c: 10 }, { o: 9, h: 10.6, l: 8.8, c: 10.2 },
     { o: 10, h: 10.5, l: 8.9, c: 9 }, { o: 8.99, h: 10.6, l: 8.8, c: 10 }]);
-  const js = charts.map((cs) => cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf('Bullish Engulfing') >= 0));
-  const r = spawnSync(py, [FIX, '--k08'], { input: JSON.stringify(charts), encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 24 });
-  assert.strictEqual(r.status, 0, r.stderr);
-  const pyOut = JSON.parse(r.stdout);
-  assert.deepStrictEqual(pyOut, js);
-  assert.ok(js.reduce((n, x) => n + x.length, 0) > 200, 'enough engulfing candles on the random charts');
-  assert.deepStrictEqual(js[js.length - 1], [3, 7], 'equal bodies and a doji before are not engulfing; just bigger is');
+  const SHEET = { K08: 'Bullish Engulfing', K09: 'Piercing', K10: 'Bullish Harami', K12: 'Tweezer Bottoms', K17: 'Morningstar' };
+  Object.keys(SHEET).forEach((pid) => {
+    const js = charts.map((cs) => cs.map((_, i) => i).filter((i) => i >= 1 && P.patternsAt(cs, i).indexOf(SHEET[pid]) >= 0));
+    const r = spawnSync(py, [FIX, '--pat', pid], { input: JSON.stringify(charts), encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 24 });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.deepStrictEqual(JSON.parse(r.stdout), js, pid + ' = the sheet\'s ' + SHEET[pid]);
+    assert.ok(js.reduce((n, x) => n + x.length, 0) > 20, pid + ': enough of them on the random charts');
+    if (pid === 'K08') assert.deepStrictEqual(js[js.length - 1], [3, 7], 'equal bodies and a doji before are not engulfing; just bigger is');
+  });
 });
 
 test('web/data/pattern-registry.js + docs/PATTERN_SPECS.md = pattern_registry.py (run `npm run patterns` after changing it)', { skip: !py && 'python3 not installed' }, () => {
@@ -56,7 +58,8 @@ test('web/data/pattern-registry.js + docs/PATTERN_SPECS.md = pattern_registry.py
   assert.strictEqual(fs.readFileSync(BP.OUT_MD, 'utf8'), BP.renderMd(reg));
   assert.strictEqual(reg.patterns.filter((p) => p.category !== 'X').length, 194);
   const impl = reg.patterns.filter((p) => p.status === 'implemented');
-  assert.ok(impl.length >= 6 && impl.every((p) => p.rules && p.rules.length >= 5 && p.params && p.version));
+  assert.ok(impl.length >= 70 && impl.every((p) => p.rules && p.rules.length && p.words && p.params && p.version), 'rules + words of every implemented one');
+  assert.ok(reg.common.length >= 7, 'the shared definitions');
   // the Lab page's defaults for every implemented pattern's parameters = the registry's
   const src = fs.readFileSync(path.join(__dirname, '..', 'web', 'pages', 'lab.js'), 'utf8');
   impl.forEach((p) => Object.keys(p.params).forEach((k) => {
