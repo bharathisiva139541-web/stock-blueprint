@@ -450,7 +450,24 @@ signal close); CAUSALITY for all 172 x D / W / 4H; the Lab group for every patte
 *Measured*: the 102 together ~92 s per million candles (Q20 4.4 s, I11 3.0 s, the Ichimoku ones ~2.8 s, most under 1 s);
 all 172 ~142 s.
 
-Next (the agreed order): classical chart patterns C01-C20 last; then phase 4 (the Zerodha delivery cost schedule).
+Phase 4 - built 13-Nov-2026 ("Yes do it"): the classical chart patterns C01-C20 - double / triple bottom, inverse head and
+shoulders, rounding bottom / saucer, falling wedge, broadening formation, bull flag / pennant, cup and handle, ascending /
+symmetrical triangle, rectangle, ascending channel (entry = a bounce off the lower line - a breakout version can be added),
+staircase, measured move, high tight flag, flat base, IPO base (a generic version on Kite candles: the first daily candle after
+1 Jan 2008 = the listing; daily / weekly only - the sheet's own IPO base sequence stays richer), VCP = **192 implemented**;
+only B15 (15-minute opening range) and M16 (true VWAP) are left - both need intraday data the laptop does not keep long enough.
+Detectors in pcbridge/ScreenerBridge/pattern_p4.py: shapes drawn through the same swings (patSwing), sizes in ATR(14) of the
+last swing, time-based lengths per timeframe (`TFL`); the signal = the BREAKOUT after the pattern's last swing, on or after
+the candle that swing becomes known, within 60 candles (a close above the level before that, or under the pattern's floor
+first = no signal); one signal per pattern. Tests run (all pass): a made chart for every one of the 20 (the breakout candle,
+its first candle and stop reference; a changed copy without it - unequal lows, no head, a V instead of a U, too deep, not
+expanding, a deep flag, a flag vs a pennant, a deep handle, a deep pullback, an 80 % retrace, a 68 % pole, low volume, no
+volume dry-up, a listing before 2008 / 4-hour candles for C19); every event on random charts (a breakout closes at / above
+its level, the stop under the close); CAUSALITY for all 192 x D / W / 4H; the Lab group for every pattern. *Measured*: the
+20 together ~29 s per million candles (the slowest ~2.6 s), all 192 ~170 s.
+
+Next (the master prompt's later phases): phase 4 costs (the Zerodha delivery cost schedule in the Lab), then the combination
+engine and the leaderboard - each offered first.
 
 ## 12. Known limits (will stay)
 

@@ -468,7 +468,7 @@ import pattern_p3 as p3  # noqa: E402
 
 P3_IDS = sorted(p3.DETECTORS)
 assert len(P3_IDS) == 102 and all(p in reg.SPECS for p in P3_IDS), [p for p in P3_IDS if p not in reg.SPECS]
-assert set(reg.implemented()) == set(det.DETECTORS) and len(reg.implemented()) == 172
+assert set(reg.implemented()) == set(det.DETECTORS) and len(reg.implemented()) == 192
 o3, h3, l3, c3, v3 = walk(303, 400, vol=0.04)
 n3 = len(c3)
 
@@ -833,6 +833,79 @@ o_, h_, l_, c_, v_ = walk(77, 900, vol=0.04)
 assert det.detect('P09', o_, h_, l_, c_, v_, 'D', {'patSwing': 3}) != det.detect('P09', o_, h_, l_, c_, v_, 'D')
 assert det.detect('I08', o_, h_, l_, c_, v_, 'D', {'divPivot': 3}) != det.detect('I08', o_, h_, l_, c_, v_, 'D')
 assert det.param_hash('P09', det.params_for('P09', {'patSwing': 3})) != det.param_hash('P09', det.params_for('P09', {}))
+
+# ------------------------------------------------------------------ 4d. PHASE 4 (owner, 13-Nov-2026: "Yes do it"): the classical chart
+# patterns C01-C20 on made charts - the breakout candle where it must come, a changed copy where it must not - and the properties
+# of every event on random charts
+import pattern_p4 as p4  # noqa: E402
+
+P4_IDS = sorted(p4.DETECTORS)
+assert len(P4_IDS) == 20 and all(p in reg.SPECS for p in P4_IDS)
+assert [e['id'] for e in reg.entries() if e['status'] != 'implemented' and e['category'] != 'X'] == ['B15', 'M16']
+C30 = calm3(30)
+on('C01', zig([(0, 120), (10, 100), (20, 112), (30, 100.5), (40, 114)]), 39, occ=10, stop=99.8)
+no('C01', zig([(0, 120), (10, 100), (20, 112), (30, 97), (40, 114)])[:40])                               # the lows not equal
+on('C02', zig([(0, 125), (10, 100), (20, 112), (30, 100.5), (40, 112), (50, 100.2), (60, 115)]), 59, occ=10, stop=99.8)
+no('C02', zig([(0, 125), (10, 100), (20, 112), (30, 100.5), (40, 112), (50, 96), (60, 115)])[:60])
+e_ = on('C03', zig([(0, 125), (10, 104), (18, 112), (28, 96), (38, 112.5), (46, 104.5), (56, 116)]), 54, occ=10, stop=104.3)
+assert abs(e_[3] - 113.075) < 1e-9                                                                       # the sloped neckline there
+no('C03', zig([(0, 125), (10, 104), (18, 112), (28, 104), (38, 112.5), (46, 104.5), (56, 116)])[:55])    # no head
+on('C04', zig([(0, 98), (6, 100), (24, 80), (36, 80.5), (59, 99.5)]) + [[99.5, 101.2, 99.4, 101.0]], 60, occ=0)
+no('C04', zig([(0, 98), (6, 100), (30, 96), (33, 80), (36, 96), (59, 99.5)]) + [[99.5, 101.2, 99.4, 101.0]])   # a V, not a U
+on('C05', zig([(0, 98), (12, 100), (48, 88), (72, 88.3), (119, 99.5)]) + [[99.5, 100.4, 99.4, 100.3]], 120, occ=0)
+no('C05', zig([(0, 98), (12, 100), (48, 70), (72, 70.3), (119, 99.5)]) + [[99.5, 100.4, 99.4, 100.3]])   # too deep for a saucer
+W6 = zig([(0, 95), (8, 120), (16, 104), (24, 114), (32, 101.5), (40, 109), (48, 99.5), (58, 112)])
+on('C06', W6, 53, occ=16, stop=99.3)
+no('C06', W6[:53] + [[104.5, 105.3, 104.3, 105.0]])                                                       # stays under the line
+on('C07', zig([(0, 110), (6, 104), (12, 112), (18, 101), (24, 115), (30, 108), (40, 118)]), 38, occ=6)
+no('C07', zig([(0, 110), (6, 104), (12, 112), (18, 106), (24, 115), (30, 108), (40, 118)])[:39])          # not expanding
+FL = C30 + zig([(0, 100), (8, 112), (11, 110), (13, 111), (17, 108.5), (20, 110), (24, 109)])[1:]
+yes('C08', FL + [[109, 111.2, 108.9, 111.0]], occ=22, stop=108.3)
+no('C08', C30 + zig([(0, 100), (8, 112), (11, 110), (13, 111), (17, 105), (20, 110), (24, 109)])[1:] + [[109, 111.2, 108.9, 111.0]])
+no('C09', FL + [[109, 111.2, 108.9, 111.0]])                                                             # a flag, not a pennant
+yes('C09', C30 + zig([(0, 100), (8, 112), (11, 108), (14, 111), (17, 109.5), (19, 110.5), (21, 110)])[1:] + [[110, 111.6, 109.9, 111.4]],
+    occ=22, stop=107.8)
+CH = zig([(0, 100), (10, 120), (25, 95), (35, 95.5), (50, 119.5), (54, 116), (58, 118)])
+e_ = yes('C10', CH + [[118, 120.3, 117.9, 120.1]], occ=10, stop=115.8)
+assert e_[5] == 21.1
+no('C10', zig([(0, 100), (10, 120), (25, 95), (35, 95.5), (50, 119.5), (54, 106), (58, 118)]) + [[118, 120.3, 117.9, 120.1]])
+ASC = zig([(0, 100), (8, 110), (16, 100), (24, 110.2), (32, 104), (40, 112)])
+REC = zig([(0, 100), (8, 110), (16, 100), (24, 110.2), (32, 100.3), (40, 112)])
+on('C11', ASC, 39, occ=8, stop=103.8); no('C11', REC[:40])
+on('C13', REC, 39, occ=8, stop=100.1); no('C13', ASC[:40])
+SYM = zig([(0, 100), (8, 116), (16, 100), (24, 112), (32, 104), (46, 114)])
+on('C12', SYM, 39, occ=8, stop=103.8); no('C12', ASC[:40])
+CHN = zig([(0, 100), (6, 108), (12, 103), (18, 111), (24, 106), (30, 114), (36, 109.2)])
+yes('C14', CHN + [[109.2, 110, 108.9, 109.8]], occ=12, stop=108.9); no('C14', CHN + [[109.8, 110, 108.9, 109.2]])   # red
+on('C15', zig([(0, 100), (6, 108), (12, 104), (18, 112), (24, 108), (30, 116), (36, 112), (46, 120)]), 42, occ=12, stop=111.8)
+no('C15', zig([(0, 100), (6, 108), (12, 104), (18, 112), (24, 104.5), (30, 116), (36, 112), (46, 120)])[:43])   # a deep pullback
+on('C16', zig([(0, 110), (6, 100), (16, 120), (24, 110), (34, 124)]), 32, occ=6, stop=109.8)
+no('C16', zig([(0, 110), (6, 100), (16, 120), (24, 104), (34, 124)])[:34])                                  # gave back 80 %
+yes('C17', zig([(0, 52), (10, 50), (40, 100), (46, 90), (52, 96)]) + [[96, 101, 95.9, 100.6]], occ=10, stop=89.8)
+no('C17', zig([(0, 62), (10, 60), (40, 100), (46, 90), (52, 96)]) + [[96, 101, 95.9, 100.6]])            # rose 68 %, not 90 %
+FB = zig([(0, 90), (60, 118)]) + [[118, 119.5, 116.5, 118.2 if k % 2 else 117.8, 1000.0] for k in range(25)]
+yes('C18', FB + [[118, 120.5, 117.9, 120.3, 2000.0]], occ=61, stop=116.5); no('C18', FB + [[118, 120.5, 117.9, 120.3, 1300.0]])
+IPO = [[100, 110, 98, 108]] + zig([(0, 108), (4, 120), (12, 104), (18, 119)])[1:]
+e_ = yes('C19', IPO + [[119, 121, 118.8, 120.8]], occ=0, stop=103.8)
+assert e_[3] == 120.2 and e_[5] == 13.6
+no('C19', IPO + [[119, 120.1, 118.8, 120.0]])
+o_, h_, l_, c_, v_ = lists(IPO + [[119, 121, 118.8, 120.8]])
+assert det.detect('C19', o_, h_, l_, c_, v_, 'D', day=list(range(date(2005, 1, 3).toordinal(), date(2005, 1, 3).toordinal() + 20))) == []
+assert det.detect('C19', o_, h_, l_, c_, v_, '4H', day=list(range(D0P, D0P + 20))) == []                  # D / W only
+VCP = zig([(0, 80), (12, 100), (20, 80), (30, 99), (38, 89.5), (46, 99.5), (52, 94.5), (58, 98.5)], vu=3000.0, vd=3000.0)
+for k_, row_ in enumerate(VCP):
+    row_[4] = 3000.0 if k_ < 30 else (2000.0 if k_ < 46 else 1000.0)
+e_ = yes('C20', VCP + [[98.5, 100.2, 98.4, 100.1]], occ=12, stop=94.3)
+assert e_[3] == 99.7 and e_[5] == 5.4
+no('C20', [r[:4] + [3000.0] for r in VCP] + [[98.5, 100.2, 98.4, 100.1, 3000.0]])                        # no volume dry-up
+assert all(p in CRAFT for p in P4_IDS)
+for seed in range(3):
+    o_, h_, l_, c_, v_ = walk(seed * 17 + 9, 1200, vol=0.05 if seed % 2 else 0.03)
+    for pid in P4_IDS:
+        for tf in ('D', 'W', '4H'):
+            for e in det.detect(pid, o_, h_, l_, c_, v_, tf, day=list(range(D0P, D0P + 1200))):
+                assert e[0] == e[1] and 0 <= e[2] <= e[1] and all(x is None or math.isfinite(x) for x in e[3:]), (pid, e)
+                assert e[4] <= c_[e[1]] + 1e-9 and c_[e[1]] > e[3] - 1e-9 or pid == 'C14', (pid, tf, e)   # a breakout: close >= trigger
 
 # ------------------------------------------------------------------ 5. CAUSALITY: cut the chart / change what comes after - every
 # implemented pattern x D / W / 4H on random charts, and on its made chart (+ random candles after it) cut at every candle near

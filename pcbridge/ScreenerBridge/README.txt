@@ -413,6 +413,9 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
   multi-factor) and Ichimoku / anchored VWAP (new file pattern_p3.py). The structure patterns have a "Swings" choice (candles
   each side). I23 / I24 / Q13 compare the stock with NIFTY 50 - its candles come with the daily scan (or KiteHistoryNow.bat).
   Left for later: the classical chart patterns (double bottom, cup and handle, flags ...).
+- 13-Nov-2026 (pattern engine, step 4): 192 patterns - the classical chart patterns too (double / triple bottom, inverse head
+  and shoulders, rounding bottom, falling wedge, flags, pennants, cup and handle, triangles, rectangle, channel, staircase,
+  measured move, high tight flag, flat base, IPO base, VCP; new file pattern_p4.py). Each signals on its breakout.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

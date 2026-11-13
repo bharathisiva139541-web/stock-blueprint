@@ -16,7 +16,7 @@ python3 pattern_registry.py json      -> the registry as JSON (tools/build_patte
 import json
 import sys
 
-VERSION = 3
+VERSION = 4
 CATEGORIES = {
     'C': 'Classical chart patterns', 'K': 'Candlestick patterns', 'P': 'Price action and market structure',
     'S': 'Smart money concepts / ICT (price-action proxies)', 'V': 'Volume patterns', 'B': 'Breakout and consolidation',
@@ -945,6 +945,138 @@ P3 = {
                'The short, medium and long EMAs squeezed together; then price broke up out of the squeeze.', 54),
 }
 SPECS.update(P3)
+
+# ------------------------------------------------------------------ PHASE 4 (owner, 13-Nov-2026: "Yes do it" - the classical chart
+# patterns C01-C20, pattern_p4.py)
+COMMON += [
+    'Chart patterns (phase 4): drawn through swings (patSwing candles each side). A pattern is complete when its last swing is '
+    'known; the signal is the BREAKOUT after it - the first close above the pattern\'s level after its last swing, on or after '
+    'the candle that swing becomes known, within 60 candles (a close above the level before that - the pattern was not visible '
+    'yet - or a close under the pattern\'s floor first = no signal). One signal per pattern.',
+    'Pattern sizes are measured in ATR(14) of the pattern\'s last swing ("equal" lows / highs = within 1 x ATR, 0.5 x ATR for '
+    'flat tops and rectangles), so one rule fits daily, weekly and 4-hour candles; time-based patterns give their length per '
+    'timeframe.',
+]
+CL = 'a classical chart pattern (signal = the breakout)'
+P4 = {
+    'C01': _sp(['Two consecutive known swing lows, 2 x patSwing to 120 candles apart, within 1 x ATR of each other, nothing lower '
+                'between them.',
+                'Neckline = the highest high between them, at least 2 x ATR above the higher low; a fall into the pattern (a high of '
+                'the 60 candles before the 1st low at or above the neckline).',
+                'Signal: the breakout above the neckline (a close under the lower low first = failed).',
+                'Stop reference = the lower of the two lows; trigger = the neckline; the depth % kept.'],
+               'Price fell to the same low twice, bounced, then closed above the high between the two lows - a double bottom.',
+               130, True, CL, SW),
+    'C02': _sp(['Three consecutive known swing lows within 150 candles, all within 1 x ATR of each other, nothing lower between.',
+                'Neckline = the highest high between the first and the last, at least 2 x ATR above the highest of the lows; a fall '
+                'into the pattern.', 'Signal: the breakout above the neckline. Stop reference = the lowest of the three lows.'],
+               'Three tests of the same low, then a close above the highs between them - a triple bottom.', 160, True, CL, SW),
+    'C03': _sp(['Three consecutive known swing lows: left shoulder, head, right shoulder - the head at least 0.5 x ATR under both '
+                'shoulders, the shoulders within 1.5 x ATR of each other, within 150 candles.',
+                'Neckline = the line through the highest high between the left shoulder and the head and the highest high between '
+                'the head and the right shoulder (at most 2 x ATR apart; each at least 1 x ATR above its shoulder); a fall into '
+                'the pattern.',
+                'Signal: the breakout above the neckline (a close under the head first = failed).',
+                'Stop reference = the lowest low since the right shoulder; trigger = the neckline on the signal candle.'],
+               'Inverse head and shoulders: a low, a deeper low, a higher low, then a close above the line joining the highs '
+               'between them.', 160, True, CL, SW),
+    'C04': _sp(['The window = the 60 candles before the signal (weekly 40, 4-hour 120). Left rim = the highest high of its first '
+                'fifth; bottom = its lowest low, not in the first or the last third.',
+                'Depth 12 % to 50 % of the rim; the closes fall into the bottom and rise out of it (regression slopes); a rounded '
+                'floor: at least 20 % of the window\'s closes in the lowest third of the depth.',
+                'Signal: the first close above the rim (no close of the window above it); one per bottom.',
+                'Stop reference = the lowest low of the window\'s last fifth (the right side).'],
+               'A slow, rounded U-shaped bottom; price came back up to the left rim and closed above it.', 121, True, CL),
+    'C05': _sp(['As C04 with a longer window (120 candles; weekly 60, 4-hour 240) and a shallower depth, 6 % to 25 % of the rim.'],
+               'A long, shallow saucer-shaped bottom, then a close above its left rim.', 241, True, CL),
+    'C06': _sp(['The upper line through the two latest known swing highs (falling), the lower line through the two latest known '
+                'swing lows (falling, more slowly - the lines converge); the four swings interleaved, within 150 candles.',
+                'Signal: the first close above the upper line (the close before not above it) within 40 candles of the last swing '
+                'becoming known, before the lines cross; once per pair of swings.',
+                'Stop reference = the lowest low since the latest swing low; trigger = the upper line.'],
+               'A falling wedge - lower highs and lower lows narrowing - broken upward.', 160, True, CL, SW),
+    'C07': _sp(['The two latest known swing highs and the two swing lows before the 2nd high, in the order low, high, low, high: '
+                'the 2nd high above the 1st and the 2nd low under the 1st (an expanding range), within 150 candles.',
+                'Signal: the first close above the 2nd (highest) swing high within 60 candles of it becoming known.',
+                'Stop reference = the lowest low since the 2nd low.'],
+               'A broadening formation (higher highs and lower lows) broken upward.', 160, False, CL, SW),
+    'C08': _sp(['Pole: the latest known swing high at least 4 x ATR above the lowest low of the 15 candles before it.',
+                'Flag: the 4 to 20 candles after it, never above it, its low not under the middle of the pole; split in two halves - '
+                'the upper line through each half\'s highest high is flat or falling, and the lows do not rise.',
+                'Signal: the first close above that upper line (the close before not above it); once per pole.',
+                'Stop reference = the flag\'s lowest low; the pole in ATR kept.'],
+               'A strong rise (the pole), a short drift down or sideways (the flag), then a close above the flag.', 40, False, CL, SW),
+    'C09': _sp(['As C08, but the flag converges: the upper line falling and the second half\'s lows above the first half\'s - '
+                'a small triangle (pennant).'],
+               'A strong rise, a small narrowing triangle, then a close above its upper line.', 40, False, CL, SW),
+    'C10': _sp(['Cup: two known swing highs (rims) 30 to 250 candles apart (weekly 7-65, 4-hour 60-500), the right rim within 5 % '
+                'of the left, nothing higher between; the bottom 12 % to 50 % under the left rim and not in the first or the last '
+                '15 % of the cup (a U, not a V).',
+                'Handle: after the right rim, at most a quarter of the cup long (at least patSwing candles), its low in the upper '
+                'half of the cup and at most 15 % under the right rim.',
+                'Signal: the first close above the right rim. Stop reference = the handle\'s low; the cup depth % kept.'],
+               'Cup and handle: a rounded cup, a small pullback (the handle), then a close above the cup\'s right rim.', 260, False,
+               CL, SW),
+    'C11': _sp(['Flat top: the two latest known swing highs within 0.5 x ATR; rising lows: the 2nd of the two latest known swing lows '
+                'at least 0.5 x ATR above the 1st; the top at least 2 x ATR above the 1st low; interleaved, within 150 candles.',
+                'Signal: the first close above the top (the close before not) within 40 candles of the last swing being known.',
+                'Stop reference = the lowest low since the latest swing low.'],
+               'An ascending triangle: a flat ceiling and rising lows, then a close above the ceiling.', 160, False, CL, SW),
+    'C12': _sp(['Falling highs (the 2nd swing high at least 0.5 x ATR under the 1st) and rising lows (the 2nd swing low at least '
+                '0.5 x ATR above the 1st), interleaved, within 150 candles; the upper line through the two highs.',
+                'Signal: the first close above the upper line before the lines cross. Stop reference = the lowest low since the '
+                'latest swing low.'],
+               'A symmetrical triangle broken upward.', 160, False, CL, SW),
+    'C13': _sp(['The two latest known swing highs within 0.5 x ATR and the two latest known swing lows within 0.5 x ATR, the range '
+                'at least 2 x ATR tall, interleaved, within 150 candles.',
+                'Signal: the first close above the higher top. Stop reference = the lowest low since the latest swing low.'],
+               'A sideways rectangle broken upward.', 160, False, CL, SW),
+    'C14': _sp(['A rising channel: the two latest known swing highs rising and the two latest known swing lows rising, the two '
+                'slopes within 30 % of each other (parallel), the channel at least 2 x ATR wide, interleaved, within 150 candles.',
+                'Signal (this version - the bounce): a green candle whose low comes within 0.25 x ATR of the lower line (or under '
+                'it) and closes above it, within 60 candles of the latest swing low, no close under the lower line since it; once '
+                'per swing low.', 'Stop reference = the candle\'s low; the channel slope (% a candle) kept.'],
+               'In a rising channel price came back to the lower line and bounced off it.', 160, False,
+               'entry = a bounce off the lower line (a breakout version can be added)', SW),
+    'C15': _sp(['The three latest known swing highs rising and the three latest known swing lows rising, alternating in time; '
+                'every pullback gives back at most 60 % of the rise into its high.',
+                'Signal: the first close above the 3rd swing high within 60 candles of it becoming known.',
+                'Stop reference = the latest swing low.'],
+               'A staircase: three steps of higher highs and higher lows with shallow pullbacks, then a new step up.', 120, False,
+               CL, SW),
+    'C16': _sp(['Leg 1: a swing low A to the next swing high B, at least 3 x ATR; correction: the swing low C after B gives back 38.2 % '
+                'to 61.8 % of A-B, C above A.',
+                'Signal: the first close above B within 40 candles of C becoming known (no close above B since C).',
+                'Stop reference = C\'s low; the % from the close to the measured target (C + the size of leg 1) kept.'],
+               'A rise, a 38-62 % pullback, then a close above the first high - the second leg of a measured move starts.', 120,
+               False, 'leg 2 measured against leg 1 - no harmonic ratios', SW),
+    'C17': _sp(['Pole: the latest known swing high at least 90 % above the lowest low of the 40 candles before it (weekly 8, 4-hour '
+                '80).', 'Flag: the 3 to 25 candles after it (weekly 5, 4-hour 50), its low at most 25 % under the top, no close '
+                'above the top.', 'Signal: the first close above the top. Stop reference = the flag\'s low; the pole gain % kept.'],
+               'A high tight flag: price nearly doubled fast, rested a little, then made a new high.', 66, False, CL, SW),
+    'C18': _sp(['Base: the 25 candles before the signal (weekly 5, 4-hour 50) within 15 % (high - low under 15 % of the high).',
+                'A rise before it: the close where the base starts at least 20 % above the lowest low of the 60 candles before '
+                '(weekly 13, 4-hour 120).',
+                'Signal: a fresh close above the base\'s high on relative volume >= 1.4. Stop reference = the base\'s low.'],
+               'After a rise, a tight flat base of five weeks or more, then a breakout on higher volume.', 86, False,
+               "O'Neil's flat base (B18 has no prior-rise / volume rule)"),
+    'C19': _sp(['Daily and weekly candles only; the stock\'s first daily candle after 1 Jan 2008 counts as its listing (Kite\'s '
+                'daily history reaches 2006 - earlier listings are not known).',
+                'Within 250 candles of the listing (weekly 52): the first close above the highest high since the listing that '
+                'comes after a base - the high at least 8 candles (weekly 3) before, a pullback of 10 % to 50 % from it; a close '
+                'above a shorter / shallower pause is just a new high and the base starts again.',
+                'Stop reference = the base\'s low; trigger = the high since the listing; the base depth % kept.'],
+               'A newly listed stock built its first base and broke out above the high since its listing.', 250, False,
+               "a generic version on Kite candles; the sheet's own IPO base sequence (Code.gs ab_ipoBaseSequence_) is richer"),
+    'C20': _sp(['Three consecutive known swing highs, each followed by its swing low (before the next high): the pullbacks get '
+                'smaller each time (1st at most 50 %, the 3rd at most 15 %), the highs within 3 % of the 1st, the lows rising, the '
+                'average volume of the last pullback under the first one\'s.',
+                'Signal: the first close above the 3rd swing high (the pivot) within 30 candles of the last swing low becoming '
+                'known. Stop reference = the last swing low; the last pullback % kept.'],
+               'A volatility contraction pattern: shrinking pullbacks with drying volume, then a close above the pivot.', 150,
+               False, CL, SW),
+}
+SPECS.update(P4)
 WORDS_M1 = {
     'K08': 'A red candle was followed by a bigger green candle whose body covered all of the red body - buyers took over the '
            'whole of the day before. The stop goes under the lower of the two lows.',

@@ -15,7 +15,7 @@ const BP = require('../tools/build_patterns.js');
 const py = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).status === 0);
 const FIX = path.join(__dirname, 'fixtures', 'pcbridge_patterns_check.py');
 
-test('pattern engine M1 + phases 2 / 3 (python, offline): indicators, registry, detectors, made charts, causality, Lab group', { skip: !py && 'python3 not installed' }, () => {
+test('pattern engine M1 + phases 2 / 3 / 4 (python, offline): indicators, registry, detectors, made charts, causality, Lab group', { skip: !py && 'python3 not installed' }, () => {
   const r = spawnSync(py, [FIX], { encoding: 'utf8', timeout: 600000 });
   assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /OK\s*$/);
@@ -58,8 +58,8 @@ test('web/data/pattern-registry.js + docs/PATTERN_SPECS.md = pattern_registry.py
   assert.strictEqual(fs.readFileSync(BP.OUT_MD, 'utf8'), BP.renderMd(reg));
   assert.strictEqual(reg.patterns.filter((p) => p.category !== 'X').length, 194);
   const impl = reg.patterns.filter((p) => p.status === 'implemented');
-  assert.ok(impl.length >= 172 && impl.every((p) => p.rules && p.rules.length && p.words && p.params && p.version), 'rules + words of every implemented one');
-  assert.ok(reg.common.length >= 13, 'the shared definitions (phase 3: swings, zones, indicators ...)');
+  assert.ok(impl.length >= 192 && impl.every((p) => p.rules && p.rules.length && p.words && p.params && p.version), 'rules + words of every implemented one');
+  assert.ok(reg.common.length >= 15, 'the shared definitions (phase 3: swings, zones, indicators ...; phase 4: chart patterns)');
   // the Lab page's defaults for every implemented pattern's parameters = the registry's
   const src = fs.readFileSync(path.join(__dirname, '..', 'web', 'pages', 'lab.js'), 'utf8');
   impl.forEach((p) => Object.keys(p.params).forEach((k) => {

@@ -928,3 +928,8 @@ def detect(pid, o, h, l, c, v, tf, P=None, day=None, bench=None):
 # detectors to DETECTORS (it also does that itself when it is imported first)
 import pattern_p3  # noqa: E402,F401
 DETECTORS.update(getattr(pattern_p3, 'DETECTORS', {}))
+
+# ------------------------------------------------------------------ PHASE 4 (owner, 13-Nov-2026: "Yes do it") - the classical chart
+# patterns C01-C20 (pattern_p4.py, same way)
+import pattern_p4  # noqa: E402,F401
+DETECTORS.update(getattr(pattern_p4, 'DETECTORS', {}))

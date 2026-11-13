@@ -1318,7 +1318,7 @@ function check(name, fn) {
     // state; an implemented one goes into the form with "Use", its own fields and exact rules show, the plain words follow
     await own.p.click('#lab-lib summary');
     await own.p.waitForSelector('#lab-lib-table table');
-    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(172 built in the new engine so far\)/);
+    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(192 built in the new engine so far\)/);
     await own.p.fill('#lab-lib-q', 'engulf');
     await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 1);
     assert.match(await own.p.$eval('#lab-lib-table tbody tr', (x) => x.textContent), /K08\s*Bullish Engulfing\s*Candlestick patterns\s*Implemented/);
@@ -1330,8 +1330,8 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 25, 'phase 3: every SMC pattern is built in the new engine');
     await own.p.click('[data-chip="labcat"][data-v="C"]');
     await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 20);
-    assert.match(await own.p.$eval('#lab-lib-table tbody', (x) => x.textContent), /C01\s*Double Bottom[\s\S]*Planned/);
-    assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 0, 'the classical chart patterns come last');
+    assert.match(await own.p.$eval('#lab-lib-table tbody', (x) => x.textContent), /C01\s*Double Bottom[\s\S]*Implemented/);
+    assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 20, 'phase 4: the classical chart patterns too');
     await own.p.click('[data-chip="labcat"][data-v="all"]');
     await own.p.fill('#lab-lib-q', 'K08');
     await own.p.waitForSelector('[data-usepat="K08"]');
@@ -1350,9 +1350,9 @@ function check(name, fn) {
     await own.p.waitForSelector('[data-k="boVol"]');
     await own.p.selectOption('[data-k="boVol"]', '2');
     assert.match(await plainText(), /Pattern library: B03 52-Week High Breakout \(a fresh close above the level, volume at least 2 x the 20-candle average\)/);
-    // phase 2 / 3 (13-Nov-2026): 172 patterns in the picker, grouped; a reversal pattern can be kept only after a fall
+    // phase 2 / 3 / 4 (13-Nov-2026): 192 patterns in the picker, grouped; a reversal pattern can be kept only after a fall
     assert.ok(await own.p.$$eval('#lab-form select[data-k="pattern"] optgroup', (x) => x.length) >= 8, 'grouped by category');
-    assert.strictEqual(await own.p.$$eval('#lab-form select[data-k="pattern"] option', (x) => x.length), 172);
+    assert.strictEqual(await own.p.$$eval('#lab-form select[data-k="pattern"] option', (x) => x.length), 192);
     assert.ok(!(await own.p.$('#lab-form select[data-k="patCtx"]')), 'a breakout has no trend-context choice');
     await own.p.selectOption('[data-k="pattern"]', 'K01');
     await own.p.waitForSelector('#lab-form select[data-k="patCtx"]');
@@ -1372,6 +1372,11 @@ function check(name, fn) {
     assert.match(await plainText(), /I08 MACD Positive Divergence \(swing lows of 5 candles each side, at most 60 candles apart/);
     await own.p.selectOption('[data-k="pattern"]', 'I23');
     await own.p.waitForFunction(() => /against NIFTY 50/.test(document.querySelector('#lab-plain').textContent));
+    // phase 4: a classical chart pattern - its swings field and its rules
+    await own.p.selectOption('[data-k="pattern"]', 'C10');
+    await own.p.waitForFunction(() => /C10 Cup and Handle \(swings of \d+ candles each side/.test(document.querySelector('#lab-plain').textContent));
+    assert.ok(await own.p.$('#lab-form select[data-k="patSwing"]'), 'the cup is drawn through swings');
+    assert.match(await own.p.$eval('#lab-form details.lab-rules', (x) => x.textContent), /Handle: after the right rim[\s\S]*Chart patterns \(phase 4\)/);
     // market structure (owner, 10-Nov-2026): his CHoCH + FVG setup in one click, the plain words follow
     await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', '[]'); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"]:not([open])');

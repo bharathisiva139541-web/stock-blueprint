@@ -468,7 +468,7 @@
       '</details>' : '');
   }
 
-  /** The implemented patterns, grouped by category (a long list - 172 after phase 3). */
+  /** The implemented patterns, grouped by category (a long list - 192 after phase 4). */
   function patSelect(v) {
     var ps = patReg().filter(function (p) { return p.status === 'implemented'; });
     var cats = (window.SB_PATTERNS && window.SB_PATTERNS.categories) || {};
