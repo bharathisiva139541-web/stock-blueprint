@@ -84,8 +84,9 @@ function html() {
     table(['Box', 'பொருள்'], [
       ['Timeframe', 'Daily / Weekly / 4 hour (4 hour = அன்றைய 13:15 candle).'],
       ['Pattern', 'எந்த signals சோதிக்கப்படும் (FVG+Spring, Gap-up FVG + Spring, First touch of a zone = SMC entry, Every Spring ...).'],
-      ['Stop loss + How far below it (%)', 'Stop எங்கே: zone bottom / Spring candle low / இரண்டில் கீழானது / entry-இலிருந்து %. "0.5" = அதற்கு 0.5% கீழே.'],
-      ['Target (R)', '**R = entry - stop** (ஒரு trade-இன் risk). 2 = risk-இன் இரண்டு மடங்கு லாபத்தில் target.'],
+      ['Stop loss + How far below it (%)', 'Stop எங்கே: zone bottom / Spring candle low / இரண்டில் கீழானது / entry-இலிருந்து % / CHoCH final low. "0.5" = அதற்கு 0.5% கீழே.'],
+      ['… or x ATR under the entry, whichever is lower', '**ATR stop**: entry-இலிருந்து x மடங்கு ATR(14) கீழே இன்னொரு stop; இரண்டில் **கீழே உள்ள விலை** (அகலமான stop) பயன்படும். உதா. 5% stop = 95, 2 x ATR = 93 → stop 93.'],
+      ['Target', '**R multiple** (R = entry - stop; 2 = risk-இன் இரண்டு மடங்கு) / **% above the entry** (20%, 30%, 40% ...) / **The CHoCH move high (HH)** / கடைசி swing high. HH / swing high: குறைந்தது X R மேலே இல்லையென்றால் trade இல்லை.'],
       ['At the target', '**Keep the trade and trail the stop** = target-க்குப் பின் trade-ஐ வைத்து stop-ஐ மேலே நகர்த்தும் (பெரிய move-ஐப் பிடிக்க). **Sell at the target** = அங்கேயே விற்கும்.'],
       ['Then', 'Trail முறை: கடைசி N candles-இன் lowest low-க்குக் கீழ் / உச்ச விலையிலிருந்து X% / EMA-க்குக் கீழ் close / **x ATR** / **புதிய swing low-க்குக் கீழ்** / trail இல்லை.'],
       ['Account ₹ / Risk per trade', 'உங்கள் கணக்கு எவ்வளவு, ஒரு trade-இல் கணக்கின் எத்தனை % risk.'],
@@ -97,7 +98,7 @@ function html() {
       ['Spring candle shape', 'Spring candle-க்குக் கடுமையான விதிகள் (wick, body, dip). என் 5 பரிந்துரைகள் "Use this" உடன்.'],
       ['Trend filters', 'Signal candle EMA support / மேலே close; stock-இன் **weekly trend**; NIFTY போன்ற index-இன் நிலை.'],
       ['Entry details', 'Close-இல் / அடுத்த open-இல் / **zone top order**; அதிகபட்ச risk %; zone-க்குள் எவ்வளவு ஆழம்; தேதிகள்; குறைந்த விலை / turnover.'],
-      ['Exit details', 'Target = கடைசி swing high; அதிகபட்ச நாட்கள்; costs (buy + sell சேர்த்து); target-இல் stop-ஐ entry-க்கு நகர்த்துதல்.'],
+      ['Exit details', '**Target-இல் ஒரு பகுதி விற்பனை** (உதா. பாதி; மீதி trail-உடன்); target-க்கு முன் **xR மேலே போனதும் stop → entry**; **Time stop** (N candles-இல் xR மேலே போகவில்லை என்றால் அந்த candle close-இல் விற்பனை); அதிகபட்ச நாட்கள்; costs.'],
       ['Money details', 'ஒரு position அதிகபட்சம் %, ஒரே நேரத்தில் எத்தனை trades, லாபத்தை மீண்டும் முதலீடு.'],
       ['Checking the result', '**Validation part from** (3 பகுதி சோதனை) மற்றும் **Steady over time?** (ஒவ்வொரு N வருடத் தொகுதி).']]) +
     p('**"Clear all the More rules"** = எல்லா விருப்ப விதிகளையும் default-க்குத் திருப்பும் (basics அப்படியே). ஒரு பகுதியைத் திறந்தால் அடுத்த முறையும் திறந்தே இருக்கும்.'), 4));

@@ -45,11 +45,13 @@ gapEntry = input.bool(true, "An FVG with a Gap-up zone inside it: buy at the Gap
 stopMode = input.string("Under the zone bottom", "Stop loss", options=["Under the zone bottom", "Under the touch candle's low", "Under whichever is lower", "% under the entry", "Under the CHoCH's final low"], group=G2)
 stopBuf = input.float(0.5, "Stop: how far below it (%)", minval=0, step=0.1, group=G2)
 stopPct = input.float(5.0, "Stop: % under the entry (with that choice)", minval=0.1, step=0.5, group=G2)
+stopAtr = input.float(0.0, "Stop: or x ATR(14) under the entry - whichever is lower (0 = off)", minval=0, maxval=10, step=0.5, group=G2)
 maxRisk = input.float(15.0, "Skip if the risk is more than % (0 = never)", minval=0, step=1, group=G2)
 minPrice = input.float(0.0, "Price at least Rs", minval=0, step=1, group=G2)
-targetMode = input.string("R multiple", "Target", options=["R multiple", "The last swing high"], group=G2)
+targetMode = input.string("R multiple", "Target", options=["R multiple", "The last swing high", "The move high (HH)", "% above the entry"], group=G2)
 targetR = input.float(2.0, "Target (R = times the risk)", minval=0.25, step=0.25, group=G2)
-swingMinR = input.float(1.0, "Swing-high target: at least this many R above the entry", minval=0, step=0.25, group=G2)
+targetPct = input.float(20.0, "Target: % above the entry (with that choice)", minval=1, step=5, group=G2)
+swingMinR = input.float(1.0, "Swing-high / move-high target: at least this many R above the entry", minval=0, step=0.25, group=G2)
 G6 = "Filters (Backtest Lab steps 1 and 4)"
 useDates = input.bool(false, "Only signals between these dates", group=G6)
 fromDate = input.time(timestamp("01 Jan 2020 00:00 +0530"), "From", group=G6)
@@ -562,8 +564,11 @@ if nh0 > 0
             string sm = atTop and (stopMode == "Under the touch candle's low" or stopMode == "Under whichever is lower") ? "Under the zone bottom" : stopMode
             float base = sm == "Under the touch candle's low" ? low : sm == "Under whichever is lower" ? math.min(low, zbStop) : zbStop
             float stop = sm == "% under the entry" ? entry * (1 - stopPct / 100) : sm == "Under the CHoCH's final low" ? chLf * (1 - stopBuf / 100) : base * (1 - stopBuf / 100)
+            // the ATR stop (owner, 13-Nov-2026): the lower of the two; the order at the zone top uses the ATR of the bar before
+            if stopAtr > 0
+                stop := math.min(stop, entry - stopAtr * (atTop ? atrS[1] : atrS))
             float risk = entry - stop
-            float tgt = entry + targetR * risk
+            float tgt = targetMode == "% above the entry" ? entry * (1 + targetPct / 100) : entry + targetR * risk
             if sm == "Under the CHoCH's final low" and not aliveOk
                 skipWhy := "no live CHoCH (the stop goes under its final low)"
                 ok := false
@@ -590,6 +595,12 @@ if nh0 > 0
                     ok := false
                 else
                     tgt := sw
+            else if targetMode == "The move high (HH)"
+                if not aliveOk or na(chH) or chH <= entry or chH < entry + swingMinR * risk - 0.000000001
+                    skipWhy := "no CHoCH move high at least " + str.tostring(swingMinR) + "R above the entry"
+                    ok := false
+                else
+                    tgt := chH
             if ok
                 bool before = best < 0
                 if not before
@@ -613,7 +624,7 @@ if best >= 0
     string tip = chTxt + "\n" + kind + " " + fmtP(zb) + " - " + fmtP(zt) + (na(bDep) ? "" : ", its " + str.lower(discPart) + " " + str.tostring(math.round(bDep * 100)) + "% down the move") + (structOnly and fibLvl > 0 and aliveOk ? " (" + str.tostring(fibLvl * 100) + "% line " + fmtP(chH - fibLvl * (chH - chLf)) + ")" : "")
     nBuys += 1
     lastBuy := fmtT(time) + " at " + fmtP(bEntry)
-    tip := tip + "\nentry " + fmtP(bEntry) + " · stop " + fmtP(bStop) + " · target " + fmtP(bTgt) + (targetMode == "R multiple" ? " (" + str.tostring(targetR) + "R)" : " (the last swing high)") + " · risk " + str.tostring(math.round((bEntry - bStop) / bEntry * 1000) / 10.0) + "%"
+    tip := tip + "\nentry " + fmtP(bEntry) + " · stop " + fmtP(bStop) + " · target " + fmtP(bTgt) + (targetMode == "R multiple" ? " (" + str.tostring(targetR) + "R)" : targetMode == "% above the entry" ? " (" + str.tostring(targetPct) + "% above)" : targetMode == "The move high (HH)" ? " (the move high)" : " (the last swing high)") + (stopAtr > 0 ? " · stop: the lower of the rule's and " + str.tostring(stopAtr) + " x ATR" : "") + " · risk " + str.tostring(math.round((bEntry - bStop) / bEntry * 1000) / 10.0) + "%"
     label.new(bar_index, low, "BUY " + fmtP(bEntry), yloc=yloc.belowbar, style=label.style_label_up, color=C_BUY, textcolor=color.white, size=size.small, tooltip=tip)
     line.new(bar_index, bEntry, bar_index + 8, bEntry, color=C_BUY, width=2)
     line.new(bar_index, bStop, bar_index + 8, bStop, color=C_STOP, width=2)

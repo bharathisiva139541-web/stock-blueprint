@@ -1356,9 +1356,26 @@ function check(name, fn) {
     assert.match(pineBox, /Open the Daily \(1D\) chart on TradingView/);
     assert.ok(await own.p.$('#lab-pine-box a[download$=".pine"]'), 'a download link too');
     await own.p.selectOption('[data-k="pivotN"]', '5');
+    // the owner's stop / target / exit options (13-Nov-2026): the ATR stop next to the stop loss, a % target, half at the target,
+    // the stop to the entry at 1R, a time stop
+    await own.p.selectOption('[data-k="stopAtr"]', '2');
+    assert.match(await plainText(), /or 2 x ATR\(14\) under the entry - whichever is lower \(the wider stop\)/);
+    await own.p.selectOption('[data-k="targetMode"]', 'pct');
+    await own.p.waitForSelector('[data-k="targetPct"]');
+    await own.p.selectOption('[data-k="targetPct"]', '30');
+    await own.p.evaluate(() => { document.querySelector('[data-sec="exit"]').open = true; });
+    await own.p.selectOption('[data-k="partialPct"]', '50');
+    await own.p.selectOption('[data-k="beAt"]', '1');
+    await own.p.selectOption('[data-k="timeN"]', '10');
+    await own.p.waitForSelector('[data-k="timeR"]');
+    const exitWords = await plainText();
+    assert.match(exitWords, /Before the target: once price is 1R up, move the stop to the entry\./);
+    assert.match(exitWords, /Time stop: if price has not gone 1R up within 10 candles, sell at that candle's close\./);
+    assert.match(exitWords, /At 30% above the entry sell 50% and for the rest move the stop up to the target/);
+    assert.match(await own.p.$eval('[data-sec="exit"] summary', (x) => x.textContent), /3 changed/);
     await own.p.selectOption('[data-k="targetMode"]', 'swing');
     await own.p.waitForSelector('[data-k="swingMinR"]');
-    assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop up to the target/);
+    assert.match(await plainText(), /At the last swing high \(at least 1R above the entry - none = no trade\) sell 50% and for the rest move the stop up to the target/);
     assert.ok(/Only Springs where the Spring candle has an upper wick of at most 5%/.test(await plainText()), 'the Spring rules stay');
     // the development / test split (owner, 12-Nov-2026): a test period from 2020
     await own.p.fill('[data-k="testFrom"]', '2020-01-01');
@@ -1382,6 +1399,8 @@ function check(name, fn) {
       got.job.params.discPart, got.job.params.entry],
     ['touch', 'only', 5, 3, 'both', false, true, 'swing', 1, 0.5, 'mid', 'zone'], 'the market-structure rules reach the laptop');
     assert.strictEqual(got.job.params.testFrom, '2020-01-01', 'the test period reaches the laptop');
+    assert.deepStrictEqual([got.job.params.stopAtr, got.job.params.targetPct, got.job.params.partialPct, got.job.params.beAt, got.job.params.timeN, got.job.params.timeR],
+      [2, 30, 50, 1, 10, 1], 'the stop / target / exit options reach the laptop');
     const missing = (await own.p.evaluate(() => Object.keys(window.SB.lab.DEF))).filter((k) => !(k in got.job.params));
     assert.deepStrictEqual(missing, ['name', 'from', 'to', 'valFrom'], 'every rule reaches the laptop (empty dates left out)');
     assert.ok(got.job.params.swingMode === 'fractal' && got.job.params.rollYears === 3 && got.job.params.atrK === 3);
@@ -1429,7 +1448,7 @@ function check(name, fn) {
     await guideShot(own.p, '13-folded', '#lab-result section.card');
     const view = await own.p.$eval('#lab-result', (x) => x.textContent);
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
-    assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) move the stop up to the target \(a fall back to it = sold there, a win\), then trail it under the lowest low of the last 3 candles/);
+    assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) sell 50% and for the rest move the stop up to the target \(a fall back to it = sold there, a win\), then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);
     // why a signal was skipped: on the word itself (hover / tap), and counted in the account tile
     assert.match(view, /37 left out by your EMA rules · 12 left out by your market rule/);

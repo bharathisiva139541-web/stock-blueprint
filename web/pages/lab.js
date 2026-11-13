@@ -32,6 +32,10 @@
     // the CHoCH level + first pullback, target R multiple or the last swing high) - off by default
     structure: 'off', pivotN: 5, downN: 3, zoneWhen: 'both', belowChoch: true, firstPull: true, chochAge: 0,
     targetMode: 'R', swingMinR: 1,
+    // the owner's stop / target / exit options (13-Nov-2026: "stoploss ATR based ... Multiples of ATR whichever is lower ... Our exit
+    // and target system should have more options"): the ATR stop, a % target, part sold at the target, the stop to the entry at
+    // xR, a time stop
+    stopAtr: 0, targetPct: 20, partialPct: 0, beAt: 0, timeN: 0, timeR: 1,
     // the discount zone (owner, 11-Nov-2026, SUPREMEIND: "we always try to enter with low risk, i.e. the zone in discount
     // area. it is ok even the zone have some area slightly above the Choch"): the zone's middle under the Fib line of the
     // move (final low -> its high) - off by default
@@ -73,7 +77,7 @@
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
     ['zone', 'Zone rules - size, Gap-up zone inside, Fib + pattern, dark cloud', ['zoneMin', 'zoneMax', 'gapEntry', 'fibPat', 'fibLevel', 'fibTol', 'darkCloud']],
     ['entry', 'Entry details', ['entry', 'maxRisk', 'whereIn', 'from', 'to', 'minPrice', 'minTurnover', 'maxTouch']],
-    ['exit', 'Exit details', ['targetMode', 'swingMinR', 'breakeven', 'lockTarget', 'maxDays', 'cost']],
+    ['exit', 'Exit details - part at the target, stop to entry, time stop', ['partialPct', 'beAt', 'timeN', 'timeR', 'breakeven', 'lockTarget', 'maxDays', 'cost']],
     ['money', 'Money details', ['maxPosPct', 'maxOpen', 'compound']],
     ['check', 'Checking the result - validation part, steady over time', ['valFrom', 'rollYears']]
   ];
@@ -111,7 +115,14 @@
     downN: [[1, 'At least 1'], [2, 'At least 2'], [3, 'At least 3'], [4, 'At least 4'], [5, 'At least 5']],
     zoneWhen: [['both', 'In the CHoCH move or after it'], ['leg', 'Only in the CHoCH move'], ['after', 'Only after the CHoCH candle']],
     chochAge: [[0, 'Any time after it'], [10, 'Within 10 candles'], [20, 'Within 20 candles'], [40, 'Within 40 candles'], [60, 'Within 60 candles'], [120, 'Within 120 candles']],
-    targetMode: [['R', 'R multiple (times the risk)'], ['swing', 'The last swing high']],
+    targetMode: [['R', 'R multiple (times the risk)'], ['pct', '% above the entry'], ['mh', 'The CHoCH move high (HH)'], ['swing', 'The last swing high']],
+    stopAtr: [[0, 'Off - only the stop above'], [1, '1 x ATR'], [1.5, '1.5 x ATR'], [2, '2 x ATR'], [2.5, '2.5 x ATR'], [3, '3 x ATR'], [4, '4 x ATR']],
+    targetPct: [[10, '10% above the entry'], [15, '15% above the entry'], [20, '20% above the entry'], [25, '25% above the entry'], [30, '30% above the entry'],
+      [40, '40% above the entry'], [50, '50% above the entry'], [75, '75% above the entry'], [100, '100% above the entry']],
+    partialPct: [[0, 'Off - the whole position'], [25, 'Sell 25% there'], [33, 'Sell a third (33%) there'], [50, 'Sell half (50%) there'], [75, 'Sell 75% there']],
+    beAt: [[0, 'Off'], [0.5, 'When price is 0.5R up'], [1, 'When price is 1R up'], [1.5, 'When price is 1.5R up']],
+    timeN: [[0, 'Off'], [3, 'After 3 candles'], [5, 'After 5 candles'], [10, 'After 10 candles'], [15, 'After 15 candles'], [20, 'After 20 candles'], [30, 'After 30 candles']],
+    timeR: [[0.5, '… not 0.5R up yet'], [1, '… not 1R up yet'], [1.5, '… not 1.5R up yet'], [2, '… not 2R up yet']],
     discount: [[0, 'Off - not checked'], [0.382, '38.2% down the move'], [0.5, 'Half way down - the 50% line (discount)'], [0.618, '61.8% down the move'],
       [0.65, '65% down the move'], [0.7, '70% down the move'], [0.705, '70.5% down the move'], [0.75, '75% down the move'], [0.786, '78.6% down the move']],
     discountMax: [[0, 'No limit'], [0.786, '78.6% down'], [0.9, '90% down'], [1, '100% - down to the final low']],
@@ -167,7 +178,7 @@
     fallN: [[0, 'Not checked'], [5, 'Within the last 5 candles'], [10, 'Within the last 10 candles'], [20, 'Within the last 20 candles'], [50, 'Within the last 50 candles']],
     fallPct: [[3, 'at least 3%'], [5, 'at least 5%'], [8, 'at least 8%'], [10, 'at least 10%'], [15, 'at least 15%'], [20, 'at least 20%'], [30, 'at least 30%']]
   };
-  var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'trailN', 'trailPct', 'emaN', 'maxDays',
+  var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'stopAtr', 'targetPct', 'partialPct', 'beAt', 'timeN', 'timeR', 'trailN', 'trailPct', 'emaN', 'maxDays',
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
@@ -205,7 +216,7 @@
   };
   var REASON = { stop: ['Stop loss', 's-bad'], target: ['Target', 's-good'], be: ['Breakeven (stop at entry)', ''], trail: ['Trailing stop', 's-good'],
     lock: ['Target locked (the stop at the target)', 's-good'],
-    ema: ['Close under EMA', 's-good'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
+    ema: ['Close under EMA', 's-good'], tstop: ['Time stop (no move)', 's-info'], time: ['Time limit', 's-info'], open: ['Still running', 's-warn'] };
   var POLL_MS = 4000;
   var ST = { status: null, item: null, itemId: null, timer: 0, busy: false, err: '', host: null, gen: 0, bd: '' };
 
@@ -369,11 +380,17 @@
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
       F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' :
         p.stop === 'final' ? 'the CHoCH\'s final low (LL - no live CHoCH = no trade)' : 'the zone bottom or the Spring low, whichever is lower')) +
+      (Number(p.stopAtr) ? ', or ' + F.num(p.stopAtr, 1) + ' x ATR(14) under the entry - whichever is lower (the wider stop)' : '') +
       (p.maxRisk ? ' - trades risking more than ' + F.num(p.maxRisk, 1) + '% are skipped' : '') + '.');
-    var tgt = p.targetMode === 'swing' ? 'the last swing high (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' : F.num(p.targetR, 2) + 'R';
-    if (p.after === 'fixed') s.push('Sell at ' + tgt + (p.targetMode === 'swing' ? '' : ' (' + F.num(p.targetR, 2) + ' x the risk)') + '.');
+    var tgt = p.targetMode === 'swing' ? 'the last swing high (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' :
+      p.targetMode === 'mh' ? 'the CHoCH move high - HH (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' :
+        p.targetMode === 'pct' ? F.num(p.targetPct, 1) + '% above the entry' : F.num(p.targetR, 2) + 'R';
+    var part = Number(p.partialPct) && p.after !== 'fixed' ? Number(p.partialPct) : 0;
+    if (Number(p.beAt)) s.push('Before the target: once price is ' + F.num(p.beAt, 1) + 'R up, move the stop to the entry.');
+    if (Number(p.timeN)) s.push('Time stop: if price has not gone ' + F.num(p.timeR, 1) + 'R up within ' + p.timeN + ' candles, sell at that candle\'s close.');
+    if (p.after === 'fixed') s.push('Sell at ' + tgt + (p.targetMode === 'R' ? ' (' + F.num(p.targetR, 2) + ' x the risk)' : '') + '.');
     else {
-      s.push('At ' + tgt + ' ' + (p.lockTarget ? 'move the stop up to the target (a fall back to it = sold there, a win), then ' :
+      s.push('At ' + tgt + ' ' + (part ? 'sell ' + part + '% and for the rest ' : '') + (p.lockTarget ? 'move the stop up to the target (a fall back to it = sold there, a win), then ' :
         p.breakeven ? 'move the stop to the entry, then ' : 'keep the stop, then ') +
         (p.trail === 'lows' ? 'trail it under the lowest low of the last ' + p.trailN + ' candle' + (p.trailN === 1 ? '' : 's') :
           p.trail === 'pct' ? 'trail it ' + F.num(p.trailPct, 1) + '% under the highest price' :
@@ -512,12 +529,17 @@
   }
 
   function exitHtml(f) {
-    return '<div class="form-grid">' + field('Target', sel('targetMode', f.targetMode)) +
-      (f.targetMode === 'swing' ? num('swingMinR', f.swingMinR, 'At least this many R above the entry', ' min="0" step="0.25"') : '') +
+    return '<div class="form-grid">' +
+      (f.after === 'trail' ? field('At the target, sell part of it (the rest follows "At the target")', sel('partialPct', f.partialPct), 'wide') : '') +
+      field('Before the target: stop to the entry', sel('beAt', f.beAt)) +
+      field('Time stop', sel('timeN', f.timeN)) + (Number(f.timeN) ? field('… if price is', sel('timeR', f.timeR)) : '') +
       num('maxDays', f.maxDays, 'Sell after at most (days)', ' min="1" step="1"') +
       num('cost', f.cost, 'Costs per trade, buy + sell (%)', ' min="0" step="0.05"') +
       (f.after === 'trail' ? '<div class="field lab-checks">' + check('lockTarget', f.lockTarget, 'At the target, move the stop up to the target (a fall back to it = a win)') +
-        check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>';
+        check('breakeven', f.breakeven, 'At the target, move the stop to the entry') + '</div>' : '') + '</div>' +
+      '<p class="sub">Part at the target: e.g. half is sold at the target, the other half stays with your trail - the result counts both. ' +
+      'Stop to the entry: once price is that many R up (before the target), a fall back to the entry closes the trade at about 0R. ' +
+      'Time stop: a trade that has not moved that many R up within those candles is sold at that candle\'s close.</p>';
   }
 
   /** The zone rules (owner, 12-Nov-2026, after his first charts PDF). */
@@ -571,7 +593,11 @@
       field('Stop loss', sel('stop', f.stop), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
-      (f.targetMode === 'swing' ? '' : num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"')) +
+      field('… or x ATR under the entry, whichever is lower', sel('stopAtr', f.stopAtr)) +
+      field('Target', sel('targetMode', f.targetMode)) +
+      (f.targetMode === 'R' ? num('targetR', f.targetR, 'Target (R = times the risk)', ' min="0.25" step="0.25"') :
+        f.targetMode === 'pct' ? field('Target %', sel('targetPct', f.targetPct)) :
+          num('swingMinR', f.swingMinR, 'At least this many R above the entry', ' min="0" step="0.25"')) +
       field('At the target', sel('after', f.after), 'wide') +
       (trailOn ? field('Then', sel('trail', f.trail), 'wide') : '') +
       (trailOn && f.trail === 'lows' ? num('trailN', f.trailN, 'N candles', ' min="1" step="1"') : '') +
@@ -607,7 +633,7 @@
       else if (NUMS.indexOf(k) >= 0) { var v = Number(inp.value); if (isFinite(v) && inp.value !== '') f[k] = v; }
       else f[k] = String(inp.value || '');
     });
-    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
+    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch', 'timeN'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
     f.trailN = Math.max(1, f.trailN); f.maxDays = Math.max(1, f.maxDays); f.maxOpen = Math.max(1, f.maxOpen);
     return f;
   }
@@ -910,6 +936,7 @@
         (sk.risk ? ' · ' + F.int(sk.risk) + ' skipped (risk too big)' : '') +
         (sk.struct ? ' · ' + F.int(sk.struct) + ' left out by your market-structure rules' : '') +
         (sk.noswing ? ' · ' + F.int(sk.noswing) + ' without a swing high above (target)' : '') +
+        (sk.nomh ? ' · ' + F.int(sk.nomh) + ' without a CHoCH move high far enough above (target)' : '') +
         (sk.zoneentry ? ' · ' + F.int(sk.zoneentry) + ' not first touches (the zone-top order fills on those only)' : '') +
         (sk.shape ? ' · ' + F.int(sk.shape) + ' Springs left out by your shape rules' : '') +
         (sk.ema ? ' · ' + F.int(sk.ema) + ' left out by your EMA rules' : '') +
@@ -1025,7 +1052,7 @@
             return r.struct ? '<span class="lab-acct" tabindex="0" data-tip="' + esc(r.struct) + '">' + ui.badge(x[0], x[1]) + '</span>' : ui.badge(x[0], x[1]);
           }, title: 'Market structure at the signal (hover / tap for the CHoCH level, its date, the final low, the move high, the zone\'s place in the move and the BOS)' },
         { key: 'entry', label: 'Entry', type: 'num', digits: 2 }, { key: 'stop', label: 'Stop', type: 'num', digits: 2 },
-        { key: 'target', label: 'Target', type: 'num', digits: 2, title: 'The target price (R multiple or the last swing high)' },
+        { key: 'target', label: 'Target', type: 'num', digits: 2, title: 'The target price (R multiple, % above the entry, the CHoCH move high or the last swing high)' },
         { key: 'riskPct', label: 'Risk %', type: 'num', digits: 2 },
         { key: 'exit', label: 'Exit', type: 'num', digits: 2 }, { key: 'exitOn', label: 'Sold on' },
         { key: 'reason', label: 'Why', html: function (r) { var x = REASON[r.reason] || [r.reason, '']; return ui.badge(x[0], x[1]); } },
@@ -1045,6 +1072,10 @@
         { key: 'zn', label: 'Zone no.', type: 'num', digits: 0, title: 'Which discount zone of the CHoCH move: 1 = the only (or the higher) one, 2 = the 2nd (under a 1st that was only watched)' },
         { key: 'mit', label: 'Touches before move high', type: 'num', digits: 0, title: 'Candles that touched the zone (a wick in it counts) between its forming and the move high - at most 2 allowed' },
         { key: 'mv', label: 'Move volume x', type: 'num', digits: 1, title: 'The biggest volume in the CHoCH move (final low to the CHoCH candle), x the average of the 20 candles before the move' },
+        { key: 'stopBy', label: 'Stop from', get: function (r) { return r.stopBy === 'atr' ? 'ATR' : r.stopBy === 'rule' ? 'Your rule' : ''; },
+          title: 'Which stop was lower (and used): your stop rule or the ATR stop' },
+        { key: 'part', label: 'Sold at the target', get: function (r) { return r.part ? String(r.part).replace(/\bat /, 'at ₹') : ''; },
+          title: 'The part sold at the target (the Exit column is the average of both parts)' },
         { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
           // owner, 09-Nov-2026: "show the reason if I place the cursor on the word skipped" (a tap on a phone)
           html: function (r) {
@@ -1062,6 +1093,7 @@
         if (c.key === 'upW' || c.key === 'loW' || c.key === 'dip') return rows.some(function (r) { return isNum(r[c.key]); });   // runs before 10-Nov-2026 have none
         if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag' || c.key === 'zpct' || c.key === 'zn' || c.key === 'mv' || c.key === 'mit') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure / a zone (12-Nov-2026)
         if (c.key === 'pat') return rows.some(function (r) { return r.pat; });
+        if (c.key === 'stopBy' || c.key === 'part') return rows.some(function (r) { return r[c.key]; });   // with the ATR stop / a part sold (13-Nov-2026)
         return true;
       })
     }).mount($('#lab-trades', box));
@@ -1129,7 +1161,7 @@
       var f = readForm(el);
       saveForm(f);
       var inSec = SECTIONS.some(function (x) { return (x[2] || SHAPE_KEYS).indexOf(k) >= 0; });
-      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry'].indexOf(k) >= 0 || inSec ||
+      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN'].indexOf(k) >= 0 || inSec ||
           Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the cards and "changed" counts follow
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
