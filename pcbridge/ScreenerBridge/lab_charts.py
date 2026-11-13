@@ -24,7 +24,9 @@ import zlib
 from datetime import date
 
 PAGE_W, PAGE_H = 842.0, 595.0          # A4 landscape, points
-MAX_TRADES = 1500                      # trades in one PDF - two pages each (the rest are counted on the cover)
+# trades in one PDF - two pages each (the rest are counted on the cover). Owner, 13-Nov-2026: "yen ore pdf ah pana mudiyatha?"
+# (his 3,411-trade run stopped at 1,500 - all losing trades): ~3.7 KB a page, so 10,000 trades = 20,000 pages ~ 75 MB
+MAX_TRADES = 10000
 KEEP_FILES = 20                        # older PDFs in the folder are removed
 MAX_WINDOW = 260                       # candles on one chart at most
 FOLDER = 'lab_charts'

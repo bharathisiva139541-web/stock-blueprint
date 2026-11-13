@@ -351,7 +351,7 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    fall with its lower highs / lows, the CHoCH, the zone and how deep it sits in the rise, the first touch, no BOS yet,
    how old the CHoCH was, your filters, the plan) and how it ended (for a stop loss: how far it went up first, a wick only
    or a close under the stop, a big candle / heavy volume, whether the zone and the final low held, whether price reached
-   the target later). At most 1,500 trades (3,000 pages) a PDF.
+   the target later). Every trade of a run in ONE PDF (13-Nov-2026; was 1,500) - at most 10,000 trades (20,000 pages, ~75 MB).
  - Real or chance? + What worked best + Development / test (12-Nov-2026, after your ChatGPT review): every run now shows
    the likely range (90%) of its average R ("An edge" = the whole range above 0; "Could be chance" = it spans 0), and
    tables of the finished trades split one feature at a time - zone depth in the move, lower highs / lows before the
