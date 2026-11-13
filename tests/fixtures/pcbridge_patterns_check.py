@@ -220,11 +220,12 @@ def lists(rows):
 
 
 D0P = date(2015, 1, 5).toordinal()               # a Monday
+BENCH = (list(range(D0P, D0P + 4000)), walk(4242, 4000, vol=0.01, start=10000.0)[3])   # a NIFTY 50 stand-in (I23 I24 Q13)
 
 
 def ev_at(pid, rows, tf='D', P=None, day=True):
     o, h, l, c, v = lists(rows)
-    return [e for e in det.detect(pid, o, h, l, c, v, tf, P, day=list(range(D0P, D0P + len(c))) if day else None)
+    return [e for e in det.detect(pid, o, h, l, c, v, tf, P, day=list(range(D0P, D0P + len(c))) if day else None, bench=BENCH)
             if e[0] == len(c) - 1]
 
 
@@ -457,8 +458,381 @@ DN13 = base(30, 'down')
 P13 = DN13[-1][3]
 yes('V13', DN13 + [[P13 - 0.5, P13 + 0.2, P13 - 3.0, P13 + 0.1, 2500]]); no('V13', DN13 + [[P13 - 0.5, P13 + 0.2, P13 - 3.0, P13 + 0.1, 1500]])
 yes('V15', r6 + [[102.0, 104.0, 101.9, 103.5, 1600]]); no('V15', r6 + [[102.0, 104.0, 101.9, 103.5, 1300]])
-assert sorted(CRAFT) == sorted(p for p in reg.implemented() if p not in ('K08', 'B01', 'B02', 'B03', 'B04', 'I01')), \
-    sorted(set(reg.implemented()) - set(CRAFT))
+assert sorted(CRAFT) == sorted(reg.P2), sorted(set(reg.P2) - set(CRAFT))
+
+# ------------------------------------------------------------------ 4c. PHASE 3 (owner, 13-Nov-2026: "Do it"): the new indicators an
+# independent second way (brute force / another smoothing / properties), the patterns built on indicator crosses recounted from
+# those series, made charts for the structure / SMC / rare patterns (the event where it must come, a changed copy where it must
+# not), and properties of every phase-3 event on random charts.
+import pattern_p3 as p3  # noqa: E402
+
+P3_IDS = sorted(p3.DETECTORS)
+assert len(P3_IDS) == 102 and all(p in reg.SPECS for p in P3_IDS), [p for p in P3_IDS if p not in reg.SPECS]
+assert set(reg.implemented()) == set(det.DETECTORS) and len(reg.implemented()) == 172
+o3, h3, l3, c3, v3 = walk(303, 400, vol=0.04)
+n3 = len(c3)
+
+
+def brute_max(x, n, i):
+    return max(x[i - n + 1:i + 1])
+
+
+rmx, rmn = ind.rolling_max(h3, 9), ind.rolling_min(l3, 9)
+assert all(rmx[i] is None for i in range(8)) and all(rmx[i] == brute_max(h3, 9, i) and rmn[i] == min(l3[i - 8:i + 1])
+                                                   for i in range(8, n3))
+
+
+def ema_ref(xs, n):                       # seeded with the mean of the first n KNOWN values
+    out, prev, buf = [], None, []
+    for x in xs:
+        if x is None:
+            out.append(None)
+            continue
+        if prev is None:
+            buf.append(x)
+            if len(buf) == n:
+                prev = sum(buf) / n
+            out.append(prev)
+        else:
+            prev = prev + 2.0 / (n + 1) * (x - prev)
+            out.append(prev)
+    return out
+
+
+ml, ms, mh = ind.macd(c3)
+e12, e26 = ema_ref(c3, 12), ema_ref(c3, 26)
+line = [None if a is None or b is None else a - b for a, b in zip(e12, e26)]
+sig = ema_ref(line, 9)
+assert all(near(a, b, 1e-9) for a, b in zip(ml, line)) and all(near(a, b, 1e-9) for a, b in zip(ms, sig))
+assert ml[24] is None and ml[25] is not None and ms[32] is None and ms[33] is not None
+assert all(near(a, (b - s) if b is not None and s is not None else None, 1e-9) for a, b, s in zip(mh, ml, ms))
+
+sk, sd = ind.stochastic(h3, l3, c3)
+raw = [None] * n3
+for i in range(13, n3):
+    hh, ll = max(h3[i - 13:i + 1]), min(l3[i - 13:i + 1])
+    raw[i] = 50.0 if hh == ll else 100.0 * (c3[i] - ll) / (hh - ll)
+for i in range(n3):
+    k_ = None if i < 15 else sum(raw[i - 2:i + 1]) / 3
+    d_ = None if i < 17 else sum(sum(raw[j - 2:j + 1]) / 3 for j in range(i - 2, i + 1)) / 3
+    assert near(sk[i], k_, 1e-9) and near(sd[i], d_, 1e-9), i
+assert ind.stochastic([5.0] * 20, [5.0] * 20, [5.0] * 20)[0][-1] == 50.0      # no range = 50
+
+cc = ind.cci(h3, l3, c3, 20)
+for i in range(19, n3):
+    tp = [(h3[j] + l3[j] + c3[j]) / 3 for j in range(i - 19, i + 1)]
+    m_ = sum(tp) / 20
+    md = sum(abs(t - m_) for t in tp) / 20
+    assert near(cc[i], (tp[-1] - m_) / (0.015 * md), 1e-7), i
+assert ind.cci([2.0] * 25, [1.0] * 25, [1.5] * 25, 20)[-1] == 0.0
+
+mf = ind.mfi(h3, l3, c3, v3, 14)
+tp3 = [(a + b + d) / 3 for a, b, d in zip(h3, l3, c3)]
+for i in range(n3):
+    if i < 14:
+        assert mf[i] is None
+        continue
+    pos = sum(tp3[j] * v3[j] for j in range(i - 13, i + 1) if tp3[j] > tp3[j - 1])
+    neg = sum(tp3[j] * v3[j] for j in range(i - 13, i + 1) if tp3[j] < tp3[j - 1])
+    assert near(mf[i], 100 - 100 / (1 + pos / neg) if neg else 100.0, 1e-7), i
+
+ob3, ad3 = ind.obv(c3, v3), ind.ad_line(h3, l3, c3, v3)
+for i in range(1, n3):
+    assert ob3[i] == sum(v3[j] * ((c3[j] > c3[j - 1]) - (c3[j] < c3[j - 1])) for j in range(1, i + 1))
+    rng_ = h3[i] - l3[i]
+    assert near(ad3[i] - ad3[i - 1], (2 * c3[i] - h3[i] - l3[i]) / max(rng_, 0.01) * v3[i], 1e-6)
+
+# +DI / -DI / ADX with Wilder's SUM smoothing (first = the sum of n, then s - s / n + x) - the ratios equal the mean form's
+pdi, mdi, adx = ind.dmi(h3, l3, c3, 14)
+trs, pps, mms = [], [], []
+for i in range(1, n3):
+    up_, dn_ = h3[i] - h3[i - 1], l3[i - 1] - l3[i]
+    pps.append(up_ if up_ > dn_ and up_ > 0 else 0.0)
+    mms.append(dn_ if dn_ > up_ and dn_ > 0 else 0.0)
+    trs.append(max(h3[i] - l3[i], abs(h3[i] - c3[i - 1]), abs(l3[i] - c3[i - 1])))
+
+
+def wsum(xs, n):
+    out, s = [], None
+    for k, x in enumerate(xs):
+        if k == n - 1:
+            s = sum(xs[:n])
+        elif k >= n:
+            s = s - s / n + x
+        out.append(s)
+    return out
+
+
+st_, sp_, sm_ = wsum(trs, 14), wsum(pps, 14), wsum(mms, 14)
+dxs = []
+for k in range(len(trs)):
+    if st_[k] is None:
+        continue
+    p_, m_ = 100 * sp_[k] / st_[k], 100 * sm_[k] / st_[k]
+    assert near(pdi[k + 1], p_, 1e-7) and near(mdi[k + 1], m_, 1e-7)
+    dxs.append((k + 1, 100 * abs(p_ - m_) / (p_ + m_)))
+a_ = sum(d for _, d in dxs[:14]) / 14
+assert near(adx[dxs[13][0]], a_, 1e-7) and adx[dxs[12][0]] is None
+for idx, d in dxs[14:]:
+    a_ = (a_ * 13 + d) / 14
+    assert near(adx[idx], a_, 1e-7)
+
+rc = ind.roc(c3, 12)
+assert all(rc[i] is None for i in range(12)) and all(near(rc[i], 100 * (c3[i] / c3[i - 12] - 1), 1e-9) for i in range(12, n3))
+ts, tss = ind.tsi(c3)
+mo = [None] + [c3[i] - c3[i - 1] for i in range(1, n3)]
+num, den = ema_ref(ema_ref(mo, 25), 13), ema_ref(ema_ref([None] + [abs(x) for x in mo[1:]], 25), 13)
+tref = [None if a is None else 100 * a / b for a, b in zip(num, den)]
+assert all(near(a, b, 1e-7) for a, b in zip(ts, tref)) and all(near(a, b, 1e-7) for a, b in zip(tss, ema_ref(tref, 7)))
+au, adn = ind.aroon(h3, l3, 25)
+for i in range(25, n3):
+    w_ = list(range(i - 25, i + 1))
+    bh_ = max(w_, key=lambda j: (h3[j], j))
+    bl_ = min(w_, key=lambda j: (l3[j], -j))
+    assert au[i] == 100.0 * (25 - (i - bh_)) / 25 and adn[i] == 100.0 * (25 - (i - bl_)) / 25
+# Parabolic SAR: under the lows in an up trend, over the highs in a down trend; a flip puts the SAR on the other trend's extreme
+sar, tr3 = ind.psar(h3, l3, c3)
+t0, flips = 1, 0
+for i in range(2, n3):
+    assert (sar[i] <= l3[i] + 1e-9) if tr3[i] == 1 else (sar[i] >= h3[i] - 1e-9), i
+    if tr3[i] != tr3[i - 1]:
+        flips += 1
+        ext = min(l3[t0:i + 1]) if tr3[i] == 1 else max(h3[t0:i + 1])
+        assert near(sar[i], ext, 1e-9), (i, sar[i], ext)
+        t0 = i
+assert flips > 10
+pr = ind.pct_rank(c3, 50)
+assert all(pr[i] is None for i in range(50)) and all(near(pr[i], 100.0 * sum(1 for x in c3[i - 50:i] if x <= c3[i]) / 50, 1e-9)
+                                                     for i in range(50, n3))
+ls = ind.linreg_slope(c3, 20)
+for i in range(19, n3, 7):
+    w_ = c3[i - 19:i + 1]
+    my_ = sum(w_) / 20
+    assert near(ls[i], sum((k - 9.5) * (w_[k] - my_) for k in range(20)) / sum((k - 9.5) ** 2 for k in range(20)), 1e-7)
+tk, kj, sa, sb = ind.ichimoku(h3, l3)
+for i in range(51, n3):
+    assert near(tk[i], (max(h3[i - 8:i + 1]) + min(l3[i - 8:i + 1])) / 2, 1e-9)
+    assert near(kj[i], (max(h3[i - 25:i + 1]) + min(l3[i - 25:i + 1])) / 2, 1e-9)
+    assert near(sb[i], (max(h3[i - 51:i + 1]) + min(l3[i - 51:i + 1])) / 2, 1e-9) and near(sa[i], (tk[i] + kj[i]) / 2, 1e-9)
+
+# the patterns that are an indicator cross: recounted from the series checked above (signal candles + stop references)
+rs3 = ind.rsi(c3, 14)
+mid3 = ind.sma(c3, 20)
+sd3 = ind.stdev(c3, 20)
+up3 = [None if m is None else m + 2 * s for m, s in zip(mid3, sd3)]
+lo3 = [None if m is None else m - 2 * s for m, s in zip(mid3, sd3)]
+pb3 = [None if u is None or u == q else (c3[i] - q) / (u - q) for i, (u, q) in enumerate(zip(up3, lo3))]
+z50 = [None if m is None or not s else (c3[i] - m) / s for i, (m, s) in enumerate(zip(ind.sma(c3, 50), ind.stdev(c3, 50)))]
+
+
+def cu(a, b, i):
+    bi, bj = (b[i], b[i - 1]) if isinstance(b, list) else (b, b)
+    return i >= 1 and None not in (a[i], a[i - 1], bi, bj) and a[i] > bi and a[i - 1] <= bj
+
+
+grn = lambda i: c3[i] > o3[i]  # noqa: E731
+CROSS = {
+    'I04': (lambda i: cu(rs3, 50.0, i) and i >= 10 and any(x is not None and x < 40 for x in rs3[i - 10:i]), 10),
+    'I05': (lambda i: cu(rs3, 30.0, i), 10),
+    'I06': (lambda i: cu(ml, ms, i) and ml[i] < 0 and ms[i] < 0, 10),
+    'I07': (lambda i: cu(ml, 0.0, i), 20),
+    'I09': (lambda i: cu(sk, sd, i) and sk[i - 1] < 20 and sd[i - 1] < 20, 10),
+    'I10': (lambda i: cu(sk, 20.0, i), 10),
+    'I11': (lambda i: cu(cc, -100.0, i), 10),
+    'I15': (lambda i: cu(adx, 25.0, i) and pdi[i] > mdi[i], 10),
+    'I16': (lambda i: cu(rc, 0.0, i) and i >= 20 and any(x is not None and x <= -5 for x in rc[i - 20:i]), 20),
+    'I17': (lambda i: cu(ts, tss, i) and ts[i] < 0, 10),
+    'I18': (lambda i: cu(au, adn, i) and au[i] >= 50, 10),
+    'I20': (lambda i: lo3[i - 1] is not None and c3[i - 1] < lo3[i - 1] and c3[i] > lo3[i] and grn(i), 2),
+    'I21': (lambda i: i >= 25 and mid3[i] is not None and up3[i] > c3[i] > mid3[i] and all(c3[j] < mid3[j] for j in range(i - 5, i)), 6),
+    'M14': (lambda i: cu(tk, kj, i), 10),
+    'M15': (lambda i: cu(sa, sb, i), 10),
+    'Q02': (lambda i: cu(z50, -2.0, i), 5),
+    'Q03': (lambda i: cu(pb3, 0.5, i) and i >= 5 and any(x is not None and x < 0 for x in pb3[i - 5:i]), 6),
+}
+for pid, (cond, look) in CROSS.items():
+    want = [[i, i, i, h3[i], min(l3[max(0, i - look + 1):i + 1])] for i in range(1, n3) if cond(i)]
+    got = [e[:5] for e in det.detect(pid, o3, h3, l3, c3, v3, 'D')]
+    assert got == want, (pid, got[:3], want[:3])
+    assert want or pid in ('I15', 'Q02', 'Q03', 'I09', 'I16', 'I20'), pid
+fl = [i for i in range(2, n3) if tr3[i] == 1 and tr3[i - 1] == -1]
+assert [e[0] for e in det.detect('I19', o3, h3, l3, c3, v3, 'D')] == fl and fl
+
+# made charts (zig = straight legs through the given (candle, close) points: open = the close before, high / low 0.2 beyond
+# the body, so the turning points are clean swings)
+
+
+def zig(points, vu=1000.0, vd=1000.0, w=0.2):
+    rows, prev = [], points[0][1]
+    for (a, pa), (b, pb) in zip(points, points[1:]):
+        for k in range(a + (1 if rows else 0), b + 1):
+            c = round(pa + (pb - pa) * (k - a) / float(b - a), 2)
+            o = prev if rows else c
+            rows.append([o, round(max(o, c) + w, 2), round(min(o, c) - w, 2), c, vu if c > o else vd])
+            prev = c
+    return rows
+
+
+def calm3(n=30, v=1000.0, w=1.0):
+    return [[100.0, 100.0 + w, 100.0 - w, 100.2 if k % 2 == 0 else 99.8, v] for k in range(n)]
+
+
+def on(pid, rows, at, occ=None, stop=None):
+    """The pattern exactly on candle `at` of the made chart (cut there) - via yes(), so the chart joins CRAFT."""
+    return yes(pid, rows[:at + 1], occ=occ, stop=stop)
+
+
+Z1 = zig([(0, 105), (6, 112), (12, 100), (18, 115), (24, 104), (32, 110)])
+on('P01', Z1, 29, occ=12, stop=103.8)
+no('P01', zig([(0, 105), (6, 112), (12, 100), (18, 115), (24, 98), (32, 110)])[:30])                    # a lower low
+Z2 = zig([(0, 105), (6, 110), (12, 100), (18, 106), (22, 102)])
+yes('P02', Z2 + [[101.5, 101.8, 99.0, 99.5], [99.6, 100.5, 99.4, 100.2], [100.2, 102.0, 100.1, 101.9]], occ=23, stop=99.0)
+no('P02', Z2 + [[101.5, 101.8, 99.0, 99.5], [99.6, 100.5, 99.4, 100.2], [100.2, 102.0, 100.1, 101.7]])
+yes('P03', zig([(0, 100), (6, 115), (12, 104), (18, 111), (24, 103), (30, 112)]), occ=18)
+no('P03', zig([(0, 100), (6, 115), (12, 104), (18, 111), (24, 103), (30, 111.0)]))
+on('P04', zig([(0, 100), (6, 120), (12, 105), (18, 115), (24, 100), (30, 118), (36, 110)]), 35, stop=99.8)
+no('P04', zig([(0, 100), (6, 120), (12, 105), (18, 115), (24, 100), (30, 114), (36, 110)])[:36])
+on('P05', zig([(0, 120), (6, 125), (12, 110), (18, 118), (24, 105), (30, 112), (36, 108), (42, 115)]), 41, stop=107.8)
+no('P05', zig([(0, 120), (6, 125), (12, 110), (18, 118), (24, 105), (30, 112), (36, 103), (42, 115)])[:42])
+Z6 = zig([(0, 100), (6, 130), (12, 115), (18, 125), (24, 110), (30, 120), (36, 104), (44, 124)])
+e6 = on('P06', Z6, 43, occ=36, stop=103.8)
+assert e6[3] == 120.2 and e6[5] == 2 and not ev_at('P07', Z6[:44])                     # an ordinary candle: no MSS
+on('P07', Z6[:42] + [[119.0, 124.0, 118.9, 123.9]], 42)
+on('P08', zig([(0, 100), (6, 108), (12, 103), (18, 112), (24, 106), (30, 113)]), 30, stop=105.8)
+no('P08', zig([(0, 100), (6, 108), (12, 103), (18, 112), (24, 102), (30, 113)]))                         # a lower low: no uptrend
+Z9 = zig([(0, 105), (6, 110), (12, 100), (18, 106), (22, 103)])
+e9 = yes('P09', Z9 + [[103, 103.2, 99.5, 100.5]], occ=12, stop=99.5)
+assert e9[5] == 0.3
+no('P09', Z9 + [[103, 103.2, 99.5, 99.7]])
+yes('S06', Z9 + [[103, 103.2, 98.9, 100.5]]); no('S06', Z9 + [[103, 103.2, 99.5, 100.5]])              # 0.5 x ATR deep
+yes('P10', Z9 + [[102.5, 102.7, 99.6, 99.7], [99.7, 100.5, 99.5, 100.3]], occ=23, stop=99.5)
+no('P10', Z9 + [[102.5, 102.7, 99.6, 99.7], [99.7, 100.5, 99.5, 99.75]])
+C3 = calm3()
+yes('P11', C3 + [[99.5, 99.8, 98.0, 98.5], [98.5, 99.6, 98.4, 99.3]], occ=30, stop=98.0)
+no('P11', C3 + [[99.5, 99.8, 98.0, 98.5], [98.5, 99.6, 98.4, 98.9]])
+Z12 = zig([(0, 106), (6, 112), (12, 100), (18, 108), (24, 100.5), (30, 107), (34, 103)])
+e12_ = yes('P12', Z12 + [[101.0, 101.8, 100.1, 101.6]], occ=12, stop=100.1)
+assert e12_[5] == 99.8
+no('P12', Z12 + [[100.3, 101.8, 100.1, 101.6]])                                                           # no long lower shadow
+Z13 = zig([(0, 100), (6, 110), (12, 104), (18, 110.2), (24, 105), (29, 111.6)]) + [[111.6, 111.8, 111.0, 111.2]]
+yes('P13', Z13 + [[111.2, 111.5, 110.9, 111.4]], occ=29); no('P13', Z13 + [[111.2, 111.5, 110.0, 110.3]])
+Z14 = zig([(0, 100), (6, 110), (12, 104), (17, 111)])
+yes('P14', Z14 + [[111.0, 111.3, 110.5, 110.9]], occ=17, stop=110.5); no('P14', Z14 + [[111.0, 111.3, 110.0, 110.1]])
+yes('P15', Z14 + [[111.0, 111.3, 110.5, 110.9], [110.9, 111.6, 110.8, 111.5]], occ=18, stop=110.5)
+no('P15', Z14 + [[111.0, 111.3, 110.5, 110.9], [110.9, 111.6, 110.8, 111.2]])
+yes('P18', zig([(0, 100), (6, 120), (12, 110), (18, 116), (24, 108), (30, 113)]), occ=18)
+no('P18', zig([(0, 100), (6, 120), (12, 110), (18, 116), (24, 108), (30, 111)]))
+P19B = zig([(0, 100), (10, 110), (20, 100), (30, 108), (40, 104.5)]) + [[104.5, 104.8, 104.2, 104.6]] * 10
+yes('P19', P19B + [[104.6, 105.5, 104.5, 105.3]], occ=41); no('P19', P19B + [[104.6, 104.9, 104.5, 104.7]])
+yes('P20', C3 + [[100, 103, 98, 102.5], [102, 102.8, 99, 101], [101, 104, 100.8, 103.5]], occ=30, stop=99)
+no('P20', C3 + [[100, 103, 98, 102.5], [102, 102.8, 99, 101], [101, 104, 100.8, 102.9]])
+DN3 = base(30, 'down')
+PD3 = DN3[-1][3]
+yes('P21', DN3 + [[PD3 - 0.3, PD3 + 1.5, PD3 - 1.2, PD3 + 1.3]]); no('P21', DN3 + [[PD3 - 0.3, PD3 + 1.5, PD3 - 1.2, PD3 + 1.0]])
+R22 = C3 + [[99.8, 100.2, 99.6, 100.0], [100.0, 100.5, 99.8, 100.3], [100.3, 100.8, 100.1, 100.6], [100.6, 101.1, 100.4, 100.9]]
+yes('P22', R22, occ=30, stop=99.6); no('P22', R22 + [[100.9, 101.3, 100.7, 101.1]])                       # only the first
+yes('P23', C3 + [[100, 103.5, 99.9, 103.4]], occ=20); no('P23', C3 + [[100, 102.5, 99.9, 102.4]])
+on('P24', zig([(0, 110), (6, 118), (12, 100), (18, 108), (24, 98), (30, 103)]), 29, occ=12, stop=97.8)
+no('P24', zig([(0, 110), (6, 118), (12, 100), (18, 108), (24, 92), (30, 103)])[:30])                       # a full-size fall
+# SMC
+ZS1 = zig([(0, 110), (6, 116), (12, 102), (18, 112), (24, 104), (30, 114), (36, 106), (42, 112), (46, 108)])
+yes('S01', ZS1 + [[108, 108.2, 101.0, 102.5]], occ=12, stop=101.0); no('S01', ZS1 + [[108, 108.2, 101.7, 102.5]])
+ZS2 = zig([(0, 108), (6, 112), (12, 100), (18, 108), (24, 100.2), (30, 107), (34, 104)])
+yes('S02', ZS2 + [[104, 104.2, 99.5, 100.4]], occ=12); no('S02', ZS2 + [[104, 104.2, 99.5, 99.7]])
+yes('S03', C3 + [[100, 100.5, 98.8, 100.3]]); no('S03', C3 + [[100.5, 100.6, 98.8, 100.3]])               # red
+yes('S04', calm3(35) + [[100, 100.5, 99.2, 100.2], [100.0, 100.4, 98.8, 100.3]])
+no('S04', calm3(35) + [[100, 100.5, 98.9, 98.95], [100.0, 100.4, 98.8, 100.3]])                          # the week's 1st dip closed under
+yes('S05', calm3(27) + [[100, 100.5, 99.5, 100.2], [100, 100.4, 98.7, 100.3]])
+no('S05', calm3(27) + [[100, 100.5, 99.5, 100.2], [100, 100.4, 98.7, 98.8]])                              # closed under it
+assert det.detect('S03', *lists(C3 + [[100, 100.5, 98.8, 100.3]]), 'D') == [] and not ev_at('S03', C3 + [[100, 100.5, 98.8, 100.3]], 'W')
+ZS7 = zig([(0, 110), (6, 115), (12, 100), (18, 108), (21, 104), (24, 107), (30, 102)])
+yes('S07', ZS7 + [[102, 102.2, 99.5, 100.5]], occ=12)
+no('S07', zig([(0, 110), (6, 115), (12, 100), (24, 107), (30, 102)]) + [[102, 102.2, 99.5, 100.5]])     # no inducement low
+OB = zig([(0, 100), (6, 106), (12, 101), (16, 103)]) + [[103, 103.2, 101.8, 102.0], [102.0, 108.0, 101.9, 107.8],
+                                                         [107.8, 108.2, 105.5, 106.0], [106.0, 106.2, 104.0, 104.5]]
+yes('S08', OB + [[104.5, 104.8, 103.0, 103.6]], occ=17, stop=101.8); no('S08', OB + [[104.5, 104.8, 103.3, 103.6]])
+yes('S19', OB + [[104.5, 104.8, 103.0, 103.6]], occ=17)
+OBN = OB[:19] + [[107.8, 108.2, 102.5, 106.0]] + OB[20:]                                                 # the candle after fills the gap
+assert not ev_at('S19', OBN + [[104.5, 104.8, 103.0, 103.6]]) and not ev_at('S19', OBN)
+yes('S24', OB + [[104.5, 104.8, 103.0, 103.6], [103.6, 103.7, 101.0, 101.2], [101.2, 103.6, 101.1, 103.5]], occ=17, stop=101.0)
+no('S24', OB + [[104.5, 104.8, 103.0, 103.6], [103.6, 103.7, 101.0, 101.2], [101.2, 103.6, 101.1, 103.1]])
+on('S09', zig([(0, 110), (6, 116), (12, 104), (18, 112), (24, 100), (32, 114)]), 32, occ=18)
+on('S10', zig([(0, 110), (6, 116), (12, 104), (18, 112), (24, 106), (32, 114)]) + [[114, 114.2, 112.0, 113.0]], 33, occ=18)
+assert not ev_at('S09', zig([(0, 110), (6, 116), (12, 104), (18, 112), (24, 106), (32, 114)]) + [[114, 114.2, 112.0, 113.0]])
+ZS20 = zig([(0, 110), (6, 116), (12, 104), (18, 112), (23, 105)]) + [[105, 105.2, 102.5, 104.5]] + zig([(0, 104.5), (8, 114)])[1:]
+yes('S20', ZS20 + [[114, 114.2, 112.0, 113.0]], occ=18)
+no('S20', zig([(0, 110), (6, 116), (12, 104), (18, 112), (24, 100), (32, 114)])[:33])                   # a plain lower low: no sweep
+ZS11 = zig([(0, 112), (8, 118), (14, 110), (20, 104)]) + [[104, 104.3, 100.5, 104.2]] + zig([(0, 104.2), (6, 110), (12, 104.5)])[1:]
+yes('S11', ZS11 + [[104.5, 104.8, 103.8, 104.6]], occ=21, stop=100.5); no('S11', ZS11 + [[104.5, 104.8, 104.1, 104.6]])
+F12 = C3 + [[100, 101, 99.5, 100.8], [100.8, 104, 100.7, 103.8], [103.8, 105, 102.5, 104.5], [104.5, 104.8, 103.2, 103.5]]
+e_ = yes('S12', F12 + [[103.5, 103.6, 102.2, 102.8]], occ=30, stop=101)
+assert e_[3] == 102.5 and e_[5] == 1.49
+no('S12', F12 + [[103.5, 103.6, 100.5, 100.9]])                                                           # closed under the bottom
+yes('S13', F12 + [[103.5, 103.6, 102.2, 102.8], [102.8, 103, 101.6, 102.0]], occ=30)
+no('S13', F12 + [[103.5, 103.6, 102.2, 102.8], [102.8, 103, 101.8, 102.0]])                              # middle = 101.75 not reached
+F16 = C3 + [[100, 101, 99.5, 100.8], [100.8, 105, 100.7, 104.6], [104.6, 105.5, 102.5, 105.2], [105.2, 105.4, 103.2, 103.5]]
+yes('S16', F16 + [[103.5, 103.6, 102.2, 102.8]])
+no('S16', C3 + [[100, 101, 99.5, 100.8], [100.8, 103.2, 100.7, 102.8], [102.8, 104, 102.5, 103.5], [103.5, 103.6, 102.2, 102.8]])  # small middle
+yes('S25', C3 + [[100, 101, 99.5, 100.8], [100.8, 105, 100.7, 104.6], [104.6, 106, 103.5, 105.5]], occ=30, stop=101)
+no('S25', C3 + [[100, 101, 99.5, 100.8], [100.8, 105, 100.7, 104.6], [104.6, 106, 102.5, 105.5]])        # gap under 1 x ATR
+B14 = C3 + [[100, 100.5, 98, 98.2], [98.2, 98.3, 95, 95.2], [95.2, 96.5, 94, 96], [96, 97.5, 95.8, 97.2]]
+yes('S14', B14 + [[97.2, 98.6, 97, 98.4]], occ=30, stop=96.5); no('S14', B14 + [[97.2, 98.6, 97, 97.9]])
+yes('S15', C3 + [[100, 104.6, 99.9, 104.5]]); no('S15', C3 + [[100, 103.6, 99.9, 103.5]])
+on('S17', zig([(0, 100), (6, 130), (12, 115), (18, 125), (24, 110), (30, 120), (35, 112)]) + [[112, 112.2, 108.5, 110.5]] +
+   zig([(0, 110.5), (6, 122)])[1:], 42, occ=36, stop=108.5)
+assert not ev_at('S17', Z6[:44])                                                                          # P06's chart: no sweep
+ZS18 = zig([(0, 100), (6, 108), (12, 103), (18, 112), (24, 106), (30, 110)]) + [[110, 110.2, 105.5, 106.5], [106.5, 109, 106.4, 108.8]]
+yes('S18', ZS18 + [[108.8, 112.6, 108.7, 112.5]], occ=31, stop=105.5); no('S18', ZS18 + [[108.8, 112.1, 108.7, 112.0]])
+ZS21 = zig([(0, 105), (10, 100), (20, 120), (30, 100.5)])
+yes('S21', ZS21 + [[100.5, 103, 100, 102.8]], occ=20, stop=100); no('S21', ZS21 + [[100.5, 102, 100, 101.9]])
+e_ = on('S22', zig([(0, 100), (6, 130), (12, 115), (18, 125), (24, 110), (30, 120), (36, 104), (44, 124), (52, 110)]), 50, occ=36)
+assert e_[5] >= 50
+BP = C3 + [[100, 100.5, 99, 99.2], [99.2, 99.3, 96, 96.2], [96.2, 97.5, 95.8, 97.3], [97.3, 97.6, 96.5, 97.4], [97.4, 101, 97.3, 100.8],
+           [100.8, 102, 98.5, 101.5]]
+yes('S23', BP + [[101.5, 101.8, 98.3, 99.0]], occ=30, stop=97.6); no('S23', BP + [[101.5, 101.8, 98.6, 99.0]])
+# volume
+ZV = [(0, 100), (6, 108), (12, 102), (18, 110), (24, 104), (30, 112), (36, 106), (42, 110)]
+on('V09', zig(ZV, vu=2000.0), 41, occ=12, stop=105.8); no('V09', zig(ZV)[:42])                           # OBV flat at the lows
+ZV10 = zig([(0, 106), (6, 110), (12, 100), (18, 106), (24, 101)])
+yes('V10', ZV10 + [[100.5, 100.9, 100.0, 100.6, 2500.0]]); no('V10', ZV10 + [[100.5, 100.9, 100.0, 100.6, 1500.0]])
+yes('V14', DN3 + [[PD3, PD3 + 0.4, PD3 - 0.4, PD3 - 0.1, 2500.0], [PD3 - 0.1, PD3 + 0.8, PD3 - 0.2, PD3 + 0.6]], occ=30)
+no('V14', DN3 + [[PD3, PD3 + 0.4, PD3 - 0.4, PD3 - 0.1, 2500.0], [PD3 - 0.1, PD3 + 0.8, PD3 - 0.2, PD3 + 0.3]])
+V16R = C3 + [[100.5, 100.7, 98.0, 98.3, 2500.0], [98.3, 99.5, 98.2, 99.3]]
+yes('V16', V16R + [[99.3, 101, 99.2, 100.9]], occ=30, stop=98.0); no('V16', V16R + [[99.3, 101, 99.2, 100.6]])
+# quant
+UP3 = base(210, 'up')
+T3 = UP3[-1][3]
+Q1 = UP3 + [[T3, T3 + 0.2, T3 - 3.2, T3 - 3.0], [T3 - 12.0, T3 - 11.8, T3 - 13.2, T3 - 13.0]]
+yes('Q01', Q1 + [[T3 - 13.0, T3 - 11.4, T3 - 13.1, T3 - 11.6]]); no('Q01', Q1 + [[T3 - 13.0, T3 - 11.4, T3 - 13.1, T3 - 11.9]])
+Q5 = zig([(k * 10, 100 + (10 if k % 2 else 0)) for k in range(14)]) + calm3(30, w=0.5)
+yes('Q05', Q5 + [[100, 102.5, 99.9, 102.4]]); no('Q05', Q5 + [[100, 101.5, 99.9, 101.4]])
+Q7 = C3 + [[100, 100.2, 99.3, 99.5], [99.5, 99.6, 98.9, 99.0], [99, 99.1, 98.4, 98.5], [98.5, 98.6, 97.9, 98.0], [98, 98.1, 97.4, 97.5]]
+yes('Q07', Q7 + [[97.5, 98.4, 97.4, 98.3]], occ=30); no('Q07', Q7 + [[97.5, 98.4, 97.4, 98.0]])
+yes('Q08', C3 + [[101, 101.2, 96.8, 97], [97, 99.5, 96.9, 99.2]], occ=30, stop=96.8)
+no('Q08', C3 + [[101, 101.2, 96.8, 97], [97, 99.5, 96.9, 98.9]])
+yes('Q09', C3 + [[99.0, 101.5, 98.9, 101.4]]); no('Q09', C3 + [[99.9, 101.5, 98.9, 101.4]])               # opened mid-range
+yes('Q16', calm3(30, w=0.5) + [[100, 103, 99.9, 102.9, 2500.0]]); no('Q16', calm3(30, w=0.5) + [[100, 103, 99.9, 102.9, 1500.0]])
+Q19 = C3 + [[100, 100.1, 98.9, 99.0], [99, 99.1, 97.9, 98.0], [98, 98.1, 96.9, 97.0], [97, 97.1, 95.9, 96.0]]
+yes('Q19', Q19 + [[96, 100.1, 95.9, 100.0]]); no('Q19', Q19 + [[96, 97.1, 95.9, 96.9]])
+for pid in ('P07', 'Q05', 'Q08', 'S08', 'S11', 'S15', 'S16', 'S17', 'S19', 'S22', 'S24', 'V10', 'P06', 'Q16', 'Q19', 'S06'):
+    assert pid in CRAFT, pid                    # the ones rare on random charts have a made chart (section 5 needs events)
+
+# every phase-3 event on random charts: its candles in order, numbers finite, the stop reference under the signal close; the
+# patterns with an indicator series of their own are recounted above; a swing-based one never signals before its swing is known
+BENCH3 = (list(range(D0P, D0P + 2000)), walk(9191, 2000, vol=0.01, start=10000.0)[3])
+for seed in range(3):
+    o_, h_, l_, c_, v_ = walk(seed * 13 + 5, 900, vol=0.05 if seed % 2 else 0.03)
+    for pid in P3_IDS:
+        for tf in ('D', 'W', '4H'):
+            for e in det.detect(pid, o_, h_, l_, c_, v_, tf, day=list(range(D0P, D0P + 900)), bench=BENCH3):
+                assert e[0] == e[1] and 0 <= e[2] <= e[1] and all(x is None or math.isfinite(x) for x in e[3:]), (pid, e)
+                assert e[4] <= c_[e[1]] + 1e-9, (pid, tf, e, c_[e[1]])
+assert det.detect('I23', o3, h3, l3, c3, v3, 'D') == [] and det.detect('Q12', o3, h3, l3, c3, v3, 'D') == []   # no benchmark / dates
+# patSwing changes the structure patterns (and the memo key); divPivot the divergences
+o_, h_, l_, c_, v_ = walk(77, 900, vol=0.04)
+assert det.detect('P09', o_, h_, l_, c_, v_, 'D', {'patSwing': 3}) != det.detect('P09', o_, h_, l_, c_, v_, 'D')
+assert det.detect('I08', o_, h_, l_, c_, v_, 'D', {'divPivot': 3}) != det.detect('I08', o_, h_, l_, c_, v_, 'D')
+assert det.param_hash('P09', det.params_for('P09', {'patSwing': 3})) != det.param_hash('P09', det.params_for('P09', {}))
 
 # ------------------------------------------------------------------ 5. CAUSALITY: cut the chart / change what comes after - every
 # implemented pattern x D / W / 4H on random charts, and on its made chart (+ random candles after it) cut at every candle near
@@ -468,18 +842,19 @@ seen = {}
 
 
 def causal(pid, tf, o, h, l, c, v, cuts, seed):
-    full = det.detect(pid, o, h, l, c, v, tf, day=DAYS7[:len(c)])
+    full = det.detect(pid, o, h, l, c, v, tf, day=DAYS7[:len(c)], bench=BENCH)
     seen[pid] = seen.get(pid, 0) + len(full)
     for e in full:
         assert e[2] <= e[1] <= e[0] < len(c) and all(x is None or math.isfinite(x) for x in e[3:]), (pid, e)
     for k in cuts:
         want_ = [e for e in full if e[0] <= k]
-        cut = det.detect(pid, o[:k + 1], h[:k + 1], l[:k + 1], c[:k + 1], v[:k + 1], tf, day=DAYS7[:k + 1])
+        cut = det.detect(pid, o[:k + 1], h[:k + 1], l[:k + 1], c[:k + 1], v[:k + 1], tf, day=DAYS7[:k + 1], bench=BENCH)
         assert cut == want_, (pid, tf, seed, k, [x for x in cut if x not in want_][:2], [x for x in want_ if x not in cut][:2])
         o2, h2, l2, c2, v2 = walk(seed + 1000 + k, len(c) - k - 1, start=c[k])
-        alt = det.detect(pid, o[:k + 1] + o2, h[:k + 1] + h2, l[:k + 1] + l2, c[:k + 1] + c2, v[:k + 1] + v2, tf, day=DAYS7[:len(c)])
+        alt = det.detect(pid, o[:k + 1] + o2, h[:k + 1] + h2, l[:k + 1] + l2, c[:k + 1] + c2, v[:k + 1] + v2, tf, day=DAYS7[:len(c)],
+                         bench=BENCH)
         assert [e for e in alt if e[0] <= k] == want_, (pid, tf, seed, k, 'changed by later candles')
-    assert det.detect(pid, o, h, l, c, v, tf, day=DAYS7[:len(c)]) == full, 'reproducible'
+    assert det.detect(pid, o, h, l, c, v, tf, day=DAYS7[:len(c)], bench=BENCH) == full, 'reproducible'
 
 
 RAND = [walk(seed * 7 + 1, 700, vol=0.05 if seed % 2 else 0.03) for seed in range(3)]
@@ -524,7 +899,10 @@ def week_candles(ds):
     return out
 
 
+LBENCH = walk(5151, 1500, vol=0.01, start=10000.0)[3]
+LDAYS = [(D0 + timedelta(days=k)).toordinal() for k in range(1500)]
 wr = L.CacheWriter(D0 + timedelta(days=4000))
+wr.indices = {'NIFTY_50': [[d_, c_] for d_, c_ in zip(LDAYS, LBENCH)]}
 for sym, ch in charts.items():
     ds = day_candles(ch)
     wr.add(sym, 'D', ds, [])
@@ -542,14 +920,31 @@ for pid in reg.implemented():
     assert res['groupName'] == 'Pattern library: %s %s' % (pid, name) and res['warnings'] == [L.SURVIVORSHIP]
     want_n = 0
     for sym, (o, h, l, c, v) in charts.items():
-        evs = det.detect(pid, o, h, l, c, v, 'D', day=[(D0 + timedelta(days=k)).toordinal() for k in range(len(c))])
+        evs = det.detect(pid, o, h, l, c, v, 'D', day=[(D0 + timedelta(days=k)).toordinal() for k in range(len(c))],
+                         bench=(LDAYS, LBENCH))
         want_n += len({e[0] for e in evs})
         mine = sorted((t['signal'], t['entry'], t['stop']) for t in tr if t['sym'] == sym)
-        exp = sorted(((D0 + timedelta(days=e[0])).isoformat(), c[e[0]], round(e[4] * 0.995, 2)) for e in evs if e[4] * 0.995 < c[e[0]])
+        first = {}                     # the Lab takes one trade a candle: the first event of that candle that passes (stop < entry)
+        for e in evs:
+            if e[4] * 0.995 < c[e[0]] and e[0] not in first:
+                first[e[0]] = e
+        exp = sorted(((D0 + timedelta(days=e[0])).isoformat(), c[e[0]], round(e[4] * 0.995, 2)) for e in first.values())
         assert [(a_, b_) for a_, b_, _ in mine] == [(a_, b_) for a_, b_, _ in exp], (pid, sym, mine[:3], exp[:3])
         assert all(abs(x[2] - y[2]) < 0.011 for x, y in zip(mine, exp)), (pid, sym)
     assert (res['tradesTotal'] >= 1 or want_n == 0) and all(t['zone'] == '%s %s' % (pid, name) for t in tr), (pid, res['tradesTotal'])
     assert res['tradesTotal'] <= want_n
+# phase 3: the relative-strength patterns need NIFTY 50 on the laptop; the swing size reaches the detectors (and the memo key)
+try:
+    L._PatRows('nocache', 'D', {'index': {}, 'indices': {}}, dict(L.DEFAULTS, pattern='I23'))
+    raise AssertionError('I23 ran without NIFTY 50')
+except L.LabError as ex:
+    assert 'NIFTY 50' in str(ex), ex
+rs_ = L.run_job({'group': 'pattern', 'pattern': 'I23', 'maxRisk': 0})
+assert rs_['tradesTotal'] > 0 and rs_['groupName'].startswith('Pattern library: I23')
+t5 = L.run_job({'group': 'pattern', 'pattern': 'P09', 'maxRisk': 0})['tradesTotal']
+t3 = L.run_job({'group': 'pattern', 'pattern': 'P09', 'maxRisk': 0, 'patSwing': 3})['tradesTotal']
+assert t5 > 0 and t3 > t5, (t5, t3)                   # smaller swings = more swing lows to sweep
+assert L.clean_params({'patSwing': 40})['patSwing'] == 10 and L.clean_params({'patSwing': 1})['patSwing'] == 2
 # the next open, the ATR stop, a weekly run (turnover from the daily candles), the turnover filter, the charts PDF
 r1 = L.run_job({'group': 'pattern', 'pattern': 'B01', 'tf': 'D', 'entry': 'next_open', 'maxRisk': 0})
 assert r1['tradesTotal'] > 0

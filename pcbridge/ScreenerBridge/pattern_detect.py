@@ -116,8 +116,9 @@ LONG, SMALL, DOJI = 0.7, 0.3, 0.1        # a long body >= 0.7 x ATR(14), a small
 class Ctx:
     """One stock's candles + the series the detectors share, worked out once (memo) - only from each candle and earlier ones."""
 
-    def __init__(self, o, h, l, c, v, tf, day=None):
+    def __init__(self, o, h, l, c, v, tf, day=None, bench=None):
         self.o, self.h, self.l, self.c, self.v, self.tf, self.day = o, h, l, c, v, tf, day
+        self.bench = bench               # (day ordinals, closes) of the benchmark index (NIFTY 50) - phase 3 RS patterns
         self.n = len(c)
         self._m = {}
 
@@ -911,12 +912,19 @@ DETECTORS = {'K08': _ctxwrap(bullish_engulfing), 'B01': _ctxwrap(high_breakout('
              'V12': _v12, 'V13': _v13, 'V15': _v15}
 
 
-def detect(pid, o, h, l, c, v, tf, P=None, day=None):
+def detect(pid, o, h, l, c, v, tf, P=None, day=None, bench=None):
     """The events of pattern `pid` on one stock's candles (lists, oldest first) of timeframe tf ('D' / 'W' / '4H'); `day` = the
-    candles' day ordinals (the multi-timeframe pattern M11 needs them). P['patCtx'] 'down' keeps a reversal pattern (registry
-    'ctx') only after a fall: the candle before it closed under its falling 20-SMA."""
-    x = Ctx(o, h, l, c, v, tf, day)
+    candles' day ordinals (the multi-timeframe patterns M11 / Q12 and the period sweeps S03-S05 need them); `bench` = the
+    benchmark's (day ordinals, closes) for the relative-strength patterns I23 / I24 / Q13 (none = no events). P['patCtx'] 'down'
+    keeps a reversal pattern (registry 'ctx') only after a fall: the candle before it closed under its falling 20-SMA."""
+    x = Ctx(o, h, l, c, v, tf, day, bench)
     ev = DETECTORS[pid](x, params_for(pid, P))
     if P and P.get('patCtx') == 'down' and reg.SPECS[pid].get('ctx'):
         ev = [e for e in ev if x.downtrend(e[2])]
     return ev
+
+
+# ------------------------------------------------------------------ PHASE 3 (owner, 13-Nov-2026: "Do it") - pattern_p3.py adds its
+# detectors to DETECTORS (it also does that itself when it is imported first)
+import pattern_p3  # noqa: E402,F401
+DETECTORS.update(getattr(pattern_p3, 'DETECTORS', {}))

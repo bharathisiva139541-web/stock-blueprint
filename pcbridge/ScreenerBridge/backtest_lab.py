@@ -47,6 +47,7 @@ if HERE not in sys.path:
 import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2026)
 import pattern_detect  # noqa: E402  (the bullish pattern engine - owner, 13-Nov-2026; docs/PATTERN_ENGINE_PLAN.md)
 import pattern_registry  # noqa: E402
+import pattern_p3  # noqa: E402  (phase 3 detectors - NEEDS_BENCH)
 
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
@@ -216,7 +217,10 @@ DEFAULTS = {
     # phase 2 (13-Nov-2026): a reversal pattern (registry 'ctx') only after a fall - 'down' = the candle before it closed under its
     # falling 20-SMA; 'any' = everywhere
     'patCtx': 'any',
+    # phase 3 (13-Nov-2026): the swing size of the structure / SMC patterns (P / S / V09 V10 / M17) - candles each side
+    'patSwing': 5,
 }
+BENCH_INDEX = 'NIFTY_50'               # the relative-strength patterns' benchmark (cache meta 'indices')
 SURVIVORSHIP = ("The stocks are today's ~1,800 listed ones - companies delisted or suspended over the years are not in the "
                 "candles (Kite has only current instruments), so every result looks somewhat better than reality "
                 "(survivorship bias).")
@@ -265,7 +269,7 @@ LIMITS = {   # key: (min, max, integer)
     'stopAtr': (0, 10, False), 'targetPct': (1, 1000, False), 'partialPct': (0, 90, False), 'beAt': (0, 20, False),
     'timeN': (0, 1000, True), 'timeR': (0.1, 20, False),
     'engBody': (0, 10, False), 'boBuf': (0, 20, False), 'boVol': (0, 20, False), 'rsiN': (2, 50, True), 'divPivot': (2, 20, True),
-    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False),
+    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -557,6 +561,13 @@ class _PatRows:
                 _PAT_MEMO.pop(next(iter(_PAT_MEMO)))
             _PAT_MEMO[key] = {}
         self.memo = _PAT_MEMO[key]
+        self.bench = None
+        if self.pid in pattern_p3.NEEDS_BENCH:             # the relative-strength patterns: NIFTY 50's daily closes
+            ix = (meta.get('indices') or {}).get(BENCH_INDEX)
+            if not ix or not ix.get('d'):
+                raise LabError('%s needs the NIFTY 50 candles on the laptop - they come with the next daily scan (after 15:40) '
+                               'or KiteHistoryNow.bat' % self.pid)
+            self.bench = (list(ix['d']), list(ix['c']))
         self.dix = (meta['index'].get('D') or {}) if tf != 'D' else None
         self.dayf = open(os.path.join(d, 'D.bin'), 'rb') if self.dix else None
         self.found = 0
@@ -571,7 +582,7 @@ class _PatRows:
         if got is None or got[0] != cs.n:
             o, h, l, c = ([_f(x) for x in a] for a in (cs.o, cs.h, cs.l, cs.c))
             got = self.memo[sym] = (cs.n, pattern_detect.detect(self.pid, o, h, l, c, [float(x) for x in cs.v], self.tf, self.params,
-                                                                 day=list(cs.day)))
+                                                                 day=list(cs.day), bench=self.bench))
         return got[1]
 
     def turnover(self, sym, cs):
