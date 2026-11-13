@@ -172,8 +172,13 @@ linkZone(int f, bool g, float b, float t, array<int> zF_, array<bool> zGap_, arr
     true
 
 // the market-structure rules of a zone (candle f, bottom, top) under the current CHoCH - the BUY's own test (the 2nd-zone rule)
-zPass(int f, float zb, float zt, int li, int cb, int bos, float lvl, float hh, float lf) =>
+zPass(int f, float zb, float zt, int li, int cb, int bos, float lvl, float hh, float lf, int mhb) =>
     bool ok = f >= li
+    // the owner's rules of 13-Nov-2026: no zone wholly above the CHoCH level; the zone formed in the swing final low -> move high
+    if zb >= lvl - 0.000000001
+        ok := false
+    if f > mhb
+        ok := false
     if zoneWhen == "Only in the CHoCH move" and f > cb + 1
         ok := false
     if zoneWhen == "Only after the CHoCH candle" and f <= cb
@@ -321,6 +326,7 @@ var int chBos = -1
 var float chPeak = na
 var int chPeakBar = -1
 var float chH = na
+var int chHBar = -1
 var int chTime = 0
 var int chLiTime = 0
 var line fibLn = na
@@ -354,6 +360,7 @@ var tzOutF = array.new_int()
 var rmList = array.new_int()
 var abB = array.new_float()
 var abT = array.new_float()
+var abF = array.new_int()
 
 // 1. a close under the final low ends the CHoCH (this candle too)
 bool alive = chB >= 0 and not chDead and chB < bar_index
@@ -436,6 +443,10 @@ if nh0 > 0
             ok := false
         if structOnly and ok
             ok := aliveOk and f >= chLi
+            if zb >= chLvl - 0.000000001
+                ok := false
+            if f > chHBar
+                ok := false
             if zoneWhen == "Only in the CHoCH move" and f > chB + 1
                 ok := false
             if zoneWhen == "Only after the CHoCH candle" and f <= chB
@@ -451,15 +462,17 @@ if nh0 > 0
             // untouched one under it - of two the 1st is only watched, a 3rd is not traded
             array.clear(abB)
             array.clear(abT)
+            array.clear(abF)
             int ntz = array.size(tzF)
             if ntz > 0
                 for j = 0 to ntz - 1
                     int fj = array.get(tzF, j)
                     float bj = array.get(tzB, j)
                     float tj = array.get(tzT, j)
-                    if fj >= chLi and fj < bar_index and bj >= zt - 0.000000001 and zPass(fj, bj, tj, chLi, chB, chBos, chLvl, chH, chLf)
+                    if fj >= chLi and fj < bar_index and bj >= zt - 0.000000001 and zPass(fj, bj, tj, chLi, chB, chBos, chLvl, chH, chLf, chHBar)
                         array.push(abB, bj)
                         array.push(abT, tj)
+                        array.push(abF, fj)
             if nh0 > 0
                 for j = 0 to nh0 - 1
                     int kj = array.get(hitList, j)
@@ -467,34 +480,73 @@ if nh0 > 0
                         int fj = array.get(zF, kj)
                         float bj = array.get(zBot, kj)
                         float tj = array.get(zTop, kj)
-                        if fj >= chLi and fj < bar_index and bj >= zt - 0.000000001 and zPass(fj, bj, tj, chLi, chB, chBos, chLvl, chH, chLf)
+                        if fj >= chLi and fj < bar_index and bj >= zt - 0.000000001 and zPass(fj, bj, tj, chLi, chB, chBos, chLvl, chH, chLf, chHBar)
                             array.push(abB, bj)
                             array.push(abT, tj)
+                            array.push(abF, fj)
             bool lowerZ = false
             if nz > 0
                 for j = 0 to nz - 1
                     if j != k and not lowerZ
                         int fj = array.get(zF, j)
                         float tj = array.get(zTop, j)
-                        if fj >= chLi and fj < bar_index and tj <= zb + 0.000000001 and zPass(fj, array.get(zBot, j), tj, chLi, chB, chBos, chLvl, chH, chLf)
+                        if fj >= chLi and fj < bar_index and tj <= zb + 0.000000001 and zPass(fj, array.get(zBot, j), tj, chLi, chB, chBos, chLvl, chH, chLf, chHBar)
                             lowerZ := true
             int areas = 0
             int nab = array.size(abB)
             int[] ordA = array.sort_indices(abB, order.ascending)
             float curT = na
+            float a1T = na
+            int a1F = 0
             if nab > 0
                 for j = 0 to nab - 1
                     int x = array.get(ordA, j)
                     if na(curT) or array.get(abB, x) > curT + 0.000000001
                         areas += 1
                         curT := array.get(abT, x)
+                        if areas == 1
+                            a1T := curT
+                            a1F := array.get(abF, x)
                     else
                         curT := math.max(curT, array.get(abT, x))
+                        if areas == 1
+                            a1T := curT
+                            a1F := math.min(a1F, array.get(abF, x))
+            // the 1st (watched) zone must not be touched before the move high (owner, 13-Nov-2026, APTUS)
+            int a1n = 0
+            if areas == 1
+                int oA1 = bar_index - chHBar
+                int oB1 = bar_index - a1F - 1
+                if oB1 >= oA1
+                    for o8 = oA1 to oB1
+                        if low[o8] <= a1T + 0.000000001
+                            a1n += 1
             if areas >= 2
                 skipWhy := "a 3rd discount zone of the CHoCH move - only the 2nd is traded"
                 ok := false
+            else if a1n > 0
+                skipWhy := "the 1st (watched) zone was touched before the move high"
+                ok := false
             else if areas == 0 and lowerZ
                 skipWhy := "the 1st of two discount zones of the CHoCH move - only watched (your rule: the trade is on the 2nd, under it)"
+                ok := false
+        if structOnly and ok
+            // the owner's rules of 13-Nov-2026: at most 2 candles in the zone and no close under its middle before the move high
+            int oA = bar_index - chHBar
+            int oB = bar_index - f - 1
+            int nT = 0
+            bool deepC = false
+            if oB >= oA
+                for o9 = oA to oB
+                    if low[o9] <= zt + 0.000000001
+                        nT += 1
+                        if close[o9] < (zb + zt) / 2 - 0.000000001
+                            deepC := true
+            if deepC
+                skipWhy := "a candle closed under the zone's middle before the move high"
+                ok := false
+            else if nT > 2
+                skipWhy := "more than 2 candles touched the zone before the move high"
                 ok := false
         if ok and not dateOk
             ok := false
@@ -630,7 +682,9 @@ if chB >= 0 and not chDead and chBos < 0 and bar_index > chB
 
 // 4. the move's high (the next candles' discount line)
 if chB >= 0 and not chDead and bar_index > chB
-    chH := math.max(chH, high)
+    if high > chH
+        chH := high
+        chHBar := bar_index
 if chB >= 0 and not chDead and fibLvl > 0 and not na(fibLn)
     float fpx = chH - fibLvl * (chH - chLf)
     line.set_y1(fibLn, fpx)
@@ -779,10 +833,14 @@ if sz6 > 0
                 chTime := time
                 chLiTime := time[bar_index - segMinBar]
                 float mh = na
+                int mhb = bar_index
                 int span2 = bar_index - chLi
                 for k = 0 to span2
-                    mh := na(mh) ? high[k] : math.max(mh, high[k])
+                    if na(mh) or high[k] >= mh
+                        mh := high[k]
+                        mhb := bar_index - k
                 chH := mh
+                chHBar := mhb
                 line.new(chHi, chLvl, bar_index, chLvl, color=C_CHOCH, width=2, style=line.style_dashed)
                 label.new(bar_index, chLvl, "CHoCH (" + str.tostring(d) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 10), textcolor=color.white, size=size.small, tooltip="CHoCH " + fmtP(chLvl) + " on " + fmtT(time) + ": a close above " + (isProt ? "the protected high (the swing high before the lowest low)" : "the last swing high") + " after " + str.tostring(d) + " lower highs and lower lows" + (eqAtr > 0 ? " (within " + str.tostring(eqAtr) + " x ATR = equal, not lower)" : "") + ". Final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ". Swings: " + swTxt)
                 label.new(chLi, chLf, "final low", yloc=yloc.price, style=label.style_label_up, color=color.new(C_CHOCH, 40), textcolor=color.white, size=size.tiny)

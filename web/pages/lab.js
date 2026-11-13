@@ -182,7 +182,13 @@
     sweep: 'the final low did not sweep the low before it',
     zone1: 'the 1st (higher) of two discount zones of the move - only watched, the trade is on the 2nd',
     zone3: 'a 3rd (or deeper) discount zone of the move - only the 2nd is traded',
-    mvol: 'no big-volume candle (your rule) in the CHoCH move' };
+    mvol: 'no big-volume candle (your rule) in the CHoCH move',
+    // the owner's rules of 13-Nov-2026 (always on with "Only my setup")
+    abovechoch: 'its zone was wholly above the CHoCH level', swing: 'its zone did not form in the swing from the final low to the move high',
+    premfast: 'a premium zone (above your Fib line) with the signal 4 days or less after the CHoCH',
+    deepclose: 'a candle closed under the middle of its zone before the move high',
+    mitig: 'more than 2 candles touched its zone before the move high',
+    zone1mit: 'the 1st (watched) zone was touched before the move high' };
   var STAGE = { disc: ['Discount, 1st pullback', 's-good'], below: ['Below CHoCH, 1st pullback', 's-good'], prem: ['Premium (above the Fib line)', 's-warn'],
     above: ['At / above CHoCH level', 's-warn'], bos: ['After a BOS', 's-bad'], old: ['Zone older than the CHoCH low', 's-info'], none: ['No CHoCH', ''] };
   var ITD_TV = { D: 'D', W: 'W', '4H': '240' };
@@ -288,6 +294,10 @@
     if (Number(p.moveVol)) w.push('in the CHoCH move (final low to the CHoCH candle) at least ' + (Number(p.moveVolN) || 1) + ' candle' + ((Number(p.moveVolN) || 1) === 1 ? '' : 's') +
       ' with ' + pc(p.moveVol) + ' x the average volume of the 20 candles before the move');
     w.push('the CHoCH still alive (no close under its final low)');
+    // the owner's rules of 13-Nov-2026 - always part of "Only my setup"
+    w.push('the zone not wholly above the CHoCH level and formed in the one swing from the final low to the move high');
+    w.push('before the move high at most 2 candles touched the zone and none closed under its middle');
+    w.push('no premium zone (above the Fib line) when the signal comes 4 days or less after the CHoCH');
     if (p.group === 'touch') {
       w.push(p.touchAgain === false ? 'a zone price touched before the CHoCH does not count again' :
         'a zone price already touched before the CHoCH (while the rise was forming) counts again - its first touch after the CHoCH');
@@ -1033,6 +1043,7 @@
         { key: 'zpct', label: 'Zone %', type: 'num', digits: 1, title: 'The zone\'s size: top - bottom, % of the bottom (a Gap-up zone inside an FVG: that FVG)' },
         { key: 'pat', label: 'Pattern', get: function (r) { return r.pat || ''; }, title: 'The pattern at the zone\'s Fib line (Fib + pattern entry)' },
         { key: 'zn', label: 'Zone no.', type: 'num', digits: 0, title: 'Which discount zone of the CHoCH move: 1 = the only (or the higher) one, 2 = the 2nd (under a 1st that was only watched)' },
+        { key: 'mit', label: 'Touches before move high', type: 'num', digits: 0, title: 'Candles that touched the zone (a wick in it counts) between its forming and the move high - at most 2 allowed' },
         { key: 'mv', label: 'Move volume x', type: 'num', digits: 1, title: 'The biggest volume in the CHoCH move (final low to the CHoCH candle), x the average of the 20 candles before the move' },
         { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
           // owner, 09-Nov-2026: "show the reason if I place the cursor on the word skipped" (a tap on a phone)
@@ -1049,7 +1060,7 @@
         if (c.key === 'stage') return rows.some(function (r) { return r.stage; });
         if (c.key === 'target') return rows.some(function (r) { return isNum(r.target); });
         if (c.key === 'upW' || c.key === 'loW' || c.key === 'dip') return rows.some(function (r) { return isNum(r[c.key]); });   // runs before 10-Nov-2026 have none
-        if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag' || c.key === 'zpct' || c.key === 'zn' || c.key === 'mv') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure / a zone (12-Nov-2026)
+        if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag' || c.key === 'zpct' || c.key === 'zn' || c.key === 'mv' || c.key === 'mit') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure / a zone (12-Nov-2026)
         if (c.key === 'pat') return rows.some(function (r) { return r.pat; });
         return true;
       })

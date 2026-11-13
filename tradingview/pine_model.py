@@ -21,6 +21,7 @@ swing high before the lowest swing low since the last CHoCH), eqAtr (highs / low
 from datetime import date
 
 GAP_MIN, GAP_MAX, INSIDE_BODY, FVG_K, LOCK_PCT, ZONES_KEPT = 3.0, 5.0, 2.0, 0.70, 0.05, 300
+MIT_MAX = 2                                             # = backtest_lab.MIT_MAX
 LINK_SPAN = 3          # = kite_intraday.ZONE_LINK_SPAN: a Gap-up zone inside an FVG zone formed at most this many candles apart
 
 
@@ -56,6 +57,7 @@ class Model:
         self.chB = -1                                   # the current CHoCH (the latest with d >= down_n)
         self.chHi = self.chLi = -1
         self.chLvl = self.chLf = self.chH = self.chPeak = None
+        self.chHBar = -1                                # the move high's candle (the first of equal highs)
         self.chD, self.chDead, self.chBos = 0, True, -1
         self.zF, self.zBot, self.zTop, self.zGap, self.zIn = [], [], [], [], []
         # the Gap-up zone inside an FVG (12-Nov-2026, Lab gapEntry): an FVG zone's 'has a Gap-up zone inside' / a Gap-up zone's
@@ -222,7 +224,9 @@ class Model:
             if self.struct_only and not (alive_ok and self._passes(k)):
                 continue
             if self.second and self._rank(k, i, hit):
-                continue                                 # the 1st of two discount zones (watched) / a 3rd
+                continue                                 # the 1st of two discount zones (watched) / a 3rd / a touched 1st zone
+            if self.struct_only and self._mit_fail(self.zF[k], self.zBot[k], self.zTop[k]):
+                continue                                 # more than 2 candles in it / a close under its middle before the move high
             if not (date_ok and turn_ok and ema_ok):
                 continue
             t = self._trade(k, i, o, l, c, alive_ok)
@@ -251,7 +255,8 @@ class Model:
 
         # 4. the move's high (for the next bars' discount)
         if self.chB >= 0 and not self.chDead and i > self.chB:
-            self.chH = max(self.chH, h)
+            if h > self.chH:
+                self.chH, self.chHBar = h, i
 
         # 5. new zones: a 3-candle FVG on this bar; a Gap-up zone 3 - 5 % on this bar (the inside-FVG gap: 1b)
         if i >= 13:
@@ -311,7 +316,9 @@ class Model:
                     if d >= self.down_n:
                         self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi_, lvl, self.seg_min_bar, self.seg_min, d
                         self.chDead, self.chBos, self.chPeak = False, -1, None
-                        self.chH = max(H[self.chLi:i + 1])
+                        seg = H[self.chLi:i + 1]
+                        self.chH = max(seg)
+                        self.chHBar = self.chLi + seg.index(self.chH)
                         if self.again:          # the zones of this move touched before now that held: back on the list
                             keep = []
                             for z in self.tz:
@@ -371,20 +378,37 @@ class Model:
         """backtest_lab.zone_rank on this bar: 'zone1' (an untouched discount zone waits under it - this one only watched) /
         'zone3' (two areas above already) / ''."""
         kb, kt = self.zBot[k], self.zTop[k]
-        above = [(b, t) for f, b, t in [x[:3] for x in self.tz] + [(self.zF[j], self.zBot[j], self.zTop[j]) for j in hit if j != k]
+        above = [(b, t, f) for f, b, t in [x[:3] for x in self.tz] + [(self.zF[j], self.zBot[j], self.zTop[j]) for j in hit if j != k]
                  if self.chLi <= f < i and b >= kt - 1e-9 and self._passes_z(f, b, t)]
-        areas, top = 0, None
-        for b, t in sorted(above):
-            if top is not None and b <= top + 1e-9:
-                top = max(top, t)
+        areas = []
+        for b, t, f in sorted(above):
+            if areas and b <= areas[-1][1] + 1e-9:
+                a = areas[-1]
+                areas[-1] = (a[0], max(a[1], t), min(a[2], f))
             else:
-                areas, top = areas + 1, t
-        if areas >= 2:
+                areas.append((b, t, f))
+        if len(areas) >= 2:
             return 'zone3'
-        if areas == 0 and any(j != k and self.chLi <= self.zF[j] < i and self.zTop[j] <= kb + 1e-9 and
+        if len(areas) == 1 and self._touches(areas[0][2], areas[0][1])[0] > 0:
+            return 'zone1mit'                            # the 1st zone was touched before the move high (13-Nov-2026)
+        if not areas and any(j != k and self.chLi <= self.zF[j] < i and self.zTop[j] <= kb + 1e-9 and
                               self._passes_z(self.zF[j], self.zBot[j], self.zTop[j]) for j in range(len(self.zF))):
             return 'zone1'
         return ''
+
+    def _touches(self, f, top, bot=None):
+        """backtest_lab.zone_mitigation up to the move high: (candles f+1 .. chHBar touching the zone, a close under its middle)."""
+        n, deep, mid = 0, False, (bot + top) / 2.0 if bot is not None else None
+        for j in range(f + 1, self.chHBar + 1):
+            if self.l[j] <= top + 1e-9:
+                n += 1
+                if mid is not None and self.c[j] < mid - 1e-9:
+                    deep = True
+        return n, deep
+
+    def _mit_fail(self, f, bot, top):
+        n, deep = self._touches(f, top, bot)
+        return deep or n > MIT_MAX
 
     def _passes(self, k):
         return self._passes_z(self.zF[k], self.zBot[k], self.zTop[k])
@@ -398,6 +422,10 @@ class Model:
         if P['zoneWhen'] == 'after' and f <= self.chB:
             return False
         if P['firstPull'] and self.chBos >= 0:
+            return False
+        if bot >= self.chLvl - 1e-9:                     # wholly above the CHoCH level (13-Nov-2026)
+            return False
+        if f > self.chHBar:                               # not formed in the swing final low -> move high (13-Nov-2026)
             return False
         if P['belowChoch'] and not top < self.chLvl:
             return False

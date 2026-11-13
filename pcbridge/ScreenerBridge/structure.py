@@ -226,7 +226,7 @@ class Structure:
         s = self.st.get(k)
         if s is None:
             b = self.events[k][0]
-            s = self.st[k] = [b + 1, -1, b + 1, None, bisect.bisect_right(self.ph, b), -1, self.events[k][3], None]
+            s = self.st[k] = [b + 1, -1, b + 1, None, bisect.bisect_right(self.ph, b), -1, self.events[k][3], None, -1]
         return s
 
     def dead_by(self, k, c, i):
@@ -282,18 +282,26 @@ class Structure:
         """The highest high from CHoCH k's final low up to the candle BEFORE i (the top of the move a pullback into candle i
         retraces - known before candle i opens). Candles are asked for in time order (forward, remembered); an earlier
         candle than the last one asked is worked out from the start."""
+        return self.move_high_at(k, h, i)[0]
+
+    def move_high_at(self, k, h, i):
+        """move_high + the candle it was made on (the first of equal highs): (price, candle) or (None, -1)."""
         s = self._state(k)
-        j, mx = s[6], s[7]
+        j, mx, mi = s[6], s[7], s[8]
         if i < j:
-            seg = h[self.events[k][3]:i]
-            return max(seg) if len(seg) else None
+            li = self.events[k][3]
+            seg = h[li:i]
+            if not len(seg):
+                return None, -1
+            m = max(seg)
+            return m, li + list(seg).index(m)
         while j < i and j < len(h):
             v = h[j]
             if mx is None or v > mx:
-                mx = v
+                mx, mi = v, j
             j += 1
-        s[6], s[7] = j, mx
-        return mx
+        s[6], s[7], s[8] = j, mx, mi
+        return mx, mi
 
     def last_swing_high(self, i, above):
         """The most recent swing high confirmed by candle i (known on a candle <= i) at or above `above`: (candle, price)."""
@@ -327,9 +335,12 @@ class Structure:
                'below': (zone_top if zone_top is not None else price) < lvl,
                'lvl': lvl, 'ztop': zone_top if zone_top is not None else price}
         out['stage'] = 'old' if not out['after_low'] else 'bos' if not first else 'above' if not out['below'] else 'below'
+        if zone_bottom is not None:
+            out['zbot'] = zone_bottom
+            out['zf'] = zone_f
         if h is not None:
-            H = self.move_high(k, h, i)
-            out['H'] = H
+            H, mh = self.move_high_at(k, h, i)
+            out['H'], out['mh'] = H, mh
             out['depth'] = depth(H, lf, zone_part(zone_bottom, zone_top, part, price))
             if fib and out['stage'] in ('above', 'below'):
                 out['stage'] = 'disc' if out['depth'] is not None and out['depth'] >= fib - 1e-9 else 'prem'

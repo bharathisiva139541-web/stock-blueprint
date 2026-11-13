@@ -188,6 +188,14 @@ DEFAULTS = {
     'touchAgain': True,
 }
 BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger than this
+# THE OWNER'S SETUP RULES OF 13-Nov-2026 (always on with structure 'only' - "add this to standard exclusion ... No need filter";
+# the charts BESTAGRO / APTUS and two stop losses whose zone price had sat in before the buy): a zone wholly above the CHoCH level
+# never counts; the zone formed in the one swing from the final low to the move high; the traded zone touched by at most
+# MIT_MAX candles (a wick in it counts) and no candle closing under its middle before the move high; the 1st (watched) zone of
+# two not touched at all before the move high; a premium zone (above the Fib line, taken by lineOk) is not traded when the
+# signal comes PREM_FAST_DAYS calendar days or less after the CHoCH candle
+MIT_MAX = 2
+PREM_FAST_DAYS = 4
 LOCK_PCT = 0.05                # = kite_intraday.CIRCUIT_LOCK_PCT: a candle whose range is <= 0.05 % (a Gap-up zone's touch never counts on it)
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
@@ -240,7 +248,7 @@ ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 
 REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv']
+              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit']
 
 
 def _iso_date(s):
@@ -1063,7 +1071,7 @@ def summarise(trades, P, skips, meta, secs):
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
                      t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', ''),
                      int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
-                     t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', '')])
+                     t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1414,6 +1422,18 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     zrank = rank(r, sj, r[8], outer)          # which discount zone of the CHoCH move (owner, 12-Nov-2026)
                     if smode == 'only' and P['zonePick'] == 'second' and zrank[0]:
                         return None, ('struct', zrank[0])
+                mit = None
+                if smode == 'only' and sj is not None and sj['k'] >= 0:
+                    # the owner's rules of 13-Nov-2026: a fast premium zone, touches / a deep close before the move high, a
+                    # touched 1st zone
+                    zf_ = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
+                    lo_at, cl_at = (lambda j: _f(cs.l[j])), (lambda j: _f(cs.c[j]))
+                    area = zrank[2] if (zrank is not None and P['zonePick'] == 'second' and zrank[1] == 2) else None
+                    why = setup_fail(sj, zf_, r[2], r[3], lo_at, cl_at, cs.day[r[0]] - cs.day[st.s.events[sj['k']][0]], area)
+                    if why:
+                        return None, ('struct', why)
+                    if zf_ is not None and sj.get('mh', -1) >= 0:
+                        mit = zone_mitigation(lo_at, cl_at, zf_, r[2], r[3], sj['mh'])[0]
                 # E9: how deep the signal candle went into its zone (not with the zone-top order - known only at the close)
                 if P['whereIn'] != 'any' and P['entry'] != 'zone' and r[4] in ('t', 'm', 'b'):
                     if not (r[4] == 't' or (P['whereIn'] == 'tm' and r[4] == 'm')):
@@ -1456,6 +1476,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
                 if len(r) > 10 and r[10] == 'A' and code in ('Z', 'Y'):
                     t['again'] = True                     # touched before the CHoCH - its first touch since then
+                if mit is not None:
+                    t['mit'] = mit                        # candles that touched the zone before the move high
                 if zrank is not None:
                     t['zn'] = zrank[1]
                     if zrank[2]:
@@ -1675,6 +1697,37 @@ def rearm_touches(events, down_n, zones, lows, closes, locked=None):
     return out
 
 
+def zone_mitigation(low_at, close_at, f, zb, zt, upto):
+    """The candles f+1 .. upto (the move high's candle) that touched the zone (low at / under its top - a wick in it is
+    enough) and whether one of them closed under the zone's middle -> (touches, deep close)."""
+    mid, n, deep = (zb + zt) / 2.0, 0, False
+    for j in range(f + 1, upto + 1):
+        if low_at(j) <= zt + 1e-9:
+            n += 1
+            if close_at(j) < mid - 1e-9:
+                deep = True
+    return n, deep
+
+
+def setup_fail(sj, f, zb, zt, low_at, close_at, days, area=None):
+    """The owner's rules of 13-Nov-2026 on a signal whose structure passed (sj = structure judge with 'mh' / 'stage';
+    f / zb / zt = the traded zone; days = calendar days from the CHoCH candle; area = the 1st (watched) zone above when this
+    one is the 2nd, (bottom, top, candle)) -> the first rule it fails (a STRUCT_WHY key) or ''."""
+    if sj.get('stage') == 'prem' and days is not None and days <= PREM_FAST_DAYS:
+        return 'premfast'
+    mh = sj.get('mh')
+    if f is None or mh is None or mh < 0:
+        return ''
+    n, deep = zone_mitigation(low_at, close_at, f, zb, zt, mh)
+    if deep:
+        return 'deepclose'
+    if n > MIT_MAX:
+        return 'mitig'
+    if area is not None and zone_mitigation(low_at, close_at, area[2], area[0], area[1], mh)[0] > 0:
+        return 'zone1mit'
+    return ''
+
+
 def zone_rank(zones, i, zb, zt, li, judge_ok, broken):
     """The owner's 2nd-zone rule (12-Nov-2026, zonePick 'second'): a signal on candle i in the area zb .. zt (a Gap-up zone
     inside an FVG = that FVG) of a CHoCH whose final low is candle li. `zones` = every zone of the stock [(f, bottom, top,
@@ -1747,7 +1800,13 @@ STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows 
               'sweep': 'the final low did not sweep the swing low before it (closed back above)',
               'zone1': 'the 1st (higher) of two discount zones in the CHoCH move - only watched, the trade is on the 2nd',
               'zone3': 'a 3rd (or deeper) discount zone of the CHoCH move - only the 2nd is traded',
-              'mvol': 'no big-volume candle (your x-times rule) in the CHoCH move'}
+              'mvol': 'no big-volume candle (your x-times rule) in the CHoCH move',
+              'abovechoch': 'its zone was wholly above the CHoCH level',
+              'swing': 'its zone did not form in the swing from the final low to the move high',
+              'premfast': 'a premium zone (above your Fib line) with the signal 4 days or less after the CHoCH',
+              'deepclose': 'a candle closed under the middle of its zone before the move high',
+              'mitig': 'more than 2 candles touched its zone before the move high',
+              'zone1mit': 'the 1st (watched) zone was touched before the move high'}
 
 
 def struct_fail(sj, P):
@@ -1757,6 +1816,11 @@ def struct_fail(sj, P):
     w = P['zoneWhen']
     if not (sj['after_low'] and (w == 'both' or (w == 'leg' and sj['leg']) or (w == 'after' and sj['after']))):
         return 'zone'
+    # the owner's rules of 13-Nov-2026: no zone wholly above the CHoCH level; the zone formed in the swing final low -> move high
+    if sj.get('zbot') is not None and sj.get('lvl') is not None and sj['zbot'] >= sj['lvl'] - 1e-9:
+        return 'abovechoch'
+    if sj.get('zf') is not None and sj.get('mh') is not None and sj['mh'] >= 0 and sj['zf'] > sj['mh']:
+        return 'swing'
     if P['firstPull'] and not sj['first']:
         return 'bos'
     if P['belowChoch'] and not sj['below']:

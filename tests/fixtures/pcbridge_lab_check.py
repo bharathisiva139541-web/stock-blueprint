@@ -418,7 +418,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-8:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-9:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -858,20 +858,24 @@ sub = [r for r in mine6 if r[sym6] == 'SUB']
 assert len(sub) == 1 and sub[0][ent6] == 126.5 and abs(sub[0][st6] - round(121.3 * 0.995, 2)) < 0.006, sub
 # no discount rule: the premium zone's touch is taken first (what the SUPREMEIND run did); 'show' labels it premium
 loose6 = [r for r in lab6(discount=0, zonePick='every') if r[sym6] == 'SUP']
-assert [r[sig6] for r in loose6][-1] == r6[t_prem][0] and len(loose6) == 2, loose6
+# (13-Nov-2026: the premium FVG 139.3 - 145.0 lies wholly above the CHoCH level 136.3 - never a zone of the setup now, BESTAGRO)
+assert [r[sig6] for r in loose6] == [r6[t_disc][0]], loose6
+assert L.run_job(dict(SMC6, discount=0, zonePick='every'))['structWhy'].get('abovechoch', 0) >= 1
 # the owner's 2nd-zone rule (12-Nov-2026: "No trade only on 2nd FVG. 1st FVG can be watched but not to be traded"): with both
 # zones counting (no discount rule) the higher one is only watched, the trade is the 2nd; with the discount rule only one counts
 zn6 = L.TRADE_COLS.index('zn')
 run2 = L.run_job(dict(SMC6, discount=0))
 two6 = [r for r in run2['trades'] if r[sym6] == 'SUP']
-assert len(two6) == 1 and two6[0][sig6] == r6[t_disc][0] and two6[0][zn6] == 2 and run2['structWhy'].get('zone1', 0) >= 1, (two6, run2['structWhy'])
+# (13-Nov-2026: the premium FVG is wholly above the CHoCH level, so it is no zone of the move - the discount one is the only one;
+# the 2nd-zone rule itself: section 19's SWIGGY-like chart)
+assert len(two6) == 1 and two6[0][sig6] == r6[t_disc][0] and two6[0][zn6] == 1, (two6, run2['structWhy'])
 assert sup[0][zn6] == 1 and L.DEFAULTS['zonePick'] == 'second', 'the premium zone does not count - the discount one is the only one'
 show6 = L.run_job(dict(SMC6, structure='show'))
 lab_st = {r[sig6]: r[stage6] for r in show6['trades'] if r[sym6] == 'SUP'}
 assert lab_st[r6[t_prem][0]] == 'prem' and lab_st[r6[t_disc][0]] == 'disc', lab_st
 assert {x['stage'] for x in show6['stages']} >= {'disc', 'prem'} and show6['stages'][0]['stage'] == 'disc'
 only6 = L.run_job(dict(SMC6))
-assert only6['structWhy'].get('premium', 0) >= 1, only6['structWhy']
+assert only6['structWhy'].get('premium', 0) + only6['structWhy'].get('abovechoch', 0) >= 1, only6['structWhy']   # (the premium FVG is also wholly above the CHoCH level: 13-Nov-2026)
 # discPart top: the whole zone under the line; bottom: any part
 assert [r[sym6] for r in lab6(discount=0.95, discPart='bottom')] == [] or all(r[sym6] != 'SUP' for r in lab6(discount=0.95, discPart='mid'))
 # the zone-top entry: first-touch signals only; a Spring row is skipped ('zoneentry')
@@ -1465,31 +1469,32 @@ assert P(moveVol=50, moveVolN=0, zonePick='x') ['moveVol'] == 20 and P(moveVolN=
 loose18 = dict(D6, fib=0.2)
 got18 = [x for x in K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), (),
                               choch=loose18)['items'] if x['pattern'] == K.CHOCH_PATTERN]
+# (13-Nov-2026: the premium FVG lies wholly above the CHoCH level - not a zone of the setup, so the discount one is the only one;
+# the 2nd-zone note: section 19)
 assert got18[0]['candle'][:10] == r6[t_disc][0] and r6[t_prem][0] not in [x['candle'][:10] for x in got18] and \
-    all('· 2nd discount zone (the 1st only watched)' in x['note'] for x in got18), \
-    [(x['candle'], x['note']) for x in got18]
+    not any('2nd discount zone' in x['note'] for x in got18), [(x['candle'], x['note']) for x in got18]
 every18 = [x for x in K.analyse({'sym': 'SUP', 'day': r6, 'm15': [], 'h4': []}, r6[t_prem - 1][0], date.fromisoformat(r6[-1][0]), set(), ('D',), (),
                                 choch=dict(loose18, zonePick='every'))['items'] if x['pattern'] == K.CHOCH_PATTERN]
 assert every18[0]['candle'][:10] == r6[t_disc][0] and not any('2nd discount zone' in x['note'] for x in every18), [(x['candle'], x['note']) for x in every18]
 pre18 = [dict(zip(('day', 'o', 'h', 'l', 'c', 'v'), r)) for r in r6[:t_prem]]
 cs18 = [{'t': r['day'], 'day': r['day'], 'o': r['o'], 'h': r['h'], 'l': r['l'], 'c': r['c']} for r in pre18]
 wt18 = K.choch_waiting(cs18, cs18, 'D', rules=loose18)
-assert wt18 and wt18['zone'][:2] == [121.3, 126.5] and 'the 2nd discount zone (the 1st, 139.30 - 145.00, only watched)' in wt18['how'], wt18
-assert K.choch_waiting(cs18, cs18, 'D', rules=dict(loose18, zonePick='every'))['zone'][:2] == [139.3, 145.0]
+assert wt18 and wt18['zone'][:2] == [121.3, 126.5] and '2nd discount zone' not in wt18['how'], wt18
+assert K.choch_waiting(cs18, cs18, 'D', rules=dict(loose18, zonePick='every'))['zone'][:2] == [121.3, 126.5]   # (the premium FVG: above the CHoCH)
 # the charts PDF: volume under every chart, the watched 1st zone + the sentence
 pdf18 = L.run_job(dict(SMC6, discount=0, moveVol=0.01), charts=L.CHARTS_DIR, name='second zone')
 w18 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf18['pdf']['file'])))
-for txt in ('Volume (grey line = 20-candle average; the CHoCH move darker)', '1st zone (watched only)', 'Your rule only watches that 1st',
+for txt in ('Volume (grey line = 20-candle average; the CHoCH move darker)',
             'the 2nd traded, the 1st only watched', 'Volume in the rise that made the CHoCH', 'Volume in the CHoCH move: at least 1 candle'):
     assert txt in w18, txt
 
 # ------------------------------------------------------------------ 19. a zone touched before the CHoCH counts again (owner, 13-Nov-2026,
 # SWIGGY: "Here 2 FVG under 50% line. 1st one is already mitigated before Choch move, we can take in this FVG even if this FVG
 # mitigated before the Choch Move")
-def craft19():
-    """SWIGGY-like: 3 lower highs / lows, FVG1 121.3 - 126.5 in the CHoCH move TOUCHED before the CHoCH candle, the CHoCH, FVG2
-    139.3 - 145.0 (discount: the move high 175.3), the pullback into FVG2 (the 1st, watched), then into FVG1 (its first touch
-    since the CHoCH = the trade), the rally."""
+def craft19(dips=1, deep=False, touch1=False):
+    """SWIGGY-like: 3 lower highs / lows, FVG1 121.3 - 126.5 in the CHoCH move TOUCHED once before the CHoCH candle, the CHoCH,
+    FVG2 133.5 - 138.0 (not wholly above the CHoCH level 136.3; discount: the move high 175.3), the pullback into FVG2 (the
+    1st, watched - untouched before the move high), then into FVG1 (its first touch since the CHoCH = the trade), the rally."""
     rows, prev = [], 165.0
     d0 = date(2026, 3, 2)
 
@@ -1506,16 +1511,24 @@ def craft19():
     put(120, 121.3, 119.7, 121)                                 # A
     put(121, 130.3, 120.7, 130)                                 # B
     put(130, 133.3, 126.5, 133)                                 # C: FVG1 121.3 - 126.5
-    put(133, 133.3, 125.8, 131)                                 # a dip into FVG1 BEFORE the CHoCH (it holds)
-    put(131, 138.3, 130.0, 138)                                 # the CHoCH (a close above 136.3)
-    put(138, 139.3, 133.0, 139)
-    put(139, 148.3, 138.7, 148)
-    put(148, 151.3, 145.0, 151)                                 # FVG2 139.3 - 145.0
-    prev = 151
+    if deep:                                                    # a close under FVG1's middle (123.9) before the move high
+        put(133, 133.0, 123.0, 123.5)
+        put(123.5, 131.0, 123.2, 130.5)
+    else:
+        put(133, 133.3, 125.8, 131)                             # a dip into FVG1 BEFORE the CHoCH (it holds, closes above its middle)
+        for x in range(dips - 1):                               # more candles in it
+            put(131, 132.5 + x * 0.2, 126.0 + x * 0.2, 131.5)
+    put(131, 133.5, 130.5, 133)
+    put(133, 141.3, 132.8, 141)                                 # the CHoCH (a close above 136.3)
+    put(141, 145.0, 138.0, 144.5)                               # FVG2 133.5 - 138.0
+    prev = 144.5
+    if touch1:                                                  # FVG2 touched before the move high
+        put(144.5, 145.2, 136.5, 143)
+        prev = 143
     go(175, 4)                                                  # the move high 175.3: the 50 % line 147.5
-    go(147, 4)
-    put(147, 147.3, 143.0, 144)                                 # the first touch of FVG2
-    prev = 144
+    go(150, 4)
+    put(150, 150.3, 135.9, 137.5)                               # the first touch of FVG2
+    prev = 137.5
     go(128, 6)
     put(128, 128.3, 124.8, 125)                                 # FVG1 again - the first touch since the CHoCH
     prev = 125
@@ -1524,7 +1537,7 @@ def craft19():
 
 
 r19 = craft19()
-t19a = next(k for k, r in enumerate(r19) if r[3] == 143.0)
+t19a = next(k for k, r in enumerate(r19) if r[3] == 135.9)
 t19b = next(k for k, r in enumerate(r19) if r[3] == 124.8)
 K.store_save('SWG', {'v': 1, 'sym': 'SWG', 'm15': [], 'day': r19, 'h4': []})
 K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
@@ -1535,9 +1548,9 @@ mine19 = swg(entry='zone')
 assert [(t['signal'], t['entry'], t['zn']) for t in mine19] == [(r19[t19b][0], 126.5, 2)], mine19
 assert mine19[0]['zone'] == 'FVG zone touch (again after the CHoCH)' and mine19[0]['R'] > 0, mine19
 off19 = swg(entry='zone', touchAgain=False)                    # before: FVG1 used up before the CHoCH -> FVG2 is the trade
-assert [(t['signal'], t['entry']) for t in off19] == [(r19[t19a][0], 145.0)], off19
+assert [(t['signal'], t['entry']) for t in off19] == [(r19[t19a][0], 138.0)], off19
 both19 = swg(entry='zone', zonePick='every')
-assert [t['entry'] for t in sorted(both19, key=lambda t: t['signal'])] == [145.0, 126.5], both19
+assert [t['entry'] for t in sorted(both19, key=lambda t: t['signal'])] == [138.0, 126.5], both19
 # the rule itself: rearm_touches on the made chart
 st19 = L.structure.Structure([r[2] for r in r19], [r[3] for r in r19], [r[4] for r in r19], 5)
 k19 = st19.active(t19b, 3)
@@ -1558,11 +1571,52 @@ day19 = lambda **kw: [x for x in K.analyse(dict(store19, day=r19[:t19a + 1]), r1
 assert [x['candle'][:10] for x in day19(touchAgain=False)] == [r19[t19a][0]] and day19() == [], (day19(touchAgain=False), day19())
 pre19 = [{'t': r[0], 'day': r[0], 'o': r[1], 'h': r[2], 'l': r[3], 'c': r[4]} for r in r19[:t19a]]
 w19 = K.choch_waiting(pre19, pre19, 'D')
-assert w19 and w19['buy'] == 126.5 and 'the 2nd discount zone (the 1st, 139.30 - 145.00, only watched)' in w19['how'], w19
-assert K.choch_waiting(pre19, pre19, 'D', rules=dict(D6, touchAgain=False))['buy'] == 145.0
+assert w19 and w19['buy'] == 126.5 and 'the 2nd discount zone (the 1st, 133.50 - 138.00, only watched)' in w19['how'], w19
+assert K.choch_waiting(pre19, pre19, 'D', rules=dict(D6, touchAgain=False))['buy'] == 138.0
 # the charts PDF says it
 pdf19 = L.run_job(dict(SMC6, entry='zone'), charts=L.CHARTS_DIR, name='touch again')
 w19p = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf19['pdf']['file'])))
-assert 'Price had already touched this zone once while the rise was forming' in w19p, 'the sentence'
+for txt in ('Price had already touched this zone once while the rise was forming', '1st zone (watched only)', 'Your rule only watches that 1st'):
+    assert txt in w19p, txt
+
+# ------------------------------------------------------------------ 20. the owner's setup rules of 13-Nov-2026 ("refine our setup by my points"):
+# a premium zone 4 days or less after the CHoCH; no zone wholly above the CHoCH level (BESTAGRO); the zone formed in the swing
+# final low -> move high; at most 2 candles in the zone and no close under its middle before the move high; the 1st (watched)
+# zone untouched before the move high (APTUS)
+lo20 = [100.0] * 40
+cl20 = [100.0] * 40
+for j, (lo, cl) in {12: (95.0, 99.0), 14: (94.0, 98.0), 16: (95.5, 99.5)}.items():
+    lo20[j], cl20[j] = lo, cl
+at20 = lambda a: (lambda j: a[j])
+sj20 = {'stage': 'disc', 'mh': 20}
+assert L.zone_mitigation(at20(lo20), at20(cl20), 10, 90.0, 96.0, 20) == (3, False)
+assert L.setup_fail(sj20, 10, 90.0, 96.0, at20(lo20), at20(cl20), 30) == 'mitig', 'three candles in the zone'
+assert L.setup_fail(dict(sj20, mh=15), 10, 90.0, 96.0, at20(lo20), at20(cl20), 30) == '', 'two before the move high are allowed'
+assert L.setup_fail(dict(sj20, mh=13), 10, 90.0, 96.0, at20(lo20), at20([91.0 if j == 12 else c for j, c in enumerate(cl20)]), 30) == 'deepclose'
+assert L.setup_fail(dict(sj20, mh=11), 10, 90.0, 96.0, at20(lo20), at20(cl20), 30, area=(97.0, 99.0, 5)) == '', 'the 1st zone untouched'
+assert L.setup_fail(dict(sj20, mh=13), 10, 80.0, 85.0, at20(lo20), at20(cl20), 30, area=(94.5, 99.0, 5)) == 'zone1mit'
+assert L.setup_fail(dict(sj20, stage='prem'), None, 0, 0, None, None, 4) == 'premfast'
+assert L.setup_fail(dict(sj20, stage='prem'), None, 0, 0, None, None, 5) == '' and L.setup_fail(dict(sj20, stage='disc'), None, 0, 0, None, None, 2) == ''
+base20 = {'k': 0, 'after_low': True, 'leg': True, 'after': True, 'first': True, 'below': True, 'lvl': 100.0, 'ztop': 99.0}
+assert L.struct_fail(dict(base20, zbot=100.0), P(belowChoch=False)) == 'abovechoch' and L.struct_fail(dict(base20, zbot=99.9), P(belowChoch=False)) == ''
+assert L.struct_fail(dict(base20, zbot=90.0, zf=30, mh=25), P(belowChoch=False)) == 'swing' and \
+    L.struct_fail(dict(base20, zbot=90.0, zf=25, mh=25), P(belowChoch=False)) == ''
+assert L.MIT_MAX == 2 and L.PREM_FAST_DAYS == 4
+# on the made SWIGGY-like chart: 3 candles in FVG1 / a close under its middle / FVG2 touched before the move high = no trade
+for kw, why in (({'dips': 3}, 'mitig'), ({'deep': True}, 'deepclose'), ({'touch1': True}, 'zone1mit')):
+    rows20 = craft19(**kw)
+    K.store_save('SWG', {'v': 1, 'sym': 'SWG', 'm15': [], 'day': rows20, 'h4': []})
+    K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+    run20 = L.run_job(dict(SMC6, entry='zone'))
+    assert not [t for t in run20['trades'] if t[0] == 'SWG'] and run20['structWhy'].get(why, 0) >= 1, (kw, run20['structWhy'])
+    it20 = [x for x in K.analyse({'sym': 'SWG', 'day': rows20, 'm15': [], 'h4': []}, rows20[50][0], date.fromisoformat(rows20[-1][0]), set(),
+                                 ('D',), ())['items'] if x['pattern'] == K.CHOCH_PATTERN and x['note'].startswith('Zone')]
+    assert not it20, (kw, [(x['candle'], x['note']) for x in it20])
+# 2 candles in FVG1 are still fine; the trade list says how many touched it
+K.store_save('SWG', {'v': 1, 'sym': 'SWG', 'm15': [], 'day': craft19(dips=2), 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+ok20 = [dict(zip(L.TRADE_COLS, t)) for t in L.run_job(dict(SMC6, entry='zone'))['trades'] if t[0] == 'SWG']
+assert [(t['entry'], t['zn'], t['mit']) for t in ok20] == [(126.5, 2, 2)], ok20
+K.store_save('SWG', {'v': 1, 'sym': 'SWG', 'm15': [], 'day': r19, 'h4': []})
 
 print('OK')
