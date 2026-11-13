@@ -130,7 +130,10 @@
     divRsiMax: [[100, 'Any RSI'], [30, 'RSI at most 30 (oversold)'], [40, 'RSI at most 40'], [50, 'RSI at most 50']],
     patCtx: [['any', 'Anywhere'], ['down', 'Only after a fall (under a falling 20-SMA)']],
     patSwing: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
-    stopPat: [['zone', 'Under the pattern\'s low (its stop reference)'], ['spring', 'Under the signal candle\'s low'], ['lower', 'Under whichever is lower'],
+    // the Pattern library's stop (owner, 13-Nov-2026: "confusing to use stoplosses for patterns. stop loss using zone FVG Zone
+    // bottom is irrelevant here") - a pattern has no zone: its own low, the signal candle's low or a % (the CHoCH's final low
+    // only when the market structure is on)
+    stopPat: [['zone', 'Under the pattern\'s low (the lowest point of its candles)'], ['spring', 'Under the signal candle\'s low'],
       ['pct', '% under the entry'], ['final', 'Under the CHoCH\'s final low']],
     structure: [['off', 'Off - do not look at it'], ['show', 'Show it on every trade (nothing left out) - to compare'], ['only', 'Only my setup (the rules below)']],
     pivotN: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
@@ -400,8 +403,11 @@
     if (zw) s.push(zw);
     s.push(p.entry === 'zone' ? 'Buy with an order waiting at the zone top - filled when price first comes down to it (at the open when it opened under the top); ' +
       'only first-touch signals, the stop always under the zone.' : 'Buy ' + (p.entry === 'close' ? 'at the signal candle\'s close' : 'at the next candle\'s open') + '.');
+    var patRun = p.group === 'pattern';
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
-      F.num(p.stopBuf, 2) + '% below ' + (p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' :
+      F.num(p.stopBuf, 2) + '% below ' + (patRun && (p.stop === 'zone' || p.stop === 'lower') ? 'the pattern\'s low (the lowest point of its candles)' :
+        patRun && p.stop === 'spring' ? 'the signal candle\'s low' :
+        p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' :
         p.stop === 'final' ? 'the CHoCH\'s final low (LL - no live CHoCH = no trade)' : 'the zone bottom or the Spring low, whichever is lower')) +
       (Number(p.stopAtr) ? ', or ' + F.num(p.stopAtr, 1) + ' x ATR(14) under the entry - whichever is lower (the wider stop)' : '') +
       (p.maxRisk ? ' - trades risking more than ' + F.num(p.maxRisk, 1) + '% are skipped' : '') + '.');
@@ -659,7 +665,15 @@
     }).join('') + '</div>';
   }
 
+  /** The stop choices of a Pattern library run (no zone - the 'lower of the two' is the pattern's low; the CHoCH's final low only
+   *  with the market structure on). */
+  function patStops(f) {
+    return CHOICES.stopPat.filter(function (o) { return o[0] !== 'final' || f.structure !== 'off'; });
+  }
+
   function formHtml(f) {
+    // a pattern run with a zone-only stop kept from another setup -> the pattern's low
+    if (f.group === 'pattern' && (f.stop === 'lower' || (f.stop === 'final' && f.structure === 'off'))) f.stop = 'zone';
     var trailOn = f.after === 'trail';
     var changed = SECTIONS.reduce(function (n, x) { return n + sectionOn(f, x[0]); }, 0);
     return '<section class="card lab-form" id="lab-form"><div class="card-head"><div><h2>Your rules</h2><p>1 · pick a ready setup, 2 · check the basics, ' +
@@ -669,7 +683,7 @@
       '<h3 class="lab-h">2 · The basics</h3><div class="form-grid">' +
       field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
       (f.group === 'pattern' ? patHtml(f) : '') +
-      field('Stop loss', sel('stop', f.stop, f.group === 'pattern' ? CHOICES.stopPat : null), 'wide') +
+      field('Stop loss', sel('stop', f.stop, f.group === 'pattern' ? patStops(f) : null), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
       field('… or x ATR under the entry, whichever is lower', sel('stopAtr', f.stopAtr)) +
@@ -994,6 +1008,27 @@
     }).mount(host);
   }
 
+  /** A Pattern library run made by an older laptop program (owner, 13-Nov-2026: "entha pattern select paninalum, our backtest run
+   *  only on Bullishengulfing" - a program that did not know the chosen pattern used its default K08 without a word): the pattern
+   *  asked (this run's job) vs the one it ran, and the program's pattern engine (results from 13-Nov-2026 on carry it). */
+  function engineNote(it, res) {
+    var p = res.params || {};
+    if (p.group !== 'pattern') return '';
+    var sj = ST.status && ST.status.job;
+    var job = sj && sj.id === it.id ? sj.params || {} : {};
+    var fix = ' Your laptop\'s program is older than this website: extract the newest ScreenerBridge.zip into the ScreenerBridge folder, ' +
+      'then sign out of Windows and sign in again (or restart the laptop), and run it again.';
+    if (job.pattern && job.pattern !== p.pattern) {
+      return '<p class="note bad lab-warn" id="lab-engine">You chose ' + esc(job.pattern + ' ' + ((patOf(job.pattern) || {}).name || '')) +
+        ' but your laptop ran ' + esc(p.pattern + ' ' + ((patOf(p.pattern) || {}).name || '')) + ' - these figures and the charts PDF are for that pattern.' + esc(fix) + '</p>';
+    }
+    if (!res.engine) {
+      return '<p class="note warn lab-warn" id="lab-engine">Made by an older laptop program - it knew fewer patterns, and a pattern it did not know ran as ' +
+        'K08 Bullish Engulfing. Check the pattern in the title above.' + esc(fix) + '</p>';
+    }
+    return '<p class="sub" id="lab-engine">Laptop program: pattern engine v' + esc(String(res.engine.version)) + ' · ' + F.int(res.engine.patterns) + ' patterns</p>';
+  }
+
   function paintResult(el) {
     var box = $('#lab-result', el);
     var it = ST.item;
@@ -1005,7 +1040,8 @@
       '<div class="actions"><button class="btn sm" type="button" id="lab-use">Use these rules</button>' +
       '<button class="btn sm" type="button" id="lab-res-pine" title="The TradingView indicator with this run\'s rules - to check its trades on the chart">📋 TradingView script</button>' +
       '<button class="btn sm danger" type="button" id="lab-del">Delete this run</button></div></div>' +
-      '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>' + pdfNote(res.pdf) + '<div id="lab-res-pine-box" class="lab-pine"></div>';
+      engineNote(it, res) + '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>' + pdfNote(res.pdf) +
+      '<div id="lab-res-pine-box" class="lab-pine"></div>';
     if (!s.trades) {
       box.innerHTML = h + '<p class="empty">No trade matched these rules' + (res.open ? ' (' + res.open + ' still running)' : '') + '.</p></section>';
       bindResult(el, it);

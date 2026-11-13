@@ -845,9 +845,14 @@ def why_story(t, cs, s, P, cx):
     mode = P.get('stop')
     if P.get('entry') == 'zone' and mode in ('spring', 'lower') and code not in ('P', 'Q'):
         mode = 'zone'
-    stop = {'zone': 'just under the %s bottom' % ('FVG\'s' if t.get('fz') else 'zone'), 'spring': "just under that candle's low",
-            'lower': 'under the lower of the zone bottom and the candle low', 'pct': '%g%% under the buy price' % P.get('stopPct', 0),
-            'final': 'just under the final low (the lowest point before the CHoCH)'}.get(mode, '')
+    if code == 'K':                          # a Pattern library trade: there is no zone - the pattern's own low (13-Nov-2026)
+        stop = {'zone': "just under the pattern's low (the lowest point of its candles)", 'lower': "just under the pattern's low",
+                'spring': "just under the signal candle's low"}.get(mode)
+    else:
+        stop = None
+    stop = stop or {'zone': 'just under the %s bottom' % ('FVG\'s' if t.get('fz') else 'zone'), 'spring': "just under that candle's low",
+                    'lower': 'under the lower of the zone bottom and the candle low', 'pct': '%g%% under the buy price' % P.get('stopPct', 0),
+                    'final': 'just under the final low (the lowest point before the CHoCH)'}.get(mode, '')
     if P.get('stopAtr'):
         stop += ' or %s times the ATR (the usual candle size) under the buy price, whichever is lower' % ('%g' % P['stopAtr'])
     tgt = target_words(P)
@@ -1174,6 +1179,8 @@ def rule_lines(P):
                 P.get('moveVolN', 1), '' if P.get('moveVolN', 1) == 1 else 's', P['moveVol']))
     stop = {'zone': 'under the zone bottom', 'spring': "under the signal candle's low", 'lower': 'under the lower of the two',
             'pct': '%g%% under the entry' % P.get('stopPct', 0), 'final': 'under the CHoCH\'s final low (LL)'}.get(P.get('stop'), P.get('stop'))
+    if P.get('group') == 'pattern' and P.get('stop') in ('zone', 'lower'):
+        stop = "under the pattern's low"                 # a Pattern library run has no zone (13-Nov-2026)
     stop += '' if P.get('stop') == 'pct' else ' by %g%%' % P.get('stopBuf', 0)
     if P.get('stopAtr'):
         stop += ', or %g x ATR(14) under the entry - whichever is lower' % P['stopAtr']

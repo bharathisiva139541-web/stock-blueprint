@@ -416,6 +416,10 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
 - 13-Nov-2026 (pattern engine, step 4): 192 patterns - the classical chart patterns too (double / triple bottom, inverse head
   and shoulders, rounding bottom, falling wedge, flags, pennants, cup and handle, triangles, rectangle, channel, staircase,
   measured move, high tight flag, flat base, IPO base, VCP; new file pattern_p4.py). Each signals on its breakout.
+- IMPORTANT after extracting a new zip: sign out of Windows and sign in again (or restart). The background program keeps the
+  old code until then - e.g. on 13-Nov-2026 the Backtest Lab ran K08 Bullish Engulfing for every pattern chosen, because the
+  old program did not know the new patterns. Now the laptop refuses a pattern it does not know, and the website's result
+  says "your laptop ran ... not ..." / shows "Laptop program: pattern engine v4 · 192 patterns".
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

@@ -67,3 +67,16 @@ test('web/data/pattern-registry.js + docs/PATTERN_SPECS.md = pattern_registry.py
     assert.ok(m && Number(m[1]) === p.params[k], p.id + ' ' + k + ' default on the page');
   }));
 });
+
+test('every rule the Lab page sends is known to the laptop program (an unknown one would fall back to its default)', { skip: !py && 'python3 not installed' }, () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'web', 'pages', 'lab.js'), 'utf8');
+  const a = src.indexOf('var DEF = {');
+  const DEF = Function('return (' + src.slice(a + 10, src.indexOf('};', a) + 1) + ')')();
+  delete DEF.name;
+  const forms = [DEF, Object.assign({}, DEF, { group: 'pattern', pattern: 'C20', stop: 'spring' }), Object.assign({}, DEF, { group: 'touch', structure: 'only', stop: 'final' })];
+  const code = 'import json, sys; sys.path.insert(0, ' + JSON.stringify(path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge')) + ')\n' +
+    'import backtest_lab as L\nout = []\nfor f in json.load(sys.stdin):\n    u = {}\n    L.clean_params(f, u)\n    out.append(u)\nprint(json.dumps(out))';
+  const r = spawnSync(py, ['-c', code], { input: JSON.stringify(forms), encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(JSON.parse(r.stdout), [{}, {}, {}]);
+});
