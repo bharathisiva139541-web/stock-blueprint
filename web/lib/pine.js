@@ -39,11 +39,17 @@
     return src.replace(re, function (_, a, __, c) { return a + lit + c; });
   }
 
+  var BOS_KIND = { both: 'Every BOS', first: 'Only the 1st BOS after a CHoCH', trend: 'Only BOS of a running up-trend' };
+
   /** The Lab's form (or a run's params) -> the Pine inputs (name -> literal). */
   function inputs(p) {
     var disc = clamp(num(p.discount, 0), 0, 1);
     var out = {
       structOnly: String(p.structure === 'only'),
+      // BOS + FVG (owner, 13-Nov-2026): the same rules on a BOS move
+      setupMode: str(p.setup === 'bos' ? 'BOS + FVG' : 'CHoCH + FVG'),
+      bosKind: str(BOS_KIND[p.bosKind] || BOS_KIND.both),
+      upN: String(clamp(Math.round(num(p.upN, 1)), 1, 8)),
       pivN: String(clamp(Math.round(num(p.pivotN, 5)), 2, 20)),
       downN: String(clamp(Math.round(num(p.downN, 3)), 1, 8)),
       zoneWhen: str(ZONE_WHEN[p.zoneWhen] || ZONE_WHEN.both),
@@ -120,6 +126,11 @@
     if (num(p.beAt, 0)) exits.push('the stop to the entry at ' + num(p.beAt, 0) + 'R');
     if (num(p.timeN, 0)) exits.push('the time stop (' + Math.round(num(p.timeN, 0)) + ' candles)');
     if (exits.length) n.push('Exits are not drawn: ' + exits.join(', ') + ' - the Lab\'s result has them.');
+    // the lower-timeframe confirmation (owner, 13-Nov-2026) - one chart cannot show two timeframes' structure
+    if (p.ltf && p.ltf !== 'off') {
+      n.push('The confirmation on the ' + ({ D: 'daily', '1H': '1-hour', '15m': '15-minute' }[p.ltf] || p.ltf) + ' chart is not drawn: the BUY marks are the ' +
+        'touches - after one, switch TradingView to the ' + p.ltf + ' chart and look for a CHoCH with its final low in the zone (the Lab\'s charts PDF has a page for each).');
+    }
     n.push('Only the entry, stop and target are drawn - the trail, the target lock, the time limit, the costs and the account are not.');
     return n;
   }
