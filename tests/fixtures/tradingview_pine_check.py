@@ -162,8 +162,8 @@ for params in SETS:
     lab, mod = lab_trades(params), model_trades(charts, params)
     assert mod == lab, (params, [x for x in mod if x not in lab][:3], [x for x in lab if x not in mod][:3])
     counts.append(len(lab))
-assert min(counts) >= 3 and sum(counts) > 900, counts
-assert lab_trades(SMC) != lab_trades(dict(SMC, gapEntry=False)), 'the Gap-up zone entry changes some trades on these charts'
+assert min(counts) >= 2 and sum(counts) > 900, counts   # (13-Nov-2026: the owner's setup rules leave fewer trades)
+assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, gapEntry=False)), 'the Gap-up zone entry changes some trades on these charts'
 assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, zonePick='every')), 'the 2nd-zone rule changes trades'
 assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, touchAgain=False)), 'touchAgain changes trades'
 # the CHoCH events of every chart = structure.py's - the baseline and every structure option
@@ -238,7 +238,9 @@ for sym, rows in made.items():
     assert len(m.buys) == 1 and m.buys[0][2:4] == [121.3, 126.5] and rows[m.buys[0][0]][2] == 124.8, (sym, m.buys)
     assert m.buys[0][6] == 126.5 and abs(m.buys[0][7] - 121.3 * 0.995) < 1e-9, m.buys     # an order at the zone top, stop under the zone
     loose = model(rows, L.clean_params(dict(SMC, tf='D', discount=0, zonePick='every')))
-    assert loose.buys[0][2:4] == [139.3, 145.0], loose.buys   # without the discount rule the premium zone is the BUY (the SUPREMEIND run)
+    # without the discount rule the premium zone was the BUY (the SUPREMEIND run) - since 13-Nov-2026 it lies wholly above the CHoCH
+    # level, so it is no zone of the setup
+    assert loose.buys[0][2:4] == [121.3, 126.5], loose.buys
     # the owner's 2nd-zone rule (12-Nov-2026): both zones count without the discount rule - the higher one is only watched
     two = model(rows, L.clean_params(dict(SMC, tf='D', discount=0)))
     assert [b[2:4] for b in two.buys][:1] == [[121.3, 126.5]], two.buys

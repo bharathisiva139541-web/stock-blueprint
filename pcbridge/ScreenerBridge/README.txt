@@ -391,6 +391,10 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    the CHoCH is the signal (SWIGGY). ChochRules.bat asks "A zone price touched before the CHoCH": 1 = counts again,
    2 = not. IMPORTANT after extracting a new zip: sign out and in again (or restart the laptop) - the background program
    keeps running the old version until then (that is why the charts PDF had no volume bars).
+ - 13-Nov-2026 (later): five fixed rules of your CHoCH + FVG setup (Backtest Lab "Only my setup", the daily scan and the
+   TradingView script): no zone wholly above the CHoCH line; the zone formed in the swing from the final low to the move
+   high; before the move high at most 2 candles touched the zone and none closed under its middle; the 1st (watched)
+   zone untouched before the move high; no premium zone when the signal comes 4 days or less after the CHoCH.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

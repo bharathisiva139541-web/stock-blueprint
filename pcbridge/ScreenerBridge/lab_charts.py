@@ -764,6 +764,11 @@ def why_story(t, cs, s, P, cx):
                    'The market structure rules of this run were met.')
         if has_zone:
             out.append('Before the signal the price left %s on %s.' % (zone_name, dt(zf)))
+    if ev and t.get('mit') is not None:
+        m = t['mit']
+        out.append(('Before the rise reached its high, no candle touched this zone - it was fresh.' if not m else
+                    'Before the rise reached its high, %s touched this zone with a wick and none closed under its middle - '
+                    'your rule allows at most 2.' % ('one candle' if m == 1 else '%d candles' % m)))
     if ev and t.get('again'):
         out.append('Price had already touched this zone once while the rise was forming (before the CHoCH). Your rule counts '
                    'its first touch after the CHoCH again - this one.')

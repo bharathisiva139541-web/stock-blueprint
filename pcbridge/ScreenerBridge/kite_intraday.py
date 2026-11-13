@@ -1751,12 +1751,18 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
                          part=r['part'], fib=r['fib'])
             if _choch_fail(j, r):
                 continue
-            nth = ''
+            nth, area = '', None
             if zl is not None:          # of two discount zones the 2nd is traded, the 1st only watched (owner, 12-Nov-2026)
                 why, n_z, _a = _choch_rank(st, j['k'], i, off, z, zl, all_c, closes, highs, r, all_c[i]['c'], again)
                 if why:
                     continue
                 nth = ' · 2nd discount zone (the 1st only watched)' if n_z == 2 else ''
+                area = (_a[0], _a[1], _a[2] + off) if (n_z == 2 and _a) else None
+            # the owner's rules of 13-Nov-2026 (backtest_lab.setup_fail): a premium zone 4 days or less after the CHoCH, more than
+            # 2 candles in the zone / a close under its middle before the move high, a touched 1st zone
+            days = (date.fromisoformat(all_c[i]['day'][:10]) - date.fromisoformat(full_c[st.events[j['k']][0]]['day'][:10])).days
+            if backtest_lab.setup_fail(j, z['f'] + off, z['bottom'], z['top'], lambda q: full_c[q]['l'], lambda q: full_c[q]['c'], days, area):
+                continue
             if z.get('again'):
                 words = 'Zone touch (the first since the CHoCH - touched before it)'
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
@@ -1835,20 +1841,28 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
     if not found:
         return None
     found.sort(key=lambda x: (-x[2], x[0]['kind'] != 'FVG', x[0]['f']))
-    pick_at = 0
-    if r.get('zonePick', 'second') == 'second':
-        # of two discount zones in the move the order waits at the 2nd - the 1st (the higher) is only watched (owner, 12-Nov-2026)
-        zl, pick_at = _zone_list(zones, touches), None
-        for q, (zq, _jq, _bq, _hq, _sq) in enumerate(found):
+    second = r.get('zonePick', 'second') == 'second'
+    zl, pick_at = (_zone_list(zones, touches) if second else None), None
+    lo_at, cl_at = (lambda q: full_c[q]['l']), (lambda q: full_c[q]['c'])
+    for q, (zq, jq, _bq, _hq, _sq) in enumerate(found):
+        n_z, above = 1, None
+        if second:
+            # of two discount zones in the move the order waits at the 2nd - the 1st (the higher) is only watched (owner, 12-Nov-2026)
             why, n_z, above = _choch_rank(st, k, len(all_c), off, zq, zl, all_c, closes, highs, r, price, again)
-            if not why:
-                pick_at = q
-                if n_z == 2 and above:
-                    found[q] = found[q][:3] + (found[q][3] + ' - the 2nd discount zone (the 1st, %.2f - %.2f, only watched)'
-                                               % (above[0], above[1]),) + found[q][4:]
-                break
-        if pick_at is None:
-            return None
+            if why:
+                continue
+        # the owner's rules of 13-Nov-2026: at most 2 candles in the zone / no close under its middle before the move high, the
+        # 1st zone untouched before it (the fast-premium rule is judged on the day of the touch)
+        if backtest_lab.setup_fail(jq, zq['f'] + off, zq['bottom'], zq['top'], lo_at, cl_at, None,
+                                   (above[0], above[1], above[2] + off) if (n_z == 2 and above) else None):
+            continue
+        pick_at = q
+        if n_z == 2 and above:
+            found[q] = found[q][:3] + (found[q][3] + ' - the 2nd discount zone (the 1st, %.2f - %.2f, only watched)'
+                                       % (above[0], above[1]),) + found[q][4:]
+        break
+    if pick_at is None:
+        return None
     z, j, buy, how, sz = found[pick_at]
     H = j['H']
     pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
