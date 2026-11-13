@@ -12424,7 +12424,7 @@ function ab_chochRules_(r) {
     zoneMin: flt(r.zoneMin, 0, 50, 0), zoneMax: flt(r.zoneMax, 0, 100, 0), lineTol: flt(r.lineTol, 0, 5, 0.5), fibLevel: flt(r.fibLevel, 0.2, 0.95, 0.618),
     fibTol: flt(r.fibTol, 0, 5, 1), gapEntry: typeof r.gapEntry === 'boolean' ? r.gapEntry : true, lineOk: r.lineOk === true,
     darkCloud: pick(r.darkCloud, ['any', 'exclude', 'only'], 'any'), fibPat: pick(r.fibPat, ['off', 'big', 'all'], 'off'),
-    zonePick: pick(r.zonePick, ['second', 'every'], 'second') };
+    zonePick: pick(r.zonePick, ['second', 'every'], 'second'), touchAgain: typeof r.touchAgain === 'boolean' ? r.touchAgain : true };
 }
 
 /** 'swings of 5 candles, at least 3 lower highs / lows, the zone's middle at least 50% down the move, the zone formed in the CHoCH
@@ -12442,6 +12442,8 @@ function ab_chochRulesText_(r) {
   }
   // owner, 12-Nov-2026: of two discount zones in the CHoCH move the 2nd is traded, the 1st only watched
   out += r.zonePick === 'every' ? ', every discount zone' : ', the 2nd discount zone when the move has two (the 1st only watched)';
+  // owner, 13-Nov-2026: a zone touched before the CHoCH counts again after it (default) - said only when switched off
+  if (r.touchAgain === false) out += ', a zone touched before the CHoCH does not count again';
   return out;
 }
 

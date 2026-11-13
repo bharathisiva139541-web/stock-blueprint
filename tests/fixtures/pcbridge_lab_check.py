@@ -932,7 +932,7 @@ K.send_waiting({}, lambda cfg, action, body, **kw: sent6.append((action, body)) 
 assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'] for r in sent6[0][1]['rows']] == ['AAA', 'SUP'], sent6
 assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
 NEW6 = {'zoneMin': 0.0, 'zoneMax': 0.0, 'lineTol': 0.5, 'fibLevel': 0.618, 'fibTol': 1.0, 'gapEntry': True, 'lineOk': False,
-        'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second'}       # the 12-Nov-2026 refinements' defaults
+        'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second', 'touchAgain': True}       # the 12-Nov-2026 refinements' defaults
 assert sent6[0][1]['choch'] == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6)
 # the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
 D6 = K.choch_rules()
@@ -955,23 +955,23 @@ for rr6, n6 in ((dict(D6, part='top'), 2), (dict(D6, downN=4), 0), (dict(D6, fib
     if n6:
         assert '· first pullback · zone top 81% down the move · zone ' in got6[0]['note'], got6[0]['note']
 # ChochRules.bat: Enter keeps a value, a bad answer is asked again; config.json gets the five keys
-answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 7)
+answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 8)
 saved6 = {}
 assert K.choch_setup({'url': 'x'}, lambda c: saved6.update(c), ask=lambda q: next(answers)) == 0
 assert K.choch_rules(saved6) == dict({'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6) and saved6['url'] == 'x', saved6
 # ... and the refinements of 12-Nov-2026: zone size 2 - 8 %, the FVG top, the CHoCH-line rule (+1 %), dark clouds left out,
 # the Fib + pattern entry in big zones at the 61.8 % line +/- 1.5 %
-answers = iter([''] * 5 + ['2', '2', '8', '2', '2', '1', '2', '2', '', '1.5'])
+answers = iter([''] * 5 + ['2', '2', '2', '8', '2', '2', '1', '2', '2', '', '1.5'])
 saved7 = {}
 assert K.choch_setup({}, lambda c: saved7.update(c), ask=lambda q: next(answers)) == 0
 r7 = K.choch_rules(saved7)
 assert (r7['zoneMin'], r7['zoneMax'], r7['gapEntry'], r7['lineOk'], r7['lineTol'], r7['darkCloud'], r7['fibPat'], r7['fibLevel'], r7['fibTol'],
-        r7['zonePick']) == (2.0, 8.0, False, True, 1.0, 'exclude', 'big', 0.618, 1.5, 'every'), r7
+        r7['zonePick'], r7['touchAgain']) == (2.0, 8.0, False, True, 1.0, 'exclude', 'big', 0.618, 1.5, 'every', False), r7
 assert saved7['choch_zone_pick'] == 'every'
 assert saved7['choch_zone_max_pct'] == 8.0 and saved7['choch_dark_cloud'] == 'exclude' and saved7['choch_gap_entry'] is False
 assert K.choch_rules_words(r7).endswith(", zone size 2 - 8%, the whole FVG (not the Gap-up zone inside it), or the zone top at / under the CHoCH level (+1%), "
                                         "dark-cloud FVGs left out, big zones: a Spring / Harami + Inverted Hammer at the zone's 61.8% line, "
-                                        "every discount zone"), K.choch_rules_words(r7)
+                                        "every discount zone, a zone touched before the CHoCH does not count again"), K.choch_rules_words(r7)
 assert K.choch_rules({'choch_zone_max_pct': 500, 'choch_dark_cloud': 'x', 'choch_gap_entry': 1, 'choch_fib_pattern': 'some'}) == D6
 # the zone size rule in the daily scan: the SUPREMEIND chart's zone is 4.3 % tall
 assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMax=3)) is None and K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMin=5)) is None
@@ -1482,5 +1482,87 @@ w18 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf18
 for txt in ('Volume (grey line = 20-candle average; the CHoCH move darker)', '1st zone (watched only)', 'Your rule only watches that 1st',
             'the 2nd traded, the 1st only watched', 'Volume in the rise that made the CHoCH', 'Volume in the CHoCH move: at least 1 candle'):
     assert txt in w18, txt
+
+# ------------------------------------------------------------------ 19. a zone touched before the CHoCH counts again (owner, 13-Nov-2026,
+# SWIGGY: "Here 2 FVG under 50% line. 1st one is already mitigated before Choch move, we can take in this FVG even if this FVG
+# mitigated before the Choch Move")
+def craft19():
+    """SWIGGY-like: 3 lower highs / lows, FVG1 121.3 - 126.5 in the CHoCH move TOUCHED before the CHoCH candle, the CHoCH, FVG2
+    139.3 - 145.0 (discount: the move high 175.3), the pullback into FVG2 (the 1st, watched), then into FVG1 (its first touch
+    since the CHoCH = the trade), the rally."""
+    rows, prev = [], 165.0
+    d0 = date(2026, 3, 2)
+
+    def put(o, h, l, c):
+        rows.append([(d0 + timedelta(days=len(rows))).isoformat(), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 900000])
+
+    def go(to, k=6):
+        nonlocal prev
+        for x in leg(prev, to, k):
+            put(prev, max(prev, x) + 0.3, min(prev, x) - 0.3, x)
+            prev = x
+    for to in (150, 160, 142, 152, 134, 144, 126, 136, 120):
+        go(to)
+    put(120, 121.3, 119.7, 121)                                 # A
+    put(121, 130.3, 120.7, 130)                                 # B
+    put(130, 133.3, 126.5, 133)                                 # C: FVG1 121.3 - 126.5
+    put(133, 133.3, 125.8, 131)                                 # a dip into FVG1 BEFORE the CHoCH (it holds)
+    put(131, 138.3, 130.0, 138)                                 # the CHoCH (a close above 136.3)
+    put(138, 139.3, 133.0, 139)
+    put(139, 148.3, 138.7, 148)
+    put(148, 151.3, 145.0, 151)                                 # FVG2 139.3 - 145.0
+    prev = 151
+    go(175, 4)                                                  # the move high 175.3: the 50 % line 147.5
+    go(147, 4)
+    put(147, 147.3, 143.0, 144)                                 # the first touch of FVG2
+    prev = 144
+    go(128, 6)
+    put(128, 128.3, 124.8, 125)                                 # FVG1 again - the first touch since the CHoCH
+    prev = 125
+    go(190, 8)
+    return rows
+
+
+r19 = craft19()
+t19a = next(k for k, r in enumerate(r19) if r[3] == 143.0)
+t19b = next(k for k, r in enumerate(r19) if r[3] == 124.8)
+K.store_save('SWG', {'v': 1, 'sym': 'SWG', 'm15': [], 'day': r19, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+assert L.LOCK_PCT == K.CIRCUIT_LOCK_PCT and L.DEFAULTS['touchAgain'] is True
+c19 = L.TRADE_COLS
+swg = lambda **kw: [dict(zip(c19, r)) for r in L.run_job(dict(SMC6, **kw))['trades'] if r[0] == 'SWG']
+mine19 = swg(entry='zone')
+assert [(t['signal'], t['entry'], t['zn']) for t in mine19] == [(r19[t19b][0], 126.5, 2)], mine19
+assert mine19[0]['zone'] == 'FVG zone touch (again after the CHoCH)' and mine19[0]['R'] > 0, mine19
+off19 = swg(entry='zone', touchAgain=False)                    # before: FVG1 used up before the CHoCH -> FVG2 is the trade
+assert [(t['signal'], t['entry']) for t in off19] == [(r19[t19a][0], 145.0)], off19
+both19 = swg(entry='zone', zonePick='every')
+assert [t['entry'] for t in sorted(both19, key=lambda t: t['signal'])] == [145.0, 126.5], both19
+# the rule itself: rearm_touches on the made chart
+st19 = L.structure.Structure([r[2] for r in r19], [r[3] for r in r19], [r[4] for r in r19], 5)
+k19 = st19.active(t19b, 3)
+assert (r19[56][3], r19[57][3]) == (126.5, 125.8)
+zk19 = [(('FVG', 56), 56, 121.3, 126.5, 57, False)]
+got19 = L.rearm_touches(st19.events, 3, zk19, [r[3] for r in r19], [r[4] for r in r19])
+assert got19.get(k19) == {('FVG', 56): t19b}, (got19, k19, st19.events)
+assert L.rearm_touches(st19.events, 3, zk19, [r[3] for r in r19], [99.0 if j == 57 else r[4] for j, r in enumerate(r19)]) \
+    .get(k19, {}) == {}, 'a zone a close went under before the CHoCH is not counted again'
+# the daily scan: the setup on FVG1's touch (none on FVG2's), the waiting list's order at FVG1 with FVG2 watched
+store19 = {'sym': 'SWG', 'day': r19, 'm15': [], 'h4': []}
+it19 = [x for x in K.analyse(store19, r19[t19a - 1][0], date.fromisoformat(r19[-1][0]), set(), ('D',), ())['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert it19 and it19[0]['candle'][:10] == r19[t19b][0] and r19[t19a][0] not in [x['candle'][:10] for x in it19], [(x['candle'], x['note']) for x in it19]
+assert it19[0]['note'].startswith('Zone touch (the first since the CHoCH - touched before it) · CHoCH ') and '· 2nd discount zone (the 1st only watched)' in it19[0]['note'], it19[0]['note']
+# on FVG2's day (before the later fall that undoes it): without the rule FVG2 is the setup, with it FVG2 is only watched
+day19 = lambda **kw: [x for x in K.analyse(dict(store19, day=r19[:t19a + 1]), r19[t19a - 1][0], date.fromisoformat(r19[t19a][0]), set(), ('D',), (),
+                                           choch=dict(D6, **kw))['items'] if x['pattern'] == K.CHOCH_PATTERN]
+assert [x['candle'][:10] for x in day19(touchAgain=False)] == [r19[t19a][0]] and day19() == [], (day19(touchAgain=False), day19())
+pre19 = [{'t': r[0], 'day': r[0], 'o': r[1], 'h': r[2], 'l': r[3], 'c': r[4]} for r in r19[:t19a]]
+w19 = K.choch_waiting(pre19, pre19, 'D')
+assert w19 and w19['buy'] == 126.5 and 'the 2nd discount zone (the 1st, 139.30 - 145.00, only watched)' in w19['how'], w19
+assert K.choch_waiting(pre19, pre19, 'D', rules=dict(D6, touchAgain=False))['buy'] == 145.0
+# the charts PDF says it
+pdf19 = L.run_job(dict(SMC6, entry='zone'), charts=L.CHARTS_DIR, name='touch again')
+w19p = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf19['pdf']['file'])))
+assert 'Price had already touched this zone once while the rise was forming' in w19p, 'the sentence'
 
 print('OK')

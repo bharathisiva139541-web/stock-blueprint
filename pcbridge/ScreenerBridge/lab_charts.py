@@ -764,6 +764,9 @@ def why_story(t, cs, s, P, cx):
                    'The market structure rules of this run were met.')
         if has_zone:
             out.append('Before the signal the price left %s on %s.' % (zone_name, dt(zf)))
+    if ev and t.get('again'):
+        out.append('Price had already touched this zone once while the rise was forming (before the CHoCH). Your rule counts '
+                   'its first touch after the CHoCH again - this one.')
     if ev and t.get('zn') == 2:
         out.append('Price had already come down to a higher discount zone of the same rise. Your rule only watches that 1st '
                    'zone; the trade is taken in the 2nd zone under it - this one.')

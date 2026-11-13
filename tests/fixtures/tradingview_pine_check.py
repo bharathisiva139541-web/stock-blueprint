@@ -153,7 +153,10 @@ SETS = [SMC,
         dict(SMC, pivotN=3, downN=1, stop='final', maxRisk=0), dict(SMC, structure='off', pivotN=3, downN=1, stop='final', entry='close', maxRisk=0),
         # the 2nd-zone rule (owner, 12-Nov-2026: on by default above) - off, and with every zone counting (no discount rule)
         dict(SMC, pivotN=3, downN=1, zonePick='every'), dict(SMC, pivotN=2, downN=1, discount=0, zoneWhen='leg'),
-        dict(SMC, pivotN=3, downN=1, discount=0.382, discPart='top', entry='close', stop='lower')]
+        dict(SMC, pivotN=3, downN=1, discount=0.382, discPart='top', entry='close', stop='lower'),
+        # a zone touched before the CHoCH counts again (owner, 13-Nov-2026: on by default above) - off, and with every zone
+        dict(SMC, pivotN=3, downN=1, touchAgain=False), dict(SMC, pivotN=2, downN=1, touchAgain=False, zonePick='every'),
+        dict(SMC, pivotN=2, downN=2, zonePick='every', discount=0.382)]
 counts = []
 for params in SETS:
     lab, mod = lab_trades(params), model_trades(charts, params)
@@ -162,6 +165,7 @@ for params in SETS:
 assert min(counts) >= 3 and sum(counts) > 900, counts
 assert lab_trades(SMC) != lab_trades(dict(SMC, gapEntry=False)), 'the Gap-up zone entry changes some trades on these charts'
 assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, zonePick='every')), 'the 2nd-zone rule changes trades'
+assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, touchAgain=False)), 'touchAgain changes trades'
 # the CHoCH events of every chart = structure.py's - the baseline and every structure option
 OPTS = [{}, {'swingMode': 'zigzag', 'zzAtr': 2}, {'swingMode': 'zigzag', 'zzAtr': 1}, {'swingMode': 'zigzag', 'zzAtr': 3, 'chochMode': 'protected'},
         {'swingAtr': 1}, {'swingAtr': 0.5, 'eqAtr': 0.25}, {'chochMode': 'protected'}, {'chochMode': 'protected', 'eqAtr': 0.5}, {'eqAtr': 0.1},
@@ -274,6 +278,7 @@ assert float(default('zzAtr')) == D['zzAtr'] and float(default('swAtr')) == D['s
 assert default('gapEntry') == 'true' and D['gapEntry'] is True and 'linkZone(' in src and 'bool waitsInside = gapEntry and not zg and array.get(zInner, k)' in src
 assert '"Under the CHoCH\'s final low"' in src and M.LINK_SPAN == K.ZONE_LINK_SPAN
 assert default('zonePick') == 'Trade the 2nd (the 1st only watched)' and D['zonePick'] == 'second' and 'zPass(fj, bj, tj, chLi' in src
+assert default('touchAgain') == 'true' and D['touchAgain'] is True and 'if structOnly and touchAgain' in src and 'while array.size(tzF) > 300' in src
 for name, key in (('zzAtr', 'zzAtr'), ('swAtr', 'swingAtr'), ('eqAtr', 'eqAtr')):
     mm = re.search(r'^%s = input\.float\([^\n]*minval=([\d.]+), maxval=([\d.]+)' % name, src, re.M)
     assert mm and (float(mm.group(1)), float(mm.group(2))) == L.LIMITS[key][:2], (name, L.LIMITS[key])

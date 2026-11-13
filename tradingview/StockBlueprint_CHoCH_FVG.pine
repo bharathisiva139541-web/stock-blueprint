@@ -32,6 +32,7 @@ discPart = input.string("Middle", "... judged on the zone's", options=["Middle",
 firstPull = input.bool(true, "First pullback only (no BOS yet)", group=G1)
 belowChoch = input.bool(false, "Zone top below the CHoCH level (strict)", group=G1)
 zonePick = input.string("Trade the 2nd (the 1st only watched)", "Two discount zones in the CHoCH move", options=["Trade the 2nd (the 1st only watched)", "Trade every zone"], group=G1)
+touchAgain = input.bool(true, "A zone touched before the CHoCH counts again after it", group=G1)
 // how swings and the CHoCH are found (the Lab's More rules > Market structure; owner, 12-Nov-2026)
 swMode = input.string("Candles each side", "Swings", options=["Candles each side", "ZigZag (ATR)"], group=G1)
 zzAtr = input.float(2.0, "ZigZag: a turn of x ATR(14)", minval=0.5, maxval=10, step=0.5, group=G1)
@@ -345,6 +346,12 @@ var hitList = array.new_int()
 var tzF = array.new_int()
 var tzB = array.new_float()
 var tzT = array.new_float()
+var tzG = array.new_bool()
+var tzIn = array.new_bool()
+var tzInner = array.new_bool()
+var tzOutB = array.new_float()
+var tzOutF = array.new_int()
+var rmList = array.new_int()
 var abB = array.new_float()
 var abT = array.new_float()
 
@@ -579,6 +586,11 @@ if nh > 0
         array.push(tzF, array.get(zF, k))
         array.push(tzB, array.get(zBot, k))
         array.push(tzT, array.get(zTop, k))
+        array.push(tzG, array.get(zGap, k))
+        array.push(tzIn, array.get(zIn, k))
+        array.push(tzInner, array.get(zInner, k))
+        array.push(tzOutB, array.get(zOutB, k))
+        array.push(tzOutF, array.get(zOutF, k))
         box bx = array.get(zBox, k)
         if not na(bx)
             box.set_right(bx, bar_index)
@@ -595,6 +607,16 @@ if nh > 0
         array.remove(zOutB, k)
         array.remove(zOutF, k)
         array.remove(zBox, k)
+// the touched zones kept for the 2nd-zone rule / touchAgain: the newest 300 (= pine_model ZONES_KEPT)
+while array.size(tzF) > 300
+    array.shift(tzF)
+    array.shift(tzB)
+    array.shift(tzT)
+    array.shift(tzG)
+    array.shift(tzIn)
+    array.shift(tzInner)
+    array.shift(tzOutB)
+    array.shift(tzOutF)
 
 // 3. BOS: a swing high confirmed now (after the CHoCH candle) raises the peak; a close above the peak = BOS
 if chB >= 0 and not chDead and chBos < 0 and bar_index > chB
@@ -768,6 +790,46 @@ if sz6 > 0
                     float fp0 = chH - fibLvl * (chH - chLf)
                     fibLn := line.new(chLi, fp0, bar_index, fp0, color=C_FIB, width=1, style=line.style_dotted)
                     fibLb := label.new(bar_index, fp0, str.tostring(fibLvl * 100) + "% " + fmtP(fp0), style=label.style_label_left, color=color.new(C_FIB, 100), textcolor=C_FIB, size=size.tiny)
+                // a zone of this move price touched before now that held (no close under its bottom) waits again - its first
+                // touch after the CHoCH counts (owner, 13-Nov-2026, SWIGGY)
+                if structOnly and touchAgain
+                    array.clear(rmList)
+                    int ntz6 = array.size(tzF)
+                    if ntz6 > 0
+                        for q6 = 0 to ntz6 - 1
+                            int f6 = array.get(tzF, q6)
+                            float b6 = array.get(tzB, q6)
+                            if f6 >= chLi
+                                bool held6 = true
+                                int back6 = bar_index - f6 - 1
+                                if back6 >= 0
+                                    for j6 = 0 to back6
+                                        if close[j6] < b6
+                                            held6 := false
+                                            break
+                                if held6
+                                    array.push(zF, f6)
+                                    array.push(zBot, b6)
+                                    array.push(zTop, array.get(tzT, q6))
+                                    array.push(zGap, array.get(tzG, q6))
+                                    array.push(zIn, array.get(tzIn, q6))
+                                    array.push(zInner, array.get(tzInner, q6))
+                                    array.push(zOutB, array.get(tzOutB, q6))
+                                    array.push(zOutF, array.get(tzOutF, q6))
+                                    array.push(zBox, na)
+                                    array.push(rmList, q6)
+                    int nrm6 = array.size(rmList)
+                    if nrm6 > 0
+                        for q7 = nrm6 - 1 to 0
+                            int x7 = array.get(rmList, q7)
+                            array.remove(tzF, x7)
+                            array.remove(tzB, x7)
+                            array.remove(tzT, x7)
+                            array.remove(tzG, x7)
+                            array.remove(tzIn, x7)
+                            array.remove(tzInner, x7)
+                            array.remove(tzOutB, x7)
+                            array.remove(tzOutF, x7)
                 // the zones of this move that wait for price (formed after the final low, not touched yet)
                 if showZones and not showAll
                     int nz6 = array.size(zF)

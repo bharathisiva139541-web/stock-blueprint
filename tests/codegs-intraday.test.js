@@ -503,7 +503,7 @@ test('CHoCH + FVG waiting for the pullback (owner, 12-Nov-2026, IREDA): the "CHo
   assert.match(e.sheet('CHoCH Waiting').rows[0][0], /Rules: swings of 10 candles, at least 4 lower highs \/ lows, the zone's top at least 38\.2% down the move, the zone formed only in the CHoCH move, the 2nd discount zone when the move has two \(the 1st only watched\)\./);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(e.run('ab_chochRules_({ pivotN: 99, downN: 0, fib: 3, part: "x", zoneWhen: "y", zoneMax: 500, gapEntry: 1, darkCloud: "x", fibPat: "y", lineOk: "yes" })'))),
     { pivotN: 5, downN: 3, fib: 0.5, part: 'mid', zoneWhen: 'both', zoneMin: 0, zoneMax: 0, lineTol: 0.5, fibLevel: 0.618, fibTol: 1, gapEntry: true,
-      lineOk: false, darkCloud: 'any', fibPat: 'off', zonePick: 'second' }, 'out of range = the defaults');
+      lineOk: false, darkCloud: 'any', fibPat: 'off', zonePick: 'second', touchAgain: true }, 'out of range = the defaults');
   e.post({ token: TOKEN, action: 'intraday', op: 'waiting', upto: '2026-11-07', rows: [w('PARAGMILK', 'D', 9.23, 1), Object.assign(w('M&M', '4H', 2.5, 0), { inside: 1 })] });
   // the site feed: every column but the chart / time, Kite's prices included (the owner's choice)
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +

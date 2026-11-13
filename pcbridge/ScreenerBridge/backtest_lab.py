@@ -180,13 +180,20 @@ DEFAULTS = {
     # from the final low to the CHoCH candle with a volume of moveVol x the average of the 20 candles before the final low
     # (0 = off; structure 'only')
     'moveVol': 0.0, 'moveVolN': 1,
+    # touchAgain (owner, 13-Nov-2026, SWIGGY: "Here 2 FVG under 50% line. 1st one is already mitigated before Choch move, we can
+    # take in this FVG even if this FVG mitigated before the Choch Move"): a zone formed after the CHoCH's final low that price
+    # touched on / before the CHoCH candle (while the rise was forming) and that held (no close under its bottom) counts again -
+    # its first touch AFTER the CHoCH candle is a signal ('touch' group, structure 'only'; rearm_touches) and, for the 2nd-zone
+    # rule, it waits under a higher zone until then
+    'touchAgain': True,
 }
 BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger than this
+LOCK_PCT = 0.05                # = kite_intraday.CIRCUIT_LOCK_PCT: a candle whose range is <= 0.05 % (a Gap-up zone's touch never counts on it)
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
 BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull',
-         'sweep', 'lockTarget', 'gapEntry', 'lineOk')
+         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
                          'touch'),
@@ -1049,7 +1056,8 @@ def summarise(trades, P, skips, meta, secs):
     rows = []
     for t in sorted(trades, key=lambda t: (t['sigDay'], t['sigMin'], t['sym']), reverse=True)[:MAX_TRADES_OUT]:
         rows.append([t['sym'], _label(P['tf'], t['sigDay'], t['sigMin']),
-                     zone_name[t['code']] + (' inside FVG' if t['code'] in ('G', 'Y', 'Q') and (t['inside'] or t.get('fz')) else ''),
+                     zone_name[t['code']] + (' inside FVG' if t['code'] in ('G', 'Y', 'Q') and (t['inside'] or t.get('fz')) else '') +
+                     (' (again after the CHoCH)' if t.get('again') else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
@@ -1284,6 +1292,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     sopts = struct_opts(P)
     trail_on = P['after'] == 'trail'
     final_stop = P['stop'] == 'final'
+    again_on = P['touchAgain'] and smode == 'only' and P['group'] == 'touch'
     smap = (_struct_map(d, tf, P['pivotN'], sopts) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
             or final_stop else None)
     PC = dict(P, entry='close') if P['fibPat'] != 'off' else P      # Fib + pattern rows: bought at the pattern candle's close
@@ -1310,14 +1319,42 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                    if trail_on and P['trail'] == 'atr' else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
             zl_memo = []
+            again = None
+            if again_on and st is not None:
+                # a zone touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
+                again = st.rearm.get(P['downN'])
+                if again is None:
+                    zk = sorted(((x[1], int(x[8])), int(x[8]), x[2], x[3], x[0], x[1] == 'Y') for x in sigs[sym]
+                                if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0)
+                    zk.sort(key=lambda z: z[1])
+                    lows_, his_ = [_f(x) for x in cs.l], [_f(x) for x in cs.h]       # the prices as the cache rows have them
+                    again = st.rearm[P['downN']] = rearm_touches(
+                        st.s.events, P['downN'], zk, lows_, [_f(x) for x in cs.c],
+                        lambda j: lows_[j] > 0 and (his_[j] - lows_[j]) / lows_[j] * 100 <= LOCK_PCT)
+                if again:
+                    byk = {(x[1], int(x[8])): x for x in sigs[sym] if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0}
+                    extra = []
+                    for got in again.values():
+                        for key, j in got.items():
+                            if j is None:
+                                continue
+                            o = byk[key]
+                            lo_, mid = _f(cs.l[j]), (o[2] + o[3]) / 2.0
+                            extra.append([j, o[1], o[2], o[3], 'b' if lo_ <= o[2] else 't' if lo_ >= mid else 'm', 1, o[6], o[7], o[8],
+                                          o[9] if len(o) > 9 else None, 'A'])
+                    extra = pick(extra, P)
+                    if extra:
+                        rows = sorted(rows + extra, key=lambda x: (x[0], -(x[3] if x[3] is not None else -1e18), x[1] != 'Z', x[8] if len(x) > 8 else 0))
 
-            def zone_list():
-                """Every zone of the stock [(f, bottom, top, first touch candle or None)] by f (the 2nd-zone rule)."""
+            def zone_list(k_):
+                """Every zone of the stock [(f, bottom, top, first touch candle or None)] by f (the 2nd-zone rule); with touchAgain
+                a zone touched on / before CHoCH k_'s candle = its first touch after it (or None)."""
                 if not zl_memo:
-                    zl_memo.append(sorted(((int(x[8]), x[2], x[3], None if x[1] == 'V' else x[0]) for x in sigs[sym]
-                                           if x[1] in ('Z', 'Y', 'V') and len(x) > 8 and x[8] is not None and x[8] >= 0),
-                                          key=lambda z: z[0]))
-                return zl_memo[0]
+                    zl_memo.append(sorted((((x[1], int(x[8])) if x[1] != 'V' else None, int(x[8]), x[2], x[3], None if x[1] == 'V' else x[0])
+                                           for x in sigs[sym] if x[1] in ('Z', 'Y', 'V') and len(x) > 8 and x[8] is not None and x[8] >= 0),
+                                          key=lambda z: z[1]))
+                got = (again or {}).get(k_) or {}
+                return [(f_, b_, t_, got[key] if key in got else ft) for key, f_, b_, t_, ft in zl_memo[0]]
 
             def rank(r, sj, zf, outer):
                 """zone_rank of a signal row whose structure is judged."""
@@ -1329,7 +1366,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     j2 = st.s.judge(i_, f2, t2, pr, cs.c, P['downN'], P['chochAge'], h=cs.h, zone_bottom=b2, part=P['discPart'],
                                     fib=fib)
                     return j2['k'] == k_ and not struct_fail(j2, P)
-                return zone_rank(zone_list(), i_, ab, at_, st.s.events[k_][3], jok,
+                return zone_rank(zone_list(k_), i_, ab, at_, st.s.events[k_][3], jok,
                                  lambda f2, b2: any(cs.c[j] < b2 for j in range(f2 + 1, i_)))
 
             def attempt(r):
@@ -1417,6 +1454,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                             t['depth'] = round(sj['depth'], 4)
                 zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                 t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
+                if len(r) > 10 and r[10] == 'A' and code in ('Z', 'Y'):
+                    t['again'] = True                     # touched before the CHoCH - its first touch since then
                 if zrank is not None:
                     t['zn'] = zrank[1]
                     if zrank[2]:
@@ -1536,11 +1575,12 @@ _STRUCT = {'key': None, 'map': {}}
 
 class _Struct:
     """A stock's Structure + the candle count it was made from (a new cache build = new candles)."""
-    __slots__ = ('s', 'size')
+    __slots__ = ('s', 'size', 'rearm')
 
     def __init__(self, cs, n, opts=None):
         self.s = structure.Structure(cs.h, cs.l, cs.c, n, opts or None)
         self.size = cs.n
+        self.rearm = {}                 # {down_n: rearm_touches' map} (touchAgain)
 
 
 def struct_opts(P):
@@ -1592,6 +1632,47 @@ def move_volumes(cs, li, b):
         return None
     avg = sum(vs) / len(vs)
     return [float(cs.v[j]) / avg for j in range(li, min(b, cs.n - 1) + 1)]
+
+
+def rearm_touches(events, down_n, zones, lows, closes, locked=None):
+    """touchAgain (owner, 13-Nov-2026): for every CHoCH with at least down_n lower highs / lows (events = structure's
+    [b, hi, lvl, li, lf, d]), the zones formed after its final low (li <= f <= b) that price touched on / before the CHoCH
+    candle and that held (every close f+1 .. b at / above the bottom) - and the first candle after the CHoCH candle, up to
+    the next such CHoCH's candle (it is still this CHoCH's then), whose low reaches the zone top (a Gap-up zone: not a
+    circuit-locked candle). zones = [(key, f, bottom, top, first touch candle or None, is Gap-up)] by f; locked(j) -> bool.
+    -> {event index: {key: candle or None (not touched again in that time)}}. Walks each CHoCH's own candles once."""
+    ks = [k for k, e in enumerate(events) if e[5] >= down_n]
+    fs = [z[1] for z in zones]
+    out, n = {}, len(lows)
+    for x, k in enumerate(ks):
+        b, li = events[k][0], events[k][3]
+        end = min(n, (events[ks[x + 1]][0] + 1) if x + 1 < len(ks) else n)
+        cand = []
+        for z in zones[bisect.bisect_left(fs, li):bisect.bisect_right(fs, b)]:
+            if z[4] is None or z[4] > b:
+                continue
+            if any(closes[j] < z[2] for j in range(z[1] + 1, b + 1)):
+                continue
+            cand.append(z)
+        if not cand:
+            continue
+        got = {z[0]: None for z in cand}
+        pending = sorted(cand, key=lambda z: -z[3])
+        j = b + 1
+        while pending and j < end:
+            lo = lows[j]
+            if pending[0][3] >= lo:
+                lk = locked(j) if locked else False
+                keep = []
+                for z in pending:
+                    if z[3] >= lo and not (z[5] and lk):
+                        got[z[0]] = j
+                    else:
+                        keep.append(z)
+                pending = keep
+            j += 1
+        out[k] = got
+    return out
 
 
 def zone_rank(zones, i, zb, zt, li, judge_ok, broken):
