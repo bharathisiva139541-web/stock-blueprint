@@ -51,7 +51,10 @@
     darkCloud: 'any',
     // owner, 12-Nov-2026: "No trade only on 2nd FVG. 1st FVG can be watched but not to be traded" (on by default, like the laptop's
     // DEFAULTS) + "In the move of Choch, volumes are at least twice ... Add this option" (off)
-    zonePick: 'second', moveVol: 0, moveVolN: 1
+    zonePick: 'second', moveVol: 0, moveVolN: 1,
+    // owner, 13-Nov-2026 (SWIGGY): "1st one is already mitigated before Choch move, we can take in this FVG even if this FVG mitigated
+    // before the Choch Move" - a zone touched before the CHoCH counts again after it (on by default, like the laptop's DEFAULTS)
+    touchAgain: true
   };
   // ready setups for the "Start here" cards (owner, 12-Nov-2026: "make bactest lab more user-friendly not to be complex")
   var QUICK = [
@@ -64,7 +67,7 @@
   // the folded "More rules" sections: the keys each one holds (its header counts the ones you changed)
   var SECTIONS = [
     ['structure', 'Market structure - CHoCH / BOS', ['structure', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
-      'lineOk', 'lineTol', 'zonePick', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep',
+      'lineOk', 'lineTol', 'zonePick', 'touchAgain', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep',
       'moveVol', 'moveVolN']],
     ['shape', 'Spring candle shape', null],
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
@@ -77,7 +80,7 @@
   // the owner's CHoCH + FVG setup in one click (his answers of 10-Nov-2026, and 11-Nov-2026: the discount half of the move
   // instead of "below the CHoCH level", the first return to that zone = the signal, a buy order at the zone top)
   var SMC = { group: 'touch', structure: 'only', pivotN: 5, downN: 3, zoneWhen: 'both', belowChoch: false, discount: 0.5, discPart: 'mid',
-    firstPull: true, chochAge: 0, stop: 'zone', entry: 'zone', zonePick: 'second' };
+    firstPull: true, chochAge: 0, stop: 'zone', entry: 'zone', zonePick: 'second', touchAgain: true };
   var SHAPE_KEYS = ['upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
     'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct'];
   // My recommendations (10-Nov-2026): starting points to TEST - each one is a reasoned idea, not a proven edge
@@ -285,6 +288,10 @@
     if (Number(p.moveVol)) w.push('in the CHoCH move (final low to the CHoCH candle) at least ' + (Number(p.moveVolN) || 1) + ' candle' + ((Number(p.moveVolN) || 1) === 1 ? '' : 's') +
       ' with ' + pc(p.moveVol) + ' x the average volume of the 20 candles before the move');
     w.push('the CHoCH still alive (no close under its final low)');
+    if (p.group === 'touch') {
+      w.push(p.touchAgain === false ? 'a zone price touched before the CHoCH does not count again' :
+        'a zone price already touched before the CHoCH (while the rise was forming) counts again - its first touch after the CHoCH');
+    }
     w.push(p.zonePick === 'every' ? 'every discount zone\'s first touch is a trade' :
       'when the move has two discount zones, the one price reaches first (the higher) is only watched and the trade is on the 2nd (a 3rd is not traded)');
     return head + engineWords(p) + '. Only signals where ' + w.join('; ') + '.';
@@ -409,6 +416,7 @@
       (on ? field('A swing high / low', sel('pivotN', f.pivotN)) + field('Lower highs and lower lows before the CHoCH', sel('downN', f.downN)) +
         (only ? field('The zone formed', sel('zoneWhen', f.zoneWhen)) + field('The signal came', sel('chochAge', f.chochAge)) +
           field('Two discount zones in the move', sel('zonePick', f.zonePick), 'wide') +
+          (f.group === 'touch' ? '<div class="field lab-checks">' + check('touchAgain', f.touchAgain, 'A zone price touched before the CHoCH (while the rise was forming) counts again after it') + '</div>' : '') +
           field('Discount: the zone at least', sel('discount', f.discount), 'wide') +
           (Number(f.discount) ? field('… judged on', sel('discPart', f.discPart)) : '') +
           '<div class="field lab-checks">' + check('belowChoch', f.belowChoch, 'Zone top below the CHoCH level (strict)') + check('firstPull', f.firstPull, 'First pullback only (no BOS yet)') + '</div>' +

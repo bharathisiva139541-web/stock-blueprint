@@ -1329,7 +1329,7 @@ TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the
 CHOCH_MORE = (('zoneMin', 'choch_zone_min_pct', 0.0, 0.0, 50.0), ('zoneMax', 'choch_zone_max_pct', 0.0, 0.0, 100.0),
               ('lineTol', 'choch_line_tol_pct', 0.5, 0.0, 5.0), ('fibLevel', 'choch_pattern_fib', 0.618, 0.2, 0.95),
               ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0))
-CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False))
+CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False), ('touchAgain', 'choch_touch_again', True))
 CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')),
                ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')))
 
@@ -1383,6 +1383,8 @@ def choch_rules_words(r):
         out += ', %s: a Spring / Harami + Inverted Hammer at the zone\'s %s%% line' % (
             'big zones' if r['fibPat'] == 'big' else 'every zone', _num_words((r.get('fibLevel') or 0.618) * 100))
     out += ', every discount zone' if r.get('zonePick') == 'every' else ', the 2nd discount zone when the move has two (the 1st only watched)'
+    if r.get('touchAgain') is False:
+        out += ', a zone touched before the CHoCH does not count again'
     return out
 
 
@@ -1483,6 +1485,8 @@ def choch_setup(cfg, save_config, ask=input):
     pick('The zone formed', 'zoneWhen', [(w, CHOCH_WHEN_WORDS[w]) for w in CHOCH_WHENS])
     pick('Two discount zones in the CHoCH move', 'zonePick', [('second', 'trade the 2nd (the 1st only watched)'),
                                                             ('every', 'trade every zone\'s first touch')])
+    pick('A zone price touched before the CHoCH (while the rise was forming)', 'touchAgain',
+         [(True, 'counts again - its first touch after the CHoCH'), (False, 'does not count again')])
     # the refinements of 12-Nov-2026 (the Backtest Lab's names)
     print('\nZone size = (top - bottom) / bottom in %. 0 = no limit.')
     num('Zone size at least % (0 to 50)', 'zoneMin', 'choch_zone_min_pct', 0.0, 50.0)
@@ -1649,20 +1653,52 @@ def choch_entries(all_c, d, i, slot_ok, touches, r, zones=None, pat=None):
 
 
 def _zone_list(zones, touches):
-    """backtest_lab.zone_rank's zone list from spring_zones' zones + zone_first_touches: [(f, bottom, top, first touch or
-    None)] by f."""
+    """backtest_lab.zone_rank's zone list from spring_zones' zones + zone_first_touches: [(key, f, bottom, top, first touch
+    or None)] by f; key = (kind, f)."""
     ft = {}
     for i, v in (touches or {}).items():
         for z in v:
             ft[(z['kind'], z['f'])] = i
-    return sorted(((z['f'], z['bottom'], z['top'], ft.get((z['kind'], z['f']))) for z in zones or ()), key=lambda x: x[0])
+    return sorted((((z['kind'], z['f']), z['f'], z['bottom'], z['top'], ft.get((z['kind'], z['f']))) for z in zones or ()),
+                  key=lambda x: x[1])
 
 
-def _choch_rank(st, k, i, off, z, zl, all_c, closes, highs, r, price):
+def _again_map(full_c, off, st, r, zones, touches):
+    """touchAgain (owner, 13-Nov-2026, SWIGGY: "1st one is already mitigated before Choch move, we can take in this FVG even if
+    this FVG mitigated before the Choch Move"): backtest_lab.rearm_touches on these zones -> {CHoCH: {(kind, f): its first
+    touch after the CHoCH candle as an all_c index, or None}} ({} when the rule is off)."""
+    if r.get('touchAgain', True) is False or not zones or st is None:
+        return {}
+    zk = [(key, f + off, b, t, (ft + off) if ft is not None else None, key[0] == 'Gap-up') for key, f, b, t, ft in _zone_list(zones, touches)]
+    got = backtest_lab.rearm_touches(st.events, r['downN'], zk, [c['l'] for c in full_c], [c['c'] for c in full_c],
+                                     lambda j: is_locked(full_c[j]))
+    return {k: {key: (j - off) if j is not None else None for key, j in v.items()} for k, v in got.items()}
+
+
+def _again_touches(all_c, zones, again):
+    """The touches touchAgain adds: {all_c index: [zone + 'where' / touch 1 / again]} (highest top first)."""
+    byk = {(z['kind'], z['f']): z for z in zones or ()}
+    out = {}
+    for v in again.values():
+        for key, j in v.items():
+            if j is None or j < 0 or key not in byk:
+                continue
+            z, low = byk[key], all_c[j]['l']
+            out.setdefault(j, []).append(dict(z, where='bottom' if low <= z['bottom'] else 'top' if low >= (z['bottom'] + z['top']) / 2 else 'middle',
+                                              touch=1, again=True))
+    for v in out.values():
+        v.sort(key=lambda z: (-z['top'], z['kind'] != 'FVG', z['f']))
+    return out
+
+
+def _choch_rank(st, k, i, off, z, zl, all_c, closes, highs, r, price, again=None):
     """The owner's 2nd-zone rule (backtest_lab.zone_rank, 12-Nov-2026) for zone z on candle i of all_c (full_c = all_c with
-    `off` older candles) under CHoCH k -> ('' | 'zone1' | 'zone3', number, the nearest area above)."""
+    `off` older candles) under CHoCH k -> ('' | 'zone1' | 'zone3', number, the nearest area above). `again` = _again_map
+    (a zone touched on / before the CHoCH candle: its first touch after it)."""
     a = z                         # (a Gap-up zone inside an FVG: the FVG overlaps it - the same area)
     li = st.events[k][3] - off
+    got = (again or {}).get(k) or {}
+    zl = [(f, b, t, got[key] if key in got else ft) for key, f, b, t, ft in zl]
 
     def ok(f, b, t):
         jj = st.judge(i + off, f + off, t, price, closes, r['downN'], h=highs, zone_bottom=b, part=r['part'], fib=r['fib'])
@@ -1687,18 +1723,25 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
     pat = None
     if r.get('fibPat') in ('big', 'all') and zones:
         pat = (_RangeMin([c['c'] for c in all_c]), [z['f'] for z in zones], WINDOW.get(tf, 300), cfg)
+    highs = [c['h'] for c in full_c]
+    if st is None:
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'])
+    # a zone price touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
+    again = _again_map(full_c, off, st, r, zones, touches)
+    tch = touches
+    if again:
+        tch = dict(touches)
+        for j, v in _again_touches(all_c, zones, again).items():
+            tch[j] = sorted(list(tch.get(j) or []) + v, key=lambda z: (-z['top'], z['kind'] != 'FVG', z['f']))
     cand = {}
     for i in range(max(1, len(all_c) - WINDOW.get(tf, 300)), len(all_c)):
         if all_c[i]['day'] <= from_iso:
             continue
-        t = choch_entries(all_c, d, i, _slot_ok(slots, tf, all_c[i]), touches, r, zones, pat)
+        t = choch_entries(all_c, d, i, _slot_ok(slots, tf, all_c[i]), tch, r, zones, pat)
         if t:
             cand[i] = t
     if not cand:
         return {}
-    highs = [c['h'] for c in full_c]
-    if st is None:
-        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'])
     closes = [c['c'] for c in full_c]
     zl = _zone_list(zones, touches) if r.get('zonePick', 'second') == 'second' else None
     out = {}
@@ -1710,10 +1753,12 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
                 continue
             nth = ''
             if zl is not None:          # of two discount zones the 2nd is traded, the 1st only watched (owner, 12-Nov-2026)
-                why, n_z, _a = _choch_rank(st, j['k'], i, off, z, zl, all_c, closes, highs, r, all_c[i]['c'])
+                why, n_z, _a = _choch_rank(st, j['k'], i, off, z, zl, all_c, closes, highs, r, all_c[i]['c'], again)
                 if why:
                     continue
                 nth = ' · 2nd discount zone (the 1st only watched)' if n_z == 2 else ''
+            if z.get('again'):
+                words = 'Zone touch (the first since the CHoCH - touched before it)'
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
             sz = _size_zone(z, r)
             pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
@@ -1758,6 +1803,11 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
     if n - 1 - b > WINDOW.get(tf, 300) or st.dead_by(k, closes, n) >= 0 or st.bos_before(k, closes, n) >= 0:
         return None
     hit = set((z['kind'], z['f']) for v in touches.values() for z in v)
+    # a zone touched on / before the CHoCH candle and not since counts as not touched (owner, 13-Nov-2026, SWIGGY)
+    again = _again_map(full_c, off, st, r, zones, touches)
+    for key, j in (again.get(k) or {}).items():
+        if j is None:
+            hit.discard(key)
     price = closes[-1]
     found = []
     gap_entry, fp = r.get('gapEntry', True), r.get('fibPat', 'off')
@@ -1790,7 +1840,7 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
         # of two discount zones in the move the order waits at the 2nd - the 1st (the higher) is only watched (owner, 12-Nov-2026)
         zl, pick_at = _zone_list(zones, touches), None
         for q, (zq, _jq, _bq, _hq, _sq) in enumerate(found):
-            why, n_z, above = _choch_rank(st, k, len(all_c), off, zq, zl, all_c, closes, highs, r, price)
+            why, n_z, above = _choch_rank(st, k, len(all_c), off, zq, zl, all_c, closes, highs, r, price, again)
             if not why:
                 pick_at = q
                 if n_z == 2 and above:

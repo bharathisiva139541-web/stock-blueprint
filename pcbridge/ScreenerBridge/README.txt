@@ -387,6 +387,10 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    trade / the buy order is on the 2nd (ChochRules.bat asks "Two discount zones in the CHoCH move": 1 = trade the 2nd,
    2 = every zone). The Backtest Lab can also ask for big volume in the CHoCH move, and every chart in the charts PDF
    now has the volume under it. The Lab's cache rebuilds once more by itself (version 6).
+ - 13-Nov-2026: a zone price touched before the CHoCH (while the rise was forming) counts again - its first touch after
+   the CHoCH is the signal (SWIGGY). ChochRules.bat asks "A zone price touched before the CHoCH": 1 = counts again,
+   2 = not. IMPORTANT after extracting a new zip: sign out and in again (or restart the laptop) - the background program
+   keeps running the old version until then (that is why the charts PDF had no volume bars).
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

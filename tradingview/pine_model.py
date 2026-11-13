@@ -70,7 +70,9 @@ class Model:
         self.events, self.buys, self.bos = [], [], {}
         # the 2nd-zone rule (12-Nov-2026, the Lab's zonePick): the zones price has touched (f, bottom, top), newest last
         self.second = self.struct_only and P.get('zonePick', 'second') == 'second'
-        self.tz = []
+        self.tz = []                                    # (f, bottom, top, gap, inside, inner, outer bottom, outer candle)
+        # touchAgain (13-Nov-2026): a zone touched on / before the CHoCH candle comes back on the list at the CHoCH
+        self.again = self.struct_only and P.get('touchAgain', True)
 
     # ---- the helpers Pine computes on every bar
     def _pivot_high(self, i):
@@ -232,7 +234,7 @@ class Model:
             self.buys.append([i, self.zF[best], self.zBot[best], self.zTop[best], 'Gap-up' if self.zGap[best] else 'FVG',
                               self.zIn[best]] + list(bvals))
         for k in hit:
-            self.tz.append((self.zF[k], self.zBot[k], self.zTop[k]))
+            self.tz.append((self.zF[k], self.zBot[k], self.zTop[k], self.zGap[k], self.zIn[k], self.zInner[k], self.zOutB[k], self.zOutF[k]))
         del self.tz[:-ZONES_KEPT]
         for k in reversed(hit):
             for a in (self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF):
@@ -310,6 +312,15 @@ class Model:
                         self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi_, lvl, self.seg_min_bar, self.seg_min, d
                         self.chDead, self.chBos, self.chPeak = False, -1, None
                         self.chH = max(H[self.chLi:i + 1])
+                        if self.again:          # the zones of this move touched before now that held: back on the list
+                            keep = []
+                            for z in self.tz:
+                                if z[0] >= self.chLi and min(C[z[0] + 1:i + 1]) >= z[1]:
+                                    for a, v in zip((self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF), z):
+                                        a.append(v)
+                                else:
+                                    keep.append(z)
+                            self.tz = keep
 
     def _add(self, f, bot, top, gap, inside):
         self.zF.append(f); self.zBot.append(bot); self.zTop.append(top); self.zGap.append(gap); self.zIn.append(inside)
@@ -360,7 +371,7 @@ class Model:
         """backtest_lab.zone_rank on this bar: 'zone1' (an untouched discount zone waits under it - this one only watched) /
         'zone3' (two areas above already) / ''."""
         kb, kt = self.zBot[k], self.zTop[k]
-        above = [(b, t) for f, b, t in self.tz + [(self.zF[j], self.zBot[j], self.zTop[j]) for j in hit if j != k]
+        above = [(b, t) for f, b, t in [x[:3] for x in self.tz] + [(self.zF[j], self.zBot[j], self.zTop[j]) for j in hit if j != k]
                  if self.chLi <= f < i and b >= kt - 1e-9 and self._passes_z(f, b, t)]
         areas, top = 0, None
         for b, t in sorted(above):

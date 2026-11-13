@@ -68,6 +68,8 @@
       gapEntry: String(p.gapEntry !== false),
       // of two discount zones in the CHoCH move: the 2nd traded, the 1st only watched (owner, 12-Nov-2026)
       zonePick: str(p.zonePick === 'every' ? 'Trade every zone' : 'Trade the 2nd (the 1st only watched)'),
+      // a zone touched before the CHoCH counts again after it (owner, 13-Nov-2026)
+      touchAgain: String(p.touchAgain !== false),
       // how swings and the CHoCH are found (owner, 12-Nov-2026: the structure options drawn too)
       swMode: str(p.swingMode === 'zigzag' ? 'ZigZag (ATR)' : 'Candles each side'),
       zzAtr: fl(clamp(num(p.zzAtr, 2), 0.5, 10)),
