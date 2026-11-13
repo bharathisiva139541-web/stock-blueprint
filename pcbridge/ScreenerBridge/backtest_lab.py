@@ -45,6 +45,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2026)
+import pattern_detect  # noqa: E402  (the bullish pattern engine - owner, 13-Nov-2026; docs/PATTERN_ENGINE_PLAN.md)
+import pattern_registry  # noqa: E402
 
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
@@ -204,7 +206,17 @@ DEFAULTS = {
     # timeN / timeR = a time stop: timeN candles after the signal candle price has not gone timeR R up (the target not reached)
     # -> sold at that candle's close (0 off)
     'timeN': 0, 'timeR': 1.0,
+    # THE PATTERN LIBRARY (owner, 13-Nov-2026: the bullish pattern engine, M1 - "yes. do as per your recommendation"): group
+    # 'pattern' = the signals of one registry pattern (pattern_registry.py / pattern_detect.py), found on the cached candles at
+    # run time; the stop kind 'zone' = under the pattern's own stop reference (its low). Each pattern's own parameters:
+    'pattern': 'K08',
+    'engBody': 0.0,                      # K08: the green candle's body at least x ATR(14) (0 = off)
+    'boBuf': 0.0, 'boVol': 0.0,          # B01-B04: close at least x % above the level; volume at least x the 20-candle average
+    'rsiN': 14, 'divPivot': 5, 'divMaxGap': 60, 'divRsiMax': 100.0,   # I01: RSI length, swing size, lows apart, RSI at the 1st low
 }
+SURVIVORSHIP = ("The stocks are today's ~1,800 listed ones - companies delisted or suspended over the years are not in the "
+                "candles (Kite has only current instruments), so every result looks somewhat better than reality "
+                "(survivorship bias).")
 BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger than this
 # THE OWNER'S SETUP RULES OF 13-Nov-2026 (always on with structure 'only' - "add this to standard exclusion ... No need filter";
 # the charts BESTAGRO / APTUS and two stop losses whose zone price had sat in before the buy): a zone wholly above the CHoCH level
@@ -222,13 +234,14 @@ BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', '
          'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
-                         'touch'),
+                         'touch', 'pattern'),
     'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct', 'final'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'atr', 'swing', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
     'targetMode': ('R', 'swing', 'mh', 'pct'), 'discPart': ('mid', 'top', 'bottom'),
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
+    'pattern': tuple(pattern_registry.implemented()),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -248,6 +261,8 @@ LIMITS = {   # key: (min, max, integer)
     'moveVol': (0, 20, False), 'moveVolN': (1, 20, True),
     'stopAtr': (0, 10, False), 'targetPct': (1, 1000, False), 'partialPct': (0, 90, False), 'beAt': (0, 20, False),
     'timeN': (0, 1000, True), 'timeR': (0.1, 20, False),
+    'engBody': (0, 10, False), 'boBuf': (0, 20, False), 'boVol': (0, 20, False), 'rsiN': (2, 50, True), 'divPivot': (2, 20, True),
+    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -256,6 +271,7 @@ GROUP_NAMES = {
     'ft': 'FVG First Touch', 'conf': 'FVG First Touch Confirmed',
     'entry': 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed',
     'touch': 'First touch of a zone (every FVG / Gap-up zone)',
+    'pattern': 'Pattern library',
 }
 SPRING_CODES = ('S', 'F', 'G')   # the Spring shape rules apply to these (T / C = FVG First Touch / Confirmed have no Spring pair)
 TOUCH_CODES = ('T', 'Z', 'Y')    # first-touch signals: the zone-top entry (a buy order waiting at the top) fills on them
@@ -264,7 +280,7 @@ FVG_CODES = ('F', 'Z', 'T', 'C', 'P')   # rows whose zone is a 3-candle FVG (the
 PAT_NAMES = {'S': 'Spring', 'H': 'Bullish Harami + Inverted Hammer'}
 ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
               'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'FVG zone - pattern at the Fib line',
-              'Q': 'Gap-up zone - pattern at the Fib line'}
+              'Q': 'Gap-up zone - pattern at the Fib line', 'K': 'Pattern library'}
 REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
@@ -512,6 +528,80 @@ class Candles:
             vals.append(a)
             p += n * size
         self.o, self.h, self.l, self.c, self.v, self.day, self.minute = vals
+
+
+# ------------------------------------------------------------------ the Pattern library's signal rows (owner, 13-Nov-2026)
+_PAT_MEMO = {}                 # (cache dir, tf, pattern, params hash) -> {sym: (candles, events)} while the program runs
+PAT_MEMO_KEEP = 4
+
+
+class _PatRows:
+    """The signal rows of one Pattern library run: pattern_detect events of the chosen pattern on each stock's cached candles
+    -> rows in the Lab's own format [i, 'K', stop reference, None, '', 0, 0, turnover lakh, -1, None, None, trigger, aux]
+    (r[2] = the pattern's stop reference, so the stop kind 'zone' puts the stop under the pattern's low). The events are
+    remembered per (cache build, timeframe, pattern, its parameters) - a second run with other exit rules does not detect
+    again."""
+
+    def __init__(self, d, tf, meta, P):
+        self.pid, self.tf, self.P = P['pattern'], tf, P
+        self.name = '%s %s' % (self.pid, pattern_registry.by_id()[self.pid]['name'])
+        self.params = pattern_detect.params_for(self.pid, P)
+        key = (d, tf, self.pid, pattern_detect.param_hash(self.pid, self.params))
+        if key not in _PAT_MEMO:
+            while len(_PAT_MEMO) >= PAT_MEMO_KEEP:
+                _PAT_MEMO.pop(next(iter(_PAT_MEMO)))
+            _PAT_MEMO[key] = {}
+        self.memo = _PAT_MEMO[key]
+        self.dix = (meta['index'].get('D') or {}) if tf != 'D' else None
+        self.dayf = open(os.path.join(d, 'D.bin'), 'rb') if self.dix else None
+        self.found = 0
+
+    def close(self):
+        if self.dayf is not None:
+            self.dayf.close()
+            self.dayf = None
+
+    def events(self, sym, cs):
+        got = self.memo.get(sym)
+        if got is None or got[0] != cs.n:
+            o, h, l, c = ([_f(x) for x in a] for a in (cs.o, cs.h, cs.l, cs.c))
+            got = self.memo[sym] = (cs.n, pattern_detect.detect(self.pid, o, h, l, c, [float(x) for x in cs.v], self.tf, self.params))
+        return got[1]
+
+    def turnover(self, sym, cs):
+        """day ordinal -> the average daily turnover (close x volume) of the 20 sessions up to that day, lakh (= turnover_fn)."""
+        dc = cs
+        if self.dix is not None:
+            if sym not in self.dix or self.dayf is None:
+                return None
+            dc = Candles(self.dayf, self.dix[sym][0], self.dix[sym][1])
+        pre = [0.0]
+        for j in range(dc.n):
+            pre.append(pre[-1] + _f(dc.c[j]) * float(dc.v[j]))
+        days = list(dc.day)
+
+        def at(day):
+            k = bisect.bisect_right(days, day)
+            if k == 0:
+                return 0.0
+            a = max(0, k - 20)
+            return round((pre[k] - pre[a]) / (k - a) / 1e5, 1)
+        return at
+
+    def rows(self, sym, cs):
+        ev = self.events(sym, cs)
+        if not ev:
+            return []
+        self.found += len(ev)
+        turn = self.turnover(sym, cs)
+        out = []
+        for a, conf, occ, trig, sref, aux in ev:
+            t = turn(cs.day[a]) if turn else 0.0
+            if self.P['minTurnover'] and t < self.P['minTurnover']:
+                continue
+            out.append([a, 'K', round(sref, 4), None, '', 0, 0, t, -1, None, None,
+                        round(trig, 4) if trig is not None else None, aux])
+        return out
 
 
 # ------------------------------------------------------------------ one trade
@@ -1125,7 +1215,7 @@ def summarise(trades, P, skips, meta, secs):
     rows = []
     for t in sorted(trades, key=lambda t: (t['sigDay'], t['sigMin'], t['sym']), reverse=True)[:MAX_TRADES_OUT]:
         rows.append([t['sym'], _label(P['tf'], t['sigDay'], t['sigMin']),
-                     zone_name[t['code']] + (' inside FVG' if t['code'] in ('G', 'Y', 'Q') and (t['inside'] or t.get('fz')) else '') +
+                     (t.get('pname') or zone_name[t['code']]) + (' inside FVG' if t['code'] in ('G', 'Y', 'Q') and (t['inside'] or t.get('fz')) else '') +
                      (' (again after the CHoCH)' if t.get('again') else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
@@ -1143,7 +1233,10 @@ def summarise(trades, P, skips, meta, secs):
         stats['edge'] = _edge(stats['trades'], lo_r, hi_r)
     split = _split(closed, P)
     rolling = _rolling(closed, P['rollYears'])
-    return {'v': 1, 'params': P, 'groupName': GROUP_NAMES[P['group']], 'cacheUpto': meta.get('upto'),
+    gname = GROUP_NAMES[P['group']]
+    if P['group'] == 'pattern':
+        gname += ': %s %s' % (P['pattern'], pattern_registry.by_id()[P['pattern']]['name'])
+    return {'v': 1, 'params': P, 'groupName': gname, 'cacheUpto': meta.get('upto'), 'warnings': [SURVIVORSHIP],
             'from': date.fromordinal(first).isoformat() if first else '', 'to': date.fromordinal(last).isoformat() if last else '',
             'stats': stats, 'open': len(trades) - len(closed), 'skipped': skips, 'account': acct, 'years': years,
             'hist': hist, 'reasons': reasons, 'tradeCols': TRADE_COLS, 'trades': rows, 'tradesTotal': len(trades),
@@ -1371,14 +1464,24 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     lens = ema_lens(P)
     mkt = market_filter(meta, P)
     fw = open(os.path.join(d, 'W.bin'), 'rb') if wk_index is not None else None
-    syms = sorted(sigs)
+    pat_on = P['group'] == 'pattern'
+    pat = _PatRows(d, tf, meta, P) if pat_on else None
+    syms = sorted(index) if pat_on else sorted(sigs)
     fib = P['discount'] or None
     with open(os.path.join(d, tf + '.bin'), 'rb') as f:
         for k, sym in enumerate(syms):
-            rows = pick(sigs[sym], P)
-            if not rows or sym not in index:
-                continue
-            cs = Candles(f, index[sym][0], index[sym][1])
+            if pat_on:
+                if sym not in index:
+                    continue
+                cs = Candles(f, index[sym][0], index[sym][1])
+                rows = pat.rows(sym, cs)
+                if not rows:
+                    continue
+            else:
+                rows = pick(sigs.get(sym) or [], P)
+                if not rows or sym not in index:
+                    continue
+                cs = Candles(f, index[sym][0], index[sym][1])
             ema = ema_series(cs.c, P['emaN']) if P['after'] == 'trail' and P['trail'] == 'ema' else None
             emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens}
             st = None
@@ -1515,6 +1618,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     return None, (why, '')
                 t['ema'] = note
                 t['sym'] = sym
+                if code == 'K':                       # a Pattern library signal: its name + level (the trades list, the PDF)
+                    t['pname'], t['pid'], t['trig'] = pat.name, P['pattern'], r[11] if len(r) > 11 else None
                 t['zpct'] = round(zp, 2) if zp is not None else None
                 t['dc'] = bool(dc)
                 if code in FIB_CODES:
@@ -1582,6 +1687,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 progress(int((k + 1) * 90 / max(1, len(syms))))
     if fw is not None:
         fw.close()
+    if pat is not None:
+        pat.close()
     res = summarise(trades, P, skips, meta, time.time() - t0)
     if charts:
         try:

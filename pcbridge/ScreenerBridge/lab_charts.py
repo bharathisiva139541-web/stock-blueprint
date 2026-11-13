@@ -574,6 +574,9 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     if t.get('fibLine') is not None and za is not None:        # the zone's Fib line the pattern held (12-Nov-2026)
         ch.hline(za, i, t['fibLine'], FIB, 0.8, dash=(3, 1.5))
         right.append((ch.Y(t['fibLine']), 'Zone %g%% %s' % (P.get('fibLevel', 0.618) * 100, money(t['fibLine'])), FIB))
+    if str(t.get('pid') or '').startswith('B') and t.get('trig') is not None:      # the breakout level (Pattern library)
+        ch.hline(max(start, i - 20), i, t['trig'], MUTED, 0.8, dash=(3, 1.5))
+        right.append((ch.Y(t['trig']), 'Breakout level %s' % money(t['trig']), MUTED))
     ch.hline(i, jx, t['entry'], ENTRY, 1.1)
     ch.hline(i, jx, t['stop'], STOP, 1.1)
     if t.get('tgt') is not None:
@@ -653,7 +656,7 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     ex_txt = money(ex) if t.get('part') is None else '%s (%g%% at %s, the rest %s)' % (
         money(t['exit']), t.get('partPct', 50), money(t['part']), money(ex))
     line2 = '%s - entry %s - stop %s%s (risk %.2f%%) - target %s - exit %s on %s after %d day%s - best %.2fR - %s' % (
-        ZONE_NAME.get(t['code'], t['code']) + (' (%s)' % WHERE.get(t.get('where'), '') if t.get('where') in WHERE else ''),
+        (t.get('pname') or ZONE_NAME.get(t['code'], t['code'])) + (' (%s)' % WHERE.get(t.get('where'), '') if t.get('where') in WHERE else ''),
         money(t['entry']), money(t['stop']), ' (%g x ATR)' % P.get('stopAtr') if t.get('stopBy') == 'atr' else '', t['riskPct'],
         money(t['tgt']) if t.get('tgt') is not None else '-', ex_txt,
         day_text(cs.day[jx_full], cs.minute[jx_full], intraday), t['days'], '' if t['days'] == 1 else 's', t['maxR'],
@@ -802,6 +805,8 @@ def why_story(t, cs, s, P, cx):
     elif code in ('S', 'F', 'G'):
         txt = ('On %s a Spring candle formed%s: the price dipped below the red candle before it and closed back above its low - '
                'sellers pushed down, buyers pushed back.' % (dt(i), ' on the zone' if has_zone else ''))
+    elif code == 'K':
+        txt = 'On %s the backtest found %s (Pattern library). %s' % (dt(i), t.get('pname') or 'a pattern', PAT_WORDS.get(t.get('pid'), ''))
     else:
         txt = 'The signal came on %s.' % dt(i)
     if ev:
@@ -884,6 +889,24 @@ def target_words(P):
     if m == 'pct':
         return 'when the price is %s%% above the buy price' % ('%g' % P.get('targetPct', 20))
     return 'at %s the risk (%gR)' % (_times(P.get('targetR', 2)), P.get('targetR', 2))
+
+
+# the Pattern library's patterns in plain words (page 2 - no prices; owner, 13-Nov-2026, the bullish pattern engine)
+PAT_WORDS = {
+    'K08': 'A red candle was followed by a bigger green candle whose body covered all of the red body - buyers took over the '
+           'whole of the day before. The stop goes under the lower of the two lows.',
+    'B01': 'The close went above the highest high of the 20 candles before it, for the first time - a fresh 20-candle breakout. '
+           'The stop goes under that candle\'s low.',
+    'B02': 'The close went above the highest high of the 50 candles before it, for the first time - a fresh 50-candle breakout. '
+           'The stop goes under that candle\'s low.',
+    'B03': 'The close went above the highest high of the 52 weeks before it, for the first time - a fresh 52-week high. '
+           'The stop goes under that candle\'s low.',
+    'B04': 'The close went above every high since the history starts (20 years or the listing) - an all-time high. '
+           'The stop goes under that candle\'s low.',
+    'I01': 'Price made a lower swing low but RSI made a higher low - the fall was losing strength (a bullish divergence). '
+           'The signal came only when the second low was confirmed by the candles after it, never on the low itself. '
+           'The stop goes under that second low.',
+}
 
 
 def _times_x(x):
