@@ -1380,9 +1380,10 @@ BACKTEST_TFS = ('4H', 'D', 'W')
 GAP_SPRING = 'Gap-up FVG + Spring'   # owner, 08-Nov-2026: split from Spring in FVG (= 3-candle FVG zones only)
 SPRING_PATTERNS = ('Spring in FVG', GAP_SPRING, 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
 FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed'), ('twin', 'Twin Star Bottom + FVG'))
-RULES_VERSION = 6                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
+RULES_VERSION = 7                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
                                    # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch, 5 = CHoCH + FVG,
-                                   # 6 = CHoCH + FVG in the discount half of the move + the first touch of any zone)
+                                   # 6 = CHoCH + FVG in the discount half of the move + the first touch of any zone,
+                                   # 7 = BOS + FVG + the lower-timeframe CHoCH in the zone - 13-Nov-2026)
 # the owner's CHoCH + FVG setup (10-Nov-2026, structure.py): after >= 3 lower highs / lows (swings of 5 candles) a candle
 # closes above the last lower high; an FVG / Gap-up zone formed in that move or after it; on the first pullback into it (no
 # BOS yet) a Spring on the zone (4H: the 13:15 candle), an FVG First Touch / Confirmed or the first touch of the zone.
@@ -1391,6 +1392,17 @@ RULES_VERSION = 6                  # a change rescans the last FIRST_RUN_SESSION
 # high since; CHOCH_FIB, CHOCH_PART) instead of "the zone under the CHoCH level"
 CHOCH_PATTERN = 'CHoCH + FVG'
 CHOCH_TFS = ('4H', 'D', 'W')
+# BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this. like FVG Zone at discount level in the BOS move ... It can
+# be a continuous BOS in uptrend. or BOS formed after Choch"): the same setup on the BOS move (structure.bos_events) - the
+# daily scan lists the first touches of its discount zones like the CHoCH ones (config "choch_bos": false = off,
+# "choch_bos_kind": both / first / trend)
+BOS_PATTERN = 'BOS + FVG'
+# the lower-timeframe confirmation (owner, 13-Nov-2026: "If any Choch has happened inside the Zone in 15 min, then i decided to
+# buy"): after a CHoCH + FVG / BOS + FVG setup's touch, a CHoCH of a smaller chart (my recommendations: 3 candles a swing, 2 lower
+# highs / lows, its final low in the zone - at most 0.5 % under it -, within 5 candles of the setup's chart) = a row '15m CHoCH
+# in zone' (the daily scan after the close; config "choch_ltf": 15m / 1H / off for the daily setups - 4H uses 15m, W the daily)
+LTF_PATTERNS = {'15m': '15m CHoCH in zone', '1H': '1H CHoCH in zone', 'D': 'D CHoCH in zone'}
+LTF_LIVE_P = {'ltfPivot': 3, 'ltfDown': 2, 'ltfWait': 5, 'ltfUnder': 0.5}
 CHOCH_PIVOT_N = 5
 CHOCH_DOWN_N = 3
 CHOCH_FIB = 0.5
@@ -1416,9 +1428,11 @@ TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the
 CHOCH_MORE = (('zoneMin', 'choch_zone_min_pct', 0.0, 0.0, 50.0), ('zoneMax', 'choch_zone_max_pct', 0.0, 0.0, 100.0),
               ('lineTol', 'choch_line_tol_pct', 0.5, 0.0, 5.0), ('fibLevel', 'choch_pattern_fib', 0.618, 0.2, 0.95),
               ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0))
-CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False), ('touchAgain', 'choch_touch_again', True))
+CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False), ('touchAgain', 'choch_touch_again', True),
+               ('bos', 'choch_bos', True))
 CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')),
-               ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')))
+               ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')), ('bosKind', 'choch_bos_kind', 'both', ('both', 'first', 'trend')),
+               ('ltf', 'choch_ltf', '15m', ('15m', '1H', 'off')))
 
 
 def choch_rules(cfg=None):
@@ -1589,6 +1603,14 @@ def choch_setup(cfg, save_config, ask=input):
     if r['fibPat'] != 'off':
         num('... the zone\'s Fib line (0.5 / 0.618 / 0.705 / 0.786)', 'fibLevel', 'choch_pattern_fib', 0.2, 0.95, (0.5, 0.618, 0.705, 0.786))
         num('... the pattern\'s low within % of that line (0 to 5)', 'fibTol', 'choch_pattern_tol_pct', 0.0, 5.0)
+    # BOS + FVG and the smaller chart's confirmation list (owner, 13-Nov-2026)
+    print('\nBOS + FVG = the same rules on a BOS move (a close above a higher high after a higher low).')
+    pick('BOS + FVG setups in the daily list', 'bos', [(True, 'listed'), (False, 'not listed')])
+    if r['bos']:
+        pick('Which BOS', 'bosKind', [('both', 'every BOS - the 1st after a CHoCH and the ones of a running up-trend'),
+                                      ('first', 'only the 1st BOS after a CHoCH'), ('trend', 'only the BOS of a running up-trend')])
+    pick('After a daily setup\'s touch, list a CHoCH in the zone on', 'ltf',
+         [('15m', 'the 15-minute chart'), ('1H', 'the 1-hour chart'), ('off', 'nothing (no confirmation list)')])
     cfg['choch_swing_candles'], cfg['choch_lower_highs'], cfg['choch_fib'] = r['pivotN'], r['downN'], r['fib']
     cfg['choch_zone_part'], cfg['choch_zone_when'] = r['part'], r['zoneWhen']
     for key, name, _d, _lo, _hi in CHOCH_MORE:
@@ -1794,7 +1816,7 @@ def _choch_rank(st, k, i, off, z, zl, all_c, closes, highs, r, price, again=None
                                   lambda f, b: any(all_c[q]['c'] < b for q in range(f + 1, min(i, len(all_c)))))
 
 
-def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None, zones=None):
+def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None, zones=None, kind='choch'):
     """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
     {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). A candle's
     entry patterns (choch_candidates) are tried in turn - the first whose zone formed after the CHoCH's final low, on the
@@ -1855,8 +1877,14 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
             sz = _size_zone(z, r)
             pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
-            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move%s%s'
-                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)), nth,
+            if kind == 'bos':           # BOS + FVG (13-Nov-2026): which BOS, and the higher low its move starts at
+                ck = st.ck[j['k']] if st.ck else -1
+                head = 'BOS %s (%s)' % (full_c[b]['t'], ('the 1st after the CHoCH of %s' % full_c[st.chev[ck][0]]['t']) if ck >= 0 else
+                                        '%d higher high%s / low%s' % (dd, '' if dd == 1 else 's', '' if dd == 1 else 's'))
+            else:
+                head = 'CHoCH %s after %d lower highs / lows' % (full_c[b]['t'], dd)
+            out[i] = (z, '%s · %s · first pullback · zone %s %d%% down the move%s%s'
+                      % (words, head, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)), nth,
                          (' · zone %s%% tall' % _num_words(pct)) if pct is not None else ''))
             break
     return out
@@ -1960,6 +1988,51 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
             'buy': round(buy, 2), 'stopAt': round(sz['bottom'], 2), 'how': how, 'pct': round(pct, 2) if pct is not None else None}
 
 
+def ltf_candles(store, ltf, upto_iso):
+    """The smaller chart's candles from the store for the daily scan's confirmation: 15m / 1H from the stored 15-minute days
+    (~6 months), D = the daily candles."""
+    if ltf == 'D':
+        return [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto_iso]
+    return [c for c in bucket_intraday(store.get('m15') or [], 15 if ltf == '15m' else 60) if c['day'] <= upto_iso]
+
+
+def ltf_live(store, tf, all_c, setups, since_iso, upto_iso, r, ltf, lt_box=None):
+    """The lower-timeframe CHoCH in the zone of the recent setups (13-Nov-2026): `setups` = [(i, zone, what)] of all_c (the
+    chart tf); for each touch of the last ltfWait + 2 candles the small CHoCH (backtest_lab.ltf_find - the Lab's own rule)
+    of the `ltf` chart -> items {'tf', 'candle' (the small CHoCH candle), 'session', 'low', 'close', 'pattern', 'zone', 'note'}
+    of the ones after since_iso. `lt_box` keeps the small candles + their CHoCH events for the next timeframe."""
+    P = dict(LTF_LIVE_P, tf=tf)
+    recent = [s for s in setups if s[0] >= len(all_c) - P['ltfWait'] - 2]
+    if not recent:
+        return []
+    box = lt_box if lt_box is not None else {}
+    if ltf not in box:
+        lc = ltf_candles(store, ltf, upto_iso)
+        lt = backtest_lab.CandleArrays(lc, ltf != 'D')
+        ev = backtest_lab.structure.choch_events(lt.h, lt.l, lt.c, P['ltfPivot']) if lt.n > 20 else []
+        box[ltf] = (lc, lt, ev)
+    lc, lt, ev = box[ltf]
+    if not ev:
+        return []
+    cs = backtest_lab.CandleArrays(all_c, tf == '4H')
+    out = []
+    for i, z, what in recent:
+        sz = _size_zone(z, r)
+        hit, jj, _why = backtest_lab.ltf_find(cs, i, sz['bottom'], z['top'], P, lt, ev)
+        if hit is None:
+            continue
+        c = lc[int(hit[0])]
+        if c['day'] <= since_iso:
+            continue
+        d = int(hit[5])
+        out.append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
+                    'pattern': LTF_PATTERNS[ltf], 'zone': zone_out(all_c, z),
+                    'note': '%s zone touched %s · %s CHoCH after %d lower high%s / low%s, its final low in the zone%s · buy at its close · '
+                            'stop under its final low' % (what, all_c[i]['t'], ltf, d, '' if d == 1 else 's', '' if d == 1 else 's',
+                                                           '' if jj == i else ' · %d candle%s after the touch' % (jj - i, '' if jj - i == 1 else 's'))})
+    return out
+
+
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
             backtest=False, lab=None, lab_only=False, choch=None):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
@@ -1974,6 +2047,7 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
     turn = backtest_lab.turnover_fn(store.get('day') or []) if lab is not None and backtest else None
     out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': [], 'waiting': []}
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
+    lt_boxes = {}                     # the smaller charts' candles + CHoCH events (the confirmation rows), made once a stock
     for tf in timeframes:
         full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
         if len(full_c) < 2:
@@ -2018,17 +2092,30 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             zs_c = link_zones(spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else []
             tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
             rules = choch or choch_rules()          # the daily scan's CHoCH rules (config.json / ChochRules.bat)
-            st_c = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c],
-                                                    rules['pivotN'])
-            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_c, touches=tch_c,
-                                                    rules=rules, zones=zs_c).items()):
-                c = all_c[i]
-                broken = spring_broken(all_c, i)
-                if broken is None and c['day'] > since_iso:
-                    out['items'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
-                                         'pattern': CHOCH_PATTERN, 'zone': zone_out(all_c, z), 'note': note})
-                elif broken is not None and c['day'] >= keep_from:
-                    out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': CHOCH_PATTERN})
+            fhl = ([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c])
+            st_c = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'])
+            runs = [(CHOCH_PATTERN, 'choch', st_c, rules)]
+            if rules.get('bos', True):
+                # BOS + FVG (13-Nov-2026): the same rules on the BOS move; the BOS structure picked its events already
+                st_b = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], None,
+                                                        {'kind': 'bos', 'bos': rules.get('bosKind', 'both'), 'downN': rules['downN'], 'upN': 1})
+                runs.append((BOS_PATTERN, 'bos', st_b, dict(rules, downN=1)))
+            found = []
+            for pname, kind, st_x, r_x in runs:
+                for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_x, touches=tch_c,
+                                                        rules=r_x, zones=zs_c, kind=kind).items()):
+                    c = all_c[i]
+                    broken = spring_broken(all_c, i)
+                    if broken is None and c['day'] > since_iso:
+                        out['items'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
+                                             'pattern': pname, 'zone': zone_out(all_c, z), 'note': note})
+                    elif broken is not None and c['day'] >= keep_from:
+                        out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': pname})
+                    found.append((i, z, '%s %s' % (tf, pname)))
+            # the smaller chart's CHoCH in the zone after a recent touch (13-Nov-2026)
+            ltf = {'D': rules.get('ltf', '15m'), '4H': '15m', 'W': 'D'}.get(tf) if rules.get('ltf', '15m') != 'off' else None
+            if ltf and found:
+                out['items'].extend(ltf_live(store, tf, all_c, found, since_iso, upto.isoformat(), rules, ltf, lt_boxes))
             # ... and the ones still waiting for the pullback (owner, 12-Nov-2026: the sheet's "CHoCH Waiting" tab)
             w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c, rules=rules)
             if w:

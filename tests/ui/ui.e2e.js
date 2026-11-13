@@ -87,7 +87,10 @@ LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles
     ['2026-10-20', SENT_SYM, null, '4H', 'FVG First Touch', '2026-10-20 09:15', '2026-10-14 13:15', 'FVG'],
     ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null],
     // the owner's CHoCH + FVG setup (10-Nov-2026): the PC's words, no prices
-    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback']] };
+    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'],
+    // 13-Nov-2026: BOS + FVG and the smaller chart's CHoCH in the zone (the confirmed entry)
+    ['2026-10-20', SENT_SYM, null, 'D', 'BOS + FVG', '2026-10-19', '2026-10-08', 'FVG top (touch 1) · Zone first touch · BOS 2026-10-14 (2 higher highs / lows) · first pullback · zone middle 60% down the move'],
+    ['2026-10-20', SENT_SYM, null, 'D', '15m CHoCH in zone', '2026-10-20 11:30', '2026-10-08', 'FVG · D BOS + FVG zone touched 2026-10-19 · 15m CHoCH after 2 lower highs / lows, its final low in the zone · 1 candle after the touch · buy at its close · stop under its final low']] };
 // format 14 (owner, 12-Nov-2026, IREDA): CHoCH + FVG setups waiting for the pullback - with Kite's prices (owner: "use kite price")
 LIVE_MAIN.chochWait = { note: 'CHoCH + FVG setups WAITING for the pullback, from Zerodha Kite candles (your PC program, session 2026-10-20): ... Rules: swings of 8 candles, ' +
     'at least 10 lower highs / lows, the zone\'s top at least 38.2% down the move, the zone formed only in the CHoCH move. Distance % = ...',
@@ -880,8 +883,8 @@ function check(name, fn) {
       note: document.querySelector('#sg-itd .card-head p').textContent,
       jump: !!document.querySelector('[data-jump="sg-itd"]')
     }));
-    assert.strictEqual(r.count, '5 of 5');
-    assert.deepStrictEqual(r.chips, ['All timeframes (5)', '1H (1)', '4H (2)', 'D (1)', 'W (1)']);
+    assert.strictEqual(r.count, '7 of 7');
+    assert.deepStrictEqual(r.chips, ['All timeframes (7)', '1H (1)', '4H (2)', 'D (3)', 'W (1)']);
     assert.ok(r.links.some((l) => l[0] === 'TradingView 4H ↗' && l[1] === 'https://www.tradingview.com/chart/?symbol=NSE%3A' + encodeURIComponent(FLAG_SYM) + '&interval=240' && l[2] === '_blank'), JSON.stringify(r.links));
     assert.match(r.note, /Last scan: session 2026-10-20/);
     assert.ok(r.jump, 'in the page\'s jump chips');
@@ -898,18 +901,28 @@ function check(name, fn) {
     assert.ok(typeof dp.chg === 'number', 'the stock has a change %');
     assert.ok(dp.cell.includes(Math.abs(dp.chg).toFixed(2)), dp.cell + ' vs ' + dp.chg);
     await p.click('[data-chip="sgitdtf"][data-v="4H"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 5');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 7');
     await p.click('[data-chip="sgitdp"][data-v="FVG First Touch"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 5');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 7');
     await p.click('[data-chip="sgitdp"][data-v="Spring"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 5');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 7');
     // the owner's CHoCH + FVG setups (10-Nov-2026): their own section first, with what triggered each one
     await p.waitForSelector('#sg-ch-t table');
     const ch = await p.evaluate(() => ({ count: document.querySelector('#sg-ch-count').textContent, text: document.querySelector('#sg-ch-t').textContent,
       link: (document.querySelector('#sg-ch-t a.btn') || {}).textContent, jump: !!document.querySelector('[data-jump="sg-choch"]'),
       first: document.querySelector('#app section.card').id, note: document.querySelector('#sg-choch .card-head p').textContent }));
-    assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['1 of 1', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
+    assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['3 of 3', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
     assert.ok(ch.text.includes('Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'), ch.text);
+    // BOS + FVG and the smaller chart's CHoCH in the zone (owner, 13-Nov-2026): a Setup column + chips
+    assert.deepStrictEqual(await p.$$eval('[data-chip="sgchset"]', (b) => b.map((x) => x.textContent)),
+      ['Every setup', 'CHoCH + FVG (1)', 'BOS + FVG (1)', 'Confirmed on a smaller chart (1)']);
+    await p.click('[data-chip="sgchset"][data-v="ltf"]');
+    assert.strictEqual(await p.$eval('#sg-ch-count', (x) => x.textContent), '1 of 3');
+    assert.match(await p.$eval('#sg-ch-t tbody', (x) => x.textContent), /15m CHoCH in zone[\s\S]*2026-10-20 11:30[\s\S]*D BOS \+ FVG zone touched 2026-10-19 · 15m CHoCH after 2 lower highs/);
+    await p.click('[data-chip="sgchset"][data-v="bos"]');
+    assert.match(await p.$eval('#sg-ch-t tbody', (x) => x.textContent), /BOS \+ FVG[\s\S]*BOS 2026-10-14 \(2 higher highs \/ lows\)/);
+    await p.click('[data-chip="sgchset"][data-v="all"]');
+    assert.match(ch.note, /BOS \+ FVG = the same on a BOS move[\s\S]*15m CHoCH in zone = after such a touch/);
     assert.match(ch.note, /10 lower highs and 10 lower lows \(swings of 8 candles\).*closed above the last lower high \(CHoCH\).*only in the CHoCH move, in the discount part of the move \(its top at least 38\.2% down.*first pullback.*first touch.*ChochRules\.bat/,
       'the laptop\'s own rules (ChochRules.bat), read from the tab note');
     // waiting for the pullback (owner, 12-Nov-2026, IREDA): CHoCH formed, discount zone below - the zone top to buy at, the distance from the price shown

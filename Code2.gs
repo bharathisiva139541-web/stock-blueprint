@@ -12338,7 +12338,14 @@ const AB_ITD_TFS = ['M', 'W', 'D', '4H', '2H', '1H', '30m', '15m'];          // 
 // an FVG / Gap-up zone of that move or after it below the CHoCH level, the first pullback into it with a Spring / FVG First Touch / Confirmed;
 // 11-Nov-2026: the zone's middle in the discount half of the move instead, the first touch of any zone too - the PC decides, this only keeps the rows)
 const AB_ITD_CHOCH = 'CHoCH + FVG';
-const AB_ITD_PATTERNS = [AB_ITD_CHOCH, 'Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch'];
+// owner, 13-Nov-2026 ("Shall we track BOS setup like this ... Why can't we enter the trade after confirmation by seeing the lower timeframe
+// Choch"): 'BOS + FVG' = the same setup on a BOS move; '15m / 1H / D CHoCH in zone' = after a CHoCH + FVG / BOS + FVG touch, the smaller
+// chart's CHoCH with its final low in the zone (the PC decides; their note is kept like the CHoCH one's)
+const AB_ITD_BOS = 'BOS + FVG';
+const AB_ITD_LTF = ['15m CHoCH in zone', '1H CHoCH in zone', 'D CHoCH in zone'];
+const AB_ITD_PATTERNS = [AB_ITD_CHOCH, AB_ITD_BOS].concat(AB_ITD_LTF, ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG',
+  'FVG First Touch Confirmed', 'FVG First Touch']);
+const AB_ITD_NOTED = [AB_ITD_CHOCH, AB_ITD_BOS].concat(AB_ITD_LTF);          // patterns whose PC note goes into FVG Detail
 const AB_ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
 const AB_ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
 const AB_ITD_KEEP_DAYS = 30;
@@ -12485,7 +12492,7 @@ function ab_itdFromBridge_(req) {
   (Array.isArray(req.invalid) ? req.invalid : []).forEach(function (x) {
     const sym = String(x && x.sym || '').trim().toUpperCase();
     const p0 = String(x.pattern || '');
-    const pat = p0 === 'Gap-up FVG + Spring' || p0 === AB_ITD_CHOCH ? p0 : 'Spring in FVG';   // an older PC sends no pattern
+    const pat = p0 === 'Gap-up FVG + Spring' || p0 === AB_ITD_CHOCH || p0 === AB_ITD_BOS ? p0 : 'Spring in FVG';   // an older PC sends no pattern
     if (sym) gone[sym + '|' + String(x.tf || '') + '|' + pat + '|' + String(x.candle || '')] = true;
   });
   let replaced = 0, removed = 0;
@@ -12506,7 +12513,7 @@ function ab_itdFromBridge_(req) {
     const r = { session: session, sym: sym, company: names[sym] || '', tf: tf, pattern: pattern, candle: candle,
                 formed: z && /^\d{4}-\d{2}(-\d{2}( \d{2}:\d{2})?)?$/.test(String(z[2])) ? String(z[2]) : '',
                 low: ab_itdNum_(it.low), close: ab_itdNum_(it.close), bottom: z ? ab_itdNum_(z[0]) : '', top: z ? ab_itdNum_(z[1]) : '', found: found,
-                detail: ab_itdDetail_(z) + (pattern === AB_ITD_CHOCH && it.note ? ' · ' + ab_itdNote_(it.note) : '') };
+                detail: ab_itdDetail_(z) + (AB_ITD_NOTED.indexOf(pattern) !== -1 && it.note ? ' · ' + ab_itdNote_(it.note) : '') };
     const k = key(r);
     if (gone[k]) { skipped++; return; }
     if (byKey[k]) r.found = byKey[k].found || found;
@@ -12542,6 +12549,8 @@ function ab_itdFromBridge_(req) {
     'CHoCH + FVG (your SMC setup, 4H / D / W): after the lower highs and lower lows a candle closed above the last lower high, ' +
     'an FVG / Gap-up zone of that move in the discount part of the move, and on the first pullback (no BOS yet) ' +
     'the first touch of that zone, a Spring on it or an FVG First Touch / Confirmed - rules: ' + ab_chochRulesText_(ab_chochRules_(req.choch)) + '. ' +
+    'BOS + FVG: the same on a BOS move (a close above a higher high after a higher low - the 1st BOS after a CHoCH or one of a running up-trend). ' +
+    '15m / 1H / D CHoCH in zone: after such a touch, the smaller chart\'s CHoCH with its final low in the zone (within 5 candles) - the confirmed entry. ' +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {

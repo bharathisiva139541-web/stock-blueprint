@@ -1164,24 +1164,36 @@ def ltf_text(P, lt, ev, cs, i, jj, kind, fvg):
     return txt + (' · in the signal candle' if w == 0 else ' · %d candle%s after the signal' % (w, '' if w == 1 else 's'))
 
 
-def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, lows=None, final=None, mh=None):
-    """The lower-timeframe confirmation of one signal (see DEFAULTS 'ltf') -> (trade, None) or (None, reason): 'ltfnone' (no
-    small CHoCH in the zone in time), 'ltfbroke' (a candle of the chart closed under the zone first), 'ltfnofvg' / 'ltfnofill'
-    (the FVG entry: no small FVG in its move / not retested in time), 'ltfdata' (no small candles for that time), 'ltfnotyet'
-    (the waiting time is not over yet), or simulate's own. row / rs = the signal row and its stop row (rs[2] = the bottom the
-    stop sits under)."""
+class CandleArrays:
+    """Candle dicts ({'t', 'day', 'o', 'h', 'l', 'c'[, 'v']} - the daily scan's) as the arrays ltf_find reads (day ordinal,
+    minute of the day, o h l c v)."""
+    __slots__ = ('o', 'h', 'l', 'c', 'v', 'day', 'minute', 'n')
+
+    def __init__(self, cands, intraday):
+        self.day = [date.fromisoformat(c['day'][:10]).toordinal() for c in cands]
+        self.minute = [_minute(c['t']) if intraday else 0 for c in cands]
+        self.o, self.h = [c['o'] for c in cands], [c['h'] for c in cands]
+        self.l, self.c = [c['l'] for c in cands], [c['c'] for c in cands]
+        self.v = [float(c.get('v') or 0) for c in cands]
+        self.n = len(cands)
+
+
+def ltf_find(cs, i, zb, zt, P, lt, events):
+    """The small CHoCH that confirms a signal on candle i of the chart cs (timeframe P['tf']) in the zone zb .. zt (zb = the
+    bottom the stop sits under): the first CHoCH event of lt (`events` = structure.choch_events of the small candles, the run's
+    ltfPivot) in the time of candles i .. i + ltfWait - 1, with >= ltfDown lower highs / lows, its final low formed from the
+    signal candle on, at / under the zone top and at most ltfUnder % under its bottom, no candle of the chart closing under
+    the zone before the one it is in -> (event, jj = the chart's candle it is in, None) or (None, None, reason: 'ltfdata' /
+    'ltfnone' / 'ltfbroke' / 'ltfnotyet'). Used by the Backtest Lab (ltf_trade) and the daily scan (kite_intraday)."""
     tf = P['tf']
-    zb, zt = rs[2], row[3]
-    if zb is None or zt is None:
-        return None, 'ltfnone'
     w0 = htf_span(tf, cs.day[i], cs.minute[i])[0]
     jw = min(cs.n - 1, i + P['ltfWait'] - 1)
     w1 = htf_span(tf, cs.day[jw], cs.minute[jw])[1]
     if lt is None or not lt.n or lt.day[0] > cs.day[i]:
-        return None, 'ltfdata'                   # the small candles begin after the signal (Kite has none that old)
+        return None, None, 'ltfdata'             # the small candles begin after the signal (Kite has none that old)
     a = _first_at(lt, w0)
     if a >= lt.n or lt.day[a] * 1440 + lt.minute[a] >= htf_span(tf, cs.day[i], cs.minute[i])[1]:
-        return None, 'ltfdata'                   # none in the signal candle's time (a gap in the small candles)
+        return None, None, 'ltfdata'             # none in the signal candle's time (a gap in the small candles)
     z = _first_at(lt, w1)
     floor = zb * (1 - P['ltfUnder'] / 100.0) if P['ltfUnder'] < 100 else -1e18
     k = bisect.bisect_left([e[0] for e in events], a)
@@ -1195,22 +1207,38 @@ def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, low
     if hit is None:
         broke = any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jw + 1))
         if broke:
-            return None, 'ltfbroke'
+            return None, None, 'ltfbroke'
         if z >= lt.n or i + P['ltfWait'] - 1 >= cs.n:
-            return None, 'ltfnotyet'
-        return None, 'ltfnone'
-    b, lf, li = int(hit[0]), _f(hit[4]), int(hit[3])
-
-    def chart_candle(kx):
-        """The chart's candle (i ..) the small candle kx is in."""
-        key = lt.day[kx] * 1440 + lt.minute[kx]
-        j = i
-        while j < cs.n - 1 and htf_span(tf, cs.day[j], cs.minute[j])[1] <= key:
-            j += 1
-        return j
-    jj = chart_candle(b)
+            return None, None, 'ltfnotyet'
+        return None, None, 'ltfnone'
+    jj = chart_candle(cs, i, tf, lt, int(hit[0]))
     if any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jj)):
-        return None, 'ltfbroke'                  # a candle of the chart closed under the zone before the small CHoCH
+        return None, None, 'ltfbroke'            # a candle of the chart closed under the zone before the small CHoCH
+    return hit, jj, None
+
+
+def chart_candle(cs, i, tf, lt, kx):
+    """The chart's candle (from i on) the small candle kx is in."""
+    key = lt.day[kx] * 1440 + lt.minute[kx]
+    j = i
+    while j < cs.n - 1 and htf_span(tf, cs.day[j], cs.minute[j])[1] <= key:
+        j += 1
+    return j
+
+
+def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, lows=None, final=None, mh=None):
+    """The lower-timeframe confirmation of one signal (see DEFAULTS 'ltf') -> (trade, None) or (None, reason): ltf_find's
+    reasons, 'ltfnofvg' / 'ltfnofill' (the FVG entry: no small FVG in its move / not retested in time), or simulate's own.
+    row / rs = the signal row and its stop row (rs[2] = the bottom the stop sits under)."""
+    tf = P['tf']
+    zb, zt = rs[2], row[3]
+    if zb is None or zt is None:
+        return None, 'ltfnone'
+    hit, jj, why = ltf_find(cs, i, zb, zt, P, lt, events)
+    if hit is None:
+        return None, why
+    b, lf, li = int(hit[0]), _f(hit[4]), int(hit[3])
+    z = _first_at(lt, htf_span(tf, cs.day[min(cs.n - 1, i + P['ltfWait'] - 1)], cs.minute[min(cs.n - 1, i + P['ltfWait'] - 1)])[1])
     fvg, e0 = None, b
     if P['ltfEntry'] == 'fvg':
         best = None
@@ -1229,7 +1257,7 @@ def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, low
                 break                            # the small CHoCH failed before the retest
         if e0 is None:
             return None, 'ltfnofill'
-        jj = chart_candle(e0)
+        jj = chart_candle(cs, i, tf, lt, e0)
         if any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jj)):
             return None, 'ltfbroke'
     # the small candles from the entry to the end of the chart's candle jj, then the chart's candles after it
