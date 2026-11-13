@@ -16,6 +16,7 @@
   var STOP = { zone: 'Under the zone bottom', spring: 'Under the touch candle\'s low', lower: 'Under whichever is lower', pct: '% under the entry',
     final: 'Under the CHoCH\'s final low' };
   var EMA = { 0: 'Off', 10: '10 EMA', 21: '21 EMA', 50: '50 EMA', 1: 'Any of 10 / 21 / 50' };
+  var TARGET = { R: 'R multiple', swing: 'The last swing high', mh: 'The move high (HH)', pct: '% above the entry' };
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var TF = { D: 'Daily (1D)', W: 'Weekly (1W)', '4H': '4 hour (240)' };
   var SHAPE_BASE = { upWickMax: 100, loWickMin: 0, closeMin: 0, c2BodyMin: 0, c2Color: 'any', c2BodyMax: 30, undercutMin: 0.1, undercutMax: 0,
@@ -55,10 +56,13 @@
       stopMode: str(STOP[p.stop] || STOP.zone),
       stopBuf: fl(Math.max(0, num(p.stopBuf, 0.5))),
       stopPct: fl(clamp(num(p.stopPct, 5), 0.1, 50)),
+      // the ATR stop: whichever is lower (owner, 13-Nov-2026)
+      stopAtr: fl(clamp(num(p.stopAtr, 0), 0, 10)),
       maxRisk: fl(Math.max(0, num(p.maxRisk, 15))),
       minPrice: fl(Math.max(0, num(p.minPrice, 0))),
-      targetMode: str(p.targetMode === 'swing' ? 'The last swing high' : 'R multiple'),
+      targetMode: str(TARGET[p.targetMode] || TARGET.R),
       targetR: fl(Math.max(0.25, num(p.targetR, 2))),
+      targetPct: fl(clamp(num(p.targetPct, 20), 1, 1000)),
       swingMinR: fl(Math.max(0, num(p.swingMinR, 1))),
       useDates: String(!!(stamp(p.from) || stamp(p.to))),
       minTurn: fl(Math.max(0, num(p.minTurnover, 0))),
@@ -111,6 +115,11 @@
     if (p.whereIn && p.whereIn !== 'any') more.push('how deep the candle went into the zone');
     if (num(p.wkAbove, 0)) more.push('the weekly trend');
     if (more.length) n.push('Not drawn (check them on the chart yourself): ' + more.join(', ') + '.');
+    var exits = [];
+    if (num(p.partialPct, 0) && p.after !== 'fixed') exits.push('selling ' + num(p.partialPct, 0) + '% at the target');
+    if (num(p.beAt, 0)) exits.push('the stop to the entry at ' + num(p.beAt, 0) + 'R');
+    if (num(p.timeN, 0)) exits.push('the time stop (' + Math.round(num(p.timeN, 0)) + ' candles)');
+    if (exits.length) n.push('Exits are not drawn: ' + exits.join(', ') + ' - the Lab\'s result has them.');
     n.push('Only the entry, stop and target are drawn - the trail, the target lock, the time limit, the costs and the account are not.');
     return n;
   }

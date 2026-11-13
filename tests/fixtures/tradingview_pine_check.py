@@ -156,7 +156,12 @@ SETS = [SMC,
         dict(SMC, pivotN=3, downN=1, discount=0.382, discPart='top', entry='close', stop='lower'),
         # a zone touched before the CHoCH counts again (owner, 13-Nov-2026: on by default above) - off, and with every zone
         dict(SMC, pivotN=3, downN=1, touchAgain=False), dict(SMC, pivotN=2, downN=1, touchAgain=False, zonePick='every'),
-        dict(SMC, pivotN=2, downN=2, zonePick='every', discount=0.382)]
+        dict(SMC, pivotN=2, downN=2, zonePick='every', discount=0.382),
+        # the owner's stop / target options (13-Nov-2026): the ATR stop with every stop kind, the move-high and % targets
+        dict(SMC, pivotN=3, downN=1, stopAtr=1.5), dict(SMC, pivotN=2, downN=1, stop='pct', stopPct=3, stopAtr=2, maxRisk=10, entry='close'),
+        dict(SMC, pivotN=3, downN=1, stop='final', stopAtr=1, maxRisk=0), dict(SMC, pivotN=2, downN=1, stop='lower', entry='close', stopAtr=0.5),
+        dict(SMC, pivotN=3, downN=1, targetMode='mh'), dict(SMC, structure='off', pivotN=3, downN=1, targetMode='mh', swingMinR=0, entry='close', maxRisk=0),
+        dict(SMC, pivotN=2, downN=1, targetMode='pct', targetPct=25, stopAtr=1, stop='lower', entry='close')]
 counts = []
 for params in SETS:
     lab, mod = lab_trades(params), model_trades(charts, params)
@@ -166,6 +171,8 @@ assert min(counts) >= 2 and sum(counts) > 900, counts   # (13-Nov-2026: the owne
 assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, gapEntry=False)), 'the Gap-up zone entry changes some trades on these charts'
 assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, zonePick='every')), 'the 2nd-zone rule changes trades'
 assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, touchAgain=False)), 'touchAgain changes trades'
+assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, stopAtr=1.5)), 'the ATR stop changes stops'
+assert lab_trades(dict(SMC, pivotN=3, downN=1)) != lab_trades(dict(SMC, pivotN=3, downN=1, targetMode='mh')), 'the move-high target'
 # the CHoCH events of every chart = structure.py's - the baseline and every structure option
 OPTS = [{}, {'swingMode': 'zigzag', 'zzAtr': 2}, {'swingMode': 'zigzag', 'zzAtr': 1}, {'swingMode': 'zigzag', 'zzAtr': 3, 'chochMode': 'protected'},
         {'swingAtr': 1}, {'swingAtr': 0.5, 'eqAtr': 0.25}, {'chochMode': 'protected'}, {'chochMode': 'protected', 'eqAtr': 0.5}, {'eqAtr': 0.1},
@@ -287,5 +294,11 @@ for name, key in (('zzAtr', 'zzAtr'), ('swAtr', 'swingAtr'), ('eqAtr', 'eqAtr'))
 assert src.count('- eqAtr * array.get(swA, kk)') == 2 and 'swBase := sz6' in src and 'float zA = zzAtr * atrS' in src
 assert 'high[pivN] - loWin >= swAtr * atrS[pivN]' in src and 'hiWin - low[pivN] >= swAtr * atrS[pivN]' in src
 assert 'if hiNew and hiNewP > chB' in src and 'if array.get(phV, j) >= above' in src
+# the stop / target options (owner, 13-Nov-2026)
+assert float(default('stopAtr')) == D['stopAtr'] == 0 and float(default('targetPct')) == D['targetPct']
+mm = re.search(r'^stopAtr = input\.float\([^\n]*minval=([\d.]+), maxval=([\d.]+)', src, re.M)
+assert mm and (float(mm.group(1)), float(mm.group(2))) == L.LIMITS['stopAtr'][:2]
+assert 'stop := math.min(stop, entry - stopAtr * (atTop ? atrS[1] : atrS))' in src and 'tgt := chH' in src
+assert '"The move high (HH)", "% above the entry"]' in src and set(L.CHOICES['targetMode']) == {'R', 'swing', 'mh', 'pct'}
 lint(os.path.join(ROOT, 'tradingview', 'StockBlueprint_CHoCH_FVG.pine'))
 print('OK')

@@ -17,6 +17,9 @@ emaStack - and (owner, 12-Nov-2026: "புதிய structure options-ஐயு
 மாற்றுவது") the structure engine's options of structure.py: swingMode 'zigzag' + zzAtr (ATR ZigZag swings, known when price
 turned zzAtr x ATR), swingAtr (a candles-each-side swing must stand out by x ATR), chochMode 'protected' (the CHoCH breaks the
 swing high before the lowest swing low since the last CHoCH), eqAtr (highs / lows within x ATR of the one before are not lower).
+The owner's stop / target options of 13-Nov-2026: stopAtr (the lower of the rule's stop and entry - stopAtr x ATR(14); the
+zone-top order uses the ATR of the bar before), targetMode 'mh' (the CHoCH move's high) / 'pct' (targetPct % above the entry);
+the exits (part sold at the target, the stop to the entry at xR, the time stop) do not change which BUYs are drawn.
 """
 from datetime import date
 
@@ -456,6 +459,11 @@ class Model:
         else:
             base = l if mode == 'spring' else zb if mode == 'zone' else min(l, zb)
             stop = base * (1 - P['stopBuf'] / 100.0)
+        if P.get('stopAtr'):                             # the ATR stop (13-Nov-2026): whichever is lower
+            ja = i - 1 if at_top else i
+            if ja < 0:
+                return None
+            stop = min(stop, entry - P['stopAtr'] * self.atr[ja])
         risk = entry - stop
         if not (entry > 0 and risk > 0):
             return None
@@ -463,11 +471,17 @@ class Model:
             return None
         if entry < P['minPrice']:
             return None
-        target = entry + P['targetR'] * risk
-        if P['targetMode'] == 'swing':
+        tm = P['targetMode']
+        target = entry * (1 + P['targetPct'] / 100.0) if tm == 'pct' else entry + P['targetR'] * risk
+        if tm == 'swing':
             above = entry + P['swingMinR'] * risk
             sw = next((self.phV[j] for j in range(len(self.phV) - 1, -1, -1) if self.phV[j] >= above), None)
             if sw is None:
                 return None
             target = sw
+        elif tm == 'mh':                                 # the CHoCH move's high (HH), at least swingMinR R above the entry
+            mh = round(self.chH, 2) if alive_ok and self.chH is not None else None
+            if mh is None or not mh > entry or mh < entry + P['swingMinR'] * risk - 1e-9:
+                return None
+            target = mh
         return entry, stop, target

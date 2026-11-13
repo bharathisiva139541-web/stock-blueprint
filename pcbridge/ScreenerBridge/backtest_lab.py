@@ -186,6 +186,24 @@ DEFAULTS = {
     # its first touch AFTER the CHoCH candle is a signal ('touch' group, structure 'only'; rearm_touches) and, for the 2nd-zone
     # rule, it waits under a higher zone until then
     'touchAgain': True,
+    # THE OWNER'S STOP / TARGET / EXIT OPTIONS (13-Nov-2026: "in the place of stoploss, can we add stoploss ATR based. all 5
+    # options with Multiples of ATR whichever is lower ... if fixed % below the entry is 5% and 2 times the ATR is 7% stoploss
+    # ... our stoploss is 7%. Our exit and target system should have more options according to my setups"; answers: half at the
+    # target and the rest trails, the HH-move high as the target, a fixed % profit target - 20 / 30 / 40 % -, the stop to the
+    # entry at 1R, a time stop):
+    # stopAtr = the stop is ALSO worked out stopAtr x ATR(14) under the entry and the LOWER price of the two is used (the wider
+    # stop; 0 = off) - with every stop kind; the ATR of the signal candle (the zone-top order: of the candle before it)
+    'stopAtr': 0.0,
+    # targetMode 'mh' = the CHoCH move's high (HH - the move high; no live CHoCH, or under swingMinR R above the entry = no
+    # trade) / 'pct' = targetPct % above the entry
+    'targetPct': 20.0,
+    # partialPct = at the target sell this % of the position; the rest follows "At the target" (lock / breakeven / trail); 0 off
+    'partialPct': 0.0,
+    # beAt = before the target, once price is beAt R above the entry the stop moves up to the entry (0 off)
+    'beAt': 0.0,
+    # timeN / timeR = a time stop: timeN candles after the signal candle price has not gone timeR R up (the target not reached)
+    # -> sold at that candle's close (0 off)
+    'timeN': 0, 'timeR': 1.0,
 }
 BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger than this
 # THE OWNER'S SETUP RULES OF 13-Nov-2026 (always on with structure 'only' - "add this to standard exclusion ... No need filter";
@@ -208,7 +226,7 @@ CHOICES = {
     'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct', 'final'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'atr', 'swing', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
-    'targetMode': ('R', 'swing'), 'discPart': ('mid', 'top', 'bottom'),
+    'targetMode': ('R', 'swing', 'mh', 'pct'), 'discPart': ('mid', 'top', 'bottom'),
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
 }
@@ -228,6 +246,8 @@ LIMITS = {   # key: (min, max, integer)
     'lagMin': (0, 2000, True), 'dispAtr': (0, 5, False), 'dispVol': (0, 10, False), 'atrK': (0.5, 10, False), 'rollYears': (0, 10, True),
     'zoneMin': (0, 50, False), 'zoneMax': (0, 100, False), 'lineTol': (0, 5, False), 'fibLevel': (0.2, 0.95, False), 'fibTol': (0, 5, False),
     'moveVol': (0, 20, False), 'moveVolN': (1, 20, True),
+    'stopAtr': (0, 10, False), 'targetPct': (1, 1000, False), 'partialPct': (0, 90, False), 'beAt': (0, 20, False),
+    'timeN': (0, 1000, True), 'timeR': (0.1, 20, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -245,10 +265,10 @@ PAT_NAMES = {'S': 'Spring', 'H': 'Bullish Harami + Inverted Hammer'}
 ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
               'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'FVG zone - pattern at the Fib line',
               'Q': 'Gap-up zone - pattern at the Fib line'}
-REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'time', 'open')
+REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit']
+              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy']
 
 
 def _iso_date(s):
@@ -697,13 +717,17 @@ def market_filter(meta, P):
     return ok
 
 
-def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
+def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, mh=None):
     """One signal row -> the trade under the rules P (see the module text), or (None, why skipped). `swing` (target mode
     'swing') = the Structure of these candles: the target is then the last swing high at least swingMinR R above the
     entry (none = skipped, 'noswing'). `atr` (trail 'atr') = the ATR(14) series; `lows` (trail 'swing') = the Structure
     whose swing lows the stop trails under. `final` (stop 'final') = the CHoCH's final low (none = skipped, 'nofinal').
     lockTarget (12-Nov-2026): once price reaches the target the stop moves up to it (a gap open above the target that falls
-    back the same candle = sold at the target; exit reason 'lock')."""
+    back the same candle = sold at the target; exit reason 'lock').
+    The owner's options of 13-Nov-2026: stopAtr (`atr` = the ATR(14) series) - the lower of the rule's stop and entry - stopAtr x
+    ATR; target 'mh' (`mh` = the CHoCH move's high; none = skipped, 'nomh') / 'pct'; partialPct sold at the target (the exit
+    price = the average of both parts, 'part' = where the first part went, 'xr' = the rest's exit); beAt (the stop to the entry
+    before the target, reason 'be'); timeN / timeR (reason 'tstop')."""
     i, code, zb = row[0], row[1], row[2]
     n = cs.n
     if i >= n:
@@ -737,6 +761,17 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
     else:
         base = low if mode == 'spring' else zb if mode == 'zone' else min(low, zb if zb is not None else low)
         stop = base * (1 - P['stopBuf'] / 100.0)
+    stop_by = ''
+    if P['stopAtr']:
+        # the ATR stop (13-Nov-2026): whichever is LOWER - the rule's stop or stopAtr x ATR(14) under the entry; the zone-top
+        # order fills during the touch candle, so it uses the ATR up to the candle before
+        ja = i - 1 if zone_in else i
+        if atr is None or ja < 0 or ja >= len(atr):
+            return None, 'data'
+        s_atr = entry - P['stopAtr'] * atr[ja]
+        stop_by = 'rule'
+        if s_atr < stop:
+            stop, stop_by = s_atr, 'atr'
     risk = entry - stop
     if not (entry > 0 and risk > 0):
         return None, 'gap' if P['entry'] in ('next_open', 'zone') else 'risk'
@@ -745,17 +780,27 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
         return None, 'risk'
     if entry < P['minPrice']:
         return None, 'price'
-    target = entry + P['targetR'] * risk
+    tmode = P['targetMode']
+    target = entry * (1 + P['targetPct'] / 100.0) if tmode == 'pct' else entry + P['targetR'] * risk
     if swing is not None:
         sh = swing.last_swing_high(i, entry + P['swingMinR'] * risk)
         if sh is None:
             return None, 'noswing'
         target = _f(sh[1])
+    elif tmode == 'mh':
+        # the CHoCH move's high (HH): at least swingMinR R above the entry
+        if mh is None or not _f(mh) > entry or _f(mh) < entry + P['swingMinR'] * risk - 1e-9:
+            return None, 'nomh'
+        target = _f(mh)
     end = cs.day[i] + P['maxDays']
     trail, fixed, be = P['trail'], P['after'] == 'fixed', P['breakeven']
     lock = P.get('lockTarget') and not fixed
     hit, cur, best = False, stop, entry
     ex, why, jx = None, None, None
+    part = P['partialPct'] / 100.0 if P['partialPct'] and not fixed else 0.0
+    tp = None                                  # where the part sold at the target went
+    be_at = entry + P['beAt'] * risk if P['beAt'] else None
+    t_at = entry + P['timeR'] * risk if P['timeN'] else None
 
     def trail_up(j, cur):
         if trail == 'lows':
@@ -784,11 +829,14 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
                 if fixed:
                     ex, why, jx = target, 'target', i
                 else:
+                    tp = target
                     if be:
                         cur = max(cur, entry)
                     if lock:
                         cur = max(cur, target)
                     cur = trail_up(i, cur)
+            elif be_at is not None and c0 >= be_at:
+                cur = max(cur, entry)
     for j in (range(j0, n) if ex is None else ()):
         if cs.day[j] > end:
             ex, why, jx = _f(cs.c[j - 1]), 'time', j - 1
@@ -801,6 +849,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
                 if fixed:
                     ex, why, jx = o, 'target', j
                     break
+                tp = o
                 if be:
                     cur = max(cur, entry)
                 if lock:                          # the stop moves up to the target: falling back under it = sold there
@@ -811,8 +860,8 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
                 best = max(best, h)
                 cur = trail_up(j, cur)
                 continue
-            if l < stop:
-                ex, why, jx = min(o, stop), 'stop', j
+            if l < cur:                           # the stop (moved to the entry by beAt: 'be')
+                ex, why, jx = min(o, cur), 'be' if cur >= entry * (1 - 1e-9) else 'stop', j
                 break
             best = max(best, h)
             if h >= target:
@@ -820,11 +869,18 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
                 if fixed:
                     ex, why, jx = target, 'target', j
                     break
+                tp = target
                 if be:
                     cur = max(cur, entry)
                 if lock:
                     cur = max(cur, target)
                 cur = trail_up(j, cur)
+                continue
+            if be_at is not None and h >= be_at:
+                cur = max(cur, entry)             # 1R reached: the stop to the entry
+            if t_at is not None and j - i >= P['timeN'] and best < t_at:
+                ex, why, jx = c, 'tstop', j       # the time stop: no move in timeN candles
+                break
             continue
         if l < cur:
             ex = min(o, cur)
@@ -841,6 +897,9 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
         ex, why = _f(cs.c[jx]), 'open'        # the window is not over yet: still running (shown, not counted)
     if jx <= i and not zone_in:               # no candle inside the window: sold where bought
         jx, ex = i, entry
+    xr = ex
+    if part and tp is not None:               # part sold at the target, the rest at ex: the average exit price
+        ex = part * tp + (1 - part) * ex
     cost = P['cost'] / 100.0 * entry
     R = (ex - entry - cost) / risk
     best_r = (best - entry) / risk
@@ -849,7 +908,9 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None):
             'R': round(R, 3), 'ret': round((ex - entry - cost) / entry * 100, 2), 'days': cs.day[jx] - cs.day[i],
             'maxR': round(max(0.0, best_r), 2), 'hit': hit, 'tgt': round(target, 2), 'jx': jx,
             'ek': (cs.day[i if P['entry'] != 'next_open' else min(i + 1, n - 1)], cs.minute[i if P['entry'] != 'next_open' else min(i + 1, n - 1)]),
-            'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i]}, None
+            'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i],
+            'part': round(tp, 2) if part and tp is not None else None, 'xr': round(xr, 4), 'partPct': P['partialPct'] if part else 0,
+            'stopBy': stop_by}, None
 
 
 def _exit_why(cur, entry, target, lock):
@@ -1071,7 +1132,8 @@ def summarise(trades, P, skips, meta, secs):
                      t['qty'], t['pnl'], t['taken'], t.get('ema', ''), t.get('upW', ''), t.get('loW', ''), t.get('dip', ''),
                      t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', ''),
                      int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
-                     t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', '')])
+                     t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', ''),
+                     ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1294,15 +1356,16 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
     trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
                          'noswing': 0, 'zoneentry': 0, 'where': 0, 'wk': 0, 'zsize': 0, 'dcloud': 0, 'gapin': 0, 'nofinal': 0,
-                         'fiblevel': 0}
+                         'fiblevel': 0, 'nomh': 0}
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
     sopts = struct_opts(P)
     trail_on = P['after'] == 'trail'
     final_stop = P['stop'] == 'final'
     again_on = P['touchAgain'] and smode == 'only' and P['group'] == 'touch'
+    mh_tgt = P['targetMode'] == 'mh'
     smap = (_struct_map(d, tf, P['pivotN'], sopts) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
-            or final_stop else None)
+            or final_stop or mh_tgt else None)
     PC = dict(P, entry='close') if P['fibPat'] != 'off' else P      # Fib + pattern rows: bought at the pattern candle's close
     wk_index = (meta['index'].get('W') or {}) if P['wkAbove'] and tf != 'W' else None
     lens = ema_lens(P)
@@ -1324,7 +1387,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 if st is None or st.size != cs.n:
                     st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
             atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
-                   if trail_on and P['trail'] == 'atr' else None)
+                   if (trail_on and P['trail'] == 'atr') or P['stopAtr'] else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
             zl_memo = []
             again = None
@@ -1409,7 +1472,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     if not ok:
                         return None, ('shape', why)
                 sj = None
-                if smode != 'off' or final_stop:
+                if smode != 'off' or final_stop or mh_tgt:
                     zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                     sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'],
                                     h=cs.h, zone_bottom=r[2] if zf is not None else None, part=P['discPart'], fib=fib)
@@ -1445,8 +1508,9 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         return None, ('ema', '')
                 final = st.s.events[sj['k']][4] if final_stop and sj is not None and sj['k'] >= 0 else None
                 rs = r if not outer else [r[0], r[1], outer[0]] + list(r[3:])      # the stop under the FVG's bottom
+                mh = sj.get('H') if mh_tgt and sj is not None and sj['k'] >= 0 else None
                 t, why = simulate(cs, rs, PC if code in FIB_CODES else P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
-                                  st.s if trail_on and P['trail'] == 'swing' else None, final)
+                                  st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
                 if t is None:
                     return None, (why, '')
                 t['ema'] = note

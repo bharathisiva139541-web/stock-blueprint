@@ -46,7 +46,8 @@ function readBack(src) {
     stop: inv({ zone: 'Under the zone bottom', spring: "Under the touch candle's low", lower: 'Under whichever is lower', pct: '% under the entry',
       final: "Under the CHoCH's final low" }, get('stopMode')),
     stopBuf: Number(get('stopBuf')), stopPct: Number(get('stopPct')), maxRisk: Number(get('maxRisk')), minPrice: Number(get('minPrice')),
-    targetMode: get('targetMode') === 'R multiple' ? 'R' : 'swing', targetR: Number(get('targetR')), swingMinR: Number(get('swingMinR')),
+    targetMode: inv({ R: 'R multiple', swing: 'The last swing high', mh: 'The move high (HH)', pct: '% above the entry' }, get('targetMode')),
+    targetR: Number(get('targetR')), swingMinR: Number(get('swingMinR')), targetPct: Number(get('targetPct')), stopAtr: Number(get('stopAtr')),
     minTurnover: Number(get('minTurn')), emaSupport: Number(inv({ 0: 'Off', 10: '10 EMA', 21: '21 EMA', 50: '50 EMA', 1: 'Any of 10 / 21 / 50' }, get('emaSup'))),
     emaTouch: Number(get('emaTouch')), above10: get('ab10') === 'true', above21: get('ab21') === 'true', above50: get('ab50') === 'true', emaStack: get('emaStack') === 'true',
     swingMode: get('swMode') === 'ZigZag (ATR)' ? 'zigzag' : 'fractal', zzAtr: Number(get('zzAtr')), swingAtr: Number(get('swAtr')),
@@ -68,14 +69,18 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   const base = { structure: 'only', pivotN: 5, downN: 3, zoneWhen: 'both', chochAge: 0, discount: 0.5, discPart: 'mid', firstPull: true, belowChoch: false,
     entry: 'zone', stop: 'zone', stopBuf: 0.5, stopPct: 5, maxRisk: 15, minPrice: 0, targetMode: 'R', targetR: 2, swingMinR: 1, minTurnover: 0,
     emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false,
-    swingMode: 'fractal', zzAtr: 2, swingAtr: 0, chochMode: 'last', eqAtr: 0, gapEntry: true, zonePick: 'second', touchAgain: true };
+    swingMode: 'fractal', zzAtr: 2, swingAtr: 0, chochMode: 'last', eqAtr: 0, gapEntry: true, zonePick: 'second', touchAgain: true,
+    targetPct: 20, stopAtr: 0 };
   const sets = [base,
     Object.assign({}, base, { pivotN: 8, downN: 4, discount: 0.382, targetR: 2.5, from: '2020-01-01', to: '2026-11-11' }),       // the owner's screenshot
     Object.assign({}, base, { structure: 'off', zoneWhen: 'leg', chochAge: 40, discount: 0.55, discPart: 'top', firstPull: false, belowChoch: true, entry: 'close',
       stop: 'pct', stopPct: 4, maxRisk: 0, minPrice: 50, targetMode: 'swing', swingMinR: 1.5, minTurnover: 120, emaSupport: 1, emaTouch: 2, above50: true, emaStack: true,
       swingMode: 'zigzag', zzAtr: 1.5, chochMode: 'protected', eqAtr: 0.25 }),
     Object.assign({}, base, { entry: 'close', stop: 'lower', stopBuf: 1.25, emaSupport: 21, above10: true, above21: true, from: '2015-03-09', swingAtr: 1, eqAtr: 0.1 }),
-    Object.assign({}, base, { stop: 'final', gapEntry: false, zonePick: 'every', touchAgain: false })];
+    Object.assign({}, base, { stop: 'final', gapEntry: false, zonePick: 'every', touchAgain: false }),
+    // the owner's stop / target options (13-Nov-2026)
+    Object.assign({}, base, { stop: 'pct', stopPct: 5, stopAtr: 2, targetMode: 'mh', swingMinR: 0.5 }),
+    Object.assign({}, base, { stopAtr: 1.5, targetMode: 'pct', targetPct: 30 })];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pine-'));
   const files = sets.map((p, k) => {
     const code = PINE.build(p, { src: w.SB_PINE_SRC, name: 'Test "' + k + '"\nidea', plain: 'Rules in words.\nNext line', when: '11 Nov 2026' });
@@ -108,4 +113,9 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   // the refinements of 12-Nov-2026 the script does not draw are said
   const n3 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', zoneMax: 10, lineOk: true, fibPat: 'big', darkCloud: 'exclude' }).join(' ');
   assert.match(n3, /the zone size range, zones short of the discount line under the CHoCH level, the Spring \/ Harami \+ Inverted Hammer at the zone's Fib line, the dark-cloud FVG rule\./);
+  // the exits of 13-Nov-2026 are said (the ATR stop and the targets are drawn)
+  const n4 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', partialPct: 50, beAt: 1, timeN: 10, stopAtr: 2, targetMode: 'mh' }).join(' ');
+  assert.match(n4, /Exits are not drawn: selling 50% at the target, the stop to the entry at 1R, the time stop \(10 candles\)/);
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', stopAtr: 2, targetMode: 'pct', targetPct: 30 }).length, 2, 'drawn, not said');
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', partialPct: 50, after: 'fixed' }).length, 2, 'a fixed target sells it all');
 });

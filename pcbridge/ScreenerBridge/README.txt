@@ -395,6 +395,11 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    TradingView script): no zone wholly above the CHoCH line; the zone formed in the swing from the final low to the move
    high; before the move high at most 2 candles touched the zone and none closed under its middle; the 1st (watched)
    zone untouched before the move high; no premium zone when the signal comes 4 days or less after the CHoCH.
+ - 13-Nov-2026 (stop / target / exit): Backtest Lab "… or x ATR under the entry, whichever is lower" next to the stop
+   loss - with every stop kind the lower price of the two is used (5 % = 95, 2 x ATR = 93 -> stop 93). Target: R / % above
+   the entry (20, 30, 40 % ...) / the CHoCH move high (HH) / the last swing high. Exit details: sell part (e.g. half) at the
+   target and let the rest trail, the stop to the entry once price is 1R up, a time stop (no 1R move in N candles = sold at
+   that candle's close). The charts PDF says them; the TradingView script draws the ATR stop and the new targets.
  - Spring candle shape (10-Nov-2026): step 3 of the page - hard rules that only make the Spring STRICTER (the pattern's own
    rule is loose: a doji, a 2-tick dip or a weak close can all be a "Spring"). The Spring candle (c2): upper wick at most
    x % of its range (0 = none), lower wick at least x %, closed in the top x %, body at least x % (not a doji), green /

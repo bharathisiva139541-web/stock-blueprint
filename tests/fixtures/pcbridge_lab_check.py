@@ -418,7 +418,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-9:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-11:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -1618,5 +1618,106 @@ K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
 ok20 = [dict(zip(L.TRADE_COLS, t)) for t in L.run_job(dict(SMC6, entry='zone'))['trades'] if t[0] == 'SWG']
 assert [(t['entry'], t['zn'], t['mit']) for t in ok20] == [(126.5, 2, 2)], ok20
 K.store_save('SWG', {'v': 1, 'sym': 'SWG', 'm15': [], 'day': r19, 'h4': []})
+
+# ------------------------------------------------------------------ 21. the owner's stop / target / exit options (13-Nov-2026: "stoploss ATR
+# based. all 5 options with Multiples of ATR whichever is lower ... if fixed % below the entry is 5% and 2 times the ATR is 7% ...
+# our stoploss is 7%. Our exit and target system should have more options"; answers: half at the target + the rest trails, the
+# HH-move high target, a % profit target, the stop to the entry at 1R, a time stop)
+def run21(path, row=None, mh=None, **kw):
+    row = row or ROW21
+    cs = cache_of({'X': (BASE21 + path, [row])})['X']
+    pp = P(**dict(dict(cost=0, lockTarget=False), **kw))
+    atr = L.structure.atr_series([L._f(x) for x in cs.h], [L._f(x) for x in cs.l], [L._f(x) for x in cs.c])
+    return L.simulate(cs, row, pp, None, None, atr, None, None, mh)
+
+
+BASE21 = [cdl(0, 100, 101, 95.5, 96), cdl(1, 96, 97, 94, 96.5)]     # = section 2's (the names are used again in between)
+ROW21 = [1, 'F', 95.0, 99.0, 'b', 1, 0, 50.0]
+path21 = [cdl(2, 96.5, 98, 96, 97.5), cdl(3, 97.5, 101, 99, 100.8), cdl(4, 100.8, 103, 100.5, 102.5), cdl(5, 102.5, 104, 101.5, 103.5),
+          cdl(6, 103.5, 104, 100.2, 101)]          # = section 2's path (the name is used again in between)
+flat = [cdl(k, 97, 98, 96, 97.2) for k in range(2, 30)]
+# ATR(14) at the Spring candle (2 candles: true ranges 5.5 and 3) = 4.25; the zone stop 94.525
+t, _ = run21(path21, stopAtr=1)
+assert abs(t['stop'] - 92.25) < 1e-6 and t['stopBy'] == 'atr' and abs(t['risk'] - 4.25) < 1e-6, t
+t, _ = run21(path21, stopAtr=0.25)
+assert abs(t['stop'] - 94.525) < 0.006 and t['stopBy'] == 'rule', t
+t, _ = run21(path21, stop='pct', stopPct=5, stopAtr=1)            # 5 % = 91.675 is lower than 1 x ATR = 92.25
+assert abs(t['stop'] - 91.675) < 0.006 and t['stopBy'] == 'rule', t
+t, _ = run21(path21, stop='pct', stopPct=5, stopAtr=2)            # 2 x ATR = 88.0 is lower: the owner's example
+assert abs(t['stop'] - 88.0) < 1e-6 and t['stopBy'] == 'atr', t
+cs21 = cache_of({'X': (BASE21 + path21, [ROW21])})['X']
+assert L.simulate(cs21, ROW21, P(stopAtr=1)) == (None, 'data')     # no ATR series given -> not guessed
+t, _ = run21(path21)
+assert t['stopBy'] == '' and t['part'] is None, t
+# the % target: 3 % above the entry
+t, _ = run21(path21, targetMode='pct', targetPct=3, after='fixed')
+assert t['reason'] == 'target' and abs(t['exit'] - 96.5 * 1.03) < 1e-3 and t['tgt'] == round(96.5 * 1.03, 2), t
+# the move high (HH): no live CHoCH -> no trade; under swingMinR R above -> no trade; else the target
+assert run21(path21, targetMode='mh') == (None, 'nomh')
+assert run21(path21, targetMode='mh', mh=97.0) == (None, 'nomh')       # 1R above = 98.475
+t, _ = run21(path21, targetMode='mh', mh=97.0, swingMinR=0, after='fixed')
+assert t['tgt'] == 97.0 and t['reason'] == 'target' and t['exit'] == 97.0, t
+t, _ = run21(path21, targetMode='mh', mh=103.0, after='fixed')
+assert t['tgt'] == 103.0 and t['reason'] == 'target', t
+# half at the target, the rest trails: the target 100.45 on day 3, the trail sells the rest at 100.5
+t, _ = run21(path21, partialPct=50)
+assert t['part'] == 100.45 and t['xr'] == 100.5 and abs(t['exit'] - 100.475) < 1e-6 and t['reason'] == 'trail', t
+assert t['R'] == round((100.475 - 96.5) / 1.975, 3), t
+t, _ = run21([cdl(2, 102, 103, 101.8, 102.5), cdl(3, 102.5, 103, 96, 97)], partialPct=50)   # an open above the target: that part at the open
+assert t['part'] == 102 and t['reason'] == 'be' and abs(t['exit'] - (0.5 * 102 + 0.5 * 96.5)) < 1e-6, t
+t, _ = run21(path21, partialPct=50, after='fixed')                  # 'sell at the target' sells it all
+assert t['part'] is None and t['reason'] == 'target', t
+t, _ = run21([cdl(2, 96.5, 98, 94.4, 95)], partialPct=50)         # stopped before the target: nothing sold early
+assert t['part'] is None and t['R'] == -1.0, t
+# the stop to the entry at 1R (98.475): day 2 reaches 99, day 3 falls under the entry -> sold at the entry
+up1 = [cdl(2, 96.5, 99, 97, 98.5), cdl(3, 98.5, 98.6, 96, 96.2)]
+t, _ = run21(up1, beAt=1)
+assert t['reason'] == 'be' and t['exit'] == 96.5 and t['R'] == 0.0 and not t['hit'], t
+t, _ = run21(up1)                                                 # without it: still running
+assert t['reason'] == 'open', t
+t, _ = run21([cdl(2, 96.5, 99, 97, 98.5), cdl(3, 95, 95.5, 94.8, 95.2)], beAt=1)   # a gap under the entry: sold at the open
+assert t['reason'] == 'be' and t['exit'] == 95, t
+t, _ = run21([cdl(2, 96.5, 98.4, 97, 98)] + up1[1:], beAt=1)     # 98.4 is short of 1R: the stop stays under the zone
+assert t['reason'] == 'open', t
+# the time stop: 3 candles without a 1R move (flat highs 98) -> sold at the 3rd candle's close
+t, _ = run21(flat, timeN=3, timeR=1, maxDays=10)
+assert t['reason'] == 'tstop' and t['days'] == 3 and t['exit'] == 97.2 and t['jx'] == 4, t
+t, _ = run21(flat, timeN=3, timeR=0.5, maxDays=10)               # half an R (97.49) was reached: no time stop
+assert t['reason'] == 'time', t
+t, _ = run21(path21, timeN=2, timeR=1)                              # the target came in time (the 2nd candle)
+assert t['reason'] == 'trail', t
+# through run_job on the SWIGGY-like chart: the ATR stop, the move-high target, the columns
+c21 = L.TRADE_COLS
+assert c21[-2:] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
+j21 = lambda **kw: [dict(zip(c21, r)) for r in L.run_job(dict(SMC6, entry='zone', **kw))['trades'] if r[0] == 'SWG']
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)    # the cache of r19 again (section 20 left another)
+t0, = j21()
+ta, = j21(stopAtr=3)
+assert ta['stopBy'] == 'atr' and ta['stop'] < t0['stop'] and ta['entry'] == t0['entry'] == 126.5, (t0, ta)
+sw21 = L.structure.atr_series([r[2] for r in r19], [r[3] for r in r19], [r[4] for r in r19])
+assert abs(ta['stop'] - round(126.5 - 3 * sw21[t19b - 1], 2)) < 0.011, (ta['stop'], 126.5 - 3 * sw21[t19b - 1])
+tb, = j21(stopAtr=0.5)
+assert tb['stopBy'] == 'rule' and tb['stop'] == t0['stop'], tb
+tm, = j21(targetMode='mh', after='fixed')
+mh21 = max(r[2] for r in r19[:t19b])
+assert tm['target'] == mh21 == 175.3 and tm['reason'] == 'target', (tm, mh21)
+tp, = j21(partialPct=50, targetR=2)
+assert tp['part'].startswith('50% at ') and tp['R'] > 0, tp
+r21 = L.run_job(dict(SMC6, entry='zone', structure='off', targetMode='mh', group='touch'))
+assert 'nomh' in r21['skipped']
+# the charts PDF says it
+pdf21 = L.run_job(dict(SMC6, entry='zone', stopAtr=3, partialPct=50, targetR=1, beAt=0.5, timeN=40), charts=L.CHARTS_DIR, name='atr stop')
+w21 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf21['pdf']['file'])))
+for txt in ('or 3 times the ATR (the usual candle size) under the buy price, whichever is lower', 'Here the ATR stop was the lower one, so it was used.',
+            '(3 x ATR)', '50% of the shares were sold at the target', 'At the target 50% of the shares are sold.', 'the rest stays open',
+            'Once the price is 0.5 times the risk up, the stop moves to the buy price.', 'within 40 candles', '50% sold ',
+            'or 3 x ATR(14) under the entry - whichever is lower', 'Time stop: sold at the close when the price has not gone 1R up within 40 candles'):
+    assert txt in w21, txt
+pdf21b = L.run_job(dict(SMC6, entry='zone', targetMode='mh', timeN=2, timeR=5), charts=L.CHARTS_DIR, name='move high')
+w21b = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf21b['pdf']['file'])))
+for txt in ('at the high of the CHoCH move (the HH - move high)', 'by your time stop', 'TIME STOP', 'Target: the CHoCH move high - HH (at least 1R above)'):
+    assert txt in w21b, txt
+assert L.clean_params({'targetMode': 'mh', 'stopAtr': 99, 'partialPct': 100, 'timeN': 2.6})['stopAtr'] == 10
+assert L.clean_params({'partialPct': 100})['partialPct'] == 90 and L.clean_params({'timeN': 2.6})['timeN'] == 3
 
 print('OK')

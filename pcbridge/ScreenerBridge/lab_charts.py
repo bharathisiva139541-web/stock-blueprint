@@ -498,7 +498,7 @@ def context(t, cs, s, P, extra=None):
 
 
 EXIT_WORD = {'stop': 'STOP HIT', 'target': 'TARGET', 'be': 'BREAKEVEN', 'trail': 'TRAIL EXIT', 'lock': 'TARGET LOCKED', 'ema': 'EMA EXIT', 'time': 'TIME EXIT',
-             'open': 'STILL OPEN'}
+             'tstop': 'TIME STOP', 'open': 'STILL OPEN'}
 TAG_COL = {'HH': (0.10, 0.55, 0.30), 'HL': (0.10, 0.55, 0.30), 'LH': (0.80, 0.22, 0.22), 'LL': (0.80, 0.22, 0.22),
            'EQH': MUTED, 'EQL': MUTED, 'H': MUTED, 'L': MUTED}
 
@@ -589,9 +589,11 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     # the trade's own marks first (they matter most), then the structure words
     ya = ch.tri(i, f2(cs.l[i]), True, ENTRY, 4.2, 3.0)
     ch.word(i, ya, 'BUY', ENTRY, up=False, size=7.5)
-    ex = t['exit']
+    ex = t.get('xr', t['exit'])               # the rest's exit (with a part sold at the target, t['exit'] is the average)
     ecol = TARGET if t['R'] > 0 else STOP if t['R'] < 0 else MUTED
     xx, yx = ch.X(jx), ch.Y(ex)
+    if t.get('part') is not None:
+        right.append((ch.Y(t['part']), '%g%% sold %s' % (t.get('partPct', 50), money(t['part'])), TARGET))
     cv.line(xx - 3, yx - 3, xx + 3, yx + 3, ecol, 1.4)
     cv.line(xx - 3, yx + 3, xx + 3, yx - 3, ecol, 1.4)
     ch.place.block(xx - 3.5, xx + 3.5, yx - 3.5, yx + 3.5)
@@ -648,9 +650,12 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
             14, INK, bold=True)
     cv.text(PAGE_W - 30, PAGE_H - 34, '%s   %s' % (r_txt, reason), 14, ecol, bold=True, align='right')
     jx_full = t.get('jx', t['i'])
-    line2 = '%s - entry %s - stop %s (risk %.2f%%) - target %s - exit %s on %s after %d day%s - best %.2fR - %s' % (
+    ex_txt = money(ex) if t.get('part') is None else '%s (%g%% at %s, the rest %s)' % (
+        money(t['exit']), t.get('partPct', 50), money(t['part']), money(ex))
+    line2 = '%s - entry %s - stop %s%s (risk %.2f%%) - target %s - exit %s on %s after %d day%s - best %.2fR - %s' % (
         ZONE_NAME.get(t['code'], t['code']) + (' (%s)' % WHERE.get(t.get('where'), '') if t.get('where') in WHERE else ''),
-        money(t['entry']), money(t['stop']), t['riskPct'], money(t['tgt']) if t.get('tgt') is not None else '-', money(ex),
+        money(t['entry']), money(t['stop']), ' (%g x ATR)' % P.get('stopAtr') if t.get('stopBy') == 'atr' else '', t['riskPct'],
+        money(t['tgt']) if t.get('tgt') is not None else '-', ex_txt,
         day_text(cs.day[jx_full], cs.minute[jx_full], intraday), t['days'], '' if t['days'] == 1 else 's', t['maxR'],
         'in the account' if t.get('taken') else 'not taken by the account')
     cv.text(x0, PAGE_H - 52, line2, 8, MUTED)
@@ -838,15 +843,28 @@ def why_story(t, cs, s, P, cx):
     stop = {'zone': 'just under the %s bottom' % ('FVG\'s' if t.get('fz') else 'zone'), 'spring': "just under that candle's low",
             'lower': 'under the lower of the zone bottom and the candle low', 'pct': '%g%% under the buy price' % P.get('stopPct', 0),
             'final': 'just under the final low (the lowest point before the CHoCH)'}.get(mode, '')
-    tgt = 'at the last swing high above' if P.get('targetMode') == 'swing' else 'at %s the risk (%gR)' % (_times(P.get('targetR', 2)), P.get('targetR', 2))
+    if P.get('stopAtr'):
+        stop += ' or %s times the ATR (the usual candle size) under the buy price, whichever is lower' % ('%g' % P['stopAtr'])
+    tgt = target_words(P)
     txt = 'The plan: buy %s, put the stop loss %s, and take the target %s.' % (ent, stop, tgt)
+    if t.get('stopBy') == 'atr':
+        txt += ' Here the ATR stop was the lower one, so it was used.'
+    elif t.get('stopBy') == 'rule':
+        txt += ' Here the %s stop was the lower one, so the ATR stop was not needed.' % ('percentage' if mode == 'pct' else 'rule\'s')
+    if P.get('beAt') and not (P.get('after') == 'fixed' and P['beAt'] >= P.get('targetR', 2) and P.get('targetMode') == 'R'):
+        txt += ' Once the price is %s the risk up, the stop moves to the buy price.' % _times(P['beAt'])
+    if P.get('timeN'):
+        txt += ' If the price has not gone %s the risk up within %d candles, it is sold at that candle\'s close (a time stop).' % (
+            _times(P.get('timeR', 1)), P['timeN'])
+    if P.get('partialPct') and P.get('after') != 'fixed':
+        txt += ' At the target %g%% of the shares are sold.' % P['partialPct']
     if P.get('after') != 'fixed':
         trail = {'lows': 'under the lowest low of the last %s candles' % P.get('trailN'), 'pct': '%g%% under the highest price' % P.get('trailPct', 0),
                  'ema': 'until a close under the %s EMA' % P.get('emaN'), 'atr': '%s x ATR under the highest price' % P.get('atrK'),
                  'swing': 'under each new swing low'}.get(P.get('trail'))
         lock = P.get('lockTarget')
         if trail:
-            txt += ' After the target the trade stays open%s and the stop follows the price %s.' % (
+            txt += ' After the target the %s stays open%s and the stop follows the price %s.' % ('rest' if P.get('partialPct') else 'trade',
                 ', the stop moves up to the target' if lock else ', the stop moves to the buy price' if P.get('breakeven') else '', trail)
         elif lock:
             txt += ' After the target the trade stays open and the stop moves up to the target.'
@@ -854,6 +872,18 @@ def why_story(t, cs, s, P, cx):
     if t.get('zpct') is not None and (P.get('zoneMin') or P.get('zoneMax')):
         out.append('The zone was %s tall - inside your size range.' % _pct_words(t['zpct']))
     return out
+
+
+def target_words(P):
+    """The run's target in words (page 2 - no prices)."""
+    m = P.get('targetMode')
+    if m == 'swing':
+        return 'at the last swing high above'
+    if m == 'mh':
+        return 'at the high of the CHoCH move (the HH - move high)'
+    if m == 'pct':
+        return 'when the price is %s%% above the buy price' % ('%g' % P.get('targetPct', 20))
+    return 'at %s the risk (%gR)' % (_times(P.get('targetR', 2)), P.get('targetR', 2))
 
 
 def _times_x(x):
@@ -882,6 +912,9 @@ def end_story(t, cs, s, P, cx):
                 hit_k = j
                 break
     lines = []
+    if t.get('part') is not None:
+        lines.append('%g%% of the shares were sold at the target%s; the numbers here are for the whole position.' % (
+            t.get('partPct', 50), ' (it opened above it - sold at the open)' if t.get('tgt') is not None and t['part'] > t['tgt'] + 1e-9 else ''))
     if why == 'stop':
         head = 'The stop loss was hit on %s, %s after buying - %s.' % (dt(jx), days, res)
         if jx > i and f2(cs.o[jx]) < t['stop'] - 1e-9:
@@ -944,10 +977,16 @@ def end_story(t, cs, s, P, cx):
         head = 'The trade was closed on %s, %s after buying - %s.' % (dt(jx), days, res)
         if hit_k is not None:
             lines.append('The price reached the target on %s. The trade was kept open and the stop followed the price up.' % dt(hit_k))
+        if why == 'be' and not t.get('hit') and P.get('beAt'):
+            lines.append('The price went %s the risk up, so the stop moved to the buy price.' % _times(P['beAt']))
         lines.append(('On %s the price fell back to the buy price, where the stop had moved, so the trade closed at about breakeven.' % dt(jx)) if why == 'be' else
                      'On %s the price fell below that following stop, and the trade was closed.' % dt(jx))
         if t['maxR'] >= 1:
             lines.append('At its best the trade was about %.1f times the risk up.' % t['maxR'])
+    elif why == 'tstop':
+        head = 'The trade was closed on %s by your time stop - %s.' % (dt(jx), res)
+        lines.append('In %d candles after the signal the price had not gone %s the risk up, so it was sold at that candle\'s close.' % (
+            P.get('timeN', 0), _times(P.get('timeR', 1))))
     elif why == 'time':
         head = 'The trade was closed on %s because of your time limit (%s days) - %s.' % (dt(jx), P.get('maxDays'), res)
         lines.append('It reached neither the stop nor the target in that time.')
@@ -1036,7 +1075,7 @@ def trade_page(pdf, key, t, cs, s, P, page_no, pages, run_name, piv=None, emas=N
 
 
 REASON = {'stop': 'Stop loss', 'target': 'Target', 'be': 'Breakeven', 'trail': 'Trailing stop', 'lock': 'Target locked',
-          'ema': 'Close under EMA', 'time': 'Time limit', 'open': ''}
+          'ema': 'Close under EMA', 'tstop': 'Time stop', 'time': 'Time limit', 'open': ''}
 TF_NAME = {'D': 'Daily', 'W': 'Weekly', '4H': '4 hour'}
 ZONE_NAME = {'F': 'FVG + Spring', 'G': 'Gap-up FVG + Spring', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
              'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'Pattern at the Fib line of an FVG zone',
@@ -1121,16 +1160,25 @@ def rule_lines(P):
                 P.get('moveVolN', 1), '' if P.get('moveVolN', 1) == 1 else 's', P['moveVol']))
     stop = {'zone': 'under the zone bottom', 'spring': "under the signal candle's low", 'lower': 'under the lower of the two',
             'pct': '%g%% under the entry' % P.get('stopPct', 0), 'final': 'under the CHoCH\'s final low (LL)'}.get(P.get('stop'), P.get('stop'))
-    out.append('Stop loss: %s%s; trades risking more than %g%% skipped' % (
-        stop, '' if P.get('stop') == 'pct' else ' by %g%%' % P.get('stopBuf', 0), P.get('maxRisk', 0)) if P.get('maxRisk') else
-        'Stop loss: %s%s' % (stop, '' if P.get('stop') == 'pct' else ' by %g%%' % P.get('stopBuf', 0)))
-    tgt = 'the last swing high (at least %gR above)' % P.get('swingMinR', 0) if P.get('targetMode') == 'swing' else '%gR' % P.get('targetR', 2)
+    stop += '' if P.get('stop') == 'pct' else ' by %g%%' % P.get('stopBuf', 0)
+    if P.get('stopAtr'):
+        stop += ', or %g x ATR(14) under the entry - whichever is lower' % P['stopAtr']
+    out.append('Stop loss: %s; trades risking more than %g%% skipped' % (stop, P.get('maxRisk', 0)) if P.get('maxRisk') else 'Stop loss: %s' % stop)
+    tgt = {'swing': 'the last swing high (at least %gR above)' % P.get('swingMinR', 0),
+           'mh': 'the CHoCH move high - HH (at least %gR above)' % P.get('swingMinR', 0),
+           'pct': '%g%% above the entry' % P.get('targetPct', 20)}.get(P.get('targetMode'), '%gR' % P.get('targetR', 2))
     if P.get('after') == 'fixed':
         out.append('Target: %s - sold there' % tgt)
     else:
         trail = {'lows': 'under the lowest low of the last %s candles' % P.get('trailN'), 'pct': '%g%% under the highest price' % P.get('trailPct', 0),
-                 'ema': 'a close under the %s EMA' % P.get('emaN'), 'none': 'no trail'}.get(P.get('trail'), '')
-        out.append('Target: %s - then %s%s' % (tgt, 'the stop to the target, ' if P.get('lockTarget') else 'the stop to the entry, ' if P.get('breakeven') else '', trail))
+                 'ema': 'a close under the %s EMA' % P.get('emaN'), 'atr': '%g x ATR under the highest price' % P.get('atrK', 3),
+                 'swing': 'under each new swing low', 'none': 'no trail'}.get(P.get('trail'), '')
+        out.append('Target: %s - %sthen %s%s' % (tgt, ('%g%% sold there, ' % P['partialPct']) if P.get('partialPct') else '',
+                                                  'the stop to the target, ' if P.get('lockTarget') else 'the stop to the entry, ' if P.get('breakeven') else '', trail))
+    if P.get('beAt'):
+        out.append('Before the target: the stop to the entry once the price is %gR up' % P['beAt'])
+    if P.get('timeN'):
+        out.append('Time stop: sold at the close when the price has not gone %gR up within %d candles' % (P.get('timeR', 1), P['timeN']))
     out.append('Sold after %s days at the latest; costs %g%% a trade' % (P.get('maxDays'), P.get('cost', 0)))
     if P.get('from') or P.get('to'):
         out.append('Signals %s%s' % ('from %s ' % P['from'] if P.get('from') else '', 'to %s' % P['to'] if P.get('to') else ''))
