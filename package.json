@@ -17,6 +17,7 @@
     "logos": "node tools/build_logos.js",
     "guide": "node tools/pattern-guide/build.js",
     "pine": "node tools/build_pine.js",
-    "lab-guide": "node tools/lab-guide/build.js"
+    "lab-guide": "node tools/lab-guide/build.js",
+    "patterns": "node tools/build_patterns.js"
   }
 }

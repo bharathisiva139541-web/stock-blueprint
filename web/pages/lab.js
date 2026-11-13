@@ -10,6 +10,9 @@
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, isNum = ui.isNum;
+  /** The bullish pattern engine's registry (web/data/pattern-registry.js = pattern_registry.py; owner, 13-Nov-2026). */
+  function patReg() { return (window.SB_PATTERNS && window.SB_PATTERNS.patterns) || []; }
+  function patOf(id) { return patReg().filter(function (p) { return p.id === id; })[0] || null; }
 
   var DEF = {
     name: 'My FVG+Spring idea', tf: 'D', group: 'fvg', from: '', to: '', minPrice: 0, minTurnover: 0, maxTouch: 0,
@@ -36,6 +39,9 @@
     // and target system should have more options"): the ATR stop, a % target, part sold at the target, the stop to the entry at
     // xR, a time stop
     stopAtr: 0, targetPct: 20, partialPct: 0, beAt: 0, timeN: 0, timeR: 1,
+    // the Pattern library (owner, 13-Nov-2026 - the bullish pattern engine, M1): the pattern + its own parameters
+    // (= pcbridge/ScreenerBridge/pattern_registry.py SPECS params)
+    pattern: 'K08', engBody: 0, boBuf: 0, boVol: 0, rsiN: 14, divPivot: 5, divMaxGap: 60, divRsiMax: 100,
     // the discount zone (owner, 11-Nov-2026, SUPREMEIND: "we always try to enter with low risk, i.e. the zone in discount
     // area. it is ok even the zone have some area slightly above the Choch"): the zone's middle under the Fib line of the
     // move (final low -> its high) - off by default
@@ -109,7 +115,17 @@
       ['fvg_bottom', 'FVG+Spring - at / under the bottom'], ['gap', 'Gap-up FVG + Spring'], ['gapin', 'Gap-up FVG + Spring - inside FVG only'],
       ['zone', 'FVG+Spring or Gap-up FVG + Spring'], ['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'],
       ['entry', 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed'],
-      ['touch', 'First touch of a zone - every FVG / Gap-up zone (your SMC entry)'], ['spring', 'Every Spring (no zone - to compare)']],
+      ['touch', 'First touch of a zone - every FVG / Gap-up zone (your SMC entry)'], ['spring', 'Every Spring (no zone - to compare)'],
+      ['pattern', 'Pattern library (new engine) - pick the pattern below']],
+    pattern: patReg().filter(function (p) { return p.status === 'implemented'; }).map(function (p) { return [p.id, p.id + ' · ' + p.name]; }),
+    engBody: [[0, 'Any size'], [0.5, 'At least 0.5 x ATR'], [1, 'At least 1 x ATR'], [1.5, 'At least 1.5 x ATR'], [2, 'At least 2 x ATR']],
+    boBuf: [[0, 'Just above it'], [0.5, '0.5% above it'], [1, '1% above it'], [2, '2% above it'], [3, '3% above it']],
+    boVol: [[0, 'Not checked'], [1.5, 'At least 1.5 x the 20-candle average'], [2, 'At least 2 x the 20-candle average'], [3, 'At least 3 x the 20-candle average']],
+    divPivot: [[3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
+    divMaxGap: [[30, 'At most 30 candles apart'], [60, 'At most 60 candles apart'], [100, 'At most 100 candles apart'], [150, 'At most 150 candles apart']],
+    divRsiMax: [[100, 'Any RSI'], [30, 'RSI at most 30 (oversold)'], [40, 'RSI at most 40'], [50, 'RSI at most 50']],
+    stopPat: [['zone', 'Under the pattern\'s low (its stop reference)'], ['spring', 'Under the signal candle\'s low'], ['lower', 'Under whichever is lower'],
+      ['pct', '% under the entry'], ['final', 'Under the CHoCH\'s final low']],
     structure: [['off', 'Off - do not look at it'], ['show', 'Show it on every trade (nothing left out) - to compare'], ['only', 'Only my setup (the rules below)']],
     pivotN: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
     downN: [[1, 'At least 1'], [2, 'At least 2'], [3, 'At least 3'], [4, 'At least 4'], [5, 'At least 5']],
@@ -178,7 +194,8 @@
     fallN: [[0, 'Not checked'], [5, 'Within the last 5 candles'], [10, 'Within the last 10 candles'], [20, 'Within the last 20 candles'], [50, 'Within the last 50 candles']],
     fallPct: [[3, 'at least 3%'], [5, 'at least 5%'], [8, 'at least 8%'], [10, 'at least 10%'], [15, 'at least 15%'], [20, 'at least 20%'], [30, 'at least 30%']]
   };
-  var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'stopAtr', 'targetPct', 'partialPct', 'beAt', 'timeN', 'timeR', 'trailN', 'trailPct', 'emaN', 'maxDays',
+  var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'stopAtr', 'targetPct', 'partialPct', 'beAt', 'timeN', 'timeR',
+    'engBody', 'boBuf', 'boVol', 'rsiN', 'divPivot', 'divMaxGap', 'divRsiMax', 'trailN', 'trailPct', 'emaN', 'maxDays',
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
@@ -356,7 +373,7 @@
   /** The rules in plain words (shown above the Run button and with each result). */
   function plain(p) {
     var s = [];
-    s.push(choiceLabel('group', p.group) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
+    s.push((p.group === 'pattern' ? 'Pattern library: ' + patWords(p) : choiceLabel('group', p.group)) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
       (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
     if (p.testFrom) {
       s.push(p.valFrom && p.valFrom < p.testFrom ? 'Development part: the signals before ' + F.date(p.valFrom) + '; validation part: ' + F.date(p.valFrom) +
@@ -404,8 +421,39 @@
     return s.join(' ');
   }
 
-  function sel(k, v) {
-    var list = CHOICES[k];
+  /** The chosen Pattern library pattern in words (its name + the parameters that are not the default). */
+  function patWords(p) {
+    var e = patOf(p.pattern);
+    var w = (p.pattern || '') + ' ' + (e ? e.name : '');
+    var x = [];
+    if (p.pattern === 'K08' && Number(p.engBody)) x.push('the green body at least ' + F.num(p.engBody, 1) + ' x ATR(14)');
+    if (/^B0[1-4]$/.test(p.pattern)) {
+      x.push(Number(p.boBuf) ? 'a close ' + F.num(p.boBuf, 1) + '% above the level' : 'a fresh close above the level');
+      if (Number(p.boVol)) x.push('volume at least ' + F.num(p.boVol, 1) + ' x the 20-candle average');
+    }
+    if (p.pattern === 'I01') {
+      x.push('RSI(' + p.rsiN + '), swing lows of ' + p.divPivot + ' candles each side, at most ' + p.divMaxGap + ' candles apart' +
+        (Number(p.divRsiMax) < 100 ? ', RSI at the 1st low at most ' + F.num(p.divRsiMax, 0) : '') + ' - the signal comes when the 2nd low is confirmed (' + p.divPivot + ' candles after it)');
+    }
+    return w + (x.length ? ' (' + x.join(', ') + ')' : '');
+  }
+
+  /** The Pattern library's own fields (the basics, Pattern = "Pattern library"). */
+  function patHtml(f) {
+    var id = f.pattern, e = patOf(id);
+    var h = field('Which pattern', sel('pattern', f.pattern), 'wide');
+    if (id === 'K08') h += field('Green candle body', sel('engBody', f.engBody));
+    if (/^B0[1-4]$/.test(id)) h += field('Close above the level', sel('boBuf', f.boBuf)) + field('Volume on that candle', sel('boVol', f.boVol), 'wide');
+    if (id === 'I01') {
+      h += field('Swing lows', sel('divPivot', f.divPivot)) + field('The two lows', sel('divMaxGap', f.divMaxGap)) +
+        field('At the 1st low', sel('divRsiMax', f.divRsiMax)) + num('rsiN', f.rsiN, 'RSI length', ' min="2" step="1"');
+    }
+    return h + (e && e.rules ? '<details class="lab-rules field wide"><summary>The exact rules of ' + esc(id + ' ' + e.name) + ' (version ' + e.version + ')</summary><ol>' +
+      e.rules.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ol></details>' : '');
+  }
+
+  function sel(k, v, own) {
+    var list = own || CHOICES[k];
     // a value from a saved run / preset that is not in the list (e.g. 7) is shown as its own option, never silently swapped
     if (!list.some(function (o) { return String(o[0]) === String(v); })) list = list.concat([[v, String(v)]]);
     return '<select class="sel" data-k="' + k + '">' + list.map(function (o) {
@@ -590,7 +638,8 @@
       '<h3 class="lab-h">1 · Start from a ready setup</h3>' + quickHtml(f) +
       '<h3 class="lab-h">2 · The basics</h3><div class="form-grid">' +
       field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
-      field('Stop loss', sel('stop', f.stop), 'wide') +
+      (f.group === 'pattern' ? patHtml(f) : '') +
+      field('Stop loss', sel('stop', f.stop, f.group === 'pattern' ? CHOICES.stopPat : null), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
       field('… or x ATR under the entry, whichever is lower', sel('stopAtr', f.stopAtr)) +
@@ -607,6 +656,8 @@
       num('capital', f.capital, 'Account ₹', ' min="1000" step="10000"') + num('riskPct', f.riskPct, 'Risk per trade (% of the account)', ' min="0.05" step="0.25"') +
       field('Test period from (optional)', '<input class="inp" type="date" data-k="testFrom" id="lab-testfrom" value="' + esc(f.testFrom) + '" ' +
         'title="Trades before this date = the development part (where you look for rules); from it = the test part (kept to check them)">') + '</div>' +
+      (f.group === 'pattern' && f.entry === 'zone' ? '<p class="note warn">A Pattern library signal has no zone: an "order at the zone top" never fills - ' +
+        'set Entry details → Buy to the signal candle\'s close or the next open.</p>' : '') +
       '<p class="sub">Test period: trades before that date = the <b>development</b> part (choose your rules there), from it = the <b>test</b> part (kept aside to check them). ' +
       'Rules that work only in the development part fit the past by luck. E.g. 2020-01-01.</p>' +
       '<h3 class="lab-h">3 · More rules (optional)' + (changed ? ' - ' + changed + ' changed' : '') + '</h3><div class="lab-secs">' +
@@ -633,7 +684,7 @@
       else if (NUMS.indexOf(k) >= 0) { var v = Number(inp.value); if (isFinite(v) && inp.value !== '') f[k] = v; }
       else f[k] = String(inp.value || '');
     });
-    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch', 'timeN'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
+    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch', 'timeN', 'rsiN', 'divPivot', 'divMaxGap'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
     f.trailN = Math.max(1, f.trailN); f.maxDays = Math.max(1, f.maxDays); f.maxOpen = Math.max(1, f.maxOpen);
     return f;
   }
@@ -959,7 +1010,8 @@
       structNote(res) + shapeNote(res, s);
     // the answer first (owner, 12-Nov-2026: "make bactest lab more user-friendly not to be complex"): is there an edge, does the test
     // part agree, what the account did - then the rest folded
-    h += '<div class="lab-verdict" id="lab-verdict">' + edgeNote(s) + verdictTest(res) +
+    h += '<div class="lab-verdict" id="lab-verdict">' + (res.warnings || []).map(function (w) { return '<p class="note warn lab-warn">' + esc(w) + '</p>'; }).join('') +
+      edgeNote(s) + verdictTest(res) +
       '<div class="tiles">' + ui.tile('Trades', F.int(s.trades), res.open ? F.int(res.open) + ' still running' : 'all finished') +
       ui.tile('Win rate', F.num(s.winPct, 1) + '%', 'sold above the entry') +
       ui.tile('Average per trade', '<span class="' + tone(s.avgR) + '">' + r2(s.avgR) + '</span>', isNum(s.avgRLo) ? 'likely ' + rng(s.avgRLo, s.avgRHi) : 'median ' + r2(s.medR)) +
@@ -1153,6 +1205,71 @@
     else show(false);
   }
 
+  // ---------- the Pattern library list (owner, 13-Nov-2026 - the bullish pattern engine: all 194 patterns of his master prompt +
+  // his own, each with its real state; "Use" puts an implemented one in the form)
+  var NEEDS = { o: 'OHLC', v: 'volume', b: 'index', i: 'intraday' };
+  var STATUS_TONE = { implemented: 's-good', lab: 's-info', partial: 's-warn', sheet: 's-warn', planned: '', data: 's-bad' };
+  // short chip names (a long chip would push a phone screen sideways)
+  var CAT_SHORT = { C: 'Classical', K: 'Candles', P: 'Price action', S: 'SMC / ICT', V: 'Volume', B: 'Breakouts', M: 'Moving averages',
+    I: 'Momentum', Q: 'Quant', X: 'Yours' };
+  function libHtml() {
+    var ps = patReg();
+    if (!ps.length) return '';
+    var n = ps.filter(function (p) { return p.category !== 'X'; }).length;
+    var done = ps.filter(function (p) { return p.status === 'implemented'; }).length;
+    var cats = window.SB_PATTERNS.categories || {};
+    return '<section class="card" id="lab-lib"><details class="lab-sec" data-sec="library"' + (ST.libOpen ? ' open' : '') + '><summary><span>Pattern library - ' + n +
+      ' patterns + your own (' + done + ' built in the new engine so far)</span><span class="sub">open</span></summary><div class="lab-sec-body">' +
+      '<p class="sub">Every pattern with its real state. <b>Implemented</b> = written rules + tests (nothing from later candles is used) - pick it with ' +
+      'Pattern → "Pattern library". <b>In the Lab</b> = your existing setups. <b>Partial</b> = a filter or only in the sheet. <b>Planned</b> = not built yet. ' +
+      '<b>Data limited</b> = no 5-minute candles. The rules: docs/PATTERN_SPECS.md.</p>' +
+      '<div class="controls">' + ui.chips('labcat', [['all', 'All']].concat(Object.keys(cats).map(function (k) { return [k, CAT_SHORT[k] || cats[k]]; })), ST.libCat || 'all') +
+      '<input class="inp" type="search" id="lab-lib-q" placeholder="Search a pattern or ID" value="' + esc(ST.libQ || '') + '"></div>' +
+      '<div id="lab-lib-table"></div></div></details></section>';
+  }
+  function drawLib(el) {
+    var host = $('#lab-lib-table', el);
+    if (!host) return;
+    var cat = ST.libCat || 'all', q = String(ST.libQ || '').toLowerCase().trim();
+    var rows = patReg().filter(function (p) {
+      return (cat === 'all' || p.category === cat) && (!q || (p.id + ' ' + p.name + ' ' + p.family + ' ' + p.note).toLowerCase().indexOf(q) >= 0);
+    });
+    host.innerHTML = '';
+    new ui.Table({
+      rows: rows, pageSize: 25, id: 'lab-pattern-library',
+      columns: [
+        { key: 'id', label: 'ID' }, { key: 'name', label: 'Pattern' }, { key: 'categoryName', label: 'Category' },
+        { key: 'statusName', label: 'Status', html: function (r) { return ui.badge(r.statusName, STATUS_TONE[r.status] || ''); } },
+        { key: 'tf', label: 'Timeframes', get: function (r) { return (r.timeframes || []).join(' / '); } },
+        { key: 'needs', label: 'Data', get: function (r) { return String(r.needs || '').split('').map(function (c) { return NEEDS[c] || c; }).join(' + '); } },
+        { key: 'note', label: 'Note', get: function (r) { return r.note || ''; } },
+        { key: 'use', label: '', get: function () { return null; },
+          html: function (r) { return r.status === 'implemented' ? '<button class="btn sm" type="button" data-usepat="' + esc(r.id) + '">Use</button>' : ''; } }
+      ]
+    }).mount(host);
+  }
+  function bindLib(el) {
+    var box = $('#lab-lib', el);
+    if (!box) return;
+    var d = $('details', box);
+    d.addEventListener('toggle', function () { ST.libOpen = d.open; if (d.open && !$('#lab-lib-table table', el)) drawLib(el); });
+    if (d.open) drawLib(el);
+    ui.bindChips(box, 'labcat', function (v) { ST.libCat = v; drawLib(el); });
+    $('#lab-lib-q', box).addEventListener('input', function (e) { ST.libQ = e.target.value; drawLib(el); });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-usepat]');
+      if (!b) return;
+      var f = readForm(el);
+      f.group = 'pattern';
+      f.pattern = b.getAttribute('data-usepat');
+      if (f.entry === 'zone') f.entry = 'close';
+      if (f.structure === 'only') f.structure = 'off';
+      saveForm(f);
+      SB.route(true);
+      setTimeout(function () { var x = $('#lab-form', document); if (x && x.scrollIntoView) x.scrollIntoView({ block: 'start' }); }, 0);
+    });
+  }
+
   function bindForm(el) {
     var host = $('#lab-form', el);
     host.addEventListener('change', function (e) {
@@ -1161,7 +1278,7 @@
       var f = readForm(el);
       saveForm(f);
       var inSec = SECTIONS.some(function (x) { return (x[2] || SHAPE_KEYS).indexOf(k) >= 0; });
-      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN'].indexOf(k) >= 0 || inSec ||
+      if (['stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN', 'pattern'].indexOf(k) >= 0 || inSec ||
           Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the cards and "changed" counts follow
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));
@@ -1274,10 +1391,11 @@
         return;
       }
       var f = form();
-      el.innerHTML = head + '<div id="lab-status" class="lab-status"></div>' + formHtml(f) +
+      el.innerHTML = head + '<div id="lab-status" class="lab-status"></div>' + formHtml(f) + libHtml() +
         '<section class="card"><div class="card-head"><div><h2>Your runs</h2><p>The newest 8 are kept in your sheet (tab Backtest_Lab). Open one to see it.</p></div></div>' +
         '<div id="lab-runs"><p class="empty">Loading…</p></div></section><div id="lab-result"></div>';
       bindForm(el);
+      bindLib(el);
       paintStatus(el);
       var gen = ST.gen;
       var want = params && params[0];

@@ -1314,6 +1314,38 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('[data-k="upWickMax"]', (x) => x.value), '100');
     assert.ok(!/Only Springs where/.test(await plainText()), 'cleared');
     await own.p.click('[data-rec="hammer"]');
+    // the Pattern library (owner, 13-Nov-2026 - the bullish pattern engine, M1): every pattern of his master prompt with its real
+    // state; an implemented one goes into the form with "Use", its own fields and exact rules show, the plain words follow
+    await own.p.click('#lab-lib summary');
+    await own.p.waitForSelector('#lab-lib-table table');
+    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(6 built in the new engine so far\)/);
+    await own.p.fill('#lab-lib-q', 'engulf');
+    await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 1);
+    assert.match(await own.p.$eval('#lab-lib-table tbody tr', (x) => x.textContent), /K08\s*Bullish Engulfing\s*Candlestick patterns\s*Implemented/);
+    await own.p.fill('#lab-lib-q', '');
+    await own.p.click('[data-chip="labcat"][data-v="S"]');
+    await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 25);
+    const smcRows = await own.p.$eval('#lab-lib-table tbody', (x) => x.textContent);
+    assert.ok(/S22\s*Discount Zone Entry[\s\S]*In the Lab \(own group\)/.test(smcRows) && /S08\s*Bullish Order Block[\s\S]*Planned/.test(smcRows), 'statuses as they are');
+    assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 0, 'nothing in SMC is built in the new engine yet');
+    await own.p.click('[data-chip="labcat"][data-v="all"]');
+    await own.p.fill('#lab-lib-q', 'K08');
+    await own.p.waitForSelector('[data-usepat="K08"]');
+    await own.p.click('[data-usepat="K08"]');
+    await own.p.waitForSelector('#lab-form select[data-k="pattern"]');
+    assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="group"],#lab-form select[data-k="pattern"],#lab-form select[data-k="structure"]', (x) => x.map((e) => e.value)),
+      ['pattern', 'K08', 'off']);
+    assert.match(await plainText(), /^In plain words: Pattern library: K08 Bullish Engulfing on the daily chart\./);
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="stop"] option[value="zone"]', (x) => x.textContent), 'Under the pattern\'s low (its stop reference)');
+    await own.p.selectOption('[data-k="pattern"]', 'I01');
+    await own.p.waitForSelector('[data-k="divPivot"]');
+    await own.p.selectOption('[data-k="divRsiMax"]', '40');
+    assert.match(await plainText(), /Pattern library: I01 RSI Bullish Divergence \(RSI\(14\), swing lows of 5 candles each side, at most 60 candles apart, RSI at the 1st low at most 40 - the signal comes when the 2nd low is confirmed \(5 candles after it\)\)/);
+    assert.match(await own.p.$eval('#lab-form details.lab-rules', (x) => x.textContent), /The exact rules of I01 RSI Bullish Divergence \(version 1\)[\s\S]*never p2/);
+    await own.p.selectOption('[data-k="pattern"]', 'B03');
+    await own.p.waitForSelector('[data-k="boVol"]');
+    await own.p.selectOption('[data-k="boVol"]', '2');
+    assert.match(await plainText(), /Pattern library: B03 52-Week High Breakout \(a fresh close above the level, volume at least 2 x the 20-candle average\)/);
     // market structure (owner, 10-Nov-2026): his CHoCH + FVG setup in one click, the plain words follow
     await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', '[]'); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"]:not([open])');
@@ -1422,6 +1454,7 @@ function check(name, fn) {
         { key: 'lhll', name: 'Lower highs / lows before the CHoCH', trades: 3, rows: [
           { label: '3', trades: 20, winPct: 30, avgR: 0.01, medR: -1, totalR: 0.2, hitPct: 30, lo: -0.4, hi: 0.4, verdict: 'few', dev: { trades: 12, avgR: 0 }, test: { trades: 8, avgR: 0.02 }, held: '' },
           { label: '4', trades: 35, winPct: 35, avgR: 0.34, medR: -0.4, totalR: 11.9, hitPct: 35, lo: -0.1, hi: 0.78, verdict: 'chance', dev: { trades: 20, avgR: 0.3 }, test: { trades: 15, avgR: 0.4 }, held: 'yes' }] }],
+      warnings: ['The stocks are today\'s ~1,800 listed ones - ... (survivorship bias).'],
       open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
       stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
       reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
@@ -1447,6 +1480,7 @@ function check(name, fn) {
     await guideShot(own.p, '12-trades', 'details[data-rsec="trades"]');
     await guideShot(own.p, '13-folded', '#lab-result section.card');
     const view = await own.p.$eval('#lab-result', (x) => x.textContent);
+    assert.match(await own.p.$eval('#lab-verdict', (x) => x.textContent), /survivorship bias/, 'every result says the universe is today\'s stocks');
     assert.ok(/Zone stop 1%/.test(view) && /66\.7%/.test(view) && /1\.21R/.test(view) && /₹10,36,000/.test(view), view.slice(0, 600));
     assert.match(view, /At the last swing high \(at least 1R above the entry - none = no trade\) sell 50% and for the rest move the stop up to the target \(a fall back to it = sold there, a win\), then trail it under the lowest low of the last 3 candles/);
     assert.strictEqual(await own.p.$$eval('#lab-trades tbody tr', (r) => r.length), 4);

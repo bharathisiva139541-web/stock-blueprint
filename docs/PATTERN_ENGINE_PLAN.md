@@ -1,6 +1,7 @@
 # Bullish Pattern Recognition Engine - Phase 0 audit and integration plan
 
-Status: **Phase 0 (audit + plan) only. Nothing below is built yet** unless the matrix in section 6 says "Lab" or "Partial".
+Status: Phase 0 (audit + plan) approved 13-Nov-2026 ("yes. do as per your recommendation"); **M1 built** (section 11).
+The live state of every pattern is docs/PATTERN_SPECS.md (generated from the registry) - the matrix below is the audit.
 Written 13-Nov-2026 for the owner's "Master project prompt" (194 bullish patterns, long only, ~20 years, ~1,800 stocks).
 Every number marked *measured* was run in this repo's container; everything marked *estimate* still has to be measured on
 the owner's laptop.
@@ -203,7 +204,7 @@ Families group patterns that share one detector with different parameters (about
 | K05 | Bullish Belt Hold | New | |
 | K06 | Long Lower Shadow | New | |
 | K07 | Bullish Closing Marubozu | New | |
-| K08 | Bullish Engulfing | Partial | sheet col W / web/lib/patterns.js |
+| K08 | Bullish Engulfing | **Implemented (M1)** | = the sheet's col W rule (parity test with web/lib/patterns.js) |
 | K09 | Piercing Line | Partial | sheet / web |
 | K10 | Bullish Harami | Partial | sheet / web |
 | K11 | Bullish Harami Cross | New | |
@@ -297,7 +298,7 @@ B01 20-day high, B02 50-day high, B03 52-week high, B04 All-time high, B13 Donch
 parameter) - B05 Multi-month resistance, B06 Multi-touch resistance, B14 Darvas box, B16 Breakout + retest, B18
 Multi-week base, B19 Resistance absorption (family BASE) - B07 Narrow range, B08 NR4, B09 NR7, B10 Inside-bar cluster,
 B17 Contraction -> expansion (family NR) - B11 Bollinger squeeze, B12 Keltner squeeze, B20 MA compression (family SQ) -
-**all New**. **B15 Opening Range Breakout = Data** (15-minute candles only for ~6 months; no 5-minute).
+**B01-B04 Implemented (M1)**, the rest New. **B15 Opening Range Breakout = Data** (15-minute candles only for ~6 months; no 5-minute).
 
 **G. Moving averages / trend**
 
@@ -320,7 +321,7 @@ B17 Contraction -> expansion (family NR) - B11 Bollinger squeeze, B12 Keltner sq
 **H. Momentum / indicators** - I01-I05 RSI (divergence, hidden divergence, failure swing, 50 reclaim, oversold
 reversal), I06-I08 MACD, I09-I10 Stochastic, I11 CCI, I12 MFI divergence, I13-I14 OBV, I15 ADX expansion, I16 ROC, I17
 TSI, I18 Aroon, I19 Parabolic SAR, I20-I22 Bollinger (lower-band reversal, middle reclaim, band walk), I23-I24 Relative
-strength vs benchmark (needs the index cache) - **all New**; divergences use confirmed pivots (signal only after the 2nd
+strength vs benchmark (needs the index cache) - **I01 Implemented (M1)**, the rest New; divergences use confirmed pivots (signal only after the 2nd
 pivot is confirmed).
 
 **I. Quantitative** - Q01-Q20 **all New** (z-score / %B / RSI-price statistics, ATR regime, down-day exhaustion, large
@@ -328,8 +329,8 @@ down candle reversal, Q09 defined on daily OHLC without gaps, momentum / ROC, Q1
 relative-strength leadership, Q14 Donchian trend start, Q15 statistical pullback, Q16 price-volume anomaly, Q17 range
 expansion, Q18 trend persistence, Q19 failed momentum breakdown, Q20 multi-factor confluence = a combination, phase 5).
 
-**Count:** A 20 + B 27 + C 24 + D 25 + E 16 + F 20 + G 18 + H 24 + I 20 = **194**. Today: Lab 3, Partial 22, Data 2,
-New 167 (the registry will record each one exactly). The owner's own patterns (Spring, FVG+Spring, Gap-up
+**Count:** A 20 + B 27 + C 24 + D 25 + E 16 + F 20 + G 18 + H 24 + I 20 = **194**. At the audit: Lab 3, Partial 22, Data 2,
+New 167. After M1: Implemented 6, Lab 3, Partial 21, Data 2, Planned 162 (docs/PATTERN_SPECS.md has the live count). The owner's own patterns (Spring, FVG+Spring, Gap-up
 FVG + Spring, inside-FVG gap, Twin Star Bottom, Harami + Inverted Hammer, Three Day Low Rejection, Trio, FVG 123 types,
 FVG First Touch) stay as they are and join the registry as extras (X..).
 
@@ -391,7 +392,41 @@ No Code.gs / Code2.gs change and no New version deploy for M1 (the sheet / api a
 4. Default costs = a Zerodha equity-delivery schedule (brokerage 0, STT, exchange, SEBI, stamp, GST, DP) instead of the
    flat 0.2 %? Historical rate changes only where verified.
 
-## 11. Known limits (will stay)
+## 11. M1 - built 13-Nov-2026
+
+Owner's answers: M1 yes; order after it = candlesticks + breakouts + moving averages, then structure / SMC, then volume /
+momentum / quant, classical chart patterns last; survivorship bias accepted with a note on EVERY Lab result
+(`backtest_lab.SURVIVORSHIP`, result `warnings`); the Zerodha delivery cost schedule = phase 4.
+
+| Piece | File |
+|---|---|
+| Shared maths (anatomy, TR, Wilder, ATR, SMA, EMA, RSI, prior N-high, relative volume) | pcbridge/ScreenerBridge/indicators.py |
+| Registry: 194 + 10 own, status, family, data needs, written rules of the implemented ones | pcbridge/ScreenerBridge/pattern_registry.py |
+| Detectors + event model + lifecycle: K08, B01-B04, I01 | pcbridge/ScreenerBridge/pattern_detect.py |
+| Lab: Pattern "Pattern library" (`group` 'pattern', `pattern`, own parameters), `_PatRows`, survivorship note | backtest_lab.py |
+| Charts PDF: the pattern's name, plain words (`PAT_WORDS`), the breakout level | lab_charts.py |
+| Page: pattern picker + its fields + "The exact rules", the Pattern library list (chips, search, status, Use, CSV) | web/pages/lab.js |
+| Generated copies | web/data/pattern-registry.js, docs/PATTERN_SPECS.md (`npm run patterns`) |
+| Tests | tests/fixtures/pcbridge_patterns_check.py, tests/pcbridge-patterns.test.js, ui.e2e |
+
+Tests run (all pass): indicator worked examples (RSI 70.464 by hand on the StockCharts sample closes; ATR, EMA, Wilder by
+hand) + an independent second calculation on random data; the registry's 194 IDs per category; detector units and
+boundaries (equal bodies, the level excludes the signal candle, fresh breakouts only, minimum history, divergence not before
+the 2nd low is confirmed); CAUSALITY for every implemented pattern x D / W / 4H x 4 random charts x ~29 cut points (cut =
+same events; random candles after the cut = same events); reproducibility; K08 = the sheet's rule on 40 random charts +
+boundary candles; the Lab group end-to-end (entry = the signal close, stop under the pattern's low, next open, ATR stop,
+weekly with daily turnover, turnover filter, charts PDF, the same run twice = the same result); the existing Lab fixture
+unchanged.
+
+*Measured* detection speed (this container, pure Python, 600 random stocks x 3,000 daily candles = 1.8 M candles): K08
+0.15 s / M candles, B01 0.42, B02 0.39, B03 0.34, B04 0.15, I01 0.54. The laptop's ~4-7 M daily candles -> about 1-4 s
+per pattern for a whole run (the events are remembered while the program runs; a second run with other exit rules does not
+detect again).
+
+Next (phase 2, the agreed order): candlesticks K01-K27, breakouts B05-B20 (not B15), moving averages M01-M12, basic
+volume patterns.
+
+## 12. Known limits (will stay)
 
 Survivorship bias; current sector / cap only; no 5-minute data; 15-minute ~6 months; 4H ~5.5 years; no historical
 delivery %; OHLCV cannot reveal order flow (SMC = proxies); the charts PDF shows candles after the exit (outcome review,
