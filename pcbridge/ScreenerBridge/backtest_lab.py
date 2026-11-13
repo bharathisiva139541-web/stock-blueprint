@@ -213,6 +213,9 @@ DEFAULTS = {
     'engBody': 0.0,                      # K08: the green candle's body at least x ATR(14) (0 = off)
     'boBuf': 0.0, 'boVol': 0.0,          # B01-B04: close at least x % above the level; volume at least x the 20-candle average
     'rsiN': 14, 'divPivot': 5, 'divMaxGap': 60, 'divRsiMax': 100.0,   # I01: RSI length, swing size, lows apart, RSI at the 1st low
+    # phase 2 (13-Nov-2026): a reversal pattern (registry 'ctx') only after a fall - 'down' = the candle before it closed under its
+    # falling 20-SMA; 'any' = everywhere
+    'patCtx': 'any',
 }
 SURVIVORSHIP = ("The stocks are today's ~1,800 listed ones - companies delisted or suspended over the years are not in the "
                 "candles (Kite has only current instruments), so every result looks somewhat better than reality "
@@ -241,7 +244,7 @@ CHOICES = {
     'targetMode': ('R', 'swing', 'mh', 'pct'), 'discPart': ('mid', 'top', 'bottom'),
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
-    'pattern': tuple(pattern_registry.implemented()),
+    'pattern': tuple(pattern_registry.implemented()), 'patCtx': ('any', 'down'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -546,6 +549,8 @@ class _PatRows:
         self.pid, self.tf, self.P = P['pattern'], tf, P
         self.name = '%s %s' % (self.pid, pattern_registry.by_id()[self.pid]['name'])
         self.params = pattern_detect.params_for(self.pid, P)
+        if pattern_registry.SPECS[self.pid].get('ctx'):
+            self.params = dict(self.params, patCtx=P.get('patCtx', 'any'))     # the trend context before a reversal pattern
         key = (d, tf, self.pid, pattern_detect.param_hash(self.pid, self.params))
         if key not in _PAT_MEMO:
             while len(_PAT_MEMO) >= PAT_MEMO_KEEP:
@@ -565,7 +570,8 @@ class _PatRows:
         got = self.memo.get(sym)
         if got is None or got[0] != cs.n:
             o, h, l, c = ([_f(x) for x in a] for a in (cs.o, cs.h, cs.l, cs.c))
-            got = self.memo[sym] = (cs.n, pattern_detect.detect(self.pid, o, h, l, c, [float(x) for x in cs.v], self.tf, self.params))
+            got = self.memo[sym] = (cs.n, pattern_detect.detect(self.pid, o, h, l, c, [float(x) for x in cs.v], self.tf, self.params,
+                                                                 day=list(cs.day)))
         return got[1]
 
     def turnover(self, sym, cs):

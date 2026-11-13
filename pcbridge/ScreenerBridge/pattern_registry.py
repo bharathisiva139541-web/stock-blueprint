@@ -16,7 +16,7 @@ python3 pattern_registry.py json      -> the registry as JSON (tools/build_patte
 import json
 import sys
 
-VERSION = 1
+VERSION = 2
 CATEGORIES = {
     'C': 'Classical chart patterns', 'K': 'Candlestick patterns', 'P': 'Price action and market structure',
     'S': 'Smart money concepts / ICT (price-action proxies)', 'V': 'Volume patterns', 'B': 'Breakout and consolidation',
@@ -293,17 +293,289 @@ for _k, (_what, _tf) in _BO.items():
         'Invalidated once a later close is back under the level before the entry.',
     ]
 
+# ------------------------------------------------------------------ PHASE 2 (owner, 13-Nov-2026: "Yes do it" - candlesticks,
+# breakouts, moving averages, basic volume patterns). The shared definitions every rule below uses:
+COMMON = [
+    'ATR = Wilder ATR(14) of the candle BEFORE the pattern\'s first candle (its size yardstick, known before the pattern starts).',
+    'Long body = body >= 0.7 x ATR; small body = body <= 0.3 x ATR; doji = body <= 10 % of its own range (range > 0). '
+    'Upper shadow = high - max(open, close), lower shadow = min(open, close) - low; "% of the range" = of that candle\'s high - low.',
+    'c1, c2 ... = the pattern\'s candles, oldest first; the signal = the close of its last candle. Entry = that close or the next '
+    'open (the Lab\'s "Buy"); stop reference = the lowest low of the pattern\'s candles and trigger = their highest high, unless '
+    'a rule says otherwise.',
+    'Fresh = the close above the level while the close before was not above ITS level (one signal per breakout, not every day '
+    'the price stays above).',
+    'Relative volume = the candle\'s volume / the average volume of the 20 candles BEFORE it.',
+    'Trend context (Lab "Before the pattern", reversal patterns only): "After a fall" keeps a pattern only when the candle before '
+    'it closed under its 20-SMA and that SMA fell over the 5 candles before. Continuation patterns (K16, K26, K27) always need '
+    'the uptrend: the candle before closed above its 20-SMA, which rose over the 5 candles before.',
+    'Invalidated by a close under the stop reference before the entry. Lengths are candles of the chosen timeframe unless a rule '
+    'gives one per timeframe. Every value uses only the candle and earlier ones (checked: cut / changed-future tests).',
+]
+
+
+def _sp(rules, words, lookback, ctx=False, note=None, params=None):
+    d = {'version': 1, 'lookback': lookback, 'params': params or {}, 'rules': rules, 'words': words, 'ctx': ctx}
+    if note:
+        d['note'] = note
+    return d
+
+
+SHEET = "the sheet's own column W rule (checked equal to web/lib/patterns.js)"
+P2 = {
+    # candlesticks
+    'K01': _sp(['One candle, range >= 0.5 x ATR, either colour.', 'Body > 10 % and <= 35 % of the range (a doji is K03).',
+                'Lower shadow >= 2 x the body and >= 55 % of the range; upper shadow <= 10 % of the range.'],
+               'A hammer: a small body at the top and a long lower shadow - sellers pushed the price down during the candle and '
+               'buyers pushed it back up.', 15, True),
+    'K02': _sp(['One candle, range >= 0.5 x ATR, either colour.', 'Body > 10 % and <= 35 % of the range.',
+                'Upper shadow >= 2 x the body and >= 55 % of the range; lower shadow <= 10 % of the range.'],
+               'An inverted hammer: a small body at the bottom and a long upper shadow - buyers tried to lift the price after a '
+               'fall.', 15, True),
+    'K03': _sp(['One candle, range >= 0.5 x ATR.', 'A doji (body <= 10 % of the range) with an upper shadow <= 10 % and a lower '
+                'shadow >= 70 % of the range.'],
+               'A dragonfly doji: it opened and closed at the top after a long dip during the candle - the dip was fully bought.',
+               15, True),
+    'K04': _sp(['Green, long body.', 'Upper and lower shadows each <= 5 % of the range.'],
+               'A bullish marubozu: a long green candle with almost no shadows - buyers were in control from the open to the close.',
+               15, True),
+    'K05': _sp(['Green, long body, body >= 60 % of the range.', 'Opens at its low: lower shadow <= 3 % of the range.',
+                'Opens below the close of the candle before.'],
+               'A bullish belt hold: it opened lower, at its low, and then rose all the way - a strong turn after a fall.', 15, True),
+    'K06': _sp(['Range >= 1 x ATR (a big candle).', 'Lower shadow >= 60 % of the range.',
+                'Close in the upper half of the range (close location value >= 0).'],
+               'A long lower shadow: a big candle whose low was strongly rejected - it closed in its upper half.', 15, True),
+    'K07': _sp(['Green, long body, body >= 60 % of the range.',
+                'Closes at its high: upper shadow <= 2 % of the range; a lower shadow > 5 % (otherwise it is K04).'],
+               'A closing marubozu: a long green candle that closed at its high - buyers held on until the close.', 15, True),
+    'K09': _sp(['c1 red; c2 opens under c1\'s LOW.', 'c2 closes above the middle of c1\'s body and below c1\'s open.',
+                'No size rule (the sheet\'s rule).'],
+               'A piercing line: after a red candle the next one opened below its low and closed above the middle of its body.',
+               2, True, SHEET),
+    'K10': _sp(['c1 red, c2 green.', "c2's body inside c1's body (c2 open >= c1 close, c2 close <= c1 open), smaller than c1's.",
+                "c2's low above c1's low (the sheet's rule)."],
+               'A bullish harami: a small green candle inside the body of the red one before - the fall stopped.', 2, True, SHEET),
+    'K11': _sp(['c1 red, long body.', 'c2 a doji with its whole body inside c1\'s body (between c1\'s close and open).'],
+               'A harami cross: a doji inside the body of a long red candle - the selling stopped.', 15, True),
+    'K12': _sp(['c1 red, c2 green.', 'Lows equal within 1.25 % of their average.',
+                'Bodies differ by <= 25 % of the bigger, lower shadows by <= 30 %, both lower shadows > 0 (the sheet\'s rule).'],
+               'A tweezer bottom: two candles with the same low, a red then a green one - that low was defended twice.', 2, True, SHEET),
+    'K13': _sp(['c1 red with a long body, c2 red.', 'Their closes equal within 0.1 % of c1\'s close.'],
+               'A matching low: two red candles closing at the same price - the fall found a floor.', 15, True),
+    'K14': _sp(['c1 red, long body; c2 green, long body.', 'c2 opens at least 30 % of c1\'s body under c1\'s close.',
+                'c2 closes within 10 % of c1\'s body from c1\'s close.'],
+               'A bullish counterattack: after a long red candle the next one opened much lower and climbed back to the same close.',
+               15, True),
+    'K15': _sp(['c1 red marubozu, c2 green marubozu (long bodies, shadows <= 5 % of the range).',
+                'c2\'s low above c1\'s high (a gap - part of the candle definition only).'],
+               'A bullish kicking pattern: a strong red candle, then a strong green one that opened above it.', 15, True),
+    'K16': _sp(['The uptrend before c1 (continuation).', 'c1 red, body >= 0.3 x ATR; c2 green, long body.',
+                'c2 opens at c1\'s open (within 10 % of c1\'s body) and at its own low (lower shadow <= 5 % of the range).'],
+               'Bullish separating lines: in an uptrend a red candle, then a green one opening at the same price and rising - the '
+               'pause is over.', 25),
+    'K17': _sp(['c1 red, body >= 2 % of its open, lower shadow <= 30 % of its range.', 'c2 body <= 30 % of c1\'s.',
+                'c3 green, body >= 2 % of its open, closes at or above the middle of c1\'s body (the sheet\'s rule).'],
+               'A morning star: a big red candle, a small one, then a big green one closing into the red body - a turn after a fall.',
+               3, True, SHEET),
+    'K18': _sp(['c1 red, long body.', 'c2 a doji whose body is wholly under c1\'s close.',
+                'c3 green, body >= 0.5 x ATR, closes above the middle of c1\'s body.'],
+               'A morning doji star: a long red candle, a doji below it, then a green candle closing into the red body.', 15, True),
+    'K19': _sp(['Three green candles, each a long body with an upper shadow <= 25 % of its range.',
+                'Each closes higher than the one before and opens inside the previous body.'],
+               'Three white soldiers: three strong green candles in a row, each closing higher - a steady takeover by buyers.',
+               15, True),
+    'K20': _sp(['c1 red, long body.', 'c2 green with its body inside c1\'s, smaller.', 'c3 green, closing above c1\'s open.'],
+               'Three inside up: a harami confirmed by a third candle closing above the red candle\'s open.', 15, True),
+    'K21': _sp(['c1 red; c2 green engulfing c1\'s body (opens <= c1 close, closes >= c1 open, bigger body).',
+                'c3 green, closing above c2\'s close.'],
+               'Three outside up: a bullish engulfing confirmed by a third candle closing higher.', 3, True),
+    'K22': _sp(['c1 red, long body, lower shadow >= 30 % of its range.',
+                'c2 red, smaller body, opens inside c1\'s body, low above c1\'s low, with a lower shadow.',
+                'c3 small red (body <= 0.3 x ATR, shadows <= 10 % of its range) inside c2\'s range.'],
+               'Three stars in the south: three red candles, each smaller and holding a higher low - the selling dried up.',
+               15, True),
+    'K23': _sp(['c1 red, long body.', 'c2 a doji whose HIGH is under c1\'s low (a gap - candle definition only).',
+                'c3 green whose LOW is above c2\'s high, closing above the middle of c1\'s body.'],
+               'A bullish abandoned baby: a doji left alone below the candles on both sides - a sharp turn.', 15, True),
+    'K24': _sp(['c1 red, body >= 0.3 x ATR.', 'c2 green, opens at / above c1\'s close, closes above c1\'s open.',
+                'c3 red, opens above c2\'s close, closes within 0.2 % of c1\'s close.'],
+               'A stick sandwich: two red candles closing at the same price around a green one - that close held twice.', 15, True),
+    'K25': _sp(['c1 and c2 red marubozus (long bodies, shadows <= 5 %).',
+                'c3 red, opens under c2\'s close, its high above c2\'s close.',
+                'c4 red, opens at / above c3\'s high, closes at / under c3\'s low (engulfs it with the shadows).'],
+               'A concealing baby swallow: four red candles where the selling exhausts itself - a rare reversal.', 15, True),
+    'K26': _sp(['The uptrend before c1 (continuation).', 'c1 green, long body.',
+                'c2, c3, c4: bodies <= half of c1\'s, inside c1\'s range, at least two of them red.',
+                'c5 green, long body, opens above c4\'s close and closes above c1\'s close.'],
+               'Rising three methods: a strong green candle, a small three-candle pause inside it, then a new strong green candle.',
+               25),
+    'K27': _sp(['The uptrend before c1 (continuation).', 'c1 green, long body.',
+                'c2: body wholly above c1\'s close, body <= half of c1\'s.',
+                'c3, c4: bodies <= half of c1\'s, lows at / above the middle of c1\'s body.',
+                'c5 green, closes above the highest high of c2 - c4.'],
+               'A mat hold: a strong green candle, a short pause that holds high, then the climb goes on.', 25),
+    # breakouts
+    'B05': _sp(['Level = the highest high of the 126 candles before (daily; weekly 26, 4-hour 252) made at least 63 candles '
+                '(weekly 13, 4-hour 126) before - the newer candles all stayed under it.',
+                'Signal: the close above that level.', "Stop reference = the signal candle's low; trigger = the level."],
+               'The price closed above a high that had stopped it for months.', 252),
+    'B06': _sp(['Level = the highest high of the 60 candles before (weekly 26, 4-hour 120).',
+                'At least 3 separate touches: highs within 1 % of the level, at least 3 candles apart.',
+                'Signal: a fresh close above the level.', "Stop reference = the signal candle's low."],
+               'The price closed above a level it had hit at least three times before.', 120),
+    'B07': _sp(['The candle before is narrow: range <= 0.5 x ATR(14) of the candle before it.',
+                'Signal: the close above that narrow candle\'s high.', 'Stop reference = the lower of the two lows.'],
+               'After a very quiet, narrow candle the price closed above its high.', 16),
+    'B08': _sp(['The candle before has the smallest range of the last 4 candles (NR4).', 'Signal: the close above its high.',
+                'Stop reference = the lower of the two lows.'],
+               'After the narrowest candle of 4 (NR4) the price closed above its high.', 4),
+    'B09': _sp(['The candle before has the smallest range of the last 7 candles (NR7).', 'Signal: the close above its high.',
+                'Stop reference = the lower of the two lows.'],
+               'After the narrowest candle of 7 (NR7) the price closed above its high.', 7),
+    'B10': _sp(['A mother candle followed by 2 to 10 inside candles (each high <= the mother\'s high, low >= its low) ending on '
+                'the candle before (the nearest such mother).', 'Signal: the close above the mother\'s high.',
+                "Stop reference = the mother's low."],
+               'After several candles stayed inside one bigger candle, the price closed above that candle\'s high.', 12),
+    'B11': _sp(['Bollinger Bands 20, 2 (population standard deviation); bandwidth = (upper - lower) / middle.',
+                'Squeeze: the bandwidth of the candle before is in the lowest 10 % of the 126 candles before it.',
+                'Signal: a fresh close above the upper band.', "Stop reference = the signal candle's low."],
+               'After the Bollinger Bands squeezed to one of their narrowest widths, the price closed above the upper band.', 146),
+    'B12': _sp(['Keltner Channel = EMA(20) +/- 1.5 x Wilder ATR(20); Bollinger Bands 20, 2.',
+                'Squeeze: on the 3 candles before, both Bollinger Bands lay inside the Keltner Channel.',
+                'Signal: a fresh close above the upper Keltner line.', "Stop reference = the signal candle's low."],
+               'After a squeeze (Bollinger Bands inside the Keltner Channel) the price closed above the Keltner Channel.', 23),
+    'B13': _sp(['Donchian channel 55: the highest high of the 55 candles before (every timeframe).',
+                'Signal: a fresh close above it.', "Stop reference = the signal candle's low."],
+               'The price closed above the highest high of the 55 candles before (a Donchian channel breakout).', 55),
+    'B14': _sp(['Box top: a high at or above the 10 highs before it that the next 3 candles do not reach (known 3 candles later).',
+                'Box bottom: the lowest low since the top, not broken by the next 3 candles, while no high reaches the top (a high '
+                'at the top first = start again).',
+                'Signal: the first close above the top after the box is known; a low under the bottom first = the box is void.',
+                'Stop reference = the box bottom.'],
+               'A Darvas box: the price built a box under a high, then closed above the box top.', 20),
+    'B16': _sp(['Breakout: a fresh close above the highest high of the 20 candles before, after a base (those 20 candles\' high - '
+                'low <= 15 % of the low).',
+                'Retest within 10 candles: a low within 1 % above the level (or under it) and a close above it = the signal; a '
+                'close more than 2 % under the level first = no retest.', "Stop reference = the retest candle's low."],
+               'The price broke out of a base, came back to test the breakout level and closed above it again.', 31),
+    'B17': _sp(['ATR(14) of the candle before is the lowest of the 20 before and at most 75 % of the ATR 20 candles earlier.',
+                'Signal candle: green, range >= 2 x that ATR, closing in the top quarter of its range.'],
+               'After the candles became small and quiet, a big green candle closed near its high - volatility woke up upwards.', 36),
+    'B18': _sp(['Base = the 30 candles before (weekly 8, 4-hour 60) with high - low <= 15 % of the low.',
+                'Signal: a fresh close above the base high.'],
+               'The price closed above a tight multi-week base.', 60),
+    'B19': _sp(['Level = the highest high of the 40 candles before.',
+                'At least 3 of the 10 candles before had a high within 1.5 % of it, and the lowest low of the last 5 candles is '
+                'above the lowest low of the 10 before those (higher lows).', 'Signal: a fresh close above the level.'],
+               'The price kept pressing a resistance with rising lows and then closed above it.', 41),
+    'B20': _sp(['SMA 20, 50 and 200 of the candle before within 3 % of its close (the averages squeezed together).',
+                'Signal: the close more than 1 % above the highest of the three, while the close before was not.'],
+               'The 20, 50 and 200 averages came together, then the price broke out above all of them.', 201),
+    # moving averages
+    'M01': None, 'M02': None, 'M03': None, 'M04': None,
+    'M05': _sp(['SMA(50) crosses above SMA(200): above on the signal candle, not above on the candle before.',
+                'Stop reference = the lowest low of the last 20 candles.'],
+               'A golden cross: the 50 average crossed above the 200 average.', 201),
+    'M06': _sp(['EMA(20) crosses above EMA(50).', 'Stop reference = the lowest low of the last 10 candles.'],
+               'The 20 EMA crossed above the 50 EMA.', 51),
+    'M07': _sp(['Close > EMA(50) > EMA(200), both EMAs higher than 5 candles before.',
+                'Signal: the first candle where this holds after one where it did not.',
+                'Stop reference = the lowest low of the last 10 candles.'],
+               'Price, the 50 EMA and the 200 EMA lined up upwards, both averages rising.', 206),
+    'M08': _sp(['EMAs 10, 20, 30, 40, 50, 60 in order (10 highest) on the signal candle but not on the one before.',
+                'The spread EMA10 - EMA60 (as % of the close) wider than 5 candles before.',
+                'Stop reference = the lowest low of the last 10 candles.'],
+               'The six averages fanned out in bullish order - a ribbon opening upwards.', 66),
+    'M09': _sp(['The close above EMA(50) after the 10 closes before it were all under it.',
+                'Stop reference = the lowest low of those 11 candles.'],
+               'The price closed back above the 50 EMA after ten closes under it.', 60),
+    'M10': _sp(['The close above SMA(200) after the 20 closes before it were all under it.',
+                'Stop reference = the lowest low of those 21 candles.'],
+               'The price closed back above the 200-day average after twenty closes under it.', 220),
+    'M11': _sp(['Higher timeframe built from the candles themselves (daily run: weeks; weekly run: months; 4-hour run: days) - '
+                'only FINISHED higher candles: the last finished one closed above its EMA(10), which is above its EMA(20).',
+                'The candle itself: close > EMA(20) > EMA(50).',
+                'Signal: the first candle where both hold after one where they did not.',
+                'Stop reference = the lowest low of the last 10 candles.'],
+               'The weekly trend (finished weeks only) and the daily trend both turned up together.', 120),
+    'M12': _sp(['Supertrend(10, 3) with Wilder ATR(10): (high + low) / 2 +/- 3 x ATR with the usual carry-forward of the bands.',
+                'Signal: the trend turns up - the close above the upper band - on this candle.',
+                'Stop reference = the Supertrend line (the lower band), or the candle\'s low if lower.'],
+               'The Supertrend turned from down to up.', 30),
+    # volume
+    'V01': _sp(['c1 red, relative volume >= 2.5, its low under the lowest low of the 20 candles before (a climax).',
+                'c2 green, closing above the middle of c1\'s range.'],
+               'A selling climax on very high volume, followed straight away by a green candle that took back half of it.', 22),
+    'V02': _sp(['Relative volume >= 3, the low under the lowest low of the 20 candles before, the close in the upper half of the '
+                'range (close location value >= 0).'],
+               'A selling climax: huge volume at a new low, but the candle closed in its upper half.', 21),
+    'V03': _sp(['A fall: the candle before closed under the close 5 candles before it.',
+                'Signal candle: green, relative volume >= 2, closes above the high of the candle before.'],
+               'After a fall, a green candle on twice the usual volume closed above the previous high.', 21),
+    'V04': _sp(['Average volume of the 10 candles before <= 60 % of the average of the 50 before those (volume dried up).',
+                'Signal: a fresh close above the highest high of the 20 candles before.'],
+               'Volume dried up during the pause, then the price broke out.', 61),
+    'V05': _sp(['A fresh close above the highest high of the 20 candles before.',
+                'Volume rising over 3 candles (each above the one before) and relative volume >= 1.5.'],
+               'A breakout on volume that grew for three candles.', 21),
+    'V06': _sp(['A fresh close above the highest high of the 50 candles before with relative volume >= 3.'],
+               'A 50-candle breakout on three times the usual volume.', 51),
+    'V07': _sp(['Three green candles with rising closes and rising volume, the last with relative volume >= 1.2.',
+                'Signal: the first candle where this holds.'],
+               'Three rising green candles on rising volume.', 23),
+    'V08': _sp(['Uptrend: close above SMA(50), the SMA above its value 10 candles before.',
+                'A pullback of 3 - 6 lower closes ending on the candle before, its average volume < 70 % of the 20 candles before it.',
+                'Signal candle: green, closes above the high of the candle before.',
+                'Stop reference = the lowest low of the pullback and the signal candle.'],
+               'In an uptrend a quiet, low-volume pullback ended with a green candle above the previous high.', 61),
+    'V12': _sp(['A down candle (close under the close before) with a range < 0.7 x ATR(14), volume lower than each of the 2 '
+                'candles before, not closing at its low (close location value >= -0.5).',
+                'In an uptrend: close above SMA(50), the SMA above its value 10 candles before.',
+                'A volume-spread proxy (no order-book data).'],
+               'A "no supply" candle: a small down candle on low volume in an uptrend - few sellers left.', 61),
+    'V13': _sp(['A fall: the close under its 20-SMA and under the close 5 candles before.',
+                'Relative volume >= 2, close in the upper half of the range, lower shadow >= 40 % of the range.'],
+               'Stopping volume: heavy volume in a fall, but the candle closed high with a long lower shadow.', 21),
+    'V15': _sp(['The B06 level (the highest high of the 60 candles before, touched at least 3 separate times within 1 %) broken by '
+                'a fresh close above it with relative volume >= 1.5.'],
+               'The price broke a level tested three times, on clearly higher volume.', 120),
+}
+for _n, _k in ((20, 'M01'), (50, 'M02'), (100, 'M03'), (200, 'M04')):
+    P2[_k] = _sp(['EMA(%d) rising: above its value 10 candles before.' % _n,
+                  'The signal candle\'s low at or within 0.5 %% above the EMA(%d), its close above it, green.' % _n,
+                  'The 5 closes before it above the EMA and the 3 lows before it more than 0.5 % above it (a pullback that just '
+                  'arrived).', "Stop reference = the signal candle's low."],
+                 'A pullback in an uptrend touched the rising %d EMA and bounced off it.' % _n, _n + 10)
+SPECS.update(P2)
+WORDS_M1 = {
+    'K08': 'A red candle was followed by a bigger green candle whose body covered all of the red body - buyers took over the '
+           'whole of the day before. The stop goes under the lower of the two lows.',
+    'B01': 'The close went above the highest high of the 20 candles before it, for the first time - a fresh 20-candle breakout.',
+    'B02': 'The close went above the highest high of the 50 candles before it, for the first time - a fresh 50-candle breakout.',
+    'B03': 'The close went above the highest high of the 52 weeks before it, for the first time - a fresh 52-week high.',
+    'B04': 'The close went above every high since the history starts (20 years or the listing) - an all-time high.',
+    'I01': 'Price made a lower swing low but RSI made a higher low - the fall was losing strength (a bullish divergence). The '
+           'signal came only when the second low was confirmed by the candles after it, never on the low itself.',
+}
+for _k, _w in WORDS_M1.items():
+    SPECS[_k]['words'] = _w
+SPECS['K08']['ctx'] = True
+SPECS['K08']['note'] = SHEET
+
 
 def entries():
     """Every registry entry as a dict, in catalogue order."""
     out = []
     for pid, name, fam, st, needs, note in _ROWS:
+        sp = SPECS.get(pid)
+        if sp:
+            st = 'implemented'                       # built in the engine (a SPECS entry with rules + a detector)
+            note = sp.get('note', note)
         e = {'id': pid, 'name': name, 'category': pid[0], 'categoryName': CATEGORIES[pid[0]], 'family': fam, 'status': st,
              'statusName': STATUS_NAMES[st], 'needs': needs, 'note': note,
              'timeframes': ['15m'] if pid == 'B15' else list(D3)}
-        sp = SPECS.get(pid)
         if sp:
-            e.update({'version': sp['version'], 'lookback': sp['lookback'], 'params': sp['params'], 'rules': sp['rules']})
+            e.update({'version': sp['version'], 'lookback': sp['lookback'], 'params': sp['params'], 'rules': sp['rules'],
+                      'words': sp.get('words', ''), 'ctx': bool(sp.get('ctx'))})
         out.append(e)
     return out
 
@@ -317,7 +589,7 @@ def by_id():
 
 
 def as_json():
-    return json.dumps({'version': VERSION, 'categories': CATEGORIES, 'statusNames': STATUS_NAMES, 'patterns': entries()},
+    return json.dumps({'version': VERSION, 'categories': CATEGORIES, 'statusNames': STATUS_NAMES, 'common': COMMON, 'patterns': entries()},
                       ensure_ascii=False, indent=1, sort_keys=False)
 
 

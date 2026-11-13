@@ -50,11 +50,18 @@ function renderMd(reg) {
     out.push('');
   });
   out.push('Data: o = OHLC, v = volume, b = a benchmark index, i = intraday candles.', '', '## Rules of the implemented patterns', '');
+  if (reg.common && reg.common.length) {
+    out.push('### Shared definitions (every rule below uses them)', '');
+    reg.common.forEach((r) => out.push('- ' + r));
+    out.push('');
+  }
   ps.filter((p) => p.status === 'implemented').forEach((p) => {
     out.push('### ' + p.id + ' ' + p.name + ' (version ' + p.version + ')', '',
       'Timeframes: ' + p.timeframes.join(' / ') + ' - parameters: ' +
         Object.keys(p.params).map((k) => '`' + k + '` ' + p.params[k]).join(', '), '');
     p.rules.forEach((r, i) => out.push((i + 1) + '. ' + r));
+    if (p.words) out.push('', '_In words:_ ' + p.words);
+    if (p.ctx) out.push('', 'A reversal pattern: the Lab\'s "Before the pattern" setting can keep it only after a fall.');
     out.push('');
   });
   return out.join('\n');
