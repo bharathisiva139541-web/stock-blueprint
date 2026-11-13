@@ -52,6 +52,7 @@ import sys  # noqa: E402
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:      # loaded by its path (the tests): find its neighbours
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backtest_lab  # noqa: E402  (the Backtest Lab: the website's own-rules backtest, run here)
+import ltf_data  # noqa: E402  (1-hour / 15-minute candle files for the Lab's lower-timeframe confirmation, 13-Nov-2026)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -76,6 +77,13 @@ DEEP_H4_DAYS = 2000         # 4H candles back this far, built from Kite's 60-min
 DAY_CHUNK_DAYS = 1995       # Kite: at most 2000 days of day candles a request
 H60_CHUNK_DAYS = 395        # Kite: at most 400 days of 60-minute candles a request
 DEEP_BUDGET_S = 20 * 60     # the daily scan adds deep history for at most this long a day (KiteHistoryNow.bat: all at once)
+# LOWER-TIMEFRAME HISTORY (owner, 13-Nov-2026: "If any Choch has happened inside the Zone in 15 min, then i decided to buy.
+# but we have limited candles data in 15 min to backtest right?" -> keep the 1-hour candles (Kite already sends them for the
+# 4H history) and read as many years of 15-minute candles as Kite gives; config "ltf_history": false = off): files in
+# intraday_data/ltf (ltf_data.py), not in the stock's store - the daily scan reads no more than before
+DEEP_H1_DAYS = 2000         # 1-hour candles back this far (Kite: 400 days a request)
+DEEP_M15_DAYS = 2000        # 15-minute candles back this far, or to the first empty answer (Kite: 200 days a request)
+M15_CHUNK_DAYS = 195
 SCAN_KEEP = {'4H': 300, 'D': 1400, 'W': 300, 'M': 120}   # candles the daily pattern scan looks at (deep history = backtest)
 OVERLAP_DAYS = 4            # each update reads these days again: a split / bonus changes Kite's older candles -> read all again
 ADJUST_TOL = 0.005          # 0.5 %
@@ -604,6 +612,7 @@ def update_symbol(cfg, sess, sym, token, upto):
         req += 1
         if s.get('deep') or s.get('h4'):     # a split / bonus: the deep history is read again (deep_fill)
             s['deep'], s['h4'] = {}, []
+        ltf_data.remove(ltf_dir(), sym)       # ... the 1-hour / 15-minute files too
     last15 = date.fromisoformat(m15[-1][0][:10]) if m15 else None
     full15 = full or not last15 or (upto - last15).days > M15_BACKFILL_DAYS - OVERLAP_DAYS - 5
     if not full15:
@@ -626,6 +635,10 @@ def update_symbol(cfg, sess, sym, token, upto):
         s['h4'] = _merge(s['h4'], h4_rows([r for r in m15 if r[0][:10] < first]))
     s['m15'] = kept
     s['upto'] = upto_iso
+    try:
+        ltf_update(sym, dict(s, m15=m15))    # the new sessions -> the 1-hour / 15-minute files (when the deep history made them)
+    except OSError as e:
+        log('Kite %s: the 1-hour / 15-minute files could not be updated - %s' % (sym, e))
     store_save(sym, s)
     return s, req
 
@@ -633,6 +646,59 @@ def update_symbol(cfg, sess, sym, token, upto):
 def h4_rows(rows):
     """15- or 60-minute rows -> 4H rows [t, o, h, l, c, v] (09:15-13:15 / 13:15-15:30)."""
     return [[c['t'], c['o'], c['h'], c['l'], c['c'], c['v']] for c in bucket_intraday(rows, 240)]
+
+
+def h1_rows(rows):
+    """15- or 60-minute rows -> 1-hour rows [t, o, h, l, c, v] (09:15, 10:15, ... 15:15 like Kite / TradingView)."""
+    return [[c['t'], c['o'], c['h'], c['l'], c['c'], c['v']] for c in bucket_intraday(rows, 60)]
+
+
+def ltf_dir():
+    return os.path.join(DATA_DIR, 'ltf')
+
+
+def ltf_on(cfg):
+    """The lower-timeframe history is kept (config "ltf_history": false = off)."""
+    return (cfg or {}).get('ltf_history', True) is not False
+
+
+def ltf_update(sym, s):
+    """The daily update: the stored 15-minute days newer than the files' newest candle are added to the 15m / 1H files
+    (made by the deep history - none yet = nothing). A gap (the files end before the oldest stored 15-minute day: the
+    program did not run for months) -> the files are removed and read again by the deep history."""
+    m15 = s.get('m15') or []
+    if not m15:
+        return 0
+    folder, n = ltf_dir(), 0
+    first = ltf_data._key_of(m15[0][0])
+    for tf, rows in (('15m', None), ('1H', None)):
+        last = ltf_data.last_key(folder, sym, tf)
+        if last is None:
+            continue
+        if last < first and date.fromordinal(last[0]) < date.fromordinal(first[0]) - timedelta(days=4):
+            ltf_data.remove(folder, sym, tf)
+            deep = s.get('deep') if isinstance(s.get('deep'), dict) else {}
+            deep.pop('m15' if tf == '15m' else 'h1', None)
+            s['deep'] = deep
+            continue
+        n += ltf_data.append(folder, sym, tf, m15 if tf == '15m' else h1_rows(m15))
+    return n
+
+
+def _chunks_back(cfg, sess, token, interval, end, limit, chunk):
+    """Kite candles of `interval` from `end` back to `limit` in chunks of `chunk` days, newest chunk first, until an
+    empty answer (nothing older on Kite) -> (rows oldest first, requests)."""
+    out, req = [], 0
+    while end > limit:
+        frm = max(limit, end - timedelta(days=chunk))
+        rows = historical(cfg, sess, token, interval, datetime(frm.year, frm.month, frm.day, 9, 0),
+                          datetime(end.year, end.month, end.day, 15, 30))
+        req += 1
+        if not rows:
+            break
+        out = rows + out
+        end = frm - timedelta(days=1)
+    return out, req
 
 
 def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
@@ -654,6 +720,26 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
             s['day'] = _merge(rows, s['day'])          # the stored candles win where both have a day
             end = frm - timedelta(days=1)
         deep['day'] = upto.isoformat()
+    if ltf_on(cfg) and not deep.get('h1'):
+        # the 1-hour file (13-Nov-2026): Kite's 60-minute candles before the stored 15-minute days + those days as 1-hour
+        # candles; the same 60-minute candles give the 4H history when it is not there yet
+        end = (date.fromisoformat(s['m15'][0][0][:10]) if s['m15'] else upto + timedelta(days=1)) - timedelta(days=1)
+        rows, n = _chunks_back(cfg, sess, token, '60minute', end, upto - timedelta(days=DEEP_H1_DAYS), H60_CHUNK_DAYS)
+        req += n
+        ltf_data.write(ltf_dir(), sym, '1H', rows + h1_rows(s['m15']))
+        if not deep.get('h4'):
+            if not s.get('h4') and s['m15']:
+                s['h4'] = h4_rows(s['m15'])
+            s['h4'] = _merge(h4_rows(rows), s.get('h4') or [])
+            deep['h4'] = upto.isoformat()
+        deep['h1'] = upto.isoformat()
+    if ltf_on(cfg) and not deep.get('m15'):
+        # the 15-minute file: as many years as Kite gives (it answers nothing before that), up to DEEP_M15_DAYS
+        end = (date.fromisoformat(s['m15'][0][0][:10]) if s['m15'] else upto + timedelta(days=1)) - timedelta(days=1)
+        rows, n = _chunks_back(cfg, sess, token, '15minute', end, upto - timedelta(days=DEEP_M15_DAYS), M15_CHUNK_DAYS)
+        req += n
+        ltf_data.write(ltf_dir(), sym, '15m', rows + [list(r) for r in s['m15']])
+        deep['m15'] = upto.isoformat()
     if not deep.get('h4'):
         limit = upto - timedelta(days=DEEP_H4_DAYS)
         first = (s.get('h4') or [[None]])[0][0] or (s['m15'][0][0] if s['m15'] else None)
@@ -671,7 +757,7 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
             end = frm - timedelta(days=1)
         deep['h4'] = upto.isoformat()
     s['deep'] = deep
-    if req:
+    if req or ltf_on(cfg):
         store_save(sym, s)
     return s, req
 
@@ -688,7 +774,8 @@ def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
         if tok is None:
             continue
         deep = store_load(sym).get('deep')
-        if not (isinstance(deep, dict) and deep.get('day') and deep.get('h4')):
+        if not (isinstance(deep, dict) and deep.get('day') and deep.get('h4') and
+                (not ltf_on(cfg) or (deep.get('h1') and deep.get('m15')))):
             todo.append((sym, tok))
     if budget_s is None or todo:
         out('Kite deep history: %d of %d stocks to read (the rest are on this computer already; checked in %.0f s)'
@@ -2307,10 +2394,63 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
     return 0
 
 
+DEPTH_SYMS = ('RELIANCE', 'TCS', 'INFY')
+DEPTH_YEARS = (1, 2, 3, 4, 5, 6, 7, 8, 10)
+
+
+def ltf_depth(cfg, args=(), out=print, now=None):
+    """KiteDepthCheck.bat (owner, 13-Nov-2026: "Kite எத்தனை வருட 15m data தருகிறது" - check it on the laptop): for a few stocks,
+    one week of 15-minute and of 60-minute candles 1, 2, 3 ... 10 years back -> which years Kite answers (one request each,
+    nothing stored or sent). -> 0 / 1."""
+    sess = ensure_session(cfg)
+    if not sess:
+        out('No Kite login - nothing asked.')
+        return 1
+    now = now or now_ist()
+    imap = instruments(cfg, sess, now.date().isoformat())
+    syms = [a.strip().upper() for a in args if a.strip()] or list(DEPTH_SYMS)
+    best = {}
+    for sym in syms:
+        tok = token_for(imap, sym)
+        if tok is None:
+            out('%s: not on Kite (NSE)' % sym)
+            continue
+        for interval, name in (('15minute', '15-minute'), ('60minute', '1-hour')):
+            got = []
+            for y in DEPTH_YEARS:
+                d0 = now.date() - timedelta(days=int(365.25 * y))
+                rows = historical(cfg, sess, tok, interval, datetime(d0.year, d0.month, d0.day, 9, 0),
+                                  datetime(d0.year, d0.month, d0.day, 15, 30) + timedelta(days=7))
+                time.sleep(REQ_GAP_S)
+                got.append((y, len(rows), rows[0][0][:10] if rows else ''))
+                if rows:
+                    best[name] = max(best.get(name, 0), y)
+            out('%s %s candles: %s' % (sym, name, ', '.join('%d yr %s' % (y, ('yes (%d candles from %s)' % (n, d)) if n else 'NO')
+                                                             for y, n, d in got)))
+    for name in ('15-minute', '1-hour'):
+        y = best.get(name)
+        out('Kite gives %s candles back about %s.' % (name, ('%d years' % y) if y else 'less than a year'))
+    out('This program keeps them back %d days (about %.1f years) - KiteHistoryNow.bat reads them once (15-minute: about %d MB '
+        'for 1,800 stocks a year of candles).' % (DEEP_M15_DAYS, DEEP_M15_DAYS / 365.25, 290))
+    return 0
+
+
+def ltf_status():
+    """'1-hour 1,795 stocks, 15-minute 1,790 stocks' of the lower-timeframe files (TestConnection)."""
+    try:
+        names = os.listdir(ltf_dir())
+    except OSError:
+        names = []
+    h1 = sum(1 for x in names if x.endswith('.1H.bin'))
+    m15 = sum(1 for x in names if x.endswith('.15m.bin'))
+    return '1-hour %d stocks, 15-minute %d stocks' % (h1, m15)
+
+
 def history_now(cfg, api, holidays=None, now=None, out=print):
     """KiteHistoryNow.bat: the deep history of every PatternData stock at once (daily candles back DEEP_DAY_YEARS, 4H
-    back DEEP_H4_DAYS - the first time about 2 hours (a line every 25 stocks with the time left) and ~250 MB in
-    intraday_data), then the backtest -> the sheet."""
+    back DEEP_H4_DAYS and - 13-Nov-2026 - the 1-hour / 15-minute files for the Lab's lower-timeframe confirmation - the
+    first time a few hours (a line every 25 stocks with the time left), about 2 GB in intraday_data), then the backtest ->
+    the sheet."""
     holidays = set(holidays or ())
     now = now or now_ist()
     sess = ensure_session(cfg)
@@ -2324,8 +2464,9 @@ def history_now(cfg, api, holidays=None, now=None, out=print):
     syms = [str(x).strip().upper() for x in ans.get('syms') or [] if str(x).strip()]
     upto = completed_session(now, holidays)
     imap = instruments(cfg, sess, now.date().isoformat())
-    out('Deep history for the backtest: daily candles back %d years, 4H back %d days, %d stocks (only what is not on '
-        'this computer yet) ...' % (DEEP_DAY_YEARS, DEEP_H4_DAYS, len(syms)))
+    out('Deep history for the backtest: daily candles back %d years, 4H back %d days%s, %d stocks (only what is not on '
+        'this computer yet) ...' % (DEEP_DAY_YEARS, DEEP_H4_DAYS, (', 1-hour back %d days and 15-minute as far as Kite gives '
+                                                                   '(up to %d days)' % (DEEP_H1_DAYS, DEEP_M15_DAYS)) if ltf_on(cfg) else '', len(syms)))
     t0 = time.time()
     try:
         done, left, req = deep_fill(cfg, sess, imap, syms, upto, None, out)
@@ -2846,7 +2987,8 @@ def status_line(cfg):
                                    'not logged in today (the program asks when it needs to)',
                                    ('%s - %s stocks, %s pattern(s)' % (last.get('at'), last.get('stocks'), last.get('found')))
                                    if last else 'none yet')) + (
-        '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '')
+        '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '') + (
+        '; lower-timeframe history: ' + ltf_status() if ltf_on(cfg) else '')
 
 
 class Runner:

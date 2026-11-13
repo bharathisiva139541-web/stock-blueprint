@@ -690,7 +690,8 @@ try:
     m15 = [['2026-11-%02d %02d:%02d' % (dd, hh, mm), 100, 101, 99, 100.5, 5] for dd in (5, 6) for hh in range(9, 16)
            for mm in (0, 15, 30, 45) if (hh, mm) >= (9, 15) and (hh, mm) < (15, 30)]
     st = {'v': 1, 'sym': 'DEEP', 'm15': m15, 'day': [['2026-11-05', 100, 101, 99, 100, 1], ['2026-11-06', 100, 101, 99, 100, 1]], 'h4': []}
-    st2, n = K.deep_fill_symbol({}, {}, 'DEEP', 1, up, st)
+    NOLTF = {'ltf_history': False}                    # (13b: the 1-hour / 15-minute files)
+    st2, n = K.deep_fill_symbol(NOLTF, {}, 'DEEP', 1, up, st)
     days = [c for c in HCALLS if c[0] == 'day']
     assert len(days) == 4 and days[0][2] == '2026-11-04', (len(days), days[:2])      # listed 2015: 3 chunks of ~5.5 years, then none
     assert st2['day'][0][0] == '2015-03-02' and st2['day'][-1][0] == '2026-11-06' and st2['deep']['day'] == '2026-11-06'
@@ -703,7 +704,7 @@ try:
     assert [c['t'][11:] for c in first] == ['09:15', '13:15'] and first[0]['h'] == 112 and first[1]['h'] == 115, first
     assert K.store_load('DEEP')['deep'] == {'day': '2026-11-06', 'h4': '2026-11-06'}
     HCALLS.clear()
-    assert K.deep_fill_symbol({}, {}, 'DEEP', 1, up, K.store_load('DEEP'))[1] == 0 and not HCALLS, 'read once'
+    assert K.deep_fill_symbol(NOLTF, {}, 'DEEP', 1, up, K.store_load('DEEP'))[1] == 0 and not HCALLS, 'read once'
     # deep_fill: only the stocks without it, within the time allowed
     K.store_save('NEW1', {'v': 1, 'sym': 'NEW1', 'm15': [], 'day': [], 'h4': []})
     K.store_save('NEW2', {'v': 1, 'sym': 'NEW2', 'm15': [], 'day': [], 'h4': []})
@@ -713,7 +714,7 @@ try:
         return orig_dfs(cfg, sess, sym, token, upto, store)
     K.deep_fill_symbol = one_at_a_time
     try:
-        done, left, req = K.deep_fill({}, {}, {'DEEP': 1, 'NEW1': 2, 'NEW2': 3}, ['DEEP', 'NEW1', 'NEW2', 'NOTONKITE'], up,
+        done, left, req = K.deep_fill(NOLTF, {}, {'DEEP': 1, 'NEW1': 2, 'NEW2': 3}, ['DEEP', 'NEW1', 'NEW2', 'NOTONKITE'], up,
                                       None, lines.append, every=1)
     finally:
         K.deep_fill_symbol = orig_dfs
@@ -723,7 +724,7 @@ try:
     assert 'Kite deep history: 1 / 2 stocks' in lines[1] and 'min left' in lines[1] and 'left' not in lines[2], lines
     # the daily scan's quiet call: nothing to do -> no line
     lines.clear()
-    assert K.deep_fill({}, {}, {'DEEP': 1}, ['DEEP'], up, 60, lines.append) == (0, 0, 0) and lines == []
+    assert K.deep_fill(NOLTF, {}, {'DEEP': 1}, ['DEEP'], up, 60, lines.append) == (0, 0, 0) and lines == []
     # the daily update: the 15-minute days that leave the store go on as 4H candles of the deep history
     keep = K.M15_KEEP_SESSIONS
     K.M15_KEEP_SESSIONS = 2
@@ -739,6 +740,86 @@ try:
                                                                        '2026-11-05 13:15', '2026-11-06 09:15', '2026-11-06 13:15']
     finally:
         K.M15_KEEP_SESSIONS = keep
+finally:
+    K.historical = orig_hist
+
+# ------------------------------------------------------------------ 13b. the 1-hour / 15-minute files for the Lab's lower-timeframe
+# confirmation (owner, 13-Nov-2026: "If any Choch has happened inside the Zone in 15 min, then i decided to buy ... we have limited
+# candles data in 15 min to backtest right?"): kept outside the store, read once back to Kite's first answer, the daily update adds
+# the new sessions, a split / bonus reads them again
+T = K.ltf_data
+LCALLS = []
+
+
+def fake_ltf(cfg, sess, token, interval, frm, to):
+    LCALLS.append((interval, frm.date().isoformat(), to.date().isoformat()))
+    first = date(2022, 3, 1) if interval == '15minute' else date(2020, 1, 1)     # Kite's 15-minute candles start later
+    out, d = [], max(frm.date(), first)
+    while d <= to.date():
+        if d.weekday() < 5:
+            if interval == 'day':
+                out.append([d.isoformat(), 100.0, 101.0, 99.0, 100.5, 1000])
+            elif interval == '60minute':
+                for hh in (9, 10, 11, 12, 13, 14, 15):
+                    out.append(['%s %02d:15' % (d.isoformat(), hh), 100.0, 100.0 + hh, 99.0, 100.2, 10])
+            else:
+                for k in range(25):
+                    mm = 555 + 15 * k
+                    out.append(['%s %02d:%02d' % (d.isoformat(), mm // 60, mm % 60), 100.0, 100.5 + k / 10.0, 99.5, 100.1, 3])
+        d += timedelta(days=1)
+    return out
+
+
+K.historical = fake_ltf
+try:
+    up = date(2026, 11, 6)
+    m15 = fake_ltf({}, {}, 1, '15minute', datetime(2026, 11, 2), datetime(2026, 11, 6, 15, 30))
+    LCALLS.clear()
+    st = {'v': 1, 'sym': 'LTF', 'm15': m15, 'day': [['2026-11-02', 100, 101, 99, 100, 1], ['2026-11-06', 100, 101, 99, 100, 1]], 'h4': []}
+    st2, n = K.deep_fill_symbol({}, {}, 'LTF', 7, up, st)
+    assert st2['deep'] == {'day': '2026-11-06', 'h1': '2026-11-06', 'm15': '2026-11-06', 'h4': '2026-11-06'}, st2['deep']
+    h60 = [c for c in LCALLS if c[0] == '60minute']
+    assert h60[0][2] == '2026-11-01' and min(c[1] for c in h60) == (up - timedelta(days=K.DEEP_H1_DAYS)).isoformat(), 'back DEEP_H1_DAYS'
+    assert len(h60) == len({c[1] for c in h60}), 'the 4H history came from the same 60-minute candles (read once)'
+    q15 = [c for c in LCALLS if c[0] == '15minute']
+    assert all((date.fromisoformat(c[2]) - date.fromisoformat(c[1])).days <= 200 for c in q15), 'Kite: 200 days a request'
+    assert q15[-1][2] < '2022-03-01', 'stopped at the first empty answer (Kite has nothing older)'
+    D = K.ltf_dir()
+    s1, s15 = T.read(D, 'LTF', '1H'), T.read(D, 'LTF', '15m')
+    r1, r15 = T.rows_of(s1), T.rows_of(s15)
+    assert r1[0][0] == '%s 09:15' % (up - timedelta(days=K.DEEP_H1_DAYS) + timedelta(days=(7 - (up - timedelta(days=K.DEEP_H1_DAYS)).weekday()) % 7 if (up - timedelta(days=K.DEEP_H1_DAYS)).weekday() >= 5 else 0)).isoformat(), r1[0]
+    assert r15[0][0] == '2022-03-01 09:15' and r15[-1][0] == '2026-11-06 15:15' and len(r15) == len({r[0] for r in r15})
+    assert [r[0][11:] for r in r1 if r[0][:10] == '2026-11-06'] == ['09:15', '10:15', '11:15', '12:15', '13:15', '14:15', '15:15'], 'the stored days as 1-hour candles'
+    h11 = [r for r in r1 if r[0] == '2026-11-06 10:15'][0]
+    assert abs(h11[2] - max(100.5 + k / 10.0 for k in range(4, 8))) < 1e-4, ('the 10:15 hour = four 15-minute candles', h11)
+    assert [c['t'][11:] for c in K.timeframe_candles(st2, '4H') if c['t'][:10] == '2026-11-02'] == ['09:15', '13:15']
+    LCALLS.clear()
+    assert K.deep_fill_symbol({}, {}, 'LTF', 7, up, K.store_load('LTF'))[1] == 0 and not LCALLS, 'read once'
+    # the daily update adds the next session to both files (one block each)
+    nb = T.blocks(D, 'LTF', '15m')
+    s3, _ = K.update_symbol({}, {}, 'LTF', 7, date(2026, 11, 9))
+    assert T.rows_of(T.read(D, 'LTF', '15m'))[-1][0] == '2026-11-09 15:15' and T.blocks(D, 'LTF', '15m') == nb + 1
+    assert T.rows_of(T.read(D, 'LTF', '1H'))[-1][0] == '2026-11-09 15:15'
+    assert T.read(D, 'LTF', '15m').n == len(r15) + 25 and T.read(D, 'LTF', '1H').n == len(r1) + 7, 'nothing twice'
+    # the status line counts the files
+    nf = lambda ext: sum(1 for x in os.listdir(D) if x.endswith(ext))
+    assert K.ltf_status() == '1-hour %d stocks, 15-minute %d stocks' % (nf('.1H.bin'), nf('.15m.bin')) and nf('.1H.bin') >= 1, K.ltf_status()
+    # a gap (the files end months before the stored 15-minute days): removed, read again by the deep history
+    s5 = K.store_load('LTF')
+    s5['m15'] = [r for r in s5['m15'] if r[0] >= '2026-11-09']
+    T.write(D, 'LTF', '15m', [r for r in r15 if r[0] < '2026-06-01'])
+    K.ltf_update('LTF', s5)
+    assert not os.path.exists(T.path(D, 'LTF', '15m')) and 'm15' not in s5['deep'] and s5['deep'].get('h1'), s5['deep']
+    # a split / bonus (the overlap changed): both files go with the deep history
+    s6 = K.store_load('LTF')
+    s6['day'] = [[r[0], r[1] * 2, r[2] * 2, r[3] * 2, r[4] * 2, r[5]] for r in s6['day']]
+    K.store_save('LTF', s6)
+    K.update_symbol({}, {}, 'LTF', 7, date(2026, 11, 10))
+    assert not os.path.exists(T.path(D, 'LTF', '1H')) and K.store_load('LTF')['deep'] == {}, 'read again'
+    # off in config.json: nothing made
+    st7 = {'v': 1, 'sym': 'OFF', 'm15': m15, 'day': [['2026-11-06', 100, 101, 99, 100, 1]], 'h4': []}
+    K.deep_fill_symbol({'ltf_history': False}, {}, 'OFF', 8, up, st7)
+    assert not os.path.exists(T.path(D, 'OFF', '1H')) and 'h1' not in K.store_load('OFF')['deep']
 finally:
     K.historical = orig_hist
 
