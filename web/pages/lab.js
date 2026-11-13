@@ -44,6 +44,8 @@
     pattern: 'K08', engBody: 0, boBuf: 0, boVol: 0, rsiN: 14, divPivot: 5, divMaxGap: 60, divRsiMax: 100,
     // phase 2 (13-Nov-2026): a reversal pattern anywhere / only after a fall (= backtest_lab patCtx)
     patCtx: 'any',
+    // phase 3 (13-Nov-2026): the swing size of the structure / SMC patterns (candles each side, = backtest_lab patSwing)
+    patSwing: 5,
     // the discount zone (owner, 11-Nov-2026, SUPREMEIND: "we always try to enter with low risk, i.e. the zone in discount
     // area. it is ok even the zone have some area slightly above the Choch"): the zone's middle under the Fib line of the
     // move (final low -> its high) - off by default
@@ -127,6 +129,7 @@
     divMaxGap: [[30, 'At most 30 candles apart'], [60, 'At most 60 candles apart'], [100, 'At most 100 candles apart'], [150, 'At most 150 candles apart']],
     divRsiMax: [[100, 'Any RSI'], [30, 'RSI at most 30 (oversold)'], [40, 'RSI at most 40'], [50, 'RSI at most 50']],
     patCtx: [['any', 'Anywhere'], ['down', 'Only after a fall (under a falling 20-SMA)']],
+    patSwing: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
     stopPat: [['zone', 'Under the pattern\'s low (its stop reference)'], ['spring', 'Under the signal candle\'s low'], ['lower', 'Under whichever is lower'],
       ['pct', '% under the entry'], ['final', 'Under the CHoCH\'s final low']],
     structure: [['off', 'Off - do not look at it'], ['show', 'Show it on every trade (nothing left out) - to compare'], ['only', 'Only my setup (the rules below)']],
@@ -198,7 +201,7 @@
     fallPct: [[3, 'at least 3%'], [5, 'at least 5%'], [8, 'at least 8%'], [10, 'at least 10%'], [15, 'at least 15%'], [20, 'at least 20%'], [30, 'at least 30%']]
   };
   var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'stopAtr', 'targetPct', 'partialPct', 'beAt', 'timeN', 'timeR',
-    'engBody', 'boBuf', 'boVol', 'rsiN', 'divPivot', 'divMaxGap', 'divRsiMax', 'trailN', 'trailPct', 'emaN', 'maxDays',
+    'engBody', 'boBuf', 'boVol', 'rsiN', 'divPivot', 'divMaxGap', 'divRsiMax', 'patSwing', 'trailN', 'trailPct', 'emaN', 'maxDays',
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
@@ -434,10 +437,15 @@
       x.push(Number(p.boBuf) ? 'a close ' + F.num(p.boBuf, 1) + '% above the level' : 'a fresh close above the level');
       if (Number(p.boVol)) x.push('volume at least ' + F.num(p.boVol, 1) + ' x the 20-candle average');
     }
+    var ks = e ? Object.keys(e.params || {}) : [];
     if (p.pattern === 'I01') {
       x.push('RSI(' + p.rsiN + '), swing lows of ' + p.divPivot + ' candles each side, at most ' + p.divMaxGap + ' candles apart' +
         (Number(p.divRsiMax) < 100 ? ', RSI at the 1st low at most ' + F.num(p.divRsiMax, 0) : '') + ' - the signal comes when the 2nd low is confirmed (' + p.divPivot + ' candles after it)');
+    } else if (ks.indexOf('divPivot') >= 0) {
+      x.push('swing lows of ' + p.divPivot + ' candles each side, at most ' + p.divMaxGap + ' candles apart - the signal comes when the 2nd low is confirmed (' + p.divPivot + ' candles after it)');
     }
+    if (ks.indexOf('patSwing') >= 0) x.push('swings of ' + p.patSwing + ' candles each side - a swing counts only once ' + p.patSwing + ' candles after it');
+    if (e && /NIFTY 50/.test(e.note || '')) x.push('against NIFTY 50 (its candles on your laptop)');
     if (e && e.ctx && p.patCtx === 'down') x.push('only after a fall - the candle before it closed under its falling 20-SMA');
     return w + (x.length ? ' (' + x.join(', ') + ')' : '');
   }
@@ -449,10 +457,10 @@
     if (e && e.ctx) h += field('Before the pattern', sel('patCtx', f.patCtx), 'wide');
     if (id === 'K08') h += field('Green candle body', sel('engBody', f.engBody));
     if (/^B0[1-4]$/.test(id)) h += field('Close above the level', sel('boBuf', f.boBuf)) + field('Volume on that candle', sel('boVol', f.boVol), 'wide');
-    if (id === 'I01') {
-      h += field('Swing lows', sel('divPivot', f.divPivot)) + field('The two lows', sel('divMaxGap', f.divMaxGap)) +
-        field('At the 1st low', sel('divRsiMax', f.divRsiMax)) + num('rsiN', f.rsiN, 'RSI length', ' min="2" step="1"');
-    }
+    var ks = e ? Object.keys(e.params || {}) : [];
+    if (ks.indexOf('patSwing') >= 0) h += field('Swings', sel('patSwing', f.patSwing));
+    if (ks.indexOf('divPivot') >= 0) h += field('Swing lows', sel('divPivot', f.divPivot)) + field('The two lows', sel('divMaxGap', f.divMaxGap));
+    if (ks.indexOf('divRsiMax') >= 0) h += field('At the 1st low', sel('divRsiMax', f.divRsiMax)) + num('rsiN', f.rsiN, 'RSI length', ' min="2" step="1"');
     var common = (window.SB_PATTERNS && window.SB_PATTERNS.common) || [];
     return h + (e && e.rules ? '<details class="lab-rules field wide"><summary>The exact rules of ' + esc(id + ' ' + e.name) + ' (version ' + e.version + ')</summary>' +
       (e.words ? '<p>' + esc(e.words) + '</p>' : '') + '<ol>' + e.rules.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ol>' +
@@ -460,7 +468,7 @@
       '</details>' : '');
   }
 
-  /** The implemented patterns, grouped by category (a long list - 70 after phase 2). */
+  /** The implemented patterns, grouped by category (a long list - 172 after phase 3). */
   function patSelect(v) {
     var ps = patReg().filter(function (p) { return p.status === 'implemented'; });
     var cats = (window.SB_PATTERNS && window.SB_PATTERNS.categories) || {};
@@ -706,7 +714,7 @@
       else if (NUMS.indexOf(k) >= 0) { var v = Number(inp.value); if (isFinite(v) && inp.value !== '') f[k] = v; }
       else f[k] = String(inp.value || '');
     });
-    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch', 'timeN', 'rsiN', 'divPivot', 'divMaxGap'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
+    ['trailN', 'emaN', 'maxDays', 'maxOpen', 'maxTouch', 'timeN', 'rsiN', 'divPivot', 'divMaxGap', 'patSwing'].forEach(function (k) { f[k] = Math.max(0, Math.round(f[k])); });
     f.trailN = Math.max(1, f.trailN); f.maxDays = Math.max(1, f.maxDays); f.maxOpen = Math.max(1, f.maxOpen);
     return f;
   }

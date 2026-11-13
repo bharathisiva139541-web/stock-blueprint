@@ -432,8 +432,25 @@ CAUSALITY for all 70 x D / W / 4H (random charts + each made chart), K09 / K10 /
 *Measured*: all 70 together ~47 s per million candles (B10 inside-bar clusters ~3 s, most under 1.4 s) - a single
 pattern on the laptop's whole daily history stays within seconds; the full leaderboard (phase 6) ~5 minutes for daily.
 
-Next (phase 3, the agreed order): price action / structure P, SMC S, then volume (the rest) / momentum I / quant Q,
-classical chart patterns C last.
+Phase 3 - built 13-Nov-2026 ("Do it"): price action / structure P01-P24, SMC / ICT S01-S25, the rest of the volume
+patterns V09 / V10 / V11 / V14 / V16, momentum I02-I24, quant Q01-Q20, and the moving-average ones left from phase 2
+(Ichimoku M13-M15, anchored VWAP M17, EMA compression M18) = 102 more, **172 implemented** (left: the classical chart
+patterns C01-C20, B15 15-minute opening range and M16 true VWAP - data limited). New in indicators.py: MACD, slow
+Stochastic, CCI, MFI, OBV, Chaikin A/D, Wilder +DI / -DI / ADX, ROC, TSI, Aroon, Parabolic SAR (flips like TradingView's
+ta.sar), rolling percentile, regression slope, Ichimoku, rolling max / min. Detectors in pcbridge/ScreenerBridge/pattern_p3.py
+(swings = structure.pivots, known patSwing candles later; the CHoCH = the Lab's own structure.choch_events). New shared
+definitions (`COMMON`): swings, SMC zones and their first touch, the indicators, divergences, the NIFTY 50 benchmark. Lab:
+`patSwing` (2-10, default 5) for the structure / SMC patterns; I23 / I24 / Q13 read NIFTY 50's daily closes from the cache
+(4-hour candles use the session before; no NIFTY 50 on the laptop = a clear "needs the NIFTY 50 candles" message). The Lab
+takes one trade a candle (two zones touched by the same candle = one trade). Tests run (all pass): every new indicator a
+second way (brute force, Wilder's sum smoothing for ADX, Parabolic SAR's flip values, percentile / slope / Ichimoku by
+hand); 17 cross patterns + I19 recounted from those series; made charts for 58 of the 102 (all the rare ones: on / not on a
+changed copy); every event of every phase-3 pattern on random charts checked (candles in order, finite, the stop under the
+signal close); CAUSALITY for all 172 x D / W / 4H; the Lab group for every pattern (= the detector, first event a candle).
+*Measured*: the 102 together ~92 s per million candles (Q20 4.4 s, I11 3.0 s, the Ichimoku ones ~2.8 s, most under 1 s);
+all 172 ~142 s.
+
+Next (the agreed order): classical chart patterns C01-C20 last; then phase 4 (the Zerodha delivery cost schedule).
 
 ## 12. Known limits (will stay)
 

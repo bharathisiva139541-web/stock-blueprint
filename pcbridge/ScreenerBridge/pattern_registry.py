@@ -16,7 +16,7 @@ python3 pattern_registry.py json      -> the registry as JSON (tools/build_patte
 import json
 import sys
 
-VERSION = 2
+VERSION = 3
 CATEGORIES = {
     'C': 'Classical chart patterns', 'K': 'Candlestick patterns', 'P': 'Price action and market structure',
     'S': 'Smart money concepts / ICT (price-action proxies)', 'V': 'Volume patterns', 'B': 'Breakout and consolidation',
@@ -546,6 +546,405 @@ for _n, _k in ((20, 'M01'), (50, 'M02'), (100, 'M03'), (200, 'M04')):
                   'arrived).', "Stop reference = the signal candle's low."],
                  'A pullback in an uptrend touched the rising %d EMA and bounced off it.' % _n, _n + 10)
 SPECS.update(P2)
+
+# ------------------------------------------------------------------ PHASE 3 (owner, 13-Nov-2026: "Do it" - price action / structure,
+# SMC / ICT, the rest of the volume patterns, momentum, quant, Ichimoku / anchored VWAP / EMA compression; pattern_p3.py)
+COMMON += [
+    'Swings (phase 3): a swing low = a low lower than the patSwing (5) candles before it and not above the patSwing candles after '
+    'it (a swing high mirrored - structure.pivots, the same as the Lab\'s market structure). A swing is KNOWN patSwing candles '
+    'after it; "the latest swing low" at a candle = the latest one known before that candle. A pattern whose signal is the swing '
+    'itself signals on the candle it becomes known, never on the swing candle.',
+    'Zones (SMC): a bullish FVG = the 3rd candle\'s low above the 1st candle\'s high, the gap at least 0.1 x ATR (zone = that gap); '
+    'a bearish FVG mirrored. A zone\'s first touch = the first later candle whose low reaches the zone (its top, or its middle '
+    'where the rule says so) closing above the zone bottom - a close under the bottom first ends the zone. Stop reference = the '
+    'lower of the zone bottom and that candle\'s low.',
+    'Indicators: RSI(14) Wilder; MACD 12 / 26 / 9; slow Stochastic 14 / 3 / 3; CCI(20); MFI(14); OBV; Chaikin A/D line; Wilder '
+    '+DI / -DI / ADX(14); ROC(n) in %; TSI 25 / 13 with a 7 signal; Aroon(25); Parabolic SAR 0.02 / 0.02 / 0.2; Bollinger Bands '
+    '20, 2 (population standard deviation), %B = (close - lower) / (upper - lower); z-score = (close - SMA(n)) / standard '
+    'deviation(n); Ichimoku 9 / 26 / 52 (the cloud at a candle = spans A / B computed 26 candles before). EMAs are seeded with '
+    'the mean of their first n values. "Crosses above" = above on this candle, at or under on the one before.',
+    'Divergences (I08 I12 I14 V11, hidden I02): the two latest swing lows of price with divPivot (5) candles each side, divPivot to '
+    'divMaxGap (60) candles apart; signal on the candle the 2nd one becomes known; stop reference = its low.',
+    'Benchmark (I23 I24 Q13) = NIFTY 50 daily closes on the laptop; the ratio = the stock\'s close / the index close of the same '
+    'day (4-hour candles: of the session before - the index has daily candles only).',
+    '"Stop = the last N lows" = the lowest low of the N candles up to and including the signal candle.',
+]
+SW = {'patSwing': 5}
+DV = {'divPivot': 5, 'divMaxGap': 60}
+SMC = 'SMC research pattern (the owner trades his own CHoCH + FVG setup, X04 - this is a simpler generic version)'
+P3 = {
+    # P. price action / market structure
+    'P01': _sp(['When a swing low L2 becomes known, the swing low before it (L1) is lower - a higher low.',
+                'The highest swing high between L1 and L2 is above the latest swing high before L1 - a higher high.',
+                'Signal on the candle L2 becomes known; stop reference = L2\'s low; trigger = that higher high.'],
+               'Price made a higher high and then a higher low - an uptrend structure; the signal comes when the higher low is '
+               'confirmed by the candles after it.', 60, params=SW),
+    'P02': _sp(['A candle\'s low goes under the latest known swing low (the lower-low candle; each swing low once).',
+                'Within the next 5 candles a close above that candle\'s high, with no lower low in between.',
+                'Stop reference = the lower-low candle\'s low; trigger = its high.'],
+               'Price dipped under the last swing low but could not stay down: within 5 candles it closed above the high of the '
+               'candle that made the lower low.', 30, True, params=SW),
+    'P03': _sp(['The latest known swing high is a lower high (under the swing high before it), at most 100 candles old.',
+                'Signal: the first close above it.', 'Stop reference = the lowest low since that swing high; trigger = its level.'],
+               'In a fall each bounce peaked lower; then price closed above the last of those lower highs.', 60, params=SW),
+    'P04': _sp(['A swing high H becomes known above the swing high before it, while that one was a lower high (under the one '
+                'before it), and the last two swing lows before H were falling (a lower low).',
+                'Signal on the candle H becomes known; stop reference = the lowest low from the previous swing high to the signal; '
+                'trigger = H.'],
+               'After lower highs and lower lows, price made its first higher high.', 80, params=SW),
+    'P05': _sp(['A swing low L becomes known above the swing low before it, while that one was a lower low (under the one before '
+                'it), and the last two swing highs before L were falling.',
+                'Signal on the candle L becomes known; stop reference = L\'s low; trigger = the highest high since L.'],
+               'After lower lows, price made its first higher low.', 80, params=SW),
+    'P06': _sp(['structure.choch_events with patSwing candles each side (the Lab\'s own CHoCH): after at least 2 lower highs / '
+                'lows, the first close above the last swing high.',
+                'Signal = that close; stop reference = the final low; trigger = the CHoCH level; the count of lower highs / lows '
+                'kept for the breakdowns.'],
+               'A change of character: after a fall of lower highs and lower lows, a candle closed above the last swing high.',
+               80, params=SW, note='the Lab\'s market-structure engine as a pattern; the owner\'s full setup = X04'),
+    'P07': _sp(['A P06 CHoCH whose candle is a displacement: green, body >= 1.2 x ATR, close in the top quarter of its range '
+                '(CLV >= 0.5).', 'Signal, stop and trigger as P06.'],
+               'A change of character made by one strong candle - a market structure shift.', 80, params=SW),
+    'P08': _sp(['An uptrend structure: the latest known swing high above the one before it and the latest known swing low above '
+                'the one before it.', 'Signal: the first close above the latest swing high (at most 100 candles old).',
+                'Stop reference = the latest swing low; trigger = the swing high.'],
+               'In an uptrend of higher highs and higher lows, price broke above the last swing high.', 60, params=SW),
+    'P09': _sp(['A candle\'s low goes under the latest known swing low and the same candle closes back above it.',
+                'The first candle that goes under that swing low decides (closing under it = taken, no later signal).',
+                'Stop reference = the candle\'s low; trigger = its high; the dip under the swing low in % kept.'],
+               'A swing failure: price poked under the last swing low and closed back above it in the same candle.', 30, True,
+               params=SW),
+    'P10': _sp(['A close under the latest known swing low (each swing low once).', 'Within 3 candles a close back above it.',
+                'Stop reference = the lowest low since the breakdown; trigger = the level.'],
+               'Price closed under the last swing low but got back above it within 3 candles - a failed breakdown.', 30, True,
+               params=SW),
+    'P11': _sp(['A fresh close under the lowest low of the 20 candles before (the close before was not under its own).',
+                'Within 3 candles a close back above that level.',
+                'Stop reference = the lowest low since the breakdown; trigger = the level.'],
+               'Price broke under its 20-candle range and came back inside within 3 candles.', 25, True),
+    'P12': _sp(['Support = two known swing lows within 1 % of each other, at most 60 candles apart, among the last three (the '
+                'newest included); level = the lower of the two.',
+                'Signal: the first candle whose low comes within 0.5 % above the level (or under it), closing above it, green, '
+                'lower shadow >= 40 % of its range. A close under the level first = broken (no signal).',
+                'Stop reference = the candle\'s low.'],
+               'Price came back to a support tested twice before and was pushed up again (a long lower shadow).', 70, True,
+               params=SW),
+    'P13': _sp(['Resistance = two known swing highs within 1 % of each other, at most 120 candles apart (among the last three); '
+                'level = the higher.',
+                'A close above it, then within 20 candles a green candle whose low comes back to within 1 % above it (or under '
+                'it) - no close under the level in between.', 'Signal = that candle; stop reference = its low; trigger = the level.'],
+               'An old resistance was broken and then held as support on the first pullback.', 130, params=SW),
+    'P14': _sp(['The first close above the latest known swing high (the breakout).',
+                'Within 15 candles a candle whose low comes back to within 1 % above that level (or under it), closing above it - '
+                'a close under the level first = failed.', 'Signal = that retest candle; stop reference = its low.'],
+               'Price broke out above a swing high, came back to test it, and held above it.', 40, params=SW),
+    'P15': _sp(['A P14 retest, then within 3 candles a close above the retest candle\'s high (no close under the level between).',
+                'Signal = that close; stop reference = the lowest low since the retest; trigger = the retest candle\'s high.'],
+               'After the breakout and the retest, price confirmed the bounce by closing above the retest candle.', 45, params=SW),
+    'P16': _sp(['The two latest known swing highs rising (a higher high).',
+                'Within 40 candles of the newer one becoming known: the first candle whose low comes back to within 1 % above the '
+                'older swing high (or under it), closing at or above it, while the close is above a rising 50-SMA (above its value '
+                '10 candles before). A close under the older high first = void.', 'Stop reference = the candle\'s low.'],
+               'In an uptrend, price pulled back to the previous swing high - old resistance - and held there.', 80, params=SW),
+    'P17': _sp(['A P18 break of a descending trendline, then within 15 candles the first candle whose low comes back to within 1 % '
+                'above the line (or under it), closing above it - a close under the line first = failed.',
+                'Signal = that candle; stop reference = its low.'],
+               'Price broke a falling trendline, came back to it and held above it.', 90, params=SW),
+    'P18': _sp(['A descending line through the two latest known swing highs (the 2nd lower), extended to today.',
+                'Signal: the first close above the line within 60 candles of the 2nd high, the close before not above it.',
+                'Stop reference = the lowest low since the 2nd high; trigger = the line\'s value on the signal candle.'],
+               'Price closed above a falling trendline drawn through the last two lower highs.', 90, params=SW),
+    'P19': _sp(['The 10 candles before: range (highest high - lowest low) at most half the range of the 30 candles before those.',
+                'Signal: a fresh close above the highest high of those 10 candles.',
+                'Stop reference = the lower of their lowest low and the signal candle\'s low; trigger = their high.'],
+               'Price narrowed into a tight range and then broke out of it.', 41),
+    'P20': _sp(['c1 = the mother candle, c2 inside it (high <= c1 high, low >= c1 low), c1 itself not inside the candle before it '
+                '(exactly one inside candle - B10 takes 2 to 10).', 'Signal: c3 closes above c1\'s high.',
+                'Stop reference = the lower of c2\'s and c3\'s lows; trigger = c1\'s high.'],
+               'One quiet inside candle, then a close above the mother candle\'s high.', 4),
+    'P21': _sp(['c2\'s high above c1\'s high and its low under c1\'s low (an outside candle), green, closing above c1\'s high.',
+                'After a fall: c1\'s close under the close 5 candles before it.', 'Stop reference = c2\'s low.'],
+               'After a fall, one candle went under the previous low and then closed above the previous high.', 7, True),
+    'P22': _sp(['4 closes in a row, each above the close before (the first candle where this is true - not the 5th, 6th ...).',
+                'Stop reference = the lowest low of the 4 rising candles.'],
+               'Four higher closes in a row - steady buying.', 5),
+    'P23': _sp(['The 10 candles before the signal: range (highest high - lowest low) at most 2 x ATR(14) before them.',
+                'The signal candle: range >= 1.5 x that ATR, green, closing above those 10 candles\' high.',
+                'Stop reference = its low; trigger = the box high.'],
+               'After a tight sideways box, one wide green candle broke out of it.', 26),
+    'P24': _sp(['A swing low L2 becomes known lower than the swing low before it (L1) - a lower low.',
+                'The fall into L2 (from the highest high between L1 and L2) is less than 70 % of the fall into L1 (from the swing '
+                'high before L1).', 'Signal when L2 becomes known; stop reference = L2\'s low; the ratio of the two falls kept.'],
+               'Price still made a lower low, but the last fall was much shorter than the one before - the sellers are tiring.',
+               80, True, params=SW),
+    # S. smart money / ICT
+    'S01': _sp(['The sell-side pool = the lowest of the last 3 known swing lows.',
+                'A candle\'s low goes at least 0.1 x ATR under it and the candle closes back above it; the first candle under the '
+                'pool decides.', 'Stop reference = the candle\'s low.'],
+               'Price ran the stops under the lowest of the recent swing lows and closed back above them.', 40, True, SMC, SW),
+    'S02': _sp(['Equal lows = two of the last three known swing lows within 0.25 x ATR(14) (at the newer one) - the newest such '
+                'pair; level = the lower of the two.',
+                'The first candle under the level decides: closing back above it = the signal (else taken).',
+                'Stop reference = its low.'],
+               'Two nearly equal lows attract stop orders; price swept under them and closed back above.', 40, True, SMC, SW),
+    'S03': _sp(['The previous day\'s low (from the candles\' dates; on daily candles = the candle before).',
+                'The first candle of the day that goes under it decides: closing back above it, green = the signal.',
+                'Daily and 4-hour candles only. Stop reference = the candle\'s low; the level kept.'],
+               'Price went under yesterday\'s low and closed back above it.', 2, True, SMC),
+    'S04': _sp(['The previous week\'s low (weeks start on Monday; on weekly candles = the candle before).',
+                'The first candle of the week that goes under it decides: closing back above it, green = the signal.',
+                'Daily, 4-hour and weekly candles. Stop reference = the candle\'s low.'],
+               'Price went under last week\'s low and closed back above it.', 10, True, SMC),
+    'S05': _sp(['The previous calendar month\'s low.',
+                'The first candle of the month that goes under it decides: closing back above it, green = the signal.',
+                'Daily, 4-hour and weekly candles. Stop reference = the candle\'s low.'],
+               'Price went under last month\'s low and closed back above it.', 45, True, SMC),
+    'S06': _sp(['As P09, but the dip goes at least 0.5 x ATR under the latest known swing low before the close back above it.'],
+               'A deep stop-run: price dropped well under the last swing low and still closed back above it.', 30, True, SMC, SW),
+    'S07': _sp(['Major swings = patSwing candles each side, minor swings = 2 candles each side.',
+                'A sweep of the latest major swing low (low under it, close back above; the first candle under it decides).',
+                'Before it, a minor swing low above the major one (formed after it) was taken out - the inducement.',
+                'Signal = the sweep candle; stop reference = its low.'],
+               'Price first took out a small, tempting low (the inducement), then swept the real swing low and closed back above '
+               'it.', 40, True, SMC, SW),
+    'S08': _sp(['Displacement = a green candle with body >= 1.5 x ATR whose close breaks the latest known swing high (the close '
+                'before was not above it).', 'Order block = the last red candle of the 10 before it (each candle once).',
+                'Signal: the first candle after the displacement whose low reaches the block\'s high, closing above the block\'s '
+                'low, within 50 candles.',
+                'Stop reference = the lower of the block\'s low and that candle\'s low; trigger = the block\'s high; block size % kept.'],
+               'The last down candle before a strong move up (the order block); price came back to it and held.', 60, False, SMC,
+               SW),
+    'S09': _sp(['Two known swing lows, the 2nd lower (a lower low). Breaker = the last green candle among the 5 up to the highest '
+                'candle between them.',
+                'A close above the breaker\'s high within 60 candles of the 2nd low; then, once the 2nd low is known, the first '
+                'candle whose low comes back to the breaker\'s high within 30 candles of that close (a close under the breaker\'s '
+                'low first ends it).', 'Signal = that candle; stop reference = the lower of the breaker\'s low and that low.'],
+               'The last up candle before a lower low was broken upward; price came back to it and held - a breaker block.', 120,
+               False, SMC, SW),
+    'S10': _sp(['As S09, but the 2nd swing low is HIGHER than the 1st (no lower low).'],
+               'As the breaker block, but without a lower low - a mitigation block.', 120, False, SMC, SW),
+    'S11': _sp(['A known swing low candle with a lower shadow >= 60 % of its range and range >= 1 x ATR; zone = its low up to its '
+                'body bottom.',
+                'Once the swing is known, the first candle within 50 candles whose low reaches the zone top, closing above the '
+                'wick\'s low.', 'Stop reference = the lower of the wick\'s low and that candle\'s low.'],
+               'A long lower wick at a swing low marks where buyers rejected the price; price came back into that wick and held.',
+               60, False, SMC, SW),
+    'S12': _sp(['A bullish FVG (the zones rule of the shared definitions).', 'Signal: its first touch within 100 candles.'],
+               'Price came back to a fair value gap left by a quick move up and held above its bottom.', 103, False, SMC),
+    'S13': _sp(['A bullish FVG; level = its middle (the consequent encroachment).',
+                'Signal: the first candle within 100 candles whose low reaches the middle, closing above the bottom (a close under '
+                'the bottom first ends it).'],
+               'Price filled half of a fair value gap and held.', 103, False, SMC),
+    'S14': _sp(['A bearish FVG (the 3rd candle\'s high under the 1st candle\'s low, gap >= 0.1 x ATR).',
+                'Signal: the first close above its top within 50 candles - the gap turned into support.',
+                'Stop reference = the lower of its bottom and the candle\'s low; trigger = its top.'],
+               'Price closed back above a downward gap - an inverse fair value gap.', 53, False, SMC),
+    'S15': _sp(['One green candle with body >= 2 x ATR, closing in the top 20 % of its range (CLV >= 0.6).',
+                'Stop reference = its low.'],
+               'One very large green candle closing near its high - displacement.', 15),
+    'S16': _sp(['As S12, only for FVGs whose middle candle is a green displacement (body >= 1.5 x ATR).'],
+               'A fair value gap left by a strong candle; price came back to it and held.', 103, False, SMC),
+    'S17': _sp(['A P06 CHoCH whose final low swept the swing low known before it: went under it and closed back above it within 2 '
+                'candles (not after the CHoCH).', 'The CHoCH within 10 candles of the final low.',
+                'Signal = the CHoCH close; stop reference = the final low.'],
+               'Price swept a swing low and quickly turned the structure up with a change of character.', 80, False, SMC, SW),
+    'S18': _sp(['An uptrend: the latest known swing low above the one before.',
+                'A sweep candle: low under the latest swing low, close back above (the first candle under it decides).',
+                'Within 10 candles a close above the latest known swing high (as at the sweep), no low under the sweep\'s low in '
+                'between.', 'Signal = that close; stop reference = the sweep\'s low.'],
+               'In an uptrend, price swept a swing low and then broke the swing high - liquidity taken, structure continued.', 60,
+               False, SMC, SW),
+    'S19': _sp(['As S08, only for displacements that left an FVG (the candle after\'s low above the candle before\'s high); the '
+                'touch counted from 2 candles after the displacement.'],
+               'An order block whose move up also left a fair value gap - two reasons on one level.', 60, False, SMC, SW),
+    'S20': _sp(['As S09, only when the 2nd low\'s candle closed back above the 1st low (the lower low was a sweep).'],
+               'A breaker block whose lower low was a stop-run.', 120, False, SMC, SW),
+    'S21': _sp(['Range = the latest known swing high and the lowest low since it, at least 3 x ATR (before the high).',
+                'Signal: a green candle closing above the previous candle\'s high, still in the lower half of the range (discount), '
+                'with it or the candle before dipping into the lowest quarter. Once per swing high.',
+                'Stop reference = the lower of the two lows; % down the range kept.'],
+               'Price fell from the top half of its range into the cheap half and turned up there.', 80, False, SMC, SW),
+    'S22': _sp(['A P06 CHoCH. A bullish FVG formed after its final low (3rd candle from 2 candles after the final low to 20 after '
+                'the CHoCH), its bottom above the final low.',
+                'The first touch after the CHoCH, closing above the bottom, while the zone\'s middle is in the discount half of the '
+                'move (the final low up to the highest high since it). A zone touched before the CHoCH is used up.',
+                'Within 60 candles of the CHoCH; a close under the final low ends it; one signal per CHoCH.',
+                'Stop reference = the lower of the zone bottom and the touch candle\'s low; the zone\'s depth % kept.'],
+               'After a change of character, price came back to a fair value gap in the cheap half of the move.', 140, False,
+               SMC + "; the owner's full rules = Lab 'My CHoCH + FVG setup'", SW),
+    'S23': _sp(['A bearish FVG and, within 20 candles after it, a bullish FVG overlapping it; the balanced price range = the '
+                'overlap (with the newest bearish FVG before).',
+                'Signal: the first touch of the overlap within 50 candles, closing above its bottom.'],
+               'A down-gap and an up-gap overlapped; price came back to the overlap and held.', 75, False, SMC),
+    'S24': _sp(['An S08 order block closed under (a close under its low within 50 candles of the displacement).',
+                'Within 30 candles a close back above its high = the signal.',
+                'Stop reference = the lowest low since the break; trigger = the block\'s high.'],
+               'An order block broke down, then price reclaimed it by closing back above it.', 140, False, SMC, SW),
+    'S25': _sp(['A bullish FVG at least 1 x ATR big, its 3rd candle closing above the 2nd candle\'s close.',
+                'Signal on the 3rd candle (the imbalance itself); stop reference = the gap bottom (the 1st candle\'s high); '
+                'trigger = the 3rd candle\'s high.'],
+               'A very large up-gap between candles - price repriced higher at once.', 18, False,
+               'a definition to agree - this version: an FVG >= 1 x ATR'),
+    # V. volume (the rest)
+    'V09': _sp(['Three consecutive known swing lows rising, the first and last at most 120 candles apart, and OBV rising at the '
+                'same candles.', 'Signal when the 3rd swing low becomes known; stop reference = its low.'],
+               'Higher lows with on-balance volume rising at each - quiet accumulation.', 130, params=SW),
+    'V10': _sp(['Relative volume >= 2, range <= 0.7 x ATR, the low within 1 % above the latest known swing low (or under it), the '
+                'close at or above it, CLV >= 0 - once per swing low.', 'Stop reference = the candle\'s low.'],
+               'Heavy volume but a narrow candle at support - selling absorbed (a proxy - no order-book data).', 30, True,
+               'a proxy - no order-book data', SW),
+    'V11': _sp(['Price makes a lower swing low while the Chaikin A/D line makes a higher one (the divergence rule of the shared '
+                'definitions).'],
+               'Price made a lower low but the accumulation / distribution line made a higher low - hidden buying.', 60, params=DV),
+    'V14': _sp(['In a fall: the close under its 20-SMA and under the close 5 candles before.',
+                'That candle: relative volume >= 2 but range <= 0.6 x ATR - big effort, small result.',
+                'The next candle closes above its high = the signal; stop reference = the lower of the two lows.'],
+               'Heavy selling volume moved the price very little, and the next candle went above it.', 22, True),
+    'V16': _sp(['A red candle with body >= 0.7 x ATR and relative volume >= 2.',
+                'Within 3 candles a close above its high = the signal; stop reference = the lowest low since it.'],
+               'A heavy red selling candle was fully reversed within 3 candles - the selling pressure failed.', 22, True),
+    # I. momentum
+    'I02': _sp(['Price makes a HIGHER swing low while RSI(14) makes a LOWER one (the divergence rule of the shared definitions).',
+                'At the signal the close is above its 50-SMA (an uptrend).'],
+               'In an uptrend price held a higher low while RSI dipped lower - a hidden bullish divergence (trend continuation).',
+               60, params=DV),
+    'I03': _sp(['RSI(14) under 30, back above 30 (its peak = the failure level), a pullback that stays above 30, then RSI above '
+                'that peak - all within 40 candles of the first dip under 30.',
+                'Stop reference = the lowest low since the pullback started.'],
+               'Wilder\'s failure swing: RSI came out of oversold, pulled back without going oversold again, then broke its '
+               'own peak.', 55, True),
+    'I04': _sp(['RSI(14) crosses above 50, having been under 40 within the 10 candles before.', 'Stop = the last 10 lows.'],
+               'RSI climbed from weak (under 40) back above 50.', 25),
+    'I05': _sp(['RSI(14) crosses above 30.', 'Stop = the last 10 lows.'], 'RSI came back up out of the oversold area.', 25, True),
+    'I06': _sp(['The MACD line crosses above its signal line while both are under 0.', 'Stop = the last 10 lows.'],
+               'MACD turned up below the zero line - an early momentum turn.', 40),
+    'I07': _sp(['The MACD line crosses above 0.', 'Stop = the last 20 lows.'],
+               'The MACD line went above zero - the short average rose above the long one.', 40),
+    'I08': _sp(['Price makes a lower swing low while the MACD line makes a higher one, the MACD line under 0 at the first low.'],
+               'Price made a lower low but MACD made a higher low - a bullish divergence.', 60, params=DV),
+    'I09': _sp(['Stochastic %K crosses above %D with both under 20 on the candle before.', 'Stop = the last 10 lows.'],
+               'The stochastic lines crossed up in the oversold area.', 25, True),
+    'I10': _sp(['Stochastic %K crosses above 20.', 'Stop = the last 10 lows.'], 'The stochastic came back up out of oversold.',
+               25, True),
+    'I11': _sp(['CCI(20) crosses above -100.', 'Stop = the last 10 lows.'], 'CCI came back up from its oversold area.', 25, True),
+    'I12': _sp(['Price makes a lower swing low while MFI(14) makes a higher one.'],
+               'Price made a lower low but the money flow index made a higher low.', 60, params=DV),
+    'I13': _sp(['OBV above its highest value of the 50 candles before (the candle before was not), the close above its 20-EMA.',
+                'Stop reference = the candle\'s low.'],
+               'On-balance volume reached a 50-candle high - volume is flowing in.', 52),
+    'I14': _sp(['Price makes a lower swing low while OBV makes a higher one.'],
+               'Price made a lower low but on-balance volume made a higher low.', 60, params=DV),
+    'I15': _sp(['ADX(14) crosses above 25 with +DI above -DI.', 'Stop = the last 10 lows.'],
+               'A trend is getting stronger (ADX above 25) and it is an up trend (+DI above -DI).', 40),
+    'I16': _sp(['ROC(12) crosses above 0, having been at or under -5 % within the 20 candles before.', 'Stop = the last 20 lows.'],
+               'The 12-candle change turned positive after a fall of 5 % or more.', 35, True),
+    'I17': _sp(['TSI crosses above its signal line while TSI is under 0.', 'Stop = the last 10 lows.'],
+               'The true strength index turned up below zero.', 50),
+    'I18': _sp(['Aroon up crosses above Aroon down, Aroon up at least 50.', 'Stop = the last 10 lows.'],
+               'Recent highs became more recent than recent lows - the Aroon lines crossed up.', 30),
+    'I19': _sp(['The Parabolic SAR flips to bullish (a high above the SAR).',
+                'Stop reference = the new SAR (the lowest low of the fall) or the candle\'s low if lower.'],
+               'Parabolic SAR flipped under the price - the down trend ended.', 30, True),
+    'I20': _sp(['The close before under the lower Bollinger Band, this close back above it, green.', 'Stop = the last 2 lows.'],
+               'Price closed outside the lower band and came straight back inside.', 22, True),
+    'I21': _sp(['The close crosses above the middle band (20-SMA) after 5 closes under it, still under the upper band.',
+                'Stop = the last 6 lows.'],
+               'Price got back above its 20-average (the Bollinger middle band) after a week under it.', 26),
+    'I22': _sp(['3 closes in a row at or above the upper Bollinger Band (the first time - the close 3 candles before was not).',
+                'Stop = the last 3 lows.'],
+               'Price kept closing on the upper band - walking the band, a strong trend.', 24),
+    'I23': _sp(['The RS ratio (the stock\'s close / NIFTY 50\'s) above its highest value of the 50 candles before (the candle '
+                'before was not), and the close above the highest high of the 20 candles before.',
+                'Stop reference = the candle\'s low; ratio / its old high kept.'],
+               'The stock broke out against NIFTY 50 and on its own chart at the same time.', 52, note='needs the NIFTY 50 candles on the laptop'),
+    'I24': _sp(['The RS ratio above its highest value of the year before (D 252, W 52, 4H 504 candles; the candle before was '
+                'not), while the close is still under its own high of that year - relative strength leads price.',
+                'Stop = the last 10 lows.'],
+               'Against NIFTY 50 the stock is at a new 1-year high before its own price is.', 505,
+               note='needs the NIFTY 50 candles on the laptop'),
+    # Q. quantitative / statistical
+    'Q01': _sp(['The close before at least 2 standard deviations under its 20-SMA (z-score <= -2).',
+                'The signal candle: green, closing above that candle\'s high, above the 200-SMA.', 'Stop = the last 2 lows.'],
+               'A statistically oversold dip in a long-term uptrend, then a strong up candle.', 200),
+    'Q02': _sp(['The 50-candle z-score crosses back above -2.', 'Stop = the last 5 lows.'],
+               'Price came back from more than 2 standard deviations under its 50-average.', 52, True),
+    'Q03': _sp(['%B crosses above 0.5 (the middle band) having been under 0 within the 5 candles before.', 'Stop = the last 6 lows.'],
+               'From outside the lower band to above the middle band within a few candles.', 26, True),
+    'Q04': _sp(['Over the last 20 candles the regression slope of the close is negative while the slope of RSI(14) is positive - '
+                'the first candle where both are true, with RSI under 50.', 'Stop = the last 20 lows.'],
+               'Price trended down while RSI trended up - a statistical divergence.', 40, True),
+    'Q05': _sp(['ATR(14) of the candle before at or below its 10th percentile of the 126 candles before it.',
+                'The signal candle: true range >= 2 x that ATR, green, close in the upper half (CLV >= 0).',
+                'Stop reference = its low.'],
+               'Volatility shrank to a 6-month low, then one wide green candle - expansion.', 140),
+    'Q06': _sp(['The standard deviation of the last 20 returns (as of the candle before) at or below its 20th percentile of the '
+                '126 before.', 'A fresh close above the highest high of the 20 candles before.', 'Stop reference = its low.'],
+               'A calm period (low volatility) ended with a breakout.', 170),
+    'Q07': _sp(['5 lower closes in a row, then a close above the previous candle\'s high.', 'Stop = the last 6 lows.'],
+               'Five down closes in a row, then a strong up close - exhaustion.', 7, True),
+    'Q08': _sp(['A red candle with body >= 2 x ATR.', 'Within 3 candles a close above the middle of its body.',
+                'Stop reference = the lowest low since it.'],
+               'A very large red candle was half recovered within 3 candles.', 18, True),
+    'Q09': _sp(['Range >= 1 x ATR, green, the open in the lowest 30 % of the range, the close in the top 20 % (CLV >= 0.6) and '
+                'above the previous close.', 'Stop reference = its low.'],
+               'The candle opened weak, near its low, and closed strong, near its high.', 15, True),
+    'Q10': _sp(['ROC(10) at least 5 points higher than 5 candles before, while it was already above 0 then (the first candle).',
+                'Stop = the last 10 lows.'],
+               'Momentum is rising faster - the 10-candle change is accelerating.', 16),
+    'Q11': _sp(['ROC(10) fell into candle i-2 (at or under -5 %) and rose on the two candles after it.', 'Stop = the last 10 lows.'],
+               'The 10-candle change turned up from a deep low.', 15, True),
+    'Q12': _sp(['The RSI(14) of the last FINISHED higher candle (daily -> weekly, weekly -> monthly, 4-hour -> daily) above 50, '
+                'and the candle\'s own RSI(14) crosses above 50.', 'Stop = the last 10 lows.'],
+               'Momentum agrees on two timeframes: the higher timeframe RSI above 50 and this one crossing above 50.', 300),
+    'Q13': _sp(['The RS ratio (vs NIFTY 50) up at least 10 % over 63 candles, and a fresh close above the highest high of the 50 '
+                'candles before.', 'Stop reference = the candle\'s low.'],
+               'A stock that has beaten NIFTY 50 by 10 % in 3 months broke out to a 50-candle high.', 64,
+               note='needs the NIFTY 50 candles on the laptop'),
+    'Q14': _sp(['A fresh close above the highest high of the 20 candles before, with no such close in the 60 candles before.',
+                'Stop reference = the candle\'s low.'],
+               'The first 20-candle breakout after a quiet period - a possible new trend (Donchian).', 81),
+    'Q15': _sp(['Close above its 50-SMA, the 50-SMA above the 200-SMA and above its value 10 candles before.',
+                'The close before at least 1.5 standard deviations under its 20-SMA (z <= -1.5); the signal closes above that '
+                'candle\'s high.', 'Stop = the last 2 lows.'],
+               'A sharp, statistically deep pullback inside a healthy uptrend, then a strong close.', 210),
+    'Q16': _sp(['The return at least 2 x the standard deviation of the 20 returns before (and up), relative volume >= 2.',
+                'Stop reference = the candle\'s low.'],
+               'An unusually big up move on unusually big volume.', 22),
+    'Q17': _sp(['The 10-candle average range (as % of the close) at or below its 10th percentile of the 126 before (as of the '
+                'candle before).',
+                'The signal candle: range >= 2 x that average, green, close in the top third (CLV >= 0.33), above the 10-candle '
+                'high.', 'Stop reference = its low.'],
+               'Candles had become very small; then a wide green candle broke the 10-candle high.', 140),
+    'Q18': _sp(['Close above its 50-SMA above the 200-SMA, ROC(63) at least 20 %, and a fresh close above the 10-candle high.',
+                'Stop = the last 5 lows.'],
+               'A stock already up 20 % in 3 months made a new 10-candle high - momentum continuing.', 200),
+    'Q19': _sp(['RSI(14) crosses under 30, then within 3 candles back above 40.', 'Stop reference = the lowest low since.'],
+               'RSI broke into oversold and was back above 40 within 3 candles - the breakdown failed.', 20, True),
+    'Q20': _sp(['Five factors: close above its 50-SMA, 50-SMA above 200-SMA, RSI(14) above 50, MACD above its signal, relative '
+                'volume >= 1.2.', 'Signal when 4 or 5 are true and fewer than 4 were on the candle before; the score kept.',
+                'Stop = the last 10 lows.'],
+               'Trend, momentum and volume agree at once (4 of 5 factors).', 200,
+               note='a combination - a full combination engine is phase 5'),
+    # M. moving averages (the rest)
+    'M13': _sp(['A fresh close above the Ichimoku cloud top (the higher of span A and span B as drawn at that candle).',
+                'Stop reference = the candle\'s low; trigger = the cloud top.'],
+               'Price closed above the Ichimoku cloud.', 80),
+    'M14': _sp(['The tenkan-sen (9) crosses above the kijun-sen (26).', 'Stop = the last 10 lows.'],
+               'The fast Ichimoku line crossed above the slow one.', 30),
+    'M15': _sp(['Span A crosses above span B as computed on the candle (the cloud ahead turns bullish).', 'Stop = the last 10 lows.'],
+               'The Ichimoku cloud ahead turned from red to green.', 55),
+    'M17': _sp(['Anchored VWAP from the latest known swing high: the typical price (high + low + close) / 3 x volume summed from '
+                'that candle / the volume summed.',
+                'Signal: the close crosses above it within 60 candles of the high (once per anchor).',
+                'Stop reference = the lowest low since the high; trigger = the anchored VWAP.'],
+               'Price got back above the average price paid by everyone who bought since the last swing high.', 70, False,
+               'a daily typical-price proxy (no intraday volume profile)', SW),
+    'M18': _sp(['EMA 10, 20 and 50 within 1.5 % of the close of each other on each of the 3 candles before.',
+                'The signal: green, closing above all three EMAs and above those 3 candles\' highs (the first candle).',
+                'Stop = the last 4 lows.'],
+               'The short, medium and long EMAs squeezed together; then price broke up out of the squeeze.', 54),
+}
+SPECS.update(P3)
 WORDS_M1 = {
     'K08': 'A red candle was followed by a bigger green candle whose body covered all of the red body - buyers took over the '
            'whole of the day before. The stop goes under the lower of the two lows.',

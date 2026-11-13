@@ -1318,7 +1318,7 @@ function check(name, fn) {
     // state; an implemented one goes into the form with "Use", its own fields and exact rules show, the plain words follow
     await own.p.click('#lab-lib summary');
     await own.p.waitForSelector('#lab-lib-table table');
-    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(70 built in the new engine so far\)/);
+    assert.match(await own.p.$eval('#lab-lib summary', (x) => x.textContent), /Pattern library - 194 patterns \+ your own \(172 built in the new engine so far\)/);
     await own.p.fill('#lab-lib-q', 'engulf');
     await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 1);
     assert.match(await own.p.$eval('#lab-lib-table tbody tr', (x) => x.textContent), /K08\s*Bullish Engulfing\s*Candlestick patterns\s*Implemented/);
@@ -1326,8 +1326,12 @@ function check(name, fn) {
     await own.p.click('[data-chip="labcat"][data-v="S"]');
     await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 25);
     const smcRows = await own.p.$eval('#lab-lib-table tbody', (x) => x.textContent);
-    assert.ok(/S22\s*Discount Zone Entry[\s\S]*In the Lab \(own group\)/.test(smcRows) && /S08\s*Bullish Order Block[\s\S]*Planned/.test(smcRows), 'statuses as they are');
-    assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 0, 'nothing in SMC is built in the new engine yet');
+    assert.ok(/S22\s*Discount Zone Entry[\s\S]*Implemented/.test(smcRows) && /S08\s*Bullish Order Block[\s\S]*Implemented/.test(smcRows), 'statuses as they are');
+    assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 25, 'phase 3: every SMC pattern is built in the new engine');
+    await own.p.click('[data-chip="labcat"][data-v="C"]');
+    await own.p.waitForFunction(() => document.querySelectorAll('#lab-lib-table tbody tr').length === 20);
+    assert.match(await own.p.$eval('#lab-lib-table tbody', (x) => x.textContent), /C01\s*Double Bottom[\s\S]*Planned/);
+    assert.strictEqual(await own.p.$$eval('#lab-lib-table [data-usepat]', (x) => x.length), 0, 'the classical chart patterns come last');
     await own.p.click('[data-chip="labcat"][data-v="all"]');
     await own.p.fill('#lab-lib-q', 'K08');
     await own.p.waitForSelector('[data-usepat="K08"]');
@@ -1346,15 +1350,28 @@ function check(name, fn) {
     await own.p.waitForSelector('[data-k="boVol"]');
     await own.p.selectOption('[data-k="boVol"]', '2');
     assert.match(await plainText(), /Pattern library: B03 52-Week High Breakout \(a fresh close above the level, volume at least 2 x the 20-candle average\)/);
-    // phase 2 (13-Nov-2026): 70 patterns in the picker, grouped; a reversal pattern can be kept only after a fall
-    assert.ok(await own.p.$$eval('#lab-form select[data-k="pattern"] optgroup', (x) => x.length) >= 4, 'grouped by category');
-    assert.strictEqual(await own.p.$$eval('#lab-form select[data-k="pattern"] option', (x) => x.length), 70);
+    // phase 2 / 3 (13-Nov-2026): 172 patterns in the picker, grouped; a reversal pattern can be kept only after a fall
+    assert.ok(await own.p.$$eval('#lab-form select[data-k="pattern"] optgroup', (x) => x.length) >= 8, 'grouped by category');
+    assert.strictEqual(await own.p.$$eval('#lab-form select[data-k="pattern"] option', (x) => x.length), 172);
     assert.ok(!(await own.p.$('#lab-form select[data-k="patCtx"]')), 'a breakout has no trend-context choice');
     await own.p.selectOption('[data-k="pattern"]', 'K01');
     await own.p.waitForSelector('#lab-form select[data-k="patCtx"]');
     await own.p.selectOption('[data-k="patCtx"]', 'down');
     assert.match(await plainText(), /Pattern library: K01 Hammer \(only after a fall - the candle before it closed under its falling 20-SMA\)/);
     assert.match(await own.p.$eval('#lab-form details.lab-rules', (x) => x.textContent), /Shared definitions:[\s\S]*Long body = body >= 0\.7 x ATR/);
+    // phase 3: a structure pattern has the swing size; a divergence its swing lows; a relative-strength one names NIFTY 50
+    assert.ok(!(await own.p.$('#lab-form select[data-k="patSwing"]')), 'a candle pattern has no swings');
+    await own.p.selectOption('[data-k="pattern"]', 'P09');
+    await own.p.waitForSelector('#lab-form select[data-k="patSwing"]');
+    await own.p.selectOption('[data-k="patSwing"]', '3');
+    assert.match(await plainText(), /Pattern library: P09 Swing Failure Pattern \(SFP\) \(swings of 3 candles each side - a swing counts only once 3 candles after it/);
+    assert.match(await own.p.$eval('#lab-form details.lab-rules', (x) => x.textContent), /Swings \(phase 3\)[\s\S]*KNOWN patSwing candles/);
+    await own.p.selectOption('[data-k="pattern"]', 'I08');
+    await own.p.waitForSelector('#lab-form select[data-k="divPivot"]');
+    assert.ok(!(await own.p.$('#lab-form select[data-k="divRsiMax"]')), 'only I01 has the RSI limit');
+    assert.match(await plainText(), /I08 MACD Positive Divergence \(swing lows of 5 candles each side, at most 60 candles apart/);
+    await own.p.selectOption('[data-k="pattern"]', 'I23');
+    await own.p.waitForFunction(() => /against NIFTY 50/.test(document.querySelector('#lab-plain').textContent));
     // market structure (owner, 10-Nov-2026): his CHoCH + FVG setup in one click, the plain words follow
     await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', '[]'); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"]:not([open])');
