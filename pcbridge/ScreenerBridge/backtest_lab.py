@@ -220,6 +220,8 @@ DEFAULTS = {
     # phase 3 (13-Nov-2026): the swing size of the structure / SMC patterns (P / S / V09 V10 / M17) - candles each side
     'patSwing': 5,
 }
+# the program's pattern engine - every result carries it, so the page can tell an older laptop program
+ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
 BENCH_INDEX = 'NIFTY_50'               # the relative-strength patterns' benchmark (cache meta 'indices')
 SURVIVORSHIP = ("The stocks are today's ~1,800 listed ones - companies delisted or suspended over the years are not in the "
                 "candles (Kite has only current instruments), so every result looks somewhat better than reality "
@@ -301,14 +303,18 @@ def _iso_date(s):
         return ''
 
 
-def clean_params(p):
-    """The run's rules from the page, checked: unknown keys left out, numbers kept within LIMITS, choices from CHOICES."""
+def clean_params(p, unknown=None):
+    """The run's rules from the page, checked: unknown keys left out, numbers kept within LIMITS, choices from CHOICES.
+    `unknown` (a dict) collects the choices the page sent that this program does not know (they keep their default) - a
+    page newer than the laptop's program (owner, 13-Nov-2026: K01 Hammer chosen, the old program ran K08 without a word)."""
     p = p if isinstance(p, dict) else {}
     out = dict(DEFAULTS)
     for k, opts in CHOICES.items():
         v = p.get(k)
         if not isinstance(v, bool) and v in opts:
             out[k] = int(v) if isinstance(v, float) else v
+        elif v is not None and unknown is not None:
+            unknown[k] = v
     for k, (lo, hi, integer) in LIMITS.items():
         v = p.get(k)
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
@@ -1455,7 +1461,13 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     """One Backtest Lab run on the cache -> the result (summarise). Raises LabError when there is no cache yet. `charts` = a
     folder: a PDF with a chart page per trade is made there (lab_charts.py; result 'pdf')."""
     t0 = time.time()
-    P = clean_params(params)
+    unknown = {}
+    P = clean_params(params, unknown)
+    if 'group' in unknown or (P['group'] == 'pattern' and 'pattern' in unknown):
+        what = ('pattern %s' % unknown['pattern']) if 'pattern' in unknown else ('signals "%s"' % unknown['group'])
+        raise LabError('this laptop program does not know the %s - its program is older than the website. Extract the newest '
+                       'ScreenerBridge.zip into the ScreenerBridge folder, then sign out of Windows and sign in again (or '
+                       'restart) and run it again' % what)
     meta, d = load_meta(base)
     if not meta:
         raise LabError('no backtest cache on this computer yet')
@@ -1707,6 +1719,11 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     if pat is not None:
         pat.close()
     res = summarise(trades, P, skips, meta, time.time() - t0)
+    res['engine'] = ENGINE
+    if unknown:
+        res['warnings'].append('Your laptop\'s program did not know %s and used its own default%s - extract the newest '
+                               'ScreenerBridge.zip, then sign out of Windows and sign in again.' % (
+                                   ', '.join('%s "%s"' % (k, v) for k, v in sorted(unknown.items())), '' if len(unknown) == 1 else 's'))
     if charts:
         try:
             res['pdf'] = make_charts(charts, d, P, trades, res, meta, progress, name)

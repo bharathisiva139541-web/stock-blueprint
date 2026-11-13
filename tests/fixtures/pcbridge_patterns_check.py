@@ -1045,6 +1045,18 @@ _txt = ' '.join(_zlib.decompressobj().decompress(m.group(1)).decode('latin-1') f
                 if m.group(1)[:1] == b'x')
 for _w in ('Breakout level', 'B01 20-Day High Breakout', 'the backtest found B01 20-Day High Breakout'):
     assert _w in _txt, _w
+# a pattern has no zone (owner, 13-Nov-2026: "stop loss using zone FVG Zone bottom is irrelevant here")
+assert 'zone bottom' not in _txt and "under the pattern's low" in _txt, 'a pattern run speaks of the pattern\'s low'
+# a page newer than the laptop's program (owner, 13-Nov-2026: K01 chosen, an older program ran K08 without a word): an unknown pattern
+# stops the run and says what to do; another unknown choice is named in the warnings; every result carries the pattern engine
+try:
+    L.run_job({'group': 'pattern', 'pattern': 'Z99'})
+    raise AssertionError('Z99 ran')
+except L.LabError as ex:
+    assert 'pattern Z99' in str(ex) and 'sign out of Windows' in str(ex), ex
+rk = L.run_job({'group': 'pattern', 'pattern': 'K08', 'maxRisk': 0, 'stop': 'nowhere'})
+assert rk['engine'] == {'version': reg.VERSION, 'patterns': len(reg.implemented())} and rk['params']['stop'] == L.DEFAULTS['stop']
+assert len(rk['warnings']) == 2 and 'stop "nowhere"' in rk['warnings'][1], rk['warnings']
 # the same run twice = the same result (memo or not)
 L._PAT_MEMO.clear()
 x1 = L.run_job({'group': 'pattern', 'pattern': 'I01', 'maxRisk': 0})

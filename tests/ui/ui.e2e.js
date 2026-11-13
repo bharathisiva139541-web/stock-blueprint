@@ -1340,7 +1340,7 @@ function check(name, fn) {
     assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="group"],#lab-form select[data-k="pattern"],#lab-form select[data-k="structure"]', (x) => x.map((e) => e.value)),
       ['pattern', 'K08', 'off']);
     assert.match(await plainText(), /^In plain words: Pattern library: K08 Bullish Engulfing on the daily chart\./);
-    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="stop"] option[value="zone"]', (x) => x.textContent), 'Under the pattern\'s low (its stop reference)');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="stop"] option[value="zone"]', (x) => x.textContent), 'Under the pattern\'s low (the lowest point of its candles)');
     await own.p.selectOption('[data-k="pattern"]', 'I01');
     await own.p.waitForSelector('[data-k="divPivot"]');
     await own.p.selectOption('[data-k="divRsiMax"]', '40');
@@ -1584,6 +1584,36 @@ function check(name, fn) {
     await own.p.click('.bell-pop [data-bell="read"]');
     assert.ok(!(await own.p.$eval('#bell', (b) => b.classList.contains('has-new'))), 'all read');
     assert.ok(sheet.bodies.some((b) => b.op === 'notes') && sheet.bodies.some((b) => b.op === 'lab' && b.lab.do === 'run'), 'ops: ' + sheet.bodies.map((b) => b.op).join(' '));
+    // a Pattern library run (owner, 13-Nov-2026: "entha pattern select paninalum, our backtest run only on Bullishengulfing ... stop
+    // loss using zone FVG Zone bottom is irrelevant here"): the pattern stops have no zone; a laptop program that ran another pattern
+    // is named on the result, a current one shows its pattern engine
+    await own.p.keyboard.press('Escape');
+    await own.p.evaluate(() => { location.hash = '#lab'; });
+    await own.p.waitForSelector('#lab-form [data-k="group"]');
+    await own.p.selectOption('#lab-form [data-k="group"]', 'pattern');
+    await own.p.waitForSelector('#lab-form select[data-k="pattern"]');
+    await own.p.selectOption('#lab-form [data-k="structure"]', 'off').catch(() => {});
+    await own.p.selectOption('#lab-form select[data-k="pattern"]', 'K01');
+    await own.p.waitForFunction(() => /K01 Hammer/.test(document.querySelector('#lab-plain').textContent));
+    await own.p.selectOption('#lab-form select[data-k="entry"]', 'close').catch(() => {});
+    assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="stop"] option', (o) => o.map((x) => x.value)), ['zone', 'spring', 'pct'],
+      'a pattern has no zone: its low, the signal candle\'s low or a % (the CHoCH low only with the structure on)');
+    assert.match(await plainText(), /Stop loss [\d.]+% below the pattern's low \(the lowest point of its candles\)/);
+    assert.ok(!/zone bottom/.test(await plainText()), 'no zone bottom in a pattern run\'s words');
+    for (const [ran, engine, want] of [['K08', null, /You chose K01 Hammer but your laptop ran K08 Bullish Engulfing - these figures and the charts PDF are for that pattern\. Your laptop's program is older than this website: extract the newest ScreenerBridge\.zip/],
+      ['K01', { version: 4, patterns: 192 }, /Laptop program: pattern engine v4 · 192 patterns/]]) {
+      await own.p.click('#lab-run');
+      await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
+      const pj = JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll' })));
+      assert.ok(pj.job.params.group === 'pattern' && pj.job.params.pattern === 'K01' && pj.job.params.stop === 'zone', JSON.stringify(pj.job.params).slice(0, 200));
+      const pres = { v: 1, params: Object.assign({}, pj.job.params, { pattern: ran }), groupName: 'Pattern library: ' + ran + (ran === 'K08' ? ' Bullish Engulfing' : ' Hammer'),
+        cacheUpto: '2026-11-12', from: '', to: '', stats: { trades: 0 }, trades: [], tradeCols: cols, tradesTotal: 0, open: 0, skipped: {}, secs: 0.4, warnings: [] };
+      if (engine) pres.engine = engine;
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: pj.job.id, result: pres }))), { ok: true, stored: true });
+      await own.p.waitForFunction((rx) => new RegExp(rx).test((document.querySelector('#lab-engine') || {}).textContent || ''), want.source, { timeout: 20000 })
+        .catch(async (e) => { throw new Error(e.message + ' | status: ' + (await own.p.$eval('#lab-status', (x) => x.textContent).catch(() => '-')).slice(0, 300) +
+          ' | result: ' + (await own.p.$eval('#lab-result', (x) => x.textContent).catch(() => '-')).slice(0, 400)); });
+    }
     // phone width: no sideways scroll on the page
     await own.p.setViewportSize({ width: 360, height: 780 });
     await own.p.keyboard.press('Escape');
