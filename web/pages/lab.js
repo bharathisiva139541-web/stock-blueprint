@@ -68,11 +68,16 @@
     zonePick: 'second', moveVol: 0, moveVolN: 1,
     // owner, 13-Nov-2026 (SWIGGY): "1st one is already mitigated before Choch move, we can take in this FVG even if this FVG mitigated
     // before the Choch Move" - a zone touched before the CHoCH counts again after it (on by default, like the laptop's DEFAULTS)
-    touchAgain: true
+    touchAgain: true,
+    // BOS + FVG setups (owner, 13-Nov-2026: "Shall we track BOS setup like this. like FVG Zone at discount level in the BOS move ...
+    // It can be a continuous BOS in uptrend. or BOS formed after Choch" -> "yes. implement all you recommendations"): the structure
+    // rules on the BOS move (from its higher low to its high) instead of the CHoCH move (= backtest_lab setup / bosKind / upN)
+    setup: 'choch', bosKind: 'both', upN: 1
   };
   // ready setups for the "Start here" cards (owner, 12-Nov-2026: "make bactest lab more user-friendly not to be complex")
   var QUICK = [
     { id: 'smc', name: 'My CHoCH + FVG setup', why: 'After lower highs and lower lows a candle closes above the last lower high (CHoCH); the first time price comes back to a zone in the discount half of that move = buy at the zone top, stop under the zone.' },
+    { id: 'bos', name: 'My BOS + FVG setup', why: 'In an up-trend (or right after a CHoCH) a candle closes above the last higher high (BOS); the first time price comes back to a zone in the discount half of that BOS move (from its higher low) = buy at the zone top, stop under the zone.' },
     { id: 'fvg', name: 'FVG + Spring', why: 'A Spring candle on a 3-candle FVG zone (anywhere on it or under its bottom); buy at the Spring candle\'s close, stop under the zone.',
       set: { group: 'fvg', structure: 'off', entry: 'close', stop: 'zone', discount: 0 } },
     { id: 'gap', name: 'Gap-up FVG + Spring', why: 'The same on a Gap-up zone (a gap between two candles); buy at the Spring candle\'s close, stop under the zone.',
@@ -80,7 +85,7 @@
   ];
   // the folded "More rules" sections: the keys each one holds (its header counts the ones you changed)
   var SECTIONS = [
-    ['structure', 'Market structure - CHoCH / BOS', ['structure', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
+    ['structure', 'Market structure - CHoCH / BOS setups', ['structure', 'setup', 'bosKind', 'upN', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
       'lineOk', 'lineTol', 'zonePick', 'touchAgain', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep',
       'moveVol', 'moveVolN']],
     ['shape', 'Spring candle shape', null],
@@ -94,7 +99,10 @@
   // the owner's CHoCH + FVG setup in one click (his answers of 10-Nov-2026, and 11-Nov-2026: the discount half of the move
   // instead of "below the CHoCH level", the first return to that zone = the signal, a buy order at the zone top)
   var SMC = { group: 'touch', structure: 'only', pivotN: 5, downN: 3, zoneWhen: 'both', belowChoch: false, discount: 0.5, discPart: 'mid',
-    firstPull: true, chochAge: 0, stop: 'zone', entry: 'zone', zonePick: 'second', touchAgain: true };
+    firstPull: true, chochAge: 0, stop: 'zone', entry: 'zone', zonePick: 'second', touchAgain: true, setup: 'choch' };
+  // the same on the BOS move (13-Nov-2026): every BOS - the first after a CHoCH and the ones of a running up-trend
+  var BOSSET = Object.assign({}, SMC, { setup: 'bos', bosKind: 'both', upN: 1 });
+  function quickSet(id) { return id === 'smc' ? SMC : id === 'bos' ? BOSSET : QUICK.filter(function (x) { return x.id === id; })[0].set; }
   var SHAPE_KEYS = ['upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
     'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct'];
   // My recommendations (10-Nov-2026): starting points to TEST - each one is a reasoned idea, not a proven edge
@@ -136,11 +144,15 @@
     stopPat: [['zone', 'Under the pattern\'s low (the lowest point of its candles)'], ['spring', 'Under the signal candle\'s low'],
       ['pct', '% under the entry'], ['final', 'Under the CHoCH\'s final low']],
     structure: [['off', 'Off - do not look at it'], ['show', 'Show it on every trade (nothing left out) - to compare'], ['only', 'Only my setup (the rules below)']],
+    setup: [['choch', 'CHoCH + FVG - the zone of the move that turned a downtrend'], ['bos', 'BOS + FVG - the zone of a BOS move (a higher high broken)']],
+    bosKind: [['both', 'Every BOS - the 1st after a CHoCH and the ones of a running up-trend'], ['first', 'Only the 1st BOS after a CHoCH'],
+      ['trend', 'Only BOS of a running up-trend (not the 1st after a CHoCH)']],
+    upN: [[1, 'At least 1 (any BOS)'], [2, 'At least 2'], [3, 'At least 3'], [4, 'At least 4']],
     pivotN: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
     downN: [[1, 'At least 1'], [2, 'At least 2'], [3, 'At least 3'], [4, 'At least 4'], [5, 'At least 5']],
     zoneWhen: [['both', 'In the CHoCH move or after it'], ['leg', 'Only in the CHoCH move'], ['after', 'Only after the CHoCH candle']],
     chochAge: [[0, 'Any time after it'], [10, 'Within 10 candles'], [20, 'Within 20 candles'], [40, 'Within 40 candles'], [60, 'Within 60 candles'], [120, 'Within 120 candles']],
-    targetMode: [['R', 'R multiple (times the risk)'], ['pct', '% above the entry'], ['mh', 'The CHoCH move high (HH)'], ['swing', 'The last swing high']],
+    targetMode: [['R', 'R multiple (times the risk)'], ['pct', '% above the entry'], ['mh', 'The CHoCH / BOS move high (HH)'], ['swing', 'The last swing high']],
     stopAtr: [[0, 'Off - only the stop above'], [1, '1 x ATR'], [1.5, '1.5 x ATR'], [2, '2 x ATR'], [2.5, '2.5 x ATR'], [3, '3 x ATR'], [4, '4 x ATR']],
     targetPct: [[10, '10% above the entry'], [15, '15% above the entry'], [20, '20% above the entry'], [25, '25% above the entry'], [30, '30% above the entry'],
       [40, '40% above the entry'], [50, '50% above the entry'], [75, '75% above the entry'], [100, '100% above the entry']],
@@ -170,7 +182,7 @@
     entry: [['close', 'At the signal candle\'s close'], ['next_open', 'At the next candle\'s open'],
       ['zone', 'An order waiting at the zone top (first-touch signals)']],
     stop: [['zone', 'A little below the FVG / Gap-up zone bottom'], ['spring', 'A little below the Spring candle\'s low'],
-      ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry'], ['final', 'A little below the CHoCH\'s final low (LL)']],
+      ['lower', 'A little below whichever is lower'], ['pct', 'A fixed % below the entry'], ['final', 'A little below the CHoCH\'s final low (LL) / the BOS move\'s higher low (HL)']],
     zoneMin: [[0, 'No minimum'], [1, 'At least 1%'], [1.5, 'At least 1.5%'], [2, 'At least 2%'], [3, 'At least 3%'], [4, 'At least 4%']],
     zoneMax: [[0, 'No limit'], [4, 'At most 4%'], [5, 'At most 5%'], [6, 'At most 6%'], [8, 'At most 8%'], [10, 'At most 10%'], [12, 'At most 12%'], [15, 'At most 15%']],
     fibPat: [['off', 'Off - buy at the zone top as usual'], ['big', 'In zones bigger than "at most" (the rest at the zone top)'], ['all', 'In every zone (no zone-top orders)']],
@@ -209,7 +221,7 @@
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
     'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears',
-    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN'];
+    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN', 'upN'];
   // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
   var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
     bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level',
@@ -228,6 +240,16 @@
     zone1mit: 'the 1st (watched) zone was touched before the move high' };
   var STAGE = { disc: ['Discount, 1st pullback', 's-good'], below: ['Below CHoCH, 1st pullback', 's-good'], prem: ['Premium (above the Fib line)', 's-warn'],
     above: ['At / above CHoCH level', 's-warn'], bos: ['After a BOS', 's-bad'], old: ['Zone older than the CHoCH low', 's-info'], none: ['No CHoCH', ''] };
+  // a BOS + FVG run (13-Nov-2026): the same stages on the BOS move
+  var STAGE_BOS = { disc: ['Discount, 1st pullback', 's-good'], below: ['Below BOS, 1st pullback', 's-good'], prem: ['Premium (above the Fib line)', 's-warn'],
+    above: ['At / above BOS level', 's-warn'], bos: ['After the next BOS', 's-bad'], old: ['Zone older than the BOS higher low', 's-info'], none: ['No BOS', ''] };
+  function stageOf(key, p) { return ((p && p.setup === 'bos') ? STAGE_BOS : STAGE)[key]; }
+  /** A structure text of the CHoCH setup in the words of a BOS run ('CHoCH' -> 'BOS', its final low -> the higher low). */
+  function evWords(txt, p) {
+    if (!(p && p.setup === 'bos')) return txt;
+    return String(txt).replace(/the final low to the move high/g, 'the higher low to the move high').replace(/final low/g, 'higher low')
+      .replace(/a BOS came first/g, 'the next BOS came first').replace(/no BOS yet/g, 'no next BOS yet').replace(/CHoCH/g, 'BOS');
+  }
   var ITD_TV = { D: 'D', W: 'W', '4H': '240' };
   function tvUrl(sym, tf) { return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '&interval=' + (ITD_TV[tf] || 'D'); }
   // the first failed rule -> words (= backtest_lab.py SHAPE_WHY)
@@ -310,6 +332,7 @@
   /** The market-structure rules in words ('' when off). */
   function structWords(p) {
     if (p.structure === 'off' || !p.structure) return '';
+    if (p.setup === 'bos') return bosWords(p);
     var head = 'Market structure (swings of ' + p.pivotN + ' candles each side): a CHoCH = a candle closing above the last swing high after at least ' +
       p.downN + ' lower highs and ' + p.downN + ' lower lows';
     if (p.structure === 'show') return head + engineWords(p) + ' - shown on every trade, nothing left out.';
@@ -342,6 +365,20 @@
     w.push(p.zonePick === 'every' ? 'every discount zone\'s first touch is a trade' :
       'when the move has two discount zones, the one price reaches first (the higher) is only watched and the trade is on the 2nd (a 3rd is not traded)');
     return head + engineWords(p) + '. Only signals where ' + w.join('; ') + '.';
+  }
+
+  /** The BOS + FVG setup in words (13-Nov-2026): the CHoCH rules said of the BOS move. */
+  function bosWords(p) {
+    var kind = p.bosKind === 'first' ? 'the 1st BOS after a CHoCH (after at least ' + p.downN + ' lower highs and lower lows)' :
+      p.bosKind === 'trend' ? 'a BOS of a running up-trend (at least ' + (Number(p.upN) || 1) + ' higher high' + ((Number(p.upN) || 1) === 1 ? '' : 's') + ' and higher low' + ((Number(p.upN) || 1) === 1 ? '' : 's') + ', not the 1st after a CHoCH)' :
+        'every BOS - the 1st after a CHoCH (' + p.downN + ' lower highs / lows before it) and the ones of a running up-trend' + ((Number(p.upN) || 1) > 1 ? ' (at least ' + p.upN + ' higher highs / lows)' : '');
+    var head = 'BOS + FVG (swings of ' + p.pivotN + ' candles each side): a BOS = a candle closing above the last swing high when that high was a higher high ' +
+      'and the pullback since it a higher low; ' + kind + '; the BOS move = from that higher low to the highest high before the signal';
+    if (p.structure === 'show') return head + engineWords(p) + ' - shown on every trade, nothing left out.';
+    // the CHoCH sentences say the same of the BOS move
+    var chochPart = structWords(Object.assign({}, p, { setup: 'choch' }));
+    var rest = chochPart.slice(chochPart.indexOf('. Only signals where ') + 2);
+    return head + engineWords(p) + '. ' + evWords(rest, p);
   }
 
   function idxName(n) { return String(n || '').replace(/_/g, ' '); }
@@ -408,11 +445,12 @@
       F.num(p.stopBuf, 2) + '% below ' + (patRun && (p.stop === 'zone' || p.stop === 'lower') ? 'the pattern\'s low (the lowest point of its candles)' :
         patRun && p.stop === 'spring' ? 'the signal candle\'s low' :
         p.stop === 'zone' ? 'the zone bottom' : p.stop === 'spring' ? 'the Spring candle\'s low' :
-        p.stop === 'final' ? 'the CHoCH\'s final low (LL - no live CHoCH = no trade)' : 'the zone bottom or the Spring low, whichever is lower')) +
+        p.stop === 'final' ? (p.setup === 'bos' && p.structure !== 'off' ? 'the BOS move\'s higher low (HL - no live BOS = no trade)' : 'the CHoCH\'s final low (LL - no live CHoCH = no trade)') :
+        'the zone bottom or the Spring low, whichever is lower')) +
       (Number(p.stopAtr) ? ', or ' + F.num(p.stopAtr, 1) + ' x ATR(14) under the entry - whichever is lower (the wider stop)' : '') +
       (p.maxRisk ? ' - trades risking more than ' + F.num(p.maxRisk, 1) + '% are skipped' : '') + '.');
     var tgt = p.targetMode === 'swing' ? 'the last swing high (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' :
-      p.targetMode === 'mh' ? 'the CHoCH move high - HH (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' :
+      p.targetMode === 'mh' ? 'the ' + (p.setup === 'bos' && p.structure !== 'off' ? 'BOS' : 'CHoCH') + ' move high - HH (at least ' + F.num(p.swingMinR, 2) + 'R above the entry - none = no trade)' :
         p.targetMode === 'pct' ? F.num(p.targetPct, 1) + '% above the entry' : F.num(p.targetR, 2) + 'R';
     var part = Number(p.partialPct) && p.after !== 'fixed' ? Number(p.partialPct) : 0;
     if (Number(p.beAt)) s.push('Before the target: once price is ' + F.num(p.beAt, 1) + 'R up, move the stop to the entry.');
@@ -524,7 +562,11 @@
   function structHtml(f) {
     var on = f.structure !== 'off', only = f.structure === 'only';
     return '<div class="form-grid">' + field('Market structure', sel('structure', f.structure), 'wide') +
-      (on ? field('A swing high / low', sel('pivotN', f.pivotN)) + field('Lower highs and lower lows before the CHoCH', sel('downN', f.downN)) +
+      (on ? field('Setup', sel('setup', f.setup), 'wide') +
+        (f.setup === 'bos' ? field('Which BOS', sel('bosKind', f.bosKind), 'wide') +
+          (f.bosKind !== 'first' ? field('Higher highs and higher lows (a running up-trend)', sel('upN', f.upN)) : '') : '') +
+        field('A swing high / low', sel('pivotN', f.pivotN)) +
+        (f.setup !== 'bos' || f.bosKind !== 'trend' ? field('Lower highs and lower lows before the CHoCH', sel('downN', f.downN)) : '') +
         (only ? field('The zone formed', sel('zoneWhen', f.zoneWhen)) + field('The signal came', sel('chochAge', f.chochAge)) +
           field('Two discount zones in the move', sel('zonePick', f.zonePick), 'wide') +
           (f.group === 'touch' ? '<div class="field lab-checks">' + check('touchAgain', f.touchAgain, 'A zone price touched before the CHoCH (while the rise was forming) counts again after it') + '</div>' : '') +
@@ -547,6 +589,8 @@
       'The move = from the CHoCH\'s final low to the highest high before the signal candle (what you draw the Fibonacci on at that moment): 50% down = its middle. ' +
       '"Show it on every trade" keeps every signal and adds a table "By market structure" to the result. ' +
       'ZigZag / "stand out by" / protected high / equal highs are other ways to find the swings and the CHoCH - try one at a time against the usual. ' +
+      'BOS + FVG: the same rules on a BOS move - from the higher low before the break to the highest high since; the setup is over at a close under that higher low ' +
+      'or at the next BOS. "The CHoCH" in the boxes above means the BOS then. ' +
       'The daily scan\'s lists use the values set on your laptop with <b>ChochRules.bat</b>.</p>';
   }
 
@@ -655,13 +699,13 @@
 
   function quickHtml(f) {
     var isOn = function (q) {
-      var set = q.id === 'smc' ? SMC : q.set;
+      var set = quickSet(q.id);
       return Object.keys(set).every(function (k) { return String(f[k]) === String(set[k]); });
     };
     return '<div class="lab-recs lab-quick">' + QUICK.map(function (q) {
       var on = isOn(q);
       return '<div class="lab-rec' + (on ? ' on' : '') + '"><b>' + esc(q.name) + '</b><span>' + esc(q.why) + '</span>' +
-        '<button class="btn sm" type="button" data-quick="' + q.id + '"' + (q.id === 'smc' ? ' id="lab-smc"' : '') + '>' + (on ? 'In use' : 'Use this') + '</button></div>';
+        '<button class="btn sm" type="button" data-quick="' + q.id + '"' + (q.id === 'smc' ? ' id="lab-smc"' : q.id === 'bos' ? ' id="lab-bos"' : '') + '>' + (on ? 'In use' : 'Use this') + '</button></div>';
     }).join('') + '</div>';
   }
 
@@ -884,7 +928,7 @@
     var why = res.structWhy || {}, keys = Object.keys(why).filter(function (k) { return why[k]; });
     if (!keys.length) return '';
     return '<p class="note">Market structure: left out - ' + keys.sort(function (a, b) { return why[b] - why[a]; })
-      .map(function (k) { return F.int(why[k]) + ' ' + (STRUCT_WHY[k] || k); }).join('; ') + '.</p>';
+      .map(function (k) { return F.int(why[k]) + ' ' + evWords(STRUCT_WHY[k] || k, res.params); }).join('; ') + '.</p>';
   }
 
   /** With hard Spring rules on: how many Springs each rule left out (the first rule a Spring failed), and a plain
@@ -1143,7 +1187,7 @@
       new ui.Table({
         rows: res.stages, pageSize: 10, id: 'lab-stages', tools: false,
         columns: [
-          { key: 'stage', label: 'Where the signal sat', html: function (r) { var x = STAGE[r.stage] || [r.name, '']; return ui.badge(x[0], x[1]) + ' <span class="sub">' + esc(r.name) + '</span>'; } },
+          { key: 'stage', label: 'Where the signal sat', html: function (r) { var x = stageOf(r.stage, res.params) || [r.name, '']; return ui.badge(x[0], x[1]) + ' <span class="sub">' + esc(r.name) + '</span>'; } },
           { key: 'trades', label: 'Trades', type: 'num', digits: 0 }, { key: 'winPct', label: 'Win %', type: 'num', digits: 1 },
           { key: 'avgR', label: 'Avg R', type: 'num', digits: 2, html: function (r) { return '<span class="' + tone(r.avgR) + '">' + r2(r.avgR) + '</span>'; } },
           { key: 'medR', label: 'Median R', type: 'num', digits: 2 }, { key: 'totalR', label: 'Total R', type: 'num', digits: 1 },
@@ -1163,10 +1207,10 @@
         { key: 'sym', label: 'Stock', type: 'sym' },
         { key: 'signal', label: 'Signal candle' },
         { key: 'zone', label: 'Zone', get: function (r) { return r.zone + (r.where ? ' · ' + r.where : ''); } },
-        { key: 'stage', label: 'Structure', get: function (r) { return r.stage ? (STAGE[r.stage] || [r.stage])[0] : ''; },
+        { key: 'stage', label: 'Structure', get: function (r) { return r.stage ? (stageOf(r.stage, res.params) || [r.stage])[0] : ''; },
           html: function (r) {
             if (!r.stage) return '';
-            var x = STAGE[r.stage] || [r.stage, ''];
+            var x = stageOf(r.stage, res.params) || [r.stage, ''];
             return r.struct ? '<span class="lab-acct" tabindex="0" data-tip="' + esc(r.struct) + '">' + ui.badge(x[0], x[1]) + '</span>' : ui.badge(x[0], x[1]);
           }, title: 'Market structure at the signal (hover / tap for the CHoCH level, its date, the final low, the move high, the zone\'s place in the move and the BOS)' },
         { key: 'entry', label: 'Entry', type: 'num', digits: 2 }, { key: 'stop', label: 'Stop', type: 'num', digits: 2 },
@@ -1363,7 +1407,7 @@
       var q = e.target.closest && e.target.closest('[data-quick]');
       if (q) {
         var qq = QUICK.filter(function (x) { return x.id === q.getAttribute('data-quick'); })[0];
-        saveForm(Object.assign(readForm(el), qq.id === 'smc' ? SMC : qq.set));
+        saveForm(Object.assign(readForm(el), quickSet(qq.id)));
         SB.route(true);
         return;
       }

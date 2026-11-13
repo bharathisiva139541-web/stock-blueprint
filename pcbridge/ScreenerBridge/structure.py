@@ -32,6 +32,9 @@ choice in the Backtest Lab next to the frozen baseline above; every option at it
  - eq (E5, equal highs / lows): a high within eq x ATR(14) of the one before is not a LOWER high (the same for lows).
  - sweeps (E5): `sweep[k]` = the final low of CHoCH k went under the swing low before it and CLOSED back above it (a sweep
    of the sell-side liquidity, not a breakdown).
+BOS SETUPS (owner, 13-Nov-2026 - bos_events): a BOS = a close above the last confirmed swing high when that high was a
+HIGHER high and the pullback since it a HIGHER low; the BOS move runs from that higher low to the highest high since it;
+'first' = the first BOS after a CHoCH (the CHoCH not dead before it), 'trend' = the others (a continuing up-trend).
 Pure Python (no numpy). A Structure keeps only its events and swing highs (small), not the candles: the checks that look
 at the candles after a CHoCH (dead / BOS) take the closes as an argument and go forward only as far as asked.
 """
@@ -197,12 +200,103 @@ def choch_events(h, l, c, n, ph=None, pl=None, opts=None, pts=None):
     return ev
 
 
+def bos_events(h, l, c, n, opts=None, pts=None, chochs=None, kind='both', down_n=1, up_n=1):
+    """BOS events (owner, 13-Nov-2026: "Shall we track BOS setup like this. like FVG Zone at discount level in the BOS move
+    ... It can be a continuous BOS in uptrend. or BOS formed after Choch") -> ([b, hi, lvl, li, lf, d], ...), [ck, ...]) in
+    time order, on the same alternating swings as choch_events: b = the candle that CLOSED above the last confirmed swing
+    high hi (price lvl) where that swing high was a HIGHER high (above the swing high before it) and the pullback since it
+    made a HIGHER low - li / lf = the lowest low between hi and b (the "higher low", where the BOS move starts; the setup is
+    dead from a close under it), d = how many higher highs / higher lows in a row ended there (the smaller count). A break
+    of a LOWER high is a CHoCH (choch_events) - never a BOS. ck[x] = the index (in `chochs`) of the CHoCH whose up-trend
+    this BOS is the FIRST of (the first BOS after a CHoCH with >= down_n lower highs / lows, the CHoCH not dead before it),
+    else -1. kind: 'first' = only those, 'trend' = only the others (continuation BOS with >= up_n higher highs / lows),
+    'both' = every BOS. opts / pts: as choch_events (the equal-highs tolerance counts here too)."""
+    o = opts or {}
+    if pts is None:
+        pts = swing_points(h, l, c, n, o)
+    if chochs is None:
+        chochs = choch_events(h, l, c, n, opts=o, pts=pts)
+    conf, atr = pts['conf'], pts['atr']
+    eq = float(o.get('eq') or 0)
+
+    def tol(k):
+        return eq * atr[sw[k][0]] if eq else 0.0
+    sw, used, ev = [], set(), []
+    for i in range(len(c)):
+        for p, is_h in sorted(conf.get(i, ())):
+            if is_h:
+                if sw and sw[-1][2]:
+                    if h[p] > sw[-1][1]:
+                        sw[-1] = [p, h[p], True]
+                else:
+                    sw.append([p, h[p], True])
+            else:
+                if sw and not sw[-1][2]:
+                    if l[p] < sw[-1][1]:
+                        sw[-1] = [p, l[p], False]
+                else:
+                    sw.append([p, l[p], False])
+        if not sw:
+            continue
+        q = len(sw) - 1 if sw[-1][2] else len(sw) - 2
+        if q < 2:
+            continue
+        hi, lvl = sw[q][0], sw[q][1]
+        if not c[i] > lvl or hi in used:
+            continue
+        used.add(hi)
+        seg = l[hi + 1:i + 1]
+        if not len(seg):
+            continue
+        lf = min(seg)
+        li = hi + 1 + list(seg).index(lf)
+        if not (lvl > sw[q - 2][1] + tol(q) and lf > sw[q - 1][1] + tol(q - 1)):
+            continue                      # not a higher high after a higher low: no BOS (a lower high broken = a CHoCH)
+        du, k = 0, q
+        while k - 2 >= 0 and sw[k][1] > sw[k - 2][1] + tol(k):
+            du += 1
+            k -= 2
+        dl, prev, k = 0, lf, q - 1
+        while k >= 0 and prev > sw[k][1] + tol(k):
+            dl += 1
+            prev = sw[k][1]
+            k -= 2
+        ev.append([i, hi, lvl, li, lf, max(1, min(du, dl))])
+    # which CHoCH's up-trend each BOS is the first of
+    cks, last = [], {}
+    order = [e[0] for e in chochs]
+    for e in ev:
+        b = e[0]
+        k = bisect.bisect_left(order, b) - 1      # the latest CHoCH before it (a newer weak CHoCH = its own trend)
+        ck = -1
+        if k >= 0:
+            cb, clf = chochs[k][0], chochs[k][4]
+            if chochs[k][5] >= down_n and last.get(k) is None and not any(c[j] < clf for j in range(cb + 1, b)):
+                ck = k
+            last[k] = b
+        cks.append(ck)
+    out, outk = [], []
+    for e, ck in zip(ev, cks):
+        if kind == 'first' and ck < 0:
+            continue
+        if kind == 'trend' and (ck >= 0 or e[5] < up_n):
+            continue
+        if kind == 'both' and ck < 0 and e[5] < up_n:
+            continue
+        out.append(e)
+        outk.append(ck)
+    return out, outk
+
+
 class Structure:
     """The structure of one candle series (see the module text). events[k] = [b, hi, lvl, li, lf, d]; `opts` = the options
-    of the module text (none = the baseline)."""
-    __slots__ = ('n', 'ph', 'phv', 'phc', 'pl', 'plv', 'plc', 'events', 'bs', 'st', 'sweep')
+    of the module text (none = the baseline). setup {'kind': 'bos', 'bos': 'first' | 'trend' | 'both', 'downN', 'upN'}
+    (13-Nov-2026): the events are the BOS events of bos_events instead of the CHoCHs (the same judge / dead / next-BOS /
+    move-high rules then work on the BOS move: from its higher low to the high); ck[k] = the CHoCH (chev index) a 'first'
+    BOS belongs to, else -1. chev = the CHoCH events either way."""
+    __slots__ = ('n', 'ph', 'phv', 'phc', 'pl', 'plv', 'plc', 'events', 'bs', 'st', 'sweep', 'bos', 'ck', 'chev')
 
-    def __init__(self, h, l, c, n=5, opts=None):
+    def __init__(self, h, l, c, n=5, opts=None, setup=None):
         self.n = n
         pts = swing_points(h, l, c, n, opts)
         ph, pl = pts['ph'], pts['pl']
@@ -212,7 +306,13 @@ class Structure:
         self.pl = array.array('i', pl)
         self.plv = array.array('d', [l[p] for p in pl])
         self.plc = array.array('i', pts['plc'])
-        self.events = choch_events(h, l, c, n, opts=opts, pts=pts)
+        self.chev = choch_events(h, l, c, n, opts=opts, pts=pts)
+        if setup and setup.get('kind') == 'bos':
+            self.bos = setup.get('bos') or 'both'
+            self.events, self.ck = bos_events(h, l, c, n, opts, pts, self.chev, self.bos, setup.get('downN', 1), setup.get('upN', 1))
+        else:
+            self.bos, self.ck = None, None
+            self.events = self.chev
         self.bs = array.array('i', [e[0] for e in self.events])
         # sweeps: the final low went under the swing low before the CHoCH's swing high and closed back above it
         self.sweep = []
@@ -270,7 +370,10 @@ class Structure:
         return s[3]
 
     def active(self, i, down_n):
-        """The index of the latest CHoCH before candle i with at least down_n lower highs / lows (-1 = none)."""
+        """The index of the latest CHoCH before candle i with at least down_n lower highs / lows (-1 = none). A BOS
+        structure: the latest BOS event before i (they were chosen when it was made - down_n is not used)."""
+        if self.bos:
+            down_n = 1
         k = bisect.bisect_left(self.bs, i) - 1
         while k >= 0:
             if self.events[k][5] >= down_n:
@@ -382,3 +485,8 @@ STAGE_NAMES = {'none': 'No CHoCH before it', 'old': 'Zone older than the CHoCH l
                'above': 'At / above the CHoCH level', 'below': 'Below the CHoCH level, first pullback',
                'disc': 'In the discount part of the move (under the Fib line), first pullback - your setup',
                'prem': 'In the premium part of the move (above the Fib line)'}
+BOS_STAGE_NAMES = {'none': 'No BOS before it', 'old': 'Zone older than the BOS move\'s higher low',
+                   'bos': 'After the next BOS (already moved)', 'above': 'At / above the BOS level',
+                   'below': 'Below the BOS level, first pullback',
+                   'disc': 'In the discount part of the BOS move (under the Fib line), first pullback - your setup',
+                   'prem': 'In the premium part of the BOS move (above the Fib line)'}

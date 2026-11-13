@@ -219,6 +219,13 @@ DEFAULTS = {
     'patCtx': 'any',
     # phase 3 (13-Nov-2026): the swing size of the structure / SMC patterns (P / S / V09 V10 / M17) - candles each side
     'patSwing': 5,
+    # BOS + FVG SETUPS (owner, 13-Nov-2026: "Shall we track BOS setup like this. like FVG Zone at discount level in the BOS
+    # move ... It can be a continuous BOS in uptrend. or BOS formed after Choch"; "yes. implement all you recommendations"):
+    # setup 'choch' (the CHoCH + FVG setup) / 'bos' = every structure rule above works on the BOS move instead - from the
+    # BOS's higher low (where the setup dies on a close under it) to its high, the zone under the BOS level / its Fib line,
+    # the first pullback = before the next BOS (structure.bos_events); bosKind 'first' = the first BOS after a CHoCH (that
+    # CHoCH with >= downN lower highs / lows) / 'trend' = the later ones of an up-trend (>= upN higher highs / lows) / 'both'
+    'setup': 'choch', 'bosKind': 'both', 'upN': 1,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -251,6 +258,7 @@ CHOICES = {
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
     'pattern': tuple(pattern_registry.implemented()), 'patCtx': ('any', 'down'),
+    'setup': ('choch', 'bos'), 'bosKind': ('first', 'trend', 'both'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -271,7 +279,7 @@ LIMITS = {   # key: (min, max, integer)
     'stopAtr': (0, 10, False), 'targetPct': (1, 1000, False), 'partialPct': (0, 90, False), 'beAt': (0, 20, False),
     'timeN': (0, 1000, True), 'timeR': (0.1, 20, False),
     'engBody': (0, 10, False), 'boBuf': (0, 20, False), 'boVol': (0, 20, False), 'rsiN': (2, 50, True), 'divPivot': (2, 20, True),
-    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True),
+    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True), 'upN': (1, 8, True),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -1230,7 +1238,7 @@ def summarise(trades, P, skips, meta, secs):
             if not ts and not n_open:
                 continue
             s = _stats(ts)
-            stages.append({'stage': key, 'name': structure.STAGE_NAMES[key], 'trades': s['trades'], 'open': n_open,
+            stages.append({'stage': key, 'name': (structure.BOS_STAGE_NAMES if P.get('setup') == 'bos' else structure.STAGE_NAMES)[key], 'trades': s['trades'], 'open': n_open,
                            'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'), 'totalR': s.get('totalR'),
                            'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')})
     zone_name = ZONE_NAMES
@@ -1482,11 +1490,13 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
     sopts = struct_opts(P)
+    ssetup = struct_setup(P)
+    dn = setup_down(P)
     trail_on = P['after'] == 'trail'
     final_stop = P['stop'] == 'final'
     again_on = P['touchAgain'] and smode == 'only' and P['group'] == 'touch'
     mh_tgt = P['targetMode'] == 'mh'
-    smap = (_struct_map(d, tf, P['pivotN'], sopts) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
+    smap = (_struct_map(d, tf, P['pivotN'], sopts, ssetup) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
             or final_stop or mh_tgt else None)
     PC = dict(P, entry='close') if P['fibPat'] != 'off' else P      # Fib + pattern rows: bought at the pattern candle's close
     wk_index = (meta['index'].get('W') or {}) if P['wkAbove'] and tf != 'W' else None
@@ -1517,7 +1527,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
             if smap is not None:
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
+                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts, ssetup)
             atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
                    if (trail_on and P['trail'] == 'atr') or P['stopAtr'] else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
@@ -1525,14 +1535,14 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
             again = None
             if again_on and st is not None:
                 # a zone touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
-                again = st.rearm.get(P['downN'])
+                again = st.rearm.get(dn)
                 if again is None:
                     zk = sorted(((x[1], int(x[8])), int(x[8]), x[2], x[3], x[0], x[1] == 'Y') for x in sigs[sym]
                                 if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0)
                     zk.sort(key=lambda z: z[1])
                     lows_, his_ = [_f(x) for x in cs.l], [_f(x) for x in cs.h]       # the prices as the cache rows have them
-                    again = st.rearm[P['downN']] = rearm_touches(
-                        st.s.events, P['downN'], zk, lows_, [_f(x) for x in cs.c],
+                    again = st.rearm[dn] = rearm_touches(
+                        st.s.events, dn, zk, lows_, [_f(x) for x in cs.c],
                         lambda j: lows_[j] > 0 and (his_[j] - lows_[j]) / lows_[j] * 100 <= LOCK_PCT)
                 if again:
                     byk = {(x[1], int(x[8])): x for x in sigs[sym] if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0}
@@ -1760,7 +1770,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
         tf = P['tf']
         index = meta['index'].get(tf) or {}
         sopts = struct_opts(P)
-        smap = _struct_map(d, tf, P['pivotN'], sopts)
+        ssetup = struct_setup(P)
+        smap = _struct_map(d, tf, P['pivotN'], sopts, ssetup)
         lens = ema_lens(P)
         done = 0
         with open(os.path.join(d, tf + '.bin'), 'rb') as f:
@@ -1770,7 +1781,7 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                 cs = Candles(f, index[sym][0], index[sym][1])
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
+                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts, ssetup)
                 extra = {'seq': LC.swing_seq(st.s),     # the run's own swings (fractal / ATR / ZigZag) as the structure saw them
                          'atr': structure.atr_series(cs.h, cs.l, cs.c)}
                 emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens} or None
@@ -1804,8 +1815,8 @@ class _Struct:
     """A stock's Structure + the candle count it was made from (a new cache build = new candles)."""
     __slots__ = ('s', 'size', 'rearm')
 
-    def __init__(self, cs, n, opts=None):
-        self.s = structure.Structure(cs.h, cs.l, cs.c, n, opts or None)
+    def __init__(self, cs, n, opts=None, setup=None):
+        self.s = structure.Structure(cs.h, cs.l, cs.c, n, opts or None, setup)
         self.size = cs.n
         self.rearm = {}                 # {down_n: rearm_touches' map} (touchAgain)
 
@@ -1823,6 +1834,19 @@ def struct_opts(P):
     if P['eqAtr']:
         o['eq'] = P['eqAtr']
     return o
+
+
+def struct_setup(P):
+    """The structure's setup (structure.Structure): None = the CHoCH events; a BOS run -> {'kind': 'bos', 'bos', 'downN',
+    'upN'} (13-Nov-2026)."""
+    if P.get('setup') != 'bos':
+        return None
+    return {'kind': 'bos', 'bos': P.get('bosKind') or 'both', 'downN': P.get('downN', 3), 'upN': P.get('upN', 1)}
+
+
+def setup_down(P):
+    """The down_n a run hands the structure: the CHoCH's lower highs / lows - a BOS structure chose its events already."""
+    return 1 if P.get('setup') == 'bos' else P['downN']
 
 
 def struct_more(s, sj, cs, i, P):
@@ -1985,10 +2009,10 @@ def week_filter(fw, idx, n):
     return ok
 
 
-def _struct_map(d, tf, n, opts=None):
-    """{sym: _Struct} kept while the program runs (the same cache build, timeframe, swing size and structure options) - the
-    first run with market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
-    key = (d, tf, n, tuple(sorted((opts or {}).items())))
+def _struct_map(d, tf, n, opts=None, setup=None):
+    """{sym: _Struct} kept while the program runs (the same cache build, timeframe, swing size, structure options and setup)
+    - the first run with market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
+    key = (d, tf, n, tuple(sorted((opts or {}).items())), tuple(sorted((setup or {}).items())))
     if _STRUCT['key'] != key:
         _STRUCT['key'], _STRUCT['map'] = key, {}
     return _STRUCT['map']
@@ -2047,8 +2071,15 @@ def struct_text(s, sj, cs, tf, P=None):
     if sj['k'] < 0:
         return ''
     b, hi, lvl, li, lf, dd = s.events[sj['k']]
-    txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f on %s)' % (
-        _f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
+    if s.bos:
+        ck = s.ck[sj['k']]
+        how = ('the 1st BOS after the CHoCH of %s' % _label(tf, cs.day[s.chev[ck][0]], cs.minute[s.chev[ck][0]]) if ck >= 0 else
+               '%d higher high%s / low%s' % (dd, '' if dd == 1 else 's', '' if dd == 1 else 's'))
+        txt = 'BOS %.2f on %s (%s, higher low %.2f on %s)' % (
+            _f(lvl), _label(tf, cs.day[b], cs.minute[b]), how, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
+    else:
+        txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f on %s)' % (
+            _f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
     if sj.get('H') is not None:
         txt += ' · move high %.2f' % _f(sj['H'])
         if sj.get('depth') is not None:
@@ -2060,7 +2091,7 @@ def struct_text(s, sj, cs, tf, P=None):
     if not sj['first']:
         k = s.st.get(sj['k'])
         if k and k[5] >= 0:
-            txt += ' · BOS on %s' % _label(tf, cs.day[k[5]], cs.minute[k[5]])
+            txt += ' · %sBOS on %s' % ('next ' if s.bos else '', _label(tf, cs.day[k[5]], cs.minute[k[5]]))
     return txt
 
 
