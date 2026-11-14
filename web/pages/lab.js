@@ -76,7 +76,7 @@
     // the lower-timeframe confirmation (owner, 13-Nov-2026: "If any Choch has happened inside the Zone in 15 min, then i decided to
     // buy"; my recommendations: 3 candles a swing, 2 lower highs / lows, wait 5 candles, buy at its close, stop under its final low)
     // - off by default (= backtest_lab ltf...)
-    ltf: 'off', ltfPivot: 3, ltfDown: 2, ltfWait: 5, ltfUnder: 0.5, ltfEntry: 'close', ltfStop: 'ltf',
+    ltf: 'off', ltfPivot: 3, ltfDown: 2, ltfWait: 5, ltfUnder: 0.5, ltfEntry: 'close', ltfStop: 'ltf', ltfNear: 2,
     // the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also")
     ltfChoch: 'last'
   };
@@ -99,7 +99,7 @@
     ['shape', 'Spring candle shape', null],
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
     ['zone', 'Zone rules - size, Gap-up zone inside, Fib + pattern, dark cloud', ['zoneMin', 'zoneMax', 'gapEntry', 'fibPat', 'fibLevel', 'fibTol', 'darkCloud']],
-    ['ltf', 'Confirmation on a lower timeframe - a small CHoCH in the zone (15m / 1H / daily)', ['ltf', 'ltfPivot', 'ltfDown', 'ltfChoch', 'ltfWait', 'ltfUnder', 'ltfEntry', 'ltfStop']],
+    ['ltf', 'Confirmation on a lower timeframe - a small CHoCH in the zone (15m / 1H / daily)', ['ltf', 'ltfPivot', 'ltfDown', 'ltfChoch', 'ltfWait', 'ltfUnder', 'ltfEntry', 'ltfNear', 'ltfStop']],
     ['entry', 'Entry details', ['entry', 'maxRisk', 'whereIn', 'from', 'to', 'minPrice', 'minTurnover', 'maxTouch']],
     ['exit', 'Exit details - part at the target, stop to entry, time stop', ['partialPct', 'beAt', 'timeN', 'timeR', 'breakeven', 'lockTarget', 'maxDays', 'cost']],
     ['money', 'Money details', ['maxPosPct', 'maxOpen', 'compound']],
@@ -168,6 +168,9 @@
     ltfEntry: [['close', 'At the small CHoCH candle\'s close'], ['fvg', 'An order at the top of the small FVG of its move (retest)'],
       ['smart', 'Smart: CHoCH in the zone → its close; above the zone → the small FVG top, else the 50% line (retest)']],
     ltfStop: [['ltf', 'Under the small final low (the stop buffer above)'], ['rule', 'The stop loss chosen above (e.g. under the zone)']],
+    ltfNear: [[0, 'At / under the zone top only (in the zone)'], [0.5, 'At most 0.5% above the zone top'], [1, 'At most 1% above the zone top'],
+      [2, 'At most 2% above the zone top'], [3, 'At most 3% above the zone top'], [5, 'At most 5% above the zone top'],
+      [10, 'At most 10% above the zone top'], [100, 'Any distance above the zone']],
     ltfChoch: [['last', 'Above the last small swing high (usual)'], ['protected', 'Above the protected high - the small swing high right before the lowest low']],
     pivotN: [[2, '2 candles each side'], [3, '3 candles each side'], [5, '5 candles each side'], [8, '8 candles each side'], [10, '10 candles each side']],
     downN: [[1, 'At least 1'], [2, 'At least 2'], [3, 'At least 3'], [4, 'At least 4'], [5, 'At least 5']],
@@ -242,7 +245,7 @@
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
     'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears',
-    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN', 'upN', 'ltfPivot', 'ltfDown', 'ltfWait', 'ltfUnder'];
+    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN', 'upN', 'ltfPivot', 'ltfDown', 'ltfWait', 'ltfUnder', 'ltfNear'];
   // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
   var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
     bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level',
@@ -413,7 +416,7 @@
     if (p.ltfEntry === 'smart') {
       return 'Confirmation on the ' + (LTF_NAME[p.ltf] || p.ltf) + ' chart: after the signal, wait up to ' + p.ltfWait + ' ' + tfw + ' candle' + (Number(p.ltfWait) === 1 ? '' : 's') +
         ' for a CHoCH there (swings of ' + p.ltfPivot + ' candles, at least ' + p.ltfDown + ' lower highs and lower lows' + (p.ltfChoch === 'protected' ? ', a close above the protected high' : '') +
-        '; its final low anywhere). Smart buy: its level at / under the ' +
+        '; its final low anywhere; its line ' + nearWords(p.ltfNear) + '). Smart buy: its level at / under the ' +
         'zone top → at its close; above the zone → an order at the top of its highest small FVG, else at the 50% line of its move. Stop: a buy above the zone → a little under ' +
         'the small final low, in the zone → as set above. The order is cancelled when a ' + tfw + ' closes under the zone, and missed when price reaches the target first.';
     }
@@ -424,6 +427,13 @@
       (p.ltfEntry === 'fvg' ? 'with an order at the top of the small FVG of that move when price comes back to it' : 'at the close of that CHoCH candle') +
       '; stop ' + (p.ltfStop === 'rule' ? 'as set above' : 'a little under that small final low') + '. No small CHoCH in time, or a ' + tfw +
       ' close under the zone first = no trade.';
+  }
+
+  /** The Smart entry's limit on the small CHoCH line (owner, 14-Nov-2026). */
+  function nearWords(v) {
+    var n = Number(v);
+    if (!isFinite(n) || n >= 100) return 'any distance above the zone';
+    return n ? 'at most ' + pc(n) + '% above the zone top' : 'at / under the zone top';
   }
 
   function idxName(n) { return String(n || '').replace(/_/g, ' '); }
@@ -707,10 +717,12 @@
       (on ? field('A swing on it', sel('ltfPivot', f.ltfPivot)) + field('Lower highs and lower lows before its CHoCH', sel('ltfDown', f.ltfDown)) +
         field('The small CHoCH closes', sel('ltfChoch', f.ltfChoch), 'wide') +
         field('Wait at most', sel('ltfWait', f.ltfWait)) + (f.ltfEntry === 'smart' ? '' : field('Its final low', sel('ltfUnder', f.ltfUnder), 'wide')) +
-        field('Buy', sel('ltfEntry', f.ltfEntry), 'wide') + (f.ltfEntry === 'smart' ? '' : field('Stop loss', sel('ltfStop', f.ltfStop), 'wide')) : '') + '</div>' +
+        field('Buy', sel('ltfEntry', f.ltfEntry), 'wide') +
+        (f.ltfEntry === 'smart' ? field('The small CHoCH line', sel('ltfNear', f.ltfNear), 'wide') : field('Stop loss', sel('ltfStop', f.ltfStop), 'wide')) : '') + '</div>' +
       (on && f.ltfEntry === 'smart' ? '<p class="note" id="lab-smart-note"><b>Smart buy:</b> the small CHoCH\'s level (the small high it broke) at / under the zone top → buy at its close. ' +
         'Above the zone → no chasing: an order at the top of the highest small FVG of its move, or - no small FVG - at the 50% line of that move (its final low to its high, ' +
-        'fixed at the CHoCH). Its final low may be anywhere. The order waits to the end of "Wait at most"; a candle of your chart closing under the zone cancels it; ' +
+        'fixed at the CHoCH). Its final low may be anywhere, but its line must sit just above the zone (' + esc(nearWords(f.ltfNear)) + ') - ' +
+        'a small CHoCH after a big rally is passed over and a later one may still come. The order waits to the end of "Wait at most"; a candle of your chart closing under the zone cancels it; ' +
         'the target reached first = missed. Stop: a buy above the zone → under the small final low; a buy in the zone → your stop (under the zone). ' +
         'Target: your R on that stop.</p>' : '') +
       (on && noZone ? '<p class="note warn">The confirmation needs a zone (FVG / Gap-up): pick a zone pattern above - "' + esc(choiceLabel('group', f.group)) + '" has none.</p>' : '') +
@@ -1054,7 +1066,7 @@
   var RSEC_OPEN = ['ltf', 'split', 'bd', 'trades'];
   var LTF_WHY = { ltfnone: 'no small CHoCH in the zone in time', ltfbroke: 'a candle of the chart closed under the zone first',
     ltfnofvg: 'no small FVG in the move (FVG entry)', ltfnofill: 'the order was not reached in time (no retest)',
-    ltfmissed: 'missed - the target came before the retest', other: 'another rule' };
+    ltfmissed: 'missed - the target came before the retest', ltffar: 'the small CHoCH came too far above the zone', other: 'another rule' };
   var LTF_HOW = { close: 'In the zone - its close', fvg: 'Above - small FVG top', half: 'Above - 50% line' };
   var SETUP_NAME = { choch: 'CHoCH + FVG', bos: 'BOS + FVG' };
   /** With vs without the lower-timeframe confirmation on the same signals (owner, 13-Nov-2026). */

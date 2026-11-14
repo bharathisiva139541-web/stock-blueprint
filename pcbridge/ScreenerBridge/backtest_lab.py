@@ -258,6 +258,12 @@ DEFAULTS = {
     # ltfChoch 'last' = a close above the last small swing high / 'protected' = above the swing high right before the lowest
     # swing low (structure.py's protected CHoCH, like the chart's chochMode)
     'ltfChoch': 'last',
+    # the Smart entry's small CHoCH line close to the zone (owner, 14-Nov-2026, PCJEWELLER: the 15-minute CHoCH came after a
+    # big rally far above the daily zone and the order sat there - "above the Zone does not mean too much above ... small
+    # Choch line should have just above the higher timeframe Zone, within 2% (it can be controllable)"): its level at most
+    # ltfNear % above the zone top (0 = at / under the top only, 100 = any distance); a CHoCH further up is passed over and a
+    # later one in the window may still come ('ltffar' when none does)
+    'ltfNear': 2,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -314,6 +320,7 @@ LIMITS = {   # key: (min, max, integer)
     'engBody': (0, 10, False), 'boBuf': (0, 20, False), 'boVol': (0, 20, False), 'rsiN': (2, 50, True), 'divPivot': (2, 20, True),
     'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True), 'upN': (1, 8, True),
     'ltfPivot': (2, 10, True), 'ltfDown': (1, 6, True), 'ltfWait': (1, 30, True), 'ltfUnder': (0, 100, False),
+    'ltfNear': (0, 100, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -1074,7 +1081,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
 LTF_RANK = {'15m': 1, '1H': 2, '4H': 3, 'D': 4, 'W': 5}
 PROGRESS_EVERY_S = 60          # a run tells the sheet how far it is at least this often (the page's "laptop" badge stays fresh)
 LTF_NAMES = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}
-LTF_WHY = ('ltfnone', 'ltfbroke', 'ltfnofvg', 'ltfnofill', 'ltfdata', 'ltfnotyet', 'ltfmissed')
+LTF_WHY = ('ltfnone', 'ltfbroke', 'ltfnofvg', 'ltfnofill', 'ltfdata', 'ltfnotyet', 'ltfmissed', 'ltffar')
 LTF_HOW = ('close', 'fvg', 'half')      # the Smart entry: the CHoCH in the zone at its close / the small FVG top / the 50% line
 _LTF_MEMO = {'key': None, 'map': {}}
 
@@ -1173,7 +1180,7 @@ class _Remap:
         self.plc = [mp(x) for x in st.plc]
 
 
-def ltf_text(P, lt, ev, cs, i, jj, kind, fvg, order=None, low_stop=None):
+def ltf_text(P, lt, ev, cs, i, jj, kind, fvg, order=None, low_stop=None, zt=None):
     """'15m CHoCH 2025-04-14 11:30 above 145.20 (2 lower highs / lows, final low 143.10 at 2025-04-14 10:45) · bought at its
     close · 1 candle after the signal' (the trades list). The Smart entry says which of its three ways it took and where the
     stop went (low_stop True = under the small final low)."""
@@ -1183,9 +1190,10 @@ def ltf_text(P, lt, ev, cs, i, jj, kind, fvg, order=None, low_stop=None):
     txt = '%s CHoCH %s above %.2f%s (%d lower highs / lows, final low %.2f at %s)' % (
         P['ltf'], lab(int(b)), _f(lvl), ' (protected high)' if P.get('ltfChoch') == 'protected' else '', int(d), _f(lf), lab(int(li)))
     if P.get('ltfEntry') == 'smart':
+        above = ' (%.1f%% above it)' % ((_f(lvl) / _f(zt) - 1) * 100) if zt and kind != 'close' else ''
         txt += {'close': ' · its level in the zone - bought at its close',
-                'fvg': ' · above the zone - bought at its FVG top %.2f (retest)' % _f(order or 0),
-                'half': ' · above the zone, no small FVG - bought at the 50%% line %.2f of its move (retest)' % _f(order or 0)}[kind]
+                'fvg': ' · above the zone%s - bought at its FVG top %.2f (retest)' % (above, _f(order or 0)),
+                'half': ' · above the zone%s, no small FVG - bought at the 50%% line %.2f of its move (retest)' % (above, _f(order or 0))}[kind]
         txt += ' · stop under the small final low' if low_stop else ' · stop under the zone (your stop rule)'
     else:
         txt += ' · bought at its close' if kind == 'close' else ' · bought at its FVG top %.2f (retest)' % _f(fvg[1])
@@ -1211,9 +1219,10 @@ def ltf_find(cs, i, zb, zt, P, lt, events):
     """The small CHoCH that confirms a signal on candle i of the chart cs (timeframe P['tf']) in the zone zb .. zt (zb = the
     bottom the stop sits under): the first CHoCH event of lt (`events` = structure.choch_events of the small candles, the run's
     ltfPivot) in the time of candles i .. i + ltfWait - 1, with >= ltfDown lower highs / lows, its final low formed from the
-    signal candle on, at / under the zone top and at most ltfUnder % under its bottom, no candle of the chart closing under
-    the zone before the one it is in -> (event, jj = the chart's candle it is in, None) or (None, None, reason: 'ltfdata' /
-    'ltfnone' / 'ltfbroke' / 'ltfnotyet'). Used by the Backtest Lab (ltf_trade) and the daily scan (kite_intraday)."""
+    signal candle on, at / under the zone top and at most ltfUnder % under its bottom (the Smart entry: anywhere, but its
+    level at most ltfNear % above the zone top), no candle of the chart closing under the zone before the one it is in ->
+    (event, jj = the chart's candle it is in, None) or (None, None, reason: 'ltfdata' / 'ltfnone' / 'ltfbroke' /
+    'ltfnotyet' / 'ltffar'). Used by the Backtest Lab (ltf_trade) and the daily scan (kite_intraday)."""
     tf = P['tf']
     w0 = htf_span(tf, cs.day[i], cs.minute[i])[0]
     jw = min(cs.n - 1, i + P['ltfWait'] - 1)
@@ -1226,13 +1235,18 @@ def ltf_find(cs, i, zb, zt, P, lt, events):
     z = _first_at(lt, w1)
     floor = zb * (1 - P['ltfUnder'] / 100.0) if P['ltfUnder'] < 100 else -1e18
     anywhere = P.get('ltfEntry') == 'smart'      # the Smart entry: the small final low may be anywhere (owner, 14-Nov-2026)
+    near = float(P.get('ltfNear', 100) if anywhere else 100)
+    cap = _f(zt) * (1 + near / 100.0) if near < 100 else None     # ... but its CHoCH line close to the zone top
     k = bisect.bisect_left([e[0] for e in events], a)
-    hit = None
+    hit, far = None, False
     while k < len(events) and events[k][0] < z:
         e = events[k]
         if e[5] >= P['ltfDown'] and e[3] >= a and (anywhere or (_f(e[4]) <= zt + 1e-9 and _f(e[4]) >= floor - 1e-9)):
-            hit = e
-            break
+            if cap is not None and _f(e[2]) > cap + 1e-9:
+                far = True                       # too far above the zone - a later one may still come
+            else:
+                hit = e
+                break
         k += 1
     if hit is None:
         broke = any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jw + 1))
@@ -1240,7 +1254,7 @@ def ltf_find(cs, i, zb, zt, P, lt, events):
             return None, None, 'ltfbroke'
         if z >= lt.n or i + P['ltfWait'] - 1 >= cs.n:
             return None, None, 'ltfnotyet'
-        return None, None, 'ltfnone'
+        return None, None, 'ltffar' if far else 'ltfnone'
     jj = chart_candle(cs, i, tf, lt, int(hit[0]))
     if any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jj)):
         return None, None, 'ltfbroke'            # a candle of the chart closed under the zone before the small CHoCH
@@ -1325,13 +1339,14 @@ def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, low
         jx = t['jx']
         t['jx'] = jj if jx < m else jj + 1 + (jx - m)
         t['sigDay'], t['sigMin'] = cs.day[i], cs.minute[i]
-        t['ltf'] = ltf_text(P, lt, hit, cs, i, jj, kind, fvg, order, low_stop)
+        t['ltf'] = ltf_text(P, lt, hit, cs, i, jj, kind, fvg, order, low_stop, zt)
         t['ltfWait'] = jj - i
         t['lx'] = {'tf': P['ltf'], 'b': b, 'li': li, 'lvl': _f(hit[2]), 'lf': lf, 'hi': int(hit[1]), 'd': int(hit[5]), 'e': e0, 'jj': jj,
                    'fvg': list(fvg) if fvg else None}
         if smart:
             t['ltfHow'] = kind
             t['lx']['how'], t['lx']['order'], t['lx']['lowStop'] = kind, order, bool(low_stop)
+            t['lx']['zt'], t['lx']['near'] = _f(zt), P.get('ltfNear', 100)
             if kind == 'half':
                 t['lx']['half'] = [lf, half_hi]
         return t, None
