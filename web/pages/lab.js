@@ -688,7 +688,7 @@
       '<p class="sub">Instead of buying when price touches the zone, the backtest waits for a <b>small CHoCH</b> on the smaller chart: price falls into the zone in lower ' +
       'highs and lower lows, makes its final low in the zone, then closes above its last swing high - the buy comes then. No CHoCH in time, or a candle of your ' +
       'chart closing under the zone first = no trade. Every signal is also traded without it, and the result compares both. The laptop keeps 1-hour candles ' +
-      '~5 years and 15-minute ones as far back as Kite gives (<b>KiteHistoryNow.bat</b> reads them once; <b>KiteDepthCheck.bat</b> shows how far).</p>';
+      'and 15-minute candles as far back as Kite gives, up to 20 years (<b>KiteHistoryNow.bat</b> reads them once; <b>KiteDepthCheck.bat</b> shows how far).</p>';
   }
 
   function entryHtml(f) {
@@ -770,7 +770,7 @@
     var changed = SECTIONS.reduce(function (n, x) { return n + sectionOn(f, x[0]); }, 0);
     return '<section class="card lab-form" id="lab-form"><div class="card-head"><div><h2>Your rules</h2><p>1 · pick a ready setup, 2 · check the basics, ' +
       '3 · press ▶ Run. Everything else is optional under <b>More rules</b>. Kept on this device; your laptop runs it on its Kite candles ' +
-      '(daily ~20 years, 4 hour ~5 years).</p></div><div class="actions"><a class="btn sm" href="docs/Backtest-Lab-Guide.pdf" target="_blank" rel="noopener">📘 Guide (PDF)</a></div></div>' +
+      '(daily ~20 years, 4 hour as far back as Kite gives - up to 20 years).</p></div><div class="actions"><a class="btn sm" href="docs/Backtest-Lab-Guide.pdf" target="_blank" rel="noopener">📘 Guide (PDF)</a></div></div>' +
       '<h3 class="lab-h">1 · Start from a ready setup</h3>' + quickHtml(f) +
       '<h3 class="lab-h">2 · The basics</h3><div class="form-grid">' +
       field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +

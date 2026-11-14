@@ -32,7 +32,7 @@ computer is on - no time limit:
  - IntradayNow.bat         the Kite intraday / weekly / monthly pattern scan right now (opens the login page if needed)
  - IntradayCheck.bat       one stock's Spring check on Kite's candles, e.g. PARAGMILK 4H (sends nothing)
  - BacktestNow.bat         the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1R-5R) on the Kite candles already here -> the sheet (no login)
- - KiteHistoryNow.bat      read Kite's long history (daily ~20 years, 4H and 1-hour ~5 years, 15-minute as far as Kite gives) for the backtest all at once, then the backtest
+ - KiteHistoryNow.bat      read Kite's long history (daily ~20 years; 4H, 1-hour and 15-minute as far as Kite gives, up to 20 years) for the backtest all at once, then the backtest
  - KiteDepthCheck.bat      how many years of 15-minute / 1-hour candles Kite gives (RELIANCE, TCS, INFY or the stocks you type; nothing stored)
  - LiveNow.bat             Kite LIVE prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
  - bridge.log       what it did (open with Notepad)
@@ -81,10 +81,11 @@ Rs 500 a month, live + historical data) this program also looks at 15m / 30m / 1
     The numbers go to the sheet's "Spring Backtest" + "Spring Backtest Trades" tabs and the website (Patterns & FVG >
     FVG+Spring backtest); bridge.log shows one line per timeframe ("Kite backtest ..."). BacktestNow.bat runs only the
     backtest, on the candles already here - no Kite login needed.
-    LONG HISTORY: daily candles back ~20 years (or to the listing day) and 4H back ~5 years (built from Kite's
-    60-minute candles) are read once and kept here (folder intraday_data, about 250 MB) - the sheet never gets them,
-    only the summary, so the sheet is not loaded by it. The daily scan reads this history a part a day (20 minutes);
-    KiteHistoryNow.bat reads all of it at once (the first time about 2 hours; a line every 25 stocks with
+    LONG HISTORY: daily candles back ~20 years (or to the listing day) and 4H as far back as Kite gives - up to 20
+    years (built from Kite's 60-minute candles; 14-Nov-2026, was ~5 years) are read once and kept here (folder
+    intraday_data) - the sheet never gets them, only the summary, so the sheet is not loaded by it. The daily scan
+    reads this history a part a day (20 minutes); KiteHistoryNow.bat reads all of it at once (the first time several
+    hours with the 1-hour / 15-minute candles; a line every 25 stocks with
     the time left), then runs the backtest. Stopped half-way? Run it again - the stocks already read are kept.
  - The candles are kept in the folder intraday_data (only the new days are read after the first time); the day's
    Kite permission in kite_session.json. Both stay on this computer.
@@ -426,7 +427,9 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
     candles of your chart) for a CHoCH on the 15-minute / 1-hour chart (daily for a weekly run) with its final low in the zone,
     and buys then (its close, or the retest of its small FVG), stop under that small final low. The result has a table "With vs
     without the confirmation" on the same signals; the charts PDF gets a 3rd page per trade with the small chart.
-  * The 1-hour / 15-minute candles live in intraday_data\ltf (one file a stock - about 2 GB for 5 years of 15-minute candles).
+  * The 1-hour / 15-minute candles live in intraday_data\ltf (one file a stock - about 370 MB a year of candles for 1,800 stocks;
+    14-Nov-2026: as far back as Kite gives, up to 20 years - your KiteDepthCheck showed at least 10 years = about 4 GB).
+    A history read before with 5.5 years is only extended backwards (the older part), not read again.
     Run KiteHistoryNow.bat once (a few hours - it carries on where it stopped); the daily scan also adds them a part a day and
     keeps them up to date. KiteDepthCheck.bat shows how far back Kite gives them. config.json "ltf_history": false = off.
   * Daily scan: new rows "BOS + FVG" and "15m CHoCH in zone" (the 15-minute CHoCH after a daily CHoCH / BOS + FVG touch, within

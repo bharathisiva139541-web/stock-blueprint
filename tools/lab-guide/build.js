@@ -128,7 +128,7 @@ function html() {
       ['Its final low', 'சிறிய final low zone-க்குள் (அல்லது bottom-க்கு 0.5% கீழே வரை).'],
       ['Buy · Stop loss', 'சிறிய CHoCH candle close-இல் (அல்லது அதன் சிறிய FVG retest-இல்); stop சிறிய final low-க்குக் கீழே (அல்லது மேலே தேர்ந்த stop).']]) +
     img('10b-ltf', 'முடிவில் "With vs without": அதே signals-இல் உறுதிப்படுத்தலுடன் vs இல்லாமல் - எது சிறந்தது என்று எண்களில்.') +
-    list(['சிறிய chart-இன் candles laptop-இல்: 1-hour ~5 வருடம், 15-minute Kite தரும் வரை. **KiteHistoryNow.bat** ஒரு முறை (சில மணி நேரம்); **KiteDepthCheck.bat** = Kite எத்தனை வருடம் தருகிறது.',
+    list(['சிறிய chart-இன் candles laptop-இல்: 1-hour, 15-minute இரண்டும் Kite தரும் வரை (20 வருடம் வரை; Kite குறைந்தது 10 வருடம் தருகிறது). **KiteHistoryNow.bat** ஒரு முறை (சில மணி நேரம்); **KiteDepthCheck.bat** = Kite எத்தனை வருடம் தருகிறது.',
       'அதற்கு முன் வந்த பழைய signals ஒப்பீட்டில் சேராது ("older signals left out").',
       'Charts PDF-இல் ஒவ்வொரு trade-க்கும் 3-வது பக்கம்: சிறிய chart, zone, சிறிய CHoCH, BUY, stop.',
       'Daily scan-உம் இதைக் காட்டும்: Patterns & FVG → CHoCH + FVG setups → **BOS + FVG** மற்றும் **15m CHoCH in zone** rows.'])));

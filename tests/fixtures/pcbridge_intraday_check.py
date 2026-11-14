@@ -696,13 +696,14 @@ try:
     assert len(days) == 4 and days[0][2] == '2026-11-04', (len(days), days[:2])      # listed 2015: 3 chunks of ~5.5 years, then none
     assert st2['day'][0][0] == '2015-03-02' and st2['day'][-1][0] == '2026-11-06' and st2['deep']['day'] == '2026-11-06'
     h60 = [c for c in HCALLS if c[0] == '60minute']
-    assert h60 and h60[0][2] == '2026-11-04' and min(c[1] for c in h60) == (up - timedelta(days=K.DEEP_H4_DAYS)).isoformat(), h60[:2]
+    # (14-Nov-2026: as far back as Kite gives, up to 20 years - the read stops at the chunk before the listing, which answers nothing)
+    assert h60 and h60[0][2] == '2026-11-04' and min(c[1] for c in h60) < '2015-03-02' and st2['h4'][0][0] == '2015-03-02 09:15', h60[-2:]
     h4 = K.timeframe_candles(st2, '4H')
     ts = [c['t'] for c in h4]
     assert len(ts) == len(set(ts)) and ts == sorted(ts) and ts[-1] == '2026-11-06 13:15' and ts[-4:-2] == ['2026-11-05 09:15', '2026-11-05 13:15']
     first = [c for c in h4 if c['t'][:10] == '2026-11-04']
     assert [c['t'][11:] for c in first] == ['09:15', '13:15'] and first[0]['h'] == 112 and first[1]['h'] == 115, first
-    assert K.store_load('DEEP')['deep'] == {'day': '2026-11-06', 'h4': '2026-11-06'}
+    assert K.store_load('DEEP')['deep'] == {'day': '2026-11-06', 'h4': '2026-11-06', 'h4d': K.DEEP_H4_DAYS}
     HCALLS.clear()
     assert K.deep_fill_symbol(NOLTF, {}, 'DEEP', 1, up, K.store_load('DEEP'))[1] == 0 and not HCALLS, 'read once'
     # deep_fill: only the stocks without it, within the time allowed
@@ -777,9 +778,11 @@ try:
     LCALLS.clear()
     st = {'v': 1, 'sym': 'LTF', 'm15': m15, 'day': [['2026-11-02', 100, 101, 99, 100, 1], ['2026-11-06', 100, 101, 99, 100, 1]], 'h4': []}
     st2, n = K.deep_fill_symbol({}, {}, 'LTF', 7, up, st)
-    assert st2['deep'] == {'day': '2026-11-06', 'h1': '2026-11-06', 'm15': '2026-11-06', 'h4': '2026-11-06'}, st2['deep']
+    assert st2['deep'] == {'day': '2026-11-06', 'h1': '2026-11-06', 'm15': '2026-11-06', 'h4': '2026-11-06', 'h1d': K.DEEP_H1_DAYS,
+                           'm15d': K.DEEP_M15_DAYS, 'h4d': K.DEEP_H4_DAYS}, st2['deep']
     h60 = [c for c in LCALLS if c[0] == '60minute']
-    assert h60[0][2] == '2026-11-01' and min(c[1] for c in h60) == (up - timedelta(days=K.DEEP_H1_DAYS)).isoformat(), 'back DEEP_H1_DAYS'
+    assert h60[0][2] == '2026-11-01' and min(c[1] for c in h60) < '2020-01-01', 'back to Kite\'s first 60-minute candle (here 2020-01-01)'
+    assert K.DEEP_H1_DAYS == K.DEEP_M15_DAYS == K.DEEP_H4_DAYS == 7305, 'up to 20 years (owner, 14-Nov-2026)'
     assert len(h60) == len({c[1] for c in h60}), 'the 4H history came from the same 60-minute candles (read once)'
     q15 = [c for c in LCALLS if c[0] == '15minute']
     assert all((date.fromisoformat(c[2]) - date.fromisoformat(c[1])).days <= 200 for c in q15), 'Kite: 200 days a request'
@@ -787,7 +790,7 @@ try:
     D = K.ltf_dir()
     s1, s15 = T.read(D, 'LTF', '1H'), T.read(D, 'LTF', '15m')
     r1, r15 = T.rows_of(s1), T.rows_of(s15)
-    assert r1[0][0] == '%s 09:15' % (up - timedelta(days=K.DEEP_H1_DAYS) + timedelta(days=(7 - (up - timedelta(days=K.DEEP_H1_DAYS)).weekday()) % 7 if (up - timedelta(days=K.DEEP_H1_DAYS)).weekday() >= 5 else 0)).isoformat(), r1[0]
+    assert r1[0][0] == '2020-01-01 09:15', r1[0]
     assert r15[0][0] == '2022-03-01 09:15' and r15[-1][0] == '2026-11-06 15:15' and len(r15) == len({r[0] for r in r15})
     assert [r[0][11:] for r in r1 if r[0][:10] == '2026-11-06'] == ['09:15', '10:15', '11:15', '12:15', '13:15', '14:15', '15:15'], 'the stored days as 1-hour candles'
     h11 = [r for r in r1 if r[0] == '2026-11-06 10:15'][0]
@@ -816,6 +819,38 @@ try:
     K.store_save('LTF', s6)
     K.update_symbol({}, {}, 'LTF', 7, date(2026, 11, 10))
     assert not os.path.exists(T.path(D, 'LTF', '1H')) and K.store_load('LTF')['deep'] == {}, 'read again'
+    # a history read with the earlier 2000 days (no '<kind>d' marks): only the older part is read - the 1-hour file and the 4H
+    # history go back to Kite's first 60-minute candle; the 15-minute file started after the old limit (Kite had nothing older)
+    old_lim = up - timedelta(days=K.DEEP_ASKED_BEFORE)
+    h1_old = fake_ltf({}, {}, 1, '60minute', datetime.combine(old_lim + timedelta(days=1), datetime.min.time()), datetime(2026, 11, 6, 15, 30))
+    m15_old = fake_ltf({}, {}, 1, '15minute', datetime(2022, 3, 1), datetime(2026, 11, 6, 15, 30))
+    T.write(D, 'OLD', '1H', h1_old)
+    T.write(D, 'OLD', '15m', m15_old)
+    K.store_save('OLD', {'v': 1, 'sym': 'OLD', 'm15': m15[-25:], 'day': [['2026-11-06', 100, 101, 99, 100, 1]], 'h4': K.h4_rows(h1_old),
+                         'deep': {'day': '2026-11-06', 'h1': '2026-11-06', 'm15': '2026-11-06', 'h4': '2026-11-06'}})
+    assert not K.deep_complete(K.store_load('OLD')['deep'], {})
+    LCALLS.clear()
+    so, n = K.deep_fill_symbol({}, {}, 'OLD', 9, up)
+    assert n and all(c[0] == '60minute' and c[2] <= old_lim.isoformat() for c in LCALLS), LCALLS
+    assert T.rows_of(T.read(D, 'OLD', '1H'))[0][0] == '2020-01-01 09:15' and T.read(D, 'OLD', '1H').n == len(T.rows_of(T.read(D, 'OLD', '1H')))
+    assert so['h4'][0][0] == '2020-01-01 09:15' and so['h4'][-1][0][:10] == '2026-11-06', 'the 4H history extended with the older 1-hour candles'
+    assert (so['deep']['h1d'], so['deep']['m15d'], so['deep']['h4d']) == (7305, 7305, 7305) and K.deep_complete(so['deep'], {})
+    assert T.rows_of(T.read(D, 'OLD', '15m'))[0][0] == '2022-03-01 09:15', '15-minute: nothing older on Kite - not read again'
+    LCALLS.clear()
+    assert K.deep_fill_symbol({}, {}, 'OLD', 9, up, K.store_load('OLD'))[1] == 0 and not LCALLS, 'extended once'
+    # KiteDepthCheck (14-Nov-2026: up to 20 years): each year asked once a timeframe, the answer = the farthest year with candles
+    orig_es, orig_inst, orig_sleep = K.ensure_session, K.instruments, K.time.sleep
+    K.ensure_session, K.instruments = (lambda cfg: {'access_token': 'x'}), (lambda cfg, sess, d: {'RELIANCE': 5, 'TCS': 6, 'INFY': 7})
+    K.time.sleep = lambda s: None
+    LCALLS.clear()
+    outd = []
+    try:
+        assert K.ltf_depth({}, (), outd.append, now=datetime(2026, 11, 14, 9, 0)) == 0
+    finally:
+        K.ensure_session, K.instruments, K.time.sleep = orig_es, orig_inst, orig_sleep
+    assert len(LCALLS) == 3 * 2 * len(K.DEPTH_YEARS) and max(K.DEPTH_YEARS) == 20
+    assert 'Kite gives 15-minute candles back about 3 years.' in outd and 'Kite gives 1-hour candles back about 5 years.' in outd, outd[-4:]
+    assert outd[-1].startswith('This program keeps them as far back as Kite gives, up to 20 years'), outd[-1]
     # off in config.json: nothing made
     st7 = {'v': 1, 'sym': 'OFF', 'm15': m15, 'day': [['2026-11-06', 100, 101, 99, 100, 1]], 'h4': []}
     K.deep_fill_symbol({'ltf_history': False}, {}, 'OFF', 8, up, st7)
