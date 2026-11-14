@@ -34,6 +34,8 @@ computer is on - no time limit:
  - BacktestNow.bat         the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1R-5R) on the Kite candles already here -> the sheet (no login)
  - KiteHistoryNow.bat      read Kite's long history (daily ~20 years; 4H, 1-hour and 15-minute as far as Kite gives, up to 20 years) for the backtest all at once, then the backtest
  - KiteDepthCheck.bat      how many years of 15-minute / 1-hour candles Kite gives (RELIANCE, TCS, INFY or the stocks you type; nothing stored)
+ - MoveDataToD.bat         keeps the big Kite / Backtest Lab data (intraday_data, lab_cache, lab_charts) on another drive
+                            (Enter = D:\StockBlueprintData) and moves it there - see DATA ON THE D: DRIVE below
  - LiveNow.bat             Kite LIVE prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -345,7 +347,8 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
  - Charts PDF (12-Nov-2026): with every Backtest Lab run this computer also makes ONE PDF with a chart page for every trade
    (the losing ones first, newest first; then the rest; then the open ones): the candles, swing highs / lows, the CHoCH
    level + final low, the Fib (discount) line, the BOS, the FVG / Gap-up zone, the entry / stop / target lines, the BUY
-   and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file); the newest 20 PDFs are
+   and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file - or in the data folder
+   of MoveDataToD.bat, e.g. D:\StockBlueprintData\lab_charts); the newest 20 PDFs are
    kept. The Lab page shows the file name with each run. config "lab_charts": false = off.
    Two pages a trade (12-Nov-2026): page 1 = the chart with every swing marked HH / HL / LH / LL (each high / low against
    the one before), CHoCH, final low, move high, BOS, the FVG / Gap-up zone, BUY and the exit - the words are put where
@@ -428,7 +431,8 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
     and buys then (its close, or the retest of its small FVG), stop under that small final low. The result has a table "With vs
     without the confirmation" on the same signals; the charts PDF gets a 3rd page per trade with the small chart.
   * The 1-hour / 15-minute candles live in intraday_data\ltf (one file a stock - about 370 MB a year of candles for 1,800 stocks;
-    14-Nov-2026: as far back as Kite gives, up to 20 years - your KiteDepthCheck showed at least 10 years = about 4 GB).
+    14-Nov-2026: as far back as Kite gives, up to 20 years - your KiteDepthCheck of 14-Nov-2026 showed 10 years for both
+    (12 years = no) = about 4 GB).
     A history read before with 5.5 years is only extended backwards (the older part), not read again.
     Run KiteHistoryNow.bat once (a few hours - it carries on where it stopped); the daily scan also adds them a part a day and
     keeps them up to date. KiteDepthCheck.bat shows how far back Kite gives them. config.json "ltf_history": false = off.
@@ -461,3 +465,15 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
  - "skipped" in the trade list: hover (or tap on a phone) to see why - too many trades open at once, one share
    costing more than your position limit, one share risking more than your risk per trade, or the account ran out.
  - A check without the website: python screener_bridge.py lab   (or: lab W / lab 4H) - the default rules, nothing sent.
+
+DATA ON THE D: DRIVE (14-Nov-2026)
+ - Your words: "yes i want the datas to be in D drive. apo than c drive la konjam spaces irukum".
+ - MoveDataToD.bat asks for the folder (press Enter = D:\StockBlueprintData; type HERE = back to this folder), checks the
+   drive and its free space, saves it in config.json ("data_folder") and moves intraday_data, lab_cache and lab_charts
+   there. The program files, config.json, bridge.log and the small state files stay here.
+ - While the background program runs, the data is not moved from the window: sign out of Windows and sign in again -
+   the background program moves the data FIRST (bridge.log: "Moving the Kite / Backtest Lab data ..." every 30 seconds,
+   then "Data folder: moved ..."), then everything goes on from the new folder.
+ - The move is file by file: a sign-out or power cut in the middle loses nothing - the next start moves the rest. A move
+   that fails (disk full ...) puts the moved files back and keeps the old folder.
+ - data_place.json (here) says where the data is now; TestConnection line 9 says "data folder: ...".

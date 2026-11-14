@@ -965,10 +965,12 @@
     if (!pdf) return '';
     if (pdf.error) return '<p class="note warn">The charts PDF could not be made on your laptop: ' + esc(pdf.error) + '</p>';
     if (!pdf.file) return '';
-    return '<p class="note lab-pdf">📄 <b>Charts PDF on your laptop</b> - two pages for every trade (the chart with HH / HL / LH / LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended) - the losing ones first: <code>ScreenerBridge\\' +
-      esc(pdf.folder || 'lab_charts') + '\\' + esc(pdf.file) + '</code> - ' + F.int(pdf.pages) + ' pages' +
+    // pdf.path = the folder's full path (14-Nov-2026: the data may sit on the D: drive - MoveDataToD.bat)
+    var where = pdf.path ? String(pdf.path) : 'ScreenerBridge\\' + (pdf.folder || 'lab_charts');
+    return '<p class="note lab-pdf">📄 <b>Charts PDF on your laptop</b> - two pages for every trade (the chart with HH / HL / LH / LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended) - the losing ones first: <code>' +
+      esc(where) + '\\' + esc(pdf.file) + '</code> - ' + F.int(pdf.pages) + ' pages' +
       (pdf.shown < pdf.trades ? ' (the first ' + F.int(pdf.shown) + ' of ' + F.int(pdf.trades) + ' trades)' : '') +
-      '. On the laptop: File Explorer → the ScreenerBridge folder → <b>lab_charts</b> (the newest 20 PDFs are kept).</p>';
+      '. On the laptop: File Explorer → <b>' + esc(where) + '</b> (the newest 20 PDFs are kept).</p>';
   }
 
   /** With market structure 'only': how many signals each structure rule left out (the first one they failed). */

@@ -2148,7 +2148,7 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
         raise
     LC.tidy(folder)
     log('Backtest Lab: charts PDF %s (%d pages) in %s' % (fname, pages, folder))
-    return {'file': fname, 'folder': LC.FOLDER, 'pages': pages, 'trades': len(trades), 'shown': len(shown)}
+    return {'file': fname, 'folder': LC.FOLDER, 'path': os.path.abspath(folder), 'pages': pages, 'trades': len(trades), 'shown': len(shown)}
 
 
 # ------------------------------------------------------------------ market structure (structure.py) in a run

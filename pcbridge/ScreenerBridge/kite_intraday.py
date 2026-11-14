@@ -3148,7 +3148,8 @@ def status_line(cfg):
                                    ('%s - %s stocks, %s pattern(s)' % (last.get('at'), last.get('stocks'), last.get('found')))
                                    if last else 'none yet')) + (
         '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '') + (
-        '; lower-timeframe history: ' + ltf_status() if ltf_on(cfg) else '')
+        '; lower-timeframe history: ' + ltf_status() if ltf_on(cfg) else '') + (
+        '; data folder: ' + os.path.dirname(DATA_DIR) if not os.path.normcase(os.path.dirname(DATA_DIR)) == os.path.normcase(HERE) else '')
 
 
 class Runner:

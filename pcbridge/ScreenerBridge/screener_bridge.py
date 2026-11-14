@@ -68,6 +68,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py kitedepth [SYMBOL ...]  how many years of 15-minute / 1-hour candles Kite gives (a check, nothing stored)
   python screener_bridge.py lab [D|W|4H]  the Backtest Lab with its default rules on this computer (a check; the website's page sends its own)
   python screener_bridge.py live       Kite live prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
+  python screener_bridge.py datafolder [FOLDER]  keep the big Kite / Backtest Lab data in another folder (D:\\StockBlueprintData) and move it there
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -156,6 +157,7 @@ if HERE not in sys.path:
 import kite_intraday as itd   # noqa: E402  (Zerodha Kite: intraday / weekly / monthly patterns)
 itd.log = log
 itd.backtest_lab.log = log
+import data_place as DP       # noqa: E402  (owner, 14-Nov-2026: the big data on the D: drive)
 
 
 def nse_holidays():
@@ -3821,20 +3823,26 @@ def loop_sleep(seconds):
     time.sleep(seconds)
 
 
-def loop_claim():
-    """One background program per log-in: False when another one is running (alive, since this computer started, its
-    bridge_loop.json touched in the last LOOP_STALE_S); else this one takes the file over and keeps it fresh."""
-    import threading
+def loop_running():
+    """True while ANOTHER background program runs (alive, since this computer started, its bridge_loop.json touched in
+    the last LOOP_STALE_S)."""
     try:
         with open(LOOP_PATH, 'r', encoding='utf-8') as f:
             info = json.load(f)
         pid, boot, now_boot = info.get('pid'), info.get('boot'), _boot_time()
         same_boot = isinstance(boot, (int, float)) and bool(now_boot) and abs(boot - now_boot) <= 120
         fresh = time.time() - os.path.getmtime(LOOP_PATH) < LOOP_STALE_S
-        if pid and str(pid) != str(os.getpid()) and same_boot and fresh and _pid_alive(pid):
-            return False
+        return bool(pid and str(pid) != str(os.getpid()) and same_boot and fresh and _pid_alive(pid))
     except (OSError, ValueError, AttributeError, TypeError):
-        pass
+        return False
+
+
+def loop_claim():
+    """One background program per log-in: False when another one is running (loop_running); else this one takes
+    bridge_loop.json over and keeps it fresh."""
+    import threading
+    if loop_running():
+        return False
     try:
         with open(LOOP_PATH, 'w', encoding='utf-8') as f:
             json.dump({'pid': os.getpid(), 'boot': _boot_time(), 'started': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, f)
@@ -3852,6 +3860,82 @@ def loop_claim():
     return True
 
 
+def use_data_place(cfg):
+    """The program's big folders -> where the data is now (data_place.py). -> (that place, the wanted place when a move
+    is still waiting else None)."""
+    base, pending = DP.current(cfg, HERE)
+    DP.apply(base, itd)
+    return base, pending
+
+
+def data_start(cfg):
+    """The background program's start: config.json's data_folder differs from where the data is -> moved now (log lines
+    every 30 s), then the folders point there; a failed move keeps the old place (tried again at the next start)."""
+    base, pending = use_data_place(cfg)
+    if not pending:
+        return base
+    ok, words = DP.move(HERE, base, pending, out=log)
+    log(('Data folder: %s.' if ok else 'Data folder: NOT moved - %s.') % words)
+    return use_data_place(cfg)[0]
+
+
+DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab')    # the commands that read / write the big data
+
+
+def cmd_datafolder(cfg, args=(), ask=input, out=print):
+    """MoveDataToD.bat (owner, 14-Nov-2026: "yes i want the datas to be in D drive. apo than c drive la konjam spaces
+    irukum"): asks the folder (Enter = the one in config.json, else D:\\StockBlueprintData; HERE = back to the ScreenerBridge
+    folder), checks the drive and its free space, saves config.json `data_folder` and moves the data at once - or, while
+    the background program runs, at its next start (sign out of Windows and in again)."""
+    busy = DP.moving(HERE, _pid_alive)
+    if busy:
+        out('The data is being moved right now (to %s) - wait for it to finish (bridge.log).' % busy.get('dst'))
+        return 1
+    now = DP.place(HERE)
+    files, size = DP.size_of(now)
+    out('The Kite / Backtest Lab data (intraday_data, lab_cache, lab_charts) is now in:')
+    out('   %s  (%s, %d files)' % (now, DP.gb(size), files))
+    free = DP.free_bytes(now)
+    if free is not None:
+        out('   that drive has %s free' % DP.gb(free))
+    default = str(cfg.get('data_folder') or '').strip() or DP.DEFAULT_FOLDER
+    if args:
+        ans = ' '.join(args)
+    else:
+        ans = ask('Folder for the data (Enter = %s; type HERE = back to the ScreenerBridge folder): ' % default)
+    ans = (ans or '').strip().strip('"').strip()
+    target = os.path.abspath(HERE if ans.upper() == 'HERE' else (ans or default))
+    if DP.same(target, now):
+        cfg['data_folder'] = '' if DP.same(target, HERE) else target
+        save_config(cfg)
+        out('The data is already in %s - nothing to move.' % target)
+        return 0
+    why = DP.check_target(target, size)
+    if why:
+        out('PROBLEM - %s. Nothing was changed.' % why)
+        return 1
+    left = DP.free_bytes(target)
+    cfg['data_folder'] = '' if DP.same(target, HERE) else target
+    save_config(cfg)
+    out('Saved in config.json: the data is kept in %s.' % target)
+    if left is not None and left < size + DP.GROWTH_BYTES:
+        out('Note: %s has %s free - KiteHistoryNow.bat may add up to %s more.' % (target, DP.gb(left), DP.gb(DP.GROWTH_BYTES)))
+    if not DP.has_data(now):
+        DP.set_place(HERE, target)
+        out('There was no data to move - everything new goes to %s.' % target)
+        return 0
+    if loop_running():
+        out('')
+        out('The background program is running now, so the data is not moved from this window. Sign out of Windows and')
+        out('sign in again: the program moves the data FIRST (about %d minutes for %s - bridge.log shows "Moving ..."),'
+            % (max(1, round(size / (60 * 60.0 * 1024 ** 2))), DP.gb(size)))
+        out('then everything goes on as before, from the new folder.')
+        return 0
+    ok, words = DP.move(HERE, now, target, out=out)
+    out(('Done - %s.' if ok else 'PROBLEM - %s.') % words)
+    return 0 if ok else 1
+
+
 def run_after_login(cfg):
     """Started at every Windows log-in (the Startup folder) and stays in the background while the computer is on (owner,
     02-Nov-2026: "no time limit"): a full round at once, another SECOND_RUN_AFTER_MIN later and then every
@@ -3861,6 +3945,7 @@ def run_after_login(cfg):
     if not loop_claim():
         log('The background program is already running - this copy stops.')
         return 0
+    data_start(cfg)     # the big data to config.json's data_folder first, before any thread reads it (MoveDataToD.bat)
     quick_s = max(0.0, float(cfg.get('quick_check_minutes') or 0)) * 60
     every_s = max(0.0, float(cfg.get('full_round_every_hours') or 0)) * 3600
     fulls, next_full, next_quick, offline = 0, time.time(), None, False
@@ -4002,6 +4087,17 @@ def cmd_setup(cfg):
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else 'run'
     cfg = load_config()
+    if cmd == 'datafolder':
+        return cmd_datafolder(cfg, argv[2:])
+    if cmd != 'login':          # (the background program moves the data itself at its start - data_start)
+        base, pending = use_data_place(cfg)
+        busy = DP.moving(HERE, _pid_alive)
+        if cmd in DATA_CMDS and busy:
+            print('The Kite data is being moved to %s right now - try again in a few minutes, when bridge.log says it is done.'
+                  % busy.get('dst'))
+            return 1
+        if cmd in DATA_CMDS and pending:
+            print('(The Kite data is still in %s - it moves to %s the next time you sign in to Windows.)' % (base, pending))
     if cmd == 'setup':
         return cmd_setup(cfg)
     if cmd == 'run':
@@ -4114,7 +4210,7 @@ def main(argv):
                                        charts=itd.backtest_lab.CHARTS_DIR, name='Default rules ' + tf)
         print(itd.backtest_lab.headline(res) + ' (%.1f s)' % res['secs'])
         if (res.get('pdf') or {}).get('file'):
-            print('Charts PDF: lab_charts\\%s (%d pages)' % (res['pdf']['file'], res['pdf']['pages']))
+            print('Charts PDF: %s (%d pages)' % (os.path.join(res['pdf'].get('path') or 'lab_charts', res['pdf']['file']), res['pdf']['pages']))
         return 0
     if cmd == 'intradaycheck':
         print('Kite candle check - Spring / Spring in FVG of one stock (nothing is sent to the sheet)')
