@@ -239,7 +239,20 @@ DEFAULTS = {
     # zone; ltfEntry 'close' = at that CHoCH candle's close / 'fvg' = an order at the top of the small FVG of its move;
     # ltfStop 'ltf' = under its final low (stopBuf %) / 'rule' = the run's own stop. Every signal is also traded without it
     # - the result's 'ltf' compares both on the same signals
+    # SMART ENTRY (owner, 14-Nov-2026: "Zone kulaye lower timeframe Choch nadanthuchuna ... Choch candle close la kooda buy
+    # panalam, stop loss inum namaku narrow aagum. suppose Lowertimeframe choch Zone ku mela nadanthuna ... FVG Zone create
+    # aachuna, we can buy on this top of the Zone (LTF), FVG Zones ethum ilena, 50% retracementla buy panalam"; answers: the
+    # small CHoCH is "in the zone" when its LEVEL (the small swing high it broke) is at / under the zone top; its final low
+    # may be anywhere; several small FVGs -> the highest; the 50% line of the small move = final low .. the highest high up to
+    # the CHoCH candle, fixed then; the order waits to the end of the ltfWait window - cancelled when a candle of the chart
+    # closes under the zone, 'missed' when price reaches the target first (no cancel on a close under the small final low);
+    # stop: an entry above the zone top -> under the small final low, at / in the zone -> the run's own stop (under the zone);
+    # target = R of that stop; no risk cap): ltfEntry 'smart'
     'ltf': 'off', 'ltfPivot': 3, 'ltfDown': 2, 'ltfWait': 5, 'ltfUnder': 0.5, 'ltfEntry': 'close', 'ltfStop': 'ltf',
+    # the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also"):
+    # ltfChoch 'last' = a close above the last small swing high / 'protected' = above the swing high right before the lowest
+    # swing low (structure.py's protected CHoCH, like the chart's chochMode)
+    'ltfChoch': 'last',
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -272,8 +285,8 @@ CHOICES = {
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
     'pattern': tuple(pattern_registry.implemented()), 'patCtx': ('any', 'down'),
-    'setup': ('choch', 'bos'), 'bosKind': ('first', 'trend', 'both'),
-    'ltf': ('off', 'D', '1H', '15m'), 'ltfEntry': ('close', 'fvg'), 'ltfStop': ('ltf', 'rule'),
+    'setup': ('choch', 'bos', 'both'), 'bosKind': ('first', 'trend', 'both'),
+    'ltf': ('off', 'D', '1H', '15m'), 'ltfEntry': ('close', 'fvg', 'smart'), 'ltfStop': ('ltf', 'rule'), 'ltfChoch': ('last', 'protected'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -317,7 +330,7 @@ ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 
 REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR']
+              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow']
 
 
 def _iso_date(s):
@@ -1055,7 +1068,8 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
 # ------------------------------------------------------------------ the lower-timeframe confirmation (owner, 13-Nov-2026)
 LTF_RANK = {'15m': 1, '1H': 2, '4H': 3, 'D': 4, 'W': 5}
 LTF_NAMES = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}
-LTF_WHY = ('ltfnone', 'ltfbroke', 'ltfnofvg', 'ltfnofill', 'ltfdata', 'ltfnotyet')
+LTF_WHY = ('ltfnone', 'ltfbroke', 'ltfnofvg', 'ltfnofill', 'ltfdata', 'ltfnotyet', 'ltfmissed')
+LTF_HOW = ('close', 'fvg', 'half')      # the Smart entry: the CHoCH in the zone at its close / the small FVG top / the 50% line
 _LTF_MEMO = {'key': None, 'map': {}}
 
 
@@ -1077,9 +1091,10 @@ class _LtfSet:
 
     def __init__(self, d, meta, P):
         self.tf, self.n = P['ltf'], P['ltfPivot']
+        self.opts = {'choch': 'protected'} if P.get('ltfChoch') == 'protected' else None
         self.d, self.meta = d, meta
         self.f = open(os.path.join(d, 'D.bin'), 'rb') if self.tf == 'D' else None
-        key = (d if self.tf == 'D' else LTF_DIR, self.tf, self.n)
+        key = (d if self.tf == 'D' else LTF_DIR, self.tf, self.n, P.get('ltfChoch', 'last'))
         if _LTF_MEMO['key'] != key:
             _LTF_MEMO['key'], _LTF_MEMO['map'] = key, {}
         self.memo = _LTF_MEMO['map']
@@ -1101,7 +1116,7 @@ class _LtfSet:
         m = self.memo.get(sym)
         if m is None or m[0] != cs.n or m[1] != cs.day[-1]:
             h, l, c = [_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c]
-            ev = structure.choch_events(h, l, c, self.n)
+            ev = structure.choch_events(h, l, c, self.n, opts=self.opts)
             flat = array.array('d')
             for e in ev:
                 flat.extend(e)
@@ -1152,14 +1167,22 @@ class _Remap:
         self.plc = [mp(x) for x in st.plc]
 
 
-def ltf_text(P, lt, ev, cs, i, jj, kind, fvg):
+def ltf_text(P, lt, ev, cs, i, jj, kind, fvg, order=None, low_stop=None):
     """'15m CHoCH 2025-04-14 11:30 above 145.20 (2 lower highs / lows, final low 143.10 at 2025-04-14 10:45) · bought at its
-    close · 1 candle after the signal' (the trades list)."""
+    close · 1 candle after the signal' (the trades list). The Smart entry says which of its three ways it took and where the
+    stop went (low_stop True = under the small final low)."""
     b, hi, lvl, li, lf, d = ev
     lab = lambda k: '%s %02d:%02d' % ((date.fromordinal(lt.day[k]).isoformat(),) + divmod(lt.minute[k], 60)) if P['ltf'] != 'D' else \
         date.fromordinal(lt.day[k]).isoformat()
-    txt = '%s CHoCH %s above %.2f (%d lower highs / lows, final low %.2f at %s)' % (P['ltf'], lab(int(b)), _f(lvl), int(d), _f(lf), lab(int(li)))
-    txt += ' · bought at its close' if kind == 'close' else ' · bought at its FVG top %.2f (retest)' % _f(fvg[1])
+    txt = '%s CHoCH %s above %.2f%s (%d lower highs / lows, final low %.2f at %s)' % (
+        P['ltf'], lab(int(b)), _f(lvl), ' (protected high)' if P.get('ltfChoch') == 'protected' else '', int(d), _f(lf), lab(int(li)))
+    if P.get('ltfEntry') == 'smart':
+        txt += {'close': ' · its level in the zone - bought at its close',
+                'fvg': ' · above the zone - bought at its FVG top %.2f (retest)' % _f(order or 0),
+                'half': ' · above the zone, no small FVG - bought at the 50%% line %.2f of its move (retest)' % _f(order or 0)}[kind]
+        txt += ' · stop under the small final low' if low_stop else ' · stop under the zone (your stop rule)'
+    else:
+        txt += ' · bought at its close' if kind == 'close' else ' · bought at its FVG top %.2f (retest)' % _f(fvg[1])
     w = jj - i
     return txt + (' · in the signal candle' if w == 0 else ' · %d candle%s after the signal' % (w, '' if w == 1 else 's'))
 
@@ -1196,11 +1219,12 @@ def ltf_find(cs, i, zb, zt, P, lt, events):
         return None, None, 'ltfdata'             # none in the signal candle's time (a gap in the small candles)
     z = _first_at(lt, w1)
     floor = zb * (1 - P['ltfUnder'] / 100.0) if P['ltfUnder'] < 100 else -1e18
+    anywhere = P.get('ltfEntry') == 'smart'      # the Smart entry: the small final low may be anywhere (owner, 14-Nov-2026)
     k = bisect.bisect_left([e[0] for e in events], a)
     hit = None
     while k < len(events) and events[k][0] < z:
         e = events[k]
-        if e[5] >= P['ltfDown'] and e[3] >= a and _f(e[4]) <= zt + 1e-9 and _f(e[4]) >= floor - 1e-9:
+        if e[5] >= P['ltfDown'] and e[3] >= a and (anywhere or (_f(e[4]) <= zt + 1e-9 and _f(e[4]) >= floor - 1e-9)):
             hit = e
             break
         k += 1
@@ -1226,10 +1250,11 @@ def chart_candle(cs, i, tf, lt, kx):
     return j
 
 
-def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, lows=None, final=None, mh=None):
+def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, lows=None, final=None, mh=None, alt=None):
     """The lower-timeframe confirmation of one signal (see DEFAULTS 'ltf') -> (trade, None) or (None, reason): ltf_find's
-    reasons, 'ltfnofvg' / 'ltfnofill' (the FVG entry: no small FVG in its move / not retested in time), or simulate's own.
-    row / rs = the signal row and its stop row (rs[2] = the bottom the stop sits under)."""
+    reasons, 'ltfnofvg' / 'ltfnofill' (the FVG entry: no small FVG in its move / not retested in time), 'ltfmissed' (the
+    Smart entry: price reached the target before the order filled - its trade bought at the small CHoCH's close instead is
+    added to `alt`), or simulate's own. row / rs = the signal row and its stop row (rs[2] = the bottom the stop sits under)."""
     tf = P['tf']
     zb, zt = rs[2], row[3]
     if zb is None or zt is None:
@@ -1238,7 +1263,121 @@ def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, low
     if hit is None:
         return None, why
     b, lf, li = int(hit[0]), _f(hit[4]), int(hit[3])
-    z = _first_at(lt, htf_span(tf, cs.day[min(cs.n - 1, i + P['ltfWait'] - 1)], cs.minute[min(cs.n - 1, i + P['ltfWait'] - 1)])[1])
+    jw = min(cs.n - 1, i + P['ltfWait'] - 1)
+    z = _first_at(lt, htf_span(tf, cs.day[jw], cs.minute[jw])[1])
+    smart = P['ltfEntry'] == 'smart'
+
+    def stop_for(entry, low_stop):
+        """The stop of an entry: under the small final low, or the run's own stop rule -> (stop, by) or (None, why)."""
+        if low_stop:
+            stop = lf * (1 - P['stopBuf'] / 100.0)
+        else:
+            mode = P['stop']
+            if mode == 'pct':
+                stop = entry * (1 - P['stopPct'] / 100.0)
+            elif mode == 'final':
+                if final is None:
+                    return None, 'nofinal'
+                stop = _f(final) * (1 - P['stopBuf'] / 100.0)
+            elif mode == 'spring':
+                stop = _f(cs.l[i]) * (1 - P['stopBuf'] / 100.0)
+            elif mode == 'lower':
+                stop = min(_f(cs.l[i]), zb) * (1 - P['stopBuf'] / 100.0)
+            else:
+                stop = zb * (1 - P['stopBuf'] / 100.0)
+        by = ''
+        if P['stopAtr']:
+            if atr is None or jj - 1 < 0:
+                return None, 'data'
+            s_atr = entry - P['stopAtr'] * atr[jj - 1]
+            by = 'rule'
+            if s_atr < stop:
+                stop, by = s_atr, 'atr'
+        return stop, by
+
+    def finish(e0, jj, kind, order, fvg, low_stop):
+        """The trade bought on small candle e0 (in the chart's candle jj): at the order price (a retest - the open when it
+        gapped under it) or at e0's close."""
+        zend = _first_at(lt, htf_span(tf, cs.day[jj], cs.minute[jj])[1])
+        hy = _Hybrid(lt, e0, max(e0 + 1, zend), cs, jj + 1)
+        m = max(e0 + 1, zend) - e0
+        entry = min(_f(lt.o[e0]), order) if order is not None else _f(lt.c[e0])
+        if smart:
+            low_stop = entry > zt + 1e-9       # bought above the zone top: under the small final low; in the zone: your stop
+        stop, stop_by = stop_for(entry, low_stop)
+        if stop is None:
+            return None, stop_by
+        pad = lambda ser: ([ser[jj - 1]] * m + list(ser[jj + 1:])) if ser is not None and jj >= 1 else None
+        P2 = dict(P, stop='pct', stopAtr=0, entry='zone' if order is not None else 'close')
+        hrow = [0, 'Z' if order is not None else row[1], None, order if order is not None else row[3]] + list(row[4:8])
+        t, why = simulate(hy, hrow, P2, pad(ema), _Remap(swing, jj, m) if swing is not None else None, pad(atr),
+                          _Remap(lows, jj, m) if lows is not None else None, None, mh, stop_at=stop)
+        if t is None:
+            return None, why
+        t['stopBy'] = stop_by
+        t['i'] = i
+        jx = t['jx']
+        t['jx'] = jj if jx < m else jj + 1 + (jx - m)
+        t['sigDay'], t['sigMin'] = cs.day[i], cs.minute[i]
+        t['ltf'] = ltf_text(P, lt, hit, cs, i, jj, kind, fvg, order, low_stop)
+        t['ltfWait'] = jj - i
+        t['lx'] = {'tf': P['ltf'], 'b': b, 'li': li, 'lvl': _f(hit[2]), 'lf': lf, 'hi': int(hit[1]), 'd': int(hit[5]), 'e': e0, 'jj': jj,
+                   'fvg': list(fvg) if fvg else None}
+        if smart:
+            t['ltfHow'] = kind
+            t['lx']['how'], t['lx']['order'], t['lx']['lowStop'] = kind, order, bool(low_stop)
+            if kind == 'half':
+                t['lx']['half'] = [lf, half_hi]
+        return t, None
+
+    if smart:
+        # the Smart entry (owner, 14-Nov-2026): the small CHoCH's level in the zone -> at its close
+        if _f(hit[2]) <= zt + 1e-9:
+            return finish(b, jj, 'close', None, None, _f(lt.c[b]) > zt + 1e-9)
+        # above the zone: an order at the highest small FVG of its move (the CHoCH candle's own gap is known one candle later -
+        # the order waits from the candle after the FVG's 3rd one), else - known once that candle shows none - at the move's 50%
+        # line (final low .. the highest high up to the CHoCH candle)
+        best = None
+        for f in range(max(li + 2, 2), min(b + 1, lt.n - 1) + 1):
+            if _f(lt.l[f]) > _f(lt.h[f - 2]) and (best is None or _f(lt.l[f]) > best[1]):
+                best = (_f(lt.h[f - 2]), _f(lt.l[f]), f)
+        half_hi = max(_f(lt.h[x]) for x in range(li, b + 1))
+        if best is not None:
+            kind, order, start = 'fvg', best[1], max(b, best[2]) + 1
+        else:
+            kind, order, start = 'half', round((lf + half_hi) / 2.0, 2), b + 2
+        low_o = order > zt + 1e-9
+        stop_o, _ = stop_for(order, low_o)
+        tgt = None
+        if stop_o is not None and order > stop_o:
+            if P['targetMode'] == 'R':
+                tgt = order + P['targetR'] * (order - stop_o)
+            elif P['targetMode'] == 'pct':
+                tgt = order * (1 + P['targetPct'] / 100.0)
+            elif P['targetMode'] == 'mh' and mh is not None:
+                tgt = _f(mh)
+        jc, e0 = jj, None
+        for m in range(start, min(z, lt.n)):
+            jm = chart_candle(cs, i, tf, lt, m)
+            while jc < jm:                       # a candle of the chart closed under the zone: the order is cancelled
+                if _f(cs.c[jc]) < zb - 1e-9:
+                    return None, 'ltfbroke'
+                jc += 1
+            if _f(lt.l[m]) <= order + 1e-9:
+                e0 = m
+                break
+            if tgt is not None and _f(lt.h[m]) >= tgt - 1e-9:
+                if alt is not None:             # what buying at the small CHoCH's close would have made
+                    ta, _ = finish(b, jj, 'close', None, None, _f(lt.c[b]) > zt + 1e-9)
+                    if ta is not None:
+                        alt.append(ta)
+                return None, 'ltfmissed'
+        if e0 is None:
+            if z >= lt.n or i + P['ltfWait'] - 1 >= cs.n:
+                return None, 'ltfnotyet'
+            return None, 'ltfnofill'
+        return finish(e0, chart_candle(cs, i, tf, lt, e0), kind, order, best, low_o)
+
     fvg, e0 = None, b
     if P['ltfEntry'] == 'fvg':
         best = None
@@ -1260,64 +1399,22 @@ def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, low
         jj = chart_candle(cs, i, tf, lt, e0)
         if any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jj)):
             return None, 'ltfbroke'
-    # the small candles from the entry to the end of the chart's candle jj, then the chart's candles after it
-    zend = _first_at(lt, htf_span(tf, cs.day[jj], cs.minute[jj])[1])
-    hy = _Hybrid(lt, e0, max(e0 + 1, zend), cs, jj + 1)
-    m = max(e0 + 1, zend) - e0
-    entry = min(_f(lt.o[e0]), fvg[1]) if fvg else _f(lt.c[e0])
-    if P['ltfStop'] == 'ltf':
-        stop = lf * (1 - P['stopBuf'] / 100.0)
-    else:
-        mode = P['stop']
-        if mode == 'pct':
-            stop = entry * (1 - P['stopPct'] / 100.0)
-        elif mode == 'final':
-            if final is None:
-                return None, 'nofinal'
-            stop = _f(final) * (1 - P['stopBuf'] / 100.0)
-        elif mode == 'spring':
-            stop = _f(cs.l[i]) * (1 - P['stopBuf'] / 100.0)
-        elif mode == 'lower':
-            stop = min(_f(cs.l[i]), zb) * (1 - P['stopBuf'] / 100.0)
-        else:
-            stop = zb * (1 - P['stopBuf'] / 100.0)
-    stop_by = ''
-    if P['stopAtr']:
-        if atr is None or jj - 1 < 0:
-            return None, 'data'
-        s_atr = entry - P['stopAtr'] * atr[jj - 1]
-        stop_by = 'rule'
-        if s_atr < stop:
-            stop, stop_by = s_atr, 'atr'
-    pad = lambda ser: ([ser[jj - 1]] * m + list(ser[jj + 1:])) if ser is not None and jj >= 1 else None
-    P2 = dict(P, stop='pct', stopAtr=0, entry='zone' if fvg else 'close')
-    hrow = [0, 'Z' if fvg else row[1], None, fvg[1] if fvg else row[3]] + list(row[4:8])
-    t, why = simulate(hy, hrow, P2, pad(ema), _Remap(swing, jj, m) if swing is not None else None, pad(atr),
-                      _Remap(lows, jj, m) if lows is not None else None, None, mh, stop_at=stop)
-    if t is None:
-        return None, why
-    t['stopBy'] = stop_by
-    t['i'] = i
-    jx = t['jx']
-    t['jx'] = jj if jx < m else jj + 1 + (jx - m)
-    t['sigDay'], t['sigMin'] = cs.day[i], cs.minute[i]
-    t['ltf'] = ltf_text(P, lt, hit, cs, i, jj, 'fvg' if fvg else 'close', fvg)
-    t['ltfWait'] = jj - i
-    t['lx'] = {'tf': P['ltf'], 'b': b, 'li': li, 'lvl': _f(hit[2]), 'lf': lf, 'hi': int(hit[1]), 'd': int(hit[5]), 'e': e0, 'jj': jj,
-               'fvg': list(fvg) if fvg else None}
-    return t, None
+    half_hi = None
+    return finish(e0, jj, 'fvg' if fvg else 'close', fvg[1] if fvg else None, fvg, P['ltfStop'] == 'ltf')
 
 
 def ltf_compare(rows, P):
     """The confirmation against no confirmation on the same signals (owner, 13-Nov-2026: the Lab shows which is better):
-    rows = [(trade without it, trade with it or None, why not)] per signal candle; signals without small candles for that time
-    ('ltfdata') or still waiting ('ltfnotyet') are left out of both -> {'tf', 'name', 'signals', 'confirmed', 'why',
-    'nodata', 'notyet', 'with', 'without', 'withoutConfirmed', 'from'}."""
+    rows = [(trade without it, trade with it or None, why not[, the Smart entry's missed trade bought at the CHoCH's close])]
+    per signal candle; signals without small candles for that time ('ltfdata') or still waiting ('ltfnotyet') are left out
+    of both -> {'tf', 'name', 'signals', 'confirmed', 'why', 'nodata', 'notyet', 'with', 'without', 'withoutConfirmed',
+    'from'} + with the Smart entry (14-Nov-2026) 'missed' (orders price ran away from - the target came first),
+    'missedAtClose' (those signals bought at the small CHoCH's close instead) and 'byHow' {close / fvg / half: figures}."""
     use = [x for x in rows if x[2] not in ('ltfdata', 'ltfnotyet')]
     why = {}
-    for b, t, w in use:
-        if t is None:
-            why[w or 'other'] = why.get(w or 'other', 0) + 1
+    for x in use:
+        if x[1] is None:
+            why[x[2] or 'other'] = why.get(x[2] or 'other', 0) + 1
     closed = lambda ts: [t for t in ts if t is not None and t['reason'] != 'open']
 
     def st(ts):
@@ -1326,13 +1423,19 @@ def ltf_compare(rows, P):
             s['avgRLo'], s['avgRHi'] = _range([t['R'] for t in closed(ts)])
             s['edge'] = _edge(s['trades'], s['avgRLo'], s['avgRHi'])
         return s
-    first = min((b['sigDay'] for b, t, w in use), default=None)
-    return {'tf': P['ltf'], 'name': LTF_NAMES.get(P['ltf'], P['ltf']), 'signals': len(use),
-            'confirmed': sum(1 for b, t, w in use if t is not None), 'why': why,
-            'nodata': sum(1 for x in rows if x[2] == 'ltfdata'), 'notyet': sum(1 for x in rows if x[2] == 'ltfnotyet'),
-            'with': st([t for b, t, w in use]), 'without': st([b for b, t, w in use]),
-            'withoutConfirmed': st([b for b, t, w in use if t is not None]),
-            'from': date.fromordinal(first).isoformat() if first else ''}
+    first = min((x[0]['sigDay'] for x in use), default=None)
+    out = {'tf': P['ltf'], 'name': LTF_NAMES.get(P['ltf'], P['ltf']), 'signals': len(use),
+           'confirmed': sum(1 for x in use if x[1] is not None), 'why': why,
+           'nodata': sum(1 for x in rows if x[2] == 'ltfdata'), 'notyet': sum(1 for x in rows if x[2] == 'ltfnotyet'),
+           'with': st([x[1] for x in use]), 'without': st([x[0] for x in use]),
+           'withoutConfirmed': st([x[0] for x in use if x[1] is not None]),
+           'from': date.fromordinal(first).isoformat() if first else ''}
+    if P.get('ltfEntry') == 'smart':
+        out['missed'] = sum(1 for x in use if x[2] == 'ltfmissed')
+        out['missedAtClose'] = st([x[3] for x in use if len(x) > 3 and x[3] is not None])
+        out['byHow'] = {h: dict(st([x[1] for x in use if x[1] is not None and x[1].get('ltfHow') == h]),
+                                n=sum(1 for x in use if x[1] is not None and x[1].get('ltfHow') == h)) for h in LTF_HOW}
+    return out
 
 
 def _exit_why(cur, entry, target, lock):
@@ -1533,15 +1636,21 @@ def summarise(trades, P, skips, meta, secs):
     # moved heavily" - one run shows whether the setup below the CHoCH level beats the others)
     stages = []
     if any(t.get('stage') for t in trades):
-        for key in structure.STAGES:
-            ts = [t for t in closed if t.get('stage') == key]
-            n_open = sum(1 for t in trades if t.get('stage') == key and t['reason'] == 'open')
-            if not ts and not n_open:
-                continue
-            s = _stats(ts)
-            stages.append({'stage': key, 'name': (structure.BOS_STAGE_NAMES if P.get('setup') == 'bos' else structure.STAGE_NAMES)[key], 'trades': s['trades'], 'open': n_open,
-                           'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'), 'totalR': s.get('totalR'),
-                           'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')})
+        both = P.get('setup') == 'both'
+        for sn in (run_setups(P) if both else [None]):
+            names = structure.BOS_STAGE_NAMES if (sn or P.get('setup')) == 'bos' else structure.STAGE_NAMES
+            for key in structure.STAGES:
+                ts = [t for t in closed if t.get('stage') == key and (not both or t.get('setup') == sn)]
+                n_open = sum(1 for t in trades if t.get('stage') == key and t['reason'] == 'open' and (not both or t.get('setup') == sn))
+                if not ts and not n_open:
+                    continue
+                s = _stats(ts)
+                row = {'stage': key, 'name': ((SETUP_NAMES[sn] + ': ') if both else '') + names[key], 'trades': s['trades'],
+                       'open': n_open, 'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'),
+                       'totalR': s.get('totalR'), 'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')}
+                if both:
+                    row['setup'] = sn
+                stages.append(row)
     zone_name = ZONE_NAMES
     where_name = {'t': 'top', 'm': 'middle', 'b': 'bottom'}
     rows = []
@@ -1556,7 +1665,7 @@ def summarise(trades, P, skips, meta, secs):
                      int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
                      t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', ''),
                      ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', ''),
-                     t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', '')])
+                     t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', ''), t.get('setup', ''), t.get('ltfHow', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1584,6 +1693,10 @@ Z90 = 1.645                  # the likely range of an average = average +/- 1.64
 BD_MIN = 30                  # a group with fewer closed trades: 'few' (no verdict)
 BD_HELD_MIN = 10             # the dev / test check needs this many trades in both periods
 BD_DIMS = (
+    ('setup', 'Setup', 'cat', (('choch', 'CHoCH + FVG'), ('bos', 'BOS + FVG'))),
+    ('ltfHow', 'Lower-timeframe entry (Smart)', 'cat',
+     (('close', 'small CHoCH in the zone - at its close'), ('fvg', 'above the zone - small FVG retest'),
+      ('half', 'above the zone - 50% line retest'))),
     ('depth', 'Zone depth in the move (0% = the move high, 100% = the final low)', 'num',
      ((-1e9, 0.382, 'above the 38.2% line'), (0.382, 0.5, '38.2 - 50%'), (0.5, 0.618, '50 - 61.8%'), (0.618, 0.705, '61.8 - 70.5%'),
       (0.705, 0.786, '70.5 - 78.6%'), (0.786, 0.9, '78.6 - 90%'), (0.9, 1.0 + 1e-9, '90 - 100%'), (1.0 + 1e-9, 1e9, 'under the final low'))),
@@ -1621,6 +1734,8 @@ def _bd_value(t, key):
         return t.get('touch') or None
     if key == 'where':
         return t.get('where') if t.get('where') in ('t', 'm', 'b') else None
+    if key in ('setup', 'ltfHow'):
+        return t.get(key) or None
     v = t.get(key)
     return v if isinstance(v, (int, float)) and v == v else None
 
@@ -1804,14 +1919,16 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
     sopts = struct_opts(P)
-    ssetup = struct_setup(P)
-    dn = setup_down(P)
+    setups = run_setups(P)
     trail_on = P['after'] == 'trail'
     final_stop = P['stop'] == 'final'
     again_on = P['touchAgain'] and smode == 'only' and P['group'] == 'touch'
     mh_tgt = P['targetMode'] == 'mh'
-    smap = (_struct_map(d, tf, P['pivotN'], sopts, ssetup) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
-            or final_stop or mh_tgt else None)
+    need_struct = smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing') or final_stop or mh_tgt
+    if not need_struct:
+        setups = setups[:1]                     # no market structure in the run: one pass
+    smaps = ({sn: _struct_map(d, tf, P['pivotN'], sopts, struct_setup(dict(P, setup=sn))) for sn in setups}
+             if need_struct else None)
     PC = dict(P, entry='close') if P['fibPat'] != 'off' else P      # Fib + pattern rows: bought at the pattern candle's close
     wk_index = (meta['index'].get('W') or {}) if P['wkAbove'] and tf != 'W' else None
     lens = ema_lens(P)
@@ -1837,198 +1954,209 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 cs = Candles(f, index[sym][0], index[sym][1])
             ema = ema_series(cs.c, P['emaN']) if P['after'] == 'trail' and P['trail'] == 'ema' else None
             emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens}
-            st = None
-            if smap is not None:
-                st = smap.get(sym)
-                if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts, ssetup)
             atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
                    if (trail_on and P['trail'] == 'atr') or P['stopAtr'] else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
-            zl_memo = []
             ltf_box = []                        # the stock's small candles + events, read when a signal first needs them
-            again = None
-            if again_on and st is not None:
-                # a zone touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
-                again = st.rearm.get(dn)
-                if again is None:
-                    zk = sorted(((x[1], int(x[8])), int(x[8]), x[2], x[3], x[0], x[1] == 'Y') for x in sigs[sym]
-                                if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0)
-                    zk.sort(key=lambda z: z[1])
-                    lows_, his_ = [_f(x) for x in cs.l], [_f(x) for x in cs.h]       # the prices as the cache rows have them
-                    again = st.rearm[dn] = rearm_touches(
-                        st.s.events, dn, zk, lows_, [_f(x) for x in cs.c],
-                        lambda j: lows_[j] > 0 and (his_[j] - lows_[j]) / lows_[j] * 100 <= LOCK_PCT)
-                if again:
-                    byk = {(x[1], int(x[8])): x for x in sigs[sym] if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0}
-                    extra = []
-                    for got in again.values():
-                        for key, j in got.items():
-                            if j is None:
-                                continue
-                            o = byk[key]
-                            lo_, mid = _f(cs.l[j]), (o[2] + o[3]) / 2.0
-                            extra.append([j, o[1], o[2], o[3], 'b' if lo_ <= o[2] else 't' if lo_ >= mid else 'm', 1, o[6], o[7], o[8],
-                                          o[9] if len(o) > 9 else None, 'A'])
-                    extra = pick(extra, P)
-                    if extra:
-                        rows = sorted(rows + extra, key=lambda x: (x[0], -(x[3] if x[3] is not None else -1e18), x[1] != 'Z', x[8] if len(x) > 8 else 0))
 
-            def zone_list(k_):
-                """Every zone of the stock [(f, bottom, top, first touch candle or None)] by f (the 2nd-zone rule); with touchAgain
-                a zone touched on / before CHoCH k_'s candle = its first touch after it (or None)."""
-                if not zl_memo:
-                    zl_memo.append(sorted((((x[1], int(x[8])) if x[1] != 'V' else None, int(x[8]), x[2], x[3], None if x[1] == 'V' else x[0])
-                                           for x in sigs[sym] if x[1] in ('Z', 'Y', 'V') and len(x) > 8 and x[8] is not None and x[8] >= 0),
-                                          key=lambda z: z[1]))
-                got = (again or {}).get(k_) or {}
-                return [(f_, b_, t_, got[key] if key in got else ft) for key, f_, b_, t_, ft in zl_memo[0]]
+            def make_ctx(sn):
+                """One setup's rules on this stock -> (attempt, its touchAgain rows or None)."""
+                SP = P if len(setups) == 1 else dict(P, setup=sn)
+                dn = setup_down(SP)
+                st = None
+                if smaps is not None:
+                    sm = smaps[sn]
+                    st = sm.get(sym)
+                    if st is None or st.size != cs.n:
+                        st = sm[sym] = _Struct(cs, P['pivotN'], sopts, struct_setup(SP))
+                zl_memo = []
+                again, xrows = None, None
+                if again_on and st is not None:
+                    # a zone touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
+                    again = st.rearm.get(dn)
+                    if again is None:
+                        zk = sorted(((x[1], int(x[8])), int(x[8]), x[2], x[3], x[0], x[1] == 'Y') for x in sigs[sym]
+                                    if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0)
+                        zk.sort(key=lambda z: z[1])
+                        lows_, his_ = [_f(x) for x in cs.l], [_f(x) for x in cs.h]       # the prices as the cache rows have them
+                        again = st.rearm[dn] = rearm_touches(
+                            st.s.events, dn, zk, lows_, [_f(x) for x in cs.c],
+                            lambda j: lows_[j] > 0 and (his_[j] - lows_[j]) / lows_[j] * 100 <= LOCK_PCT)
+                    if again:
+                        byk = {(x[1], int(x[8])): x for x in sigs[sym] if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0}
+                        extra = []
+                        for got in again.values():
+                            for key, j in got.items():
+                                if j is None:
+                                    continue
+                                o = byk[key]
+                                lo_, mid = _f(cs.l[j]), (o[2] + o[3]) / 2.0
+                                extra.append([j, o[1], o[2], o[3], 'b' if lo_ <= o[2] else 't' if lo_ >= mid else 'm', 1, o[6], o[7], o[8],
+                                              o[9] if len(o) > 9 else None, 'A'])
+                        xrows = pick(extra, P)
 
-            def rank(r, sj, zf, outer):
-                """zone_rank of a signal row whose structure is judged."""
-                k_, i_ = sj['k'], r[0]
-                pr = _f(cs.c[i_])
-                ab, at_ = r[2], r[3]                     # (a Gap-up zone inside an FVG: the FVG overlaps it - the same area)
+                def zone_list(k_):
+                    """Every zone of the stock [(f, bottom, top, first touch candle or None)] by f (the 2nd-zone rule); with touchAgain
+                    a zone touched on / before CHoCH k_'s candle = its first touch after it (or None)."""
+                    if not zl_memo:
+                        zl_memo.append(sorted((((x[1], int(x[8])) if x[1] != 'V' else None, int(x[8]), x[2], x[3], None if x[1] == 'V' else x[0])
+                                               for x in sigs[sym] if x[1] in ('Z', 'Y', 'V') and len(x) > 8 and x[8] is not None and x[8] >= 0),
+                                              key=lambda z: z[1]))
+                    got = (again or {}).get(k_) or {}
+                    return [(f_, b_, t_, got[key] if key in got else ft) for key, f_, b_, t_, ft in zl_memo[0]]
 
-                def jok(f2, b2, t2):
-                    j2 = st.s.judge(i_, f2, t2, pr, cs.c, P['downN'], P['chochAge'], h=cs.h, zone_bottom=b2, part=P['discPart'],
-                                    fib=fib)
-                    return j2['k'] == k_ and not struct_fail(j2, P)
-                return zone_rank(zone_list(k_), i_, ab, at_, st.s.events[k_][3], jok,
-                                 lambda f2, b2: any(cs.c[j] < b2 for j in range(f2 + 1, i_)))
+                def rank(r, sj, zf, outer):
+                    """zone_rank of a signal row whose structure is judged."""
+                    k_, i_ = sj['k'], r[0]
+                    pr = _f(cs.c[i_])
+                    ab, at_ = r[2], r[3]                     # (a Gap-up zone inside an FVG: the FVG overlaps it - the same area)
 
-            def attempt(r):
-                """One signal row -> (trade, None) or (None, (skip key, rule))."""
-                code = r[1]
-                zone_row = r[2] is not None and r[3] is not None
-                link = r[9] if len(r) > 9 else None
-                outer = link if (code == 'Y' and P['gapEntry'] and link) else None   # the FVG around this Gap-up zone
-                if code == 'Z' and P['gapEntry'] and link:
-                    return None, ('gapin', '')         # the order waits at the Gap-up zone inside this FVG (that zone's row)
-                zp, dc, fline = None, None, None
-                if zone_row:
-                    zb_, zt_ = size_zone(r, P)
-                    zp = zone_pct(zb_, zt_)
-                    big_ok = code in FIB_CODES and P['fibPat'] == 'big'
-                    if zp is not None and ((P['zoneMin'] and zp < P['zoneMin'] - 1e-9) or
-                                           (P['zoneMax'] and zp > P['zoneMax'] + 1e-9 and not big_ok)):
-                        return None, ('zsize', '')
-                    ff = outer[2] if outer else (r[8] if code in FVG_CODES and len(r) > 8 else None)
-                    dc = ff is not None and ff >= 0 and dark_cloud(cs, ff)
-                    if P['darkCloud'] != 'any' and (P['darkCloud'] == 'exclude') == dc:
-                        return None, ('dcloud', '')
-                if code in FIB_CODES:
-                    fline = r[3] - P['fibLevel'] * (r[3] - r[2])
-                    lo_, cl_ = _f(cs.l[r[0]]), _f(cs.c[r[0]])
-                    if not (fline * (1 - P['fibTol'] / 100.0) <= lo_ <= fline * (1 + P['fibTol'] / 100.0) and cl_ > fline):
-                        return None, ('fiblevel', '')
-                spring_row = r[1] in SPRING_CODES
-                feats = spring_feats(cs, r[0], P, deep=shape_on) if spring_row else None   # the Spring pair's shape
-                if shape_on and spring_row:
-                    ok, why = shape_check(feats, P)
-                    if not ok:
-                        return None, ('shape', why)
-                sj = None
-                if smode != 'off' or final_stop or mh_tgt:
-                    zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
-                    sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'],
-                                    h=cs.h, zone_bottom=r[2] if zf is not None else None, part=P['discPart'], fib=fib)
-                    if smode == 'only':
-                        why = struct_fail(sj, P) or struct_more(st.s, sj, cs, r[0], P)
+                    def jok(f2, b2, t2):
+                        j2 = st.s.judge(i_, f2, t2, pr, cs.c, P['downN'], P['chochAge'], h=cs.h, zone_bottom=b2, part=P['discPart'],
+                                        fib=fib)
+                        return j2['k'] == k_ and not struct_fail(j2, P)
+                    return zone_rank(zone_list(k_), i_, ab, at_, st.s.events[k_][3], jok,
+                                     lambda f2, b2: any(cs.c[j] < b2 for j in range(f2 + 1, i_)))
+
+                def attempt(r):
+                    """One signal row -> (trade, None) or (None, (skip key, rule))."""
+                    code = r[1]
+                    zone_row = r[2] is not None and r[3] is not None
+                    link = r[9] if len(r) > 9 else None
+                    outer = link if (code == 'Y' and P['gapEntry'] and link) else None   # the FVG around this Gap-up zone
+                    if code == 'Z' and P['gapEntry'] and link:
+                        return None, ('gapin', '')         # the order waits at the Gap-up zone inside this FVG (that zone's row)
+                    zp, dc, fline = None, None, None
+                    if zone_row:
+                        zb_, zt_ = size_zone(r, P)
+                        zp = zone_pct(zb_, zt_)
+                        big_ok = code in FIB_CODES and P['fibPat'] == 'big'
+                        if zp is not None and ((P['zoneMin'] and zp < P['zoneMin'] - 1e-9) or
+                                               (P['zoneMax'] and zp > P['zoneMax'] + 1e-9 and not big_ok)):
+                            return None, ('zsize', '')
+                        ff = outer[2] if outer else (r[8] if code in FVG_CODES and len(r) > 8 else None)
+                        dc = ff is not None and ff >= 0 and dark_cloud(cs, ff)
+                        if P['darkCloud'] != 'any' and (P['darkCloud'] == 'exclude') == dc:
+                            return None, ('dcloud', '')
+                    if code in FIB_CODES:
+                        fline = r[3] - P['fibLevel'] * (r[3] - r[2])
+                        lo_, cl_ = _f(cs.l[r[0]]), _f(cs.c[r[0]])
+                        if not (fline * (1 - P['fibTol'] / 100.0) <= lo_ <= fline * (1 + P['fibTol'] / 100.0) and cl_ > fline):
+                            return None, ('fiblevel', '')
+                    spring_row = r[1] in SPRING_CODES
+                    feats = spring_feats(cs, r[0], P, deep=shape_on) if spring_row else None   # the Spring pair's shape
+                    if shape_on and spring_row:
+                        ok, why = shape_check(feats, P)
+                        if not ok:
+                            return None, ('shape', why)
+                    sj = None
+                    if smode != 'off' or final_stop or mh_tgt:
+                        zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
+                        sj = st.s.judge(r[0], zf, r[3] if zf is not None else None, _f(cs.c[r[0]]), cs.c, P['downN'], P['chochAge'],
+                                        h=cs.h, zone_bottom=r[2] if zf is not None else None, part=P['discPart'], fib=fib)
+                        if smode == 'only':
+                            why = struct_fail(sj, P) or struct_more(st.s, sj, cs, r[0], P)
+                            if why:
+                                return None, ('struct', why)
+                    zrank = None
+                    if smode != 'off' and sj is not None and sj['k'] >= 0 and len(r) > 8 and r[8] is not None and r[8] >= 0:
+                        zrank = rank(r, sj, r[8], outer)          # which discount zone of the CHoCH move (owner, 12-Nov-2026)
+                        if smode == 'only' and P['zonePick'] == 'second' and zrank[0]:
+                            return None, ('struct', zrank[0])
+                    mit = None
+                    if smode == 'only' and sj is not None and sj['k'] >= 0:
+                        # the owner's rules of 13-Nov-2026: a fast premium zone, touches / a deep close before the move high, a
+                        # touched 1st zone
+                        zf_ = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
+                        lo_at, cl_at = (lambda j: _f(cs.l[j])), (lambda j: _f(cs.c[j]))
+                        area = zrank[2] if (zrank is not None and P['zonePick'] == 'second' and zrank[1] == 2) else None
+                        why = setup_fail(sj, zf_, r[2], r[3], lo_at, cl_at, cs.day[r[0]] - cs.day[st.s.events[sj['k']][0]], area)
                         if why:
                             return None, ('struct', why)
-                zrank = None
-                if smode != 'off' and sj is not None and sj['k'] >= 0 and len(r) > 8 and r[8] is not None and r[8] >= 0:
-                    zrank = rank(r, sj, r[8], outer)          # which discount zone of the CHoCH move (owner, 12-Nov-2026)
-                    if smode == 'only' and P['zonePick'] == 'second' and zrank[0]:
-                        return None, ('struct', zrank[0])
-                mit = None
-                if smode == 'only' and sj is not None and sj['k'] >= 0:
-                    # the owner's rules of 13-Nov-2026: a fast premium zone, touches / a deep close before the move high, a
-                    # touched 1st zone
-                    zf_ = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
-                    lo_at, cl_at = (lambda j: _f(cs.l[j])), (lambda j: _f(cs.c[j]))
-                    area = zrank[2] if (zrank is not None and P['zonePick'] == 'second' and zrank[1] == 2) else None
-                    why = setup_fail(sj, zf_, r[2], r[3], lo_at, cl_at, cs.day[r[0]] - cs.day[st.s.events[sj['k']][0]], area)
-                    if why:
-                        return None, ('struct', why)
-                    if zf_ is not None and sj.get('mh', -1) >= 0:
-                        mit = zone_mitigation(lo_at, cl_at, zf_, r[2], r[3], sj['mh'])[0]
-                # E9: how deep the signal candle went into its zone (not with the zone-top order - known only at the close)
-                if P['whereIn'] != 'any' and P['entry'] != 'zone' and r[4] in ('t', 'm', 'b'):
-                    if not (r[4] == 't' or (P['whereIn'] == 'tm' and r[4] == 'm')):
-                        return None, ('where', '')
-                note = ''
-                if lens:
-                    ok, note = ema_check(cs, r[0], P, emas)
-                    if not ok:
-                        return None, ('ema', '')
-                final = st.s.events[sj['k']][4] if final_stop and sj is not None and sj['k'] >= 0 else None
-                rs = r if not outer else [r[0], r[1], outer[0]] + list(r[3:])      # the stop under the FVG's bottom
-                mh = sj.get('H') if mh_tgt and sj is not None and sj['k'] >= 0 else None
-                t, why = simulate(cs, rs, PC if code in FIB_CODES else P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
-                                  st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
-                if ltf_on:
-                    # the lower-timeframe confirmation (13-Nov-2026): the trade above = the same signal without it (compared)
-                    if t is not None and not grp_base:
-                        grp_base.append(t)
-                    if not ltf_box:
-                        ltf_box.extend(lset.get(sym))
-                    base_r = t['R'] if t is not None else None
-                    t, why = ltf_trade(cs, r[0], r, rs, PC if code in FIB_CODES else P, ltf_box[0], ltf_box[1] or [], ema,
-                                       st.s if P['targetMode'] == 'swing' else None, atr,
-                                       st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
+                        if zf_ is not None and sj.get('mh', -1) >= 0:
+                            mit = zone_mitigation(lo_at, cl_at, zf_, r[2], r[3], sj['mh'])[0]
+                    # E9: how deep the signal candle went into its zone (not with the zone-top order - known only at the close)
+                    if P['whereIn'] != 'any' and P['entry'] != 'zone' and r[4] in ('t', 'm', 'b'):
+                        if not (r[4] == 't' or (P['whereIn'] == 'tm' and r[4] == 'm')):
+                            return None, ('where', '')
+                    note = ''
+                    if lens:
+                        ok, note = ema_check(cs, r[0], P, emas)
+                        if not ok:
+                            return None, ('ema', '')
+                    final = st.s.events[sj['k']][4] if final_stop and sj is not None and sj['k'] >= 0 else None
+                    rs = r if not outer else [r[0], r[1], outer[0]] + list(r[3:])      # the stop under the FVG's bottom
+                    mh = sj.get('H') if mh_tgt and sj is not None and sj['k'] >= 0 else None
+                    t, why = simulate(cs, rs, PC if code in FIB_CODES else P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
+                                      st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
+                    if ltf_on:
+                        # the lower-timeframe confirmation (13-Nov-2026): the trade above = the same signal without it (compared)
+                        if t is not None and not grp_base:
+                            grp_base.append(t)
+                        if not ltf_box:
+                            ltf_box.extend(lset.get(sym))
+                        base_r = t['R'] if t is not None else None
+                        t, why = ltf_trade(cs, r[0], r, rs, PC if code in FIB_CODES else P, ltf_box[0], ltf_box[1] or [], ema,
+                                           st.s if P['targetMode'] == 'swing' else None, atr,
+                                           st.s if trail_on and P['trail'] == 'swing' else None, final, mh, alt=grp_alt)
+                        if t is None:
+                            if why in LTF_WHY and not grp_lwhy:
+                                grp_lwhy.append(why)
+                            return None, (why, '')
+                        t['baseR'] = base_r
                     if t is None:
-                        if why in LTF_WHY and not grp_lwhy:
-                            grp_lwhy.append(why)
                         return None, (why, '')
-                    t['baseR'] = base_r
-                if t is None:
-                    return None, (why, '')
-                t['ema'] = note
-                t['sym'] = sym
-                if code == 'K':                       # a Pattern library signal: its name + level (the trades list, the PDF)
-                    t['pname'], t['pid'], t['trig'] = pat.name, P['pattern'], r[11] if len(r) > 11 else None
-                t['zpct'] = round(zp, 2) if zp is not None else None
-                t['dc'] = bool(dc)
-                if code in FIB_CODES:
-                    t['pat'] = PAT_NAMES.get(r[10] if len(r) > 10 else '', '')
-                    t['fibLine'] = round(fline, 2)
-                if outer:
-                    t['fz'] = outer                       # the FVG around the Gap-up zone (the charts PDF draws both)
-                if feats:
-                    t['upW'], t['loW'], t['dip'] = round(feats['upW'], 1), round(feats['loW'], 1), round(feats['dip'], 2)
-                if sj is not None:
-                    t['stage'] = sj['stage']
-                    t['struct'] = struct_text(st.s, sj, cs, P['tf'], P)
-                    t['k'], t['H'] = sj['k'], sj.get('H')
-                    if sj['k'] >= 0:                   # for the breakdowns (12-Nov-2026)
-                        ev = st.s.events[sj['k']]
-                        t['lhll'], t['lag'] = ev[5], cs.day[r[0]] - cs.day[ev[0]]
-                        mv = move_volumes(cs, ev[3], ev[0])
-                        if mv:
-                            t['mv'] = round(max(mv), 1)
-                        if sj.get('depth') is not None:
-                            t['depth'] = round(sj['depth'], 4)
-                zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
-                t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
-                if len(r) > 10 and r[10] == 'A' and code in ('Z', 'Y'):
-                    t['again'] = True                     # touched before the CHoCH - its first touch since then
-                if mit is not None:
-                    t['mit'] = mit                        # candles that touched the zone before the move high
-                if zrank is not None:
-                    t['zn'] = zrank[1]
-                    if zrank[2]:
-                        t['z1'] = list(zrank[2])          # the nearest zone above (the charts PDF: "the 1st zone, only watched")
-                return t, None
+                    t['ema'] = note
+                    t['sym'] = sym
+                    if code == 'K':                       # a Pattern library signal: its name + level (the trades list, the PDF)
+                        t['pname'], t['pid'], t['trig'] = pat.name, P['pattern'], r[11] if len(r) > 11 else None
+                    t['zpct'] = round(zp, 2) if zp is not None else None
+                    t['dc'] = bool(dc)
+                    if code in FIB_CODES:
+                        t['pat'] = PAT_NAMES.get(r[10] if len(r) > 10 else '', '')
+                        t['fibLine'] = round(fline, 2)
+                    if outer:
+                        t['fz'] = outer                       # the FVG around the Gap-up zone (the charts PDF draws both)
+                    if feats:
+                        t['upW'], t['loW'], t['dip'] = round(feats['upW'], 1), round(feats['loW'], 1), round(feats['dip'], 2)
+                    if st is not None:
+                        t['setup'] = sn                       # CHoCH + FVG / BOS + FVG (14-Nov-2026: both in one run)
+                    if sj is not None:
+                        t['stage'] = sj['stage']
+                        t['struct'] = struct_text(st.s, sj, cs, P['tf'], P)
+                        t['k'], t['H'] = sj['k'], sj.get('H')
+                        if sj['k'] >= 0:                   # for the breakdowns (12-Nov-2026)
+                            ev = st.s.events[sj['k']]
+                            t['lhll'], t['lag'] = ev[5], cs.day[r[0]] - cs.day[ev[0]]
+                            mv = move_volumes(cs, ev[3], ev[0])
+                            if mv:
+                                t['mv'] = round(max(mv), 1)
+                            if sj.get('depth') is not None:
+                                t['depth'] = round(sj['depth'], 4)
+                    zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
+                    t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
+                    if len(r) > 10 and r[10] == 'A' and code in ('Z', 'Y'):
+                        t['again'] = True                     # touched before the CHoCH - its first touch since then
+                    if mit is not None:
+                        t['mit'] = mit                        # candles that touched the zone before the move high
+                    if zrank is not None:
+                        t['zn'] = zrank[1]
+                        if zrank[2]:
+                            t['z1'] = list(zrank[2])          # the nearest zone above (the charts PDF: "the 1st zone, only watched")
+                    return t, None
 
-            g = 0
-            while g < len(rows):
-                i = rows[g][0]
-                h = g
-                while h < len(rows) and rows[h][0] == i:
-                    h += 1
-                grp, g = rows[g:h], h
+                return attempt, xrows
+
+            ctxs = []                           # (attempt, its rows by candle) per setup, in run_setups' order
+            row_key = lambda x: (x[0], -(x[3] if x[3] is not None else -1e18), x[1] != 'Z', x[8] if len(x) > 8 else 0)
+            for sn in setups:
+                att, xr = make_ctx(sn)
+                by_c = {}
+                for x in (sorted(rows + xr, key=row_key) if xr else rows):
+                    by_c.setdefault(x[0], []).append(x)
+                ctxs.append((att, by_c))
+            cands = sorted(set().union(*[c[1].keys() for c in ctxs]))
+            for i in cands:
                 if i >= cs.n or (lo and cs.day[i] < lo) or (hi and cs.day[i] > hi):
                     continue
                 if mkt and not mkt(cs.day[i]):
@@ -2038,16 +2166,20 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     skips['wk'] += 1
                     continue
                 fail = None
-                grp_base, grp_lwhy, got = [], [], None
-                for r in grp:                          # the first row of the candle that passes every rule = its trade
-                    t, why = attempt(r)
-                    if t is not None:
-                        trades.append(t)
-                        fail, got = None, t
+                grp_base, grp_lwhy, grp_alt, got = [], [], [], None
+                for att, by_c in ctxs:                 # setup by setup: the first row of the candle that passes every rule
+                    for r in by_c.get(i, ()):
+                        t, why = att(r)
+                        if t is not None:
+                            trades.append(t)
+                            fail, got = None, t
+                            break
+                        fail = fail or why
+                    if got is not None:
                         break
-                    fail = fail or why
                 if ltf_on and grp_base:
-                    cmp_rows.append((grp_base[0], got, None if got is not None else (grp_lwhy[0] if grp_lwhy else (fail or ('', ''))[0])))
+                    cmp_rows.append((grp_base[0], got, None if got is not None else (grp_lwhy[0] if grp_lwhy else (fail or ('', ''))[0]),
+                                     grp_alt[0] if grp_alt and got is None else None))
                 if fail:                               # none passed: counted once, under the first row's reason
                     key, rule = fail
                     skips[key] = skips.get(key, 0) + 1
@@ -2108,8 +2240,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
         tf = P['tf']
         index = meta['index'].get(tf) or {}
         sopts = struct_opts(P)
-        ssetup = struct_setup(P)
-        smap = _struct_map(d, tf, P['pivotN'], sopts, ssetup)
+        setups = run_setups(P)
+        smaps = {sn: _struct_map(d, tf, P['pivotN'], sopts, struct_setup(dict(P, setup=sn))) for sn in setups}
         lens = ema_lens(P)
         lset = _LtfSet(d, meta, P) if per == 3 else None
         done = 0
@@ -2118,13 +2250,24 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                 if sym not in index:
                     continue
                 cs = Candles(f, index[sym][0], index[sym][1])
-                st = smap.get(sym)
-                if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts, ssetup)
-                extra = {'seq': LC.swing_seq(st.s),     # the run's own swings (fractal / ATR / ZigZag) as the structure saw them
-                         'atr': structure.atr_series(cs.h, cs.l, cs.c)}
+                sts, seqs = {}, {}
+
+                def st_of(sn):
+                    if sn not in sts:
+                        sm = smaps[sn]
+                        x = sm.get(sym)
+                        if x is None or x.size != cs.n:
+                            x = sm[sym] = _Struct(cs, P['pivotN'], sopts, struct_setup(dict(P, setup=sn)))
+                        sts[sn] = x
+                        seqs[sn] = LC.swing_seq(x.s)    # the run's own swings (fractal / ATR / ZigZag) as the structure saw them
+                    return sts[sn]
+                extra0 = {'atr': structure.atr_series(cs.h, cs.l, cs.c)}
                 emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens} or None
                 for t in by_sym[sym]:
+                    sn = t.get('setup') if t.get('setup') in smaps else setups[0]
+                    st = st_of(sn)
+                    PT = dict(P, setup=sn) if P.get('setup') == 'both' else P       # its own setup's words
+                    extra = dict(extra0, seq=seqs[sn])
                     if 'k' not in t:                  # structure not a rule in this run: the chart still shows the CHoCH, if any
                         zf = t.get('zf')
                         sj = st.s.judge(t['i'], zf, t.get('zt') if zf is not None else None, _f(cs.c[t['i']]), cs.c, P['downN'],
@@ -2133,9 +2276,10 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                         t['k'], t['H'] = sj['k'], sj.get('H')
                         if sj['k'] >= 0 and not t.get('struct'):
                             t['struct'] = struct_text(st.s, sj, cs, tf, P)
-                    if lset is not None and 'ltfc' not in extra:
-                        extra['ltfc'] = lset.get(sym)[0]
-                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, P, page_of[id(t)], total, title, None, emas, extra,
+                    if lset is not None and 'ltfc' not in extra0:
+                        extra0['ltfc'] = lset.get(sym)[0]
+                    extra['ltfc'] = extra0.get('ltfc')
+                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, PT, page_of[id(t)], total, title, None, emas, extra,
                                   extra.get('ltfc'))
                     done += 1
                     if progress and done % 200 == 0:
@@ -2152,7 +2296,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
 
 
 # ------------------------------------------------------------------ market structure (structure.py) in a run
-_STRUCT = {'key': None, 'map': {}}
+_STRUCT = {'key': None, 'map': {}, 'all': {}}     # 'all' = {key: map}, the newest last; 'map' = the last one asked for
+STRUCT_KEEP = 2
 
 
 class _Struct:
@@ -2178,6 +2323,15 @@ def struct_opts(P):
     if P['eqAtr']:
         o['eq'] = P['eqAtr']
     return o
+
+
+def run_setups(P):
+    """The setups a run tries on every signal candle, in this order (14-Nov-2026: "if i want to run CHoch+FVG, BOS+FVG at a
+    same time"): ['choch'] / ['bos'] / both -> ['choch', 'bos'] (a candle that qualifies for both is the CHoCH trade)."""
+    return ['choch', 'bos'] if P.get('setup') == 'both' else [P.get('setup') or 'choch']
+
+
+SETUP_NAMES = {'choch': 'CHoCH + FVG', 'bos': 'BOS + FVG'}
 
 
 def struct_setup(P):
@@ -2355,11 +2509,18 @@ def week_filter(fw, idx, n):
 
 def _struct_map(d, tf, n, opts=None, setup=None):
     """{sym: _Struct} kept while the program runs (the same cache build, timeframe, swing size, structure options and setup)
-    - the first run with market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
+    - the first run with market structure works it out (seconds), later runs reuse it. The last STRUCT_KEEP keys are kept
+    (14-Nov-2026: a run of CHoCH + FVG and BOS + FVG together needs both); an older one is dropped (memory)."""
     key = (d, tf, n, tuple(sorted((opts or {}).items())), tuple(sorted((setup or {}).items())))
-    if _STRUCT['key'] != key:
-        _STRUCT['key'], _STRUCT['map'] = key, {}
-    return _STRUCT['map']
+    allm = _STRUCT['all']
+    if key in allm:
+        allm[key] = allm.pop(key)          # the newest last
+    else:
+        allm[key] = {}
+        while len(allm) > STRUCT_KEEP:
+            allm.pop(next(iter(allm)))
+    _STRUCT['key'], _STRUCT['map'] = key, allm[key]
+    return allm[key]
 
 
 STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows you set)',

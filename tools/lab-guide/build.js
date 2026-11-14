@@ -117,19 +117,22 @@ function html() {
     'ஒரு higher high-க்கு மேலே close (BOS), அதற்கு முன் ஒரு higher low; move = அந்த higher low முதல் high வரை. அந்த move-இன் discount zone-க்கு ' +
     'price முதல் முறை திரும்பி வரும்போது வாங்குதல்.') +
     table(['Box', 'பொருள்'], [
-      ['Setup', '**CHoCH + FVG** (downtrend மாறும் move) அல்லது **BOS + FVG** (BOS move).'],
+      ['Setups - tick one or both', '**CHoCH + FVG** (downtrend மாறும் move), **BOS + FVG** (BOS move), அல்லது **இரண்டையும் tick** செய்தால் ஒரே run-இல் இரண்டும்: ஒவ்வொரு zone touch-உம் முதலில் CHoCH + FVG-ஆக, இல்லையென்றால் BOS + FVG-ஆக (ஒரு candle-க்கு ஒரு trade). Card: **"CHoCH + FVG and BOS + FVG together"**. முடிவில் "What worked best" → **Setup** = இரண்டும் தனித்தனியாக.'],
       ['Which BOS', '**Every BOS** / **Only the 1st BOS after a CHoCH** (CHoCH-க்குப் பின் வரும் முதல் BOS) / **Only BOS of a running up-trend** (தொடர் BOS).'],
       ['Higher highs and higher lows', 'தொடர் BOS-க்கு: குறைந்தது இத்தனை higher highs / higher lows தொடர்ச்சியாக.']]) +
     img('05b-ltf', '"Confirmation on a lower timeframe" பகுதி - zone-ஐத் தொட்ட உடனே வாங்காமல், சிறிய chart-இல் CHoCH வரும் வரை காத்திருக்கும்.') +
     table(['Box', 'பொருள்'], [
       ['After the signal, look at', '**15-minute / 1-hour** chart (Daily run), weekly run-க்கு **daily** chart. Off = பழையபடி.'],
       ['A swing on it · Lower highs and lower lows', 'சிறிய chart-இன் swing அளவு (3) மற்றும் CHoCH-க்கு முன் குறைந்தது 2 lower highs / lows.'],
+      ['The small CHoCH closes', '**Above the last small swing high** (வழக்கம்) அல்லது **Above the protected high** - lowest low-க்கு முந்தைய swing high-க்கு மேலே close.'],
       ['Wait at most', 'Signal candle உட்பட இத்தனை candles-க்குள் சிறிய CHoCH வர வேண்டும் (Daily-இல் 5 = 5 நாட்கள்).'],
       ['Its final low', 'சிறிய final low zone-க்குள் (அல்லது bottom-க்கு 0.5% கீழே வரை).'],
-      ['Buy · Stop loss', 'சிறிய CHoCH candle close-இல் (அல்லது அதன் சிறிய FVG retest-இல்); stop சிறிய final low-க்குக் கீழே (அல்லது மேலே தேர்ந்த stop).']]) +
+      ['Buy · Stop loss', 'சிறிய CHoCH candle close-இல் (அல்லது அதன் சிறிய FVG retest-இல்); stop சிறிய final low-க்குக் கீழே (அல்லது மேலே தேர்ந்த stop).'],
+      ['Buy: Smart', 'சிறிய CHoCH-இன் level zone top-க்குள் → அதன் close-இல். Zone-க்கு மேலே → துரத்தாமல் order: அந்த move-இன் உயரமான சிறிய FVG top-இல், FVG இல்லையென்றால் 50% கோட்டில் (final low → CHoCH வரை high). Final low எங்கும் இருக்கலாம். Zone-க்கு மேலே வாங்கினால் stop சிறிய final low-க்குக் கீழே; zone-க்குள் வாங்கினால் வழக்கமான stop (zone கீழே). பெரிய chart candle zone-க்குக் கீழே close = order cancel; order fill ஆகும் முன் target வந்தால் = **missed**.']]) +
     img('10b-ltf', 'முடிவில் "With vs without": அதே signals-இல் உறுதிப்படுத்தலுடன் vs இல்லாமல் - எது சிறந்தது என்று எண்களில்.') +
     list(['சிறிய chart-இன் candles laptop-இல்: 1-hour, 15-minute இரண்டும் Kite தரும் வரை (20 வருடம் வரை; Kite குறைந்தது 10 வருடம் தருகிறது). **KiteHistoryNow.bat** ஒரு முறை (சில மணி நேரம்); **KiteDepthCheck.bat** = Kite எத்தனை வருடம் தருகிறது.',
       'அதற்கு முன் வந்த பழைய signals ஒப்பீட்டில் சேராது ("older signals left out").',
+      'Smart buy-இன் முடிவில் **"Smart entry - which way it bought"** table: zone-க்குள் close / சிறிய FVG / 50% கோடு - எது வேலை செய்தது; missed orders CHoCH close-இல் வாங்கியிருந்தால் என்ன ஆகியிருக்கும்.',
       'Charts PDF-இல் ஒவ்வொரு trade-க்கும் 3-வது பக்கம்: சிறிய chart, zone, சிறிய CHoCH, BUY, stop.',
       'Daily scan-உம் இதைக் காட்டும்: Patterns & FVG → CHoCH + FVG setups → **BOS + FVG** மற்றும் **15m CHoCH in zone** rows.'])));
   // ---------------------------------------------------------------- run

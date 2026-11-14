@@ -873,12 +873,25 @@ def why_story(t, cs, s, P, cx):
         name = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}.get(lx['tf'], lx['tf'])
         w = t.get('ltfWait') or 0
         when = 'in the same candle' if not w else '%d candle%s later' % (w, '' if w == 1 else 's')
+        smart = bool(lx.get('how'))
         txt = ('The backtest did not buy at the touch. It waited for a confirmation on the %s chart: there the price fell in %d lower '
-               'high%s and lower low%s, made its final low inside the zone and then closed above its last swing high - a small CHoCH, '
-               '%s.' % (name, lx.get('d', 1), '' if lx.get('d', 1) == 1 else 's', '' if lx.get('d', 1) == 1 else 's', when))
-        txt += (' It bought when the price came back to the small FVG of that move.' if lx.get('fvg') else ' It bought at the close of that candle.')
-        if P.get('ltfStop', 'ltf') == 'ltf':
-            txt += ' The stop went just under that small final low - closer than under the zone, so one R is smaller.'
+               'high%s and lower low%s, made its final low%s and then closed above its %s - a small CHoCH, '
+               '%s.' % (name, lx.get('d', 1), '' if lx.get('d', 1) == 1 else 's', '' if lx.get('d', 1) == 1 else 's',
+                        '' if smart else ' inside the zone',
+                        'protected high (the swing high right before its lowest low)' if P.get('ltfChoch') == 'protected' else 'last swing high',
+                        when))
+        if smart:                           # the Smart entry (owner, 14-Nov-2026)
+            txt += {'close': " The small CHoCH's level was inside the zone, so it bought at the close of that candle.",
+                    'fvg': ' The small CHoCH happened above the zone, so it did not chase the price: it waited for the price to come '
+                           'back to the small FVG of that move and bought there.',
+                    'half': ' The small CHoCH happened above the zone and its move left no small FVG, so it waited for the price to '
+                            'come back to the middle (50%) of that small move and bought there.'}.get(lx['how'], '')
+            txt += (' The buy was above the zone, so the stop went just under that small final low - one R is smaller.' if lx.get('lowStop')
+                    else ' The buy was inside the zone, so the stop stayed under the zone (your stop rule).')
+        else:
+            txt += (' It bought when the price came back to the small FVG of that move.' if lx.get('fvg') else ' It bought at the close of that candle.')
+            if P.get('ltfStop', 'ltf') == 'ltf':
+                txt += ' The stop went just under that small final low - closer than under the zone, so one R is smaller.'
         out.append(txt)
     if ev:
         b = ev[0]
@@ -920,7 +933,7 @@ def why_story(t, cs, s, P, cx):
                               'just under the final low (the lowest point before the CHoCH)')}.get(mode, '')
     if t.get('lx'):                          # the lower-timeframe confirmation decided the entry (and the stop)
         ent = 'after the small CHoCH on the lower timeframe (above)'
-        if P.get('ltfStop', 'ltf') == 'ltf':
+        if (t['lx'].get('lowStop') if t['lx'].get('how') else P.get('ltfStop', 'ltf') == 'ltf'):
             stop = 'just under the small final low'
     if P.get('stopAtr'):
         stop += ' or %s times the ATR (the usual candle size) under the buy price, whichever is lower' % ('%g' % P['stopAtr'])
@@ -1189,7 +1202,8 @@ def ltf_page(pdf, key, t, lcs, P, page_no, pages, run_name):
     if t.get('fz'):
         zb = t['fz'][0]
     fvg = lx.get('fvg')
-    levels = [t['entry'], t['stop'], zb, zt, lx['lvl'], lx['lf']] + ([fvg[0], fvg[1]] if fvg else [])
+    half = lx.get('half')                    # the Smart entry's 50% line of the small move [final low, its high]
+    levels = [t['entry'], t['stop'], zb, zt, lx['lvl'], lx['lf']] + ([fvg[0], fvg[1]] if fvg else []) + (list(half) if half else [])
     x0, x1, y0, y1 = 46.0, PAGE_W - 128.0, 60.0, PAGE_H - 96.0
     intra = lx['tf'] != 'D'
     ch = Chart(cv, lcs, start, end, (x0, y0, x1, y1), levels, intraday=intra)
@@ -1214,6 +1228,9 @@ def ltf_page(pdf, key, t, lcs, P, page_no, pages, run_name):
     ch.word(b, ch.Y(f2(lcs.h[b])) + 1.5, 'CHoCH', CHOCH, up=True, size=7.5)
     if fvg:
         ch.word(max(start, fvg[2] - 2), ch.Y(fvg[1]), 'small FVG', (0.45, 0.30, 0.70), up=True, size=6.5)
+    if half and lx.get('order') is not None:
+        ch.hline(max(start, li), e, lx['order'], FIB, 0.9, dash=(3, 2))
+        right.append((ch.Y(lx['order']), '50%% line %s (order)' % money(lx['order']), FIB))
     # the small chart's swings as its structure saw them (the run's swing size)
     try:
         h = [f2(x) for x in lcs.h[start:end + 1]]
@@ -1237,9 +1254,12 @@ def ltf_page(pdf, key, t, lcs, P, page_no, pages, run_name):
     name = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}.get(lx['tf'], lx['tf'])
     cv.text(x0, PAGE_H - 34, '%s  -  the confirmation on the %s chart' % (t['sym'], name), 14, INK, bold=True)
     cv.text(x0, PAGE_H - 52, (t.get('ltf') or '')[:200], 8, MUTED)
-    cv.text(x0, PAGE_H - 65, ('After price came into the zone, the %s chart fell in %d lower high%s and lower low%s, made its final low in the zone and '
-                              'then closed above its last swing high (a small CHoCH) - the buy came then, not at the touch.') % (
-        name, lx.get('d', 1), '' if lx.get('d', 1) == 1 else 's', '' if lx.get('d', 1) == 1 else 's'), 7.5, CHOCH)
+    how = {'close': 'its level was in the zone: bought at its close', 'fvg': 'above the zone: bought on the retest of its small FVG',
+           'half': 'above the zone, no small FVG: bought at the 50% line of its move'}.get(lx.get('how'), '')
+    cv.text(x0, PAGE_H - 65, ('After price came into the zone, the %s chart fell in %d lower high%s and lower low%s, made its final low%s and '
+                              'then closed above its last swing high (a small CHoCH) - %s.') % (
+        name, lx.get('d', 1), '' if lx.get('d', 1) == 1 else 's', '' if lx.get('d', 1) == 1 else 's',
+        '' if lx.get('how') else ' in the zone', how or 'the buy came then, not at the touch'), 7.5, CHOCH)
     cv.text(x0, 18, 'Stock Blueprint Backtest Lab - %s - page 2 of 3 of this trade: the lower-timeframe confirmation (the zone of the '
                     'chart, the small CHoCH, BUY, the stop)' % run_name[:60], 6.5, AXIS)
     cv.text(PAGE_W - 30, 18, 'page %d of %d' % (page_no, pages), 6.5, AXIS, align='right')
@@ -1286,7 +1306,11 @@ def cover_page(pdf, run_name, P, res, shown, total, made):
     cv.text(50, y, 'How to read a chart', 11, INK, bold=True)
     y -= 18
     legend = [(ENTRY, 'Entry line + BUY mark (the signal candle)'), (STOP, 'Stop loss line'), (TARGET, 'Target line (dashed)')]
-    if P.get('setup') == 'bos':          # a BOS + FVG run (13-Nov-2026)
+    if P.get('setup') == 'both':         # CHoCH + FVG and BOS + FVG in one run (14-Nov-2026)
+        legend += [(CHOCH, 'CHoCH level (dashed) - CHoCH + FVG trades: from the swing high it broke to the CHoCH candle; final low'),
+                   (BOS, 'BOS level (dashed) - BOS + FVG trades: from the higher high it broke to the BOS candle; higher low'),
+                   (FIB, 'The Fib line of the move (your discount level), from the final / higher low to the signal')]
+    elif P.get('setup') == 'bos':        # a BOS + FVG run (13-Nov-2026)
         legend += [(BOS, 'BOS level (dashed) from the higher high it broke to the BOS candle; higher low = where the BOS move starts'),
                    (CHOCH, 'CHoCH level (dashed) - the trend change before a 1st BOS'),
                    (FIB, 'The Fib line of the BOS move (your discount level), from the higher low to the signal'),
@@ -1308,17 +1332,23 @@ def cover_page(pdf, run_name, P, res, shown, total, made):
 
 def rule_lines(P):
     out = []
+    both_run = P.get('setup') == 'both'
     bos_run = P.get('setup') == 'bos'
-    EVN = 'BOS' if bos_run else 'CHoCH'
-    if P.get('structure') == 'only' and bos_run:
+    EVN = 'CHoCH / BOS' if both_run else 'BOS' if bos_run else 'CHoCH'
+    if P.get('structure') == 'only' and (bos_run or both_run):
         kinds = {'first': 'the first BOS after a CHoCH (at least %s lower highs and lower lows before it)' % P.get('downN'),
                  'trend': 'BOS in a running up-trend (at least %s higher highs and higher lows)' % P.get('upN', 1),
                  'both': 'every BOS - the first after a CHoCH (%s lower highs / lows) and the ones of a running up-trend' % P.get('downN')}
-        out.append('Setup: BOS + FVG - %s' % kinds.get(P.get('bosKind'), kinds['both']))
+        if both_run:
+            out.append('Setups: CHoCH + FVG and BOS + FVG together - every signal candle is tried as CHoCH + FVG first, then as '
+                       'BOS + FVG (%s)' % kinds.get(P.get('bosKind'), kinds['both']))
+        else:
+            out.append('Setup: BOS + FVG - %s' % kinds.get(P.get('bosKind'), kinds['both']))
     if P.get('structure') == 'only':
         w = {'both': 'in the %s move or after it' % EVN, 'leg': 'only in the %s move' % EVN, 'after': 'only after the %s candle' % EVN}
         out.append('Market structure: swings of %s candles each side, %s, zone %s%s%s%s' % (
-            P.get('pivotN'), ('BOS move from its higher low' if bos_run else 'at least %s lower highs and lower lows' % P.get('downN')),
+            P.get('pivotN'), ('BOS move from its higher low' if bos_run else 'at least %s lower highs and lower lows%s' % (
+                P.get('downN'), ' (CHoCH) / the BOS move from its higher low (BOS)' if both_run else '')),
             w.get(P.get('zoneWhen'), ''), (', first pullback (no next BOS)' if bos_run else ', first pullback (no BOS)') if P.get('firstPull') else '',
             (', zone top below the %s level' % EVN) if P.get('belowChoch') else '',
             (', zone %s at least %g%% down the move' % ({'mid': 'middle', 'top': 'top', 'bottom': 'bottom'}.get(P.get('discPart'), 'middle'),
@@ -1327,11 +1357,19 @@ def rule_lines(P):
         out.append('Market structure: not a rule in this run (the charts still show the swings and any CHoCH)')
     if P.get('ltf', 'off') != 'off':
         name = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}.get(P['ltf'], P['ltf'])
-        out.append('Confirmation on the %s chart: a CHoCH (swings of %s candles, at least %s lower highs / lows) with its final low in '
-                   'the zone (at most %g%% under it), within %s candles of the signal; buy %s; stop %s' % (
-                       name, P.get('ltfPivot'), P.get('ltfDown'), P.get('ltfUnder', 0), P.get('ltfWait'),
-                       'at its FVG top on the retest' if P.get('ltfEntry') == 'fvg' else 'at its close',
-                       'under its final low' if P.get('ltfStop', 'ltf') == 'ltf' else 'by the rule below'))
+        prot = ', closing above the protected high' if P.get('ltfChoch') == 'protected' else ''
+        if P.get('ltfEntry') == 'smart':
+            out.append(('Confirmation on the %s chart: a CHoCH (swings of %s candles, at least %s lower highs / lows' + prot + ') within %s candles of '
+                        'the signal, its final low anywhere; Smart buy: its level in the zone -> at its close, above the zone -> on the '
+                        'retest of its highest small FVG, else of its 50%% line; a buy above the zone: stop under the small final low, in '
+                        'the zone: the rule below; no buy when the target came first (missed) or a candle closed under the zone') % (
+                           name, P.get('ltfPivot'), P.get('ltfDown'), P.get('ltfWait')))
+        else:
+            out.append(('Confirmation on the %s chart: a CHoCH (swings of %s candles, at least %s lower highs / lows' + prot + ') with its final low in '
+                        'the zone (at most %g%% under it), within %s candles of the signal; buy %s; stop %s') % (
+                           name, P.get('ltfPivot'), P.get('ltfDown'), P.get('ltfUnder', 0), P.get('ltfWait'),
+                           'at its FVG top on the retest' if P.get('ltfEntry') == 'fvg' else 'at its close',
+                           'under its final low' if P.get('ltfStop', 'ltf') == 'ltf' else 'by the rule below'))
     else:
         out.append('Buy: %s' % {'zone': 'an order waiting at the zone top', 'close': "the signal candle's close",
                                 'next_open': "the next candle's open"}.get(P.get('entry'), P.get('entry')))
