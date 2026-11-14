@@ -419,7 +419,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-14:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-16:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -1691,7 +1691,7 @@ t, _ = run21(path21, timeN=2, timeR=1)                              # the target
 assert t['reason'] == 'trail', t
 # through run_job on the SWIGGY-like chart: the ATR stop, the move-high target, the columns
 c21 = L.TRADE_COLS
-assert c21[-5:-3] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
+assert c21[-7:-5] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
 j21 = lambda **kw: [dict(zip(c21, r)) for r in L.run_job(dict(SMC6, entry='zone', **kw))['trades'] if r[0] == 'SWG']
 K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)    # the cache of r19 again (section 20 left another)
 t0, = j21()
@@ -1920,5 +1920,127 @@ assert it23[1]['note'] == ('D BOS + FVG zone touched %s · 1H CHoCH after 2 lowe
 assert [x['pattern'] for x in an23(ltf='off')] == ['BOS + FVG'] and an23(bos=False, ltf='off') == []
 assert [x['pattern'] for x in an23(ltf='1H', bosKind='trend')] == [], 'the 1st BOS after the CHoCH is not a running up-trend'
 assert [x['pattern'] for x in an23()] == ['BOS + FVG'], 'the default 15m: the 15-minute chart has no CHoCH of 3-candle swings here'
+
+# ------------------------------------------------------------------ 24. the Smart lower-timeframe entry + both setups in one run (owner,
+# 14-Nov-2026: "Zone kulaye lower timeframe Choch nadanthuchuna ... Choch candle close la kooda buy panalam ... Lowertimeframe choch
+# Zone ku mela nadanthuna ... FVG Zone create aachuna, we can buy on this top of the Zone (LTF), FVG Zones ethum ilena, 50%
+# retracementla buy panalam"; answers 1b 2 (final low anywhere) 3a 4a 5 (no cancel on the small final low; a close of the chart
+# under the zone cancels; the target first = missed) 6 (above the zone: under the small final low, in it: the usual stop) 7a 8 no;
+# "if i want to run CHoch+FVG, BOS+FVG at a same time, there is no option")
+assert 'smart' in L.CHOICES['ltfEntry'] and 'both' in L.CHOICES['setup'] and 'ltfmissed' in L.LTF_WHY
+SM = dict(LT23, ltfEntry='smart')
+ZB, ZT = 140.3, 144.0                       # FVG1, the daily zone of section 22
+day4 = date.fromisoformat(r22[t22a + 4][0])
+SLOT = (555, 615, 675, 735, 795, 855, 915)
+
+
+def put24(cands, extra=()):
+    """The 1-hour file: the candles on the 4 days of section 23 (7 a day), then `extra` on the 5th day."""
+    rows = []
+    for k, (o, h, l, c) in enumerate(cands):
+        dd, mm = days23[k // 7], SLOT[k % 7]
+        rows.append(['%s %02d:%02d' % (dd.isoformat(), mm // 60, mm % 60), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 100])
+    for k, (o, h, l, c) in enumerate(extra):
+        mm = SLOT[k]
+        rows.append(['%s %02d:%02d' % (day4.isoformat(), mm // 60, mm % 60), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 100])
+    K.ltf_data.write(K.ltf_dir(), 'BOS', '1H', rows)
+    L._LTF_MEMO['key'] = None
+    return rows
+
+
+def smart24(**kw):
+    r = L.run_job(dict(SM, **kw))
+    return r, [dict(zip(L.TRADE_COLS, x)) for x in r['trades'] if x[0] == 'BOS']
+
+
+# (a) the CHoCH above the zone (level 146.90 > 144.00): the highest small FVG of its move = the CHoCH candle's own gap 145.73 - 147.97
+# (known when the next candle closes): the order waits at its top from then, the price comes back on day 5 -> bought there; above the
+# zone -> the stop under the small final low 143.10
+base24 = list(seq23)                         # 24 candles: the CHoCH candle choch_c, then one more
+fill = [(150.5, 150.6, 145.4, 146.0), (146.0, 149.0, 145.8, 148.8)]
+put24(base24, fill)
+ra, ta = smart24()
+assert len(ta) == 1, (ra['skipped'], ta)
+x = ta[0]
+assert (x['entry'], x['stop'], x['ltfHow']) == (147.97, round(143.1 * 0.995, 2), 'fvg'), x
+assert x['ltf'] == ('1H CHoCH %s above 146.90 (2 lower highs / lows, final low 143.10 at %s) · above the zone - bought at its FVG top 147.97 '
+                    '(retest) · stop under the small final low · 4 candles after the signal' % (rows23[choch_c][0], rows23[choch_c - 2][0])), x['ltf']
+assert x['exitOn'] and x['days'] >= 4
+assert ra['ltf']['byHow']['fvg']['n'] == 1 and ra['ltf']['missed'] == 0, ra['ltf']
+# the old FVG entry on the same candles fills at the same order
+assert [t['entry'] for t in smart24(ltfEntry='fvg')[1]] == [147.97]
+# (b) the target came first: 147.97 + 2 x (147.97 - 142.38) = 159.14 reached before any retest -> missed; its CHoCH-close trade kept
+put24(base24, [(150.5, 160.0, 150.0, 159.5), (159.5, 160.0, 145.0, 146.0)])
+rb24, tb24 = smart24()
+assert tb24 == [] and rb24['skipped']['ltfmissed'] == 1 and rb24['ltf']['missed'] == 1 and rb24['ltf']['why'] == {'ltfmissed': 1}, rb24['ltf']
+assert 'missedAtClose' in rb24['ltf'] and rb24['ltf']['without']['trades'] + rb24['ltf']['notyet'] >= 0
+# (c) no small FVG in the move (overlapping candles): the order at its 50% line (143.10 + 147.50) / 2 = 145.30
+noFvg = list(seq23[:choch_c - 2]) + [(143.2, 144.8, 143.1, 144.5), (144.5, 146.0, 143.4, 145.7), (145.7, 147.5, 144.6, 147.2)]
+NOFVG_X = [(147.2, 147.6, 145.9, 146.4), (146.4, 146.5, 145.2, 146.3), (146.3, 149.0, 146.0, 148.9)]
+put24(noFvg, NOFVG_X)
+rc24, tc24 = smart24()
+assert len(tc24) == 1 and (tc24[0]['entry'], tc24[0]['ltfHow'], tc24[0]['stop']) == (145.3, 'half', round(143.1 * 0.995, 2)), (rc24['skipped'], tc24)
+assert 'no small FVG - bought at the 50% line 145.30 of its move (retest)' in tc24[0]['ltf'], tc24[0]['ltf']
+# (d) the small CHoCH's level inside the zone (142.60 <= 144.00): bought at its close 143.60 - in the zone -> the usual stop under it
+inz = legs23(144.5, (141.8, 143.7, 141.2, 143.0, 140.8, 142.5, 140.6, 143.6))
+put24(inz)
+rd, td = smart24()
+assert len(td) == 1, (rd['skipped'], rd['ltf'])
+assert (td[0]['entry'], td[0]['stop'], td[0]['ltfHow']) == (143.6, round(ZB * 0.995, 2), 'close'), td
+assert 'its level in the zone - bought at its close' in td[0]['ltf'] and 'stop under the zone (your stop rule)' in td[0]['ltf'], td[0]['ltf']
+# the final low may be anywhere: price left the zone and fell in lower highs / lows ABOVE it (final low 145.10) before the small
+# CHoCH - confirmed with Smart, not with the close entry (its final low must be in the zone)
+hl = legs23(147.0, (149.5, 146.5, 148.8, 145.6, 148.0, 145.2, 150.5))
+put24(hl, [(150.5, 150.6, 145.0, 145.5), (145.5, 147.0, 145.3, 146.8)])
+rh, th = smart24()
+assert len(th) == 1 and th[0]['ltfHow'] in ('fvg', 'half') and 'final low 145.10' in th[0]['ltf'], (rh['skipped'], rh['ltf'], th)
+assert smart24(ltfEntry='close')[1] == []
+# (e) a daily close under the zone after the small CHoCH, before the retest: the order is cancelled
+put24(base24, fill)
+r22e = [list(r) for r in r22]
+r22e[t22a + 3][4] = 139.0
+K.store_save('BOS', {'v': 1, 'sym': 'BOS', 'm15': [], 'day': r22e, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+assert smart24()[0]['skipped']['ltfbroke'] == 1
+K.store_save('BOS', {'v': 1, 'sym': 'BOS', 'm15': [], 'day': r22, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+# the charts PDF: the Smart entry's words + the 50% line
+put24(noFvg, NOFVG_X)
+pdf24 = L.run_job(SM, charts=L.CHARTS_DIR, name='smart entry')
+w24 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf24['pdf']['file'])))
+for txt in ('50% line 145.30 (order)', 'its move left no small FVG, so it waited for the price', 'Smart buy: its level in the zone',
+            'The buy was above the zone, so the stop went just under that small final low'):
+    assert txt in w24, txt
+# the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also"): the
+# events = structure's protected CHoCH on the small candles, kept apart from the usual ones
+put24(base24, fill)
+lp = L._LtfSet(L.load_meta()[1], L.load_meta()[0], dict(L.DEFAULTS, ltf='1H', ltfPivot=2, ltfChoch='protected'))
+cs_p, ev_p = lp.get('BOS')
+lp.close()
+want = L.structure.choch_events([L._f(v) for v in cs_p.h], [L._f(v) for v in cs_p.l], [L._f(v) for v in cs_p.c], 2, opts={'choch': 'protected'})
+assert [list(e) for e in ev_p] == [list(map(float, e)) for e in want] and L._LTF_MEMO['key'][-1] == 'protected'
+rp24, tp24 = smart24(ltfChoch='protected')
+assert len(tp24) == 1 and ' (protected high) (2 lower highs / lows' in tp24[0]['ltf'], (rp24['skipped'], tp24)
+put24(base24)                                # back to section 23's candles
+
+# both setups in one run: every signal candle tried as CHoCH + FVG first, then as BOS + FVG
+B24 = dict(SMC6, entry='zone', bosKind='both')
+scol = L.TRADE_COLS.index('setup')
+runs = {sn: L.run_job(dict(B24, setup=sn)) for sn in ('choch', 'bos', 'both')}
+keyed = {sn: {(r[0], r[1]): r for r in runs[sn]['trades']} for sn in runs}
+assert keyed['choch'] and set(keyed['bos']) - set(keyed['choch']), 'the fixture has trades of both kinds'
+assert set(keyed['both']) == set(keyed['choch']) | set(keyed['bos']) and runs['both']['tradesTotal'] == len(keyed['both'])
+assert all(keyed['both'][k][scol] == 'choch' and keyed['both'][k][L.TRADE_COLS.index('entry')] == keyed['choch'][k][L.TRADE_COLS.index('entry')]
+           for k in keyed['choch'])
+assert all(keyed['both'][k][scol] == 'bos' for k in set(keyed['bos']) - set(keyed['choch']))
+assert {r['setup'] for r in runs['both']['stages']} == {'choch', 'bos'} and all(
+    r['name'].startswith(('CHoCH + FVG: ', 'BOS + FVG: ')) for r in runs['both']['stages']), runs['both']['stages']
+assert len(L._STRUCT['all']) == 2, 'both structures kept for the next run'
+bd24 = {b['key']: b for b in runs['both']['breakdowns']}
+assert 'setup' not in {b['key'] for b in runs['choch']['breakdowns']}
+pdfb = L.run_job(dict(B24, setup='both'), charts=L.CHARTS_DIR, name='both setups')
+wb = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdfb['pdf']['file'])))
+assert 'Setups: CHoCH + FVG and BOS + FVG together' in wb and 'BOS level (dashed) - BOS + FVG trades' in wb
+assert pdfb['pdf']['pages'] == 1 + 2 * pdfb['tradesTotal']
 
 print('OK')

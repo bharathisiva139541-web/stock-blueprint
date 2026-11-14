@@ -96,6 +96,7 @@
   function notes(p) {
     var n = [];
     n.push('Open the ' + (TF[p.tf] || TF.D) + ' chart on TradingView (the Lab ran on that timeframe).');
+    if (p.setup === 'both') n.push('The script draws one setup at a time - CHoCH + FVG here; to see the BOS + FVG trades of this run, set Setup to "BOS + FVG" in its settings (gear icon).');
     if (p.group && p.group !== 'touch') {
       n.push('The script draws BUY on the first touch of a zone ("First touch of a zone"); your Pattern is a different one - Spring candles show as small "S" marks, FVG First Touch / Confirmed are not drawn.');
     }

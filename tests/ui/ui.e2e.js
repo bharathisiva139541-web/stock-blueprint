@@ -1279,7 +1279,7 @@ function check(name, fn) {
       basics: ['tf', 'group', 'stop', 'stopBuf', 'targetR', 'after', 'trail', 'trailN', 'capital', 'riskPct', 'testFrom'].every((k) => {
         const e = document.querySelector('#lab-form [data-k="' + k + '"]'); return e && e.offsetParent !== null; }),
       guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
-    assert.deepStrictEqual(lay.quick, ['smc', 'bos', 'fvg', 'gap']);
+    assert.deepStrictEqual(lay.quick, ['smc', 'bos', 'both', 'fvg', 'gap']);
     await guideShot(own.p, '01-start', '#lab-form');
     assert.deepStrictEqual(lay.secs, [['structure', false], ['zone', false], ['shape', false], ['trend', false], ['ltf', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
     assert.ok(lay.basics, 'the basics are on show');
@@ -1415,7 +1415,9 @@ function check(name, fn) {
     await own.p.click('#lab-bos');
     await own.p.waitForSelector('.lab-rec.on #lab-bos');
     assert.ok(!(await own.p.$('.lab-rec.on #lab-smc')), 'one setup card in use');
-    assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="setup"],#lab-form select[data-k="bosKind"],#lab-form select[data-k="group"],#lab-form select[data-k="discount"]', (x) => x.map((e) => e.value)), ['touch', 'bos', 'both', '0.5']);
+    assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="bosKind"],#lab-form select[data-k="group"],#lab-form select[data-k="discount"]', (x) => x.map((e) => e.value)), ['touch', 'both', '0.5']);
+    const setupBoxes = () => own.p.$$eval('#lab-setups [data-setup]', (x) => x.map((e) => e.getAttribute('data-setup') + ':' + e.checked));
+    assert.deepStrictEqual(await setupBoxes(), ['choch:false', 'bos:true'], 'the setup tick boxes (14-Nov-2026)');
     assert.match(await plainText(), /BOS \+ FVG \(swings of 5 candles each side\): a BOS = a candle closing above the last swing high when that high was a higher high and the pullback since it a higher low; every BOS - the 1st after a CHoCH \(3 lower highs \/ lows before it\) and the ones of a running up-trend; the BOS move = from that higher low to the highest high before the signal\. Only signals where the zone formed after the BOS's higher low, in the BOS move or after it; the zone's middle \(no zone: the entry\) at least 50% down the move from the BOS's higher low to its high/);
     await own.p.selectOption('#lab-form select[data-k="bosKind"]', 'trend');
     await own.p.waitForSelector('#lab-form select[data-k="upN"]');
@@ -1425,15 +1427,35 @@ function check(name, fn) {
     await own.p.waitForSelector('#lab-form select[data-k="ltfWait"]');
     assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="ltf"] option', (o) => o.map((x) => x.value)), ['off', '1H', '15m'], 'smaller than the daily chart');
     assert.match(await plainText(), /Confirmation on the 15-minute chart: after the signal, wait up to 5 daily candles for a CHoCH there \(swings of 3 candles, at least 2 lower highs and lower lows\) whose final low is in the zone \(at most 0\.5% under its bottom\); buy at the close of that CHoCH candle; stop a little under that small final low\. No small CHoCH in time, or a daily close under the zone first = no trade\./);
+    // the Smart entry (owner, 14-Nov-2026): in the zone -> the small CHoCH's close; above it -> the small FVG top, else the 50% line
+    await own.p.selectOption('#lab-form select[data-k="ltfEntry"]', 'smart');
+    await own.p.waitForSelector('#lab-smart-note');
+    assert.ok(!(await own.p.$('#lab-form select[data-k="ltfUnder"]')) && !(await own.p.$('#lab-form select[data-k="ltfStop"]')), 'Smart has its own final-low / stop rules');
+    assert.match(await own.p.$eval('#lab-smart-note', (x) => x.innerText), /Smart buy: the small CHoCH's level \(the small high it broke\) at \/ under the zone top → buy at its close[\s\S]*50% line[\s\S]*the target reached first = missed/);
+    assert.match(await plainText(), /Smart buy: its level at \/ under the zone top → at its close; above the zone → an order at the top of its highest small FVG, else at the 50% line of its move\. Stop: a buy above the zone → a little under the small final low, in the zone → as set above\./);
     await guideShot(own.p, '05b-ltf', 'details.lab-sec[data-sec="ltf"]');
+    await own.p.selectOption('#lab-form select[data-k="ltfEntry"]', 'close');
+    await own.p.waitForSelector('#lab-form select[data-k="ltfUnder"]');
+    // the small CHoCH above the protected high (owner, 14-Nov-2026)
+    await own.p.selectOption('#lab-form select[data-k="ltfChoch"]', 'protected');
+    await own.p.waitForFunction(() => /a close above the protected high\) whose final low is in the zone/.test(document.querySelector('#lab-plain').textContent));
+    await own.p.selectOption('#lab-form select[data-k="ltfChoch"]', 'last');
     await own.p.selectOption('#lab-form select[data-k="tf"]', 'W');
     await own.p.waitForFunction(() => [...document.querySelectorAll('#lab-form select[data-k="ltf"] option')].map((x) => x.value).join() === 'off,D,1H,15m');
     await own.p.selectOption('#lab-form select[data-k="tf"]', 'D');
     await own.p.selectOption('#lab-form select[data-k="ltf"]', 'off');
     await own.p.waitForFunction(() => !document.querySelector('#lab-form select[data-k="ltfWait"]'));
+    // both setups in one run (owner, 14-Nov-2026: "if i want to run CHoch+FVG, BOS+FVG at a same time"): the card and the tick boxes
+    await own.p.click('[data-quick="both"]');
+    await own.p.waitForSelector('.lab-rec.on [data-quick="both"]');
+    assert.deepStrictEqual(await setupBoxes(), ['choch:true', 'bos:true']);
+    assert.match(await plainText(), /Two setups together - every zone touch is checked as CHoCH \+ FVG first, then as BOS \+ FVG \(one trade a candle\)\. CHoCH \+ FVG: Market structure[\s\S]* BOS \+ FVG: BOS \+ FVG \(swings of 5/);
+    assert.ok(await own.p.$('#lab-form select[data-k="bosKind"]'), 'the BOS kinds with both ticked');
+    await own.p.click('#lab-setups [data-setup="bos"]');          // untick BOS -> CHoCH only
+    await own.p.waitForFunction(() => !document.querySelector('#lab-form select[data-k="bosKind"]'));
     await own.p.click('#lab-smc');
     await own.p.waitForSelector('.lab-rec.on #lab-smc');
-    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="setup"]', (e) => e.value), 'choch');
+    assert.deepStrictEqual(await setupBoxes(), ['choch:true', 'bos:false']);
     // the TradingView script with these rules (owner, 11-Nov-2026: "give option to copy the pinescript in this page that works
     // with respect to the current setup before running the setup")
     await own.p.evaluate(() => {
@@ -1527,7 +1549,12 @@ function check(name, fn) {
       ltf: { tf: '15m', name: '15-minute', signals: 40, confirmed: 22, why: { ltfnone: 15, ltfbroke: 3 }, nodata: 120, notyet: 1, from: '2021-03-01',
         with: { trades: 21, winPct: 52.4, avgR: 0.85, totalR: 17.9, pf: 2.1, avgRLo: 0.1, avgRHi: 1.6, edge: 'few' },
         without: { trades: 39, winPct: 35.9, avgR: 0.21, totalR: 8.2, pf: 1.3, avgRLo: -0.2, avgRHi: 0.6, edge: 'chance' },
-        withoutConfirmed: { trades: 21, winPct: 47.6, avgR: 0.4, totalR: 8.4, pf: 1.5, avgRLo: -0.2, avgRHi: 1.0, edge: 'few' } },
+        withoutConfirmed: { trades: 21, winPct: 47.6, avgR: 0.4, totalR: 8.4, pf: 1.5, avgRLo: -0.2, avgRHi: 1.0, edge: 'few' },
+        // the Smart entry's three ways + the orders price ran away from (14-Nov-2026)
+        missed: 4, missedAtClose: { trades: 4, winPct: 75, avgR: 1.9, totalR: 7.6, pf: 4.1, avgRLo: 0.3, avgRHi: 3.5, edge: 'few' },
+        byHow: { close: { n: 9, trades: 9, winPct: 55.6, avgR: 1.1, totalR: 9.9, pf: 2.4, avgRLo: 0.1, avgRHi: 2.1, edge: 'few' },
+                 fvg: { n: 8, trades: 8, winPct: 50, avgR: 0.7, totalR: 5.6, pf: 1.9, avgRLo: -0.4, avgRHi: 1.8, edge: 'few' },
+                 half: { n: 4, trades: 4, winPct: 50, avgR: 0.6, totalR: 2.4, pf: 1.7, avgRLo: -0.9, avgRHi: 2.1, edge: 'few' } } },
       open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
       stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
       reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
@@ -1599,6 +1626,7 @@ function check(name, fn) {
     const ltfT = await own.p.$eval('#lab-ltf', (x) => x.innerText);
     assert.match(ltfT, /With the confirmation[\s\S]*21[\s\S]*52\.4%[\s\S]*0\.85R[\s\S]*Without it - every signal[\s\S]*39[\s\S]*0\.21R[\s\S]*Without it - only the confirmed ones[\s\S]*0\.4R/);
     assert.match(view, /The 15-minute confirmation helped: 0\.85R a trade against 0\.21R without it \(\+0\.64R a trade\), on 21 of the 39 signals\. Few trades/);
+    assert.match(await own.p.$eval('#lab-smart', (x) => x.innerText), /Small CHoCH in the zone[\s\S]*9[\s\S]*1\.1R[\s\S]*Above the zone - small FVG[\s\S]*0\.7R[\s\S]*Above the zone - 50% line[\s\S]*0\.6R[\s\S]*Missed orders, if bought at the CHoCH close[\s\S]*4 orders: the target came before the retest[\s\S]*1\.9R/);
     assert.match(view, /40 signals with 15-minute candles \(from [^)]+\): 22 confirmed, not confirmed: 15 no small CHoCH in the zone in time, 3 a candle of the chart closed under the zone first\. 120 older signals left out - no 15-minute candles that old on the laptop/);
     await guideShot(own.p, '10b-ltf', 'details[data-rsec="ltf"]');
     assert.match(await own.p.$eval('#lab-verdict', (x) => x.innerText), /Real or chance\?[\s\S]*Test part \(from[\s\S]*2\.3R a trade over 2 trades[\s\S]*Account/);

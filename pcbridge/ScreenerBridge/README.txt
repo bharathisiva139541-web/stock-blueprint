@@ -487,3 +487,16 @@ ONE PROGRAM ON THE KITE CANDLES AT A TIME (14-Nov-2026)
  - A file Windows keeps busy for a moment (an antivirus scan, the search indexer) is tried again for about 20 seconds;
    a stock whose file stays busy is left for the next run and the long read goes on.
  - KiteHistoryNow.bat stopped part-way? Just double-click it again - the stocks already read are not read again.
+
+SMART LOWER-TIMEFRAME BUY + BOTH SETUPS IN ONE RUN (14-Nov-2026)
+ - Backtest Lab > "Confirmation on a lower timeframe" > Buy: "Smart". The small CHoCH's level (the small high it broke) at /
+   under the zone top -> bought at its close. Above the zone -> no chasing: an order at the top of the highest small FVG of
+   its move, or (no small FVG) at the 50% line of that move (final low .. its high, fixed at the CHoCH). Its final low may be
+   anywhere. The order waits to the end of "Wait at most"; a daily close under the zone cancels it; price reaching the target
+   first = "missed" (counted, and what buying at the CHoCH close would have made is shown). Stop: a buy above the zone ->
+   under the small final low; in the zone -> your stop (under the zone). Target: your R on that stop.
+ - "The small CHoCH closes": above the last small swing high (usual) or above the protected high (the small swing high right
+   before the lowest low).
+ - Market structure > Setups: tick CHoCH + FVG, BOS + FVG or both (card "CHoCH + FVG and BOS + FVG together"). With both, every
+   zone touch is checked as CHoCH + FVG first, then as BOS + FVG - one trade a candle; the result shows each setup apart
+   ("What worked best" > Setup, "By market structure"), and the charts PDF draws each trade on its own setup.
