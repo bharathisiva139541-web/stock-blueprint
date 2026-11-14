@@ -1929,7 +1929,7 @@ assert [x['pattern'] for x in an23()] == ['BOS + FVG'], 'the default 15m: the 15
 # under the zone cancels; the target first = missed) 6 (above the zone: under the small final low, in it: the usual stop) 7a 8 no;
 # "if i want to run CHoch+FVG, BOS+FVG at a same time, there is no option")
 assert 'smart' in L.CHOICES['ltfEntry'] and 'both' in L.CHOICES['setup'] and 'ltfmissed' in L.LTF_WHY
-SM = dict(LT23, ltfEntry='smart')
+SM = dict(LT23, ltfEntry='smart', ltfNear=100)       # any distance above the zone (as before 14-Nov-2026's limit - see (f))
 ZB, ZT = 140.3, 144.0                       # FVG1, the daily zone of section 22
 day4 = date.fromisoformat(r22[t22a + 4][0])
 SLOT = (555, 615, 675, 735, 795, 855, 915)
@@ -1964,7 +1964,7 @@ ra, ta = smart24()
 assert len(ta) == 1, (ra['skipped'], ta)
 x = ta[0]
 assert (x['entry'], x['stop'], x['ltfHow']) == (147.97, round(143.1 * 0.995, 2), 'fvg'), x
-assert x['ltf'] == ('1H CHoCH %s above 146.90 (2 lower highs / lows, final low 143.10 at %s) · above the zone - bought at its FVG top 147.97 '
+assert x['ltf'] == ('1H CHoCH %s above 146.90 (2 lower highs / lows, final low 143.10 at %s) · above the zone (2.0%% above it) - bought at its FVG top 147.97 '
                     '(retest) · stop under the small final low · 4 candles after the signal' % (rows23[choch_c][0], rows23[choch_c - 2][0])), x['ltf']
 assert x['exitOn'] and x['days'] >= 4
 assert ra['ltf']['byHow']['fvg']['n'] == 1 and ra['ltf']['missed'] == 0, ra['ltf']
@@ -2022,6 +2022,27 @@ want = L.structure.choch_events([L._f(v) for v in cs_p.h], [L._f(v) for v in cs_
 assert [list(e) for e in ev_p] == [list(map(float, e)) for e in want] and L._LTF_MEMO['key'][-1] == 'protected'
 rp24, tp24 = smart24(ltfChoch='protected')
 assert len(tp24) == 1 and ' (protected high) (2 lower highs / lows' in tp24[0]['ltf'], (rp24['skipped'], tp24)
+# (f) the small CHoCH line close to the zone (owner, 14-Nov-2026, PCJEWELLER: the 15-minute CHoCH came after a big rally and the
+# order sat far above the daily zone - "small Choch line should have just above the higher timeframe Zone, within 2% (it can be
+# controllable)"): case (a)'s level 146.90 is 2.01% above the zone top 144.00
+assert L.DEFAULTS['ltfNear'] == 2 and 'ltffar' in L.LTF_WHY and L.LIMITS['ltfNear'] == (0, 100, False)
+put24(base24, fill)
+rf24, tf24 = smart24(ltfNear=2)
+assert tf24 == [] and rf24['skipped']['ltfnotyet'] == 1, rf24['skipped']      # passed over (the window is not over in the fixture)
+rf4 = smart24(ltfNear=2, ltfWait=4)[0]
+assert rf4['skipped']['ltffar'] == 1 and rf4['ltf']['why'] == {'ltffar': 1}, rf4['ltf']
+assert smart24(ltfNear=100, ltfWait=4)[0]['skipped']['ltfnofill'] == 1       # without the limit: the order is not reached in 4 days
+r3_24, t3_24 = smart24(ltfNear=3)
+assert [t['entry'] for t in t3_24] == [147.97] and 'above the zone (2.0% above it) - bought at its FVG top' in t3_24[0]['ltf'], t3_24
+assert smart24(ltfNear=3, ltfEntry='fvg')[1][0]['entry'] == 147.97, 'the other entries do not use the limit'
+pdf_f = L.run_job(dict(SM, ltfNear=3), charts=L.CHARTS_DIR, name='near')
+w_f = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf_f['pdf']['file'])))
+for txt in ('The small CHoCH happened just above the zone (its line 2% above the zone top, your limit 3%), so it did not chase',
+            'its final low anywhere, its line at most 3% above the zone top'):
+    assert txt in w_f, txt
+# ltfNear 0 = only a CHoCH line at / under the zone top: (d)'s CHoCH in the zone still buys at its close
+put24(inz)
+assert [t['entry'] for t in smart24(ltfNear=0)[1]] == [143.6]
 put24(base24)                                # back to section 23's candles
 
 # both setups in one run: every signal candle tried as CHoCH + FVG first, then as BOS + FVG

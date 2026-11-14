@@ -497,6 +497,10 @@ SMART LOWER-TIMEFRAME BUY + BOTH SETUPS IN ONE RUN (14-Nov-2026)
    under the small final low; in the zone -> your stop (under the zone). Target: your R on that stop.
  - "The small CHoCH closes": above the last small swing high (usual) or above the protected high (the small swing high right
    before the lowest low).
+ - "The small CHoCH line" (Smart only, 14-Nov-2026 after PCJEWELLER - the 15-minute CHoCH came after a big rally and the order
+   sat far above the daily zone): the small CHoCH's level may be at most 2% above the zone top (0.5 / 1 / 3 / 5 / 10%, "in the
+   zone only" or "any distance" to choose). A small CHoCH further up is passed over; a later one near the zone inside "Wait at
+   most" may still come. None = counted as "the small CHoCH came too far above the zone".
  - Market structure > Setups: tick CHoCH + FVG, BOS + FVG or both (card "CHoCH + FVG and BOS + FVG together"). With both, every
    zone touch is checked as CHoCH + FVG first, then as BOS + FVG - one trade a candle; the result shows each setup apart
    ("What worked best" > Setup, "By market structure"), and the charts PDF draws each trade on its own setup.

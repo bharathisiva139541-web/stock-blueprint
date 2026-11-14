@@ -1433,6 +1433,14 @@ function check(name, fn) {
     assert.ok(!(await own.p.$('#lab-form select[data-k="ltfUnder"]')) && !(await own.p.$('#lab-form select[data-k="ltfStop"]')), 'Smart has its own final-low / stop rules');
     assert.match(await own.p.$eval('#lab-smart-note', (x) => x.innerText), /Smart buy: the small CHoCH's level \(the small high it broke\) at \/ under the zone top → buy at its close[\s\S]*50% line[\s\S]*the target reached first = missed/);
     assert.match(await plainText(), /Smart buy: its level at \/ under the zone top → at its close; above the zone → an order at the top of its highest small FVG, else at the 50% line of its move\. Stop: a buy above the zone → a little under the small final low, in the zone → as set above\./);
+    // the small CHoCH line just above the zone (owner, 14-Nov-2026, PCJEWELLER: "within 2% (it can be controllable)")
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="ltfNear"]', (x) => x.value), '2', 'Smart: the small CHoCH line at most 2% above the zone top');
+    assert.match(await plainText(), /its final low anywhere; its line at most 2% above the zone top\)/);
+    await own.p.selectOption('#lab-form select[data-k="ltfNear"]', '1');
+    await own.p.waitForFunction(() => /its line at most 1% above the zone top/.test(document.querySelector('#lab-plain').textContent));
+    assert.match(await own.p.$eval('#lab-smart-note', (x) => x.innerText), /its line must sit just above the zone \(at most 1% above the zone top\)/);
+    await own.p.selectOption('#lab-form select[data-k="ltfNear"]', '2');
+    await own.p.waitForFunction(() => /its line at most 2% above the zone top/.test(document.querySelector('#lab-plain').textContent));
     await guideShot(own.p, '05b-ltf', 'details.lab-sec[data-sec="ltf"]');
     await own.p.selectOption('#lab-form select[data-k="ltfEntry"]', 'close');
     await own.p.waitForSelector('#lab-form select[data-k="ltfUnder"]');
