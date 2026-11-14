@@ -54,7 +54,10 @@ function readBack(src) {
     chochMode: get('chMode') === 'The protected high' ? 'protected' : 'last', eqAtr: Number(get('eqAtr')),
     gapEntry: get('gapEntry') === 'true',
     zonePick: get('zonePick') === 'Trade every zone' ? 'every' : 'second',
-    touchAgain: get('touchAgain') === 'true'
+    touchAgain: get('touchAgain') === 'true',
+    setup: get('setupMode') === 'BOS + FVG' ? 'bos' : 'choch',
+    bosKind: inv({ both: 'Every BOS', first: 'Only the 1st BOS after a CHoCH', trend: 'Only BOS of a running up-trend' }, get('bosKind')),
+    upN: Number(get('upN'))
   };
   if (get('useDates') === 'true') { out.from = iso(get('fromDate')); out.to = iso(get('toDate')); }
   // the discount level must be one of the input's options (Pine refuses the script otherwise)
@@ -70,7 +73,7 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
     entry: 'zone', stop: 'zone', stopBuf: 0.5, stopPct: 5, maxRisk: 15, minPrice: 0, targetMode: 'R', targetR: 2, swingMinR: 1, minTurnover: 0,
     emaSupport: 0, emaTouch: 1, above10: false, above21: false, above50: false, emaStack: false,
     swingMode: 'fractal', zzAtr: 2, swingAtr: 0, chochMode: 'last', eqAtr: 0, gapEntry: true, zonePick: 'second', touchAgain: true,
-    targetPct: 20, stopAtr: 0 };
+    targetPct: 20, stopAtr: 0, setup: 'choch', bosKind: 'both', upN: 1 };
   const sets = [base,
     Object.assign({}, base, { pivotN: 8, downN: 4, discount: 0.382, targetR: 2.5, from: '2020-01-01', to: '2026-11-11' }),       // the owner's screenshot
     Object.assign({}, base, { structure: 'off', zoneWhen: 'leg', chochAge: 40, discount: 0.55, discPart: 'top', firstPull: false, belowChoch: true, entry: 'close',
@@ -80,7 +83,9 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
     Object.assign({}, base, { stop: 'final', gapEntry: false, zonePick: 'every', touchAgain: false }),
     // the owner's stop / target options (13-Nov-2026)
     Object.assign({}, base, { stop: 'pct', stopPct: 5, stopAtr: 2, targetMode: 'mh', swingMinR: 0.5 }),
-    Object.assign({}, base, { stopAtr: 1.5, targetMode: 'pct', targetPct: 30 })];
+    Object.assign({}, base, { stopAtr: 1.5, targetMode: 'pct', targetPct: 30 }),
+    // BOS + FVG (owner, 13-Nov-2026)
+    Object.assign({}, base, { setup: 'bos', bosKind: 'trend', upN: 2 }), Object.assign({}, base, { setup: 'bos', bosKind: 'first', downN: 4 })];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pine-'));
   const files = sets.map((p, k) => {
     const code = PINE.build(p, { src: w.SB_PINE_SRC, name: 'Test "' + k + '"\nidea', plain: 'Rules in words.\nNext line', when: '11 Nov 2026' });
@@ -105,6 +110,8 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   assert.match(n.join(' '), /market condition \(NIFTY 50\)/);
   assert.match(n.join(' '), /Spring shape rules/);
   assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).length, 2, 'the timeframe + "only entry / stop / target"');
+  // the lower-timeframe confirmation is said, not drawn (owner, 13-Nov-2026)
+  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', ltf: '15m' }).join(' '), /The confirmation on the 15-minute chart is not drawn: the BUY marks are the touches - after one, switch TradingView to the 15m chart/);
   // the filters of 12-Nov-2026 are said, not drawn; the structure options are drawn (owner, 12-Nov-2026), so not listed
   const n2 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', swingAtr: 1, chochMode: 'protected', eqAtr: 0.25, lagMin: 10, wkAbove: 21, sweep: true }).join(' ');
   assert.doesNotMatch(n2, /ZigZag|protected|equal highs|stand out/);

@@ -48,9 +48,11 @@ import structure  # noqa: E402  (market structure: CHoCH / BOS - owner, 10-Nov-2
 import pattern_detect  # noqa: E402  (the bullish pattern engine - owner, 13-Nov-2026; docs/PATTERN_ENGINE_PLAN.md)
 import pattern_registry  # noqa: E402
 import pattern_p3  # noqa: E402  (phase 3 detectors - NEEDS_BENCH)
+import ltf_data  # noqa: E402  (the 1-hour / 15-minute candle files - the lower-timeframe confirmation, 13-Nov-2026)
 
 LAB_DIR = os.path.join(HERE, 'lab_cache')
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
+LTF_DIR = os.path.join(HERE, 'intraday_data', 'ltf')   # kite_intraday's 1-hour / 15-minute files (ltf_data.py)
 TFS = ('D', 'W', '4H')
 CACHE_VERSION = 6               # 2 (10-Nov-2026): FVG First Touch / Confirmed rows + the zone's candle in every row;
                                 # 3 (11-Nov-2026): the first touch of every FVG / Gap-up zone ('Z' / 'Y');
@@ -219,6 +221,25 @@ DEFAULTS = {
     'patCtx': 'any',
     # phase 3 (13-Nov-2026): the swing size of the structure / SMC patterns (P / S / V09 V10 / M17) - candles each side
     'patSwing': 5,
+    # BOS + FVG SETUPS (owner, 13-Nov-2026: "Shall we track BOS setup like this. like FVG Zone at discount level in the BOS
+    # move ... It can be a continuous BOS in uptrend. or BOS formed after Choch"; "yes. implement all you recommendations"):
+    # setup 'choch' (the CHoCH + FVG setup) / 'bos' = every structure rule above works on the BOS move instead - from the
+    # BOS's higher low (where the setup dies on a close under it) to its high, the zone under the BOS level / its Fib line,
+    # the first pullback = before the next BOS (structure.bos_events); bosKind 'first' = the first BOS after a CHoCH (that
+    # CHoCH with >= downN lower highs / lows) / 'trend' = the later ones of an up-trend (>= upN higher highs / lows) / 'both'
+    'setup': 'choch', 'bosKind': 'both', 'upN': 1,
+    # LOWER-TIMEFRAME CONFIRMATION (owner, 13-Nov-2026: "i got BOS+FVG setup in a stock in Daily Timeframe. I think without
+    # confimation, i should not enter the trade just by Price touching the FVG Zone ... switching the timeframe to 15 mins.
+    # If any Choch has happened inside the Zone in 15 min, then i decided to buy"; answers - my recommendations: 3 candles a
+    # swing, at least 2 lower highs / lows, wait at most 5 candles of the chart's timeframe, buy at the small CHoCH's close
+    # (or its FVG retest), stop under its final low (or the run's own stop)): ltf 'off' / 'D' (a weekly run) / '1H' / '15m' -
+    # after the zone's signal candle, the first CHoCH of that smaller timeframe (ltfPivot candles a swing, >= ltfDown lower
+    # highs / lows) whose final low lies in the zone (at most ltfUnder % under its bottom) and formed from the signal candle
+    # on, within ltfWait candles of the chart (the signal candle = the 1st), before a candle of the chart closed under the
+    # zone; ltfEntry 'close' = at that CHoCH candle's close / 'fvg' = an order at the top of the small FVG of its move;
+    # ltfStop 'ltf' = under its final low (stopBuf %) / 'rule' = the run's own stop. Every signal is also traded without it
+    # - the result's 'ltf' compares both on the same signals
+    'ltf': 'off', 'ltfPivot': 3, 'ltfDown': 2, 'ltfWait': 5, 'ltfUnder': 0.5, 'ltfEntry': 'close', 'ltfStop': 'ltf',
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -251,6 +272,8 @@ CHOICES = {
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
     'pattern': tuple(pattern_registry.implemented()), 'patCtx': ('any', 'down'),
+    'setup': ('choch', 'bos'), 'bosKind': ('first', 'trend', 'both'),
+    'ltf': ('off', 'D', '1H', '15m'), 'ltfEntry': ('close', 'fvg'), 'ltfStop': ('ltf', 'rule'),
 }
 LIMITS = {   # key: (min, max, integer)
     'minPrice': (0, 1e6, False), 'minTurnover': (0, 1e6, False), 'maxTouch': (0, 50, True), 'stopBuf': (0, 20, False),
@@ -271,7 +294,8 @@ LIMITS = {   # key: (min, max, integer)
     'stopAtr': (0, 10, False), 'targetPct': (1, 1000, False), 'partialPct': (0, 90, False), 'beAt': (0, 20, False),
     'timeN': (0, 1000, True), 'timeR': (0.1, 20, False),
     'engBody': (0, 10, False), 'boBuf': (0, 20, False), 'boVol': (0, 20, False), 'rsiN': (2, 50, True), 'divPivot': (2, 20, True),
-    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True),
+    'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True), 'upN': (1, 8, True),
+    'ltfPivot': (2, 10, True), 'ltfDown': (1, 6, True), 'ltfWait': (1, 30, True), 'ltfUnder': (0, 100, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -293,7 +317,7 @@ ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 
 REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy']
+              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR']
 
 
 def _iso_date(s):
@@ -830,7 +854,7 @@ def market_filter(meta, P):
     return ok
 
 
-def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, mh=None):
+def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, mh=None, stop_at=None):
     """One signal row -> the trade under the rules P (see the module text), or (None, why skipped). `swing` (target mode
     'swing') = the Structure of these candles: the target is then the last swing high at least swingMinR R above the
     entry (none = skipped, 'noswing'). `atr` (trail 'atr') = the ATR(14) series; `lows` (trail 'swing') = the Structure
@@ -865,7 +889,9 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
         mode = 'spring'                       # every Spring has no zone: under its own low
     if zone_in and mode in ('spring', 'lower'):
         mode = 'zone'                         # the touch candle's low is not known when the order fills
-    if mode == 'pct':
+    if stop_at is not None:                   # the lower-timeframe confirmation worked its stop out (ltf_trade)
+        stop = stop_at
+    elif mode == 'pct':
         stop = entry * (1 - P['stopPct'] / 100.0)
     elif mode == 'final':
         if final is None:
@@ -1024,6 +1050,289 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
             'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i],
             'part': round(tp, 2) if part and tp is not None else None, 'xr': round(xr, 4), 'partPct': P['partialPct'] if part else 0,
             'stopBy': stop_by}, None
+
+
+# ------------------------------------------------------------------ the lower-timeframe confirmation (owner, 13-Nov-2026)
+LTF_RANK = {'15m': 1, '1H': 2, '4H': 3, 'D': 4, 'W': 5}
+LTF_NAMES = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}
+LTF_WHY = ('ltfnone', 'ltfbroke', 'ltfnofvg', 'ltfnofill', 'ltfdata', 'ltfnotyet')
+_LTF_MEMO = {'key': None, 'map': {}}
+
+
+def htf_span(tf, day, minute):
+    """The time a candle of the chart covers as minute keys [start, end) (key = day ordinal x 1440 + minute): a week (from
+    its Monday), a day, or a 4H block (09:15-13:15 / 13:15-the day's end)."""
+    if tf == 'W':
+        mon = day - date.fromordinal(day).weekday()
+        return mon * 1440, (mon + 7) * 1440
+    if tf == 'D':
+        return day * 1440, (day + 1) * 1440
+    return day * 1440 + minute, day * 1440 + (795 if minute < 795 else 1440)
+
+
+class _LtfSet:
+    """A run's lower-timeframe candles: get(sym) -> (candles, events) - the CHoCH events (structure.choch_events, the run's
+    ltfPivot) remembered per (timeframe, swing size) while the program runs (a compact array per stock); the candles are read
+    again each run (a file a stock - fast)."""
+
+    def __init__(self, d, meta, P):
+        self.tf, self.n = P['ltf'], P['ltfPivot']
+        self.d, self.meta = d, meta
+        self.f = open(os.path.join(d, 'D.bin'), 'rb') if self.tf == 'D' else None
+        key = (d if self.tf == 'D' else LTF_DIR, self.tf, self.n)
+        if _LTF_MEMO['key'] != key:
+            _LTF_MEMO['key'], _LTF_MEMO['map'] = key, {}
+        self.memo = _LTF_MEMO['map']
+
+    def close(self):
+        if self.f:
+            self.f.close()
+
+    def get(self, sym):
+        if self.tf == 'D':
+            idx = (self.meta['index'].get('D') or {}).get(sym)
+            if not idx:
+                return None, None
+            cs = Candles(self.f, idx[0], idx[1])
+        else:
+            cs = ltf_data.read(LTF_DIR, sym, self.tf)
+        if not cs.n:
+            return None, None
+        m = self.memo.get(sym)
+        if m is None or m[0] != cs.n or m[1] != cs.day[-1]:
+            h, l, c = [_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c]
+            ev = structure.choch_events(h, l, c, self.n)
+            flat = array.array('d')
+            for e in ev:
+                flat.extend(e)
+            m = self.memo[sym] = (cs.n, cs.day[-1], flat)
+        flat = m[2]
+        return cs, [flat[k:k + 6] for k in range(0, len(flat), 6)]
+
+
+def _first_at(cs, key):
+    """The first candle of cs at / after the minute key."""
+    day = key // 1440
+    k = bisect.bisect_left(cs.day, day)
+    while k < cs.n and cs.day[k] * 1440 + cs.minute[k] < key:
+        k += 1
+    return k
+
+
+class _Hybrid:
+    """The candles a confirmed trade lives on: the small timeframe's candles from the entry to the end of the chart's candle
+    it is in, then the chart's candles after it (the target / stop / trail rules run on them as usual)."""
+    __slots__ = ('o', 'h', 'l', 'c', 'v', 'day', 'minute', 'n')
+
+    def __init__(self, lt, a, z, cs, j1):
+        self.o = list(lt.o[a:z]) + list(cs.o[j1:])
+        self.h = list(lt.h[a:z]) + list(cs.h[j1:])
+        self.l = list(lt.l[a:z]) + list(cs.l[j1:])
+        self.c = list(lt.c[a:z]) + list(cs.c[j1:])
+        self.v = list(lt.v[a:z]) + list(cs.v[j1:])
+        self.day = list(lt.day[a:z]) + list(cs.day[j1:])
+        self.minute = list(lt.minute[a:z]) + list(cs.minute[j1:])
+        self.n = len(self.c)
+
+
+class _Remap:
+    """A Structure's swings with the chart's candle numbers moved onto a _Hybrid (the target 'last swing high' / the
+    'swing' trail): a swing known on the chart's candle jj (the entry's) is known only at the end of the small candles."""
+    __slots__ = ('ph', 'phv', 'phc', 'pl', 'plv', 'plc')
+    last_swing_high = structure.Structure.last_swing_high
+
+    def __init__(self, st, jj, m):
+        def mp(x):
+            return x - jj - 1 if x < jj else (m - 1 if x == jj else m + x - jj - 1)
+        self.ph = [mp(x) for x in st.ph]
+        self.phv = list(st.phv)
+        self.phc = [mp(x) for x in st.phc]
+        self.pl = [mp(x) for x in st.pl]
+        self.plv = list(st.plv)
+        self.plc = [mp(x) for x in st.plc]
+
+
+def ltf_text(P, lt, ev, cs, i, jj, kind, fvg):
+    """'15m CHoCH 2025-04-14 11:30 above 145.20 (2 lower highs / lows, final low 143.10 at 2025-04-14 10:45) · bought at its
+    close · 1 candle after the signal' (the trades list)."""
+    b, hi, lvl, li, lf, d = ev
+    lab = lambda k: '%s %02d:%02d' % ((date.fromordinal(lt.day[k]).isoformat(),) + divmod(lt.minute[k], 60)) if P['ltf'] != 'D' else \
+        date.fromordinal(lt.day[k]).isoformat()
+    txt = '%s CHoCH %s above %.2f (%d lower highs / lows, final low %.2f at %s)' % (P['ltf'], lab(int(b)), _f(lvl), int(d), _f(lf), lab(int(li)))
+    txt += ' · bought at its close' if kind == 'close' else ' · bought at its FVG top %.2f (retest)' % _f(fvg[1])
+    w = jj - i
+    return txt + (' · in the signal candle' if w == 0 else ' · %d candle%s after the signal' % (w, '' if w == 1 else 's'))
+
+
+class CandleArrays:
+    """Candle dicts ({'t', 'day', 'o', 'h', 'l', 'c'[, 'v']} - the daily scan's) as the arrays ltf_find reads (day ordinal,
+    minute of the day, o h l c v)."""
+    __slots__ = ('o', 'h', 'l', 'c', 'v', 'day', 'minute', 'n')
+
+    def __init__(self, cands, intraday):
+        self.day = [date.fromisoformat(c['day'][:10]).toordinal() for c in cands]
+        self.minute = [_minute(c['t']) if intraday else 0 for c in cands]
+        self.o, self.h = [c['o'] for c in cands], [c['h'] for c in cands]
+        self.l, self.c = [c['l'] for c in cands], [c['c'] for c in cands]
+        self.v = [float(c.get('v') or 0) for c in cands]
+        self.n = len(cands)
+
+
+def ltf_find(cs, i, zb, zt, P, lt, events):
+    """The small CHoCH that confirms a signal on candle i of the chart cs (timeframe P['tf']) in the zone zb .. zt (zb = the
+    bottom the stop sits under): the first CHoCH event of lt (`events` = structure.choch_events of the small candles, the run's
+    ltfPivot) in the time of candles i .. i + ltfWait - 1, with >= ltfDown lower highs / lows, its final low formed from the
+    signal candle on, at / under the zone top and at most ltfUnder % under its bottom, no candle of the chart closing under
+    the zone before the one it is in -> (event, jj = the chart's candle it is in, None) or (None, None, reason: 'ltfdata' /
+    'ltfnone' / 'ltfbroke' / 'ltfnotyet'). Used by the Backtest Lab (ltf_trade) and the daily scan (kite_intraday)."""
+    tf = P['tf']
+    w0 = htf_span(tf, cs.day[i], cs.minute[i])[0]
+    jw = min(cs.n - 1, i + P['ltfWait'] - 1)
+    w1 = htf_span(tf, cs.day[jw], cs.minute[jw])[1]
+    if lt is None or not lt.n or lt.day[0] > cs.day[i]:
+        return None, None, 'ltfdata'             # the small candles begin after the signal (Kite has none that old)
+    a = _first_at(lt, w0)
+    if a >= lt.n or lt.day[a] * 1440 + lt.minute[a] >= htf_span(tf, cs.day[i], cs.minute[i])[1]:
+        return None, None, 'ltfdata'             # none in the signal candle's time (a gap in the small candles)
+    z = _first_at(lt, w1)
+    floor = zb * (1 - P['ltfUnder'] / 100.0) if P['ltfUnder'] < 100 else -1e18
+    k = bisect.bisect_left([e[0] for e in events], a)
+    hit = None
+    while k < len(events) and events[k][0] < z:
+        e = events[k]
+        if e[5] >= P['ltfDown'] and e[3] >= a and _f(e[4]) <= zt + 1e-9 and _f(e[4]) >= floor - 1e-9:
+            hit = e
+            break
+        k += 1
+    if hit is None:
+        broke = any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jw + 1))
+        if broke:
+            return None, None, 'ltfbroke'
+        if z >= lt.n or i + P['ltfWait'] - 1 >= cs.n:
+            return None, None, 'ltfnotyet'
+        return None, None, 'ltfnone'
+    jj = chart_candle(cs, i, tf, lt, int(hit[0]))
+    if any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jj)):
+        return None, None, 'ltfbroke'            # a candle of the chart closed under the zone before the small CHoCH
+    return hit, jj, None
+
+
+def chart_candle(cs, i, tf, lt, kx):
+    """The chart's candle (from i on) the small candle kx is in."""
+    key = lt.day[kx] * 1440 + lt.minute[kx]
+    j = i
+    while j < cs.n - 1 and htf_span(tf, cs.day[j], cs.minute[j])[1] <= key:
+        j += 1
+    return j
+
+
+def ltf_trade(cs, i, row, rs, P, lt, events, ema=None, swing=None, atr=None, lows=None, final=None, mh=None):
+    """The lower-timeframe confirmation of one signal (see DEFAULTS 'ltf') -> (trade, None) or (None, reason): ltf_find's
+    reasons, 'ltfnofvg' / 'ltfnofill' (the FVG entry: no small FVG in its move / not retested in time), or simulate's own.
+    row / rs = the signal row and its stop row (rs[2] = the bottom the stop sits under)."""
+    tf = P['tf']
+    zb, zt = rs[2], row[3]
+    if zb is None or zt is None:
+        return None, 'ltfnone'
+    hit, jj, why = ltf_find(cs, i, zb, zt, P, lt, events)
+    if hit is None:
+        return None, why
+    b, lf, li = int(hit[0]), _f(hit[4]), int(hit[3])
+    z = _first_at(lt, htf_span(tf, cs.day[min(cs.n - 1, i + P['ltfWait'] - 1)], cs.minute[min(cs.n - 1, i + P['ltfWait'] - 1)])[1])
+    fvg, e0 = None, b
+    if P['ltfEntry'] == 'fvg':
+        best = None
+        for f in range(max(li + 2, 2), min(b + 1, lt.n - 1) + 1):
+            if _f(lt.l[f]) > _f(lt.h[f - 2]) and (best is None or _f(lt.l[f]) > best[1]):
+                best = (_f(lt.h[f - 2]), _f(lt.l[f]), f)
+        if best is None:
+            return None, 'ltfnofvg'
+        fvg = best
+        e0 = None
+        for m in range(max(b, best[2]) + 1, min(z, lt.n)):
+            if _f(lt.l[m]) <= best[1]:
+                e0 = m
+                break
+            if _f(lt.c[m]) < lf:
+                break                            # the small CHoCH failed before the retest
+        if e0 is None:
+            return None, 'ltfnofill'
+        jj = chart_candle(cs, i, tf, lt, e0)
+        if any(_f(cs.c[j]) < zb - 1e-9 for j in range(i, jj)):
+            return None, 'ltfbroke'
+    # the small candles from the entry to the end of the chart's candle jj, then the chart's candles after it
+    zend = _first_at(lt, htf_span(tf, cs.day[jj], cs.minute[jj])[1])
+    hy = _Hybrid(lt, e0, max(e0 + 1, zend), cs, jj + 1)
+    m = max(e0 + 1, zend) - e0
+    entry = min(_f(lt.o[e0]), fvg[1]) if fvg else _f(lt.c[e0])
+    if P['ltfStop'] == 'ltf':
+        stop = lf * (1 - P['stopBuf'] / 100.0)
+    else:
+        mode = P['stop']
+        if mode == 'pct':
+            stop = entry * (1 - P['stopPct'] / 100.0)
+        elif mode == 'final':
+            if final is None:
+                return None, 'nofinal'
+            stop = _f(final) * (1 - P['stopBuf'] / 100.0)
+        elif mode == 'spring':
+            stop = _f(cs.l[i]) * (1 - P['stopBuf'] / 100.0)
+        elif mode == 'lower':
+            stop = min(_f(cs.l[i]), zb) * (1 - P['stopBuf'] / 100.0)
+        else:
+            stop = zb * (1 - P['stopBuf'] / 100.0)
+    stop_by = ''
+    if P['stopAtr']:
+        if atr is None or jj - 1 < 0:
+            return None, 'data'
+        s_atr = entry - P['stopAtr'] * atr[jj - 1]
+        stop_by = 'rule'
+        if s_atr < stop:
+            stop, stop_by = s_atr, 'atr'
+    pad = lambda ser: ([ser[jj - 1]] * m + list(ser[jj + 1:])) if ser is not None and jj >= 1 else None
+    P2 = dict(P, stop='pct', stopAtr=0, entry='zone' if fvg else 'close')
+    hrow = [0, 'Z' if fvg else row[1], None, fvg[1] if fvg else row[3]] + list(row[4:8])
+    t, why = simulate(hy, hrow, P2, pad(ema), _Remap(swing, jj, m) if swing is not None else None, pad(atr),
+                      _Remap(lows, jj, m) if lows is not None else None, None, mh, stop_at=stop)
+    if t is None:
+        return None, why
+    t['stopBy'] = stop_by
+    t['i'] = i
+    jx = t['jx']
+    t['jx'] = jj if jx < m else jj + 1 + (jx - m)
+    t['sigDay'], t['sigMin'] = cs.day[i], cs.minute[i]
+    t['ltf'] = ltf_text(P, lt, hit, cs, i, jj, 'fvg' if fvg else 'close', fvg)
+    t['ltfWait'] = jj - i
+    t['lx'] = {'tf': P['ltf'], 'b': b, 'li': li, 'lvl': _f(hit[2]), 'lf': lf, 'hi': int(hit[1]), 'd': int(hit[5]), 'e': e0, 'jj': jj,
+               'fvg': list(fvg) if fvg else None}
+    return t, None
+
+
+def ltf_compare(rows, P):
+    """The confirmation against no confirmation on the same signals (owner, 13-Nov-2026: the Lab shows which is better):
+    rows = [(trade without it, trade with it or None, why not)] per signal candle; signals without small candles for that time
+    ('ltfdata') or still waiting ('ltfnotyet') are left out of both -> {'tf', 'name', 'signals', 'confirmed', 'why',
+    'nodata', 'notyet', 'with', 'without', 'withoutConfirmed', 'from'}."""
+    use = [x for x in rows if x[2] not in ('ltfdata', 'ltfnotyet')]
+    why = {}
+    for b, t, w in use:
+        if t is None:
+            why[w or 'other'] = why.get(w or 'other', 0) + 1
+    closed = lambda ts: [t for t in ts if t is not None and t['reason'] != 'open']
+
+    def st(ts):
+        s = _stats(closed(ts))
+        if s['trades']:
+            s['avgRLo'], s['avgRHi'] = _range([t['R'] for t in closed(ts)])
+            s['edge'] = _edge(s['trades'], s['avgRLo'], s['avgRHi'])
+        return s
+    first = min((b['sigDay'] for b, t, w in use), default=None)
+    return {'tf': P['ltf'], 'name': LTF_NAMES.get(P['ltf'], P['ltf']), 'signals': len(use),
+            'confirmed': sum(1 for b, t, w in use if t is not None), 'why': why,
+            'nodata': sum(1 for x in rows if x[2] == 'ltfdata'), 'notyet': sum(1 for x in rows if x[2] == 'ltfnotyet'),
+            'with': st([t for b, t, w in use]), 'without': st([b for b, t, w in use]),
+            'withoutConfirmed': st([b for b, t, w in use if t is not None]),
+            'from': date.fromordinal(first).isoformat() if first else ''}
 
 
 def _exit_why(cur, entry, target, lock):
@@ -1230,7 +1539,7 @@ def summarise(trades, P, skips, meta, secs):
             if not ts and not n_open:
                 continue
             s = _stats(ts)
-            stages.append({'stage': key, 'name': structure.STAGE_NAMES[key], 'trades': s['trades'], 'open': n_open,
+            stages.append({'stage': key, 'name': (structure.BOS_STAGE_NAMES if P.get('setup') == 'bos' else structure.STAGE_NAMES)[key], 'trades': s['trades'], 'open': n_open,
                            'winPct': s.get('winPct'), 'avgR': s.get('avgR'), 'medR': s.get('medR'), 'totalR': s.get('totalR'),
                            'hitPct': s.get('hitPct'), 'avgMaxR': s.get('avgMaxR')})
     zone_name = ZONE_NAMES
@@ -1246,7 +1555,8 @@ def summarise(trades, P, skips, meta, secs):
                      t.get('stage', ''), t.get('struct', ''), t.get('tgt', ''), t.get('acct', ''),
                      int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
                      t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', ''),
-                     ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', '')])
+                     ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', ''),
+                     t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1294,6 +1604,8 @@ BD_DIMS = (
     ('mv', 'Biggest volume in the CHoCH move (x the 20 candles before it)', 'num',
      ((0, 1.5, 'under 1.5x'), (1.5, 2, '1.5 - 2x'), (2, 3, '2 - 3x'), (3, 5, '3 - 5x'), (5, 10, '5 - 10x'), (10, 1e12, '10x or more'))),
     ('zn', 'Which discount zone of the CHoCH move', 'num', ((1, 2, '1st (the only / the higher one)'), (2, 3, '2nd'), (3, 1e9, '3rd or deeper'))),
+    ('ltfWait', 'Candles from the signal to the lower-timeframe CHoCH', 'num',
+     ((0, 1, 'in the signal candle'), (1, 2, '1 candle after'), (2, 3, '2 after'), (3, 5, '3 - 4 after'), (5, 1e9, '5 or more after'))),
     ('turn', 'Average daily turnover (20 days)', 'num',
      ((0, 50, 'under ₹50 lakh'), (50, 200, '₹50 lakh - 2 Cr'), (200, 1000, '₹2 - 10 Cr'), (1000, 5000, '₹10 - 50 Cr'), (5000, 1e12, '₹50 Cr or more'))),
 )
@@ -1472,6 +1784,12 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     if not meta:
         raise LabError('no backtest cache on this computer yet')
     tf = P['tf']
+    ltf_on = P['ltf'] != 'off'
+    if ltf_on and not LTF_RANK[P['ltf']] < LTF_RANK[tf]:
+        raise LabError('the confirmation timeframe (%s) must be smaller than the chart\'s (%s) - e.g. daily chart + 1-hour or '
+                       '15-minute, weekly chart + daily' % (P['ltf'], tf))
+    if ltf_on and P['group'] in ('pattern', 'spring'):
+        raise LabError('the lower-timeframe confirmation needs a zone (FVG / Gap-up) - not "%s"' % GROUP_NAMES[P['group']])
     sigs = meta['signals'].get(tf) or {}
     index = meta['index'].get(tf) or {}
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
@@ -1479,14 +1797,20 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
                          'noswing': 0, 'zoneentry': 0, 'where': 0, 'wk': 0, 'zsize': 0, 'dcloud': 0, 'gapin': 0, 'nofinal': 0,
                          'fiblevel': 0, 'nomh': 0}
+    if ltf_on:
+        skips.update({k: 0 for k in LTF_WHY})
+    lset = _LtfSet(d, meta, P) if ltf_on else None
+    cmp_rows = []                       # [(the trade without the confirmation, with it or None, why not)] per signal candle
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
     sopts = struct_opts(P)
+    ssetup = struct_setup(P)
+    dn = setup_down(P)
     trail_on = P['after'] == 'trail'
     final_stop = P['stop'] == 'final'
     again_on = P['touchAgain'] and smode == 'only' and P['group'] == 'touch'
     mh_tgt = P['targetMode'] == 'mh'
-    smap = (_struct_map(d, tf, P['pivotN'], sopts) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
+    smap = (_struct_map(d, tf, P['pivotN'], sopts, ssetup) if smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing')
             or final_stop or mh_tgt else None)
     PC = dict(P, entry='close') if P['fibPat'] != 'off' else P      # Fib + pattern rows: bought at the pattern candle's close
     wk_index = (meta['index'].get('W') or {}) if P['wkAbove'] and tf != 'W' else None
@@ -1517,22 +1841,23 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
             if smap is not None:
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
+                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts, ssetup)
             atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
                    if (trail_on and P['trail'] == 'atr') or P['stopAtr'] else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
             zl_memo = []
+            ltf_box = []                        # the stock's small candles + events, read when a signal first needs them
             again = None
             if again_on and st is not None:
                 # a zone touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
-                again = st.rearm.get(P['downN'])
+                again = st.rearm.get(dn)
                 if again is None:
                     zk = sorted(((x[1], int(x[8])), int(x[8]), x[2], x[3], x[0], x[1] == 'Y') for x in sigs[sym]
                                 if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0)
                     zk.sort(key=lambda z: z[1])
                     lows_, his_ = [_f(x) for x in cs.l], [_f(x) for x in cs.h]       # the prices as the cache rows have them
-                    again = st.rearm[P['downN']] = rearm_touches(
-                        st.s.events, P['downN'], zk, lows_, [_f(x) for x in cs.c],
+                    again = st.rearm[dn] = rearm_touches(
+                        st.s.events, dn, zk, lows_, [_f(x) for x in cs.c],
                         lambda j: lows_[j] > 0 and (his_[j] - lows_[j]) / lows_[j] * 100 <= LOCK_PCT)
                 if again:
                     byk = {(x[1], int(x[8])): x for x in sigs[sym] if x[1] in ('Z', 'Y') and len(x) > 8 and x[8] is not None and x[8] >= 0}
@@ -1643,6 +1968,21 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 mh = sj.get('H') if mh_tgt and sj is not None and sj['k'] >= 0 else None
                 t, why = simulate(cs, rs, PC if code in FIB_CODES else P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
                                   st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
+                if ltf_on:
+                    # the lower-timeframe confirmation (13-Nov-2026): the trade above = the same signal without it (compared)
+                    if t is not None and not grp_base:
+                        grp_base.append(t)
+                    if not ltf_box:
+                        ltf_box.extend(lset.get(sym))
+                    base_r = t['R'] if t is not None else None
+                    t, why = ltf_trade(cs, r[0], r, rs, PC if code in FIB_CODES else P, ltf_box[0], ltf_box[1] or [], ema,
+                                       st.s if P['targetMode'] == 'swing' else None, atr,
+                                       st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
+                    if t is None:
+                        if why in LTF_WHY and not grp_lwhy:
+                            grp_lwhy.append(why)
+                        return None, (why, '')
+                    t['baseR'] = base_r
                 if t is None:
                     return None, (why, '')
                 t['ema'] = note
@@ -1698,13 +2038,16 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     skips['wk'] += 1
                     continue
                 fail = None
+                grp_base, grp_lwhy, got = [], [], None
                 for r in grp:                          # the first row of the candle that passes every rule = its trade
                     t, why = attempt(r)
                     if t is not None:
                         trades.append(t)
-                        fail = None
+                        fail, got = None, t
                         break
                     fail = fail or why
+                if ltf_on and grp_base:
+                    cmp_rows.append((grp_base[0], got, None if got is not None else (grp_lwhy[0] if grp_lwhy else (fail or ('', ''))[0])))
                 if fail:                               # none passed: counted once, under the first row's reason
                     key, rule = fail
                     skips[key] = skips.get(key, 0) + 1
@@ -1718,7 +2061,11 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
         fw.close()
     if pat is not None:
         pat.close()
+    if lset is not None:
+        lset.close()
     res = summarise(trades, P, skips, meta, time.time() - t0)
+    if ltf_on:
+        res['ltf'] = ltf_compare(cmp_rows, P)
     res['engine'] = ENGINE
     if unknown:
         res['warnings'].append('Your laptop\'s program did not know %s and used its own default%s - extract the newest '
@@ -1746,8 +2093,9 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
     os.makedirs(folder, exist_ok=True)
     order = sorted(trades, key=LC.sort_key)
     shown = order[:LC.MAX_TRADES]
-    total = 2 * len(shown) + 1
-    page_of = {id(t): 2 * k + 2 for k, t in enumerate(shown)}
+    per = 3 if P.get('ltf', 'off') != 'off' else 2     # + the lower-timeframe confirmation's page (13-Nov-2026)
+    total = per * len(shown) + 1
+    page_of = {id(t): per * k + 2 for k, t in enumerate(shown)}
     made = datetime.now()
     title = name or ('Backtest Lab run - %s' % P['tf'])
     fname = made.strftime('%Y-%m-%d %H%M%S') + ' ' + LC.safe_name(title) + '.pdf'
@@ -1760,8 +2108,10 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
         tf = P['tf']
         index = meta['index'].get(tf) or {}
         sopts = struct_opts(P)
-        smap = _struct_map(d, tf, P['pivotN'], sopts)
+        ssetup = struct_setup(P)
+        smap = _struct_map(d, tf, P['pivotN'], sopts, ssetup)
         lens = ema_lens(P)
+        lset = _LtfSet(d, meta, P) if per == 3 else None
         done = 0
         with open(os.path.join(d, tf + '.bin'), 'rb') as f:
             for sym in sorted(by_sym):
@@ -1770,7 +2120,7 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                 cs = Candles(f, index[sym][0], index[sym][1])
                 st = smap.get(sym)
                 if st is None or st.size != cs.n:
-                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts)
+                    st = smap[sym] = _Struct(cs, P['pivotN'], sopts, ssetup)
                 extra = {'seq': LC.swing_seq(st.s),     # the run's own swings (fractal / ATR / ZigZag) as the structure saw them
                          'atr': structure.atr_series(cs.h, cs.l, cs.c)}
                 emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens} or None
@@ -1783,11 +2133,16 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                         t['k'], t['H'] = sj['k'], sj.get('H')
                         if sj['k'] >= 0 and not t.get('struct'):
                             t['struct'] = struct_text(st.s, sj, cs, tf, P)
-                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, P, page_of[id(t)], total, title, None, emas, extra)
+                    if lset is not None and 'ltfc' not in extra:
+                        extra['ltfc'] = lset.get(sym)[0]
+                    LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, P, page_of[id(t)], total, title, None, emas, extra,
+                                  extra.get('ltfc'))
                     done += 1
                     if progress and done % 200 == 0:
                         progress(90 + int(9 * done / max(1, len(shown))))
         pages = pdf.close()
+        if lset is not None:
+            lset.close()
     except Exception:
         pdf.abort()
         raise
@@ -1804,8 +2159,8 @@ class _Struct:
     """A stock's Structure + the candle count it was made from (a new cache build = new candles)."""
     __slots__ = ('s', 'size', 'rearm')
 
-    def __init__(self, cs, n, opts=None):
-        self.s = structure.Structure(cs.h, cs.l, cs.c, n, opts or None)
+    def __init__(self, cs, n, opts=None, setup=None):
+        self.s = structure.Structure(cs.h, cs.l, cs.c, n, opts or None, setup)
         self.size = cs.n
         self.rearm = {}                 # {down_n: rearm_touches' map} (touchAgain)
 
@@ -1823,6 +2178,19 @@ def struct_opts(P):
     if P['eqAtr']:
         o['eq'] = P['eqAtr']
     return o
+
+
+def struct_setup(P):
+    """The structure's setup (structure.Structure): None = the CHoCH events; a BOS run -> {'kind': 'bos', 'bos', 'downN',
+    'upN'} (13-Nov-2026)."""
+    if P.get('setup') != 'bos':
+        return None
+    return {'kind': 'bos', 'bos': P.get('bosKind') or 'both', 'downN': P.get('downN', 3), 'upN': P.get('upN', 1)}
+
+
+def setup_down(P):
+    """The down_n a run hands the structure: the CHoCH's lower highs / lows - a BOS structure chose its events already."""
+    return 1 if P.get('setup') == 'bos' else P['downN']
 
 
 def struct_more(s, sj, cs, i, P):
@@ -1985,10 +2353,10 @@ def week_filter(fw, idx, n):
     return ok
 
 
-def _struct_map(d, tf, n, opts=None):
-    """{sym: _Struct} kept while the program runs (the same cache build, timeframe, swing size and structure options) - the
-    first run with market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
-    key = (d, tf, n, tuple(sorted((opts or {}).items())))
+def _struct_map(d, tf, n, opts=None, setup=None):
+    """{sym: _Struct} kept while the program runs (the same cache build, timeframe, swing size, structure options and setup)
+    - the first run with market structure works it out (seconds), later runs reuse it. Another key replaces it (memory)."""
+    key = (d, tf, n, tuple(sorted((opts or {}).items())), tuple(sorted((setup or {}).items())))
     if _STRUCT['key'] != key:
         _STRUCT['key'], _STRUCT['map'] = key, {}
     return _STRUCT['map']
@@ -2047,8 +2415,15 @@ def struct_text(s, sj, cs, tf, P=None):
     if sj['k'] < 0:
         return ''
     b, hi, lvl, li, lf, dd = s.events[sj['k']]
-    txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f on %s)' % (
-        _f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
+    if s.bos:
+        ck = s.ck[sj['k']]
+        how = ('the 1st BOS after the CHoCH of %s' % _label(tf, cs.day[s.chev[ck][0]], cs.minute[s.chev[ck][0]]) if ck >= 0 else
+               '%d higher high%s / low%s' % (dd, '' if dd == 1 else 's', '' if dd == 1 else 's'))
+        txt = 'BOS %.2f on %s (%s, higher low %.2f on %s)' % (
+            _f(lvl), _label(tf, cs.day[b], cs.minute[b]), how, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
+    else:
+        txt = 'CHoCH %.2f on %s (%d lower highs / lows, final low %.2f on %s)' % (
+            _f(lvl), _label(tf, cs.day[b], cs.minute[b]), dd, _f(lf), _label(tf, cs.day[li], cs.minute[li]))
     if sj.get('H') is not None:
         txt += ' · move high %.2f' % _f(sj['H'])
         if sj.get('depth') is not None:
@@ -2060,7 +2435,7 @@ def struct_text(s, sj, cs, tf, P=None):
     if not sj['first']:
         k = s.st.get(sj['k'])
         if k and k[5] >= 0:
-            txt += ' · BOS on %s' % _label(tf, cs.day[k[5]], cs.minute[k[5]])
+            txt += ' · %sBOS on %s' % ('next ' if s.bos else '', _label(tf, cs.day[k[5]], cs.minute[k[5]]))
     return txt
 
 

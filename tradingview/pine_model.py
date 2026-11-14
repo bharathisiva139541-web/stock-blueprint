@@ -20,6 +20,10 @@ swing high before the lowest swing low since the last CHoCH), eqAtr (highs / low
 The owner's stop / target options of 13-Nov-2026: stopAtr (the lower of the rule's stop and entry - stopAtr x ATR(14); the
 zone-top order uses the ATR of the bar before), targetMode 'mh' (the CHoCH move's high) / 'pct' (targetPct % above the entry);
 the exits (part sold at the target, the stop to the entry at xR, the time stop) do not change which BUYs are drawn.
+BOS + FVG (owner, 13-Nov-2026): setup 'bos' - the same rules on a BOS move (structure.bos_events: a close above the last swing
+high when it was a higher high and the pullback since it a higher low; bosKind 'first' = the 1st BOS after a CHoCH with >= downN
+lower highs / lows, 'trend' = the others with >= upN higher highs / lows, 'both'); the CHoCH events are still found (a 1st BOS
+needs them) but only the BOS is the setup. The lower-timeframe confirmation (ltf) is not drawn.
 """
 from datetime import date
 
@@ -78,6 +82,13 @@ class Model:
         self.tz = []                                    # (f, bottom, top, gap, inside, inner, outer bottom, outer candle)
         # touchAgain (13-Nov-2026): a zone touched on / before the CHoCH candle comes back on the list at the CHoCH
         self.again = self.struct_only and P.get('touchAgain', True)
+        # BOS + FVG (13-Nov-2026): the BOS events (structure.bos_events) and the CHoCH a 1st BOS follows
+        self.bos_mode = P.get('setup') == 'bos'
+        self.bos_kind, self.up_n = P.get('bosKind', 'both'), P.get('upN', 1)
+        self.bos_ev = []                                # every BOS (higher high + higher low) [b, hi, lvl, li, lf, d, first]
+        self.last_used_bos = -1
+        self.lc_b, self.lc_lf, self.lc_d = -1, None, 0  # the latest CHoCH (d >= 1)
+        self.lc_seen, self.lc_dead = True, False        # a BOS after it already / a close under its final low since
 
     # ---- the helpers Pine computes on every bar
     def _pivot_high(self, i):
@@ -197,6 +208,8 @@ class Model:
         self.gap_any.append(gap_any); self.gap_pct.append(gap_pct)
 
         # 1. a close under the final low kills the CHoCH (this bar too)
+        if self.lc_b >= 0 and self.lc_b < i and c < self.lc_lf:
+            self.lc_dead = True
         alive = self.chB >= 0 and not self.chDead and self.chB < i
         if alive and c < self.chLf:
             self.chDead = True
@@ -281,6 +294,8 @@ class Model:
                     self.swP[-1], self.swV[-1], self.swA[-1] = p, v_, self.atr[p]
             else:
                 self.swP.append(p); self.swV.append(v_); self.swH.append(is_h); self.swA.append(self.atr[p])
+        if self.swP and self.bos_mode:
+            self._bos_step(i)
         if self.swP:
             if self.prot:                 # the swing high right before the lowest swing low since the last CHoCH (the latest of equal ones)
                 kmin = -1
@@ -316,21 +331,68 @@ class Model:
                         self.events.append([i, hi_, lvl, self.seg_min_bar, self.seg_min, d])
                         if self.prot:
                             self.sw_base = len(self.swP)
-                    if d >= self.down_n:
-                        self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi_, lvl, self.seg_min_bar, self.seg_min, d
-                        self.chDead, self.chBos, self.chPeak = False, -1, None
-                        seg = H[self.chLi:i + 1]
-                        self.chH = max(seg)
-                        self.chHBar = self.chLi + seg.index(self.chH)
-                        if self.again:          # the zones of this move touched before now that held: back on the list
-                            keep = []
-                            for z in self.tz:
-                                if z[0] >= self.chLi and min(C[z[0] + 1:i + 1]) >= z[1]:
-                                    for a, v in zip((self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF), z):
-                                        a.append(v)
-                                else:
-                                    keep.append(z)
-                            self.tz = keep
+                        self.lc_b, self.lc_lf, self.lc_d, self.lc_seen, self.lc_dead = i, self.seg_min, d, False, False
+                    if d >= self.down_n and not self.bos_mode:
+                        self._set_setup(i, hi_, lvl, self.seg_min_bar, self.seg_min, d)
+
+    def _set_setup(self, i, hi_, lvl, li, lf, d):
+        """The current setup = this CHoCH (or BOS) event: its level, its final / higher low, the move's high so far."""
+        H, C = self.h, self.c
+        self.chB, self.chHi, self.chLvl, self.chLi, self.chLf, self.chD = i, hi_, lvl, li, lf, d
+        self.chDead, self.chBos, self.chPeak = False, -1, None
+        seg = H[self.chLi:i + 1]
+        self.chH = max(seg)
+        self.chHBar = self.chLi + seg.index(self.chH)
+        if self.again:          # the zones of this move touched before now that held: back on the list
+            keep = []
+            for z in self.tz:
+                if z[0] >= self.chLi and min(C[z[0] + 1:i + 1]) >= z[1]:
+                    for a, v in zip((self.zF, self.zBot, self.zTop, self.zGap, self.zIn, self.zInner, self.zOutB, self.zOutF), z):
+                        a.append(v)
+                else:
+                    keep.append(z)
+            self.tz = keep
+
+    def _bos_step(self, i):
+        """structure.bos_events on bar i (before this bar's CHoCH - a 1st BOS follows a CHoCH of an earlier bar): a close above
+        the last swing high (not broken before) that was a higher high, the lowest low since it a higher low -> a BOS event;
+        the setup when its kind is the run's."""
+        H, L, c = self.h, self.l, self.c[i]
+        sw = len(self.swP)
+        q = sw - 1 if self.swH[-1] else sw - 2
+        if q < 2:
+            return
+        hi_, lvl = self.swP[q], self.swV[q]
+        if not c > lvl or hi_ <= self.last_used_bos:
+            return
+        self.last_used_bos = hi_
+        seg = L[hi_ + 1:i + 1]
+        if not seg:
+            return
+        lf = min(seg)
+        li = hi_ + 1 + seg.index(lf)
+        eq, A, V = self.eq, self.swA, self.swV
+        if not (lvl > V[q - 2] + eq * A[q] and lf > V[q - 1] + eq * A[q - 1]):
+            return
+        du, k = 0, q
+        while k - 2 >= 0 and V[k] > V[k - 2] + eq * A[k]:
+            du += 1
+            k -= 2
+        dl, prev, k = 0, lf, q - 1
+        while k >= 0 and prev > V[k] + eq * A[k]:
+            dl += 1
+            prev = V[k]
+            k -= 2
+        d = max(1, min(du, dl))
+        first = False
+        if self.lc_b >= 0:
+            first = self.lc_d >= self.down_n and not self.lc_seen and not self.lc_dead
+            self.lc_seen = True
+        self.bos_ev.append([i, hi_, lvl, li, lf, d, first])
+        kind = self.bos_kind
+        take = first if kind == 'first' else (not first and d >= self.up_n) if kind == 'trend' else (first or d >= self.up_n)
+        if take:
+            self._set_setup(i, hi_, lvl, li, lf, d)
 
     def _add(self, f, bot, top, gap, inside):
         self.zF.append(f); self.zBot.append(bot); self.zTop.append(top); self.zGap.append(gap); self.zIn.append(inside)

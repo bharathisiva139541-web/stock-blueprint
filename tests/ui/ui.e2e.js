@@ -87,7 +87,10 @@ LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles
     ['2026-10-20', SENT_SYM, null, '4H', 'FVG First Touch', '2026-10-20 09:15', '2026-10-14 13:15', 'FVG'],
     ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null],
     // the owner's CHoCH + FVG setup (10-Nov-2026): the PC's words, no prices
-    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback']] };
+    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'],
+    // 13-Nov-2026: BOS + FVG and the smaller chart's CHoCH in the zone (the confirmed entry)
+    ['2026-10-20', SENT_SYM, null, 'D', 'BOS + FVG', '2026-10-19', '2026-10-08', 'FVG top (touch 1) · Zone first touch · BOS 2026-10-14 (2 higher highs / lows) · first pullback · zone middle 60% down the move'],
+    ['2026-10-20', SENT_SYM, null, 'D', '15m CHoCH in zone', '2026-10-20 11:30', '2026-10-08', 'FVG · D BOS + FVG zone touched 2026-10-19 · 15m CHoCH after 2 lower highs / lows, its final low in the zone · 1 candle after the touch · buy at its close · stop under its final low']] };
 // format 14 (owner, 12-Nov-2026, IREDA): CHoCH + FVG setups waiting for the pullback - with Kite's prices (owner: "use kite price")
 LIVE_MAIN.chochWait = { note: 'CHoCH + FVG setups WAITING for the pullback, from Zerodha Kite candles (your PC program, session 2026-10-20): ... Rules: swings of 8 candles, ' +
     'at least 10 lower highs / lows, the zone\'s top at least 38.2% down the move, the zone formed only in the CHoCH move. Distance % = ...',
@@ -880,8 +883,8 @@ function check(name, fn) {
       note: document.querySelector('#sg-itd .card-head p').textContent,
       jump: !!document.querySelector('[data-jump="sg-itd"]')
     }));
-    assert.strictEqual(r.count, '5 of 5');
-    assert.deepStrictEqual(r.chips, ['All timeframes (5)', '1H (1)', '4H (2)', 'D (1)', 'W (1)']);
+    assert.strictEqual(r.count, '7 of 7');
+    assert.deepStrictEqual(r.chips, ['All timeframes (7)', '1H (1)', '4H (2)', 'D (3)', 'W (1)']);
     assert.ok(r.links.some((l) => l[0] === 'TradingView 4H ↗' && l[1] === 'https://www.tradingview.com/chart/?symbol=NSE%3A' + encodeURIComponent(FLAG_SYM) + '&interval=240' && l[2] === '_blank'), JSON.stringify(r.links));
     assert.match(r.note, /Last scan: session 2026-10-20/);
     assert.ok(r.jump, 'in the page\'s jump chips');
@@ -898,18 +901,28 @@ function check(name, fn) {
     assert.ok(typeof dp.chg === 'number', 'the stock has a change %');
     assert.ok(dp.cell.includes(Math.abs(dp.chg).toFixed(2)), dp.cell + ' vs ' + dp.chg);
     await p.click('[data-chip="sgitdtf"][data-v="4H"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 5');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '2 of 7');
     await p.click('[data-chip="sgitdp"][data-v="FVG First Touch"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 5');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '1 of 7');
     await p.click('[data-chip="sgitdp"][data-v="Spring"]');
-    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 5');
+    assert.strictEqual(await p.$eval('#sg-itd-count', (x) => x.textContent), '0 of 7');
     // the owner's CHoCH + FVG setups (10-Nov-2026): their own section first, with what triggered each one
     await p.waitForSelector('#sg-ch-t table');
     const ch = await p.evaluate(() => ({ count: document.querySelector('#sg-ch-count').textContent, text: document.querySelector('#sg-ch-t').textContent,
       link: (document.querySelector('#sg-ch-t a.btn') || {}).textContent, jump: !!document.querySelector('[data-jump="sg-choch"]'),
       first: document.querySelector('#app section.card').id, note: document.querySelector('#sg-choch .card-head p').textContent }));
-    assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['1 of 1', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
+    assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['3 of 3', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
     assert.ok(ch.text.includes('Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'), ch.text);
+    // BOS + FVG and the smaller chart's CHoCH in the zone (owner, 13-Nov-2026): a Setup column + chips
+    assert.deepStrictEqual(await p.$$eval('[data-chip="sgchset"]', (b) => b.map((x) => x.textContent)),
+      ['Every setup', 'CHoCH + FVG (1)', 'BOS + FVG (1)', 'Confirmed on a smaller chart (1)']);
+    await p.click('[data-chip="sgchset"][data-v="ltf"]');
+    assert.strictEqual(await p.$eval('#sg-ch-count', (x) => x.textContent), '1 of 3');
+    assert.match(await p.$eval('#sg-ch-t tbody', (x) => x.textContent), /15m CHoCH in zone[\s\S]*2026-10-20 11:30[\s\S]*D BOS \+ FVG zone touched 2026-10-19 · 15m CHoCH after 2 lower highs/);
+    await p.click('[data-chip="sgchset"][data-v="bos"]');
+    assert.match(await p.$eval('#sg-ch-t tbody', (x) => x.textContent), /BOS \+ FVG[\s\S]*BOS 2026-10-14 \(2 higher highs \/ lows\)/);
+    await p.click('[data-chip="sgchset"][data-v="all"]');
+    assert.match(ch.note, /BOS \+ FVG = the same on a BOS move[\s\S]*15m CHoCH in zone = after such a touch/);
     assert.match(ch.note, /10 lower highs and 10 lower lows \(swings of 8 candles\).*closed above the last lower high \(CHoCH\).*only in the CHoCH move, in the discount part of the move \(its top at least 38\.2% down.*first pullback.*first touch.*ChochRules\.bat/,
       'the laptop\'s own rules (ChochRules.bat), read from the tab note');
     // waiting for the pullback (owner, 12-Nov-2026, IREDA): CHoCH formed, discount zone below - the zone top to buy at, the distance from the price shown
@@ -1266,16 +1279,16 @@ function check(name, fn) {
       basics: ['tf', 'group', 'stop', 'stopBuf', 'targetR', 'after', 'trail', 'trailN', 'capital', 'riskPct', 'testFrom'].every((k) => {
         const e = document.querySelector('#lab-form [data-k="' + k + '"]'); return e && e.offsetParent !== null; }),
       guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
-    assert.deepStrictEqual(lay.quick, ['smc', 'fvg', 'gap']);
+    assert.deepStrictEqual(lay.quick, ['smc', 'bos', 'fvg', 'gap']);
     await guideShot(own.p, '01-start', '#lab-form');
-    assert.deepStrictEqual(lay.secs, [['structure', false], ['zone', false], ['shape', false], ['trend', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
+    assert.deepStrictEqual(lay.secs, [['structure', false], ['zone', false], ['shape', false], ['trend', false], ['ltf', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
     assert.ok(lay.basics, 'the basics are on show');
     assert.match(lay.guide, /Guide/);
     await own.p.click('[data-quick="fvg"]');
     await own.p.waitForSelector('.lab-quick .lab-rec.on [data-quick="fvg"]');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="group"]', (e) => e.value), 'fvg');
     // open every section (remembered on this device) for the steps below
-    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'ltf', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"][open]');
     // the owner's idea: 1 % under the zone, 2R, then the last 3 lows
     await own.p.fill('[data-k="stopBuf"]', '1');
@@ -1385,7 +1398,7 @@ function check(name, fn) {
     await guideShot(own.p, '02-ready', '.lab-quick');
     await guideShot(own.p, '03-basics', '#lab-form .form-grid');
     await guideShot(own.p, '04-more', '.lab-secs');
-    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'ltf', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"][open]');
     await guideShot(own.p, '05-structure', 'details.lab-sec[data-sec="structure"]');
     await own.p.click('#lab-smc');
@@ -1397,6 +1410,30 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="discount"]', (e) => e.value), '0.5');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="entry"]', (e) => e.value), 'zone', 'an order at the zone top');
     assert.ok(await own.p.$('.lab-rec.on #lab-smc'), 'the setup card shows In use');
+    // BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this ... continuous BOS in uptrend. or BOS formed after Choch"):
+    // the same setup on the BOS move in one click, its kinds, and the lower-timeframe confirmation
+    await own.p.click('#lab-bos');
+    await own.p.waitForSelector('.lab-rec.on #lab-bos');
+    assert.ok(!(await own.p.$('.lab-rec.on #lab-smc')), 'one setup card in use');
+    assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="setup"],#lab-form select[data-k="bosKind"],#lab-form select[data-k="group"],#lab-form select[data-k="discount"]', (x) => x.map((e) => e.value)), ['touch', 'bos', 'both', '0.5']);
+    assert.match(await plainText(), /BOS \+ FVG \(swings of 5 candles each side\): a BOS = a candle closing above the last swing high when that high was a higher high and the pullback since it a higher low; every BOS - the 1st after a CHoCH \(3 lower highs \/ lows before it\) and the ones of a running up-trend; the BOS move = from that higher low to the highest high before the signal\. Only signals where the zone formed after the BOS's higher low, in the BOS move or after it; the zone's middle \(no zone: the entry\) at least 50% down the move from the BOS's higher low to its high/);
+    await own.p.selectOption('#lab-form select[data-k="bosKind"]', 'trend');
+    await own.p.waitForSelector('#lab-form select[data-k="upN"]');
+    assert.ok(!(await own.p.$('#lab-form select[data-k="downN"]')), 'a running up-trend has no CHoCH before it to count');
+    assert.match(await plainText(), /a BOS of a running up-trend \(at least 1 higher high and higher low, not the 1st after a CHoCH\)/);
+    await own.p.selectOption('#lab-form select[data-k="ltf"]', '15m');
+    await own.p.waitForSelector('#lab-form select[data-k="ltfWait"]');
+    assert.deepStrictEqual(await own.p.$$eval('#lab-form select[data-k="ltf"] option', (o) => o.map((x) => x.value)), ['off', '1H', '15m'], 'smaller than the daily chart');
+    assert.match(await plainText(), /Confirmation on the 15-minute chart: after the signal, wait up to 5 daily candles for a CHoCH there \(swings of 3 candles, at least 2 lower highs and lower lows\) whose final low is in the zone \(at most 0\.5% under its bottom\); buy at the close of that CHoCH candle; stop a little under that small final low\. No small CHoCH in time, or a daily close under the zone first = no trade\./);
+    await guideShot(own.p, '05b-ltf', 'details.lab-sec[data-sec="ltf"]');
+    await own.p.selectOption('#lab-form select[data-k="tf"]', 'W');
+    await own.p.waitForFunction(() => [...document.querySelectorAll('#lab-form select[data-k="ltf"] option')].map((x) => x.value).join() === 'off,D,1H,15m');
+    await own.p.selectOption('#lab-form select[data-k="tf"]', 'D');
+    await own.p.selectOption('#lab-form select[data-k="ltf"]', 'off');
+    await own.p.waitForFunction(() => !document.querySelector('#lab-form select[data-k="ltfWait"]'));
+    await own.p.click('#lab-smc');
+    await own.p.waitForSelector('.lab-rec.on #lab-smc');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="setup"]', (e) => e.value), 'choch');
     // the TradingView script with these rules (owner, 11-Nov-2026: "give option to copy the pinescript in this page that works
     // with respect to the current setup before running the setup")
     await own.p.evaluate(() => {
@@ -1486,6 +1523,11 @@ function check(name, fn) {
           { label: '3', trades: 20, winPct: 30, avgR: 0.01, medR: -1, totalR: 0.2, hitPct: 30, lo: -0.4, hi: 0.4, verdict: 'few', dev: { trades: 12, avgR: 0 }, test: { trades: 8, avgR: 0.02 }, held: '' },
           { label: '4', trades: 35, winPct: 35, avgR: 0.34, medR: -0.4, totalR: 11.9, hitPct: 35, lo: -0.1, hi: 0.78, verdict: 'chance', dev: { trades: 20, avgR: 0.3 }, test: { trades: 15, avgR: 0.4 }, held: 'yes' }] }],
       warnings: ['The stocks are today\'s ~1,800 listed ones - ... (survivorship bias).'],
+      // the lower-timeframe confirmation against none on the same signals (owner, 13-Nov-2026)
+      ltf: { tf: '15m', name: '15-minute', signals: 40, confirmed: 22, why: { ltfnone: 15, ltfbroke: 3 }, nodata: 120, notyet: 1, from: '2021-03-01',
+        with: { trades: 21, winPct: 52.4, avgR: 0.85, totalR: 17.9, pf: 2.1, avgRLo: 0.1, avgRHi: 1.6, edge: 'few' },
+        without: { trades: 39, winPct: 35.9, avgR: 0.21, totalR: 8.2, pf: 1.3, avgRLo: -0.2, avgRHi: 0.6, edge: 'chance' },
+        withoutConfirmed: { trades: 21, winPct: 47.6, avgR: 0.4, totalR: 8.4, pf: 1.5, avgRLo: -0.2, avgRHi: 1.0, edge: 'few' } },
       open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
       stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
       reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
@@ -1553,7 +1595,12 @@ function check(name, fn) {
     assert.match(await own.p.$eval('#lab-stages', (x) => x.textContent), /Below CHoCH, 1st pullback[\s\S]*1\.21R/);
     // the answer first: the verdict card; the rest folded (Development vs test, What worked best and the trades open)
     const rs = await own.p.$$eval('#lab-result details.lab-rsec', (d) => d.map((x) => [x.getAttribute('data-rsec'), x.open]));
-    assert.deepStrictEqual(rs, [['all', false], ['split', true], ['bd', true], ['stages', false], ['account', false], ['exits', false], ['time', false], ['trades', true]]);
+    assert.deepStrictEqual(rs, [['ltf', true], ['all', false], ['split', true], ['bd', true], ['stages', false], ['account', false], ['exits', false], ['time', false], ['trades', true]]);
+    const ltfT = await own.p.$eval('#lab-ltf', (x) => x.innerText);
+    assert.match(ltfT, /With the confirmation[\s\S]*21[\s\S]*52\.4%[\s\S]*0\.85R[\s\S]*Without it - every signal[\s\S]*39[\s\S]*0\.21R[\s\S]*Without it - only the confirmed ones[\s\S]*0\.4R/);
+    assert.match(view, /The 15-minute confirmation helped: 0\.85R a trade against 0\.21R without it \(\+0\.64R a trade\), on 21 of the 39 signals\. Few trades/);
+    assert.match(view, /40 signals with 15-minute candles \(from [^)]+\): 22 confirmed, not confirmed: 15 no small CHoCH in the zone in time, 3 a candle of the chart closed under the zone first\. 120 older signals left out - no 15-minute candles that old on the laptop/);
+    await guideShot(own.p, '10b-ltf', 'details[data-rsec="ltf"]');
     assert.match(await own.p.$eval('#lab-verdict', (x) => x.innerText), /Real or chance\?[\s\S]*Test part \(from[\s\S]*2\.3R a trade over 2 trades[\s\S]*Account/);
     assert.match(await own.p.$eval('#lab-trades .lab-acct:not(.skip)', (x) => x.getAttribute('data-tip')), /^CHoCH \d/);
     assert.match(view, /Only on days when NIFTY 50 closed above its 50 EMA/);

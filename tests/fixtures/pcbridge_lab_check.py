@@ -24,6 +24,7 @@ L.LAB_DIR = os.path.join(TMP, 'lab_cache')
 L.CHARTS_DIR = os.path.join(TMP, 'lab_charts')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
+L.LTF_DIR = os.path.join(K.DATA_DIR, 'ltf')           # (= K.ltf_dir(): the 1-hour / 15-minute files)
 
 
 def P(**kw):
@@ -418,7 +419,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-11:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-14:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -719,7 +720,7 @@ res_b = K.analyse({'sym': 'EEE', 'day': rows_b, 'm15': [], 'h4': []}, since5, da
 assert not [x for x in res_b['items'] if x['pattern'] == K.CHOCH_PATTERN]
 assert {'tf': 'D', 'candle': spring_day, 'pattern': K.CHOCH_PATTERN} in res_b['invalid'], res_b['invalid']
 # the PC's rule = the Lab's default setup (the same structure.py)
-assert (K.CHOCH_PIVOT_N, K.CHOCH_DOWN_N) == (L.DEFAULTS['pivotN'], L.DEFAULTS['downN']) and K.RULES_VERSION == 6
+assert (K.CHOCH_PIVOT_N, K.CHOCH_DOWN_N) == (L.DEFAULTS['pivotN'], L.DEFAULTS['downN']) and K.RULES_VERSION == 7
 
 # ------------------------------------------------------------------ 12. the candle cache after an update (owner, 11-Nov-2026:
 # "backtest for some setups is loading only. sheet feed error" - the first run after the update built the cache for 20+
@@ -936,7 +937,8 @@ K.send_waiting({}, lambda cfg, action, body, **kw: sent6.append((action, body)) 
 assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'] for r in sent6[0][1]['rows']] == ['AAA', 'SUP'], sent6
 assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
 NEW6 = {'zoneMin': 0.0, 'zoneMax': 0.0, 'lineTol': 0.5, 'fibLevel': 0.618, 'fibTol': 1.0, 'gapEntry': True, 'lineOk': False,
-        'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second', 'touchAgain': True}       # the 12-Nov-2026 refinements' defaults
+        'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second', 'touchAgain': True,       # the 12-Nov-2026 refinements' defaults
+        'bos': True, 'bosKind': 'both', 'ltf': '15m'}                                       # + BOS + FVG and the 15m confirmation (13-Nov-2026)
 assert sent6[0][1]['choch'] == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6)
 # the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
 D6 = K.choch_rules()
@@ -959,19 +961,20 @@ for rr6, n6 in ((dict(D6, part='top'), 2), (dict(D6, downN=4), 0), (dict(D6, fib
     if n6:
         assert '· first pullback · zone top 81% down the move · zone ' in got6[0]['note'], got6[0]['note']
 # ChochRules.bat: Enter keeps a value, a bad answer is asked again; config.json gets the five keys
-answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 8)
+answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 11)
 saved6 = {}
 assert K.choch_setup({'url': 'x'}, lambda c: saved6.update(c), ask=lambda q: next(answers)) == 0
 assert K.choch_rules(saved6) == dict({'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6) and saved6['url'] == 'x', saved6
 # ... and the refinements of 12-Nov-2026: zone size 2 - 8 %, the FVG top, the CHoCH-line rule (+1 %), dark clouds left out,
 # the Fib + pattern entry in big zones at the 61.8 % line +/- 1.5 %
-answers = iter([''] * 5 + ['2', '2', '2', '8', '2', '2', '1', '2', '2', '', '1.5'])
+answers = iter([''] * 5 + ['2', '2', '2', '8', '2', '2', '1', '2', '2', '', '1.5', '', '2', '2'])
 saved7 = {}
 assert K.choch_setup({}, lambda c: saved7.update(c), ask=lambda q: next(answers)) == 0
 r7 = K.choch_rules(saved7)
 assert (r7['zoneMin'], r7['zoneMax'], r7['gapEntry'], r7['lineOk'], r7['lineTol'], r7['darkCloud'], r7['fibPat'], r7['fibLevel'], r7['fibTol'],
         r7['zonePick'], r7['touchAgain']) == (2.0, 8.0, False, True, 1.0, 'exclude', 'big', 0.618, 1.5, 'every', False), r7
 assert saved7['choch_zone_pick'] == 'every'
+assert (r7['bos'], r7['bosKind'], r7['ltf']) == (True, 'first', '1H') and saved7['choch_ltf'] == '1H', 'BOS + FVG / the confirmation list (13-Nov-2026)'
 assert saved7['choch_zone_max_pct'] == 8.0 and saved7['choch_dark_cloud'] == 'exclude' and saved7['choch_gap_entry'] is False
 assert K.choch_rules_words(r7).endswith(", zone size 2 - 8%, the whole FVG (not the Gap-up zone inside it), or the zone top at / under the CHoCH level (+1%), "
                                         "dark-cloud FVGs left out, big zones: a Spring / Harami + Inverted Hammer at the zone's 61.8% line, "
@@ -1688,7 +1691,7 @@ t, _ = run21(path21, timeN=2, timeR=1)                              # the target
 assert t['reason'] == 'trail', t
 # through run_job on the SWIGGY-like chart: the ATR stop, the move-high target, the columns
 c21 = L.TRADE_COLS
-assert c21[-2:] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
+assert c21[-5:-3] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
 j21 = lambda **kw: [dict(zip(c21, r)) for r in L.run_job(dict(SMC6, entry='zone', **kw))['trades'] if r[0] == 'SWG']
 K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)    # the cache of r19 again (section 20 left another)
 t0, = j21()
@@ -1719,5 +1722,203 @@ for txt in ('at the high of the CHoCH move (the HH - move high)', 'by your time 
     assert txt in w21b, txt
 assert L.clean_params({'targetMode': 'mh', 'stopAtr': 99, 'partialPct': 100, 'timeN': 2.6})['stopAtr'] == 10
 assert L.clean_params({'partialPct': 100})['partialPct'] == 90 and L.clean_params({'timeN': 2.6})['timeN'] == 3
+
+# ------------------------------------------------------------------ 22. BOS + FVG setups (owner, 13-Nov-2026: "Shall we track BOS setup like
+# this. like FVG Zone at discount level in the BOS move ... It can be a continuous BOS in uptrend. or BOS formed after Choch")
+def craft22():
+    """3 lower highs / lows, a CHoCH (136.3), the higher low 134.7, FVG1 140.3 - 144.0 in the BOS move, the 1st BOS after the CHoCH
+    (a close above 148.3), the move high 175.3, FVG1's first touch; then FVG2 160.3 - 164.0, a 2nd BOS (above 175.3, a running
+    up-trend), the move high 200.3, FVG2's first touch, the rally."""
+    rows, prev = [], 165.0
+    d0 = date(2025, 1, 6)
+
+    def put(o, h, l, c):
+        rows.append([(d0 + timedelta(days=len(rows))).isoformat(), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 900000])
+
+    def go(to, k=6):
+        nonlocal prev
+        for x in leg(prev, to, k):
+            put(prev, max(prev, x) + 0.3, min(prev, x) - 0.3, x)
+            prev = x
+
+    def slow(to, step=0.5):
+        go(to, max(1, int(round(abs(to - prev) / step))))
+
+    def fvg(a, top):                      # A B C from a: the FVG a + 0.3 .. top (B's high keeps the next candle out of it)
+        nonlocal prev
+        put(a, a + 0.3, a - 0.3, a + 0.2)
+        put(a + 0.2, top + 1.6, a, top + 0.3)
+        put(top + 0.3, top + 2.0, top, top + 1.8)
+        prev = top + 1.8
+    for to in (150, 160, 142, 152, 134, 144, 126, 136, 120):
+        go(to)
+    go(148, 6)
+    go(135, 6)
+    slow(140)
+    fvg(140, 144.0)
+    slow(150)
+    go(175, 6)
+    go(150, 4)
+    put(150, 150.3, 143.5, 144.5)          # FVG1's first touch
+    prev = 144.5
+    slow(160)
+    fvg(160, 164.0)
+    slow(180)
+    go(200, 6)
+    go(185, 4)
+    put(185, 185.3, 163.5, 164.5)          # FVG2's first touch
+    prev = 164.5
+    go(230, 8)
+    return rows
+
+
+r22 = craft22()
+t22a = next(k for k, r in enumerate(r22) if r[3] == 143.5)
+t22b = next(k for k, r in enumerate(r22) if r[3] == 163.5)
+h22, l22, c22 = [r[2] for r in r22], [r[3] for r in r22], [r[4] for r in r22]
+st22 = S.Structure(h22, l22, c22, 5, None, {'kind': 'bos', 'bos': 'both', 'downN': 3, 'upN': 1})
+assert [e[2] for e in st22.chev] == [136.3] and st22.chev[0][5] == 3, st22.chev
+assert [(e[2], e[4], e[5]) for e in st22.events] == [(148.3, 134.7, 1), (175.3, 143.5, 2), (200.3, 163.5, 3)], st22.events
+assert st22.ck == [0, -1, -1], 'the 1st BOS belongs to the CHoCH; the later ones are a running up-trend'
+assert all(c22[e[0]] > e[2] >= max(c22[e[1]:e[0]]) for e in st22.events), 'a BOS = the first close above the swing high'
+first22 = S.bos_events(h22, l22, c22, 5, kind='first', down_n=3)
+assert [e[2] for e in first22[0]] == [148.3] and S.bos_events(h22, l22, c22, 5, kind='first', down_n=4)[0] == [], 'the CHoCH has 3'
+assert [e[2] for e in S.bos_events(h22, l22, c22, 5, kind='trend', up_n=3)[0]] == [200.3]
+# no BOS is a CHoCH (a broken LOWER high) and nothing looks ahead: the events of any first part = the full chart's up to there
+for seed in range(6):
+    w = walk(300 + seed, 900)
+    hh, ll, cc = [r[2] for r in w], [r[3] for r in w], [r[4] for r in w]
+    for opts in ({}, {'swing': 'zigzag', 'zz': 2.0}, {'eq': 0.25}):
+        fe, fk = S.bos_events(hh, ll, cc, 5, opts, kind='both', down_n=2)
+        ch_lv = {e[1] for e in S.choch_events(hh, ll, cc, 5, opts=opts)}
+        assert fe and not ({e[1] for e in fe} & ch_lv), (seed, opts)
+        for cut in (200, 451, 777):
+            pe, pk = S.bos_events(hh[:cut], ll[:cut], cc[:cut], 5, opts, kind='both', down_n=2)
+            assert pe == [e for e in fe if e[0] < cut] and pk == [k for e, k in zip(fe, fk) if e[0] < cut], (seed, opts, cut)
+K.store_save('BOS', {'v': 1, 'sym': 'BOS', 'm15': [], 'day': r22, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+assert L.DEFAULTS['setup'] == 'choch' and P(setup='bos', bosKind='x', upN=99)['upN'] == 8 and P(setup='bos', bosKind='x')['bosKind'] == 'both'
+bos22 = lambda **kw: [dict(zip(L.TRADE_COLS, r)) for r in L.run_job(dict(SMC6, entry='zone', **kw))['trades'] if r[0] == 'BOS']
+assert bos22() == [], 'the CHoCH setup: after the BOS it is no first pullback'
+a22, = bos22(setup='bos', bosKind='first')
+assert (a22['signal'], a22['entry'], a22['stage'], a22['zn']) == (r22[t22a][0], 144.0, 'disc', 1), a22
+assert a22['struct'].startswith('BOS 148.30 on ') and '(the 1st BOS after the CHoCH of ' in a22['struct'] and 'higher low 134.70' in a22['struct'] \
+    and 'move high 175.30 · zone middle 82% down the move (50% line 155.00)' in a22['struct'], a22['struct']
+b22, = bos22(setup='bos', bosKind='trend')
+assert (b22['signal'], b22['entry'], b22['stage']) == (r22[t22b][0], 164.0, 'disc') and '(2 higher highs / lows, higher low 143.50 on ' in b22['struct'], b22
+assert [t['entry'] for t in sorted(bos22(setup='bos'), key=lambda t: t['signal'])] == [144.0, 164.0]
+assert bos22(setup='bos', bosKind='trend', upN=3) == [], 'the 2nd BOS has 2 higher highs / lows'
+# the stop under the BOS move's higher low, the target at its move high
+f22, = bos22(setup='bos', bosKind='first', stop='final', targetMode='mh', after='fixed')
+assert f22['stop'] == round(134.7 * 0.995, 2) and f22['target'] == 175.3 and f22['reason'] == 'target', f22
+res22 = L.run_job(dict(SMC6, entry='zone', setup='bos'))
+assert [x['name'] for x in res22['stages']][0].startswith('In the discount part of the BOS move'), res22['stages']
+# the charts PDF tells it as a BOS
+pdf22 = L.run_job(dict(SMC6, entry='zone', setup='bos', **{'from': r22[0][0]}), charts=L.CHARTS_DIR, name='bos setup')
+w22 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf22['pdf']['file'])))
+for txt in ('Setup: BOS + FVG - every BOS', 'This is the first BOS (break of structure) after the CHoCH', 'a BOS (break of structure): the up-trend went on',
+            'it belongs to this BOS move', 'the first pullback after the BOS', 'HL - higher low', 'next BOS', 'the BOS move darker'):
+    assert txt in w22, txt
+assert 'final low' not in w22, 'a BOS trade has a higher low'
+
+# ------------------------------------------------------------------ 23. the lower-timeframe confirmation (owner, 13-Nov-2026: "If any Choch has
+# happened inside the Zone in 15 min, then i decided to buy"; my recommendations: 3 candles a swing, 2 lower highs / lows, wait 5 candles,
+# buy at the small CHoCH's close, stop under its final low)
+assert L.LTF_DIR == K.ltf_dir() and L.DEFAULTS['ltf'] == 'off' and (L.DEFAULTS['ltfPivot'], L.DEFAULTS['ltfDown'], L.DEFAULTS['ltfWait']) == (3, 2, 5)
+
+
+def legs23(start, pts, k=3):
+    out, prev = [], start
+    for to in pts:
+        for x in [prev + (to - prev) * j / k for j in range(1, k + 1)]:
+            out.append((prev, max(prev, x) + 0.1, min(prev, x) - 0.1, x))
+            prev = x
+    return out
+
+
+# the 1-hour chart from FVG1's touch day (section 22): lower highs 149.5 / 148.0 / 146.8, lows down to 143.2 inside FVG1 (140.3 - 144.0),
+# then a close above 146.9 = the small CHoCH
+seq23 = legs23(151, (147, 149.5, 145.5, 148, 144.5, 146.8, 143.2, 150.5))
+days23 = [date.fromisoformat(r22[t22a + k][0]) for k in range(4)]
+rows23 = []
+for k, (o, h, l, c) in enumerate(seq23):
+    dd, mm = days23[k // 7], (555, 615, 675, 735, 795, 855, 915)[k % 7]
+    rows23.append(['%s %02d:%02d' % (dd.isoformat(), mm // 60, mm % 60), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 100])
+K.ltf_data.write(K.ltf_dir(), 'BOS', '1H', rows23)
+LT23 = dict(SMC6, entry='zone', setup='bos', bosKind='first', ltf='1H', ltfPivot=2, ltfDown=2)
+lt23 = lambda **kw: L.run_job(dict(LT23, **kw))
+r23 = lt23()
+c23 = [dict(zip(L.TRADE_COLS, r)) for r in r23['trades'] if r[0] == 'BOS']
+assert len(c23) == 1, c23
+x = c23[0]
+choch_c = next(k for k in range(len(seq23)) if seq23[k][3] > 146.9 and k > 18)
+assert x['signal'] == r22[t22a][0] and x['entry'] == round(seq23[choch_c][3], 2) and x['stop'] == round(143.1 * 0.995, 2), (x, choch_c)
+assert x['ltf'].startswith('1H CHoCH %s above 146.90 (2 lower highs / lows, final low 143.10 at ' % rows23[choch_c][0]) and \
+    'bought at its close' in x['ltf'] and x['ltfWait'] == 3 and x['baseR'] == 2.0, x
+cmp23 = r23['ltf']
+assert (cmp23['tf'], cmp23['signals'], cmp23['confirmed']) == ('1H', 1, 1) and cmp23['with']['trades'] == 1, cmp23
+assert cmp23['without']['avgR'] == 2.0 and cmp23['withoutConfirmed']['trades'] == 1, cmp23
+# the stop by the run's own rule (under the zone), not enough lower highs, no time to wait, the FVG entry not retested in time
+assert [t['stop'] for t in (dict(zip(L.TRADE_COLS, r)) for r in lt23(ltfStop='rule')['trades']) if t['sym'] == 'BOS'] == [round(140.3 * 0.995, 2)]
+assert lt23(ltfDown=3)['skipped']['ltfnotyet'] == 1, 'still waiting: the small candles end before the 5 candles are over'
+w1 = lt23(ltfWait=1)
+assert w1['skipped']['ltfnone'] == 1 and w1['ltf']['why'] == {'ltfnone': 1} and w1['ltf']['without']['trades'] == 1, w1['ltf']
+assert lt23(ltfEntry='fvg')['skipped']['ltfnofill'] == 1
+assert lt23(ltfUnder=0, ltfDown=2)['ltf']['confirmed'] == 1, 'the final low 143.1 is inside the zone'
+# a chart close under the zone before the small CHoCH: no trade
+r22b = [list(r) for r in r22]
+r22b[t22a + 1][4] = 139.0
+K.store_save('BOS', {'v': 1, 'sym': 'BOS', 'm15': [], 'day': r22b, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+assert lt23()['skipped']['ltfbroke'] == 1
+K.store_save('BOS', {'v': 1, 'sym': 'BOS', 'm15': [], 'day': r22, 'h4': []})
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+# no 1-hour candles that old / no file: left out of the comparison
+assert lt23(ltf='15m')['skipped']['ltfdata'] >= 1 and lt23(ltf='15m')['ltf']['nodata'] >= 1
+# the rules: smaller than the chart's timeframe, zone signals only
+for bad in (dict(tf='D', ltf='D'), dict(tf='4H', ltf='D'), dict(group='spring'), dict(group='pattern')):
+    try:
+        lt23(**bad)
+        raise AssertionError(bad)
+    except L.LabError:
+        pass
+# the hybrid candles: the small candles to the end of the day, then the daily ones; nothing looks ahead (a swing confirmed on the
+# entry's own daily candle is known only at its end)
+assert L.htf_span('W', date(2026, 11, 13).toordinal(), 0) == (date(2026, 11, 9).toordinal() * 1440, date(2026, 11, 16).toordinal() * 1440)
+assert L.htf_span('4H', 1000, 555) == (1000 * 1440 + 555, 1000 * 1440 + 795) and L.htf_span('4H', 1000, 795)[1] == 1001 * 1440
+rm = L._Remap(type('S', (), {'ph': [3, 7, 9], 'phv': [1, 2, 3], 'phc': [5, 9, 12], 'pl': [], 'plv': [], 'plc': []})(), 9, 4)
+assert rm.phc == [-5, 3, 6] and rm.last_swing_high(0, 0) == (-7, 1), 'the swing known on the entry candle (9) is known at its end'
+# the charts PDF: three pages a trade - the chart, the 1-hour confirmation, why
+pdf23 = L.run_job(LT23, charts=L.CHARTS_DIR, name='ltf confirm')
+pg23 = pdf_pages(os.path.join(L.CHARTS_DIR, pdf23['pdf']['file']))
+assert pdf23['pdf']['pages'] == 1 + 3 * pdf23['tradesTotal'], pdf23['pdf']
+w23 = ' '.join(' '.join(pg) for pg in pg23)
+for txt in ('the confirmation on the 1-hour chart', '1H CHoCH ', 'small CHoCH', 'page 2 of 3 of this trade', 'page 3 of 3 of this trade',
+            'It waited for a confirmation on the 1-hour chart', 'Without the lower-timeframe confirmation (buying at the zone touch)',
+            'Confirmation on the 1-hour chart: a CHoCH (swings of 2 candles, at least 2 lower highs / lows)'):
+    assert txt in w23, txt
+
+# the daily scan (owner, 13-Nov-2026): BOS + FVG rows + the smaller chart's CHoCH in the zone (here 1H, from the stored 15-minute days)
+m15_23 = []
+for t_, o_, h_, l_, c_, _v in rows23:
+    base_ = int(t_[11:13]) * 60 + int(t_[14:16])
+    if base_ == 915:
+        m15_23.append([t_, o_, h_, l_, c_, 25])
+        continue
+    for q_, (a_, b_, cc_, d_) in enumerate(((o_, h_, l_, o_), (o_, o_, o_, o_), (o_, o_, o_, o_), (o_, max(o_, c_), min(o_, c_), c_))):
+        x_ = base_ + 15 * q_
+        m15_23.append(['%s %02d:%02d' % (t_[:10], x_ // 60, x_ % 60), a_, b_, cc_, d_, 25])
+assert [[r[0]] + [round(v, 2) for v in r[1:5]] for r in K.h1_rows(m15_23)] == [[r[0]] + r[1:5] for r in rows23], 'the 15-minute days = the 1-hour chart'
+store23 = {'sym': 'BOS', 'day': r22, 'm15': m15_23, 'h4': []}
+an23 = lambda **kw: [x for x in K.analyse(store23, r22[t22a - 1][0], date.fromisoformat(r22[t22a + 6][0]), set(), ('D',), (),
+                                          choch=dict(K.choch_rules(), **kw))['items'] if x['pattern'] in (K.CHOCH_PATTERN, K.BOS_PATTERN) or 'CHoCH in zone' in x['pattern']]
+it23 = an23(ltf='1H')
+assert [(x['pattern'], x['candle']) for x in it23] == [('BOS + FVG', r22[t22a][0]), ('1H CHoCH in zone', rows23[choch_c][0])], it23
+assert it23[0]['note'].startswith('Zone first touch · BOS %s (the 1st after the CHoCH of ' % r22[st22.events[0][0]][0]), it23[0]['note']
+assert it23[1]['note'] == ('D BOS + FVG zone touched %s · 1H CHoCH after 2 lower highs / lows, its final low in the zone · 3 candles after the '
+                           'touch · buy at its close · stop under its final low' % r22[t22a][0]), it23[1]['note']
+assert [x['pattern'] for x in an23(ltf='off')] == ['BOS + FVG'] and an23(bos=False, ltf='off') == []
+assert [x['pattern'] for x in an23(ltf='1H', bosKind='trend')] == [], 'the 1st BOS after the CHoCH is not a running up-trend'
+assert [x['pattern'] for x in an23()] == ['BOS + FVG'], 'the default 15m: the 15-minute chart has no CHoCH of 3-candle swings here'
 
 print('OK')

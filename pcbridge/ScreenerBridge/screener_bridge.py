@@ -64,7 +64,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
   python screener_bridge.py chochrules the CHoCH + FVG rules of the daily scan (swing size, lower highs / lows, discount level, zone part)
   python screener_bridge.py backtest   the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1-5R) on the stored Kite candles -> the sheet (no login)
-  python screener_bridge.py kitehistory  Kite's long history (daily ~20 years, 4H ~5 years) for the backtest at once, then the backtest
+  python screener_bridge.py kitehistory  Kite's long history (daily ~20 years, 4H / 1-hour ~5 years, 15-minute as far as Kite gives) for the backtest at once, then the backtest
+  python screener_bridge.py kitedepth [SYMBOL ...]  how many years of 15-minute / 1-hour candles Kite gives (a check, nothing stored)
   python screener_bridge.py lab [D|W|4H]  the Backtest Lab with its default rules on this computer (a check; the website's page sends its own)
   python screener_bridge.py live       Kite live prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
@@ -4090,6 +4091,13 @@ def main(argv):
             return 1
         try:
             return itd.history_now(cfg, api, nse_holidays())
+        except (itd.KiteError, itd.NeedLogin) as e:
+            print('PROBLEM - %s' % e)
+            return 1
+    if cmd == 'kitedepth':
+        print('Kite: how many years of 15-minute / 1-hour candles it gives (a few stocks, nothing stored or sent) ...')
+        try:
+            return itd.ltf_depth(cfg, argv[2:])
         except (itd.KiteError, itd.NeedLogin) as e:
             print('PROBLEM - %s' % e)
             return 1

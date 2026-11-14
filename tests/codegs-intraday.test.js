@@ -468,6 +468,26 @@ test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s
   assert.deepStrictEqual(e.sheet('Intraday Patterns').rows.slice(2).map((x) => x[3] + ' ' + x[4]), ['4H CHoCH + FVG', '4H Spring in FVG']);
 });
 
+test('intraday: BOS + FVG and the smaller chart\'s CHoCH in the zone (owner, 13-Nov-2026) - kept with their words, after the CHoCH rows, a broken BOS row removed', () => {
+  const e = env();
+  const bos = { sym: 'PARAGMILK', tf: 'D', pattern: 'BOS + FVG', candle: '2026-11-05', session: '2026-11-05', low: 228.1, close: 233.7,
+    zone: [229.9, 238, '2026-10-20', 'FVG', 'middle', 1], note: 'Zone first touch · BOS 2026-10-28 (the 1st after the CHoCH of 2026-10-22) · first pullback · zone middle 70% down the move' };
+  const ltf = { sym: 'PARAGMILK', tf: 'D', pattern: '15m CHoCH in zone', candle: '2026-11-06 11:30', session: '2026-11-06', low: 230.2, close: 234.1,
+    zone: [229.9, 238, '2026-10-20', 'FVG'], note: 'D BOS + FVG zone touched 2026-11-05 · 15m CHoCH after 2 lower highs / lows, its final low in the zone · 1 candle after the touch · buy at its close · stop under its final low' };
+  const ch = Object.assign({}, bos, { pattern: 'CHoCH + FVG', note: 'Zone first touch · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback' });
+  const r = e.post(put([bos, ltf, ch, PARA, Object.assign({}, ltf, { pattern: '5m CHoCH in zone' })]));
+  assert.strictEqual(r.added, 4, JSON.stringify(r));
+  const rows = e.sheet('Intraday Patterns').rows.slice(2);
+  assert.deepStrictEqual(rows.map((x) => x[0] + ' ' + x[3] + ' ' + x[4]), ['2026-11-06 D 15m CHoCH in zone', '2026-11-05 D CHoCH + FVG', '2026-11-05 D BOS + FVG', '2026-10-30 4H Spring in FVG']);
+  assert.strictEqual(rows[0][13], 'FVG · D BOS + FVG zone touched 2026-11-05 · 15m CHoCH after 2 lower highs / lows, its final low in the zone · 1 candle after the touch · buy at its close · stop under its final low');
+  assert.strictEqual(rows[0][5], '2026-11-06 11:30', 'the small CHoCH candle');
+  assert.strictEqual(rows[2][13], 'FVG middle (touch 1) · Zone first touch · BOS 2026-10-28 (the 1st after the CHoCH of 2026-10-22) · first pullback · zone middle 70% down the move');
+  assert.match(e.sheet('Intraday Patterns').rows[0][0], /BOS \+ FVG: the same on a BOS move.*15m \/ 1H \/ D CHoCH in zone: after such a touch/);
+  const r2 = e.post(put([], { invalid: [{ sym: 'PARAGMILK', tf: 'D', candle: '2026-11-05', pattern: 'BOS + FVG' }] }));
+  assert.strictEqual(r2.removed, 1, JSON.stringify(r2));
+  assert.deepStrictEqual(e.sheet('Intraday Patterns').rows.slice(2).map((x) => x[4]), ['15m CHoCH in zone', 'CHoCH + FVG', 'Spring in FVG']);
+});
+
 test('CHoCH + FVG waiting for the pullback (owner, 12-Nov-2026, IREDA): the "CHoCH Waiting" tab, rebuilt each scan; the site feed WITH Kite prices = export_xlsx.py', () => {
   const e = env();
   const w = (sym, tf, dist, more) => ({ sym: sym, tf: tf, choch: tf === '4H' ? '2026-11-03 13:15' : '2026-11-03', level: 117.39, d: 4, low: 98.78,

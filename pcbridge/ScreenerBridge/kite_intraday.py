@@ -52,6 +52,7 @@ import sys  # noqa: E402
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path:      # loaded by its path (the tests): find its neighbours
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backtest_lab  # noqa: E402  (the Backtest Lab: the website's own-rules backtest, run here)
+import ltf_data  # noqa: E402  (1-hour / 15-minute candle files for the Lab's lower-timeframe confirmation, 13-Nov-2026)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -76,6 +77,13 @@ DEEP_H4_DAYS = 2000         # 4H candles back this far, built from Kite's 60-min
 DAY_CHUNK_DAYS = 1995       # Kite: at most 2000 days of day candles a request
 H60_CHUNK_DAYS = 395        # Kite: at most 400 days of 60-minute candles a request
 DEEP_BUDGET_S = 20 * 60     # the daily scan adds deep history for at most this long a day (KiteHistoryNow.bat: all at once)
+# LOWER-TIMEFRAME HISTORY (owner, 13-Nov-2026: "If any Choch has happened inside the Zone in 15 min, then i decided to buy.
+# but we have limited candles data in 15 min to backtest right?" -> keep the 1-hour candles (Kite already sends them for the
+# 4H history) and read as many years of 15-minute candles as Kite gives; config "ltf_history": false = off): files in
+# intraday_data/ltf (ltf_data.py), not in the stock's store - the daily scan reads no more than before
+DEEP_H1_DAYS = 2000         # 1-hour candles back this far (Kite: 400 days a request)
+DEEP_M15_DAYS = 2000        # 15-minute candles back this far, or to the first empty answer (Kite: 200 days a request)
+M15_CHUNK_DAYS = 195
 SCAN_KEEP = {'4H': 300, 'D': 1400, 'W': 300, 'M': 120}   # candles the daily pattern scan looks at (deep history = backtest)
 OVERLAP_DAYS = 4            # each update reads these days again: a split / bonus changes Kite's older candles -> read all again
 ADJUST_TOL = 0.005          # 0.5 %
@@ -604,6 +612,7 @@ def update_symbol(cfg, sess, sym, token, upto):
         req += 1
         if s.get('deep') or s.get('h4'):     # a split / bonus: the deep history is read again (deep_fill)
             s['deep'], s['h4'] = {}, []
+        ltf_data.remove(ltf_dir(), sym)       # ... the 1-hour / 15-minute files too
     last15 = date.fromisoformat(m15[-1][0][:10]) if m15 else None
     full15 = full or not last15 or (upto - last15).days > M15_BACKFILL_DAYS - OVERLAP_DAYS - 5
     if not full15:
@@ -626,6 +635,10 @@ def update_symbol(cfg, sess, sym, token, upto):
         s['h4'] = _merge(s['h4'], h4_rows([r for r in m15 if r[0][:10] < first]))
     s['m15'] = kept
     s['upto'] = upto_iso
+    try:
+        ltf_update(sym, dict(s, m15=m15))    # the new sessions -> the 1-hour / 15-minute files (when the deep history made them)
+    except OSError as e:
+        log('Kite %s: the 1-hour / 15-minute files could not be updated - %s' % (sym, e))
     store_save(sym, s)
     return s, req
 
@@ -633,6 +646,59 @@ def update_symbol(cfg, sess, sym, token, upto):
 def h4_rows(rows):
     """15- or 60-minute rows -> 4H rows [t, o, h, l, c, v] (09:15-13:15 / 13:15-15:30)."""
     return [[c['t'], c['o'], c['h'], c['l'], c['c'], c['v']] for c in bucket_intraday(rows, 240)]
+
+
+def h1_rows(rows):
+    """15- or 60-minute rows -> 1-hour rows [t, o, h, l, c, v] (09:15, 10:15, ... 15:15 like Kite / TradingView)."""
+    return [[c['t'], c['o'], c['h'], c['l'], c['c'], c['v']] for c in bucket_intraday(rows, 60)]
+
+
+def ltf_dir():
+    return os.path.join(DATA_DIR, 'ltf')
+
+
+def ltf_on(cfg):
+    """The lower-timeframe history is kept (config "ltf_history": false = off)."""
+    return (cfg or {}).get('ltf_history', True) is not False
+
+
+def ltf_update(sym, s):
+    """The daily update: the stored 15-minute days newer than the files' newest candle are added to the 15m / 1H files
+    (made by the deep history - none yet = nothing). A gap (the files end before the oldest stored 15-minute day: the
+    program did not run for months) -> the files are removed and read again by the deep history."""
+    m15 = s.get('m15') or []
+    if not m15:
+        return 0
+    folder, n = ltf_dir(), 0
+    first = ltf_data._key_of(m15[0][0])
+    for tf, rows in (('15m', None), ('1H', None)):
+        last = ltf_data.last_key(folder, sym, tf)
+        if last is None:
+            continue
+        if last < first and date.fromordinal(last[0]) < date.fromordinal(first[0]) - timedelta(days=4):
+            ltf_data.remove(folder, sym, tf)
+            deep = s.get('deep') if isinstance(s.get('deep'), dict) else {}
+            deep.pop('m15' if tf == '15m' else 'h1', None)
+            s['deep'] = deep
+            continue
+        n += ltf_data.append(folder, sym, tf, m15 if tf == '15m' else h1_rows(m15))
+    return n
+
+
+def _chunks_back(cfg, sess, token, interval, end, limit, chunk):
+    """Kite candles of `interval` from `end` back to `limit` in chunks of `chunk` days, newest chunk first, until an
+    empty answer (nothing older on Kite) -> (rows oldest first, requests)."""
+    out, req = [], 0
+    while end > limit:
+        frm = max(limit, end - timedelta(days=chunk))
+        rows = historical(cfg, sess, token, interval, datetime(frm.year, frm.month, frm.day, 9, 0),
+                          datetime(end.year, end.month, end.day, 15, 30))
+        req += 1
+        if not rows:
+            break
+        out = rows + out
+        end = frm - timedelta(days=1)
+    return out, req
 
 
 def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
@@ -654,6 +720,26 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
             s['day'] = _merge(rows, s['day'])          # the stored candles win where both have a day
             end = frm - timedelta(days=1)
         deep['day'] = upto.isoformat()
+    if ltf_on(cfg) and not deep.get('h1'):
+        # the 1-hour file (13-Nov-2026): Kite's 60-minute candles before the stored 15-minute days + those days as 1-hour
+        # candles; the same 60-minute candles give the 4H history when it is not there yet
+        end = (date.fromisoformat(s['m15'][0][0][:10]) if s['m15'] else upto + timedelta(days=1)) - timedelta(days=1)
+        rows, n = _chunks_back(cfg, sess, token, '60minute', end, upto - timedelta(days=DEEP_H1_DAYS), H60_CHUNK_DAYS)
+        req += n
+        ltf_data.write(ltf_dir(), sym, '1H', rows + h1_rows(s['m15']))
+        if not deep.get('h4'):
+            if not s.get('h4') and s['m15']:
+                s['h4'] = h4_rows(s['m15'])
+            s['h4'] = _merge(h4_rows(rows), s.get('h4') or [])
+            deep['h4'] = upto.isoformat()
+        deep['h1'] = upto.isoformat()
+    if ltf_on(cfg) and not deep.get('m15'):
+        # the 15-minute file: as many years as Kite gives (it answers nothing before that), up to DEEP_M15_DAYS
+        end = (date.fromisoformat(s['m15'][0][0][:10]) if s['m15'] else upto + timedelta(days=1)) - timedelta(days=1)
+        rows, n = _chunks_back(cfg, sess, token, '15minute', end, upto - timedelta(days=DEEP_M15_DAYS), M15_CHUNK_DAYS)
+        req += n
+        ltf_data.write(ltf_dir(), sym, '15m', rows + [list(r) for r in s['m15']])
+        deep['m15'] = upto.isoformat()
     if not deep.get('h4'):
         limit = upto - timedelta(days=DEEP_H4_DAYS)
         first = (s.get('h4') or [[None]])[0][0] or (s['m15'][0][0] if s['m15'] else None)
@@ -671,7 +757,7 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
             end = frm - timedelta(days=1)
         deep['h4'] = upto.isoformat()
     s['deep'] = deep
-    if req:
+    if req or ltf_on(cfg):
         store_save(sym, s)
     return s, req
 
@@ -688,7 +774,8 @@ def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
         if tok is None:
             continue
         deep = store_load(sym).get('deep')
-        if not (isinstance(deep, dict) and deep.get('day') and deep.get('h4')):
+        if not (isinstance(deep, dict) and deep.get('day') and deep.get('h4') and
+                (not ltf_on(cfg) or (deep.get('h1') and deep.get('m15')))):
             todo.append((sym, tok))
     if budget_s is None or todo:
         out('Kite deep history: %d of %d stocks to read (the rest are on this computer already; checked in %.0f s)'
@@ -1293,9 +1380,10 @@ BACKTEST_TFS = ('4H', 'D', 'W')
 GAP_SPRING = 'Gap-up FVG + Spring'   # owner, 08-Nov-2026: split from Spring in FVG (= 3-candle FVG zones only)
 SPRING_PATTERNS = ('Spring in FVG', GAP_SPRING, 'Spring')   # only these follow the candle-time rule (4H: the 13:15 candle)
 FVG_PATTERNS = (('ft', 'FVG First Touch'), ('conf', 'FVG First Touch Confirmed'), ('twin', 'Twin Star Bottom + FVG'))
-RULES_VERSION = 6                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
+RULES_VERSION = 7                  # a change rescans the last FIRST_RUN_SESSIONS sessions (3 = the 08-Nov-2026 FVG+Spring rule,
                                    # 4 = Gap-up FVG + Spring split off + Gap-up zones kept after the first touch, 5 = CHoCH + FVG,
-                                   # 6 = CHoCH + FVG in the discount half of the move + the first touch of any zone)
+                                   # 6 = CHoCH + FVG in the discount half of the move + the first touch of any zone,
+                                   # 7 = BOS + FVG + the lower-timeframe CHoCH in the zone - 13-Nov-2026)
 # the owner's CHoCH + FVG setup (10-Nov-2026, structure.py): after >= 3 lower highs / lows (swings of 5 candles) a candle
 # closes above the last lower high; an FVG / Gap-up zone formed in that move or after it; on the first pullback into it (no
 # BOS yet) a Spring on the zone (4H: the 13:15 candle), an FVG First Touch / Confirmed or the first touch of the zone.
@@ -1304,6 +1392,17 @@ RULES_VERSION = 6                  # a change rescans the last FIRST_RUN_SESSION
 # high since; CHOCH_FIB, CHOCH_PART) instead of "the zone under the CHoCH level"
 CHOCH_PATTERN = 'CHoCH + FVG'
 CHOCH_TFS = ('4H', 'D', 'W')
+# BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this. like FVG Zone at discount level in the BOS move ... It can
+# be a continuous BOS in uptrend. or BOS formed after Choch"): the same setup on the BOS move (structure.bos_events) - the
+# daily scan lists the first touches of its discount zones like the CHoCH ones (config "choch_bos": false = off,
+# "choch_bos_kind": both / first / trend)
+BOS_PATTERN = 'BOS + FVG'
+# the lower-timeframe confirmation (owner, 13-Nov-2026: "If any Choch has happened inside the Zone in 15 min, then i decided to
+# buy"): after a CHoCH + FVG / BOS + FVG setup's touch, a CHoCH of a smaller chart (my recommendations: 3 candles a swing, 2 lower
+# highs / lows, its final low in the zone - at most 0.5 % under it -, within 5 candles of the setup's chart) = a row '15m CHoCH
+# in zone' (the daily scan after the close; config "choch_ltf": 15m / 1H / off for the daily setups - 4H uses 15m, W the daily)
+LTF_PATTERNS = {'15m': '15m CHoCH in zone', '1H': '1H CHoCH in zone', 'D': 'D CHoCH in zone'}
+LTF_LIVE_P = {'ltfPivot': 3, 'ltfDown': 2, 'ltfWait': 5, 'ltfUnder': 0.5}
 CHOCH_PIVOT_N = 5
 CHOCH_DOWN_N = 3
 CHOCH_FIB = 0.5
@@ -1329,9 +1428,11 @@ TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the
 CHOCH_MORE = (('zoneMin', 'choch_zone_min_pct', 0.0, 0.0, 50.0), ('zoneMax', 'choch_zone_max_pct', 0.0, 0.0, 100.0),
               ('lineTol', 'choch_line_tol_pct', 0.5, 0.0, 5.0), ('fibLevel', 'choch_pattern_fib', 0.618, 0.2, 0.95),
               ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0))
-CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False), ('touchAgain', 'choch_touch_again', True))
+CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False), ('touchAgain', 'choch_touch_again', True),
+               ('bos', 'choch_bos', True))
 CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')),
-               ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')))
+               ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')), ('bosKind', 'choch_bos_kind', 'both', ('both', 'first', 'trend')),
+               ('ltf', 'choch_ltf', '15m', ('15m', '1H', 'off')))
 
 
 def choch_rules(cfg=None):
@@ -1502,6 +1603,14 @@ def choch_setup(cfg, save_config, ask=input):
     if r['fibPat'] != 'off':
         num('... the zone\'s Fib line (0.5 / 0.618 / 0.705 / 0.786)', 'fibLevel', 'choch_pattern_fib', 0.2, 0.95, (0.5, 0.618, 0.705, 0.786))
         num('... the pattern\'s low within % of that line (0 to 5)', 'fibTol', 'choch_pattern_tol_pct', 0.0, 5.0)
+    # BOS + FVG and the smaller chart's confirmation list (owner, 13-Nov-2026)
+    print('\nBOS + FVG = the same rules on a BOS move (a close above a higher high after a higher low).')
+    pick('BOS + FVG setups in the daily list', 'bos', [(True, 'listed'), (False, 'not listed')])
+    if r['bos']:
+        pick('Which BOS', 'bosKind', [('both', 'every BOS - the 1st after a CHoCH and the ones of a running up-trend'),
+                                      ('first', 'only the 1st BOS after a CHoCH'), ('trend', 'only the BOS of a running up-trend')])
+    pick('After a daily setup\'s touch, list a CHoCH in the zone on', 'ltf',
+         [('15m', 'the 15-minute chart'), ('1H', 'the 1-hour chart'), ('off', 'nothing (no confirmation list)')])
     cfg['choch_swing_candles'], cfg['choch_lower_highs'], cfg['choch_fib'] = r['pivotN'], r['downN'], r['fib']
     cfg['choch_zone_part'], cfg['choch_zone_when'] = r['part'], r['zoneWhen']
     for key, name, _d, _lo, _hi in CHOCH_MORE:
@@ -1707,7 +1816,7 @@ def _choch_rank(st, k, i, off, z, zl, all_c, closes, highs, r, price, again=None
                                   lambda f, b: any(all_c[q]['c'] < b for q in range(f + 1, min(i, len(all_c)))))
 
 
-def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None, zones=None):
+def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touches=None, rules=None, zones=None, kind='choch'):
     """CHoCH + FVG on the candles of all_c (the last part of full_c) whose day is after `from_iso`:
     {i (all_c index): (zone, note)}; the structure comes from all of full_c (structure.py, nothing looks ahead). A candle's
     entry patterns (choch_candidates) are tried in turn - the first whose zone formed after the CHoCH's final low, on the
@@ -1768,8 +1877,14 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
             b, _hi, _lvl, _li, _lf, dd = st.events[j['k']]
             sz = _size_zone(z, r)
             pct = backtest_lab.zone_pct(sz['bottom'], sz['top'])
-            out[i] = (z, '%s · CHoCH %s after %d lower highs / lows · first pullback · zone %s %d%% down the move%s%s'
-                      % (words, full_c[b]['t'], dd, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)), nth,
+            if kind == 'bos':           # BOS + FVG (13-Nov-2026): which BOS, and the higher low its move starts at
+                ck = st.ck[j['k']] if st.ck else -1
+                head = 'BOS %s (%s)' % (full_c[b]['t'], ('the 1st after the CHoCH of %s' % full_c[st.chev[ck][0]]['t']) if ck >= 0 else
+                                        '%d higher high%s / low%s' % (dd, '' if dd == 1 else 's', '' if dd == 1 else 's'))
+            else:
+                head = 'CHoCH %s after %d lower highs / lows' % (full_c[b]['t'], dd)
+            out[i] = (z, '%s · %s · first pullback · zone %s %d%% down the move%s%s'
+                      % (words, head, backtest_lab.PART_WORDS[r['part']], int(round((j['depth'] or 0) * 100)), nth,
                          (' · zone %s%% tall' % _num_words(pct)) if pct is not None else ''))
             break
     return out
@@ -1873,6 +1988,51 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
             'buy': round(buy, 2), 'stopAt': round(sz['bottom'], 2), 'how': how, 'pct': round(pct, 2) if pct is not None else None}
 
 
+def ltf_candles(store, ltf, upto_iso):
+    """The smaller chart's candles from the store for the daily scan's confirmation: 15m / 1H from the stored 15-minute days
+    (~6 months), D = the daily candles."""
+    if ltf == 'D':
+        return [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto_iso]
+    return [c for c in bucket_intraday(store.get('m15') or [], 15 if ltf == '15m' else 60) if c['day'] <= upto_iso]
+
+
+def ltf_live(store, tf, all_c, setups, since_iso, upto_iso, r, ltf, lt_box=None):
+    """The lower-timeframe CHoCH in the zone of the recent setups (13-Nov-2026): `setups` = [(i, zone, what)] of all_c (the
+    chart tf); for each touch of the last ltfWait + 2 candles the small CHoCH (backtest_lab.ltf_find - the Lab's own rule)
+    of the `ltf` chart -> items {'tf', 'candle' (the small CHoCH candle), 'session', 'low', 'close', 'pattern', 'zone', 'note'}
+    of the ones after since_iso. `lt_box` keeps the small candles + their CHoCH events for the next timeframe."""
+    P = dict(LTF_LIVE_P, tf=tf)
+    recent = [s for s in setups if s[0] >= len(all_c) - P['ltfWait'] - 2]
+    if not recent:
+        return []
+    box = lt_box if lt_box is not None else {}
+    if ltf not in box:
+        lc = ltf_candles(store, ltf, upto_iso)
+        lt = backtest_lab.CandleArrays(lc, ltf != 'D')
+        ev = backtest_lab.structure.choch_events(lt.h, lt.l, lt.c, P['ltfPivot']) if lt.n > 20 else []
+        box[ltf] = (lc, lt, ev)
+    lc, lt, ev = box[ltf]
+    if not ev:
+        return []
+    cs = backtest_lab.CandleArrays(all_c, tf == '4H')
+    out = []
+    for i, z, what in recent:
+        sz = _size_zone(z, r)
+        hit, jj, _why = backtest_lab.ltf_find(cs, i, sz['bottom'], z['top'], P, lt, ev)
+        if hit is None:
+            continue
+        c = lc[int(hit[0])]
+        if c['day'] <= since_iso:
+            continue
+        d = int(hit[5])
+        out.append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
+                    'pattern': LTF_PATTERNS[ltf], 'zone': zone_out(all_c, z),
+                    'note': '%s zone touched %s · %s CHoCH after %d lower high%s / low%s, its final low in the zone%s · buy at its close · '
+                            'stop under its final low' % (what, all_c[i]['t'], ltf, d, '' if d == 1 else 's', '' if d == 1 else 's',
+                                                           '' if jj == i else ' · %d candle%s after the touch' % (jj - i, '' if jj - i == 1 else 's'))})
+    return out
+
+
 def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg_only=DEFAULT_FVG_ONLY, cfg=None, slots=None,
             backtest=False, lab=None, lab_only=False, choch=None):
     """One stock: the patterns on finished candles whose last session is after `since_iso` (and not after `upto`) - on the
@@ -1887,6 +2047,7 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
     turn = backtest_lab.turnover_fn(store.get('day') or []) if lab is not None and backtest else None
     out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': [], 'waiting': []}
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
+    lt_boxes = {}                     # the smaller charts' candles + CHoCH events (the confirmation rows), made once a stock
     for tf in timeframes:
         full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
         if len(full_c) < 2:
@@ -1931,17 +2092,30 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             zs_c = link_zones(spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else []
             tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
             rules = choch or choch_rules()          # the daily scan's CHoCH rules (config.json / ChochRules.bat)
-            st_c = backtest_lab.structure.Structure([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c],
-                                                    rules['pivotN'])
-            for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_c, touches=tch_c,
-                                                    rules=rules, zones=zs_c).items()):
-                c = all_c[i]
-                broken = spring_broken(all_c, i)
-                if broken is None and c['day'] > since_iso:
-                    out['items'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
-                                         'pattern': CHOCH_PATTERN, 'zone': zone_out(all_c, z), 'note': note})
-                elif broken is not None and c['day'] >= keep_from:
-                    out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': CHOCH_PATTERN})
+            fhl = ([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c])
+            st_c = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'])
+            runs = [(CHOCH_PATTERN, 'choch', st_c, rules)]
+            if rules.get('bos', True):
+                # BOS + FVG (13-Nov-2026): the same rules on the BOS move; the BOS structure picked its events already
+                st_b = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], None,
+                                                        {'kind': 'bos', 'bos': rules.get('bosKind', 'both'), 'downN': rules['downN'], 'upN': 1})
+                runs.append((BOS_PATTERN, 'bos', st_b, dict(rules, downN=1)))
+            found = []
+            for pname, kind, st_x, r_x in runs:
+                for i, (z, note) in sorted(choch_setups(full_c, all_c, d, tf, slots, lo_iso, cfg, st=st_x, touches=tch_c,
+                                                        rules=r_x, zones=zs_c, kind=kind).items()):
+                    c = all_c[i]
+                    broken = spring_broken(all_c, i)
+                    if broken is None and c['day'] > since_iso:
+                        out['items'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
+                                             'pattern': pname, 'zone': zone_out(all_c, z), 'note': note})
+                    elif broken is not None and c['day'] >= keep_from:
+                        out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': pname})
+                    found.append((i, z, '%s %s' % (tf, pname)))
+            # the smaller chart's CHoCH in the zone after a recent touch (13-Nov-2026)
+            ltf = {'D': rules.get('ltf', '15m'), '4H': '15m', 'W': 'D'}.get(tf) if rules.get('ltf', '15m') != 'off' else None
+            if ltf and found:
+                out['items'].extend(ltf_live(store, tf, all_c, found, since_iso, upto.isoformat(), rules, ltf, lt_boxes))
             # ... and the ones still waiting for the pullback (owner, 12-Nov-2026: the sheet's "CHoCH Waiting" tab)
             w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c, rules=rules)
             if w:
@@ -2307,10 +2481,63 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
     return 0
 
 
+DEPTH_SYMS = ('RELIANCE', 'TCS', 'INFY')
+DEPTH_YEARS = (1, 2, 3, 4, 5, 6, 7, 8, 10)
+
+
+def ltf_depth(cfg, args=(), out=print, now=None):
+    """KiteDepthCheck.bat (owner, 13-Nov-2026: "Kite எத்தனை வருட 15m data தருகிறது" - check it on the laptop): for a few stocks,
+    one week of 15-minute and of 60-minute candles 1, 2, 3 ... 10 years back -> which years Kite answers (one request each,
+    nothing stored or sent). -> 0 / 1."""
+    sess = ensure_session(cfg)
+    if not sess:
+        out('No Kite login - nothing asked.')
+        return 1
+    now = now or now_ist()
+    imap = instruments(cfg, sess, now.date().isoformat())
+    syms = [a.strip().upper() for a in args if a.strip()] or list(DEPTH_SYMS)
+    best = {}
+    for sym in syms:
+        tok = token_for(imap, sym)
+        if tok is None:
+            out('%s: not on Kite (NSE)' % sym)
+            continue
+        for interval, name in (('15minute', '15-minute'), ('60minute', '1-hour')):
+            got = []
+            for y in DEPTH_YEARS:
+                d0 = now.date() - timedelta(days=int(365.25 * y))
+                rows = historical(cfg, sess, tok, interval, datetime(d0.year, d0.month, d0.day, 9, 0),
+                                  datetime(d0.year, d0.month, d0.day, 15, 30) + timedelta(days=7))
+                time.sleep(REQ_GAP_S)
+                got.append((y, len(rows), rows[0][0][:10] if rows else ''))
+                if rows:
+                    best[name] = max(best.get(name, 0), y)
+            out('%s %s candles: %s' % (sym, name, ', '.join('%d yr %s' % (y, ('yes (%d candles from %s)' % (n, d)) if n else 'NO')
+                                                             for y, n, d in got)))
+    for name in ('15-minute', '1-hour'):
+        y = best.get(name)
+        out('Kite gives %s candles back about %s.' % (name, ('%d years' % y) if y else 'less than a year'))
+    out('This program keeps them back %d days (about %.1f years) - KiteHistoryNow.bat reads them once (15-minute: about %d MB '
+        'for 1,800 stocks a year of candles).' % (DEEP_M15_DAYS, DEEP_M15_DAYS / 365.25, 290))
+    return 0
+
+
+def ltf_status():
+    """'1-hour 1,795 stocks, 15-minute 1,790 stocks' of the lower-timeframe files (TestConnection)."""
+    try:
+        names = os.listdir(ltf_dir())
+    except OSError:
+        names = []
+    h1 = sum(1 for x in names if x.endswith('.1H.bin'))
+    m15 = sum(1 for x in names if x.endswith('.15m.bin'))
+    return '1-hour %d stocks, 15-minute %d stocks' % (h1, m15)
+
+
 def history_now(cfg, api, holidays=None, now=None, out=print):
     """KiteHistoryNow.bat: the deep history of every PatternData stock at once (daily candles back DEEP_DAY_YEARS, 4H
-    back DEEP_H4_DAYS - the first time about 2 hours (a line every 25 stocks with the time left) and ~250 MB in
-    intraday_data), then the backtest -> the sheet."""
+    back DEEP_H4_DAYS and - 13-Nov-2026 - the 1-hour / 15-minute files for the Lab's lower-timeframe confirmation - the
+    first time a few hours (a line every 25 stocks with the time left), about 2 GB in intraday_data), then the backtest ->
+    the sheet."""
     holidays = set(holidays or ())
     now = now or now_ist()
     sess = ensure_session(cfg)
@@ -2324,8 +2551,9 @@ def history_now(cfg, api, holidays=None, now=None, out=print):
     syms = [str(x).strip().upper() for x in ans.get('syms') or [] if str(x).strip()]
     upto = completed_session(now, holidays)
     imap = instruments(cfg, sess, now.date().isoformat())
-    out('Deep history for the backtest: daily candles back %d years, 4H back %d days, %d stocks (only what is not on '
-        'this computer yet) ...' % (DEEP_DAY_YEARS, DEEP_H4_DAYS, len(syms)))
+    out('Deep history for the backtest: daily candles back %d years, 4H back %d days%s, %d stocks (only what is not on '
+        'this computer yet) ...' % (DEEP_DAY_YEARS, DEEP_H4_DAYS, (', 1-hour back %d days and 15-minute as far as Kite gives '
+                                                                   '(up to %d days)' % (DEEP_H1_DAYS, DEEP_M15_DAYS)) if ltf_on(cfg) else '', len(syms)))
     t0 = time.time()
     try:
         done, left, req = deep_fill(cfg, sess, imap, syms, upto, None, out)
@@ -2846,7 +3074,8 @@ def status_line(cfg):
                                    'not logged in today (the program asks when it needs to)',
                                    ('%s - %s stocks, %s pattern(s)' % (last.get('at'), last.get('stocks'), last.get('found')))
                                    if last else 'none yet')) + (
-        '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '')
+        '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '') + (
+        '; lower-timeframe history: ' + ltf_status() if ltf_on(cfg) else '')
 
 
 class Runner:

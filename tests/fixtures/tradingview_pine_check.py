@@ -198,6 +198,29 @@ base = seen[str({})]
 assert all(v != base for k, v in seen.items() if k != str({})), seen
 
 
+# BOS + FVG (owner, 13-Nov-2026): the model's BOS events = structure.bos_events (with which are the 1st after a CHoCH), and its BUYs
+# = the Lab's trades with setup 'bos'
+for sym, rows in list(charts.items())[:12]:
+    hh, ll, cc = [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows]
+    for n, dn, opt in ((3, 1, {}), (5, 3, {}), (2, 2, {'eqAtr': 0.25}), (3, 1, {'swingMode': 'zigzag', 'zzAtr': 2}), (3, 2, {'chochMode': 'protected'})):
+        P = L.clean_params(dict(opt, pivotN=n, downN=dn, structure='only', setup='bos'))
+        m = model(rows, P)
+        ev, ck = S.bos_events(hh, ll, cc, n, L.struct_opts(P) or None, kind='both', down_n=dn, up_n=1)
+        assert [e[:6] for e in m.bos_ev] == ev and [e[6] for e in m.bos_ev] == [k >= 0 for k in ck], (sym, n, dn, opt)
+        seen['bos'] = seen.get('bos', 0) + len(ev)
+assert seen['bos'] > 300, seen['bos']
+BOS_SETS = [dict(SMC, setup='bos'), dict(SMC, pivotN=3, downN=1, setup='bos', bosKind='first'),
+            dict(SMC, pivotN=3, downN=1, setup='bos', bosKind='trend', upN=2), dict(SMC, pivotN=2, downN=2, setup='bos', zonePick='every', discount=0.382),
+            dict(SMC, pivotN=3, downN=1, setup='bos', stop='final', targetMode='mh', maxRisk=0),
+            dict(SMC, swingMode='zigzag', zzAtr=2, downN=1, setup='bos', entry='close', stop='lower')]
+bos_counts = []
+for params in BOS_SETS:
+    lab, mod = lab_trades(params), model_trades(charts, params)
+    assert mod == lab, (params, [x for x in mod if x not in lab][:3], [x for x in lab if x not in mod][:3])
+    bos_counts.append(len(lab))
+assert min(bos_counts) >= 2 and lab_trades(BOS_SETS[0]) != lab_trades(SMC), bos_counts
+
+
 # ------------------------------------------------------------------ 2. the owner's SUPREMEIND case (made chart): the premium FVG's
 # touch is not a BUY, the discount FVG's first touch is - also when one candle goes through both
 def craft(big=False):
@@ -300,5 +323,9 @@ mm = re.search(r'^stopAtr = input\.float\([^\n]*minval=([\d.]+), maxval=([\d.]+)
 assert mm and (float(mm.group(1)), float(mm.group(2))) == L.LIMITS['stopAtr'][:2]
 assert 'stop := math.min(stop, entry - stopAtr * (atTop ? atrS[1] : atrS))' in src and 'tgt := chH' in src
 assert '"The move high (HH)", "% above the entry"]' in src and set(L.CHOICES['targetMode']) == {'R', 'swing', 'mh', 'pct'}
+# BOS + FVG (owner, 13-Nov-2026): the Lab's defaults, the model's steps in the script
+assert default('setupMode') == 'CHoCH + FVG' and D['setup'] == 'choch' and default('bosKind') == 'Every BOS' and D['bosKind'] == 'both'
+assert int(default('upN')) == D['upN'] == 1 and 'if isBosMode and sz6 > 0' in src and 'if spanB > 0 and hhOk and hlOk' in src
+assert 'firstB := lcD >= downN and not lcSeen and not lcDead' in src and 'if setNew' in src and 'if d >= downN and not isBosMode' in src
 lint(os.path.join(ROOT, 'tradingview', 'StockBlueprint_CHoCH_FVG.pine'))
 print('OK')

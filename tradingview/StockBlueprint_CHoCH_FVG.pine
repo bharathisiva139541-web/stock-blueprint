@@ -17,12 +17,19 @@
 //    every rule - also the entry / stop / risk / target rules, like the Lab picks a candle's first row that passes)
 // The Backtest Lab page's "Copy TradingView script" button writes the run's rules into the inputs below (owner, 11-Nov-2026:
 // "give option to copy the pinescript in this page that works with respect to the current setup").
+// BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this ... continuous BOS in uptrend. or BOS formed after Choch"):
+// Setup "BOS + FVG" = the same rules on a BOS move - a close above the last swing high when it was a higher high and the
+// pullback since it a higher low; the move from that higher low to the high; the 1st BOS after a CHoCH or one of a running
+// up-trend. The lower-timeframe confirmation of the Lab (a small CHoCH in the zone) is not drawn - open the smaller chart.
 // Kept in step with tradingview/pine_model.py - tests/tradingview-pine.test.js checks that model against the laptop's Lab runs.
 indicator("Stock Blueprint - CHoCH + FVG", shorttitle="SB CHoCH+FVG", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
 
 // ------------------------------------------------------------------ inputs (= the Backtest Lab's defaults)
 G1 = "Market structure (Backtest Lab step 2)"
 structOnly = input.bool(true, "Only my setup (the market-structure rules below)", group=G1)
+setupMode = input.string("CHoCH + FVG", "Setup", options=["CHoCH + FVG", "BOS + FVG"], group=G1)
+bosKind = input.string("Every BOS", "BOS + FVG: which BOS", options=["Every BOS", "Only the 1st BOS after a CHoCH", "Only BOS of a running up-trend"], group=G1)
+upN = input.int(1, "BOS of a running up-trend: higher highs / lows, at least", minval=1, maxval=8, group=G1)
 pivN = input.int(5, "A swing: candles each side", minval=2, maxval=20, group=G1)
 downN = input.int(3, "Lower highs and lower lows before the CHoCH, at least", minval=1, maxval=8, group=G1)
 zoneWhen = input.string("In the CHoCH move or after it", "The zone formed", options=["In the CHoCH move or after it", "Only in the CHoCH move", "Only after the CHoCH candle"], group=G1)
@@ -331,6 +338,15 @@ var float chH = na
 var int chHBar = -1
 var int chTime = 0
 var int chLiTime = 0
+// BOS + FVG (13-Nov-2026): the swing highs a close broke (BOS), the latest CHoCH (a 1st BOS follows it)
+var int lastUsedBos = -1
+var int lcB = -1
+var float lcLf = na
+var int lcD = 0
+var bool lcSeen = true
+var bool lcDead = false
+var string chKind = "CHoCH"
+bool isBosMode = setupMode == "BOS + FVG"
 var line fibLn = na
 var label fibLb = na
 var int nBuys = 0
@@ -365,11 +381,13 @@ var abT = array.new_float()
 var abF = array.new_int()
 
 // 1. a close under the final low ends the CHoCH (this candle too)
+if lcB >= 0 and lcB < bar_index and close < lcLf
+    lcDead := true
 bool alive = chB >= 0 and not chDead and chB < bar_index
 if alive and close < chLf
     chDead := true
     alive := false
-    label.new(bar_index, low, "CHoCH ended", yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny, tooltip="A close under the CHoCH's final low " + fmtP(chLf) + " - no more setups from this CHoCH")
+    label.new(bar_index, low, chKind + " ended", yloc=yloc.belowbar, style=label.style_label_up, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny, tooltip="A close under the " + chKind + "'s " + (chKind == "BOS" ? "higher low " : "final low ") + fmtP(chLf) + " - no more setups from this " + chKind)
 
 // 1b. the candle before's gap between two big green candles (inside FVG - judged now that this candle closed); added before
 //     the touches so the FVG around it knows it (this candle cannot touch it: its low is over the gap's top). The zones of the
@@ -689,7 +707,7 @@ if chB >= 0 and not chDead and chBos < 0 and bar_index > chB
     if not na(chPeak) and close > chPeak
         chBos := bar_index
         line.new(chPeakBar, chPeak, bar_index, chPeak, color=C_STOP, width=1)
-        label.new(bar_index, chPeak, "BOS", style=label.style_label_down, color=color.new(C_STOP, 10), textcolor=color.white, size=size.tiny, tooltip="Break of structure: a close above the highest swing high " + fmtP(chPeak) + " since the CHoCH - price already moved; later touches are not the first pullback")
+        label.new(bar_index, chPeak, chKind == "BOS" ? "next BOS" : "BOS", style=label.style_label_down, color=color.new(C_STOP, 10), textcolor=color.white, size=size.tiny, tooltip="Break of structure: a close above the highest swing high " + fmtP(chPeak) + " since the " + chKind + " - price already moved; later touches are not the first pullback")
 
 // 4. the move's high (the next candles' discount line)
 if chB >= 0 and not chDead and bar_index > chB
@@ -766,6 +784,77 @@ if swNew
         array.push(swH, swNewH)
         array.push(swA, swAt)
 int sz6 = array.size(swP)
+// the setup this candle starts (a CHoCH, or with "BOS + FVG" a BOS) - set below in one place
+bool setNew = false
+int nHi = -1
+float nLvl = na
+int nLi = -1
+float nLf = na
+int nD = 0
+string nKind = ""
+bool nFirst = false
+// BOS (13-Nov-2026, before this candle's CHoCH - a 1st BOS follows a CHoCH of an earlier candle): a close above the last swing
+// high (not broken before) that was a higher high, with the lowest low since it a higher low
+if isBosMode and sz6 > 0
+    int qb = array.get(swH, sz6 - 1) ? sz6 - 1 : sz6 - 2
+    if qb >= 2
+        int bHi = array.get(swP, qb)
+        float bLvl = array.get(swV, qb)
+        if close > bLvl and bHi > lastUsedBos
+            lastUsedBos := bHi
+            float bMin = na
+            int bMinBar = -1
+            int spanB = bar_index - bHi
+            if spanB > 0
+                for k = 1 to spanB
+                    int offB = spanB - k
+                    if na(bMin) or low[offB] < bMin
+                        bMin := low[offB]
+                        bMinBar := bar_index - offB
+            bool hhOk = bLvl > array.get(swV, qb - 2) + eqAtr * array.get(swA, qb)
+            bool hlOk = not na(bMin) and bMin > array.get(swV, qb - 1) + eqAtr * array.get(swA, qb - 1)
+            if spanB > 0 and hhOk and hlOk
+                int du = 0
+                int kb = qb
+                bool moreB = true
+                while moreB
+                    if kb - 2 >= 0
+                        if array.get(swV, kb) > array.get(swV, kb - 2) + eqAtr * array.get(swA, kb)
+                            du += 1
+                            kb -= 2
+                        else
+                            moreB := false
+                    else
+                        moreB := false
+                int dlB = 0
+                float prevB = bMin
+                kb := qb - 1
+                moreB := true
+                while moreB
+                    if kb >= 0
+                        if prevB > array.get(swV, kb) + eqAtr * array.get(swA, kb)
+                            dlB += 1
+                            prevB := array.get(swV, kb)
+                            kb -= 2
+                        else
+                            moreB := false
+                    else
+                        moreB := false
+                int dB = math.max(1, math.min(du, dlB))
+                bool firstB = false
+                if lcB >= 0
+                    firstB := lcD >= downN and not lcSeen and not lcDead
+                    lcSeen := true
+                bool takeB = bosKind == "Only the 1st BOS after a CHoCH" ? firstB : bosKind == "Only BOS of a running up-trend" ? (not firstB and dB >= upN) : (firstB or dB >= upN)
+                if takeB
+                    setNew := true
+                    nHi := bHi
+                    nLvl := bLvl
+                    nLi := bMinBar
+                    nLf := bMin
+                    nD := dB
+                    nKind := "BOS"
+                    nFirst := firstB
 if sz6 > 0
     int q = -1
     if isProt
@@ -830,84 +919,108 @@ if sz6 > 0
             int d = math.min(dh, dl)
             if d >= 1 and isProt
                 swBase := sz6
-            if d >= downN
-                chB := bar_index
-                chHi := hiBar
-                chLvl := lvl
-                chLi := segMinBar
-                chLf := segMin
-                chD := d
-                chDead := false
-                chBos := -1
-                chPeak := na
-                chPeakBar := -1
-                chTime := time
-                chLiTime := time[bar_index - segMinBar]
-                float mh = na
-                int mhb = bar_index
-                int span2 = bar_index - chLi
-                for k = 0 to span2
-                    if na(mh) or high[k] >= mh
-                        mh := high[k]
-                        mhb := bar_index - k
-                chH := mh
-                chHBar := mhb
-                line.new(chHi, chLvl, bar_index, chLvl, color=C_CHOCH, width=2, style=line.style_dashed)
-                label.new(bar_index, chLvl, "CHoCH (" + str.tostring(d) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 10), textcolor=color.white, size=size.small, tooltip="CHoCH " + fmtP(chLvl) + " on " + fmtT(time) + ": a close above " + (isProt ? "the protected high (the swing high before the lowest low)" : "the last swing high") + " after " + str.tostring(d) + " lower highs and lower lows" + (eqAtr > 0 ? " (within " + str.tostring(eqAtr) + " x ATR = equal, not lower)" : "") + ". Final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ". Swings: " + swTxt)
-                label.new(chLi, chLf, "final low", yloc=yloc.price, style=label.style_label_up, color=color.new(C_CHOCH, 40), textcolor=color.white, size=size.tiny)
-                if fibLvl > 0
-                    float fp0 = chH - fibLvl * (chH - chLf)
-                    fibLn := line.new(chLi, fp0, bar_index, fp0, color=C_FIB, width=1, style=line.style_dotted)
-                    fibLb := label.new(bar_index, fp0, str.tostring(fibLvl * 100) + "% " + fmtP(fp0), style=label.style_label_left, color=color.new(C_FIB, 100), textcolor=C_FIB, size=size.tiny)
-                // a zone of this move price touched before now that held (no close under its bottom) waits again - its first
-                // touch after the CHoCH counts (owner, 13-Nov-2026, SWIGGY)
-                if structOnly and touchAgain
-                    array.clear(rmList)
-                    int ntz6 = array.size(tzF)
-                    if ntz6 > 0
-                        for q6 = 0 to ntz6 - 1
-                            int f6 = array.get(tzF, q6)
-                            float b6 = array.get(tzB, q6)
-                            if f6 >= chLi
-                                bool held6 = true
-                                int back6 = bar_index - f6 - 1
-                                if back6 >= 0
-                                    for j6 = 0 to back6
-                                        if close[j6] < b6
-                                            held6 := false
-                                            break
-                                if held6
-                                    array.push(zF, f6)
-                                    array.push(zBot, b6)
-                                    array.push(zTop, array.get(tzT, q6))
-                                    array.push(zGap, array.get(tzG, q6))
-                                    array.push(zIn, array.get(tzIn, q6))
-                                    array.push(zInner, array.get(tzInner, q6))
-                                    array.push(zOutB, array.get(tzOutB, q6))
-                                    array.push(zOutF, array.get(tzOutF, q6))
-                                    array.push(zBox, na)
-                                    array.push(rmList, q6)
-                    int nrm6 = array.size(rmList)
-                    if nrm6 > 0
-                        for q7 = nrm6 - 1 to 0
-                            int x7 = array.get(rmList, q7)
-                            array.remove(tzF, x7)
-                            array.remove(tzB, x7)
-                            array.remove(tzT, x7)
-                            array.remove(tzG, x7)
-                            array.remove(tzIn, x7)
-                            array.remove(tzInner, x7)
-                            array.remove(tzOutB, x7)
-                            array.remove(tzOutF, x7)
-                // the zones of this move that wait for price (formed after the final low, not touched yet)
-                if showZones and not showAll
-                    int nz6 = array.size(zF)
-                    if nz6 > 0
-                        for k = 0 to nz6 - 1
-                            int ff = array.get(zF, k)
-                            if ff >= chLi and na(array.get(zBox, k))
-                                bool g6 = array.get(zGap, k)
-                                array.set(zBox, k, box.new(g6 ? ff - 1 : ff - 2, array.get(zTop, k), bar_index, array.get(zBot, k), border_color=color.new(g6 ? C_GAP : C_FVG, 40), bgcolor=color.new(g6 ? C_GAP : C_FVG, 88), extend=extend.right))
+            if d >= 1
+                lcB := bar_index
+                lcLf := segMin
+                lcD := d
+                lcSeen := false
+                lcDead := false
+            if d >= downN and isBosMode
+                line.new(hiBar, lvl, bar_index, lvl, color=color.new(C_CHOCH, 40), width=1, style=line.style_dashed)
+                label.new(bar_index, lvl, "CHoCH (" + str.tostring(d) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 50), textcolor=color.white, size=size.tiny, tooltip="CHoCH " + fmtP(lvl) + " on " + fmtT(time) + " - the trend change; its 1st BOS can be a setup")
+            if d >= downN and not isBosMode
+                setNew := true
+                nHi := hiBar
+                nLvl := lvl
+                nLi := segMinBar
+                nLf := segMin
+                nD := d
+                nKind := "CHoCH"
+// the new setup (a CHoCH, or a BOS with "BOS + FVG"): its level, its final / higher low, the move's high so far
+if setNew
+    chB := bar_index
+    chHi := nHi
+    chLvl := nLvl
+    chLi := nLi
+    chLf := nLf
+    chD := nD
+    chKind := nKind
+    chDead := false
+    chBos := -1
+    chPeak := na
+    chPeakBar := -1
+    chTime := time
+    chLiTime := time[bar_index - chLi]
+    float mh = na
+    int mhb = bar_index
+    int span2 = bar_index - chLi
+    for k = 0 to span2
+        if na(mh) or high[k] >= mh
+            mh := high[k]
+            mhb := bar_index - k
+    chH := mh
+    chHBar := mhb
+    if chKind == "BOS"
+        line.new(chHi, chLvl, bar_index, chLvl, color=C_SW, width=2, style=line.style_dashed)
+        label.new(bar_index, chLvl, "BOS (" + (nFirst ? "1st" : str.tostring(nD)) + ")", style=label.style_label_down, color=color.new(C_SW, 10), textcolor=color.white, size=size.small, tooltip="BOS " + fmtP(chLvl) + " on " + fmtT(time) + ": a close above the last swing high, a higher high, after a higher low" + (nFirst ? " - the 1st BOS after the CHoCH" : " - " + str.tostring(nD) + " higher highs / lows in a row") + ". Higher low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ". Swings: " + swTxt)
+        label.new(chLi, chLf, "higher low", yloc=yloc.price, style=label.style_label_up, color=color.new(C_SW, 40), textcolor=color.white, size=size.tiny)
+    else
+        line.new(chHi, chLvl, bar_index, chLvl, color=C_CHOCH, width=2, style=line.style_dashed)
+        label.new(bar_index, chLvl, "CHoCH (" + str.tostring(nD) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 10), textcolor=color.white, size=size.small, tooltip="CHoCH " + fmtP(chLvl) + " on " + fmtT(time) + ": a close above " + (isProt ? "the protected high (the swing high before the lowest low)" : "the last swing high") + " after " + str.tostring(nD) + " lower highs and lower lows" + (eqAtr > 0 ? " (within " + str.tostring(eqAtr) + " x ATR = equal, not lower)" : "") + ". Final low " + fmtP(chLf) + " on " + fmtT(chLiTime) + ". Swings: " + swTxt)
+        label.new(chLi, chLf, "final low", yloc=yloc.price, style=label.style_label_up, color=color.new(C_CHOCH, 40), textcolor=color.white, size=size.tiny)
+    if fibLvl > 0
+        float fp0 = chH - fibLvl * (chH - chLf)
+        fibLn := line.new(chLi, fp0, bar_index, fp0, color=C_FIB, width=1, style=line.style_dotted)
+        fibLb := label.new(bar_index, fp0, str.tostring(fibLvl * 100) + "% " + fmtP(fp0), style=label.style_label_left, color=color.new(C_FIB, 100), textcolor=C_FIB, size=size.tiny)
+    // a zone of this move price touched before now that held (no close under its bottom) waits again - its first
+    // touch after the CHoCH counts (owner, 13-Nov-2026, SWIGGY)
+    if structOnly and touchAgain
+        array.clear(rmList)
+        int ntz6 = array.size(tzF)
+        if ntz6 > 0
+            for q6 = 0 to ntz6 - 1
+                int f6 = array.get(tzF, q6)
+                float b6 = array.get(tzB, q6)
+                if f6 >= chLi
+                    bool held6 = true
+                    int back6 = bar_index - f6 - 1
+                    if back6 >= 0
+                        for j6 = 0 to back6
+                            if close[j6] < b6
+                                held6 := false
+                                break
+                    if held6
+                        array.push(zF, f6)
+                        array.push(zBot, b6)
+                        array.push(zTop, array.get(tzT, q6))
+                        array.push(zGap, array.get(tzG, q6))
+                        array.push(zIn, array.get(tzIn, q6))
+                        array.push(zInner, array.get(tzInner, q6))
+                        array.push(zOutB, array.get(tzOutB, q6))
+                        array.push(zOutF, array.get(tzOutF, q6))
+                        array.push(zBox, na)
+                        array.push(rmList, q6)
+        int nrm6 = array.size(rmList)
+        if nrm6 > 0
+            for q7 = nrm6 - 1 to 0
+                int x7 = array.get(rmList, q7)
+                array.remove(tzF, x7)
+                array.remove(tzB, x7)
+                array.remove(tzT, x7)
+                array.remove(tzG, x7)
+                array.remove(tzIn, x7)
+                array.remove(tzInner, x7)
+                array.remove(tzOutB, x7)
+                array.remove(tzOutF, x7)
+    // the zones of this move that wait for price (formed after the final low, not touched yet)
+    if showZones and not showAll
+        int nz6 = array.size(zF)
+        if nz6 > 0
+            for k = 0 to nz6 - 1
+                int ff = array.get(zF, k)
+                if ff >= chLi and na(array.get(zBox, k))
+                    bool g6 = array.get(zGap, k)
+                    array.set(zBox, k, box.new(g6 ? ff - 1 : ff - 2, array.get(zTop, k), bar_index, array.get(zBot, k), border_color=color.new(g6 ? C_GAP : C_FVG, 40), bgcolor=color.new(g6 ? C_GAP : C_FVG, 88), extend=extend.right))
 
 // ------------------------------------------------------------------ marks
 float c1Body = math.abs(close[1] - open[1])
@@ -934,10 +1047,10 @@ var table tb = table.new(position.top_right, 2, 8, bgcolor=color.new(#0f172a, 15
 if showTable and barstate.islast
     string stTxt = chB < 0 ? "no CHoCH yet" : chDead ? "ended (a close under the final low)" : chBos >= 0 ? "after a BOS - no first-pullback BUY now" : "alive - waiting for price to come back to a discount zone"
     table.cell(tb, 0, 0, "Stock Blueprint", text_color=C_FIB, text_size=size.small)
-    table.cell(tb, 1, 0, "CHoCH + FVG (" + (isZz ? "ZigZag" : str.tostring(pivN)) + " / " + str.tostring(downN) + ")", text_color=color.white, text_size=size.small)
-    table.cell(tb, 0, 1, "CHoCH", text_color=color.silver, text_size=size.small)
-    table.cell(tb, 1, 1, chB < 0 ? "-" : fmtP(chLvl) + " on " + fmtT(chTime) + " (" + str.tostring(chD) + " lower highs / lows)", text_color=color.white, text_size=size.small)
-    table.cell(tb, 0, 2, "Final low", text_color=color.silver, text_size=size.small)
+    table.cell(tb, 1, 0, setupMode + " (" + (isZz ? "ZigZag" : str.tostring(pivN)) + " / " + str.tostring(downN) + ")", text_color=color.white, text_size=size.small)
+    table.cell(tb, 0, 1, isBosMode ? "BOS" : "CHoCH", text_color=color.silver, text_size=size.small)
+    table.cell(tb, 1, 1, chB < 0 ? "-" : fmtP(chLvl) + " on " + fmtT(chTime) + " (" + str.tostring(chD) + (chKind == "BOS" ? " higher highs / lows)" : " lower highs / lows)"), text_color=color.white, text_size=size.small)
+    table.cell(tb, 0, 2, isBosMode ? "Higher low" : "Final low", text_color=color.silver, text_size=size.small)
     table.cell(tb, 1, 2, chB < 0 ? "-" : fmtP(chLf) + " on " + fmtT(chLiTime), text_color=color.white, text_size=size.small)
     table.cell(tb, 0, 3, "Move high", text_color=color.silver, text_size=size.small)
     table.cell(tb, 1, 3, chB < 0 ? "-" : fmtP(chH), text_color=color.white, text_size=size.small)
