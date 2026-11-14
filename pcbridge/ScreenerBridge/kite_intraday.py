@@ -65,6 +65,11 @@ SESSION_PATH = os.path.join(HERE, 'kite_session.json')        # the day's access
 STATE_PATH = os.path.join(HERE, 'intraday_state.json')
 INSTR_PATH = os.path.join(HERE, 'kite_instruments.json')
 DATA_DIR = os.path.join(HERE, 'intraday_data')
+DATA_LOCK_PATH = os.path.join(HERE, 'kite_data.lock')   # {pid, what, at}: the program working on the Kite candles now
+DATA_LOCK_STALE_S = 10 * 60     # not touched for this long = its program is gone
+DATA_LOCK_BEAT_S = 60
+DATA_LOCK_POLL_S = 30
+DATA_LOCK_SAY_S = 5 * 60
 
 REQ_GAP_S = 0.35            # Kite: 3 historical-data requests a second
 M15_BACKFILL_DAYS = 190     # the first read of a stock (Kite: at most 200 days of 15-minute candles a request)
@@ -413,7 +418,7 @@ def index_save(name, s):
     tmp = index_path(name) + '.tmp'
     with gzip.open(tmp, 'wt', encoding='utf-8') as f:
         json.dump(s, f, separators=(',', ':'))
-    os.replace(tmp, index_path(name))
+    ltf_data.replace(tmp, index_path(name))
 
 
 def index_names(sheet_syms=None):
@@ -562,7 +567,7 @@ def store_save(sym, s):
     tmp = store_path(sym) + '.tmp'
     with gzip.open(tmp, 'wt', encoding='utf-8') as f:
         json.dump(s, f, separators=(',', ':'))
-    os.replace(tmp, store_path(sym))
+    ltf_data.replace(tmp, store_path(sym))
 
 
 def _merge(old, new):
@@ -835,6 +840,86 @@ def deep_complete(deep, cfg):
     return all(deep.get(k + 'd', DEEP_ASKED_BEFORE) >= _deep_days(k) for k in kinds)
 
 
+class DataLock:
+    """Only one program works on the Kite candles at a time (14-Nov-2026: KiteHistoryNow.bat and the background
+    program's daily scan wrote ASTRAL's 15-minute file at once -> Windows "being used by another process" and
+    KiteHistoryNow stopped). kite_data.lock next to the program = {pid, what, at}, touched every minute while held; a
+    holder whose program is not running, or with no touch for DATA_LOCK_STALE_S, is taken over."""
+
+    def __init__(self, what, path=None):
+        self.what, self.path, self.stop, self.held = what, path or DATA_LOCK_PATH, None, False
+
+    def holder(self):
+        """{pid, what, at} of ANOTHER running program holding it, else None."""
+        try:
+            with open(self.path, 'r', encoding='utf-8') as f:
+                info = json.load(f) or {}
+            age = time.time() - os.path.getmtime(self.path)
+        except (OSError, ValueError, AttributeError):
+            return None
+        pid = info.get('pid')
+        if pid == os.getpid() or age > DATA_LOCK_STALE_S or (pid_alive is not None and not pid_alive(pid)):
+            return None
+        return info
+
+    def try_take(self):
+        if self.holder():
+            return False
+        try:
+            os.remove(self.path)        # a stale one (or this program's own)
+        except OSError:
+            pass
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except OSError:
+            return False
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump({'pid': os.getpid(), 'what': self.what, 'at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, f)
+        self.held = True
+        self.stop = threading.Event()
+
+        def beat(stop=self.stop, path=self.path):
+            while not stop.wait(DATA_LOCK_BEAT_S):
+                try:
+                    os.utime(path, None)
+                except OSError:
+                    pass
+        threading.Thread(target=beat, daemon=True).start()
+        return True
+
+    def acquire(self, wait=False, out=None):
+        """True once held; wait=False -> False at once when another program holds it; wait=True -> waits (a line at
+        the start and every DATA_LOCK_SAY_S)."""
+        t0, said = time.time(), 0.0
+        while True:
+            if self.try_take():
+                if said and out:
+                    out('Kite: the other program finished - going on (waited %.0f min).' % ((time.time() - t0) / 60))
+                return True
+            if not wait:
+                return False
+            if out and (not said or time.time() - said >= DATA_LOCK_SAY_S):
+                h = self.holder() or {}
+                out('Kite: %s is working on the Kite candles right now (since %s) - waiting for it to finish '
+                    '(this window goes on by itself; %.0f min so far) ...' % (h.get('what') or 'another program',
+                                                                          h.get('at') or '?', (time.time() - t0) / 60))
+                said = time.time()
+            time.sleep(DATA_LOCK_POLL_S)
+
+    def release(self):
+        if self.stop:
+            self.stop.set()
+        if self.held:
+            self.held = False
+            try:
+                with open(self.path, 'r', encoding='utf-8') as f:
+                    mine = (json.load(f) or {}).get('pid') == os.getpid()
+                if mine:
+                    os.remove(self.path)
+            except (OSError, ValueError, AttributeError):
+                pass
+
+
 def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
     """deep_fill_symbol for the stocks without their deep history yet, for at most `budget_s` seconds (None = all).
     -> (filled, still to do, requests). NeedLogin goes up; other errors skip the stock. One stock's candles in memory
@@ -863,6 +948,8 @@ def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
             done += 1
         except KiteError as e:
             out('Kite deep history: %s - %s' % (sym, e))
+        except PermissionError as e:    # Windows: its file in use by another program even after the waits - next time
+            out('Kite deep history: %s - its files are in use by another program (%s) - it is read again next time.' % (sym, e))
         if (k + 1) % every == 0 or k + 1 == len(todo):
             spent = time.time() - t1
             left = spent / (k + 1) * (len(todo) - k - 1)
@@ -2627,18 +2714,23 @@ def history_now(cfg, api, holidays=None, now=None, out=print):
     out('Deep history for the backtest: daily candles back %d years, 4H%s as far back as Kite gives (up to %d years), %d stocks '
         '(only what is not on this computer yet) ...' % (DEEP_DAY_YEARS, ', 1-hour and 15-minute' if ltf_on(cfg) else '',
                                                         round(DEEP_H4_DAYS / 365.25), len(syms)))
-    t0 = time.time()
+    lock = DataLock('KiteHistoryNow.bat (the long history)')
+    lock.acquire(wait=True, out=out)        # the background program's daily scan first, if it is running (14-Nov-2026)
     try:
-        done, left, req = deep_fill(cfg, sess, imap, syms, upto, None, out)
-    except NeedLogin as e:
-        out('Kite: %s - run KiteHistoryNow.bat again after the login.' % e)
-        return 1
-    out('Deep history: %d stocks read (%d requests, %.0f min)%s.' % (done, req, (time.time() - t0) / 60,
-                                                                    ', %d still to do' % left if left else ''))
-    try:
-        index_fill(cfg, sess, imap, index_names(ans.get('indices')), upto, out)
-    except NeedLogin as e:
-        out('Kite: %s - the indices are read at the next scan.' % e)
+        t0 = time.time()
+        try:
+            done, left, req = deep_fill(cfg, sess, imap, syms, upto, None, out)
+        except NeedLogin as e:
+            out('Kite: %s - run KiteHistoryNow.bat again after the login.' % e)
+            return 1
+        out('Deep history: %d stocks read (%d requests, %.0f min)%s.' % (done, req, (time.time() - t0) / 60,
+                                                                        ', %d still to do' % left if left else ''))
+        try:
+            index_fill(cfg, sess, imap, index_names(ans.get('indices')), upto, out)
+        except NeedLogin as e:
+            out('Kite: %s - the indices are read at the next scan.' % e)
+    finally:
+        lock.release()
     return backtest_now(cfg, api, holidays, now, out)
 
 
@@ -2648,6 +2740,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
     holidays = set(holidays or ())
     now = now or now_ist()
     st = state_load()
+    lock = None
     try:
         if not configured(cfg):
             log('Kite: not set up - run KiteSetup.bat (your API key and secret from developers.kite.trade).')
@@ -2661,6 +2754,13 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         if not force and not changed and (st.get('scanned') or '') >= upto.isoformat():
             log('Kite: the session of %s is already scanned.' % upto.isoformat())
             return 0
+        lock = DataLock('IntradayNow.bat (the daily Kite scan)' if force else 'the daily Kite scan (background program)')
+        if not lock.acquire(wait=force, out=log):     # KiteHistoryNow.bat is reading (14-Nov-2026) - not both at once
+            h = lock.holder() or {}
+            log('Kite: %s is working on the Kite candles right now - the daily scan waits (tried again in %d minutes).'
+                % (h.get('what') or 'another program', RETRY_S // 60))
+            st['tried'] = time.time()
+            return None
         sess = session_load()
         if not session_valid(sess):
             day = now.date().isoformat()
@@ -2813,6 +2913,8 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         log('Kite: unexpected problem - %s' % e)
         return None
     finally:
+        if lock:
+            lock.release()
         state_save(st)
 
 
@@ -2949,7 +3051,8 @@ def live_quotes(cfg, sess, keys):
     return out
 
 
-pid_alive = None   # screener_bridge.py sets its _pid_alive (Windows-safe) - a closed LiveNow window is then not 'still running'
+pid_alive = None   # screener_bridge.py sets its _pid_alive (Windows-safe) - a closed LiveNow window is then not 'still running';
+#                   also the Kite data lock's holder check (DataLock.holder)
 
 
 def _live_mark(check=False):

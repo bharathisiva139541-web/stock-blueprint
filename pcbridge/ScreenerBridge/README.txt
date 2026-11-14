@@ -477,3 +477,13 @@ DATA ON THE D: DRIVE (14-Nov-2026)
  - The move is file by file: a sign-out or power cut in the middle loses nothing - the next start moves the rest. A move
    that fails (disk full ...) puts the moved files back and keeps the old folder.
  - data_place.json (here) says where the data is now; TestConnection line 9 says "data folder: ...".
+
+ONE PROGRAM ON THE KITE CANDLES AT A TIME (14-Nov-2026)
+ - KiteHistoryNow.bat stopped at stock 376 (ASTRAL): "The process cannot access the file because it is being used by
+   another process" - the background program's daily Kite scan was writing the same stock's files at the same time.
+ - Now kite_data.lock (here) lets only one of them work on the Kite candles: KiteHistoryNow.bat waits while the daily
+   scan runs ("... is working on the Kite candles right now - waiting for it to finish", then it goes on by itself), and
+   the daily scan waits (tried again every 30 minutes) while KiteHistoryNow.bat reads. IntradayNow.bat waits the same way.
+ - A file Windows keeps busy for a moment (an antivirus scan, the search indexer) is tried again for about 20 seconds;
+   a stock whose file stays busy is left for the next run and the long read goes on.
+ - KiteHistoryNow.bat stopped part-way? Just double-click it again - the stocks already read are not read again.

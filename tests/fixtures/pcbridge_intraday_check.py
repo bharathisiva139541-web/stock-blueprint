@@ -858,4 +858,123 @@ try:
 finally:
     K.historical = orig_hist
 
+# ------------------------------------------------------------------ 13c. one program on the Kite candles at a time (14-Nov-2026:
+# KiteHistoryNow.bat stopped at stock 376 on ASTRAL.15m.bin "being used by another process" - the background program's daily
+# scan wrote the same files at the same time); a file Windows keeps busy for a moment is tried again
+K.DATA_LOCK_PATH = os.path.join(TMP, 'kite_data.lock')
+orig_alive, orig_sleep = K.pid_alive, K.time.sleep
+OTHER = 4242
+
+
+def other_holds(what, age=0):
+    with open(K.DATA_LOCK_PATH, 'w') as f:
+        json.dump({'pid': OTHER, 'what': what, 'at': '2026-11-14 10:00:00'}, f)
+    if age:
+        os.utime(K.DATA_LOCK_PATH, (time.time() - age, time.time() - age))
+
+
+try:
+    K.pid_alive = lambda pid: pid in (os.getpid(), OTHER)
+    a = K.DataLock('KiteHistoryNow.bat (the long history)')
+    assert a.acquire() and json.load(open(K.DATA_LOCK_PATH))['pid'] == os.getpid() and a.holder() is None
+    a.release()
+    assert not os.path.exists(K.DATA_LOCK_PATH), 'released = removed'
+    other_holds('the daily Kite scan (background program)')
+    b = K.DataLock('x')
+    assert not b.acquire() and b.holder()['what'] == 'the daily Kite scan (background program)'
+    K.pid_alive = lambda pid: pid == os.getpid()            # that program is gone -> taken over
+    assert b.acquire()
+    b.release()
+    K.pid_alive = lambda pid: True
+    other_holds('x', age=K.DATA_LOCK_STALE_S + 5)              # not touched for 10 minutes -> taken over
+    assert b.acquire()
+    b.release()
+    # KiteHistoryNow waits until the scan lets go
+    K.pid_alive = lambda pid: pid in (os.getpid(), OTHER)
+    other_holds('the daily Kite scan (background program)')
+    naps, said = [], []
+
+    def nap(sec):
+        naps.append(sec)
+        if len(naps) == 3:
+            os.remove(K.DATA_LOCK_PATH)
+    K.time.sleep = nap
+    try:
+        c = K.DataLock('KiteHistoryNow.bat (the long history)')
+        assert c.acquire(wait=True, out=said.append)
+    finally:
+        K.time.sleep = orig_sleep
+    assert naps == [K.DATA_LOCK_POLL_S] * 3, naps
+    assert 'the daily Kite scan (background program) is working on the Kite candles right now' in said[0] and len(said) == 2, said
+    assert said[-1].startswith('Kite: the other program finished - going on'), said
+    c.release()
+    # the daily scan does not start while KiteHistoryNow reads - it tries again RETRY_S later
+    other_holds('KiteHistoryNow.bat (the long history)')
+    K.state_save({})
+    LOGS.clear()
+    cfg_k = {'kite_api_key': 'k', 'kite_api_secret': 's'}
+    assert K.intraday_step(cfg_k, lambda *a, **k: {'ok': False}, set(), now=datetime(2026, 11, 14, 11, 0)) is None
+    assert any('KiteHistoryNow.bat (the long history) is working on the Kite candles right now - the daily scan waits' in x for x in LOGS), LOGS
+    st_l = K.state_load()
+    assert time.time() - st_l['tried'] < 60 and not K.due(cfg_k, set(), now=datetime(2026, 11, 14, 11, 1), state=st_l)[0], 'not again at the next tick'
+    assert json.load(open(K.DATA_LOCK_PATH))['pid'] == OTHER, "the other program's lock is left alone"
+    os.remove(K.DATA_LOCK_PATH)
+    # KiteHistoryNow holds the lock while it reads, and lets go before the backtest
+    seen = []
+    orig = (K.ensure_session, K.instruments, K.deep_fill, K.index_fill, K.backtest_now)
+    K.ensure_session = lambda cfg: {'access_token': 'x'}
+    K.instruments = lambda cfg, sess, d: {}
+    K.deep_fill = lambda *a, **k: (seen.append(('fill', json.load(open(K.DATA_LOCK_PATH))['what'])), (1, 0, 3))[1]
+    K.index_fill = lambda *a, **k: seen.append(('idx', os.path.exists(K.DATA_LOCK_PATH)))
+    K.backtest_now = lambda *a, **k: (seen.append(('bt', os.path.exists(K.DATA_LOCK_PATH))), 0)[1]
+    try:
+        assert K.history_now(cfg_k, lambda *a, **k: {'ok': True, 'syms': ['AAA']}, set(), now=datetime(2026, 11, 14, 11, 0), out=lambda m: None) == 0
+    finally:
+        K.ensure_session, K.instruments, K.deep_fill, K.index_fill, K.backtest_now = orig
+    assert seen == [('fill', 'KiteHistoryNow.bat (the long history)'), ('idx', True), ('bt', False)], seen
+    # a stock whose file stays busy is left for next time - the long read goes on
+    orig_dfs = K.deep_fill_symbol
+
+    def dfs(cfg, sess, sym, tok, upto, s=None):
+        if sym == 'ASTRAL':
+            raise PermissionError(13, 'The process cannot access the file because it is being used by another process')
+        return {}, 2
+    K.deep_fill_symbol = dfs
+    outs = []
+    try:
+        res = K.deep_fill({}, {}, {'AARTI': 1, 'ASTRAL': 2, 'ATUL': 3}, ['AARTI', 'ASTRAL', 'ATUL'], date(2026, 11, 13), None, outs.append)
+    finally:
+        K.deep_fill_symbol = orig_dfs
+    assert res == (2, 1, 4), res
+    assert any(x.startswith('Kite deep history: ASTRAL - its files are in use by another program') and 'read again next time' in x for x in outs), outs
+    # ltf_data.replace: Windows says "in use" twice, the third try works; always busy -> raised after the waits
+    real_rep = os.replace
+    tries = []
+
+    def flaky(src, dst):
+        tries.append(1)
+        if len(tries) < 3:
+            raise PermissionError(13, 'in use')
+        return real_rep(src, dst)
+    tmp1 = os.path.join(TMP, 'r.tmp')
+    open(tmp1, 'w').write('new')
+    naps = []
+    K.time.sleep = naps.append
+    os.replace = flaky
+    try:
+        T.replace(tmp1, os.path.join(TMP, 'r.bin'))
+        open(tmp1, 'w').write('again')
+        os.replace = lambda src, dst: (_ for _ in ()).throw(PermissionError(13, 'in use'))
+        try:
+            T.replace(tmp1, os.path.join(TMP, 'r.bin'))
+            raise AssertionError('should raise')
+        except PermissionError:
+            pass
+    finally:
+        os.replace, K.time.sleep = real_rep, orig_sleep
+    assert len(tries) == 3 and open(os.path.join(TMP, 'r.bin')).read() == 'new' and naps[:2] == list(T.REPLACE_WAITS[:2])
+    assert naps[2:] == list(T.REPLACE_WAITS), 'every wait, then the error'
+finally:
+    K.pid_alive, K.time.sleep = orig_alive, orig_sleep
+
 print('OK')
