@@ -62,6 +62,11 @@ CACHE_VERSION = 6               # 2 (10-Nov-2026): FVG First Touch / Confirmed r
                                 # 6 (12-Nov-2026): 'V' rows = the zones price never came back to (the 2nd-zone rule needs
                                 #   every zone of a CHoCH move, touched or not)
 MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
+RESULT_MAX_CHARS = 1700000      # the sheet keeps a result in at most 40 cells of 45,000 characters (Code2.gs
+                                #   AB_LAB_MAX_PARTS / AB_LAB_PART = 1.8 M): a bigger one sends only the newest trades
+                                #   (owner, 14-Nov-2026: a 2,478-trade run with the long Structure / account / lower-
+                                #   timeframe words was refused 'the result is too big to keep' - the PDF was made, the
+                                #   website got nothing)
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
 POLL_FAST_S = 10                # ... and this often while the page is open (the sheet says which)
@@ -2625,6 +2630,33 @@ def headline(res):
     return out
 
 
+def js_len(obj):
+    """The length of JSON.stringify(obj) in the sheet (JavaScript counts UTF-16 units, writes no spaces, no escapes)."""
+    return len(json.dumps(obj, ensure_ascii=False, separators=(',', ':')).encode('utf-16-le')) // 2
+
+
+def fit_result(res, limit=None):
+    """res['trades'] (newest first) cut from the end until the whole result fits `limit` characters (RESULT_MAX_CHARS);
+    res['tradesTotal'] stays, so the page says 'the newest N of M'. The figures were made from every trade already.
+    -> how many rows were left out."""
+    limit = RESULT_MAX_CHARS if limit is None else limit
+    rows = res.get('trades') or []
+    if js_len(res) <= limit:
+        return 0
+    res['trades'] = []
+    size = js_len(res)                    # with '[]'
+    keep = 0
+    for row in rows:
+        add = js_len(row) + (1 if keep else 0)
+        if size + add > limit:
+            break
+        size += add
+        keep += 1
+    res['trades'] = rows[:keep]
+    res['tradesCut'] = len(rows) - keep
+    return len(rows) - keep
+
+
 EDGE_WORDS = {'real': 'an edge - the whole range is above 0', 'losing': 'losing - the whole range is under 0',
               'chance': 'could be chance - the range spans 0', 'few': 'too few trades to say'}
 
@@ -2735,9 +2767,17 @@ class LabWorker:
                 base = 60
             charts = CHARTS_DIR if cfg.get('lab_charts') is not False else None
             res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)), charts=charts, name=name)
+            sent = len(res.get('trades') or [])
+            fit_result(res)
             reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
+            if not reply.get('ok') and 'too big' in str(reply.get('error') or ''):
+                fit_result(res, RESULT_MAX_CHARS // 2)      # the sheet counted more than we did: half and once more
+                reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
             if not reply.get('ok'):
                 raise LabError('the sheet refused the result - %s' % reply.get('error'))
+            if len(res.get('trades') or []) < sent:
+                log('Backtest Lab: the result was too big for the sheet - the website gets the newest %d of the %d trades '
+                    '(the figures use every trade; the charts PDF has them all).' % (len(res['trades']), res.get('tradesTotal') or sent))
             log('Backtest Lab: "%s" done in %.0f s - %s.' % (name or jid, res['secs'], headline(res)))
         except Exception as e:
             log('Backtest Lab: "%s" failed - %s' % (name or jid, e))

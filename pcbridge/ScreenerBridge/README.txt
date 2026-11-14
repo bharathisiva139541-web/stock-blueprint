@@ -503,3 +503,7 @@ SMART LOWER-TIMEFRAME BUY + BOTH SETUPS IN ONE RUN (14-Nov-2026)
  - 14-Nov-2026 fix: "The small CHoCH closes: above the protected high" was very slow on 15-minute candles (about 12 seconds a
    stock - a run of 1,800 stocks would take ~6 hours, and the website said "the laptop stopped" after 20 minutes). Now it takes
    a moment; and every run tells the website how far it is at least once a minute.
+ - 14-Nov-2026 fix: a big run (2,478 trades with long Structure / account / lower-timeframe words) was refused by the sheet
+   ("the result is too big to keep" - it keeps about 1.8 million characters a result), so the website showed nothing although
+   the charts PDF was made. Now the laptop sends only the newest trades that fit (the page says "The trades (the newest N of
+   M)"); every figure, table and breakdown still counts every trade, and the charts PDF has them all.
