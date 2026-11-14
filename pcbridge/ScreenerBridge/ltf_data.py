@@ -14,12 +14,30 @@ import array
 import os
 import re
 import struct
+import time
 from datetime import date
 
 MAGIC = b'LTF1'
 COMPACT_BLOCKS = 48
 TFS = ('1H', '15m')
 COLS = (('i', 4), ('h', 2), ('f', 4), ('f', 4), ('f', 4), ('f', 4), ('f', 4))     # day, minute, o, h, l, c, v
+
+
+# Windows will not replace a file another program has open (an antivirus scan, the search indexer, a reader): wait and try
+# again (14-Nov-2026: KiteHistoryNow.bat stopped on ASTRAL.15m.bin "being used by another process")
+REPLACE_WAITS = (0.2, 0.5, 1, 1, 2, 3, 5, 8)
+
+
+def replace(tmp, dst, waits=None):
+    """os.replace(tmp, dst), tried again for about 20 seconds while Windows says the file is in use."""
+    for w in tuple(REPLACE_WAITS if waits is None else waits) + (None,):
+        try:
+            os.replace(tmp, dst)
+            return
+        except PermissionError:
+            if w is None:
+                raise
+            time.sleep(w)
 
 
 def _safe(sym):
@@ -145,7 +163,7 @@ def write(folder, sym, tf, rows):
     tmp = fp + '.tmp'
     with open(tmp, 'wb') as f:
         f.write(_block(rows))
-    os.replace(tmp, fp)
+    replace(tmp, fp)
     return len(rows)
 
 

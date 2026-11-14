@@ -3266,7 +3266,7 @@ def _pid_alive(pid):
         return False
 
 
-itd.pid_alive = _pid_alive   # LiveNow: a closed window's recent mark does not stop a new copy
+itd.pid_alive = _pid_alive   # LiveNow: a closed window's recent mark does not stop a new copy; the Kite data lock's holder
 
 
 def lock_is_stale():

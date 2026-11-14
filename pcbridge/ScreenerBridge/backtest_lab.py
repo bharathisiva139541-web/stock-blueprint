@@ -430,11 +430,11 @@ class CacheWriter:
         with gzip.open(os.path.join(self.dir, 'signals.json.gz'), 'wt', encoding='utf-8') as f:
             json.dump(meta, f, separators=(',', ':'))
         final = os.path.join(self.base, self.name)
-        os.replace(self.dir, final)
+        ltf_data.replace(self.dir, final)
         tmp = os.path.join(self.base, 'current.txt.tmp')
         with open(tmp, 'w', encoding='utf-8') as f:
             f.write(self.name)
-        os.replace(tmp, os.path.join(self.base, 'current.txt'))
+        ltf_data.replace(tmp, os.path.join(self.base, 'current.txt'))
         self.done = True
         for d in os.listdir(self.base):   # older builds (a file still open on Windows: left for the next build)
             full = os.path.join(self.base, d)
