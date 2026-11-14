@@ -174,7 +174,7 @@ function html() {
       '**In the account: skipped** மேல் cursor = ஏன் கணக்கில் எடுக்கவில்லை.',
       '**TradingView ↗** = அந்த stock-இன் chart; Alt+G அழுத்தி signal தேதியைத் தட்டுங்கள்.',
       '**⇅ Sort & filter**, **▦ Columns**, CSV - table-ஐ வரிசைப்படுத்த / வடிகட்ட / பதிவிறக்க.',
-      '**Charts PDF**: ஒவ்வொரு run-உடனும் laptop-இல் ஒரு PDF - ஒவ்வொரு trade-க்கும் 2 பக்கங்கள்: 1 = chart (HH / HL / LH / LL, CHoCH, BOS, zone, BUY - candle மேல் எழுத்து இல்லை), 2 = ஏன் இந்த trade, எப்படி முடிந்தது (stop loss-க்குக் காரணங்கள்) - எளிய வாக்கியங்களில், chart இல்லாமல். நஷ்டமானவை முதலில். இடம்: ScreenerBridge folder → `lab_charts`.']), 11));
+      '**Charts PDF**: ஒவ்வொரு run-உடனும் laptop-இல் ஒரு PDF - ஒவ்வொரு trade-க்கும் 2 பக்கங்கள்: 1 = chart (HH / HL / LH / LL, CHoCH, BOS, zone, BUY - candle மேல் எழுத்து இல்லை), 2 = ஏன் இந்த trade, எப்படி முடிந்தது (stop loss-க்குக் காரணங்கள்) - எளிய வாக்கியங்களில், chart இல்லாமல். நஷ்டமானவை முதலில். இடம்: ScreenerBridge folder → `lab_charts` (MoveDataToD.bat-இல் D: தேர்ந்தால் `D:\\StockBlueprintData\\lab_charts`; Lab page note-இல் முழு இடம் வரும்).']), 11));
   pages.push(page('Runs ஒப்பீடு மற்றும் TradingView script', img('14-runs', 'Your runs - ஒரே table-இல் ஒப்பிட. ஒரு வரிசையை click செய்தால் அந்த முடிவு திறக்கும்.') +
     p('ஒரு நேரத்தில் **ஒரே ஒரு** மாற்றம் செய்து ஓட்டுங்கள்; வரிசைகளை ஒப்பிடுங்கள். வரம்பு 0-க்கு மேல் + test பகுதி ஒத்துப்போனால் அந்த வரிசையை அதிகம் நம்பலாம். கடைசி 8 runs sheet-இல் (Backtest_Lab tab) வைக்கப்படும்.') +
     img('11-pine', '"Copy TradingView script" - இதே விதிகளுடன் indicator. TradingView → Pine Editor → Ctrl+A → Ctrl+V → Save → Add to chart.') +
@@ -206,7 +206,7 @@ function html() {
     ['"No trade matched these rules"', 'விதிகள் மிகக் கடுமை: "Clear all the More rules" அல்லது ஒரு விதியை மட்டும் தளர்த்துங்கள்.'],
     ['"Too few trades"', 'பெரிய pattern group, Daily timeframe, குறைந்த விதிகள், நீண்ட காலம்.'],
     ['PIN மீண்டும் கேட்கிறது', 'My Watchlists → Sync with my sheet → PIN. 5 தவறான PIN = 15 நிமிட lock.'],
-    ['Charts PDF note வரவில்லை', 'config.json-இல் "lab_charts": false இல்லையா பாருங்கள்; ScreenerBridge\\lab_charts folder.'],
+    ['Charts PDF note வரவில்லை', 'config.json-இல் "lab_charts": false இல்லையா பாருங்கள்; ScreenerBridge\\lab_charts folder (D: drive-க்கு மாற்றியிருந்தால் D:\\StockBlueprintData\\lab_charts).'],
     ['சில trades "skipped"', 'Money details-இல் "One position at most" / "Trades open at once" உயர்த்துங்கள் (cursor-இல் காரணம்).']]) +
     box('நினைவில் வைக்க', list(['Backtest = கடந்த காலம். எதிர்காலத்துக்கு உத்தரவாதம் இல்லை.', 'ஒரு நேரத்தில் ஒரு மாற்றம்; test பகுதியை கடைசியில் மட்டும் பாருங்கள்.',
       'இது research மட்டும் - buy recommendation அல்ல.'])), 14));

@@ -20,6 +20,8 @@ pcbridge/ScreenerBridge/intraday_data/
 pcbridge/ScreenerBridge/lab_cache/
 pcbridge/ScreenerBridge/lab_charts/
 pcbridge/ScreenerBridge/kite_live.json
+pcbridge/ScreenerBridge/data_place.json
+pcbridge/ScreenerBridge/data_moving.json
 .clasprc.json
 *.token
 .env
