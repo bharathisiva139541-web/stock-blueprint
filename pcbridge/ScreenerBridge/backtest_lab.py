@@ -1067,6 +1067,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
 
 # ------------------------------------------------------------------ the lower-timeframe confirmation (owner, 13-Nov-2026)
 LTF_RANK = {'15m': 1, '1H': 2, '4H': 3, 'D': 4, 'W': 5}
+PROGRESS_EVERY_S = 60          # a run tells the sheet how far it is at least this often (the page's "laptop" badge stays fresh)
 LTF_NAMES = {'15m': '15-minute', '1H': '1-hour', 'D': 'daily'}
 LTF_WHY = ('ltfnone', 'ltfbroke', 'ltfnofvg', 'ltfnofill', 'ltfdata', 'ltfnotyet', 'ltfmissed')
 LTF_HOW = ('close', 'fvg', 'half')      # the Smart entry: the CHoCH in the zone at its close / the small FVG top / the 50% line
@@ -1938,6 +1939,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     pat = _PatRows(d, tf, meta, P) if pat_on else None
     syms = sorted(index) if pat_on else sorted(sigs)
     fib = P['discount'] or None
+    said = time.time()
     with open(os.path.join(d, tf + '.bin'), 'rb') as f:
         for k, sym in enumerate(syms):
             if pat_on:
@@ -2187,7 +2189,10 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         shape_why[rule] = shape_why.get(rule, 0) + 1
                     elif key == 'struct':
                         struct_why[rule] = struct_why.get(rule, 0) + 1
-            if progress and (k + 1) % 300 == 0:
+            # every 300 stocks and at least every PROGRESS_EVERY_S (14-Nov-2026: a slow run said nothing for 16 minutes - the page
+            # showed "is it on?" and the sheet calls a run silent for 20 minutes stopped)
+            if progress and ((k + 1) % 300 == 0 or time.time() - said >= PROGRESS_EVERY_S):
+                said = time.time()
                 progress(int((k + 1) * 90 / max(1, len(syms))))
     if fw is not None:
         fw.close()
@@ -2244,7 +2249,7 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
         smaps = {sn: _struct_map(d, tf, P['pivotN'], sopts, struct_setup(dict(P, setup=sn))) for sn in setups}
         lens = ema_lens(P)
         lset = _LtfSet(d, meta, P) if per == 3 else None
-        done = 0
+        done, said = 0, [time.time()]
         with open(os.path.join(d, tf + '.bin'), 'rb') as f:
             for sym in sorted(by_sym):
                 if sym not in index:
@@ -2282,7 +2287,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
                     LC.trade_page(pdf, (page_of[id(t)],), t, cs, st.s, PT, page_of[id(t)], total, title, None, emas, extra,
                                   extra.get('ltfc'))
                     done += 1
-                    if progress and done % 200 == 0:
+                    if progress and (done % 200 == 0 or time.time() - said[0] >= PROGRESS_EVERY_S):
+                        said[0] = time.time()
                         progress(90 + int(9 * done / max(1, len(shown))))
         pages = pdf.close()
         if lset is not None:

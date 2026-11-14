@@ -147,7 +147,8 @@ def choch_events(h, l, c, n, ph=None, pl=None, opts=None, pts=None):
     sw = []                       # alternating confirmed swings [candle, price, is_high]
     used = set()                  # swing highs already broken by a close
     base = 0                      # protected: the swings after the last CHoCH
-    ev = []
+    kmin = None                   # protected: the lowest swing low since `base` (the latest of equals) - kept as swings come
+    ev = []                       # (14-Nov-2026: re-scanning every swing on every candle took 12 s a 10-year 15-minute stock)
     for i in range(len(c)):
         for p, is_h in sorted(conf.get(i, ())):
             if is_h:
@@ -162,13 +163,14 @@ def choch_events(h, l, c, n, ph=None, pl=None, opts=None, pts=None):
                         sw[-1] = [p, l[p], False]
                 else:
                     sw.append([p, l[p], False])
+                k = len(sw) - 1           # a new / lower last swing low: is it the lowest since base?
+                if protected and k >= base and (kmin is None or sw[k][1] <= sw[kmin][1]):
+                    kmin = k
         if not sw:
             continue
         if protected:                 # the swing high right before the lowest swing low of the fall
-            lows = [k for k in range(base, len(sw)) if not sw[k][2]]
-            if not lows:
+            if kmin is None:
                 continue
-            kmin = min(lows, key=lambda k: (sw[k][1], -k))
             q = kmin - 1
         else:
             q = len(sw) - 1 if sw[-1][2] else len(sw) - 2
@@ -196,7 +198,7 @@ def choch_events(h, l, c, n, ph=None, pl=None, opts=None, pts=None):
         if d >= 1:
             ev.append([i, hi, lvl, li, lf, d])
             if protected:
-                base = len(sw)
+                base, kmin = len(sw), None
     return ev
 
 

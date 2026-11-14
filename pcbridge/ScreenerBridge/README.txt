@@ -500,3 +500,6 @@ SMART LOWER-TIMEFRAME BUY + BOTH SETUPS IN ONE RUN (14-Nov-2026)
  - Market structure > Setups: tick CHoCH + FVG, BOS + FVG or both (card "CHoCH + FVG and BOS + FVG together"). With both, every
    zone touch is checked as CHoCH + FVG first, then as BOS + FVG - one trade a candle; the result shows each setup apart
    ("What worked best" > Setup, "By market structure"), and the charts PDF draws each trade on its own setup.
+ - 14-Nov-2026 fix: "The small CHoCH closes: above the protected high" was very slow on 15-minute candles (about 12 seconds a
+   stock - a run of 1,800 stocks would take ~6 hours, and the website said "the laptop stopped" after 20 minutes). Now it takes
+   a moment; and every run tells the website how far it is at least once a minute.
