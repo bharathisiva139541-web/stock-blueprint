@@ -2066,4 +2066,60 @@ finally:
     L.PROGRESS_EVERY_S = old_every
 assert len(said25) >= 3 and said25 == sorted(said25), 'a word to the sheet for every stock when the minute has passed'
 
+# ------------------------------------------------------------------ 26. a result too big for the sheet (owner, 14-Nov-2026: 2,478 trades
+# finished, the PDF was made, "the sheet refused the result - the result is too big to keep" - the website got nothing)
+import copy
+big = runs['both']
+n26 = len(big['trades'])
+assert n26 >= 4, n26
+r26 = copy.deepcopy(big)
+assert L.fit_result(r26) == 0 and len(r26['trades']) == n26 and 'tradesCut' not in r26, 'a small result goes as it is'
+lim = L.js_len(big) - 1
+cut = L.fit_result(r26, lim)
+assert cut >= 1 and r26['tradesCut'] == cut and len(r26['trades']) == n26 - cut and L.js_len(r26) <= lim
+assert r26['trades'] == big['trades'][:n26 - cut], 'the newest trades kept (the list is newest first)'
+assert r26['tradesTotal'] == big['tradesTotal'] and r26['stats'] == big['stats'], 'the figures stay those of every trade'
+r26b = copy.deepcopy(big)
+r26b['trades'] = big['trades'][:n26 - cut + 1]
+assert L.js_len(r26b) > lim, 'as many trades as fit - one more would not'
+assert L.js_len({'a': 'x · y'}) == len('{"a":"x · y"}'), 'counted like JavaScript (no escapes, no spaces)'
+
+
+class SmallSheet(FakeSheet):
+    """Keeps a result only up to `keep` characters, like Code2.gs ab_labStore_."""
+    def __init__(self, jobs, keep):
+        FakeSheet.__init__(self, jobs)
+        self.keep, self.kept = keep, None
+
+    def __call__(self, cfg, action, payload, tries=1, timeout=60):
+        if payload['op'] == 'result':
+            self.calls.append(copy.deepcopy(payload))      # the worker cuts the same object again before a 2nd try
+            if L.js_len(payload['result']) > self.keep:
+                return {'ok': False, 'error': 'the result is too big to keep'}
+            self.kept = copy.deepcopy(payload['result'])
+            return {'ok': True}
+        return FakeSheet.__call__(self, cfg, action, payload, tries, timeout)
+
+
+old_max = L.RESULT_MAX_CHARS
+try:
+    L.RESULT_MAX_CHARS = L.js_len(big) - 200
+    LOGS.clear()
+    sh = SmallSheet([{'id': 'L26', 'name': 'big run', 'params': dict(B24, setup='both')}], L.RESULT_MAX_CHARS)
+    L.LabWorker().loop({'lab_charts': False}, sh, rounds=1)
+    assert sh.kept and not [c for c in sh.calls if c['op'] == 'fail'], sh.calls
+    assert 0 < len(sh.kept['trades']) < sh.kept['tradesTotal'] == big['tradesTotal'], len(sh.kept['trades'])
+    assert any('website gets the newest %d of the %d trades' % (len(sh.kept['trades']), big['tradesTotal']) in m for m in LOGS), LOGS[-3:]
+    # the sheet counts more than the laptop: refused once, then half the size goes
+    fitted = copy.deepcopy(big)
+    L.fit_result(fitted)
+    sh = SmallSheet([{'id': 'L27', 'name': 'big run', 'params': dict(B24, setup='both')}], L.js_len(fitted) - 20)
+    L.LabWorker().loop({'lab_charts': False}, sh, rounds=1)
+    res26 = [c for c in sh.calls if c['op'] == 'result']
+    assert len(res26) == 2 and sh.kept, [L.js_len(c['result']) for c in res26]
+    assert len(res26[1]['result']['trades']) < len(res26[0]['result']['trades']), 'the 2nd try sends fewer trades'
+    assert not [c for c in sh.calls if c['op'] == 'fail']
+finally:
+    L.RESULT_MAX_CHARS = old_max
+
 print('OK')
