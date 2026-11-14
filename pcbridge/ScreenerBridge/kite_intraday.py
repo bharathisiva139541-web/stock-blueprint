@@ -73,7 +73,8 @@ DAY_BACKFILL_DAYS = 1900    # (Kite: at most 2000 days of day candles a request)
 # Deep history for the backtest (owner, 09-Nov-2026: "the backtest date should be maximum number of days ... my doubt if
 # we choose long duration, our sheet capable?" - the candles stay on this computer; the sheet gets only the summary):
 DEEP_DAY_YEARS = 20         # daily candles back this far (or to the listing day): W from them too
-DEEP_H4_DAYS = 2000         # 4H candles back this far, built from Kite's 60-minute candles (09:15-13:15 / 13:15-15:30)
+DEEP_H4_DAYS = 7305         # 4H candles back this far (20 years - or to Kite's first 60-minute candle; 2000 days before
+                            # 14-Nov-2026), built from Kite's 60-minute candles (09:15-13:15 / 13:15-15:30)
 DAY_CHUNK_DAYS = 1995       # Kite: at most 2000 days of day candles a request
 H60_CHUNK_DAYS = 395        # Kite: at most 400 days of 60-minute candles a request
 DEEP_BUDGET_S = 20 * 60     # the daily scan adds deep history for at most this long a day (KiteHistoryNow.bat: all at once)
@@ -81,8 +82,12 @@ DEEP_BUDGET_S = 20 * 60     # the daily scan adds deep history for at most this 
 # but we have limited candles data in 15 min to backtest right?" -> keep the 1-hour candles (Kite already sends them for the
 # 4H history) and read as many years of 15-minute candles as Kite gives; config "ltf_history": false = off): files in
 # intraday_data/ltf (ltf_data.py), not in the stock's store - the daily scan reads no more than before
-DEEP_H1_DAYS = 2000         # 1-hour candles back this far (Kite: 400 days a request)
-DEEP_M15_DAYS = 2000        # 15-minute candles back this far, or to the first empty answer (Kite: 200 days a request)
+# owner's KiteDepthCheck, 14-Nov-2026: Kite gave 15-minute and 1-hour candles 10 years back (the check asked no further) -
+# "why can't go beyond 10 years? upto 20 years?" -> as far as Kite gives, up to 20 years (the read stops at Kite's first empty
+# answer); a history read with the earlier 2000 days is only extended backwards (DEEP_ASKED_BEFORE, deep '<kind>d')
+DEEP_H1_DAYS = 7305         # 1-hour candles back this far (Kite: 400 days a request)
+DEEP_M15_DAYS = 7305        # 15-minute candles back this far, or to the first empty answer (Kite: 200 days a request)
+DEEP_ASKED_BEFORE = 2000    # the days a deep read without its own '<kind>d' mark asked for
 M15_CHUNK_DAYS = 195
 SCAN_KEEP = {'4H': 300, 'D': 1400, 'W': 300, 'M': 120}   # candles the daily pattern scan looks at (deep history = backtest)
 OVERLAP_DAYS = 4            # each update reads these days again: a split / bonus changes Kite's older candles -> read all again
@@ -701,13 +706,69 @@ def _chunks_back(cfg, sess, token, interval, end, limit, chunk):
     return out, req
 
 
+def _deep_days(kind):
+    return {'h1': DEEP_H1_DAYS, 'm15': DEEP_M15_DAYS, 'h4': DEEP_H4_DAYS}[kind]
+
+
+def _deep_more(deep, kind, first):
+    """A finished deep read of `kind` ('h1' / 'm15' / 'h4') that asked fewer days than now (14-Nov-2026: 2000 days -> 20
+    years): the day to read further back from (the day before its first candle), 'none' (its first candle is well after the
+    old limit - Kite had nothing older), 'redo' (no candles kept - read it all again) or None (nothing to do)."""
+    if not deep.get(kind):
+        return None
+    asked = deep.get(kind + 'd', DEEP_ASKED_BEFORE)
+    if asked >= _deep_days(kind):
+        return None
+    if first is None:
+        return 'redo'
+    old_limit = date.fromisoformat(deep[kind]) - timedelta(days=asked)
+    if first > old_limit + timedelta(days=10):
+        return 'none'
+    return first - timedelta(days=1)
+
+
 def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
     """The deep history of one stock for the backtest: daily candles back DEEP_DAY_YEARS (or to its listing) and 4H
     candles back DEEP_H4_DAYS from Kite's 60-minute candles - each read once (store['deep']); a split / bonus later
-    (update_symbol) reads them again. -> (store, requests)."""
+    (update_symbol) reads them again. A history read with fewer days than asked now (deep '<kind>d') is extended backwards
+    only. -> (store, requests)."""
     s = store or store_load(sym)
     deep = s.get('deep') if isinstance(s.get('deep'), dict) else {}
     req = 0
+    # 14-Nov-2026: as far as Kite gives, up to 20 years - a 1-hour / 15-minute file or 4H history read with the earlier 2000
+    # days gets only its older part (the 1-hour candles read now are the 4H history's older part too)
+    h4_first = date.fromisoformat(s['h4'][0][0][:10]) if s.get('h4') else None
+    if ltf_on(cfg):
+        for kind, tf, interval, chunk in (('h1', '1H', '60minute', H60_CHUNK_DAYS), ('m15', '15m', '15minute', M15_CHUNK_DAYS)):
+            fd = ltf_data.first_day(ltf_dir(), sym, tf)
+            more = _deep_more(deep, kind, date.fromordinal(fd) if fd else None)
+            if more is None:
+                continue
+            if more == 'redo':
+                deep.pop(kind, None)
+                continue
+            if more != 'none':
+                rows, n = _chunks_back(cfg, sess, token, interval, more, upto - timedelta(days=_deep_days(kind)), chunk)
+                req += n
+                if rows:
+                    ltf_data.write(ltf_dir(), sym, tf, rows + ltf_data.rows_of(ltf_data.read(ltf_dir(), sym, tf)))
+                    if kind == 'h1' and deep.get('h4') and (h4_first is None or date.fromisoformat(rows[0][0][:10]) < h4_first):
+                        s['h4'] = _merge(h4_rows([r for r in rows if h4_first is None or r[0][:10] < h4_first.isoformat()]), s.get('h4') or [])
+                        deep['h4d'] = DEEP_H4_DAYS
+            deep[kind + 'd'] = _deep_days(kind)
+    if deep.get('h4') and not ltf_on(cfg):
+        more = _deep_more(deep, 'h4', h4_first)
+        if more == 'redo':
+            deep.pop('h4', None)
+        elif more is not None:
+            if more != 'none':
+                rows, n = _chunks_back(cfg, sess, token, '60minute', more, upto - timedelta(days=DEEP_H4_DAYS), H60_CHUNK_DAYS)
+                req += n
+                if rows:
+                    s['h4'] = _merge(h4_rows(rows), s.get('h4') or [])
+            deep['h4d'] = DEEP_H4_DAYS
+    if deep.get('h4') and deep.get('h1') and deep.get('h1d', DEEP_ASKED_BEFORE) >= DEEP_H1_DAYS:
+        deep['h4d'] = max(deep.get('h4d', DEEP_ASKED_BEFORE), DEEP_H4_DAYS)     # the 1-hour candles were the 4H history's source
     if not deep.get('day'):
         limit = upto - timedelta(days=int(365.25 * DEEP_DAY_YEARS))
         end = (date.fromisoformat(s['day'][0][0]) if s['day'] else upto + timedelta(days=1)) - timedelta(days=1)
@@ -731,15 +792,21 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
             if not s.get('h4') and s['m15']:
                 s['h4'] = h4_rows(s['m15'])
             s['h4'] = _merge(h4_rows(rows), s.get('h4') or [])
-            deep['h4'] = upto.isoformat()
-        deep['h1'] = upto.isoformat()
+            deep['h4'], deep['h4d'] = upto.isoformat(), DEEP_H4_DAYS
+        else:                                         # a 4H history of fewer days: the older 1-hour candles extend it
+            f4 = s['h4'][0][0][:10] if s.get('h4') else None
+            older = [r for r in rows if f4 is None or r[0][:10] < f4]
+            if older:
+                s['h4'] = _merge(h4_rows(older), s.get('h4') or [])
+            deep['h4d'] = DEEP_H4_DAYS
+        deep['h1'], deep['h1d'] = upto.isoformat(), DEEP_H1_DAYS
     if ltf_on(cfg) and not deep.get('m15'):
         # the 15-minute file: as many years as Kite gives (it answers nothing before that), up to DEEP_M15_DAYS
         end = (date.fromisoformat(s['m15'][0][0][:10]) if s['m15'] else upto + timedelta(days=1)) - timedelta(days=1)
         rows, n = _chunks_back(cfg, sess, token, '15minute', end, upto - timedelta(days=DEEP_M15_DAYS), M15_CHUNK_DAYS)
         req += n
         ltf_data.write(ltf_dir(), sym, '15m', rows + [list(r) for r in s['m15']])
-        deep['m15'] = upto.isoformat()
+        deep['m15'], deep['m15d'] = upto.isoformat(), DEEP_M15_DAYS
     if not deep.get('h4'):
         limit = upto - timedelta(days=DEEP_H4_DAYS)
         first = (s.get('h4') or [[None]])[0][0] or (s['m15'][0][0] if s['m15'] else None)
@@ -755,11 +822,17 @@ def deep_fill_symbol(cfg, sess, sym, token, upto, store=None):
                 break
             s['h4'] = _merge(h4_rows(rows), s.get('h4') or [])
             end = frm - timedelta(days=1)
-        deep['h4'] = upto.isoformat()
+        deep['h4'], deep['h4d'] = upto.isoformat(), DEEP_H4_DAYS
     s['deep'] = deep
     if req or ltf_on(cfg):
         store_save(sym, s)
     return s, req
+
+
+def deep_complete(deep, cfg):
+    """Every deep read asked as many days as now (a read of the earlier 2000 days = still to extend)."""
+    kinds = ('h1', 'm15', 'h4') if ltf_on(cfg) else ('h4',)
+    return all(deep.get(k + 'd', DEEP_ASKED_BEFORE) >= _deep_days(k) for k in kinds)
 
 
 def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
@@ -775,7 +848,7 @@ def deep_fill(cfg, sess, imap, syms, upto, budget_s=None, out=None, every=25):
             continue
         deep = store_load(sym).get('deep')
         if not (isinstance(deep, dict) and deep.get('day') and deep.get('h4') and
-                (not ltf_on(cfg) or (deep.get('h1') and deep.get('m15')))):
+                (not ltf_on(cfg) or (deep.get('h1') and deep.get('m15'))) and deep_complete(deep, cfg)):
             todo.append((sym, tok))
     if budget_s is None or todo:
         out('Kite deep history: %d of %d stocks to read (the rest are on this computer already; checked in %.0f s)'
@@ -2482,7 +2555,7 @@ def backtest_now(cfg, api, holidays=None, now=None, out=print):
 
 
 DEPTH_SYMS = ('RELIANCE', 'TCS', 'INFY')
-DEPTH_YEARS = (1, 2, 3, 4, 5, 6, 7, 8, 10)
+DEPTH_YEARS = (1, 2, 3, 5, 8, 10, 12, 15, 18, 20)     # (14-Nov-2026: to 20 years - the first check stopped at 10)
 
 
 def ltf_depth(cfg, args=(), out=print, now=None):
@@ -2517,8 +2590,8 @@ def ltf_depth(cfg, args=(), out=print, now=None):
     for name in ('15-minute', '1-hour'):
         y = best.get(name)
         out('Kite gives %s candles back about %s.' % (name, ('%d years' % y) if y else 'less than a year'))
-    out('This program keeps them back %d days (about %.1f years) - KiteHistoryNow.bat reads them once (15-minute: about %d MB '
-        'for 1,800 stocks a year of candles).' % (DEEP_M15_DAYS, DEEP_M15_DAYS / 365.25, 290))
+    out('This program keeps them as far back as Kite gives, up to %d years - KiteHistoryNow.bat reads them once (about 370 MB '
+        'for 1,800 stocks a year of 15-minute + 1-hour candles; a history read before is only extended backwards).' % round(DEEP_M15_DAYS / 365.25))
     return 0
 
 
@@ -2536,7 +2609,7 @@ def ltf_status():
 def history_now(cfg, api, holidays=None, now=None, out=print):
     """KiteHistoryNow.bat: the deep history of every PatternData stock at once (daily candles back DEEP_DAY_YEARS, 4H
     back DEEP_H4_DAYS and - 13-Nov-2026 - the 1-hour / 15-minute files for the Lab's lower-timeframe confirmation - the
-    first time a few hours (a line every 25 stocks with the time left), about 2 GB in intraday_data), then the backtest ->
+    first time several hours (a line every 25 stocks with the time left), about 4-8 GB in intraday_data), then the backtest ->
     the sheet."""
     holidays = set(holidays or ())
     now = now or now_ist()
@@ -2551,9 +2624,9 @@ def history_now(cfg, api, holidays=None, now=None, out=print):
     syms = [str(x).strip().upper() for x in ans.get('syms') or [] if str(x).strip()]
     upto = completed_session(now, holidays)
     imap = instruments(cfg, sess, now.date().isoformat())
-    out('Deep history for the backtest: daily candles back %d years, 4H back %d days%s, %d stocks (only what is not on '
-        'this computer yet) ...' % (DEEP_DAY_YEARS, DEEP_H4_DAYS, (', 1-hour back %d days and 15-minute as far as Kite gives '
-                                                                   '(up to %d days)' % (DEEP_H1_DAYS, DEEP_M15_DAYS)) if ltf_on(cfg) else '', len(syms)))
+    out('Deep history for the backtest: daily candles back %d years, 4H%s as far back as Kite gives (up to %d years), %d stocks '
+        '(only what is not on this computer yet) ...' % (DEEP_DAY_YEARS, ', 1-hour and 15-minute' if ltf_on(cfg) else '',
+                                                        round(DEEP_H4_DAYS / 365.25), len(syms)))
     t0 = time.time()
     try:
         done, left, req = deep_fill(cfg, sess, imap, syms, upto, None, out)
