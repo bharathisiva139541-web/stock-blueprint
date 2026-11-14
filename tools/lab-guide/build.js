@@ -112,6 +112,26 @@ function html() {
       ['Swings · stand out by · The CHoCH closes · Equal highs / lows', 'Swing / CHoCH கண்டுபிடிக்கும் **மாற்று வழிகள்** (E2, E3, E5): ZigZag, x ATR உயரம், protected high, சம highs. "the usual" = இப்போதைய baseline.'],
       ['The zone at most · Days after the CHoCH', 'Zone மிக ஆழமாக இருக்கக் கூடாது (உதா. 90%); CHoCH-க்குப் பின் குறைந்தது N நாட்கள்.'],
       ['The CHoCH candle (displacement) · its volume · sweep', 'CHoCH candle-இன் body ≥ x ATR; volume ≥ x சராசரி; final low முந்தைய low-ஐ sweep செய்து மேலே close.']]), 5));
+  // ---------------------------------------------------------------- BOS + FVG and the lower-timeframe confirmation (13-Nov-2026)
+  pages.push(page('BOS + FVG மற்றும் சிறிய timeframe உறுதிப்படுத்தல்', p('**My BOS + FVG setup** card = அதே விதிகள் ஒரு **BOS move**-இல்: ' +
+    'ஒரு higher high-க்கு மேலே close (BOS), அதற்கு முன் ஒரு higher low; move = அந்த higher low முதல் high வரை. அந்த move-இன் discount zone-க்கு ' +
+    'price முதல் முறை திரும்பி வரும்போது வாங்குதல்.') +
+    table(['Box', 'பொருள்'], [
+      ['Setup', '**CHoCH + FVG** (downtrend மாறும் move) அல்லது **BOS + FVG** (BOS move).'],
+      ['Which BOS', '**Every BOS** / **Only the 1st BOS after a CHoCH** (CHoCH-க்குப் பின் வரும் முதல் BOS) / **Only BOS of a running up-trend** (தொடர் BOS).'],
+      ['Higher highs and higher lows', 'தொடர் BOS-க்கு: குறைந்தது இத்தனை higher highs / higher lows தொடர்ச்சியாக.']]) +
+    img('05b-ltf', '"Confirmation on a lower timeframe" பகுதி - zone-ஐத் தொட்ட உடனே வாங்காமல், சிறிய chart-இல் CHoCH வரும் வரை காத்திருக்கும்.') +
+    table(['Box', 'பொருள்'], [
+      ['After the signal, look at', '**15-minute / 1-hour** chart (Daily run), weekly run-க்கு **daily** chart. Off = பழையபடி.'],
+      ['A swing on it · Lower highs and lower lows', 'சிறிய chart-இன் swing அளவு (3) மற்றும் CHoCH-க்கு முன் குறைந்தது 2 lower highs / lows.'],
+      ['Wait at most', 'Signal candle உட்பட இத்தனை candles-க்குள் சிறிய CHoCH வர வேண்டும் (Daily-இல் 5 = 5 நாட்கள்).'],
+      ['Its final low', 'சிறிய final low zone-க்குள் (அல்லது bottom-க்கு 0.5% கீழே வரை).'],
+      ['Buy · Stop loss', 'சிறிய CHoCH candle close-இல் (அல்லது அதன் சிறிய FVG retest-இல்); stop சிறிய final low-க்குக் கீழே (அல்லது மேலே தேர்ந்த stop).']]) +
+    img('10b-ltf', 'முடிவில் "With vs without": அதே signals-இல் உறுதிப்படுத்தலுடன் vs இல்லாமல் - எது சிறந்தது என்று எண்களில்.') +
+    list(['சிறிய chart-இன் candles laptop-இல்: 1-hour ~5 வருடம், 15-minute Kite தரும் வரை. **KiteHistoryNow.bat** ஒரு முறை (சில மணி நேரம்); **KiteDepthCheck.bat** = Kite எத்தனை வருடம் தருகிறது.',
+      'அதற்கு முன் வந்த பழைய signals ஒப்பீட்டில் சேராது ("older signals left out").',
+      'Charts PDF-இல் ஒவ்வொரு trade-க்கும் 3-வது பக்கம்: சிறிய chart, zone, சிறிய CHoCH, BUY, stop.',
+      'Daily scan-உம் இதைக் காட்டும்: Patterns & FVG → CHoCH + FVG setups → **BOS + FVG** மற்றும் **15m CHoCH in zone** rows.'])));
   // ---------------------------------------------------------------- run
   pages.push(page('Run - laptop-இல் ஓட்டுதல்', img('06-plain', '"In plain words" - ஓட்டும் முன் இதைப் படியுங்கள்: நீங்கள் நினைத்த விதிதானா?') +
     img('06b-actions', 'பெயர், Run, TradingView script, preset சேமிப்பு, default-க்குத் திரும்புதல்.') +

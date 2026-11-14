@@ -32,7 +32,8 @@ computer is on - no time limit:
  - IntradayNow.bat         the Kite intraday / weekly / monthly pattern scan right now (opens the login page if needed)
  - IntradayCheck.bat       one stock's Spring check on Kite's candles, e.g. PARAGMILK 4H (sends nothing)
  - BacktestNow.bat         the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1R-5R) on the Kite candles already here -> the sheet (no login)
- - KiteHistoryNow.bat      read Kite's long history (daily ~20 years, 4H ~5 years) for the backtest all at once, then the backtest
+ - KiteHistoryNow.bat      read Kite's long history (daily ~20 years, 4H and 1-hour ~5 years, 15-minute as far as Kite gives) for the backtest all at once, then the backtest
+ - KiteDepthCheck.bat      how many years of 15-minute / 1-hour candles Kite gives (RELIANCE, TCS, INFY or the stocks you type; nothing stored)
  - LiveNow.bat             Kite LIVE prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
@@ -416,6 +417,24 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
 - 13-Nov-2026 (pattern engine, step 4): 192 patterns - the classical chart patterns too (double / triple bottom, inverse head
   and shoulders, rounding bottom, falling wedge, flags, pennants, cup and handle, triangles, rectangle, channel, staircase,
   measured move, high tight flag, flat base, IPO base, VCP; new file pattern_p4.py). Each signals on its breakout.
+- 13-Nov-2026 (BOS + FVG + lower-timeframe confirmation):
+  * Backtest Lab: "My BOS + FVG setup" card / More rules > Market structure > Setup "BOS + FVG" - the same rules on a BOS move
+    (a close above a higher high after a higher low; the move from that higher low to the high): every BOS, only the 1st BOS
+    after a CHoCH, or only the BOS of a running up-trend (at least N higher highs / lows). The charts PDF draws the BOS, the
+    higher low and the CHoCH before a 1st BOS.
+  * Backtest Lab: More rules > "Confirmation on a lower timeframe" - after the zone's signal the backtest waits (at most N
+    candles of your chart) for a CHoCH on the 15-minute / 1-hour chart (daily for a weekly run) with its final low in the zone,
+    and buys then (its close, or the retest of its small FVG), stop under that small final low. The result has a table "With vs
+    without the confirmation" on the same signals; the charts PDF gets a 3rd page per trade with the small chart.
+  * The 1-hour / 15-minute candles live in intraday_data\ltf (one file a stock - about 2 GB for 5 years of 15-minute candles).
+    Run KiteHistoryNow.bat once (a few hours - it carries on where it stopped); the daily scan also adds them a part a day and
+    keeps them up to date. KiteDepthCheck.bat shows how far back Kite gives them. config.json "ltf_history": false = off.
+  * Daily scan: new rows "BOS + FVG" and "15m CHoCH in zone" (the 15-minute CHoCH after a daily CHoCH / BOS + FVG touch, within
+    5 days; 4H setups use 15m, weekly ones the daily chart) on the sheet's Intraday Patterns tab and the website (Patterns & FVG
+    > CHoCH + FVG setups, chips Every setup / CHoCH / BOS / Confirmed). ChochRules.bat asks: BOS + FVG listed or not, which
+    BOS, and the confirmation chart (15-minute / 1-hour / none).
+  * The TradingView script (Lab > Copy TradingView script) has Setup "BOS + FVG" too; the lower-timeframe confirmation is not
+    drawn - switch the chart to 15m after a BUY mark.
 - IMPORTANT after extracting a new zip: sign out of Windows and sign in again (or restart). The background program keeps the
   old code until then - e.g. on 13-Nov-2026 the Backtest Lab ran K08 Bullish Engulfing for every pattern chosen, because the
   old program did not know the new patterns. Now the laptop refuses a pattern it does not know, and the website's result
