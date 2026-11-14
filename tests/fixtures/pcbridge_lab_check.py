@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import tempfile
+import time
 from datetime import date, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2042,5 +2043,27 @@ pdfb = L.run_job(dict(B24, setup='both'), charts=L.CHARTS_DIR, name='both setups
 wb = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdfb['pdf']['file'])))
 assert 'Setups: CHoCH + FVG and BOS + FVG together' in wb and 'BOS level (dashed) - BOS + FVG trades' in wb
 assert pdfb['pdf']['pages'] == 1 + 2 * pdfb['tradesTotal']
+
+# ------------------------------------------------------------------ 25. speed + progress (owner, 14-Nov-2026: a 15-minute run with the
+# protected high said "running" for 16 minutes with no progress: choch_events re-scanned every swing on every candle - 12 s a stock)
+rnd = random.Random(3)
+px, H, Lw, C = 100.0, [], [], []
+for _ in range(62500):                      # ~10 years of 15-minute candles
+    o_ = px
+    px = max(1.0, px * (1 + rnd.gauss(0, 0.004)))
+    H.append(round(max(o_, px) * (1 + rnd.random() * 0.002), 2))
+    Lw.append(round(min(o_, px) * (1 - rnd.random() * 0.002), 2))
+    C.append(round(px, 2))
+t0 = time.time()
+L.structure.choch_events(H, Lw, C, 4, opts={'choch': 'protected'})
+assert time.time() - t0 < 3, 'the protected high on a 10-year 15-minute stock took %.1f s' % (time.time() - t0)
+said25 = []
+old_every = L.PROGRESS_EVERY_S
+L.PROGRESS_EVERY_S = 0
+try:
+    L.run_job(dict(SMC6), progress=said25.append)
+finally:
+    L.PROGRESS_EVERY_S = old_every
+assert len(said25) >= 3 and said25 == sorted(said25), 'a word to the sheet for every stock when the minute has passed'
 
 print('OK')
