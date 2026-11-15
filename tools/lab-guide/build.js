@@ -77,7 +77,9 @@ function html() {
     table(['Setup', 'என்ன செய்யும்'], [
       ['**My CHoCH + FVG setup**', 'உங்கள் SMC setup: lower highs / lower lows-க்குப் பின் CHoCH; அந்த move-இன் discount பாதியில் உள்ள zone-க்கு விலை முதல் முறை திரும்பும்போது zone top-இல் order; stop zone-க்குக் கீழ். இதுவே **baseline** (E1).'],
       ['**FVG + Spring**', '3-candle FVG zone மேல் Spring candle; Spring candle close-இல் வாங்குதல்; stop zone-க்குக் கீழ்.'],
-      ['**Gap-up FVG + Spring**', 'அதே, Gap-up zone மேல்.']]) +
+      ['**Gap-up FVG + Spring**', 'அதே, Gap-up zone மேல்.'],
+      ['**Daily FVG + 4H Spring**', 'இரண்டு timeframe setup: Daily chart-இல் FVG / Gap-up zone-ஐ **முதன்முதலில் தொடும் candle** medium-to-big **சிவப்பு candle** (body ≥ 0.5 x ATR), zone bottom-க்கு மேலே close; அதே நாளின் இரண்டு **4H candles** (09:15, 13:15) ஒரு **Spring**. அடுத்த நாள் open-இல் வாங்குதல்; stop = zone bottom / அந்த நாள் low - இரண்டில் கீழானது (அல்லது 1 x ATR, அது இன்னும் கீழே என்றால்). **15-minute CHoCH** அதே நாளில் வந்ததா என்று ஒவ்வொரு trade-இலும் குறிக்கப்படும் - "What worked best" → 15-minute CHoCH-இல் உடன் / இல்லாமல் ஒப்பீடு; "Only the trades with a 15m CHoCH" தேர்ந்தால் அவை மட்டும். Daily chart மட்டும்; 4H, 15m candles laptop-இல் ~10 வருடம்.']]) +
+    img('01b-fvg4h', 'Daily FVG + 4H Spring தேர்ந்தால் வரும் அதன் சொந்த boxes: red day-இன் body, zones, 15-minute CHoCH.') +
     p('"Use this" setup-இன் விதிகளை மட்டும் நிரப்பும்; உங்கள் account, risk போன்றவை அப்படியே இருக்கும். பிறகு எதையும் மாற்றலாம்.'), 2));
   // ---------------------------------------------------------------- step 2
   pages.push(page('படி 2 - The basics', img('03-basics', 'எப்போதும் கண் முன் இருக்கும் அடிப்படை விதிகள்.') +

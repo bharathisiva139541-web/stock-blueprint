@@ -78,6 +78,7 @@
     // - off by default (= backtest_lab ltf...)
     ltf: 'off', ltfPivot: 3, ltfDown: 2, ltfWait: 5, ltfUnder: 0.5, ltfEntry: 'close', ltfStop: 'ltf', ltfNear: 2,
     pdfDrive: false,
+    h4Body: 0.5, h4Zones: 'both', m15Choch: 'show', m15Pivot: 3, m15Down: 2,
     // the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also")
     ltfChoch: 'last'
   };
@@ -90,7 +91,11 @@
     { id: 'fvg', name: 'FVG + Spring', why: 'A Spring candle on a 3-candle FVG zone (anywhere on it or under its bottom); buy at the Spring candle\'s close, stop under the zone.',
       set: { group: 'fvg', structure: 'off', entry: 'close', stop: 'zone', discount: 0 } },
     { id: 'gap', name: 'Gap-up FVG + Spring', why: 'The same on a Gap-up zone (a gap between two candles); buy at the Spring candle\'s close, stop under the zone.',
-      set: { group: 'gap', structure: 'off', entry: 'close', stop: 'zone', discount: 0 } }
+      set: { group: 'gap', structure: 'off', entry: 'close', stop: 'zone', discount: 0 } },
+    // owner, 15-Nov-2026: "Daily la FVG la vilura first ... red candle ... 4hr timeframe la athu spring candle ah iruntha"
+    { id: 'fvg4h', name: 'Daily FVG + 4H Spring', why: 'The first daily candle into an FVG / Gap-up zone is a medium-to-big red candle, and on the 4-hour chart that day is a Spring; a 15-minute CHoCH that day is marked as extra confirmation (with / without compared). Buy at the next day\'s open, stop under the zone bottom or the day\'s low, whichever is lower, or 1 x ATR under the entry if that is lower still.',
+      set: { tf: 'D', group: 'fvg4h', structure: 'off', entry: 'next_open', stop: 'lower', stopBuf: 0.5, stopAtr: 1, discount: 0, ltf: 'off',
+        h4Body: 0.5, h4Zones: 'both', m15Choch: 'show' } }
   ];
   // the folded "More rules" sections: the keys each one holds (its header counts the ones you changed)
   var SECTIONS = [
@@ -139,7 +144,13 @@
       ['zone', 'FVG+Spring or Gap-up FVG + Spring'], ['ft', 'FVG First Touch'], ['conf', 'FVG First Touch Confirmed'],
       ['entry', 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed'],
       ['touch', 'First touch of a zone - every FVG / Gap-up zone (your SMC entry)'], ['spring', 'Every Spring (no zone - to compare)'],
-      ['pattern', 'Pattern library (new engine) - pick the pattern below']],
+      ['pattern', 'Pattern library (new engine) - pick the pattern below'],
+      ['fvg4h', 'Daily FVG + 4H Spring (two timeframes)']],
+    h4Body: [[0, 'Any size'], [0.3, 'At least 0.3 x ATR'], [0.5, 'At least 0.5 x ATR (medium)'], [0.7, 'At least 0.7 x ATR'], [1, 'At least 1 x ATR (big)'], [1.5, 'At least 1.5 x ATR']],
+    h4Zones: [['both', 'FVG and Gap-up zones'], ['fvg', 'FVG zones only'], ['gap', 'Gap-up zones only']],
+    m15Choch: [['show', 'Mark it on every trade (compare with / without)'], ['only', 'Only the trades with a 15m CHoCH'], ['off', 'Do not check']],
+    m15Pivot: [[2, '2 candles each side'], [3, '3 candles each side'], [4, '4 candles each side']],
+    m15Down: [[1, 'At least 1'], [2, 'At least 2'], [3, 'At least 3']],
     pattern: patReg().filter(function (p) { return p.status === 'implemented'; }).map(function (p) { return [p.id, p.id + ' · ' + p.name]; }),
     engBody: [[0, 'Any size'], [0.5, 'At least 0.5 x ATR'], [1, 'At least 1 x ATR'], [1.5, 'At least 1.5 x ATR'], [2, 'At least 2 x ATR']],
     boBuf: [[0, 'Just above it'], [0.5, '0.5% above it'], [1, '1% above it'], [2, '2% above it'], [3, '3% above it']],
@@ -241,7 +252,7 @@
     fallPct: [[3, 'at least 3%'], [5, 'at least 5%'], [8, 'at least 8%'], [10, 'at least 10%'], [15, 'at least 15%'], [20, 'at least 20%'], [30, 'at least 30%']]
   };
   var NUMS = ['minPrice', 'minTurnover', 'maxTouch', 'stopBuf', 'stopPct', 'maxRisk', 'targetR', 'stopAtr', 'targetPct', 'partialPct', 'beAt', 'timeN', 'timeR',
-    'engBody', 'boBuf', 'boVol', 'rsiN', 'divPivot', 'divMaxGap', 'divRsiMax', 'patSwing', 'trailN', 'trailPct', 'emaN', 'maxDays',
+    'engBody', 'boBuf', 'boVol', 'rsiN', 'divPivot', 'divMaxGap', 'divRsiMax', 'patSwing', 'trailN', 'trailPct', 'emaN', 'maxDays', 'h4Body', 'm15Pivot', 'm15Down',
     'cost', 'capital', 'riskPct', 'maxPosPct', 'maxOpen', 'emaSupport', 'emaTouch', 'mktAbove',
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
@@ -475,8 +486,9 @@
   /** The rules in plain words (shown above the Run button and with each result). */
   function plain(p) {
     var s = [];
-    s.push((p.group === 'pattern' ? 'Pattern library: ' + patWords(p) : choiceLabel('group', p.group)) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' +
-      (p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '') + '.');
+    var rng = p.from || p.to ? ' (' + (p.from ? 'from ' + F.date(p.from) : '') + (p.from && p.to ? ' ' : '') + (p.to ? 'to ' + F.date(p.to) : '') + ')' : '';
+    s.push(p.group === 'fvg4h' ? h4Words(p).replace(/^Daily FVG \+ 4H Spring:/, 'Daily FVG + 4H Spring' + rng + ':') :
+      (p.group === 'pattern' ? 'Pattern library: ' + patWords(p) : choiceLabel('group', p.group)) + ' on the ' + choiceLabel('tf', p.tf).toLowerCase() + ' chart' + rng + '.');
     if (p.testFrom) {
       s.push(p.valFrom && p.valFrom < p.testFrom ? 'Development part: the signals before ' + F.date(p.valFrom) + '; validation part: ' + F.date(p.valFrom) +
         ' to ' + F.date(p.testFrom) + '; test part: from ' + F.date(p.testFrom) + ' on.' :
@@ -553,6 +565,27 @@
   }
 
   /** The Pattern library's own fields (the basics, Pattern = "Pattern library"). */
+  /** Daily FVG + 4H Spring (owner, 15-Nov-2026): its own rules, under the Pattern box. */
+  function h4Html(f) {
+    var on = f.m15Choch !== 'off';
+    return field('The red day\'s body', sel('h4Body', f.h4Body), 'wide') + field('Zones', sel('h4Zones', f.h4Zones)) +
+      field('15-minute CHoCH that day', sel('m15Choch', f.m15Choch), 'wide') +
+      (on ? field('A swing on the 15m chart', sel('m15Pivot', f.m15Pivot)) + field('Lower highs / lows before it', sel('m15Down', f.m15Down)) : '') +
+      '<p class="note field wide" id="lab-h4-note"><b>Daily FVG + 4H Spring:</b> the first daily candle that comes back into an FVG / Gap-up zone is a red candle ' +
+      '(body at least the size above) closing above the zone bottom, and on the 4-hour chart that day is two candles - the 09:15 one falls, the 13:15 one dips ' +
+      'under its low and closes back above it: a Spring. Daily chart only; 4-hour and 15-minute candles reach back about 10 years on your laptop.' +
+      (f.tf !== 'D' ? ' <b>Choose Timeframe: Daily.</b>' : '') + (f.entry === 'zone' ? ' <b>Entry details → Buy: the next candle\'s open</b> (the Spring is known only at the day\'s close).' : '') +
+      (f.ltf && f.ltf !== 'off' ? ' <b>Set "Confirmation on a lower timeframe" to Off</b> - this setup has its own 15-minute check.' : '') + '</p>';
+  }
+  function h4Words(p) {
+    var z = { both: 'an FVG or Gap-up zone', fvg: 'an FVG zone', gap: 'a Gap-up zone' }[p.h4Zones] || 'a zone';
+    var b = Number(p.h4Body) ? ' with a body of at least ' + pc(p.h4Body) + ' x ATR' : '';
+    var m = p.m15Choch === 'off' ? '' : ' A 15-minute CHoCH that day (swings of ' + p.m15Pivot + ' candles, at least ' + p.m15Down + ' lower highs and lower lows) is ' +
+      (p.m15Choch === 'only' ? 'required.' : 'marked on every trade - the result compares with and without it.');
+    return 'Daily FVG + 4H Spring: the first daily candle to come back into ' + z + ' is a red candle' + b + ' closing above the zone bottom, and its two 4-hour candles ' +
+      'that day (09:15 and 13:15) are a Spring.' + m;
+  }
+
   function patHtml(f) {
     var id = f.pattern, e = patOf(id);
     var h = field('Which pattern', patSelect(f.pattern), 'wide');
@@ -816,7 +849,7 @@
       '<h3 class="lab-h">1 · Start from a ready setup</h3>' + quickHtml(f) +
       '<h3 class="lab-h">2 · The basics</h3><div class="form-grid">' +
       field('Timeframe', sel('tf', f.tf)) + field('Pattern', sel('group', f.group), 'wide') +
-      (f.group === 'pattern' ? patHtml(f) : '') +
+      (f.group === 'pattern' ? patHtml(f) : '') + (f.group === 'fvg4h' ? h4Html(f) : '') +
       field('Stop loss', sel('stop', f.stop, f.group === 'pattern' ? patStops(f) : null), 'wide') +
       (f.stop === 'pct' ? num('stopPct', f.stopPct, 'Stop % below the entry', ' min="0.1" step="0.5"') :
         num('stopBuf', f.stopBuf, 'How far below it (%)', ' min="0" step="0.1"')) +
@@ -1278,6 +1311,7 @@
         (sk.gapin ? ' · ' + F.int(sk.gapin) + ' FVG touches skipped - the order waited at the Gap-up zone inside' : '') +
         (sk.dcloud ? ' · ' + F.int(sk.dcloud) + ' left out by the dark-cloud rule' : '') +
         (sk.fiblevel ? ' · ' + F.int(sk.fiblevel) + ' patterns not at the zone\'s Fib line' : '') +
+        h4Skips(sk) +
         (sk.nofinal ? ' · ' + F.int(sk.nofinal) + ' without a live CHoCH (final-low stop)' : '') +
         (sk.ltfnone ? ' · ' + F.int(sk.ltfnone) + ' no small CHoCH in the zone in time' : '') +
         (sk.ltfbroke ? ' · ' + F.int(sk.ltfbroke) + ' zone closed under before the small CHoCH' : '') +
@@ -1417,6 +1451,12 @@
           title: 'The Smart entry\'s way: the small CHoCH in the zone (its close) / above the zone (the small FVG top or the 50% line on the retest)' },
         { key: 'ltfWait', label: 'Candles to confirm', type: 'num', digits: 0, title: 'Candles of your chart from the signal to the small CHoCH (0 = in the signal candle)' },
         { key: 'baseR', label: 'R without it', type: 'num', digits: 2, title: 'What the same signal made when bought as the setup says (no confirmation)' },
+        // Daily FVG + 4H Spring (15-Nov-2026): the day on 4 hours / 15 minutes
+        { key: 'h4', label: '4H Spring', get: function (r) { return r.h4 ? '4H Spring' : ''; },
+          html: function (r) { return r.h4 ? '<span class="lab-acct" tabindex="0" data-tip="' + esc(r.h4) + '">4H Spring</span>' : ''; },
+          title: 'The day on the 4-hour chart (hover / tap: the 09:15 red candle, the 13:15 dip, the day\'s body in ATR, the 15-minute CHoCH)' },
+        { key: 'm15', label: '15m CHoCH', get: function (r) { return { yes: 'yes', no: 'no', nodata: 'no data' }[r.m15] || ''; },
+          title: 'A 15-minute CHoCH on the Spring day (the extra confirmation): yes / no / no 15-minute candles that day' },
         { key: 'stopBy', label: 'Stop from', get: function (r) { return r.stopBy === 'atr' ? 'ATR' : r.stopBy === 'rule' ? 'Your rule' : ''; },
           title: 'Which stop was lower (and used): your stop rule or the ATR stop' },
         { key: 'part', label: 'Sold at the target', get: function (r) { return r.part ? String(r.part).replace(/\bat /, 'at ₹') : ''; },
@@ -1439,10 +1479,19 @@
         if (c.key === 'depth' || c.key === 'lhll' || c.key === 'lag' || c.key === 'zpct' || c.key === 'zn' || c.key === 'mv' || c.key === 'mit') return rows.some(function (r) { return isNum(r[c.key]); });   // with market structure / a zone (12-Nov-2026)
         if (c.key === 'pat') return rows.some(function (r) { return r.pat; });
         if (c.key === 'stopBy' || c.key === 'part') return rows.some(function (r) { return r[c.key]; });   // with the ATR stop / a part sold (13-Nov-2026)
+        if (c.key === 'h4' || c.key === 'm15') return rows.some(function (r) { return r[c.key]; });       // Daily FVG + 4H Spring (15-Nov-2026)
         return true;
       })
     }).mount($('#lab-trades', box));
     bindResult(el, it);
+  }
+
+  /** Daily FVG + 4H Spring: why the zones' first touches were left out (15-Nov-2026). */
+  function h4Skips(sk) {
+    var W = [['h4red', 'first touches were not a red day'], ['h4small', 'red days too small (body)'], ['h4close', 'closed under the zone bottom'],
+      ['h4atr', 'too few days before them (ATR)'], ['h4data', 'without the day\'s two 4-hour candles (before the 4-hour history)'],
+      ['h4spring', 'whose 4-hour candles were not a Spring'], ['m15no', 'without a 15-minute CHoCH that day'], ['m15data', 'without 15-minute candles that day']];
+    return W.map(function (w) { return sk[w[0]] ? ' · ' + F.int(sk[w[0]]) + ' ' + w[1] : ''; }).join('');
   }
 
   function bindResult(el, it) {
@@ -1571,7 +1620,7 @@
       var f = readForm(el);
       saveForm(f);
       var inSec = SECTIONS.some(function (x) { return (x[2] || SHAPE_KEYS).indexOf(k) >= 0; });
-      if (['tf', 'stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN', 'pattern', 'patCtx'].indexOf(k) >= 0 || inSec ||
+      if (['tf', 'stop', 'after', 'trail', 'emaSupport', 'mktIndex', 'fallN', 'structure', 'targetMode', 'group', 'swingMode', 'entry', 'timeN', 'pattern', 'patCtx', 'm15Choch'].indexOf(k) >= 0 || inSec ||
           Object.keys(SMC).indexOf(k) >= 0) { SB.route(true); return; }   // other fields appear / the cards and "changed" counts follow
       var pl = $('#lab-plain', el);
       if (pl) pl.innerHTML = '<b>In plain words:</b> ' + esc(plain(f));

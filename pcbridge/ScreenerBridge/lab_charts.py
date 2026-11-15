@@ -554,7 +554,7 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
     bos_run = cx.get('isBos')
     EVN = 'BOS' if bos_run else 'CHoCH'
     ch.volume(40.0, 92.0, mark, ('the %s move\'s biggest volume = %s the 20 candles before it' % (EVN, _times_x(t['mv']))) if t.get('mv') else '', EVN)
-    gap_zone = t.get('code') in ('G', 'Y')
+    gap_zone = t.get('code') in ('G', 'Y', 'U')
     za = None
     if zb is not None and zt is not None and zf is not None and zf >= 0:
         za = max(start, zf - (1 if gap_zone else 2))
@@ -754,7 +754,7 @@ def why_story(t, cs, s, P, cx):
     ev = cx.get('ev')
     only = P.get('structure') == 'only'
     zb, zt, zf = t.get('zb'), t.get('zt'), t.get('zf')
-    gap = t.get('code') in ('G', 'Y')
+    gap = t.get('code') in ('G', 'Y', 'U')
     zone_name = ('a gap-up zone (the price jumped up and left a gap between two candles%s)' % (
         ', in the middle of two big green candles - an "inside FVG"' if t.get('inside') else '')) if gap else \
         'an FVG zone (a fair value gap: the price moved up so fast that it skipped this price area)'
@@ -848,6 +848,20 @@ def why_story(t, cs, s, P, cx):
         txt = ('On %s a %s formed with its low right at the zone\'s %g%% Fibonacci line (drawn from the zone bottom to its top) '
                'and closed above it - buyers defended that line.%s' % (dt(i), t.get('pat') or 'pattern', lvl * 100,
                ' The zone was bigger than your size limit, so the backtest waited for this pattern instead of buying at the zone top.' if big else ''))
+    elif code in ('R', 'U'):
+        # Daily FVG + 4H Spring (owner, 15-Nov-2026): the day on 4 hours, and on 15 minutes
+        txt = ('On %s a big red daily candle fell into the zone - the first candle to come back into the zone since it formed '
+               '(its body %s times the usual daily move, ATR). On the 4-hour chart that day was two candles: the morning one '
+               '(09:15) fell, the afternoon one (13:15) dipped under its low and closed back above it - a Spring: sellers pushed '
+               'down, buyers pushed back.' % (dt(i), ('%.1f' % t['h4b']) if t.get('h4b') is not None else 'a good'))
+        m15 = t.get('m15')
+        if m15 == 'yes':
+            txt += (' Zoomed in further, a 15-minute CHoCH formed that day at %s (the price closed above its last 15-minute swing '
+                    'high) - the extra confirmation.' % (t.get('m15c') or 'that afternoon'))
+        elif m15 == 'no':
+            txt += ' No 15-minute CHoCH formed that day - this trade had no extra confirmation (your run compares both).'
+        elif m15 == 'nodata':
+            txt += ' The laptop has no 15-minute candles for that day, so the extra confirmation could not be checked.'
     elif code in ('Z', 'Y', 'T'):
         txt = 'On %s the price came back down to the zone for the first time since it formed.' % dt(i)
     elif code == 'C':
@@ -1276,7 +1290,8 @@ REASON = {'stop': 'Stop loss', 'target': 'Target', 'be': 'Breakeven', 'trail': '
 TF_NAME = {'D': 'Daily', 'W': 'Weekly', '4H': '4 hour'}
 ZONE_NAME = {'F': 'FVG + Spring', 'G': 'Gap-up FVG + Spring', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
              'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'Pattern at the Fib line of an FVG zone',
-             'Q': 'Pattern at the Fib line of a Gap-up zone'}
+             'Q': 'Pattern at the Fib line of a Gap-up zone', 'R': 'Daily FVG + 4H Spring',
+             'U': 'Daily Gap-up zone + 4H Spring'}
 WHERE = {'t': 'top', 'm': 'middle', 'b': 'bottom'}
 
 
@@ -1342,6 +1357,14 @@ def _pct1(x):
 
 def rule_lines(P):
     out = []
+    if P.get('group') == 'fvg4h':          # Daily FVG + 4H Spring (owner, 15-Nov-2026)
+        zw = {'both': 'an FVG or Gap-up zone', 'fvg': 'an FVG zone', 'gap': 'a Gap-up zone'}.get(P.get('h4Zones'), 'a zone')
+        mw = {'show': 'shown on every trade (with / without compared)', 'only': 'only the trades with one',
+              'off': 'not checked'}.get(P.get('m15Choch'), '')
+        out.append(('Signals: Daily FVG + 4H Spring - the first daily candle to touch %s is a red candle with a body of at least %g x ATR '
+                    'closing above the zone bottom, and its two 4-hour candles that day (09:15, 13:15) are a Spring; 15-minute CHoCH '
+                    'that day: %s%s') % (zw, P.get('h4Body', 0.5), mw, (' (swings of %s candles, at least %s lower highs / lows)' % (
+                        P.get('m15Pivot'), P.get('m15Down'))) if P.get('m15Choch') != 'off' else ''))
     both_run = P.get('setup') == 'both'
     bos_run = P.get('setup') == 'bos'
     EVN = 'CHoCH / BOS' if both_run else 'BOS' if bos_run else 'CHoCH'

@@ -420,7 +420,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-16:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-18:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow', 'h4', 'm15']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -1692,7 +1692,7 @@ t, _ = run21(path21, timeN=2, timeR=1)                              # the target
 assert t['reason'] == 'trail', t
 # through run_job on the SWIGGY-like chart: the ATR stop, the move-high target, the columns
 c21 = L.TRADE_COLS
-assert c21[-7:-5] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
+assert c21[c21.index('part'):c21.index('part') + 2] == ['part', 'stopBy'] and L.REASONS[-3:] == ('tstop', 'time', 'open')
 j21 = lambda **kw: [dict(zip(c21, r)) for r in L.run_job(dict(SMC6, entry='zone', **kw))['trades'] if r[0] == 'SWG']
 K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)    # the cache of r19 again (section 20 left another)
 t0, = j21()
@@ -2272,5 +2272,121 @@ try:
 finally:
     L.DRIVE_UPLOAD_PREFIX, L.DRIVE_CHUNK = old_prefix, old_chunk
     srv.shutdown()
+
+# ------------------------------------------------------------------ 28. Daily FVG + 4H Spring (owner, 15-Nov-2026: "higher timeframe
+# (Daily) la FVG la vilura first medium to big size red candle ah iruntha antha chart oda 4hr timeframe la athu spring candle ah
+# iruntha, antha trade ah edukalam ... lowertimeframe (15 min) la antha spring candle pattern oru choch ah form panuchuna additional
+# confirmation"; answers 1a 2a 3 ok 4b, 5 both, buy at the next day's open, stop the FVG bottom or the candle low (+ ATR), 6 same day)
+assert 'fvg4h' in L.CHOICES['group'] and L.GROUP_NAMES['fvg4h'] == 'Daily FVG + 4H Spring'
+assert (L.DEFAULTS['h4Body'], L.DEFAULTS['h4Zones'], L.DEFAULTS['m15Choch'], L.DEFAULTS['m15Pivot'], L.DEFAULTS['m15Down']) == (0.5, 'both', 'show', 3, 2)
+assert L.TRADE_COLS[-2:] == ['h4', 'm15']
+# the Spring rule on the two 4-hour candles = the sheet's / the daily scan's (kite_intraday.is_spring_pair)
+rnd28, yes28 = random.Random(28), 0
+for _ in range(4000):
+    o1 = round(rnd28.uniform(50, 150), 2)
+    c1 = round(o1 * (1 + rnd28.uniform(-0.05, 0.02)), 2)
+    h1, l1 = round(max(o1, c1) * (1 + rnd28.uniform(0, 0.01)), 2), round(min(o1, c1) * (1 - rnd28.uniform(0, 0.01)), 2)
+    o2 = round(c1 * (1 + rnd28.uniform(-0.01, 0.01)), 2)
+    c2 = round(o2 * (1 + rnd28.uniform(-0.006, 0.006)), 2)
+    l2 = round(min(o2, c2, l1 * (1 + rnd28.uniform(-0.02, 0.004))), 2)
+    h2 = round(max(o2, c2) * (1 + rnd28.uniform(0, 0.006)), 2)
+    a28, b28 = {'o': o1, 'h': h1, 'l': l1, 'c': c1}, {'o': o2, 'h': h2, 'l': l2, 'c': c2}
+    got28 = L.spring_pair(a28, b28)
+    assert got28 == K.is_spring_pair(a28, b28), (a28, b28)
+    yes28 += got28
+assert yes28 > 50, yes28
+
+
+class Bars:
+    """Candles as h4_check reads them (o h l c day minute n)."""
+    def __init__(self, rows):
+        self.o, self.h, self.l, self.c = ([r[k] for r in rows] for k in range(4))
+        self.day = [r[4] for r in rows]
+        self.minute = [r[5] if len(r) > 5 else 0 for r in rows]
+        self.n = len(rows)
+
+
+D0 = date(2025, 3, 3).toordinal()
+day28 = [[100.0, 101.0, 99.0, 100.0, D0 + k] for k in range(20)] + [[100.0, 100.2, 97.0, 97.6, D0 + 20]]   # ATR 2, body 2.4
+SPR = [[100.0, 100.2, 97.5, 97.8, D0 + 20, 555], [97.8, 98.2, 97.0, 97.6, D0 + 20, 795]]                    # a 4-hour Spring
+R28 = [20, 'R', 96.0, 98.0]
+H4P = dict(L.DEFAULTS, h4Body=0.5)
+why28, info28 = L.h4_check(Bars(day28), 20, R28, H4P, Bars(SPR))
+assert why28 is None and info28['j'] == 1 and abs(info28['body'] - 1.2) < 1e-9 and abs(info28['dip'] - (97.5 - 97.0) / 97.5 * 100) < 1e-9
+assert L.h4_check(Bars(day28[:20] + [[97.0, 100.6, 96.8, 100.5, D0 + 20]]), 20, R28, H4P, Bars(SPR))[0] == 'h4red'
+assert L.h4_check(Bars(day28), 20, R28, dict(H4P, h4Body=1.3), Bars(SPR))[0] == 'h4small'
+assert L.h4_check(Bars(day28), 20, [20, 'R', 97.7, 99.0], H4P, Bars(SPR))[0] == 'h4close', 'closed under the zone bottom'
+assert L.h4_check(Bars(day28[8:]), 12, R28, H4P, Bars(SPR))[0] == 'h4atr', 'fewer than 14 days before it'
+assert L.h4_check(Bars(day28), 20, R28, H4P, None)[0] == 'h4data'
+assert L.h4_check(Bars(day28), 20, R28, H4P, Bars(SPR[:1]))[0] == 'h4data', 'one 4-hour candle that day (a short session)'
+assert L.h4_check(Bars(day28), 20, R28, H4P, Bars([SPR[0], [97.8, 98.2, 97.6, 97.7, D0 + 20, 795]]))[0] == 'h4spring'
+# the made chart: section 22's daily chart with FVG1 (140.3 - 144.0) first touched by a big red day whose two 4-hour candles are a
+# Spring, and FVG2 (160.3 - 164.0) first touched by a big red day whose 4-hour candles are not
+r28 = [list(r) for r in r22]
+d28a, d28b = r28[t22a][0], r28[t22b][0]
+r28[t22a] = [d28a, 150.0, 150.3, 143.5, 145.3, 900000]
+h4_28 = []
+for r in r28:                                              # every day as two 4-hour candles (a straight split)
+    m = round((r[1] + r[4]) / 2, 2)
+    h4_28 += [[r[0] + ' 09:15', r[1], max(r[1], m), min(r[1], m), m, 400000], [r[0] + ' 13:15', m, r[2], r[3], r[4], 500000]]
+h4_28[2 * t22a:2 * t22a + 2] = [[d28a + ' 09:15', 150.0, 150.3, 145.0, 145.6, 500000], [d28a + ' 13:15', 145.6, 146.4, 143.5, 145.3, 400000]]
+h4_28[2 * t22b:2 * t22b + 2] = [[d28b + ' 09:15', 185.0, 185.3, 163.5, 170.0, 500000], [d28b + ' 13:15', 170.0, 171.0, 164.0, 164.5, 400000]]
+# its 15-minute candles that day: lower highs 149 / 148 / 147, lower lows 146 / 145 / 144, then a close above 147 = a CHoCH
+q28 = legs23(147.0, (149.0, 146.0, 148.0, 145.0, 147.0, 144.0, 148.5))
+rows15 = [['%s %02d:%02d' % ((d28a,) + divmod(555 + 15 * k, 60)), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 1000]
+          for k, (o, h, l, c) in enumerate(q28)]
+ev28 = S.choch_events([x[2] for x in rows15], [x[3] for x in rows15], [x[4] for x in rows15], 2)
+assert [(round(e[2], 2), int(e[5])) for e in ev28] == [(147.1, 2)], ev28
+K.store_save('H4S', {'v': 1, 'sym': 'H4S', 'm15': [], 'day': r28, 'h4': h4_28})
+K.ltf_data.write(K.ltf_dir(), 'H4S', '15m', rows15)
+K.backtest_pass(set(), date.fromisoformat(r6[-1][0]), {}, out=lambda m: None)
+L._LTF_MEMO['key'] = None
+F4 = {'tf': 'D', 'group': 'fvg4h', 'entry': 'next_open', 'stop': 'lower', 'stopBuf': 0.5, 'maxRisk': 0, 'cost': 0, 'm15Pivot': 2,
+      'structure': 'off'}
+
+
+def h4run(**kw):
+    r = L.run_job(dict(F4, **kw))
+    return r, [dict(zip(L.TRADE_COLS, x)) for x in r['trades'] if x[0] == 'H4S']
+
+
+r28a, t28 = h4run()
+assert len(t28) == 1, (r28a['skipped'], t28)
+x28 = t28[0]
+assert (x28['signal'], x28['zone'], x28['entry'], x28['stop']) == (d28a, 'Daily FVG + 4H Spring', r28[t22a + 1][1], round(140.3 * 0.995, 2)), x28
+assert x28['m15'] == 'yes' and x28['h4'].startswith('4H 09:15 red -2.9% · 13:15 dipped 1.0% under its low, closed back above · day body ') and \
+    x28['h4'].endswith(' · 15m CHoCH 14:15 above 147.10 (2 lower highs / lows)'), x28['h4']
+assert r28a['skipped']['h4spring'] >= 1, 'FVG2\'s first touch: its 4-hour candles are no Spring'
+# 15m CHoCH: only / its swings / no 15-minute candles that day; the stop under the day's low when that is lower; ATR stop
+assert [t['m15'] for t in h4run(m15Down=3)[1]] == ['no'] and h4run(m15Down=3, m15Choch='only')[1] == []
+assert h4run(m15Down=3, m15Choch='only')[0]['skipped']['m15no'] >= 1
+assert h4run(m15Choch='off')[1][0]['m15'] == '' and h4run(m15Choch='off')[1][0]['h4'].endswith('x ATR')
+assert [t['stop'] for t in h4run(stop='spring')[1]] == [round(143.5 * 0.995, 2)]
+body28 = float(x28['h4'].split('day body ')[1].split(' x ATR')[0])
+assert h4run(h4Body=body28 + 0.2)[1] == [] and h4run(h4Body=body28 + 0.2)[0]['skipped']['h4small'] >= 1
+assert h4run(h4Zones='gap')[1] == [] and len(h4run(h4Zones='fvg')[1]) == 1
+# the Spring candle shape rules on the 4-hour pair: the 13:15 candle has an upper wick (146.4 over its 145.6 open)
+rs28 = h4run(upWickMax=0)
+assert rs28[1] == [] and rs28[0]['shapeWhy'].get('upwick', 0) >= 1, rs28[0]['shapeWhy']
+# the breakdown compares with / without the 15-minute CHoCH
+bd28 = {b['key']: b for b in r28a['breakdowns']}
+assert 'm15' not in bd28 or {r['label'] for r in bd28['m15']['rows']} <= {'with a 15m CHoCH', 'no 15m CHoCH', 'no 15m candles that day'}
+K.ltf_data.remove(K.ltf_dir(), 'H4S', '15m')
+L._LTF_MEMO['key'] = None
+assert [t['m15'] for t in h4run()[1]] == ['nodata'] and h4run(m15Choch='only')[0]['skipped']['m15data'] >= 1
+K.ltf_data.write(K.ltf_dir(), 'H4S', '15m', rows15)
+L._LTF_MEMO['key'] = None
+for bad, words in ((dict(tf='W'), 'daily chart'), (dict(ltf='1H'), 'own 15-minute check'), (dict(entry='zone'), 'next day')):
+    try:
+        L.run_job(dict(F4, **bad))
+        raise AssertionError(bad)
+    except L.LabError as e:
+        assert words in str(e), (bad, e)
+# the charts PDF: the day on 4 hours in words
+pdf28 = L.run_job(dict(F4), charts=L.CHARTS_DIR, name='daily fvg 4h spring')
+w28 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf28['pdf']['file'])))
+for txt in ('the first candle to come back into the zone', 'On the 4-hour chart that day was two candles',
+            'a 15-minute CHoCH formed that day at 14:15', 'Signals: Daily FVG + 4H Spring'):
+    assert txt in w28, txt
 
 print('OK')

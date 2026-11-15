@@ -503,6 +503,12 @@ SMART LOWER-TIMEFRAME BUY + BOTH SETUPS IN ONE RUN (14-Nov-2026)
    under the small final low; in the zone -> your stop (under the zone). Target: your R on that stop.
  - "The small CHoCH closes": above the last small swing high (usual) or above the protected high (the small swing high right
    before the lowest low).
+ - Daily FVG + 4H Spring (15-Nov-2026): Backtest Lab > Pattern "Daily FVG + 4H Spring (two timeframes)" or the ready card. The
+   first daily candle that comes back into an FVG / Gap-up zone is a red candle (body at least 0.5 x ATR - changeable) closing
+   above the zone bottom, and that day's two 4-hour candles (09:15, 13:15) are a Spring. Bought at the next day's open; stop
+   under the zone bottom or the day's low, whichever is lower (or 1 x ATR under the entry if lower still). A 15-minute CHoCH
+   that day is marked on every trade ("15m CHoCH" column, "What worked best" compares with / without) - or "Only the trades
+   with a 15m CHoCH". Daily chart only; the 4-hour and 15-minute candles reach back about 10 years.
  - "The small CHoCH line" (Smart only, 14-Nov-2026 after PCJEWELLER - the 15-minute CHoCH came after a big rally and the order
    sat far above the daily zone): the small CHoCH's level may be at most 2% above the zone top (0.5 / 1 / 3 / 5 / 10%, "in the
    zone only" or "any distance" to choose). A small CHoCH further up is passed over; a later one near the zone inside "Wait at

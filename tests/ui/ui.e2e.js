@@ -1279,11 +1279,26 @@ function check(name, fn) {
       basics: ['tf', 'group', 'stop', 'stopBuf', 'targetR', 'after', 'trail', 'trailN', 'capital', 'riskPct', 'testFrom'].every((k) => {
         const e = document.querySelector('#lab-form [data-k="' + k + '"]'); return e && e.offsetParent !== null; }),
       guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
-    assert.deepStrictEqual(lay.quick, ['smc', 'bos', 'both', 'fvg', 'gap']);
+    assert.deepStrictEqual(lay.quick, ['smc', 'bos', 'both', 'fvg', 'gap', 'fvg4h']);
     await guideShot(own.p, '01-start', '#lab-form');
     assert.deepStrictEqual(lay.secs, [['structure', false], ['zone', false], ['shape', false], ['trend', false], ['ltf', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
     assert.ok(lay.basics, 'the basics are on show');
     assert.match(lay.guide, /Guide/);
+    // Daily FVG + 4H Spring (owner, 15-Nov-2026): the card fills its rules (buy at the next open, the lower of the zone bottom / the
+    // day's low, or 1 x ATR), its own fields and words; the 15-minute CHoCH fields go when it is not checked
+    await own.p.click('[data-quick="fvg4h"]');
+    await own.p.waitForSelector('#lab-h4-note');
+    assert.deepStrictEqual(await own.p.evaluate(() => ['tf', 'group', 'entry', 'stop', 'stopAtr', 'h4Body', 'h4Zones', 'm15Choch', 'm15Pivot', 'm15Down']
+      .map((k) => (document.querySelector('#lab-form [data-k="' + k + '"]') || {}).value)), ['D', 'fvg4h', 'next_open', 'lower', '1', '0.5', 'both', 'show', '3', '2']);
+    assert.match(await own.p.$eval('#lab-plain', (x) => x.textContent), /Daily FVG \+ 4H Spring: the first daily candle to come back into an FVG or Gap-up zone is a red candle with a body of at least 0\.5 x ATR closing above the zone bottom, and its two 4-hour candles that day \(09:15 and 13:15\) are a Spring\. A 15-minute CHoCH that day \(swings of 3 candles, at least 2 lower highs and lower lows\) is marked on every trade - the result compares with and without it\./);
+    await guideShot(own.p, '01b-fvg4h', '#lab-form .form-grid');
+    await own.p.selectOption('#lab-form select[data-k="m15Choch"]', 'off');
+    await own.p.waitForFunction(() => !document.querySelector('#lab-form [data-k="m15Pivot"]'));
+    assert.ok(!/15-minute CHoCH/.test(await own.p.$eval('#lab-plain', (x) => x.textContent)));
+    await own.p.selectOption('#lab-form select[data-k="tf"]', 'W');
+    await own.p.waitForFunction(() => /Choose Timeframe: Daily/.test(document.querySelector('#lab-h4-note').textContent));
+    await own.p.evaluate(() => { localStorage.removeItem('sb:lab:form'); window.SB.route(true); });     // back to the defaults
+    await own.p.waitForFunction(() => document.querySelector('#lab-form [data-k="group"]').value === 'fvg' && !document.querySelector('#lab-h4-note'));
     await own.p.click('[data-quick="fvg"]');
     await own.p.waitForSelector('.lab-quick .lab-rec.on [data-quick="fvg"]');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="group"]', (e) => e.value), 'fvg');
@@ -1567,7 +1582,7 @@ function check(name, fn) {
         byHow: { close: { n: 9, trades: 9, winPct: 55.6, avgR: 1.1, totalR: 9.9, pf: 2.4, avgRLo: 0.1, avgRHi: 2.1, edge: 'few' },
                  fvg: { n: 8, trades: 8, winPct: 50, avgR: 0.7, totalR: 5.6, pf: 1.9, avgRLo: -0.4, avgRHi: 1.8, edge: 'few' },
                  half: { n: 4, trades: 4, winPct: 50, avgR: 0.6, totalR: 2.4, pf: 1.7, avgRLo: -0.9, avgRHi: 2.1, edge: 'few' } } },
-      open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
+      open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9, h4spring: 7, m15no: 3 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
       stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
       reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
       account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 3, skipped: 1, openNow: 1, openPnl: 500, years: 16.8,
@@ -1607,6 +1622,7 @@ function check(name, fn) {
     assert.match(view, /300 left out by your market-structure rules · 5 without a swing high above \(target\)/);
     assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 20 its zone is not below the CHoCH level; 10 its zone was not in the discount part of the move \(above your Fib line\)\./);
     assert.match(view, /9 not first touches \(the zone-top order fills on those only\)/);
+    assert.match(view, /7 whose 4-hour candles were not a Spring · 3 without a 15-minute CHoCH that day/, 'Daily FVG + 4H Spring skips (15-Nov-2026)');
     // the charts PDF the laptop made with the run (owner, 12-Nov-2026: a chart page per trade, the losing ones first)
     assert.match(view, /Charts PDF on your laptop - two pages for every trade \(the chart with HH \/ HL \/ LH \/ LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended\) - the losing ones first: D:\\StockBlueprintData\\lab_charts\\2026-11-12 091500 Zone stop 1%\.pdf - 5 pages.*File Explorer → D:\\StockBlueprintData\\lab_charts \(the newest 20/);
     // ... and its copy in Google Drive (owner, 15-Nov-2026: "pdf um tablet or phone la ye pakanumna"): one button that opens it
