@@ -1512,6 +1512,9 @@ function check(name, fn) {
     await own.p.dispatchEvent('[data-k="testFrom"]', 'change');
     assert.match(await plainText(), /Development part: the signals before 01 Jan 2020|Development part: the signals before .*2020/);
     await guideShot(own.p, '06-plain', '#lab-plain');
+    // the charts PDF to Google Drive only when asked for this run (owner, 15-Nov-2026: "need iruntha matum driveku anupalam")
+    assert.strictEqual(await own.p.$eval('.lab-actions [data-k="pdfDrive"]', (x) => x.checked), false, 'Drive copy off by default');
+    await own.p.check('.lab-actions [data-k="pdfDrive"]');
     await guideShot(own.p, '06b-actions', '.lab-actions');
     await own.p.click('#lab-run');
     await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
@@ -1529,6 +1532,7 @@ function check(name, fn) {
       got.job.params.discPart, got.job.params.entry],
     ['touch', 'only', 5, 3, 'both', false, true, 'swing', 1, 0.5, 'mid', 'zone'], 'the market-structure rules reach the laptop');
     assert.strictEqual(got.job.params.testFrom, '2020-01-01', 'the test period reaches the laptop');
+    assert.strictEqual(got.job.params.pdfDrive, true, 'the Drive tick reaches the laptop');
     assert.deepStrictEqual([got.job.params.stopAtr, got.job.params.targetPct, got.job.params.partialPct, got.job.params.beAt, got.job.params.timeN, got.job.params.timeR],
       [2, 30, 50, 1, 10, 1], 'the stop / target / exit options reach the laptop');
     const missing = (await own.p.evaluate(() => Object.keys(window.SB.lab.DEF))).filter((k) => !(k in got.job.params));
@@ -1609,6 +1613,7 @@ function check(name, fn) {
     assert.deepStrictEqual(await own.p.$eval('#lab-pdf-drive', (a) => [a.getAttribute('href'), a.getAttribute('target'), a.textContent]),
       ['https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp_q-r/view', '_blank', '📄 Open the charts PDF']);
     assert.match(view, /from your Google Drive \(folder "Stock Blueprint - Backtest PDFs"\) - on this phone, tablet or computer/);
+    assert.ok(!(await own.p.$('#lab-pdf-laptop-only')), 'no "only on the laptop" hint when the copy is in Drive');
     // the discount setup's badge + its words, and a TradingView button per trade (owner, 11-Nov-2026: "i open trading view chart and i go to that trade date")
     assert.match(await own.p.$eval('#lab-trades tbody tr:first-child', (x) => x.innerText), /Discount, 1st pullback/);
     assert.match(await own.p.$eval('#lab-trades tbody tr:first-child .lab-acct', (x) => x.getAttribute('data-tip')), /move high 251\.00 · zone middle 62% down the move \(50% line 235\.50\)/);

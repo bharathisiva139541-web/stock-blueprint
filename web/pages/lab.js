@@ -77,6 +77,7 @@
     // buy"; my recommendations: 3 candles a swing, 2 lower highs / lows, wait 5 candles, buy at its close, stop under its final low)
     // - off by default (= backtest_lab ltf...)
     ltf: 'off', ltfPivot: 3, ltfDown: 2, ltfWait: 5, ltfUnder: 0.5, ltfEntry: 'close', ltfStop: 'ltf', ltfNear: 2,
+    pdfDrive: false,
     // the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also")
     ltfChoch: 'last'
   };
@@ -845,6 +846,8 @@
       '<p class="note lab-plain" id="lab-plain"><b>In plain words:</b> ' + esc(plain(f)) + '</p>' +
       '<div class="lab-actions"><label class="field lab-name"><span>Name of this idea</span><input class="inp" type="text" maxlength="60" data-k="name" value="' + esc(f.name) + '"></label>' +
       '<button class="btn primary" type="button" id="lab-run">▶ Run on my laptop</button>' +
+      // owner, 15-Nov-2026: "drive ku upload pananuma ngratha oru option ah vaiakalama ... need iruntha matum driveku anupalam"
+      '<span class="lab-drive-opt">' + check('pdfDrive', f.pdfDrive, '📄 Also put the charts PDF in my Google Drive (to open it on a phone / tablet)') + '</span>' +
       '<button class="btn" type="button" id="lab-pine" title="The TradingView indicator with these rules filled in - paste it in TradingView\'s Pine Editor">📋 Copy TradingView script</button>' +
       '<button class="btn" type="button" id="lab-save">Save as a preset</button>' +
       (presets().length ? '<select class="sel" id="lab-preset" aria-label="Load a preset"><option value="">Load a preset…</option>' +
@@ -1035,7 +1038,8 @@
     return '<p class="note lab-pdf">📄 <b>Charts PDF on your laptop</b> - two pages for every trade (the chart with HH / HL / LH / LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended) - the losing ones first: <code>' +
       esc(where) + '\\' + esc(pdf.file) + '</code> - ' + F.int(pdf.pages) + ' pages' +
       (pdf.shown < pdf.trades ? ' (the first ' + F.int(pdf.shown) + ' of ' + F.int(pdf.trades) + ' trades)' : '') +
-      '. On the laptop: File Explorer → <b>' + esc(where) + '</b> (the newest 20 PDFs are kept).</p>';
+      '. On the laptop: File Explorer → <b>' + esc(where) + '</b> (the newest 20 PDFs are kept).' +
+      (pdf.drive ? '' : ' <span class="sub" id="lab-pdf-laptop-only">Only on the laptop - to open it on a phone / tablet, tick "Also put the charts PDF in my Google Drive" before ▶ Run.</span>') + '</p>';
   }
 
   /** With market structure 'only': how many signals each structure rule left out (the first one they failed). */

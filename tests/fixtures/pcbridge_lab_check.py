@@ -2239,7 +2239,7 @@ try:
 
     # the worker: run -> PDF on the laptop -> an upload address from the sheet -> Drive -> the result carries the link
     LOGS.clear()
-    sh27 = DriveSheet([{'id': 'L27a', 'name': 'on the tablet', 'params': dict(SMC6)}], {'ok': True, 'upload': DRIVE + 's3', 'folder': 'x'})
+    sh27 = DriveSheet([{'id': 'L27a', 'name': 'on the tablet', 'params': dict(SMC6, pdfDrive=True)}], {'ok': True, 'upload': DRIVE + 's3', 'folder': 'x'})
     L.LabWorker().loop({}, sh27, rounds=1)
     ops27 = [c['op'] for c in sh27.calls]
     assert ops27.index('pdfup') < ops27.index('result'), ops27
@@ -2256,14 +2256,19 @@ try:
     for answer, words in (({'ok': False, 'error': 'unknown op'}, 'New version'),
                           ({'ok': False, 'error': 'Google Drive is not allowed yet - Apps Script editor: pick runLabDriveSetup'}, 'runLabDriveSetup'),
                           ({'ok': True, 'upload': 'https://evil.example/upload/drive/x'}, 'no Google Drive upload address')):
-        sh = DriveSheet([{'id': 'L27b', 'name': 'x', 'params': dict(SMC6)}], answer)
+        sh = DriveSheet([{'id': 'L27b', 'name': 'x', 'params': dict(SMC6, pdfDrive=True)}], answer)
         L.LabWorker().loop({}, sh, rounds=1)
         r27 = next(c for c in sh.calls if c['op'] == 'result')['result']
         assert words in r27['pdf']['drive']['error'] and r27['pdf']['file'], (answer, r27['pdf'])
-    # config "lab_pdf_drive": false = the laptop only
-    sh = DriveSheet([{'id': 'L27c', 'name': 'x', 'params': dict(SMC6)}], {'ok': True, 'upload': DRIVE + 's4'})
-    L.LabWorker().loop({'lab_pdf_drive': False}, sh, rounds=1)
-    assert 'pdfup' not in [c['op'] for c in sh.calls] and 'drive' not in next(c for c in sh.calls if c['op'] == 'result')['result']['pdf']
+    # asked per run (owner, 15-Nov-2026: "need iruntha matum driveku anupalam"): not ticked = the laptop only; config
+    # "lab_pdf_drive": false = never
+    assert L.DEFAULTS['pdfDrive'] is False and 'pdfDrive' in L.BOOLS
+    for params, cfg in ((dict(SMC6), {}), (dict(SMC6, pdfDrive=False), {}), (dict(SMC6, pdfDrive='yes'), {}),
+                        (dict(SMC6, pdfDrive=True), {'lab_pdf_drive': False})):
+        sh = DriveSheet([{'id': 'L27c', 'name': 'x', 'params': params}], {'ok': True, 'upload': DRIVE + 's4'})
+        L.LabWorker().loop(cfg, sh, rounds=1)
+        r27 = next(c for c in sh.calls if c['op'] == 'result')['result']
+        assert 'pdfup' not in [c['op'] for c in sh.calls] and r27['pdf']['file'] and 'drive' not in r27['pdf'], (params.get('pdfDrive'), cfg)
 finally:
     L.DRIVE_UPLOAD_PREFIX, L.DRIVE_CHUNK = old_prefix, old_chunk
     srv.shutdown()

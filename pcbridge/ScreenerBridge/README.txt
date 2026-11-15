@@ -350,7 +350,8 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file - or in the data folder
    of MoveDataToD.bat, e.g. D:\StockBlueprintData\lab_charts); the newest 20 PDFs are
    kept. The Lab page shows the file name with each run. config "lab_charts": false = off.
-   In Google Drive too (15-Nov-2026): after the PDF is made, this computer also copies it to YOUR Google Drive, folder
+   In Google Drive too (15-Nov-2026) - only when you tick "Also put the charts PDF in my Google Drive" next to Run on the
+   Lab page (not ticked = the laptop only): after the PDF is made, this computer also copies it to YOUR Google Drive, folder
    "Stock Blueprint - Backtest PDFs" (only your Google account can open it; the newest 20 are kept there as well), and the
    Lab page's result shows a button "Open the charts PDF" - it opens on the phone / tablet / any computer. The copy on this
    computer stays. Once: Apps Script editor > pick runLabDriveSetup at the top > Run > Allow, then Deploy > Manage
