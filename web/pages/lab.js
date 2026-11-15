@@ -1009,10 +1009,27 @@
 
   /** The run's charts PDF on the laptop (owner, 12-Nov-2026: "a PDF should come with it - a chart for every trade ... the
    *  swings, CHoCH, FVG area, target and stop loss"; choices: the laptop folder only, every trade, the losing ones first). */
+  /** The copy in Google Drive (owner, 15-Nov-2026: "pdf um tablet or phone la ye pakanumna epdi pakurathu?"): a button
+   *  that opens it on this device (the owner's Google account), or why it was not copied. Only a drive.google.com file link. */
+  var DRIVE_RX = /^https:\/\/drive\.google\.com\/file\/d\/[A-Za-z0-9_-]{10,200}\/view$/;
+  function driveHtml(pdf) {
+    var d = pdf && pdf.drive;
+    if (!d) return '';
+    if (d.url && DRIVE_RX.test(String(d.url))) {
+      return '<p class="lab-pdf-open"><a class="btn primary" id="lab-pdf-drive" href="' + esc(d.url) + '" target="_blank" rel="noopener">📄 Open the charts PDF</a> ' +
+        '<span class="sub">from your Google Drive (folder "Stock Blueprint - Backtest PDFs") - on this phone, tablet or computer; only your Google account can open it.</span></p>';
+    }
+    return d.error ? '<p class="note warn" id="lab-pdf-drive-err">The charts PDF was not copied to Google Drive: ' + esc(d.error) + '. It is on the laptop.</p>' : '';
+  }
+
   function pdfNote(pdf) {
     if (!pdf) return '';
     if (pdf.error) return '<p class="note warn">The charts PDF could not be made on your laptop: ' + esc(pdf.error) + '</p>';
     if (!pdf.file) return '';
+    return driveHtml(pdf) + laptopNote(pdf);
+  }
+
+  function laptopNote(pdf) {
     // pdf.path = the folder's full path (14-Nov-2026: the data may sit on the D: drive - MoveDataToD.bat)
     var where = pdf.path ? String(pdf.path) : 'ScreenerBridge\\' + (pdf.folder || 'lab_charts');
     return '<p class="note lab-pdf">📄 <b>Charts PDF on your laptop</b> - two pages for every trade (the chart with HH / HL / LH / LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended) - the losing ones first: <code>' +
