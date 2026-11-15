@@ -267,6 +267,9 @@ DEFAULTS = {
     # ltfNear % above the zone top (0 = at / under the top only, 100 = any distance); a CHoCH further up is passed over and a
     # later one in the window may still come ('ltffar' when none does)
     'ltfNear': 2,
+    # the charts PDF to Google Drive too - asked per run (owner, 15-Nov-2026: "drive ku upload pananuma ngratha oru option ah
+    # vaiakalama. because most of the time i use laptop. need iruntha matum driveku anupalam"): off = the laptop only
+    'pdfDrive': False,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -288,7 +291,7 @@ SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2B
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
 BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull',
-         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain')
+         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain', 'pdfDrive')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
                          'touch', 'pattern'),
@@ -2910,8 +2913,8 @@ class LabWorker:
                 base = 60
             charts = CHARTS_DIR if cfg.get('lab_charts') is not False else None
             res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)), charts=charts, name=name)
-            if res.get('pdf') and cfg.get('lab_pdf_drive') is not False:
-                pdf_to_drive(cfg, api, jid, res['pdf'], progress)      # the laptop copy stays; Drive gets one too
+            if res.get('pdf') and (res.get('params') or {}).get('pdfDrive') and cfg.get('lab_pdf_drive') is not False:
+                pdf_to_drive(cfg, api, jid, res['pdf'], progress)      # asked for this run: the laptop copy stays, Drive gets one too
             sent = len(res.get('trades') or [])
             fit_result(res)
             reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
