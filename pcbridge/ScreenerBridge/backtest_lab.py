@@ -270,6 +270,16 @@ DEFAULTS = {
     # the charts PDF to Google Drive too - asked per run (owner, 15-Nov-2026: "drive ku upload pananuma ngratha oru option ah
     # vaiakalama. because most of the time i use laptop. need iruntha matum driveku anupalam"): off = the laptop only
     'pdfDrive': False,
+    # DAILY FVG + 4H SPRING (owner, 15-Nov-2026: "higher timeframe (Daily) la FVG la vilura first medium to big size red candle
+    # ah iruntha antha chart oda 4hr timeframe la athu spring candle ah iruntha, antha trade ah edukalam ... lowertimeframe (15
+    # min) la antha spring candle pattern oru choch ah form panuchuna additional confirmation"; answers: 1a the red body at
+    # least h4Body x ATR(14) of the days before, 2a the zone's FIRST touching candle is that red candle, 3 the zone rule of
+    # FVG+Spring (close above the bottom, any depth), 4b FVG + Gap-up zones, 5 both with and without the 15m check, bought at
+    # the next day's open, stop = the FVG bottom or the day's low, whichever is lower (+ the ATR stop), 6 the 15m CHoCH on the
+    # same day): group 'fvg4h' (daily chart) - the day's two 4-hour candles (09:15-13:15, 13:15-15:30) must be a Spring pair;
+    # h4Zones both / fvg / gap; m15Choch show (every trade marked, the breakdown compares) / only (confirmed ones) / off;
+    # m15Pivot / m15Down = the 15-minute CHoCH's swings and lower highs / lows (its candle and its final low on that day)
+    'h4Body': 0.5, 'h4Zones': 'both', 'm15Choch': 'show', 'm15Pivot': 3, 'm15Down': 2,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -294,7 +304,7 @@ BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', '
          'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain', 'pdfDrive')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
-                         'touch', 'pattern'),
+                         'touch', 'pattern', 'fvg4h'),
     'entry': ('close', 'next_open', 'zone'), 'stop': ('zone', 'spring', 'lower', 'pct', 'final'), 'after': ('trail', 'fixed'),
     'trail': ('lows', 'pct', 'ema', 'atr', 'swing', 'none'), 'emaSupport': (0, 10, 21, 50, 1), 'mktAbove': (0, 10, 21, 50, 100, 200),
     'c2Color': ('any', 'green', 'red'), 'structure': ('off', 'show', 'only'), 'zoneWhen': ('both', 'leg', 'after'),
@@ -302,6 +312,7 @@ CHOICES = {
     'swingMode': ('fractal', 'zigzag'), 'chochMode': ('last', 'protected'), 'whereIn': ('any', 'tm', 't'), 'wkAbove': (0, 10, 21, 50),
     'fibPat': ('off', 'big', 'all'), 'darkCloud': ('any', 'exclude', 'only'), 'zonePick': ('second', 'every'),
     'pattern': tuple(pattern_registry.implemented()), 'patCtx': ('any', 'down'),
+    'h4Zones': ('both', 'fvg', 'gap'), 'm15Choch': ('show', 'only', 'off'),
     'setup': ('choch', 'bos', 'both'), 'bosKind': ('first', 'trend', 'both'),
     'ltf': ('off', 'D', '1H', '15m'), 'ltfEntry': ('close', 'fvg', 'smart'), 'ltfStop': ('ltf', 'rule'), 'ltfChoch': ('last', 'protected'),
 }
@@ -327,6 +338,7 @@ LIMITS = {   # key: (min, max, integer)
     'divMaxGap': (5, 500, True), 'divRsiMax': (5, 100, False), 'patSwing': (2, 10, True), 'upN': (1, 8, True),
     'ltfPivot': (2, 10, True), 'ltfDown': (1, 6, True), 'ltfWait': (1, 30, True), 'ltfUnder': (0, 100, False),
     'ltfNear': (0, 100, False),
+    'h4Body': (0, 5, False), 'm15Pivot': (2, 6, True), 'm15Down': (1, 6, True),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -336,19 +348,24 @@ GROUP_NAMES = {
     'entry': 'Spring on an FVG / Gap-up zone, or FVG First Touch / Confirmed',
     'touch': 'First touch of a zone (every FVG / Gap-up zone)',
     'pattern': 'Pattern library',
+    'fvg4h': 'Daily FVG + 4H Spring',
 }
 SPRING_CODES = ('S', 'F', 'G')   # the Spring shape rules apply to these (T / C = FVG First Touch / Confirmed have no Spring pair)
 TOUCH_CODES = ('T', 'Z', 'Y')    # first-touch signals: the zone-top entry (a buy order waiting at the top) fills on them
 FIB_CODES = ('P', 'Q')           # a Spring / Bullish Harami + Inverted Hammer inside an FVG / a Gap-up zone (fibPat)
-FVG_CODES = ('F', 'Z', 'T', 'C', 'P')   # rows whose zone is a 3-candle FVG (the others: Gap-up zones)
+FVG_CODES = ('F', 'Z', 'T', 'C', 'P', 'R')   # rows whose zone is a 3-candle FVG (the others: Gap-up zones)
+H4_CODES = ('R', 'U')            # Daily FVG / Gap-up zone + 4H Spring (group 'fvg4h' - the zone's first touch, checked on 4H)
+GAP_CODES = ('G', 'Y', 'Q', 'U')  # rows whose zone is a Gap-up zone
 PAT_NAMES = {'S': 'Spring', 'H': 'Bullish Harami + Inverted Hammer'}
 ZONE_NAMES = {'F': 'FVG', 'G': 'Gap-up', 'S': 'Spring', 'T': 'FVG first touch', 'C': 'FVG first touch confirmed',
               'Z': 'FVG zone touch', 'Y': 'Gap-up zone touch', 'P': 'FVG zone - pattern at the Fib line',
-              'Q': 'Gap-up zone - pattern at the Fib line', 'K': 'Pattern library'}
+              'Q': 'Gap-up zone - pattern at the Fib line', 'K': 'Pattern library',
+              'R': 'Daily FVG + 4H Spring', 'U': 'Daily Gap-up zone + 4H Spring'}
 REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'open')
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow']
+              'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow',
+              'h4', 'm15']
 
 
 def _iso_date(s):
@@ -1144,6 +1161,113 @@ class _LtfSet:
         return cs, [flat[k:k + 6] for k in range(0, len(flat), 6)]
 
 
+# ------------------------------------------------------------------ Daily FVG + 4H Spring (owner, 15-Nov-2026 - DEFAULTS 'h4Body')
+H4_SLOTS = (555, 795)            # a day's two 4-hour candles: 09:15-13:15 and 13:15-15:30 (the cache's 4H candles)
+SPRING_BASE = {'bodyMin': 0.5, 'day2BodyMax': 30, 'undercut': 0.10, 'reclaimMax': 50}   # = kite_intraday SPRING_CFG
+H4_WHY = ('h4red', 'h4small', 'h4close', 'h4atr', 'h4data', 'h4spring', 'm15no', 'm15data')
+
+
+def spring_pair(a, b, cfg=None):
+    """kite_intraday.is_spring_pair (= web/lib/patterns.js isSpringPair) on {'o','h','l','c'} candles: a red with a real body,
+    b dips under a's low (by >= undercut %) and closes back above it with a small body, its high not above a's low +
+    reclaimMax % of a's range."""
+    g = cfg or SPRING_BASE
+    b1 = abs(a['c'] - a['o'])
+    return (a['c'] < a['o'] and a['o'] > 0 and b1 / a['o'] >= g['bodyMin'] / 100 and b['l'] < a['l'] and b['c'] > a['l'] and
+            abs(b['c'] - b['o']) < g['day2BodyMax'] / 100 * b1 and b['l'] <= a['l'] * (1 - g['undercut'] / 100) and
+            b['h'] <= a['l'] + g['reclaimMax'] / 100 * (a['h'] - a['l']))
+
+
+class _H4Set:
+    """A Daily FVG + 4H Spring run's other candles: the cache's 4-hour candles and - for the 15-minute CHoCH - the laptop's
+    15-minute candles with their CHoCH events (the run's m15Pivot swings)."""
+
+    def __init__(self, d, meta, P):
+        self.ix = meta['index'].get('4H') or {}
+        self.f = open(os.path.join(d, '4H.bin'), 'rb') if self.ix and os.path.exists(os.path.join(d, '4H.bin')) else None
+        self.m15 = (_LtfSet(d, meta, dict(P, ltf='15m', ltfPivot=P['m15Pivot'], ltfChoch='last'))
+                    if P['m15Choch'] != 'off' else None)
+
+    def close(self):
+        if self.f:
+            self.f.close()
+        if self.m15 is not None:
+            self.m15.close()
+
+    def h4(self, sym):
+        idx = self.ix.get(sym)
+        return Candles(self.f, idx[0], idx[1]) if (idx and self.f) else None
+
+    def small(self, sym):
+        """(15-minute candles, CHoCH events, the events' candle numbers) or (None, [], [])."""
+        lt, ev = self.m15.get(sym) if self.m15 is not None else (None, None)
+        ev = ev or []
+        return lt, ev, [int(e[0]) for e in ev]
+
+
+def h4_check(cs, i, r, P, c4):
+    """The daily candle i (the zone's first touch) and its two 4-hour candles -> (None, info) or (why, None): red with a body
+    of at least h4Body x ATR(14) of the days before, a close above the zone bottom, and the 09:15 + 13:15 candles a Spring."""
+    o, c = _f(cs.o[i]), _f(cs.c[i])
+    if not c < o:
+        return 'h4red', None
+    atr = atr14(cs, i - 1)
+    if atr is None or atr <= 0:
+        return 'h4atr', None
+    if P['h4Body'] and (o - c) + 1e-9 < P['h4Body'] * atr:
+        return 'h4small', None
+    if not c > r[2] + 1e-9:
+        return 'h4close', None
+    if c4 is None or not c4.n:
+        return 'h4data', None
+    day = cs.day[i]
+    k = bisect.bisect_left(c4.day, day)
+    js = [j for j in range(k, min(k + 3, c4.n)) if c4.day[j] == day]
+    if [c4.minute[j] for j in js] != list(H4_SLOTS):
+        return 'h4data', None                   # no 4-hour candles that day (before the laptop's 4H history) / a short session
+    a, b = ({'o': _f(c4.o[j]), 'h': _f(c4.h[j]), 'l': _f(c4.l[j]), 'c': _f(c4.c[j])} for j in js)
+    if not spring_pair(a, b):
+        return 'h4spring', None
+    return None, {'j': js[1], 'a': a, 'b': b, 'body': (o - c) / atr, 'drop': (a['c'] - a['o']) / a['o'] * 100,
+                  'dip': (a['l'] - b['l']) / a['l'] * 100}
+
+
+def m15_check(day, box, P):
+    """A 15-minute CHoCH on the Spring day: its candle and its final low that day, >= m15Down lower highs / lows ->
+    ('yes', event) / ('no', None) / ('nodata', None)."""
+    lt, ev, bs = box
+    if lt is None or not lt.n:
+        return 'nodata', None
+    a = bisect.bisect_left(lt.day, day)
+    z = bisect.bisect_right(lt.day, day)
+    if a >= z:
+        return 'nodata', None
+    k = bisect.bisect_left(bs, a)
+    while k < len(ev) and bs[k] < z:
+        e = ev[k]
+        if e[5] >= P['m15Down'] and a <= int(e[3]) < z:
+            return 'yes', e
+        k += 1
+    return 'no', None
+
+
+def h4_text(h4, lt=None):
+    """The trades list's words: '4H 09:15 red -2.1% · 13:15 dipped 0.6% under its low, closed back above · day body 1.4 x ATR ·
+    15m CHoCH 14:45 (2 lower highs / lows)'."""
+    txt = '4H 09:15 red %.1f%% · 13:15 dipped %.1f%% under its low, closed back above · day body %.1f x ATR' % (
+        h4['drop'], h4['dip'], h4['body'])
+    m = h4.get('m15')
+    if m == 'yes' and lt is not None:
+        e = h4['m15ev']
+        txt += ' · 15m CHoCH %02d:%02d above %.2f (%d lower high%s / low%s)' % (
+            lt.minute[int(e[0])] // 60, lt.minute[int(e[0])] % 60, _f(e[2]), int(e[5]), '' if int(e[5]) == 1 else 's', '' if int(e[5]) == 1 else 's')
+    elif m == 'no':
+        txt += ' · no 15m CHoCH that day'
+    elif m == 'nodata':
+        txt += ' · no 15m candles that day'
+    return txt
+
+
 def _first_at(cs, key):
     """The first candle of cs at / after the minute key."""
     day = key // 1440
@@ -1499,9 +1623,12 @@ def pick(rows, P):
               (g == 'conf' and code == 'C') or
               (g == 'entry' and code in ('F', 'G', 'T', 'C')) or
               (g == 'touch' and code in ('Z', 'Y')) or
-              (g == 'touch' and code in FIB_CODES and fp != 'off'))
+              (g == 'touch' and code in FIB_CODES and fp != 'off') or
+              (g == 'fvg4h' and code in ('Z', 'Y') and P['h4Zones'] in ('both', 'fvg' if code == 'Z' else 'gap')))
         if not ok:
             continue
+        if g == 'fvg4h':                    # the zone's first touch, checked on the 4-hour candles in run_job (h4_check)
+            r = [r[0], 'R' if code == 'Z' else 'U'] + list(r[2:])
         if g == 'touch' and fp != 'off':
             # Fib + pattern (12-Nov-2026): 'all' = every zone by the pattern at its Fib line; 'big' = the zones bigger than
             # the size limit by the pattern, the rest by the zone-top touch
@@ -1683,7 +1810,7 @@ def summarise(trades, P, skips, meta, secs):
     rows = []
     for t in sorted(trades, key=lambda t: (t['sigDay'], t['sigMin'], t['sym']), reverse=True)[:MAX_TRADES_OUT]:
         rows.append([t['sym'], _label(P['tf'], t['sigDay'], t['sigMin']),
-                     (t.get('pname') or zone_name[t['code']]) + (' inside FVG' if t['code'] in ('G', 'Y', 'Q') and (t['inside'] or t.get('fz')) else '') +
+                     (t.get('pname') or zone_name[t['code']]) + (' inside FVG' if t['code'] in GAP_CODES and (t['inside'] or t.get('fz')) else '') +
                      (' (again after the CHoCH)' if t.get('again') else ''),
                      where_name.get(t['where'], ''), t['touch'] or '', t['entry'], t['stop'], t['riskPct'], round(t['exit'], 2),
                      _label(P['tf'], t['xk'][0], t['xk'][1]), t['reason'], t['R'], t['ret'], t['days'], t['maxR'],
@@ -1692,7 +1819,8 @@ def summarise(trades, P, skips, meta, secs):
                      int(round(t['depth'] * 100)) if t.get('depth') is not None else '', t.get('lhll', ''), t.get('lag', ''),
                      t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', ''),
                      ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', ''),
-                     t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', ''), t.get('setup', ''), t.get('ltfHow', '')])
+                     t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', ''), t.get('setup', ''), t.get('ltfHow', ''),
+                     t.get('h4', ''), t.get('m15', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1744,6 +1872,8 @@ BD_DIMS = (
     ('mv', 'Biggest volume in the CHoCH move (x the 20 candles before it)', 'num',
      ((0, 1.5, 'under 1.5x'), (1.5, 2, '1.5 - 2x'), (2, 3, '2 - 3x'), (3, 5, '3 - 5x'), (5, 10, '5 - 10x'), (10, 1e12, '10x or more'))),
     ('zn', 'Which discount zone of the CHoCH move', 'num', ((1, 2, '1st (the only / the higher one)'), (2, 3, '2nd'), (3, 1e9, '3rd or deeper'))),
+    ('m15', '15-minute CHoCH on the Spring day (Daily FVG + 4H Spring)', 'cat',
+     (('yes', 'with a 15m CHoCH'), ('no', 'no 15m CHoCH'), ('nodata', 'no 15m candles that day'))),
     ('ltfWait', 'Candles from the signal to the lower-timeframe CHoCH', 'num',
      ((0, 1, 'in the signal candle'), (1, 2, '1 candle after'), (2, 3, '2 after'), (3, 5, '3 - 4 after'), (5, 1e9, '5 or more after'))),
     ('turn', 'Average daily turnover (20 days)', 'num',
@@ -1753,7 +1883,7 @@ BD_DIMS = (
 
 def _bd_value(t, key):
     if key == 'zone':
-        return ('Gap-up inside FVG' if t.get('inside') or t.get('fz') else 'Gap-up') if t['code'] in ('G', 'Y', 'Q') else 'FVG' \
+        return ('Gap-up inside FVG' if t.get('inside') or t.get('fz') else 'Gap-up') if t['code'] in GAP_CODES else 'FVG' \
             if t['code'] in FVG_CODES else 'none'
     if key == 'risk':
         return t.get('riskPct')
@@ -1761,7 +1891,7 @@ def _bd_value(t, key):
         return t.get('touch') or None
     if key == 'where':
         return t.get('where') if t.get('where') in ('t', 'm', 'b') else None
-    if key in ('setup', 'ltfHow'):
+    if key in ('setup', 'ltfHow', 'm15'):
         return t.get(key) or None
     v = t.get(key)
     return v if isinstance(v, (int, float)) and v == v else None
@@ -1932,6 +2062,15 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                        '15-minute, weekly chart + daily' % (P['ltf'], tf))
     if ltf_on and P['group'] in ('pattern', 'spring'):
         raise LabError('the lower-timeframe confirmation needs a zone (FVG / Gap-up) - not "%s"' % GROUP_NAMES[P['group']])
+    h4_on = P['group'] == 'fvg4h'
+    if h4_on:
+        if tf != 'D':
+            raise LabError('Daily FVG + 4H Spring works on the daily chart - choose Timeframe: Daily')
+        if ltf_on:
+            raise LabError('Daily FVG + 4H Spring has its own 15-minute check - set "Confirmation on a lower timeframe" to Off')
+        if P['entry'] == 'zone':
+            raise LabError('Daily FVG + 4H Spring: the 4-hour Spring is known only when the day closes - buy at the next day\'s '
+                           'open (or at the close), not with an order at the zone top')
     sigs = meta['signals'].get(tf) or {}
     index = meta['index'].get(tf) or {}
     lo = date.fromisoformat(P['from']).toordinal() if P['from'] else None
@@ -1942,6 +2081,9 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     if ltf_on:
         skips.update({k: 0 for k in LTF_WHY})
     lset = _LtfSet(d, meta, P) if ltf_on else None
+    if h4_on:
+        skips.update({k: 0 for k in H4_WHY})
+    h4set = _H4Set(d, meta, P) if h4_on else None
     cmp_rows = []                       # [(the trade without the confirmation, with it or None, why not)] per signal candle
     shape_on, shape_why, struct_why = shape_active(P), {}, {}
     smode = P['structure']
@@ -1986,6 +2128,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                    if (trail_on and P['trail'] == 'atr') or P['stopAtr'] else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
             ltf_box = []                        # the stock's small candles + events, read when a signal first needs them
+            h4_box = []                         # Daily FVG + 4H Spring: [4-hour candles, (15-minute candles, events, ...)]
 
             def make_ctx(sn):
                 """One setup's rules on this stock -> (attempt, its touchAgain rows or None)."""
@@ -2049,6 +2192,20 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                 def attempt(r):
                     """One signal row -> (trade, None) or (None, (skip key, rule))."""
                     code = r[1]
+                    h4 = None
+                    if code in H4_CODES:
+                        # Daily FVG + 4H Spring (owner, 15-Nov-2026): the zone's first touching day, seen on 4 hours / 15 minutes
+                        if not h4_box:
+                            h4_box.append(h4set.h4(sym))
+                        why_, h4 = h4_check(cs, r[0], r, P, h4_box[0])
+                        if why_:
+                            return None, (why_, '')
+                        if h4set.m15 is not None:
+                            if len(h4_box) < 2:
+                                h4_box.append(h4set.small(sym))
+                            h4['m15'], h4['m15ev'] = m15_check(cs.day[r[0]], h4_box[1], P)
+                            if P['m15Choch'] == 'only' and h4['m15'] != 'yes':
+                                return None, ('m15no' if h4['m15'] == 'no' else 'm15data', '')
                     zone_row = r[2] is not None and r[3] is not None
                     link = r[9] if len(r) > 9 else None
                     outer = link if (code == 'Y' and P['gapEntry'] and link) else None   # the FVG around this Gap-up zone
@@ -2073,7 +2230,9 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                             return None, ('fiblevel', '')
                     spring_row = r[1] in SPRING_CODES
                     feats = spring_feats(cs, r[0], P, deep=shape_on) if spring_row else None   # the Spring pair's shape
-                    if shape_on and spring_row:
+                    if h4 is not None:                  # the 4-hour Spring pair's shape (the Spring candle shape rules)
+                        feats = spring_feats(h4_box[0], h4['j'], P, deep=shape_on)
+                    if shape_on and (spring_row or h4 is not None):
                         ok, why = shape_check(feats, P)
                         if not ok:
                             return None, ('shape', why)
@@ -2138,6 +2297,16 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     t['sym'] = sym
                     if code == 'K':                       # a Pattern library signal: its name + level (the trades list, the PDF)
                         t['pname'], t['pid'], t['trig'] = pat.name, P['pattern'], r[11] if len(r) > 11 else None
+                    if h4 is not None:                    # Daily FVG + 4H Spring: the day on 4 hours / 15 minutes
+                        lt_ = h4_box[1][0] if len(h4_box) > 1 else None
+                        t['pname'] = ZONE_NAMES[code]
+                        t['h4'] = h4_text(h4, lt_)
+                        t['m15'] = h4.get('m15', '')
+                        t['h4c'] = [h4['a'], h4['b']]          # the two 4-hour candles (the charts PDF)
+                        t['h4b'] = round(h4['body'], 1)
+                        if h4.get('m15') == 'yes' and lt_ is not None:
+                            e = h4['m15ev']
+                            t['m15c'] = '%02d:%02d' % divmod(lt_.minute[int(e[0])], 60)
                     t['zpct'] = round(zp, 2) if zp is not None else None
                     t['dc'] = bool(dc)
                     if code in FIB_CODES:
@@ -2226,6 +2395,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
         pat.close()
     if lset is not None:
         lset.close()
+    if h4set is not None:
+        h4set.close()
     res = summarise(trades, P, skips, meta, time.time() - t0)
     if ltf_on:
         res['ltf'] = ltf_compare(cmp_rows, P)
