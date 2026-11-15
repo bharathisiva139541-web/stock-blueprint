@@ -31,6 +31,7 @@ import bisect
 import re
 import gzip
 import heapq
+import http.client
 import json
 import math
 import os
@@ -39,6 +40,8 @@ import statistics
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import date, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -2672,6 +2675,131 @@ def fit_result(res, limit=None):
     return len(rows) - keep
 
 
+# ------------------------------------------------------------------ the charts PDF in Google Drive too (owner, 15-Nov-2026:
+# "suppose nan tablet la backtest run panren laptop on pani vachutu, and pdf um tablet or phone la ye pakanumna epdi pakurathu?"
+# - choice: an "Open PDF" button on the website's result, the PDF kept on the laptop AND in Drive): the sheet (Code2.gs op
+# 'pdfup') makes a resumable upload address in the owner's Drive folder for this one file; the laptop sends the bytes there
+# in parts (a cut-off part is asked about and sent again) and the result carries the file's id
+DRIVE_UPLOAD_PREFIX = 'https://www.googleapis.com/upload/drive/'   # the only place the PDF is ever sent
+DRIVE_CHUNK = 8 * 1024 * 1024        # a multiple of 256 KiB (Google's rule for the parts)
+DRIVE_TRIES = 5                      # tries for one part (each after asking Drive how much it has)
+DRIVE_TIMEOUT_S = 180
+
+
+def _range_end(h):
+    """Drive's 'Range: bytes=0-N' -> the next byte to send (N + 1); none -> 0."""
+    m = re.match(r'bytes=0-(\d+)$', str(h or '').strip())
+    return int(m.group(1)) + 1 if m else 0
+
+
+def _put(url, data, headers, timeout):
+    """One PUT -> (status, body bytes, headers). Drive's 308 'go on' is not an error here."""
+    req = urllib.request.Request(url, data=data, method='PUT', headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read(), r.headers
+    except urllib.error.HTTPError as e:
+        return e.code, e.read() if e.fp else b'', e.headers
+
+
+def drive_upload(url, path, tell=None, chunk=None, tries=None, timeout=DRIVE_TIMEOUT_S, sleep=time.sleep):
+    """The file at path to a resumable upload address -> Drive's answer ({'id': ...}). Raises LabError."""
+    if not str(url).startswith(DRIVE_UPLOAD_PREFIX):
+        raise LabError('the sheet gave no Google Drive upload address')
+    chunk = chunk or DRIVE_CHUNK
+    tries = tries or DRIVE_TRIES
+    size = os.path.getsize(path)
+    start, bad = 0, 0
+    with open(path, 'rb') as fh:
+        while True:
+            fh.seek(start)
+            data = fh.read(chunk)
+            hdr = {'Content-Length': str(len(data)), 'Content-Type': 'application/pdf',
+                   'Content-Range': 'bytes %d-%d/%d' % (start, start + len(data) - 1, size)}
+            try:
+                code, body, h = _put(url, data, hdr, timeout)
+            except (OSError, ValueError, http.client.HTTPException) as e:   # no internet / cut off: ask Drive, go on
+                code, body, h = -1, str(e).encode('utf-8', 'replace'), {}
+            if code in (200, 201):
+                try:
+                    return json.loads(body.decode('utf-8') or '{}')
+                except ValueError:
+                    raise LabError('Google Drive gave an unreadable answer')
+            if code == 308:
+                nxt = _range_end(h.get('Range') if h else None)
+                if nxt > start:
+                    start, bad = nxt, 0
+                    if tell:
+                        tell(start, size)
+                    continue
+                code = 308                             # nothing kept of that part: a failed try
+            if code in (400, 401, 403, 404, 410):
+                raise LabError('Google Drive refused the upload (HTTP %d)' % code)
+            bad += 1
+            if bad >= tries:
+                raise LabError('the upload stopped (%s)' % ('HTTP %d' % code if code > 0 else body.decode('utf-8', 'replace')[:120]))
+            sleep(min(30, 2 ** bad))
+            try:                                       # how much did Drive keep?
+                code, body, h = _put(url, b'', {'Content-Length': '0', 'Content-Range': 'bytes */%d' % size}, timeout)
+            except (OSError, ValueError, http.client.HTTPException):
+                continue
+            if code in (200, 201):
+                try:
+                    return json.loads(body.decode('utf-8') or '{}')
+                except ValueError:
+                    raise LabError('Google Drive gave an unreadable answer')
+            if code == 308:
+                start = _range_end(h.get('Range') if h else None)
+
+
+def pdf_to_drive(cfg, api, jid, pdf, progress=None):
+    """The run's charts PDF (res['pdf'] - on the laptop) copied to the owner's Google Drive: pdf['drive'] = {id, url} or
+    {error} (the laptop copy stays either way; a failure never stops the result)."""
+    if not pdf or not pdf.get('file') or pdf.get('error'):
+        return
+    path = os.path.join(pdf.get('path') or CHARTS_DIR, pdf['file'])
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        pdf['drive'] = {'error': 'the PDF was not found on the laptop'}
+        return
+    mb = size / 1048576.0
+    if progress:
+        progress(99, 'copying the charts PDF to your Google Drive (%.0f MB) ...' % max(1, mb))
+    try:
+        r = api(cfg, 'lab', {'op': 'pdfup', 'id': jid, 'name': pdf['file'], 'size': size}, tries=2, timeout=90) or {}
+    except Exception as e:
+        pdf['drive'] = {'error': 'could not ask the sheet for a Google Drive address (%s)' % str(e)[:120]}
+        log('Backtest Lab: charts PDF not copied to Google Drive - %s' % pdf['drive']['error'])
+        return
+    if not r.get('ok') or not r.get('upload'):
+        err = str(r.get('error') or 'the sheet gave no Google Drive address')
+        if err == 'unknown op':
+            err = 'the web app is an older version - Apps Script: Deploy > Manage deployments > New version'
+        pdf['drive'] = {'error': err[:200]}
+        log('Backtest Lab: charts PDF not copied to Google Drive - %s' % err)
+        return
+    said = [time.time()]
+
+    def tell(done, total):
+        if progress and time.time() - said[0] >= 15:
+            said[0] = time.time()
+            progress(99, 'copying the charts PDF to your Google Drive - %d%% of %.0f MB' % (int(done * 100 / max(1, total)), max(1, mb)))
+    t0 = time.time()
+    try:
+        f = drive_upload(r['upload'], path, tell)
+    except LabError as e:
+        pdf['drive'] = {'error': str(e)[:200]}
+        log('Backtest Lab: charts PDF not copied to Google Drive - %s' % e)
+        return
+    fid = str(f.get('id') or '')
+    if not re.match(r'^[A-Za-z0-9_-]{10,200}$', fid):
+        pdf['drive'] = {'error': 'Google Drive gave no file id'}
+        return
+    pdf['drive'] = {'id': fid, 'url': 'https://drive.google.com/file/d/%s/view' % fid}
+    log('Backtest Lab: charts PDF copied to your Google Drive (%.1f MB in %.0f s).' % (mb, time.time() - t0))
+
+
 EDGE_WORDS = {'real': 'an edge - the whole range is above 0', 'losing': 'losing - the whole range is under 0',
               'chance': 'could be chance - the range spans 0', 'few': 'too few trades to say'}
 
@@ -2782,6 +2910,8 @@ class LabWorker:
                 base = 60
             charts = CHARTS_DIR if cfg.get('lab_charts') is not False else None
             res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)), charts=charts, name=name)
+            if res.get('pdf') and cfg.get('lab_pdf_drive') is not False:
+                pdf_to_drive(cfg, api, jid, res['pdf'], progress)      # the laptop copy stays; Drive gets one too
             sent = len(res.get('trades') or [])
             fit_result(res)
             reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)

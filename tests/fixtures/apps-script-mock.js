@@ -531,7 +531,8 @@ function createEnv(workbook, opts) {
         env.fetches.push({ url: String(url), params: params || {} });
         const r = opts.fetch(String(url), params || {}) || {};
         return { getResponseCode: function () { return r.code === undefined ? 200 : r.code; },
-                 getContentText: function () { return r.text === undefined ? '' : String(r.text); } };
+                 getContentText: function () { return r.text === undefined ? '' : String(r.text); },
+                 getHeaders: function () { return r.headers || {}; } };
       },
       fetchAll: function () { throw new Error('UrlFetchApp is disabled in tests (no network)'); }
     }, env.calls),

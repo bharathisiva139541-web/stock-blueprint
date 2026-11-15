@@ -2143,4 +2143,129 @@ try:
 finally:
     L.RESULT_MAX_CHARS = old_max
 
+# ------------------------------------------------------------------ 27. the charts PDF in Google Drive too (owner, 15-Nov-2026: "suppose
+# nan tablet la backtest run panren laptop on pani vachutu, and pdf um tablet or phone la ye pakanumna epdi pakurathu?" - choice:
+# an "Open PDF" button, the PDF on the laptop AND in Drive): a made Drive resumable-upload server on this computer
+import http.server
+import re as _re
+import threading
+
+
+class DriveFake(http.server.BaseHTTPRequestHandler):
+    got = {}                 # session path -> the bytes kept
+    cut = set()              # sessions whose 2nd part is cut off half-way once
+    puts = []
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code, body=b'', hdrs=None):
+        self.send_response(code)
+        for k, v in (hdrs or {}).items():
+            self.send_header(k, v)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_PUT(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        body = self.rfile.read(n)
+        rng = self.headers.get('Content-Range', '')
+        DriveFake.puts.append((self.path, rng, len(body)))
+        buf = DriveFake.got.setdefault(self.path, bytearray())
+        m = _re.match(r'bytes (\d+)-(\d+)/(\d+)$', rng)
+        total = int(rng.rsplit('/', 1)[1])
+        if m:
+            a = int(m.group(1))
+            assert a == len(buf), (a, len(buf))
+            if self.path in DriveFake.cut and a > 0:
+                DriveFake.cut.discard(self.path)
+                buf.extend(body[:len(body) // 2])          # half of it arrived, then the line broke
+                return self._send(500)
+            buf.extend(body)
+        if len(buf) >= total:
+            return self._send(200, json.dumps({'id': 'FILE_' + self.path.strip('/').replace('/', '_') + '_xyz'}).encode())
+        return self._send(308, b'', {'Range': 'bytes=0-%d' % (len(buf) - 1)} if buf else {})
+
+
+srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), DriveFake)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+DRIVE = 'http://127.0.0.1:%d/upload/drive/' % srv.server_address[1]
+blob = os.path.join(TMP, 'drive test.pdf')
+with open(blob, 'wb') as fh:
+    fh.write(bytes(random.Random(5).getrandbits(8) for _ in range(700 * 1024)))   # 3 parts of 256 KiB
+want = open(blob, 'rb').read()
+old_prefix, old_chunk = L.DRIVE_UPLOAD_PREFIX, L.DRIVE_CHUNK
+try:
+    assert L.DRIVE_UPLOAD_PREFIX == 'https://www.googleapis.com/upload/drive/' and L.DRIVE_CHUNK % (256 * 1024) == 0
+    try:
+        L.drive_upload(DRIVE + 's0', blob)
+        raise AssertionError('only Google Drive upload addresses')
+    except L.LabError as e:
+        assert 'no Google Drive upload address' in str(e)
+    L.DRIVE_UPLOAD_PREFIX, L.DRIVE_CHUNK = DRIVE, 256 * 1024
+    told = []
+    f27 = L.drive_upload(DRIVE + 's1', blob, tell=lambda a, b: told.append((a, b)))
+    assert f27 == {'id': 'FILE_upload_drive_s1_xyz'} and bytes(DriveFake.got['/upload/drive/s1']) == want
+    assert told == [(262144, len(want)), (524288, len(want))], told
+    assert [p[1] for p in DriveFake.puts if p[0] == '/upload/drive/s1'] == [
+        'bytes 0-262143/716800', 'bytes 262144-524287/716800', 'bytes 524288-716799/716800']
+    # the line breaks in the middle of the 2nd part: Drive is asked how much it kept, the rest goes again
+    DriveFake.cut.add('/upload/drive/s2')
+    naps = []
+    assert L.drive_upload(DRIVE + 's2', blob, sleep=naps.append) == {'id': 'FILE_upload_drive_s2_xyz'}
+    assert bytes(DriveFake.got['/upload/drive/s2']) == want and naps == [2]
+    s2 = [p[1] for p in DriveFake.puts if p[0] == '/upload/drive/s2']
+    assert s2[2] == 'bytes */716800' and s2[3] == 'bytes 393216-655359/716800', s2       # 262144 + 131072 kept
+    # nobody listening: tries, then an error (never a crash)
+    L.DRIVE_UPLOAD_PREFIX = 'http://127.0.0.1:'
+    try:
+        L.drive_upload('http://127.0.0.1:9/upload/drive/x', blob, sleep=lambda s: None, tries=2, timeout=2)
+        raise AssertionError('nothing listening')
+    except L.LabError as e:
+        assert 'the upload stopped' in str(e), e
+    L.DRIVE_UPLOAD_PREFIX = DRIVE
+
+    class DriveSheet(FakeSheet):
+        def __init__(self, jobs, answer):
+            FakeSheet.__init__(self, jobs)
+            self.answer = answer
+
+        def __call__(self, cfg, action, payload, tries=1, timeout=60):
+            if payload['op'] == 'pdfup':
+                self.calls.append(payload)
+                return self.answer
+            return FakeSheet.__call__(self, cfg, action, payload, tries, timeout)
+
+    # the worker: run -> PDF on the laptop -> an upload address from the sheet -> Drive -> the result carries the link
+    LOGS.clear()
+    sh27 = DriveSheet([{'id': 'L27a', 'name': 'on the tablet', 'params': dict(SMC6)}], {'ok': True, 'upload': DRIVE + 's3', 'folder': 'x'})
+    L.LabWorker().loop({}, sh27, rounds=1)
+    ops27 = [c['op'] for c in sh27.calls]
+    assert ops27.index('pdfup') < ops27.index('result'), ops27
+    up = next(c for c in sh27.calls if c['op'] == 'pdfup')
+    res27 = next(c for c in sh27.calls if c['op'] == 'result')['result']
+    laptop = os.path.join(res27['pdf']['path'], res27['pdf']['file'])
+    assert up['id'] == 'L27a' and up['name'] == res27['pdf']['file'] and up['size'] == os.path.getsize(laptop)
+    assert os.path.isfile(laptop), 'the laptop keeps its copy'
+    assert bytes(DriveFake.got['/upload/drive/s3']) == open(laptop, 'rb').read()
+    assert res27['pdf']['drive'] == {'id': 'FILE_upload_drive_s3_xyz', 'url': 'https://drive.google.com/file/d/FILE_upload_drive_s3_xyz/view'}
+    assert any('charts PDF copied to your Google Drive' in m for m in LOGS), LOGS[-4:]
+    assert any(c['op'] == 'progress' and 'Google Drive' in c.get('note', '') for c in sh27.calls)
+    # an older web app / no permission yet / a strange address: the result still goes, with the reason
+    for answer, words in (({'ok': False, 'error': 'unknown op'}, 'New version'),
+                          ({'ok': False, 'error': 'Google Drive is not allowed yet - Apps Script editor: pick runLabDriveSetup'}, 'runLabDriveSetup'),
+                          ({'ok': True, 'upload': 'https://evil.example/upload/drive/x'}, 'no Google Drive upload address')):
+        sh = DriveSheet([{'id': 'L27b', 'name': 'x', 'params': dict(SMC6)}], answer)
+        L.LabWorker().loop({}, sh, rounds=1)
+        r27 = next(c for c in sh.calls if c['op'] == 'result')['result']
+        assert words in r27['pdf']['drive']['error'] and r27['pdf']['file'], (answer, r27['pdf'])
+    # config "lab_pdf_drive": false = the laptop only
+    sh = DriveSheet([{'id': 'L27c', 'name': 'x', 'params': dict(SMC6)}], {'ok': True, 'upload': DRIVE + 's4'})
+    L.LabWorker().loop({'lab_pdf_drive': False}, sh, rounds=1)
+    assert 'pdfup' not in [c['op'] for c in sh.calls] and 'drive' not in next(c for c in sh.calls if c['op'] == 'result')['result']['pdf']
+finally:
+    L.DRIVE_UPLOAD_PREFIX, L.DRIVE_CHUNK = old_prefix, old_chunk
+    srv.shutdown()
+
 print('OK')

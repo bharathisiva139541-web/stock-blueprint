@@ -13267,6 +13267,16 @@ const AB_LAB_STALE_MS = 20 * 60000;              // a run taken by the PC and no
 const AB_LAB_WAIT_MS = 12 * 3600000;             // a run nobody took in 12 hours is dropped
 const AB_LAB_FAST_MS = 10 * 60000;
 const AB_LAB_HEADERS = ['Id', 'Saved', 'Name', 'Summary', 'Result (JSON, in parts)'];
+// the charts PDF in Google Drive too (owner, 15-Nov-2026: "suppose nan tablet la backtest run panren laptop on pani vachutu,
+// and pdf um tablet or phone la ye pakanumna epdi pakurathu?" - choice: an "Open PDF" button on the result, the PDF kept on
+// the laptop AND in Drive): the laptop asks for an upload address (op 'pdfup'), sends the file straight to Google Drive
+// (a resumable upload - the address is good for that one file only) and its result carries the file's id
+const AB_LAB_DRIVE_PROP = 'AB_LAB_DRIVE';             // the Drive folder's id
+const AB_LAB_DRIVE_NAME = 'Stock Blueprint - Backtest PDFs';
+const AB_LAB_DRIVE_KEEP = 20;                         // the newest PDFs kept there (= the laptop's lab_charts.KEEP_FILES)
+const AB_LAB_PDF_MAX = 500 * 1048576;
+const AB_LAB_PDF_NAME_RE = /^[A-Za-z0-9 ._+()-]{1,150}\.pdf$/;
+const AB_LAB_DRIVE_ID_RE = /^[A-Za-z0-9_-]{10,200}$/;
 
 /** The run's rules from the page: a flat object of finite numbers, booleans and short plain words (choices, dates) -
  *  the PC (backtest_lab.py clean_params) keeps only the rules it knows and checks every limit, so a new rule there needs
@@ -13454,6 +13464,11 @@ function ab_labFromBridge_(req) {
       ab_labSaveJob_(j);
       return { ok: true };
     }
+    if (req.op === 'pdfup') {                  // the charts PDF to Google Drive: an upload address for this one file
+      j.beat = now;
+      ab_labSaveJob_(j);
+      return ab_labDriveStart_(req);
+    }
     if (req.op === 'fail') {
       j.status = 'failed';
       j.error = String(req.error || 'failed').slice(0, 300);
@@ -13464,7 +13479,11 @@ function ab_labFromBridge_(req) {
     if (req.op === 'result') {
       const res = req.result;
       if (!res || typeof res !== 'object' || !res.stats || !Array.isArray(res.trades)) return { ok: false, error: 'not a Backtest Lab result' };
+      ab_labDriveClean_(res);
       ab_labStore_(j, res);
+      if (res.pdf && res.pdf.drive && res.pdf.drive.id) {
+        try { ab_labDriveTidy_(ab_labDriveFolder_()); } catch (tErr) { Logger.log('Backtest Lab PDFs in Drive: ' + tErr.message); }
+      }
       j.status = 'done';
       j.pct = 100;
       j.doneAt = now;
@@ -13481,6 +13500,95 @@ function ab_labFromBridge_(req) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** The Drive folder of the charts PDFs (made once; found again by its id, else by its name). */
+function ab_labDriveFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty(AB_LAB_DRIVE_PROP);
+  if (id) {
+    try {
+      const f = DriveApp.getFolderById(id);
+      if (f && !f.isTrashed()) return f;
+    } catch (e) { /* removed - find or make it again */ }
+  }
+  const it = DriveApp.getFoldersByName(AB_LAB_DRIVE_NAME);
+  while (it && it.hasNext()) {
+    const f = it.next();
+    if (!f.isTrashed()) { props.setProperty(AB_LAB_DRIVE_PROP, f.getId()); return f; }
+  }
+  const made = DriveApp.createFolder(AB_LAB_DRIVE_NAME);
+  props.setProperty(AB_LAB_DRIVE_PROP, made.getId());
+  return made;
+}
+
+/** A Drive error in words: a missing permission -> what to do once. */
+function ab_labDriveWhy_(e) {
+  const m = String((e && e.message) || e || '');
+  if (/permission|authori[sz]|scope|insufficient|401|403/i.test(m)) {
+    return 'Google Drive is not allowed yet - Apps Script editor: pick runLabDriveSetup at the top, press Run, then Allow';
+  }
+  return 'Google Drive: ' + m.slice(0, 160);
+}
+
+/** op 'pdfup' {name, size}: a resumable upload address in the PDFs folder for this one file -> {ok, upload, folder}. */
+function ab_labDriveStart_(req) {
+  const name = String((req && req.name) || '');
+  const size = Number(req && req.size);
+  if (!AB_LAB_PDF_NAME_RE.test(name)) return { ok: false, error: 'not a charts PDF name' };
+  if (!(size > 0)) return { ok: false, error: 'no PDF size' };
+  if (size > AB_LAB_PDF_MAX) return { ok: false, error: 'the PDF is too big to copy to Google Drive (' + Math.round(size / 1048576) + ' MB)' };
+  try {
+    const folder = ab_labDriveFolder_();
+    const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id', {
+      method: 'post', contentType: 'application/json; charset=UTF-8',
+      payload: JSON.stringify({ name: name, parents: [folder.getId()], mimeType: 'application/pdf' }),
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), 'X-Upload-Content-Type': 'application/pdf', 'X-Upload-Content-Length': String(size) },
+      muteHttpExceptions: true });
+    const code = r.getResponseCode();
+    const h = (r.getHeaders && r.getHeaders()) || {};
+    const loc = String(h.Location || h.location || '');
+    if (code !== 200 || loc.indexOf('https://www.googleapis.com/upload/drive/') !== 0) {
+      return { ok: false, error: ab_labDriveWhy_('HTTP ' + code + ' ' + String(r.getContentText() || '').replace(/\s+/g, ' ').slice(0, 140)) };
+    }
+    return { ok: true, upload: loc, folder: folder.getUrl() };
+  } catch (e) {
+    return { ok: false, error: ab_labDriveWhy_(e) };
+  }
+}
+
+/** The result's res.pdf.drive kept only as {id, url} (the link made here) or {error}. */
+function ab_labDriveClean_(res) {
+  const p = res && res.pdf;
+  if (!p || typeof p !== 'object' || !p.drive || typeof p.drive !== 'object') return;
+  const id = String(p.drive.id || '');
+  if (AB_LAB_DRIVE_ID_RE.test(id)) p.drive = { id: id, url: 'https://drive.google.com/file/d/' + id + '/view' };
+  else p.drive = { error: String(p.drive.error || 'not copied').replace(/\s+/g, ' ').slice(0, 200) };
+}
+
+/** Only the newest AB_LAB_DRIVE_KEEP PDFs stay in the folder (older ones go to the Drive trash - 30 days to get back). */
+function ab_labDriveTidy_(folder) {
+  const files = [];
+  const it = folder.getFiles();
+  while (it && it.hasNext()) {
+    const f = it.next();
+    if (/\.pdf$/i.test(String(f.getName())) && !f.isTrashed()) files.push({ f: f, t: Number(f.getDateCreated()) || 0 });
+  }
+  files.sort(function (a, b) { return b.t - a.t; });
+  files.slice(AB_LAB_DRIVE_KEEP).forEach(function (x) { x.f.setTrashed(true); });
+  return Math.max(0, files.length - AB_LAB_DRIVE_KEEP);
+}
+
+/** Apps Script editor (once, 15-Nov-2026): pick runLabDriveSetup at the top, press Run and Allow - the script may then put the
+ *  Backtest Lab's charts PDFs in your Google Drive (only your account sees them). */
+function runLabDriveSetup() {
+  const f = ab_labDriveFolder_();
+  const msg = 'Google Drive is connected.\n\nThe Backtest Lab\'s charts PDFs go to your Drive folder "' + AB_LAB_DRIVE_NAME + '" (only you can see them; ' +
+    'the newest ' + AB_LAB_DRIVE_KEEP + ' are kept) - and stay on the laptop too.\n\nFolder: ' + f.getUrl() + '\n\n' +
+    'Next: Deploy > Manage deployments > pencil > Version: New version > Deploy.';
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert('Backtest Lab PDFs', msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) { /* run from the editor */ }
+  return f.getUrl();
 }
 
 /*****************************************************************

@@ -350,6 +350,11 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    and the exit X, and the trade's numbers on top. Folder: lab_charts (here, next to this file - or in the data folder
    of MoveDataToD.bat, e.g. D:\StockBlueprintData\lab_charts); the newest 20 PDFs are
    kept. The Lab page shows the file name with each run. config "lab_charts": false = off.
+   In Google Drive too (15-Nov-2026): after the PDF is made, this computer also copies it to YOUR Google Drive, folder
+   "Stock Blueprint - Backtest PDFs" (only your Google account can open it; the newest 20 are kept there as well), and the
+   Lab page's result shows a button "Open the charts PDF" - it opens on the phone / tablet / any computer. The copy on this
+   computer stays. Once: Apps Script editor > pick runLabDriveSetup at the top > Run > Allow, then Deploy > Manage
+   deployments > pencil > Version: New version > Deploy. config "lab_pdf_drive": false = the laptop only.
    Two pages a trade (12-Nov-2026): page 1 = the chart with every swing marked HH / HL / LH / LL (each high / low against
    the one before), CHoCH, final low, move high, BOS, the FVG / Gap-up zone, BUY and the exit - the words are put where
    they cover no candle; page 2 = plain sentences, no chart (the prices are on page 1): why the backtest took it (the

@@ -199,3 +199,75 @@ test('Notifications: the push sender failing never stops the run; old notes are 
   assert.ok(rows <= 351 && rows >= 300, String(rows));
   assert.equal(site(env, { op: 'notes' }).items[0].title, 'T359');
 });
+
+// owner, 15-Nov-2026: "suppose nan tablet la backtest run panren laptop on pani vachutu, and pdf um tablet or phone la ye
+// pakanumna epdi pakurathu?" - the charts PDF goes to the owner's Google Drive too (the laptop keeps its copy)
+function fakeDrive() {
+  const d = { folders: [], made: 0 };
+  const iter = (a) => { let i = 0; return { hasNext: () => i < a.length, next: () => a[i++] }; };
+  d.file = (name, t) => { const x = { trashed: false, getName: () => name, isTrashed: () => x.trashed, getDateCreated: () => new Date(t), setTrashed: (v) => { x.trashed = v; } }; return x; };
+  d.api = {
+    getFolderById: (id) => { const f = d.folders.find((x) => x.id === id); if (!f) throw new Error('No item with the given ID could be found.'); return f; },
+    getFoldersByName: (n) => iter(d.folders.filter((x) => x.name === n)),
+    createFolder: (n) => {
+      d.made++;
+      const f = { id: 'FOLDER' + d.made + '_abcdef', name: n, trashed: false, files: [] };
+      f.getId = () => f.id; f.getUrl = () => 'https://drive.google.com/drive/folders/' + f.id; f.isTrashed = () => f.trashed;
+      f.getFiles = () => iter(f.files);
+      d.folders.push(f);
+      return f;
+    }
+  };
+  return d;
+}
+
+test('Backtest Lab PDFs in Google Drive: an upload address for the running run only, the link kept with the result, the newest 20 kept, a missing permission explained', () => {
+  let answer = { code: 200, headers: { Location: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=ABC123' } };
+  const env = load({ fetch: () => answer });
+  const drive = fakeDrive();
+  env.context.DriveApp = drive.api;
+  site(env, { op: 'lab', lab: { do: 'run', name: 'tablet run', params: { tf: 'D' } } });
+  const job = pc(env, { op: 'poll' }).job;
+  const NAME = '2026-11-15 101530 tablet run.pdf';
+  assert.equal(pc(env, { op: 'pdfup', id: 'Lother', name: NAME, size: 1000 }).error, 'not the current run');
+  assert.equal(pc(env, { op: 'pdfup', id: job.id, name: 'run.exe', size: 1000 }).error, 'not a charts PDF name');
+  assert.equal(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 0 }).error, 'no PDF size');
+  assert.match(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 900 * 1048576 }).error, /too big .*900 MB/);
+  let up = pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 26214400 });
+  assert.deepEqual(up, { ok: true, upload: answer.headers.Location, folder: 'https://drive.google.com/drive/folders/FOLDER1_abcdef' });
+  const req = env.fetches[env.fetches.length - 1];
+  assert.equal(req.url, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id');
+  assert.deepEqual(JSON.parse(req.params.payload), { name: NAME, parents: ['FOLDER1_abcdef'], mimeType: 'application/pdf' });
+  assert.equal(req.params.headers['X-Upload-Content-Length'], '26214400');
+  assert.deepEqual([drive.made, drive.folders[0].name], [1, 'Stock Blueprint - Backtest PDFs']);
+  pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 1000 });
+  assert.equal(drive.made, 1, 'the same folder again');
+  drive.folders[0].trashed = true;
+  pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 1000 });
+  assert.equal(drive.made, 2, 'a folder put in the trash -> a new one');
+  // Drive refuses / the permission was never given: the reason says what to do once
+  answer = { code: 403, text: 'Request had insufficient authentication scopes.' };
+  assert.match(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 1000 }).error, /not allowed yet .*runLabDriveSetup.*Allow/);
+  answer = { code: 200, headers: { Location: 'https://evil.example/x' } };
+  assert.match(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 1000 }).error, /^Google Drive: HTTP 200/);
+  env.context.DriveApp = { getFolderById: () => { throw new Error('You do not have permission to call DriveApp.getFolderById. Required permissions: https://www.googleapis.com/auth/drive'); },
+                           getFoldersByName: () => { throw new Error('You do not have permission to call DriveApp.getFoldersByName.'); } };
+  assert.match(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 1000 }).error, /runLabDriveSetup/);
+  env.context.DriveApp = drive.api;
+  // the result: the link is made here from the file id (whatever url came with it); the folder keeps the newest 20 PDFs
+  const folder = drive.folders[1];
+  for (let k = 0; k < 23; k++) folder.files.push(drive.file('run ' + k + '.pdf', T0 - (23 - k) * 60000));
+  folder.files.push(drive.file('notes.txt', T0 - 99 * 60000));
+  const res = Object.assign({}, RESULT, { pdf: { file: NAME, pages: 9, trades: 4, shown: 4, drive: { id: 'FILE_abc_xyz12', url: 'javascript:alert(1)' } } });
+  assert.deepEqual(pc(env, { op: 'result', id: job.id, result: res }), { ok: true, stored: true });
+  const item = site(env, { op: 'lab', lab: { do: 'result', id: job.id } }).item;
+  assert.deepEqual(item.result.pdf.drive, { id: 'FILE_abc_xyz12', url: 'https://drive.google.com/file/d/FILE_abc_xyz12/view' });
+  assert.deepEqual(folder.files.filter((f) => f.trashed).map((f) => f.getName()), ['run 0.pdf', 'run 1.pdf', 'run 2.pdf'], 'the 3 oldest PDFs to the Drive trash');
+  // a failed copy keeps its reason; a strange id is not a link
+  site(env, { op: 'lab', lab: { do: 'run', name: 'b', params: {} } });
+  const j2 = pc(env, { op: 'poll' }).job;
+  pc(env, { op: 'result', id: j2.id, result: Object.assign({}, RESULT, { pdf: { file: NAME, drive: { id: '../../x', error: '' } } }) });
+  assert.deepEqual(site(env, { op: 'lab', lab: { do: 'result', id: j2.id } }).item.result.pdf.drive, { error: 'not copied' });
+  // menu / editor: connect once
+  assert.equal(env.call('runLabDriveSetup'), 'https://drive.google.com/drive/folders/FOLDER2_abcdef');
+});

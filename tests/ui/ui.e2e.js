@@ -1571,7 +1571,8 @@ function check(name, fn) {
                  skipReasons: { full: 0, cap: 1, risk: 0, blown: 0 }, capped: 0 },
       years: [{ year: 2010, trades: 1, winPct: 0, avgR: -1, totalR: -1, pnl: -10000, taken: 1 }, { year: 2026, trades: 2, winPct: 100, avgR: 2.3, totalR: 4.6, pnl: 46000, taken: 2 }],
       hist: [{ label: '-1R to 0', n: 1 }, { label: '1R to 2R', n: 1 }, { label: '3R to 5R', n: 1 }],
-      tradeCols: cols, tradesTotal: 4, secs: 1.2, pdf: { file: '2026-11-12 091500 Zone stop 1%.pdf', folder: 'lab_charts', path: 'D:\\StockBlueprintData\\lab_charts', pages: 5, trades: 4, shown: 4 },
+      tradeCols: cols, tradesTotal: 4, secs: 1.2, pdf: { file: '2026-11-12 091500 Zone stop 1%.pdf', folder: 'lab_charts', path: 'D:\\StockBlueprintData\\lab_charts', pages: 5, trades: 4, shown: 4,
+        drive: { id: '1AbCdEfGhIjKlMnOp_q-r', url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp_q-r/view' } },
       trades: [['ABC', '2026-10-30', 'Gap-up zone touch inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1, 'support 10 EMA · above 21', '', '', '', 'disc',
         'CHoCH 240.00 on 2026-10-10 (3 lower highs / lows, final low 220.00 on 2026-10-01) · move high 251.00 · zone middle 62% down the move (50% line 235.50)', 250, '40 shares, Rs 9,284 invested, Rs 148 at risk.'],
                ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, 'below', 'CHoCH 110.00 on 2026-08-20 (4 lower highs / lows, final low 92.00)', 115.5, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.'],
@@ -1604,6 +1605,10 @@ function check(name, fn) {
     assert.match(view, /9 not first touches \(the zone-top order fills on those only\)/);
     // the charts PDF the laptop made with the run (owner, 12-Nov-2026: a chart page per trade, the losing ones first)
     assert.match(view, /Charts PDF on your laptop - two pages for every trade \(the chart with HH \/ HL \/ LH \/ LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended\) - the losing ones first: D:\\StockBlueprintData\\lab_charts\\2026-11-12 091500 Zone stop 1%\.pdf - 5 pages.*File Explorer → D:\\StockBlueprintData\\lab_charts \(the newest 20/);
+    // ... and its copy in Google Drive (owner, 15-Nov-2026: "pdf um tablet or phone la ye pakanumna"): one button that opens it
+    assert.deepStrictEqual(await own.p.$eval('#lab-pdf-drive', (a) => [a.getAttribute('href'), a.getAttribute('target'), a.textContent]),
+      ['https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp_q-r/view', '_blank', '📄 Open the charts PDF']);
+    assert.match(view, /from your Google Drive \(folder "Stock Blueprint - Backtest PDFs"\) - on this phone, tablet or computer/);
     // the discount setup's badge + its words, and a TradingView button per trade (owner, 11-Nov-2026: "i open trading view chart and i go to that trade date")
     assert.match(await own.p.$eval('#lab-trades tbody tr:first-child', (x) => x.innerText), /Discount, 1st pullback/);
     assert.match(await own.p.$eval('#lab-trades tbody tr:first-child .lab-acct', (x) => x.getAttribute('data-tip')), /move high 251\.00 · zone middle 62% down the move \(50% line 235\.50\)/);
