@@ -1425,6 +1425,22 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="discount"]', (e) => e.value), '0.5');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="entry"]', (e) => e.value), 'zone', 'an order at the zone top');
     assert.ok(await own.p.$('.lab-rec.on #lab-smc'), 'the setup card shows In use');
+    // the owner's rules of 16-Nov-2026: a gap-down open into the zone (the near stop) and no straight fall from the move high
+    assert.match(await plainText(), /on the way down from the move high price made a lower high \(a swing high with 2 lower candles each side\) before the signal - no straight fall into the zone/);
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapAtr"]', (e) => e.value), '0.5', 'a gap-down open: half an ATR');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapBelow"]', (e) => e.value), '2', '... an open at most 2% under the zone');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="hhMax"]', (e) => e.value), '0', 'the move high\'s distance: off');
+    assert.match(await plainText(), /When the touch candle opens inside the zone or at most 2% under its bottom \(a gap down\), it is bought at that open and the stop goes 0\.5 x ATR under it - or just under the final low when that is nearer; a deeper open is skipped\./);
+    await own.p.selectOption('#lab-form select[data-k="hhMax"]', '30');
+    await own.p.waitForFunction(() => /the move high \(HH\) at most 30% above the zone top/.test(document.querySelector('#lab-plain').textContent));
+    await guideShot(own.p, '06b-entry', 'details.lab-sec[data-sec="entry"]');
+    await own.p.selectOption('#lab-form select[data-k="gapAtr"]', '0');
+    await own.p.waitForFunction(() => !document.querySelector('#lab-form select[data-k="gapBelow"]'));
+    assert.match(await plainText(), /A candle that opens under the zone top is bought at its open with the usual stop \(an open under that stop is skipped\)\./);
+    await own.p.selectOption('#lab-form select[data-k="gapAtr"]', '0.5');
+    await own.p.waitForSelector('#lab-form select[data-k="gapBelow"]');
+    await own.p.selectOption('#lab-form select[data-k="hhMax"]', '0');
+    await own.p.waitForFunction(() => !/at most 30% above the zone top/.test(document.querySelector('#lab-plain').textContent));
     // BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this ... continuous BOS in uptrend. or BOS formed after Choch"):
     // the same setup on the BOS move in one click, its kinds, and the lower-timeframe confirmation
     await own.p.click('#lab-bos');
@@ -1553,7 +1569,8 @@ function check(name, fn) {
     const missing = (await own.p.evaluate(() => Object.keys(window.SB.lab.DEF))).filter((k) => !(k in got.job.params));
     assert.deepStrictEqual(missing, ['name', 'from', 'to', 'valFrom'], 'every rule reaches the laptop (empty dates left out)');
     assert.ok(got.job.params.swingMode === 'fractal' && got.job.params.rollYears === 3 && got.job.params.atrK === 3);
-    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct'];
+    const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
+      'stopBy', 'fill', 'gapo', 'hh'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
                avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1, avgRLo: -0.4, avgRHi: 2.8, edge: 'few' },
@@ -1582,7 +1599,7 @@ function check(name, fn) {
         byHow: { close: { n: 9, trades: 9, winPct: 55.6, avgR: 1.1, totalR: 9.9, pf: 2.4, avgRLo: 0.1, avgRHi: 2.1, edge: 'few' },
                  fvg: { n: 8, trades: 8, winPct: 50, avgR: 0.7, totalR: 5.6, pf: 1.9, avgRLo: -0.4, avgRHi: 1.8, edge: 'few' },
                  half: { n: 4, trades: 4, winPct: 50, avgR: 0.6, totalR: 2.4, pf: 1.7, avgRLo: -0.9, avgRHi: 2.1, edge: 'few' } } },
-      open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9, h4spring: 7, m15no: 3 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10 },
+      open: 1, skipped: { risk: 2, ema: 37, mkt: 12, shape: 140, struct: 300, noswing: 5, zoneentry: 9, gapdeep: 4, h4spring: 7, m15no: 3 }, shapeWhy: { upwick: 90, lowick: 40, doji: 10 }, structWhy: { nochoch: 200, bos: 70, above: 20, premium: 10, straight: 5 },
       stages: [{ stage: 'below', name: 'Below the CHoCH level, first pullback (your setup)', trades: 3, open: 1, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, hitPct: 66.7, avgMaxR: 2.6 }],
       reasons: { stop: 1, trail: 2, open: 1 }, indexNames: ['NIFTY_50', 'NIFTY_IT', 'NIFTY_BANK'],
       account: { capital: 1000000, final: 1036000, pnl: 36000, returnPct: 3.6, cagr: 0.21, maxDD: 1, taken: 3, skipped: 1, openNow: 1, openPnl: 500, years: 16.8,
@@ -1593,11 +1610,12 @@ function check(name, fn) {
       tradeCols: cols, tradesTotal: 4, secs: 1.2, pdf: { file: '2026-11-12 091500 Zone stop 1%.pdf', folder: 'lab_charts', path: 'D:\\StockBlueprintData\\lab_charts', pages: 5, trades: 4, shown: 4,
         drive: { id: '1AbCdEfGhIjKlMnOp_q-r', url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp_q-r/view' } },
       trades: [['ABC', '2026-10-30', 'Gap-up zone touch inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1, 'support 10 EMA · above 21', '', '', '', 'disc',
-        'CHoCH 240.00 on 2026-10-10 (3 lower highs / lows, final low 220.00 on 2026-10-01) · move high 251.00 · zone middle 62% down the move (50% line 235.50)', 250, '40 shares, Rs 9,284 invested, Rs 148 at risk.'],
-               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, 'below', 'CHoCH 110.00 on 2026-08-20 (4 lower highs / lows, final low 92.00)', 115.5, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.'],
-               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', 4.8, 62.5, 0.6, 'below', 'CHoCH 55.00 on 2026-02-20 (3 lower highs / lows, final low 45.00)', 53, '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.'],
+        'CHoCH 240.00 on 2026-10-10 (3 lower highs / lows, final low 220.00 on 2026-10-01) · move high 251.00 · zone middle 62% down the move (50% line 235.50)', 250, '40 shares, Rs 9,284 invested, Rs 148 at risk.',
+        'gapatr', 'in', 2.1, 8.2],
+               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, 'below', 'CHoCH 110.00 on 2026-08-20 (4 lower highs / lows, final low 92.00)', 115.5, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.', 'gapfinal', 'under', -1.3, 21.5],
+               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', 4.8, 62.5, 0.6, 'below', 'CHoCH 55.00 on 2026-02-20 (3 lower highs / lows, final low 45.00)', 53, '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.', '', 'wick', null, 12.0],
                ['LMN', '2010-01-04', 'FVG', 'top', 1, 30435, 28825, 5, 31290, '2010-01-12', 'trail', 0.5, 2.6, 8, 0.9, 0, 0, 0, 'support 10 EMA · above 21', 9.1, 55, 3.4, 'below', 'CHoCH 32000.00 on 2009-12-20 (3 lower highs / lows, final low 28000.00)', 31290,
-                'Not taken: one share costs Rs 30,435, more than your position limit of Rs 15,000 (5% of the account, Money: "One position at most").']] };
+                'Not taken: one share costs Rs 30,435, more than your position limit of Rs 15,000 (5% of the account, Money: "One position at most").', '', 'wick', null, 30.4]] };
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
     // the page sees it done (it asks every 4 s) and opens it
     await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
@@ -1620,8 +1638,13 @@ function check(name, fn) {
     assert.match(view, /Only Springs where the Spring candle has an upper wick of at most 5% of its range, a lower wick of at least 60% of its range\./);
     for (const h of ['Upper wick %', 'Lower wick %', 'Dip %', 'Structure', 'Target']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
     assert.match(view, /300 left out by your market-structure rules · 5 without a swing high above \(target\)/);
-    assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 20 its zone is not below the CHoCH level; 10 its zone was not in the discount part of the move \(above your Fib line\)\./);
-    assert.match(view, /9 not first touches \(the zone-top order fills on those only\)/);
+    assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 20 its zone is not below the CHoCH level; 10 its zone was not in the discount part of the move \(above your Fib line\); 5 price fell straight from the move high \(HH\) into the zone - no lower high on the way\./);
+    assert.match(view, /9 not first touches \(the zone-top order fills on those only\) · 4 opened too far under the zone \(gap down\)/);
+    // the gap-down open (16-Nov-2026): how the order filled, which stop, how high the move high was
+    for (const h of ['Order filled', 'Stop from', 'HH above zone %']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
+    const fillTxt = await own.p.$$eval('#lab-trades tbody tr', (r) => r.map((x) => x.innerText));
+    assert.ok(/Gap open: ATR/.test(fillTxt[0]) && /Opened in the zone \(\+2\.1%\)/.test(fillTxt[0]), fillTxt[0]);
+    assert.ok(fillTxt.some((t) => /Gap open: final low/.test(t) && /Opened 1\.3% under it/.test(t)) && fillTxt.some((t) => /Came down to it/.test(t)), fillTxt.join('\n'));
     assert.match(view, /7 whose 4-hour candles were not a Spring · 3 without a 15-minute CHoCH that day/, 'Daily FVG + 4H Spring skips (15-Nov-2026)');
     // the charts PDF the laptop made with the run (owner, 12-Nov-2026: a chart page per trade, the losing ones first)
     assert.match(view, /Charts PDF on your laptop - two pages for every trade \(the chart with HH \/ HL \/ LH \/ LL, CHoCH, BOS, zone, BUY; then why it was taken and how it ended\) - the losing ones first: D:\\StockBlueprintData\\lab_charts\\2026-11-12 091500 Zone stop 1%\.pdf - 5 pages.*File Explorer → D:\\StockBlueprintData\\lab_charts \(the newest 20/);

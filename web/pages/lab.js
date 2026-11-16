@@ -79,6 +79,9 @@
     ltf: 'off', ltfPivot: 3, ltfDown: 2, ltfWait: 5, ltfUnder: 0.5, ltfEntry: 'close', ltfStop: 'ltf', ltfNear: 2,
     pdfDrive: false,
     h4Body: 0.5, h4Zones: 'both', m15Choch: 'show', m15Pivot: 3, m15Down: 2,
+    // a gap-down open into the zone (owner, 16-Nov-2026): bought at the open, stop gapAtr x ATR under it or under the final low when
+    // nearer; opens deeper than gapBelow % under the zone skipped; hhMax = the move high at most this % above the zone top (0 off)
+    gapBelow: 2, gapAtr: 0.5, hhMax: 0,
     // the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also")
     ltfChoch: 'last'
   };
@@ -101,12 +104,12 @@
   var SECTIONS = [
     ['structure', 'Market structure - CHoCH / BOS setups', ['structure', 'setup', 'bosKind', 'upN', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
       'lineOk', 'lineTol', 'zonePick', 'touchAgain', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep',
-      'moveVol', 'moveVolN']],
+      'moveVol', 'moveVolN', 'hhMax']],
     ['shape', 'Spring candle shape', null],
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
     ['zone', 'Zone rules - size, Gap-up zone inside, Fib + pattern, dark cloud', ['zoneMin', 'zoneMax', 'gapEntry', 'fibPat', 'fibLevel', 'fibTol', 'darkCloud']],
     ['ltf', 'Confirmation on a lower timeframe - a small CHoCH in the zone (15m / 1H / daily)', ['ltf', 'ltfPivot', 'ltfDown', 'ltfChoch', 'ltfWait', 'ltfUnder', 'ltfEntry', 'ltfNear', 'ltfStop']],
-    ['entry', 'Entry details', ['entry', 'maxRisk', 'whereIn', 'from', 'to', 'minPrice', 'minTurnover', 'maxTouch']],
+    ['entry', 'Entry details', ['entry', 'gapAtr', 'gapBelow', 'maxRisk', 'whereIn', 'from', 'to', 'minPrice', 'minTurnover', 'maxTouch']],
     ['exit', 'Exit details - part at the target, stop to entry, time stop', ['partialPct', 'beAt', 'timeN', 'timeR', 'breakeven', 'lockTarget', 'maxDays', 'cost']],
     ['money', 'Money details', ['maxPosPct', 'maxOpen', 'compound']],
     ['check', 'Checking the result - validation part, steady over time', ['valFrom', 'rollYears']]
@@ -189,6 +192,12 @@
     zoneWhen: [['both', 'In the CHoCH move or after it'], ['leg', 'Only in the CHoCH move'], ['after', 'Only after the CHoCH candle']],
     chochAge: [[0, 'Any time after it'], [10, 'Within 10 candles'], [20, 'Within 20 candles'], [40, 'Within 40 candles'], [60, 'Within 60 candles'], [120, 'Within 120 candles']],
     targetMode: [['R', 'R multiple (times the risk)'], ['pct', '% above the entry'], ['mh', 'The CHoCH / BOS move high (HH)'], ['swing', 'The last swing high']],
+    gapAtr: [[0, 'Off - the usual stop (an open under it is skipped)'], [0.3, '0.3 x ATR under the buy'], [0.5, 'Half an ATR under the buy (0.5 x)'],
+      [0.75, '0.75 x ATR under the buy'], [1, '1 x ATR under the buy']],
+    gapBelow: [[0, 'Only inside the zone'], [0.5, 'At most 0.5% under the zone bottom'], [1, 'At most 1% under the zone bottom'],
+      [2, 'At most 2% under the zone bottom'], [3, 'At most 3% under the zone bottom'], [5, 'At most 5% under the zone bottom']],
+    hhMax: [[0, 'Off - any height'], [15, 'At most 15% above the zone top'], [20, 'At most 20% above the zone top'], [25, 'At most 25% above the zone top'],
+      [30, 'At most 30% above the zone top'], [40, 'At most 40% above the zone top'], [50, 'At most 50% above the zone top']],
     stopAtr: [[0, 'Off - only the stop above'], [1, '1 x ATR'], [1.5, '1.5 x ATR'], [2, '2 x ATR'], [2.5, '2.5 x ATR'], [3, '3 x ATR'], [4, '4 x ATR']],
     targetPct: [[10, '10% above the entry'], [15, '15% above the entry'], [20, '20% above the entry'], [25, '25% above the entry'], [30, '30% above the entry'],
       [40, '40% above the entry'], [50, '50% above the entry'], [75, '75% above the entry'], [100, '100% above the entry']],
@@ -257,7 +266,8 @@
     'upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr', 'closeAbove',
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
     'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears',
-    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN', 'upN', 'ltfPivot', 'ltfDown', 'ltfWait', 'ltfUnder', 'ltfNear'];
+    'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN', 'upN', 'ltfPivot', 'ltfDown', 'ltfWait', 'ltfUnder', 'ltfNear',
+    'gapBelow', 'gapAtr', 'hhMax'];
   // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
   var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
     bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level',
@@ -273,7 +283,10 @@
     premfast: 'a premium zone (above your Fib line) with the signal 4 days or less after the CHoCH',
     deepclose: 'a candle closed under the middle of its zone before the move high',
     mitig: 'more than 2 candles touched its zone before the move high',
-    zone1mit: 'the 1st (watched) zone was touched before the move high' };
+    zone1mit: 'the 1st (watched) zone was touched before the move high',
+    // the owner's rules of 16-Nov-2026: the straight-fall rule (always on) + the move high's distance (an option)
+    hhfar: 'the move high (HH) was more than your % above the zone top',
+    straight: 'price fell straight from the move high (HH) into the zone - no lower high on the way' };
   var STAGE = { disc: ['Discount, 1st pullback', 's-good'], below: ['Below CHoCH, 1st pullback', 's-good'], prem: ['Premium (above the Fib line)', 's-warn'],
     above: ['At / above CHoCH level', 's-warn'], bos: ['After a BOS', 's-bad'], old: ['Zone older than the CHoCH low', 's-info'], none: ['No CHoCH', ''] };
   // a BOS + FVG run (13-Nov-2026): the same stages on the BOS move
@@ -398,6 +411,9 @@
     w.push('the zone not wholly above the CHoCH level and formed in the one swing from the final low to the move high');
     w.push('before the move high at most 2 candles touched the zone and none closed under its middle');
     w.push('no premium zone (above the Fib line) when the signal comes 4 days or less after the CHoCH');
+    // the owner's rules of 16-Nov-2026 (RENT, PSB): no straight fall from the move high; the move high's distance (an option)
+    w.push('on the way down from the move high price made a lower high (a swing high with 2 lower candles each side) before the signal - no straight fall into the zone');
+    if (Number(p.hhMax)) w.push('the move high (HH) at most ' + pc(p.hhMax) + '% above the zone top');
     if (p.group === 'touch') {
       w.push(p.touchAgain === false ? 'a zone price touched before the CHoCH does not count again' :
         'a zone price already touched before the CHoCH (while the rise was forming) counts again - its first touch after the CHoCH');
@@ -509,7 +525,7 @@
     var lw = ltfWords(p);
     if (lw) s.push(lw);
     s.push(p.entry === 'zone' ? 'Buy with an order waiting at the zone top - filled when price first comes down to it (at the open when it opened under the top); ' +
-      'only first-touch signals, the stop always under the zone.' : 'Buy ' + (p.entry === 'close' ? 'at the signal candle\'s close' : 'at the next candle\'s open') + '.');
+      'only first-touch signals, the stop always under the zone.' + gapWords(p) : 'Buy ' + (p.entry === 'close' ? 'at the signal candle\'s close' : 'at the next candle\'s open') + '.');
     var patRun = p.group === 'pattern';
     s.push('Stop loss ' + (p.stop === 'pct' ? F.num(p.stopPct, 2) + '% below the entry' :
       F.num(p.stopBuf, 2) + '% below ' + (patRun && (p.stop === 'zone' || p.stop === 'lower') ? 'the pattern\'s low (the lowest point of its candles)' :
@@ -676,6 +692,7 @@
         field('The zone at most', sel('discountMax', f.discountMax)) + field('Days after the CHoCH', sel('lagMin', f.lagMin)) +
         field('The CHoCH candle (displacement)', sel('dispAtr', f.dispAtr)) + field('… and its volume', sel('dispVol', f.dispVol)) +
         field('Volume in the CHoCH move', sel('moveVol', f.moveVol), 'wide') + (Number(f.moveVol) ? field('… how many', sel('moveVolN', f.moveVolN)) : '') +
+        field('The move high (HH) above the zone top', sel('hhMax', f.hhMax), 'wide') +
         '<div class="field lab-checks">' + check('sweep', f.sweep, 'The final low swept the low before it (wick under, closed back above)') + '</div></div>' : '') +
       '<p class="sub">A swing high = a candle whose high is above the candles on both sides (known only after those candles closed - the backtest never looks ahead). ' +
       'CHoCH = the first candle that CLOSES above the last swing high after the lower highs and lower lows; BOS = after it, the first close above the highest swing high since. ' +
@@ -685,6 +702,8 @@
       'BOS + FVG: the same rules on a BOS move - from the higher low before the break to the highest high since; the setup is over at a close under that higher low ' +
       'or at the next BOS. "The CHoCH" in the boxes above means the BOS then. Both ticked: every zone touch is checked as CHoCH + FVG first, then as BOS + FVG ' +
       '(one trade a candle) - the result splits them ("What worked best" → Setup). ' +
+      'Always with "Only my setup": on the way down from the move high price must make a lower high (a swing high with 2 lower candles each side) before ' +
+      'the signal - a straight fall into the zone is not traded. ' +
       'The daily scan\'s lists use the values set on your laptop with <b>ChochRules.bat</b>.</p>';
   }
 
@@ -769,14 +788,19 @@
   function entryHtml(f) {
     return '<div class="form-grid">' + field('Buy', sel('entry', f.entry), 'wide') +
       num('maxRisk', f.maxRisk, 'Skip if the risk is more than % (0 = never)', ' min="0" step="1"') +
-      (f.entry === 'zone' ? '' : field('How deep the signal candle went into the zone', sel('whereIn', f.whereIn), 'wide')) +
+      (f.entry === 'zone' ? field('Opened into the zone (gap down): stop', sel('gapAtr', f.gapAtr), 'wide') +
+        (Number(f.gapAtr) ? field('… the open at most', sel('gapBelow', f.gapBelow), 'wide') : '') :
+        field('How deep the signal candle went into the zone', sel('whereIn', f.whereIn), 'wide')) +
       field('Signals from (optional)', '<input class="inp" type="date" data-k="from" value="' + esc(f.from) + '">') +
       field('… to (optional)', '<input class="inp" type="date" data-k="to" value="' + esc(f.to) + '">') +
       num('minPrice', f.minPrice, 'Price at least ₹', ' min="0" step="1"') +
       num('minTurnover', f.minTurnover, 'Daily turnover at least ₹ lakh (20-day avg)', ' min="0" step="10"') +
       num('maxTouch', f.maxTouch, 'Zone touched at most (0 = any)', ' min="0" step="1"') + '</div>' +
       (f.entry === 'zone' ? '<p class="sub">The order at the zone top fills on a first-touch signal (Pattern "First touch of a zone" or "FVG First Touch"); ' +
-        'a Spring / Confirmed candle comes after the touch, so it is skipped. The stop goes under the zone; that candle can stop the trade out at once.</p>' : '');
+        'a Spring / Confirmed candle comes after the touch, so it is skipped. The stop goes under the zone; that candle can stop the trade out at once. ' +
+        'When the touch candle does not come down to the zone but OPENS inside it (or a little under its bottom - a gap down), the order fills at that open ' +
+        'and the stop is set near it: x ATR under the buy, or just under the final low when that is nearer (the smaller risk) - your "x ATR, whichever is lower" ' +
+        'rule is not used there. A deeper open is skipped.</p>' : '');
   }
 
   function exitHtml(f) {
@@ -1302,6 +1326,7 @@
         (sk.noswing ? ' · ' + F.int(sk.noswing) + ' without a swing high above (target)' : '') +
         (sk.nomh ? ' · ' + F.int(sk.nomh) + ' without a CHoCH move high far enough above (target)' : '') +
         (sk.zoneentry ? ' · ' + F.int(sk.zoneentry) + ' not first touches (the zone-top order fills on those only)' : '') +
+        (sk.gapdeep ? ' · ' + F.int(sk.gapdeep) + ' opened too far under the zone (gap down)' : '') +
         (sk.shape ? ' · ' + F.int(sk.shape) + ' Springs left out by your shape rules' : '') +
         (sk.ema ? ' · ' + F.int(sk.ema) + ' left out by your EMA rules' : '') +
         (sk.mkt ? ' · ' + F.int(sk.mkt) + ' left out by your market rule' : '') +
@@ -1457,8 +1482,11 @@
           title: 'The day on the 4-hour chart (hover / tap: the 09:15 red candle, the 13:15 dip, the day\'s body in ATR, the 15-minute CHoCH)' },
         { key: 'm15', label: '15m CHoCH', get: function (r) { return { yes: 'yes', no: 'no', nodata: 'no data' }[r.m15] || ''; },
           title: 'A 15-minute CHoCH on the Spring day (the extra confirmation): yes / no / no 15-minute candles that day' },
-        { key: 'stopBy', label: 'Stop from', get: function (r) { return r.stopBy === 'atr' ? 'ATR' : r.stopBy === 'rule' ? 'Your rule' : ''; },
-          title: 'Which stop was lower (and used): your stop rule or the ATR stop' },
+        { key: 'stopBy', label: 'Stop from', get: function (r) { return STOP_BY[r.stopBy] || ''; },
+          title: 'Which stop was used: your stop rule or the ATR stop (the lower one); a gap-down open into the zone: x ATR under the buy or the final low (the nearer one)' },
+        { key: 'fill', label: 'Order filled', get: function (r) { return fillWords(r); },
+          title: 'How the order at the zone top filled: price came down to the zone, or the candle opened inside / under it (a gap down - bought at the open)' },
+        { key: 'hh', label: 'HH above zone %', type: 'num', digits: 1, title: 'How far the move high (HH) was above the zone top' },
         { key: 'part', label: 'Sold at the target', get: function (r) { return r.part ? String(r.part).replace(/\bat /, 'at ₹') : ''; },
           title: 'The part sold at the target (the Exit column is the average of both parts)' },
         { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
@@ -1480,10 +1508,28 @@
         if (c.key === 'pat') return rows.some(function (r) { return r.pat; });
         if (c.key === 'stopBy' || c.key === 'part') return rows.some(function (r) { return r[c.key]; });   // with the ATR stop / a part sold (13-Nov-2026)
         if (c.key === 'h4' || c.key === 'm15') return rows.some(function (r) { return r[c.key]; });       // Daily FVG + 4H Spring (15-Nov-2026)
+        if (c.key === 'fill') return rows.some(function (r) { return r.fill; });                           // the zone-top order (16-Nov-2026)
+        if (c.key === 'hh') return rows.some(function (r) { return isNum(r.hh); });
         return true;
       })
     }).mount($('#lab-trades', box));
     bindResult(el, it);
+  }
+
+  // the stop the trade used (13-Nov-2026 ATR stop; 16-Nov-2026 a gap-down open into the zone)
+  var STOP_BY = { atr: 'ATR', rule: 'Your rule', gapatr: 'Gap open: ATR', gapfinal: 'Gap open: final low' };
+  /** How the zone-top order filled (16-Nov-2026): 'Came down to it' / 'Opened in the zone (+2.1%)' / 'Opened 1.3% under'. */
+  function fillWords(r) {
+    var g = isNum(r.gapo) ? Number(r.gapo) : null;
+    return r.fill === 'wick' ? 'Came down to it' : r.fill === 'in' ? 'Opened in the zone' + (g !== null ? ' (+' + F.num(g, 1) + '%)' : '') :
+      r.fill === 'under' ? 'Opened ' + (g !== null ? F.num(-g, 1) + '% ' : '') + 'under it' : '';
+  }
+  /** The gap-down open rule in words (16-Nov-2026) - with the zone-top order. */
+  function gapWords(p) {
+    if (!Number(p.gapAtr)) return ' A candle that opens under the zone top is bought at its open with the usual stop (an open under that stop is skipped).';
+    return ' When the touch candle opens inside the zone' + (Number(p.gapBelow) ? ' or at most ' + pc(p.gapBelow) + '% under its bottom' : '') +
+      ' (a gap down), it is bought at that open and the stop goes ' + pc(p.gapAtr) + ' x ATR under it - or just under the ' +
+      (p.setup === 'bos' && p.structure !== 'off' ? 'higher low' : 'final low') + ' when that is nearer; a deeper open is skipped.';
   }
 
   /** Daily FVG + 4H Spring: why the zones' first touches were left out (15-Nov-2026). */
