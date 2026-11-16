@@ -24,6 +24,9 @@ import os
 import re
 import secrets
 import shutil
+import ssl
+import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -68,8 +71,57 @@ class UpdateError(Exception):
     pass
 
 
+# owner's laptop, 16-Nov-2026: "Update: no connection ([SSL: CERTIFICATE_VERIFY_FAILED] ... unable to get local issuer
+# certificate)" - Python reads only the root certificates Windows already has; GitHub's was not there yet. Windows' own
+# downloader (PowerShell) checks certificates with Windows itself, which fetches a missing root by itself.
+PS_FALLBACK = lambda: os.name == 'nt'       # noqa: E731
+_RUN = subprocess.run
+_PS = {'on': False, 'said': False}
+
+
+def _cert_problem(e):
+    r = getattr(e, 'reason', e)
+    return isinstance(r, ssl.SSLCertVerificationError) or 'CERTIFICATE_VERIFY_FAILED' in str(r)
+
+
+def ps_get(url, timeout=120):
+    """A GET through Windows' own web stack (PowerShell Invoke-WebRequest, no window) -> (status, bytes)."""
+    fd, tmp = tempfile.mkstemp(prefix='sbupd', suffix='.bin')
+    os.close(fd)
+
+    def q(v):
+        return "'" + str(v).replace("'", "''") + "'"
+    script = ("$ProgressPreference='SilentlyContinue'; "
+              "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor "
+              "[Net.SecurityProtocolType]::Tls12; "
+              "try { Invoke-WebRequest -UseBasicParsing -Uri %s -UserAgent %s -OutFile %s -TimeoutSec %d; exit 0 } "
+              "catch { $c = 0; if ($_.Exception.Response) { $c = [int]$_.Exception.Response.StatusCode }; "
+              "if ($c -gt 0) { exit $c } else { [Console]::Error.WriteLine($_.Exception.Message); exit 1 } }"
+              % (q(url), q(UA), q(tmp), int(timeout)))
+    try:
+        r = _RUN(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+                 capture_output=True, text=True, timeout=timeout + 30, creationflags=0x08000000 if os.name == 'nt' else 0)
+        if r.returncode == 0:
+            with open(tmp, 'rb') as f:
+                return 200, f.read()
+        if 100 <= r.returncode < 600:
+            return r.returncode, b''
+        raise UpdateError('Windows could not reach GitHub either (%s)' % ((r.stderr or '').strip()[:200] or 'PowerShell failed'))
+    except (OSError, subprocess.SubprocessError) as e:
+        raise UpdateError('Windows could not reach GitHub either (%s)' % e)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
 def http(method, url, headers=None, body=None, timeout=60):
-    """-> (status, body bytes). Never raises for an HTTP answer; a network failure raises UpdateError."""
+    """-> (status, body bytes). Never raises for an HTTP answer; a network failure raises UpdateError. A GitHub download
+    Python cannot check the certificate of goes through Windows' own downloader (ps_get) - from then on in this program."""
+    gh = url.startswith((GH_API, GH_RAW))
+    if gh and method == 'GET' and _PS['on']:
+        return ps_get(url, max(timeout, 60))
     h = {'User-Agent': UA}
     h.update(headers or {})
     req = urllib.request.Request(url, data=body, method=method, headers=h)
@@ -82,7 +134,18 @@ def http(method, url, headers=None, body=None, timeout=60):
         except Exception:
             return e.code, b''
     except (urllib.error.URLError, OSError) as e:
-        raise UpdateError('no connection (%s)' % getattr(e, 'reason', e))
+        why = getattr(e, 'reason', e)
+        if _cert_problem(e):
+            if gh and method == 'GET' and PS_FALLBACK():
+                _PS['on'] = True
+                if not _PS['said']:
+                    _PS['said'] = True
+                    log('Update: Python could not check GitHub\'s security certificate - using Windows\' own downloader.')
+                return ps_get(url, max(timeout, 60))
+            raise UpdateError('this computer could not check the security certificate of %s (%s) - open %s once in '
+                              'Microsoft Edge, then double-click UpdateNow.bat' % (urllib.parse.urlparse(url).netloc, why,
+                                                                                  'https://github.com' if gh else url.split('?')[0]))
+        raise UpdateError('no connection (%s)' % why)
 
 
 def blob_sha(data):

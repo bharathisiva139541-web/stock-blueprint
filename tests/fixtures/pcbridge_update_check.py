@@ -328,5 +328,78 @@ assert up7.restart_due(now=evening) is False
 assert U.status_line(d3).startswith('Auto update: last checked ') and 'Google login yes' in U.status_line(d3)
 assert 'not checked yet' in U.status_line(d6) and 'missing (GoogleLogin.bat)' in U.status_line(d6)
 
+# ------------------------------------------------------------------ 8. GitHub's certificate unknown to Python (owner's laptop, 16-Nov-2026:
+# "[SSL: CERTIFICATE_VERIFY_FAILED] ... unable to get local issuer certificate"): Windows' own downloader takes over
+import ssl  # noqa: E402
+import subprocess  # noqa: E402
+import urllib.error  # noqa: E402
+real_open, real_fb, real_run = U.urllib.request.urlopen, U.PS_FALLBACK, U._RUN
+RUNS = []
+
+
+def bad_cert(req, timeout=None):
+    raise urllib.error.URLError(ssl.SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate'))
+
+
+def fake_ps(answer):
+    def run(cmd, **kw):
+        script = cmd[-1]
+        RUNS.append(script)
+        assert cmd[0] == 'powershell' and '-NonInteractive' in cmd and kw.get('capture_output')
+        assert 'Invoke-WebRequest -UseBasicParsing -Uri ' in script and '-UserAgent ' + "'" + U.UA + "'" in script
+        out = script.split('-OutFile ', 1)[1].split("'")[1]
+        code, data = answer
+        if code == 0:
+            with open(out, 'wb') as f:
+                f.write(data)
+        return subprocess.CompletedProcess(cmd, code, '', 'The remote name could not be resolved' if code == 1 else '')
+    return run
+
+
+try:
+    U.urllib.request.urlopen = bad_cert
+    U.PS_FALLBACK = lambda: True
+    U._PS.update(on=False, said=False)
+    U._RUN = fake_ps((0, b'{"sha": "%s"}' % SHA1.encode()))
+    LOGS.clear()
+    assert U.latest() == SHA1, 'the commit through PowerShell'
+    assert any("using Windows' own downloader" in m for m in LOGS) and len(RUNS) == 1
+    assert "'https://api.github.com/repos/%s/commits/main'" % U.REPO in RUNS[0]
+    assert U.http('GET', U.GH_RAW + "/x/y/it's.py")[0] == 200 and "it''s.py" in RUNS[-1], 'quotes doubled for PowerShell'
+    U._RUN = fake_ps((404, b''))
+    assert U.http('GET', U.GH_RAW + '/x/y/z') == (404, b''), 'an HTTP answer passes as its status'
+    U._RUN = fake_ps((1, b''))
+    try:
+        U.http('GET', U.GH_RAW + '/x/y/z')
+        raise AssertionError('PowerShell failed too')
+    except U.UpdateError as e:
+        assert 'Windows could not reach GitHub either (The remote name could not be resolved)' in str(e), e
+    # not Windows / not GitHub: a clear hint, never "no connection"
+    U._PS.update(on=False)
+    U.PS_FALLBACK = lambda: False
+    try:
+        U.http('GET', U.GH_API + '/repos/x')
+        raise AssertionError('no fallback here')
+    except U.UpdateError as e:
+        assert 'could not check the security certificate of api.github.com' in str(e) and 'https://github.com' in str(e), e
+    U.PS_FALLBACK = lambda: True
+    try:
+        U.http('POST', U.TOKEN_URL, body=b'x')
+        raise AssertionError('a POST never goes through PowerShell')
+    except U.UpdateError as e:
+        assert 'oauth2.googleapis.com' in str(e), e
+
+    def down(req, timeout=None):
+        raise urllib.error.URLError(OSError('timed out'))
+    U.urllib.request.urlopen = down
+    try:
+        U.http('GET', U.GH_API + '/repos/x')
+        raise AssertionError('offline')
+    except U.UpdateError as e:
+        assert str(e) == 'no connection (timed out)', e
+finally:
+    U.urllib.request.urlopen, U.PS_FALLBACK, U._RUN = real_open, real_fb, real_run
+    U._PS.update(on=False, said=False)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print('OK')
