@@ -124,6 +124,10 @@
       above10: true, emaSupport: 21, f: '=1+1' } } });
     assert.deepEqual(r.body, answer.lab);
     assert.deepEqual(calls[0].lab, { do: 'run', params: { tf: 'D', stopBuf: 0.5, breakeven: true, above10: true, emaSupport: 21 }, name: 'My idea' });
+    // "My daily scan" (16-Nov-2026): the setups + rules and the form they came from, both flat and cleaned
+    r = await call(h, { op: 'lab', pin: 'Blue2026', lab: { do: 'scan', name: 'SMC', rules: { pivotN: 10, scanH4: true, part: 'top', bad: { x: 1 } },
+      params: { tf: 'D', discount: 0.382, f: '=1+1' } } });
+    assert.deepEqual(calls.pop().lab, { do: 'scan', rules: { pivotN: 10, scanH4: true, part: 'top' }, params: { tf: 'D', discount: 0.382 }, name: 'SMC' });
     r = await call(h, { op: 'push', pin: 'Blue2026', push: { do: 'add', sub: { endpoint: p.endpoint, keys: p.keys }, label: 'Android' } });
     assert.deepEqual(r.body, answer.push);
     assert.equal(calls[1].pushUrl, 'https://stock-blueprint.vercel.app/api/push');

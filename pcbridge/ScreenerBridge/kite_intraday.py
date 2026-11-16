@@ -1570,7 +1570,9 @@ CHOCH_PART = 'mid'
 CHOCH_WHEN = 'both'
 # the daily scan's CHoCH rules can be the owner's own (12-Nov-2026: "Build 2" - the same rules as his Backtest Lab / TradingView
 # settings, e.g. 10-candle swings, 4 lower highs / lows, 38.2 %): config.json, written by ChochRules.bat (command chochrules)
-CHOCH_CFG = (('pivotN', 'choch_swing_candles', 2, 20), ('downN', 'choch_lower_highs', 1, 8), ('fib', 'choch_fib', 0.2, 0.95))
+CHOCH_CFG = (('pivotN', 'choch_swing_candles', 2, 20), ('downN', 'choch_lower_highs', 1, 8), ('fib', 'choch_fib', 0.2, 0.95),
+             # Daily FVG + 4H Spring's 15-minute CHoCH (owner, 16-Nov-2026 - the Backtest Lab's m15Pivot / m15Down)
+             ('m15Pivot', 'scan_m15_pivot', 2, 6), ('m15Down', 'scan_m15_down', 1, 6))
 CHOCH_PARTS = ('mid', 'top', 'bottom')
 CHOCH_WHENS = ('both', 'leg', 'after')
 CHOCH_FIB_CHOICES = (0.382, 0.5, 0.618, 0.705, 0.786)
@@ -1587,14 +1589,27 @@ TURNOVER_DAYS = 30                 # 4H zones: the liquidity filter looks at the
 # fibPat / fibLevel / fibTol - backtest_lab.py DEFAULTS has the owner's words): (key, config name, default, low, high)
 CHOCH_MORE = (('zoneMin', 'choch_zone_min_pct', 0.0, 0.0, 50.0), ('zoneMax', 'choch_zone_max_pct', 0.0, 0.0, 100.0),
               ('lineTol', 'choch_line_tol_pct', 0.5, 0.0, 5.0), ('fibLevel', 'choch_pattern_fib', 0.618, 0.2, 0.95),
-              ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0))
+              ('fibTol', 'choch_pattern_tol_pct', 1.0, 0.0, 5.0), ('h4Body', 'scan_h4_body', 0.5, 0.0, 5.0))
 CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok', False), ('touchAgain', 'choch_touch_again', True),
-               ('bos', 'choch_bos', True))
+               ('bos', 'choch_bos', True),
+               # which setups the daily scan lists and on which charts (owner, 16-Nov-2026: "Backtest Lab la irukura ... elathaiume
+               # optionla vai. enakh ethu daily scan ku venumo atha nan choose panikiren") - the Lab page's "My daily scan" card
+               ('scanChoch', 'scan_choch', True), ('scanSpring', 'scan_fvg_spring', True), ('scanGapSpring', 'scan_gap_spring', True),
+               ('scanH4', 'scan_fvg_4h_spring', False), ('on4H', 'scan_on_4h', True), ('onD', 'scan_on_d', True), ('onW', 'scan_on_w', True))
 CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')),
                ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')), ('bosKind', 'choch_bos_kind', 'both', ('both', 'first', 'trend')),
                ('ltf', 'choch_ltf', '15m', ('15m', '1H', 'off')),
                # owner, 16-Nov-2026 (ASHOKA: his TradingView uses the protected high): which swing high the CHoCH breaks
-               ('chochMode', 'choch_mode', 'last', ('last', 'protected')))
+               ('chochMode', 'choch_mode', 'last', ('last', 'protected')),
+               ('h4Zones', 'scan_h4_zones', 'both', ('both', 'fvg', 'gap')), ('m15Choch', 'scan_m15_choch', 'show', ('show', 'only', 'off')))
+# the website's rules for the daily scan (owner, 16-Nov-2026: "Backtestlab laye entha strategy lam venum, ena rules lam venum nu
+# dailyscan ku angaiye setpanra mari venum"): the Lab page saves them in the sheet, the laptop keeps the newest here - they replace
+# config.json's choch_* / scan_* values (ChochRules.bat) while the file exists
+SCAN_PATH = os.path.join(HERE, 'scan_rules.json')
+H4_PATTERN = 'Daily FVG + 4H Spring'     # owner, 15-Nov-2026 (the Lab's group 'fvg4h'), in the daily scan from 16-Nov-2026
+SETUP_FLAGS = (('scanChoch', CHOCH_PATTERN, 'CHoCH + FVG'), ('bos', BOS_PATTERN, 'BOS + FVG'), ('scanSpring', 'Spring in FVG', 'FVG + Spring'),
+               ('scanGapSpring', GAP_SPRING, 'Gap-up FVG + Spring'))     # (tick, the pattern's rows, its name on the page)
+CHART_FLAGS = (('4H', 'on4H'), ('D', 'onD'), ('W', 'onW'))
 
 
 def choch_rules(cfg=None):
@@ -1604,7 +1619,8 @@ def choch_rules(cfg=None):
     each one outside its range left at the default -> {'pivotN', 'downN', 'fib', 'part', 'zoneWhen', 'zoneMin', 'zoneMax',
     'gapEntry', 'lineOk', 'lineTol', 'darkCloud', 'fibPat', 'fibLevel', 'fibTol'} (the Backtest Lab's names)."""
     cfg = cfg or {}
-    out = {'pivotN': CHOCH_PIVOT_N, 'downN': CHOCH_DOWN_N, 'fib': CHOCH_FIB, 'part': CHOCH_PART, 'zoneWhen': CHOCH_WHEN}
+    out = {'pivotN': CHOCH_PIVOT_N, 'downN': CHOCH_DOWN_N, 'fib': CHOCH_FIB, 'part': CHOCH_PART, 'zoneWhen': CHOCH_WHEN,
+           'm15Pivot': 3, 'm15Down': 2}
     for key, name, lo, hi in CHOCH_CFG:
         v = cfg.get(name)
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or not lo <= v <= hi:
@@ -1651,6 +1667,82 @@ def choch_rules_words(r):
     if r.get('chochMode') == 'protected':
         out += ', the CHoCH breaks the protected high (the swing high before the lowest low)'
     return out
+
+
+def setup_words(r):
+    """'CHoCH + FVG, BOS + FVG, FVG + Spring, Gap-up FVG + Spring on 4H, D, W[; Daily FVG + 4H Spring (...)]' - what the daily scan
+    lists (= Code2.gs ab_scanSetupsText_)."""
+    r = r or {}
+    names = [w for flag, _n, w in SETUP_FLAGS if r.get(flag, True)]
+    charts = [t for t, k in CHART_FLAGS if r.get(k, True)]
+    out = '%s on %s' % (', '.join(names), ', '.join(charts) or 'no chart') if names else ''
+    if r.get('scanH4'):
+        body = float(r.get('h4Body', 0.5) or 0)
+        out += ('; ' if out else '') + 'Daily FVG + 4H Spring (the red day\'s body %s, %s, 15-minute CHoCH %s)' % (
+            'at least %s x ATR' % _num_words(body) if body else 'any size',
+            {'fvg': 'FVG zones', 'gap': 'Gap-up zones'}.get(r.get('h4Zones'), 'FVG and Gap-up zones'),
+            {'only': 'required', 'off': 'not checked'}.get(r.get('m15Choch'), 'shown'))
+    return out or 'none of the setups'
+
+
+def setup_on(r, name, tf):
+    """Is this setup listed on this chart? (the Lab page's "My daily scan" ticks; charts other than 4H / D / W: the setup only)"""
+    r = r or {}
+    for flag, n, _w in SETUP_FLAGS:
+        if n == name and not r.get(flag, True):
+            return False
+    for t, k in CHART_FLAGS:
+        if t == tf:
+            return bool(r.get(k, True))
+    return True
+
+
+def _rule_names():
+    """{rule key: config.json name} of every daily-scan rule."""
+    out = {'part': 'choch_zone_part', 'zoneWhen': 'choch_zone_when'}
+    for row in CHOCH_CFG + CHOCH_MORE + CHOCH_BOOLS + CHOCH_PICKS:
+        out[row[0]] = row[1]
+    return out
+
+
+def scan_saved():
+    """The website's daily-scan rules kept on this laptop: {'at', 'rules'} or None."""
+    try:
+        with open(SCAN_PATH, 'r', encoding='utf-8') as f:
+            s = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return s if isinstance(s, dict) and isinstance(s.get('rules'), dict) and s.get('at') else None
+
+
+def save_scan(scan):
+    """Keeps the sheet's daily-scan rules ({'at', 'rules'}) when they are not the ones here already -> True when saved."""
+    if not isinstance(scan, dict) or not scan.get('at') or not isinstance(scan.get('rules'), dict):
+        return False
+    cur = scan_saved()
+    if cur and str(cur.get('at')) == str(scan['at']):
+        return False
+    try:
+        with open(SCAN_PATH + '.tmp', 'w', encoding='utf-8') as f:
+            json.dump({'at': scan['at'], 'rules': scan['rules']}, f, indent=1)
+        os.replace(SCAN_PATH + '.tmp', SCAN_PATH)
+    except OSError as e:
+        log('Daily scan: the website\'s rules could not be kept - %s' % e)
+        return False
+    r = daily_rules({})
+    log('Daily scan: new rules from the Backtest Lab page - %s; %s. The next scan uses them (the last %d sessions again).'
+        % (setup_words(r), choch_rules_words(r), FIRST_RUN_SESSIONS))
+    return True
+
+
+def daily_rules(cfg=None):
+    """The daily scan's rules: the Backtest Lab page's (scan_rules.json) when kept here, else config.json's (ChochRules.bat).
+    Each value is checked like config.json's (out of range = the default)."""
+    s = scan_saved()
+    if not s:
+        return choch_rules(cfg)
+    names = _rule_names()
+    return choch_rules({names[k]: v for k, v in s['rules'].items() if k in names})
 
 
 def choch_opts(r):
@@ -1716,11 +1808,21 @@ def fib_pattern_at(all_c, i, zones, rmq, fs, max_age, cfg, slot_ok, level, tol):
 
 
 def choch_setup(cfg, save_config, ask=input):
-    """ChochRules.bat: the daily scan's CHoCH + FVG rules -> config.json (Enter keeps a value)."""
+    """ChochRules.bat: the daily scan's CHoCH + FVG rules -> config.json (Enter keeps a value). While the Backtest Lab page's
+    "My daily scan" rules are kept here (16-Nov-2026) they are used instead - this only shows them."""
     r = choch_rules(cfg)
     print('=' * 64)
     print(' CHoCH + FVG rules of the daily Zerodha scan')
     print('=' * 64)
+    web = scan_saved()
+    if web:
+        w = daily_rules(cfg)
+        print('Your daily scan now takes its setups and rules from the website (Backtest Lab > "My daily scan", saved %s):' % web['at'])
+        print('  Setups: ' + setup_words(w) + '.')
+        print('  Rules: ' + choch_rules_words(w) + '.')
+        print('\nChange them there: open the website > Backtest Lab > set the rules in the form > "My daily scan" > Save.')
+        print('(Nothing to type here any more.)')
+        return 0
     print('Now: ' + choch_rules_words(r) + '.')
     print('Use the same values as in your Backtest Lab / TradingView settings. Press Enter to keep a value.\n')
 
@@ -2061,6 +2163,49 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
     return out
 
 
+def fvg4h_setups(store, all_c, touches, from_iso, upto, holidays, r):
+    """Daily FVG + 4H Spring on the daily candles all_c (the Backtest Lab's group 'fvg4h' - its own backtest_lab.h4_check /
+    m15_check): a zone's first touching day (zone_first_touches `touches`, the zone kinds of r['h4Zones']) after from_iso that is
+    red with a body of at least h4Body x ATR(14), closes above the zone bottom, and whose 09:15 + 13:15 four-hour candles are a
+    Spring; the 15-minute CHoCH that day (m15Pivot swings, m15Down lower highs / lows) is said in the note, or required with
+    m15Choch 'only' -> [(i, zone, note)] oldest first. The note has no prices (the site shows it)."""
+    idx = [i for i in sorted(touches) if all_c[i]['day'] > from_iso and all_c[i]['c'] < all_c[i]['o']]
+    if not idx:
+        return []
+    kinds = {'fvg': ('FVG',), 'gap': ('Gap-up',)}.get(r.get('h4Zones'), ('FVG', 'Gap-up'))
+    P = {'h4Body': float(r.get('h4Body', 0.5)), 'm15Down': int(r.get('m15Down', 2))}
+    m15 = r.get('m15Choch', 'show')
+    cs = backtest_lab.CandleArrays(all_c, False)
+    box, out = {}, []
+    for i in idx:
+        for z in touches[i]:
+            if z['kind'] not in kinds:
+                continue
+            if 'h4' not in box:
+                box['h4'] = backtest_lab.CandleArrays([c for c in timeframe_candles(store, '4H')
+                                                       if candle_complete(c, '4H', upto, holidays)], True)
+            why, h4 = backtest_lab.h4_check(cs, i, [i, None, z['bottom'], z['top']], P, box['h4'])
+            if why:
+                continue            # (h4close differs by zone - the next zone may still pass)
+            note = 'first day back in the zone: red, body %s x ATR · 4H: 09:15 red, 13:15 Spring (under its low, closed back above)' % (
+                _num_words(h4['body']))
+            if m15 != 'off':
+                if 'm15' not in box:
+                    lt = backtest_lab.CandleArrays(ltf_candles(store, '15m', upto.isoformat()), True)
+                    ev = backtest_lab.structure.choch_events(lt.h, lt.l, lt.c, int(r.get('m15Pivot', 3))) if lt.n > 20 else []
+                    box['m15'] = (lt, ev, [int(e[0]) for e in ev])
+                got, e = backtest_lab.m15_check(cs.day[i], box['m15'], P)
+                if m15 == 'only' and got != 'yes':
+                    break
+                lt = box['m15'][0]
+                note += (' · 15m CHoCH %02d:%02d (%d lower high%s / low%s)' % (lt.minute[int(e[0])] // 60, lt.minute[int(e[0])] % 60, int(e[5]),
+                                                                            '' if int(e[5]) == 1 else 's', '' if int(e[5]) == 1 else 's')
+                         if got == 'yes' else ' · no 15m CHoCH that day' if got == 'no' else ' · no 15-minute candles that day')
+            out.append((i, z, note))
+            break
+    return out
+
+
 CHOCH_WAIT_MAX = 6000             # rows of the sheet's "CHoCH Waiting" tab (nearest first)
 
 
@@ -2217,6 +2362,7 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
     30-day outcomes (the first run after an update took 20+ minutes on the owner's laptop)."""
     turn = backtest_lab.turnover_fn(store.get('day') or []) if lab is not None and backtest else None
     out = {'items': [], 'zones': [], 'mitigated': [], 'trades': [], 'springs': [], 'invalid': [], 'waiting': []}
+    rules = choch or choch_rules()          # the daily scan's rules + setups (the Lab page's "My daily scan", else ChochRules.bat)
     keep_from = (upto - timedelta(days=KEEP_DAYS)).isoformat()
     lt_boxes = {}                     # the smaller charts' candles + CHoCH events (the confirmation rows), made once a stock
     for tf in timeframes:
@@ -2241,7 +2387,9 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 sz = d['spring'].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
                 gs = d['gapspring'].get(i) if d and tf not in NO_FVG_SPRING_TFS else None
                 for z, name in ((sz, 'Spring in FVG'), (gs, GAP_SPRING)):
-                    if z and z['broken'] is None:   # a later candle closed below its low: no longer valid (owner, 08-Nov-2026)
+                    # a later candle closed below its low: no longer valid (owner, 08-Nov-2026); a setup / chart not ticked on the
+                    # Lab page's "My daily scan" card: not listed (16-Nov-2026)
+                    if z and z['broken'] is None and setup_on(rules, name, tf):
                         out['items'].append(dict(base, pattern=name, zone=zone_out(all_c, z)))
                 if not sz and not gs and tf not in fvg_only and is_spring_pair(all_c[i - 1], c, cfg):
                     out['items'].append(dict(base, pattern='Spring', zone=None))
@@ -2256,17 +2404,18 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
                 for i, sz in d[key].items():
                     if sz['broken'] is not None and all_c[i]['day'] >= keep_from and _slot_ok(slots, tf, all_c[i]):
                         out['invalid'].append({'tf': tf, 'candle': all_c[i]['t'], 'pattern': name})
-        if d and tf in CHOCH_TFS:
+        ch_on, bos_on = setup_on(rules, CHOCH_PATTERN, tf), setup_on(rules, BOS_PATTERN, tf)
+        h4_on = tf == 'D' and bool(rules.get('scanH4'))
+        if d and tf in CHOCH_TFS and (ch_on or bos_on or h4_on):
             # the owner's CHoCH + FVG setup (10-Nov-2026): new ones + the ones of the last KEEP_DAYS a later close under
             # the entry candle's low broke (they leave the sheet's list, like Spring in FVG)
             lo_iso = min(since_iso, (upto - timedelta(days=KEEP_DAYS + 1)).isoformat())
             zs_c = link_zones(spring_zones(all_c, fvg_gaps(all_c))) if len(all_c) >= 17 else []
             tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
-            rules = choch or choch_rules()          # the daily scan's CHoCH rules (config.json / ChochRules.bat)
             fhl = ([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c])
-            st_c = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], choch_opts(rules))
-            runs = [(CHOCH_PATTERN, 'choch', st_c, rules)]
-            if rules.get('bos', True):
+            st_c = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], choch_opts(rules)) if ch_on else None
+            runs = [(CHOCH_PATTERN, 'choch', st_c, rules)] if ch_on else []
+            if bos_on:
                 # BOS + FVG (13-Nov-2026): the same rules on the BOS move; the BOS structure picked its events already
                 st_b = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], choch_opts(rules),
                                                         {'kind': 'bos', 'bos': rules.get('bosKind', 'both'), 'downN': rules['downN'], 'upN': 1})
@@ -2288,9 +2437,19 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             if ltf and found:
                 out['items'].extend(ltf_live(store, tf, all_c, found, since_iso, upto.isoformat(), rules, ltf, lt_boxes))
             # ... and the ones still waiting for the pullback (owner, 12-Nov-2026: the sheet's "CHoCH Waiting" tab)
-            w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c, rules=rules)
+            w = choch_waiting(full_c, all_c, tf, st=st_c, zones=zs_c, touches=tch_c, rules=rules) if ch_on else None
             if w:
                 out['waiting'].append(w)
+            # Daily FVG + 4H Spring (owner, 15-Nov-2026 in the Lab; in the daily scan from 16-Nov-2026)
+            if h4_on and tch_c:
+                for i, z, note in fvg4h_setups(store, all_c, tch_c, lo_iso, upto, holidays, rules):
+                    c = all_c[i]
+                    broken = spring_broken(all_c, i)
+                    if broken is None and c['day'] > since_iso:
+                        out['items'].append({'tf': tf, 'candle': c['t'], 'session': c['day'], 'low': round(c['l'], 2), 'close': round(c['c'], 2),
+                                             'pattern': H4_PATTERN, 'zone': zone_out(all_c, z), 'note': note})
+                    elif broken is not None and c['day'] >= keep_from:
+                        out['invalid'].append({'tf': tf, 'candle': c['t'], 'pattern': H4_PATTERN})
         if d and tf in FVG_PATTERN_TFS:
             day = [c for c in daily_candles(store.get('day') or []) if c['day'] <= upto.isoformat()][-TURNOVER_DAYS:]
             t = avg_turnover(day)
@@ -2506,7 +2665,7 @@ def due(cfg, holidays, now=None, state=None):
     st = state if state is not None else state_load()
     upto = completed_session(now, holidays)
     if ((st.get('scanned') or '') >= upto.isoformat() and st.get('tfs') == chosen_tfs(cfg) and (st.get('slots') or {}) == chosen_slots(cfg)
-            and st.get('rules') == RULES_VERSION and _choch_state(st) == choch_rules(cfg)):
+            and st.get('rules') == RULES_VERSION and _choch_state(st) == daily_rules(cfg)):
         return False, upto
     if st.get('wait_login_until') and time.time() < float(st['wait_login_until']) and not session_valid(session_load()):
         return False, upto
@@ -2760,7 +2919,7 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         upto = completed_session(now, holidays)
         tfs = chosen_tfs(cfg)
         slots = chosen_slots(cfg, tfs)
-        rules = choch_rules(cfg)
+        rules = daily_rules(cfg)
         changed = bool(st.get('scanned')) and (st.get('tfs') != tfs or (st.get('slots') or {}) != slots or st.get('rules') != RULES_VERSION
                                                or _choch_state(st) != rules)
         if not force and not changed and (st.get('scanned') or '') >= upto.isoformat():
@@ -2796,11 +2955,14 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         st.pop('wait_login_until', None)
         st['tried'] = time.time()
         state_save(st)
-        ans = api(cfg, 'intraday', {'op': 'syms'}, tries=2, timeout=120)
+        ans = api(cfg, 'intraday', {'op': 'syms', 'scanAt': (scan_saved() or {}).get('at') or ''}, tries=2, timeout=120)
         if not ans.get('ok'):
             log('Kite: the sheet refused the symbol list - %s (did you paste the new Code.gs + Code2.gs and do the New '
                 'version deploy?)' % ans.get('error'))
             return None
+        if save_scan(ans.get('scan')):     # the Lab page's daily-scan rules changed since the Lab's last poll (16-Nov-2026)
+            rules = daily_rules(cfg)
+            changed = bool(st.get('scanned')) and (changed or _choch_state(st) != rules)
         syms = [str(s).strip().upper() for s in ans.get('syms') or [] if str(s).strip()]
         imap = instruments(cfg, sess, now.date().isoformat())
         since = (st.get('scanned') if not changed else None) or sessions_back(upto, FIRST_RUN_SESSIONS, holidays).isoformat()
@@ -2820,7 +2982,8 @@ def intraday_step(cfg, api, holidays=None, now=None, wait_s=LOGIN_WAIT_S, force=
         log('Kite: reading the candles of %d stocks up to %s (only new days after the first time) ...'
             % (len(syms), upto.isoformat()))
         if rules != choch_rules():
-            log('Kite: your CHoCH + FVG rules (ChochRules.bat) - ' + choch_rules_words(rules) + '.')
+            log('Kite: your daily scan (%s) - %s; %s.' % ('the Backtest Lab page' if scan_saved() else 'ChochRules.bat',
+                                                          setup_words(rules), choch_rules_words(rules)))
         lab_w = backtest_lab.CacheWriter(upto)       # the Backtest Lab's cache, from the same candles
         try:
             for k, sym in enumerate(syms):
@@ -2989,7 +3152,7 @@ def check(cfg, args, holidays=None, out=print, now=None):
                              for z in zs) or 'none'))
     if tf in CHOCH_TFS:
         full_c = [c for c in timeframe_candles(store, tf) if candle_complete(c, tf, upto, holidays)]
-        rules = choch_rules(cfg)
+        rules = daily_rules(cfg)
         w = choch_waiting(full_c, full_c[-SCAN_KEEP.get(tf, len(full_c)):], tf, rules=rules)
         out('CHoCH + FVG (%s): %s'
             % (choch_rules_words(rules),
@@ -3262,7 +3425,8 @@ def status_line(cfg):
                                    'not logged in today (the program asks when it needs to)',
                                    ('%s - %s stocks, %s pattern(s)' % (last.get('at'), last.get('stocks'), last.get('found')))
                                    if last else 'none yet')) + (
-        '; your CHoCH rules: ' + choch_rules_words(choch_rules(cfg)) if choch_rules(cfg) != choch_rules() else '') + (
+        '; your daily scan%s: %s; %s' % (' (from the Backtest Lab page)' if scan_saved() else '', setup_words(daily_rules(cfg)),
+                                          choch_rules_words(daily_rules(cfg))) if daily_rules(cfg) != choch_rules() else '') + (
         '; lower-timeframe history: ' + ltf_status() if ltf_on(cfg) else '') + (
         '; data folder: ' + os.path.dirname(DATA_DIR) if not os.path.normcase(os.path.dirname(DATA_DIR)) == os.path.normcase(HERE) else '')
 

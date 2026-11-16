@@ -323,3 +323,100 @@ test('Backtest Lab speed (owner, 16-Nov-2026: "takunu vara mari ... adikadi shee
   assert.equal(site(env, { op: 'lab', pin: 'wrong1', lab: { do: 'status' } }).error, 'wrong PIN');
   assert.ok(calls >= 0);
 });
+
+test('My daily scan (owner, 16-Nov-2026: "Backtestlab laye entha strategy lam venum, ena rules lam venum nu dailyscan ku angaiye setpanra mari venum"): the page saves the setups + rules, the laptop takes them with its poll / symbol list, the Intraday Patterns tab follows', () => {
+  const env = mock.loadCodeGs({ sheets: [{ name: 'Main', rows: [[], ['SYMBOL']] }, { name: 'PatternData', rows: [['h'], ['', '', '', 'PARAGMILK'], ['', '', '', 'ABC']] }] },
+    { now: T0, props: { AB_FEED_TOKEN: FEED, AB_BRIDGE_TOKEN: BRIDGE }, prompts: [PIN, PIN] });
+  env.call('runWatchlistPinSetup');
+  let st = site(env, { op: 'lab', lab: { do: 'status' } });
+  assert.equal(st.scan, null, 'nothing saved yet: the laptop keeps ChochRules.bat\'s');
+  assert.deepEqual(pc(env, { op: 'poll', scanAt: '' }), { ok: true, job: null, next: 10, v: 2 });
+  st = site(env, { op: 'lab', lab: { do: 'scan', name: ' My   SMC ', params: { tf: 'D', group: 'touch', pivotN: 10, discount: 0.382 },
+    rules: { pivotN: 10, downN: 4, fib: 0.382, part: 'top', zoneWhen: 'leg', chochMode: 'protected', scanChoch: true, bos: false, scanSpring: false,
+             scanGapSpring: true, scanH4: true, on4H: false, onD: true, onW: true, ltf: 'off', h4Body: 0.7, h4Zones: 'fvg', m15Choch: 'only',
+             m15Pivot: 99, junk: 'x' } } });
+  assert.ok(st.ok && st.scan, JSON.stringify(st));
+  assert.equal(st.scan.at, '2026-11-09 15:30:00');
+  assert.equal(st.scan.name, 'My SMC');
+  assert.equal(st.scan.took, null, 'the laptop has not taken them yet');
+  assert.equal(st.scan.setups, 'CHoCH + FVG, Gap-up FVG + Spring on D, W; Daily FVG + 4H Spring (the red day\'s body at least 0.7 x ATR, FVG zones, 15-minute CHoCH required)');
+  assert.equal(st.scan.rules, 'swings of 10 candles, at least 4 lower highs / lows, the zone\'s top at least 38.2% down the move, the zone formed only in the CHoCH move, ' +
+    'the 2nd discount zone when the move has two (the 1st only watched), the CHoCH breaks the protected high (the swing high before the lowest low)');
+  assert.deepEqual([st.scan.values.m15Pivot, st.scan.values.bos, st.scan.values.ltf, st.scan.values.junk], [3, false, 'off', undefined], 'checked: out of range = the default');
+  assert.deepEqual(st.scan.params, { tf: 'D', group: 'touch', pivotN: 10, discount: 0.382 }, 'the form they came from ("Put the daily scan\'s rules in the form")');
+  assert.equal(env.context.CacheService.getScriptCache().get('AB_LAB_WAKE'), 'scan', 'a waiting laptop poll answers at once');
+  // the laptop's poll: the rules while it does not have them; then it says it has them -> noted for the page
+  const p1 = pc(env, { op: 'poll', wait: 25, scanAt: '' });
+  assert.deepEqual([p1.job, p1.waited, p1.scan.at, p1.scan.rules.pivotN, p1.scan.rules.scanSpring, p1.scan.rules.junk], [null, true, '2026-11-09 15:30:00', 10, false, undefined]);
+  assert.equal(pc(env, { op: 'poll', scanAt: '2026-11-09 15:30:00' }).scan, undefined);
+  st = site(env, { op: 'lab', lab: { do: 'status' } });
+  assert.equal(st.scan.took, T0, 'your laptop has it');
+  // the daily scan's symbol list hands them over too (a laptop whose Lab worker is off)
+  const syms = plain(env.post({ token: BRIDGE, action: 'intraday', op: 'syms', scanAt: 'older' }));
+  assert.ok(syms.ok && syms.scan && syms.scan.rules.pivotN === 10);
+  assert.equal(plain(env.post({ token: BRIDGE, action: 'intraday', op: 'syms', scanAt: '2026-11-09 15:30:00' })).scan, undefined);
+  // a run still goes as before beside it
+  site(env, { op: 'lab', lab: { do: 'run', params: { tf: 'D' } } });
+  assert.ok(pc(env, { op: 'poll', scanAt: '2026-11-09 15:30:00' }).job);
+  // the Intraday Patterns tab: the setups switched off leave it, 'Daily FVG + 4H Spring' is kept with its note
+  const it = (sym, tf, pattern, candle, note) => ({ sym: sym, tf: tf, pattern: pattern, candle: candle, session: candle.slice(0, 10), low: 100, close: 101,
+                                                   zone: [99, 102, '2026-10-01', 'FVG', 'top', 1], note: note });
+  const rules = st.scan.values;
+  const r = plain(env.post({ token: BRIDGE, action: 'intraday', op: 'put', upto: '2026-11-06', since: '2026-10-23', first: true, tfs: ['4H', 'D', 'W', 'M'],
+    slots: { '4H': ['13:15'] }, choch: rules, items: [it('PARAGMILK', 'D', 'Daily FVG + 4H Spring', '2026-11-05', 'first day back in the zone: red, body 1.2 x ATR · 4H: 09:15 red, 13:15 Spring (under its low, closed back above) · 15m CHoCH 14:15 (2 lower highs / lows)'),
+      it('PARAGMILK', 'D', 'Spring in FVG', '2026-11-05'), it('ABC', '4H', 'CHoCH + FVG', '2026-11-05 13:15', 'Zone first touch'),
+      it('ABC', 'D', 'CHoCH + FVG', '2026-11-04', 'Zone first touch'), it('ABC', 'D', 'BOS + FVG', '2026-11-04', 'Zone first touch'), it('ABC', 'W', 'Spring', '2026-11-03')] }));
+  assert.equal(r.ok, true);
+  const tab = env.sheet('Intraday Patterns').rows;
+  assert.deepEqual(tab.slice(2).map((x) => [x[1], x[3], x[4]]), [['PARAGMILK', 'D', 'Daily FVG + 4H Spring'], ['ABC', 'D', 'CHoCH + FVG'], ['ABC', 'W', 'Spring']],
+    'FVG + Spring, BOS + FVG and the 4-hour chart are off');
+  assert.match(tab[2][13], /^FVG top \(touch 1\) · first day back in the zone: red, body 1\.2 x ATR · 4H: 09:15 red, 13:15 Spring \(under its low, closed back above\) · 15m CHoCH 14:15/);
+  assert.match(tab[0][0], /Your setups \(Backtest Lab > My daily scan\): CHoCH \+ FVG, Gap-up FVG \+ Spring on D, W; Daily FVG \+ 4H Spring \(/);
+  // a later close under its low: the row leaves the tab like the others
+  env.post({ token: BRIDGE, action: 'intraday', op: 'put', upto: '2026-11-07', since: '2026-11-06', tfs: ['4H', 'D', 'W', 'M'], slots: { '4H': ['13:15'] }, choch: rules,
+    items: [], first: true, invalid: [{ sym: 'PARAGMILK', tf: 'D', candle: '2026-11-05', pattern: 'Daily FVG + 4H Spring' }] });
+  assert.deepEqual(env.sheet('Intraday Patterns').rows.slice(2).map((x) => x[4]), ['CHoCH + FVG', 'Spring']);
+  // an older laptop (rules without the setups): everything stays as before
+  assert.equal(env.run('ab_scanSetupsText_(ab_scanRules_({ pivotN: 5 }))'), 'CHoCH + FVG, BOS + FVG, FVG + Spring, Gap-up FVG + Spring on 4H, D, W');
+  assert.equal(env.run('ab_scanOff_(ab_scanRules_({}), "Spring in FVG", "4H") || ab_scanOff_(ab_scanRules_({}), "BOS + FVG", "W")'), false);
+  assert.equal(env.run('ab_scanOff_(ab_scanRules_({}), "Daily FVG + 4H Spring", "D")'), true);
+  assert.equal(env.run('ab_scanSetupsText_(ab_scanRules_({ scanChoch: false, bos: false, scanSpring: false, scanGapSpring: false }))'), 'none of the setups');
+});
+
+test('My daily scan: the sheet\'s check of the rules + its words = the laptop\'s (kite_intraday.py choch_rules / setup_words / choch_rules_words) on random rules', () => {
+  const { spawnSync } = require('child_process');
+  const path = require('path');
+  const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import sys']).status === 0);
+  if (!py) return;
+  const env = load();
+  const rnd = (() => { let x = 160; return () => { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; }; })();
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const sets = [];
+  for (let k = 0; k < 60; k++) {
+    sets.push({ pivotN: pick([2, 3, 5, 8, 10, 25]), downN: pick([1, 3, 4, 9]), fib: pick([0.382, 0.5, 0.618, 0.786, 0.1]), part: pick(['mid', 'top', 'bottom', 'x']),
+      zoneWhen: pick(['both', 'leg', 'after']), zoneMin: pick([0, 2, 60]), zoneMax: pick([0, 8, 15]), lineOk: pick([true, false]), lineTol: pick([0, 1, 9]),
+      gapEntry: pick([true, false]), darkCloud: pick(['any', 'exclude', 'only']), fibPat: pick(['off', 'big', 'all']), fibLevel: pick([0.5, 0.618, 0.786]),
+      fibTol: pick([0.5, 1, 3]), zonePick: pick(['second', 'every']), touchAgain: pick([true, false]), chochMode: pick(['last', 'protected']),
+      bos: pick([true, false]), bosKind: pick(['both', 'first', 'trend']), ltf: pick(['15m', '1H', 'off']), scanChoch: pick([true, false]),
+      scanSpring: pick([true, false]), scanGapSpring: pick([true, false]), scanH4: pick([true, false]), on4H: pick([true, false]), onD: pick([true, false]),
+      onW: pick([true, false]), h4Body: pick([0, 0.3, 0.5, 1.5, 9]), h4Zones: pick(['both', 'fvg', 'gap']), m15Choch: pick(['show', 'only', 'off']),
+      m15Pivot: pick([2, 3, 4, 7]), m15Down: pick([1, 2, 3, 0]) });
+  }
+  const gs = JSON.parse(JSON.stringify(env.run('(function (sets) { return sets.map(function (r) { const x = ab_scanRules_(r); return [x, ab_scanSetupsText_(x), ab_chochRulesText_(x)]; }); })(' +
+    JSON.stringify(sets) + ')')));
+  const code = 'import json, sys\nsys.path.insert(0, sys.argv[1])\nimport kite_intraday as K\nsets = json.load(sys.stdin)\n' +
+    'out = []\nfor r in sets:\n    x = K.choch_rules({K._rule_names()[k]: v for k, v in r.items() if k in K._rule_names()})\n' +
+    '    out.append([x, K.setup_words(x), K.choch_rules_words(x)])\nprint(json.dumps(out))\n';
+  const res = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge')], { input: JSON.stringify(sets), encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  const pyOut = JSON.parse(res.stdout);
+  gs.forEach((g, k) => {
+    assert.deepEqual(Object.keys(g[0]).sort(), Object.keys(pyOut[k][0]).sort(), 'the same rules');
+    Object.keys(g[0]).forEach((key) => {
+      const a = g[0][key], b = pyOut[k][0][key];
+      assert.ok(typeof a === 'number' ? Math.abs(a - b) < 1e-9 : a === b, key + ': ' + a + ' vs ' + b + ' ' + JSON.stringify(sets[k]));
+    });
+    assert.equal(g[1], pyOut[k][1], JSON.stringify(sets[k]));
+    assert.equal(g[2], pyOut[k][2], JSON.stringify(sets[k]));
+  });
+});

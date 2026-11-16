@@ -34,7 +34,10 @@
   var BOS = 'BOS + FVG';
   var LTF_PATS = ['15m CHoCH in zone', '1H CHoCH in zone', 'D CHoCH in zone'];
   var SMC_PATS = [CHOCH, BOS].concat(LTF_PATS);
-  var ITD_PATTERNS = [CHOCH, BOS].concat(LTF_PATS, ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'FVG First Touch', 'FVG First Touch Confirmed', 'Twin Star Bottom + FVG']);
+  // 'Daily FVG + 4H Spring' (owner, 16-Nov-2026 - chosen on the Backtest Lab page's "My daily scan" card): the first daily candle back
+  // into an FVG / Gap-up zone is red and its two 4-hour candles are a Spring (FVG Detail = the 4H / 15-minute words)
+  var H4 = 'Daily FVG + 4H Spring';
+  var ITD_PATTERNS = [CHOCH, BOS].concat(LTF_PATS, [H4, 'Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'FVG First Touch', 'FVG First Touch Confirmed', 'Twin Star Bottom + FVG']);
   /** The setup chip a row belongs to: choch / bos / ltf. */
   function smcKind(p) { return p === CHOCH ? 'choch' : p === BOS ? 'bos' : LTF_PATS.indexOf(p) >= 0 ? 'ltf' : ''; }
   function tvUrl(sym, tf) { return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '&interval=' + (ITD_TV[tf] || 'D'); }
@@ -509,7 +512,7 @@
           title: 'Today\'s change % of the stock - the same as the Watchlist\'s Today column (Zerodha Kite live on your devices with the PIN, else the sheet\'s delayed price)',
           get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
-        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' || r.Pattern === 'Gap-up FVG + Spring' || SMC_PATS.indexOf(r.Pattern) >= 0 ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
+        { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' || r.Pattern === 'Gap-up FVG + Spring' || r.Pattern === H4 || SMC_PATS.indexOf(r.Pattern) >= 0 ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
         { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },
         { key: 'FVG Detail', label: 'Where', title: 'Spring in FVG: where its low sat - top (upper half) / middle / bottom (at or under the bottom line) of an FVG / Gap-up zone, with the touch number; the other FVG patterns: the zone kind' },
         { key: 'FVG Formed', label: 'Zone formed', title: 'When the zone formed (same timeframe)' },

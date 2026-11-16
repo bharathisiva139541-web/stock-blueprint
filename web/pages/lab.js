@@ -982,6 +982,206 @@
     return f;
   }
 
+  // ---------- My daily scan (owner, 16-Nov-2026: "Backtestlab laye entha strategy lam venum, ena rules lam venum nu dailyscan ku
+  // angaiye setpanra mari venum ... My CHoCH + FVG setup, My BOS + FVG setup, CHoCH + FVG and BOS + FVG together, FVG + Spring,
+  // Gap-up FVG + Spring, Daily FVG + 4H Spring elathaiume optionla vai. enakh ethu daily scan ku venumo atha nan choose panikiren.
+  // remember all of your updates should be userfriendly"): which setups the laptop's daily scan lists + the form's structure /
+  // zone / 4H rules -> the sheet (Code2.gs ab_scanRules_) -> the laptop (kite_intraday.py daily_rules; ChochRules.bat no longer needed)
+  var SCAN_SETUPS = [['scanChoch', 'My CHoCH + FVG setup'], ['bos', 'My BOS + FVG setup'], ['scanSpring', 'FVG + Spring'],
+    ['scanGapSpring', 'Gap-up FVG + Spring'], ['scanH4', 'Daily FVG + 4H Spring']];
+  var SCAN_CHARTS = [['on4H', '4 hour'], ['onD', 'Daily'], ['onW', 'Weekly']];
+  var SCAN_PICK = { scanChoch: true, bos: true, scanSpring: true, scanGapSpring: true, scanH4: false, on4H: true, onD: true, onW: true, ltf: '15m' };
+  // the form's rules the daily scan uses (= kite_intraday.py CHOCH_CFG / CHOCH_MORE / CHOCH_BOOLS / CHOCH_PICKS)
+  var SCAN_SAME = ['pivotN', 'downN', 'zoneWhen', 'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'gapEntry', 'lineOk', 'darkCloud', 'fibPat',
+    'zonePick', 'touchAgain', 'chochMode', 'bosKind', 'h4Body', 'h4Zones', 'm15Choch', 'm15Pivot', 'm15Down'];
+  // the form's rules it does NOT use (the Lab only) - said under the list when changed
+  var SCAN_UNUSED = [
+    ['the Spring candle shape', SHAPE_KEYS],
+    ['the fall into the zone', ['hhMax', 'fallLh', 'fallGreen', 'fallRedRun', 'fallBigRed', 'touchBig', 'fallBars', 'fallVol', 'fallTime']],
+    ['the EMA / weekly / market filters', ['emaSupport', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
+    ['the Lab\'s lower-timeframe confirmation', ['ltf']],
+    ['the extra structure rules (ZigZag / ATR swings, equal highs, sweep, CHoCH age / candle / volume, not too deep, days after the CHoCH, higher highs)',
+      ['swingMode', 'swingAtr', 'eqAtr', 'sweep', 'chochAge', 'dispAtr', 'dispVol', 'moveVol', 'discountMax', 'lagMin', 'upN']]];
+  function scanPick() {
+    var p = ui.store.get('lab:scanPick', null), out = {};
+    Object.keys(SCAN_PICK).forEach(function (k) { out[k] = p && typeof p[k] === typeof SCAN_PICK[k] ? p[k] : SCAN_PICK[k]; });
+    return out;
+  }
+  /** The daily scan's rules from the form + the ticks (the sheet / laptop check every value again). */
+  function scanRules(f, pick) {
+    var r = {};
+    SCAN_SAME.forEach(function (k) { r[k] = f[k]; });
+    r.part = f.discPart;
+    r.fib = Number(f.discount) || 0.5;            // the daily scan always judges the discount (the form's "off" = the 50% line)
+    Object.keys(SCAN_PICK).forEach(function (k) { r[k] = pick[k]; });
+    return r;
+  }
+  function scanList(f, pick) {
+    var w = [];
+    var any = pick.scanChoch || pick.bos;
+    if (any) {
+      w.push(['Swings', choiceLabel('pivotN', f.pivotN)]);
+      w.push(['Lower highs and lower lows before the CHoCH', choiceLabel('downN', f.downN)]);
+      w.push(['The CHoCH', choiceLabel('chochMode', f.chochMode)]);
+      w.push(['Discount', Number(f.discount) ? choiceLabel('discount', f.discount) + ' - ' + choiceLabel('discPart', f.discPart) :
+        'The 50% line, the zone\'s middle (the form has the discount off - the daily scan always checks it)']);
+      w.push(['The zone formed', choiceLabel('zoneWhen', f.zoneWhen)]);
+      w.push(['Two discount zones in the move', choiceLabel('zonePick', f.zonePick)]);
+      w.push(['A zone touched before the CHoCH', f.touchAgain === false ? 'Does not count again' : 'Counts again - its first touch after the CHoCH']);
+      if (f.lineOk) w.push(['A zone short of the discount line', 'Taken when its top is at / under the CHoCH level (' + choiceLabel('lineTol', f.lineTol).toLowerCase() + ')']);
+      if (Number(f.zoneMin) || Number(f.zoneMax)) w.push(['Zone size', [Number(f.zoneMin) ? choiceLabel('zoneMin', f.zoneMin) : '', Number(f.zoneMax) ? choiceLabel('zoneMax', f.zoneMax) : ''].filter(Boolean).join(', ')]);
+      w.push(['An FVG with a Gap-up zone inside', f.gapEntry === false ? 'The whole FVG' : 'The Gap-up zone (its top = the buy)']);
+      if (f.darkCloud !== 'any') w.push(['Dark-cloud FVGs', choiceLabel('darkCloud', f.darkCloud)]);
+      if (f.fibPat !== 'off') w.push(['A Spring / Harami + Inverted Hammer at the zone\'s Fib line', choiceLabel('fibPat', f.fibPat) + ' - ' + choiceLabel('fibLevel', f.fibLevel).toLowerCase() + ', ' + choiceLabel('fibTol', f.fibTol).toLowerCase()]);
+      if (pick.bos) w.push(['Which BOS', choiceLabel('bosKind', f.bosKind)]);
+      w.push(['After a daily touch, also list a CHoCH in the zone on', { '15m': 'the 15-minute chart', '1H': 'the 1-hour chart', off: 'nothing' }[pick.ltf] || pick.ltf]);
+    }
+    if (pick.scanSpring || pick.scanGapSpring) w.push(['FVG + Spring / Gap-up FVG + Spring', 'The sheet\'s Spring rule on the zone (4 hour: only the 13:15 candle)']);
+    if (pick.scanH4) {
+      var z = { both: 'an FVG or Gap-up zone', fvg: 'an FVG zone', gap: 'a Gap-up zone' }[f.h4Zones] || 'a zone';
+      w.push(['Daily FVG + 4H Spring', 'the first daily candle back into ' + z + ' is red' + (Number(f.h4Body) ? ' with a body of at least ' + pc(f.h4Body) + ' x ATR' : '') +
+        ', closes above the zone bottom, and its 09:15 + 13:15 four-hour candles are a Spring; ' + (f.m15Choch === 'off' ? 'no 15-minute check' :
+          'a 15-minute CHoCH that day (swings of ' + f.m15Pivot + ' candles, at least ' + f.m15Down + ' lower highs / lows) is ' + (f.m15Choch === 'only' ? 'required' : 'said on the row')) +
+        ' (these come from the form when its Pattern is Daily FVG + 4H Spring)']);
+    }
+    return w;
+  }
+  function scanUnused(f) {
+    var out = SCAN_UNUSED.filter(function (x) { return x[1].some(function (k) { return k !== 'fallPct' && String(f[k]) !== String(DEF[k]); }); }).map(function (x) { return x[0]; });
+    if (f.structure === 'only' && (f.firstPull === false || f.belowChoch === true)) out.push('"only the first pullback" off / "below the CHoCH level" (the daily scan: the first pullback, the discount line)');
+    return out;
+  }
+  function scanTime(ms) {
+    var d = new Date(ms);
+    return isNaN(d) ? '' : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+  function scanNowHtml() {
+    var sc = ST.status && ST.status.scan;
+    if (!ST.status) return '<p class="sub">Loading what your daily scan uses now…</p>';
+    if (!sc) {
+      return '<p class="note">Not set from this page yet - your laptop uses ChochRules.bat\'s rules (or the defaults) and lists CHoCH + FVG, BOS + FVG, ' +
+        'FVG + Spring and Gap-up FVG + Spring. Tick below and press <b>Use for my daily scan</b> once.</p>';
+    }
+    var mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var at = String(sc.at || '').replace(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}).*$/, function (_, y, m, d, t) { return d + ' ' + (mo[Number(m) - 1] || m) + ' ' + t; });
+    var took = sc.took ? '<span class="badge s-good" id="lab-scan-took">your laptop has it (' + esc(scanTime(sc.took)) + ')</span>' :
+      '<span class="badge s-warn" id="lab-scan-took">waiting for your laptop - it takes it within a minute while it is on</span>';
+    return '<div class="lab-scan-now" id="lab-scan-now-box"><div><b>Now in use</b> <span class="sub">saved ' + esc(at) + (sc.name ? ' from "' + esc(sc.name) + '"' : '') + '</span> ' + took + '</div>' +
+      '<p><b>Lists:</b> ' + esc(sc.setups || '') + '.</p><p class="sub"><b>CHoCH / BOS rules:</b> ' + esc(sc.rules || '') + '.</p></div>';
+  }
+  function scanRulesHtml(f, pick) {
+    var w = scanList(f, pick), un = scanUnused(f);
+    return (w.length ? '<ul class="lab-scan-list">' + w.map(function (x) { return '<li><b>' + esc(x[0]) + ':</b> ' + esc(x[1]) + '</li>'; }).join('') + '</ul>' :
+      '<p class="note">Tick at least one setup.</p>') +
+      (un.length ? '<p class="note" id="lab-scan-unused">Not used by the daily scan (the Backtest Lab only): ' + esc(un.join('; ')) + '.</p>' : '');
+  }
+  function scanHtml(f) {
+    var pick = scanPick();
+    var box = function (k, label) { return '<label class="lab-check"><input type="checkbox" data-scan="' + k + '"' + (pick[k] ? ' checked' : '') + '> ' + esc(label) + '</label>'; };
+    return '<section class="card lab-scan" id="lab-scan"><div class="card-head"><div><h2>📅 My daily scan</h2><p>Every evening after the market closes your laptop ' +
+      'checks every stock on its Kite candles and lists the setups you tick here on the <a href="#signals">Patterns &amp; FVG</a> page (the CHoCH / BOS ones also in Daily Suggestions). ' +
+      'It uses the rules of the form above: set them, test them with <b>Run on my laptop</b>, then save them here (no more ChochRules.bat).</p></div></div>' +
+      '<div id="lab-scan-now">' + scanNowHtml() + '</div>' +
+      '<div class="form-grid"><div class="field wide"><span>Setups to list - tick the ones you want</span><div class="lab-checks-row" id="lab-scan-setups">' +
+      SCAN_SETUPS.map(function (x) { return box(x[0], x[1]); }).join('') + '</div>' +
+      '<small class="sub" id="lab-scan-both">' + (pick.scanChoch && pick.bos ? '✓ CHoCH + FVG and BOS + FVG together' : 'Tick both CHoCH + FVG and BOS + FVG to have them together.') + '</small></div>' +
+      '<div class="field wide"><span>Charts - for the first four (Daily FVG + 4H Spring is always the daily chart)</span><div class="lab-checks-row" id="lab-scan-charts">' +
+      SCAN_CHARTS.map(function (x) { return box(x[0], x[1]); }).join('') + '</div></div>' +
+      field('After a daily CHoCH / BOS touch, also list a CHoCH in the zone on', '<select class="sel" data-scan="ltf">' +
+        [['15m', 'The 15-minute chart'], ['1H', 'The 1-hour chart'], ['off', 'Nothing (no confirmation list)']].map(function (o) {
+          return '<option value="' + o[0] + '"' + (pick.ltf === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+        }).join('') + '</select>', 'wide') + '</div>' +
+      '<details class="lab-rules" open><summary>The rules it will use (from the form above)</summary><div id="lab-scan-rules">' + scanRulesHtml(f, pick) + '</div></details>' +
+      '<div class="lab-actions"><button class="btn primary" type="button" id="lab-scan-save" title="Your laptop\'s daily scan uses these from its next scan">💾 Use for my daily scan</button>' +
+      '<button class="btn sm" type="button" id="lab-scan-load" title="The form gets the rules your daily scan uses now - then Run to backtest exactly them">Put the daily scan\'s rules in the form</button></div>' +
+      '<div id="lab-scan-msg"></div></section>';
+  }
+  function readScanPick(el) {
+    var pick = scanPick();
+    el.querySelectorAll('#lab-scan [data-scan]').forEach(function (x) { var k = x.getAttribute('data-scan'); pick[k] = x.type === 'checkbox' ? x.checked : String(x.value); });
+    return pick;
+  }
+  function paintScan(el, fromSheet) {
+    var now = $('#lab-scan-now', el);
+    if (now) now.innerHTML = scanNowHtml();
+    var sc = ST.status && ST.status.scan;
+    // the ticks follow what the sheet keeps, until you change one on this visit
+    if (fromSheet && sc && sc.values && !ST.scanTouched) {
+      el.querySelectorAll('#lab-scan [data-scan]').forEach(function (x) {
+        var k = x.getAttribute('data-scan'), v = sc.values[k];
+        if (v === undefined) return;
+        if (x.type === 'checkbox') x.checked = !!v; else x.value = String(v);
+      });
+    }
+    var pick = readScanPick(el);
+    var r = $('#lab-scan-rules', el);
+    if (r) r.innerHTML = scanRulesHtml(readForm(el), pick);
+    var both = $('#lab-scan-both', el);
+    if (both) both.textContent = pick.scanChoch && pick.bos ? '✓ CHoCH + FVG and BOS + FVG together' : 'Tick both CHoCH + FVG and BOS + FVG to have them together.';
+  }
+  /** After a save: the status asked again every 10 s (3 minutes at most) until the laptop has the rules. */
+  function waitTook(el, gen, n) {
+    var sc = ST.status && ST.status.scan;
+    if (gen !== ST.gen || !document.body.contains(el) || n >= 18 || (sc && sc.took)) return;
+    setTimeout(function () {
+      if (gen !== ST.gen) return;
+      ask({ lab: { do: 'status' } }).then(function (j) {
+        if (gen !== ST.gen) return;
+        ST.status = j;
+        paintStatus(el);
+        paintScan(el);
+        waitTook(el, gen, n + 1);
+      }, function () { waitTook(el, gen, n + 1); });
+    }, 10000);
+  }
+  function bindScan(el) {
+    var card = $('#lab-scan', el);
+    if (!card) return;
+    card.addEventListener('change', function (e) {
+      if (!e.target.closest('[data-scan]')) return;
+      ST.scanTouched = true;
+      ui.store.set('lab:scanPick', readScanPick(el));
+      paintScan(el);
+    });
+    var fm = $('#lab-form', el);
+    if (fm) fm.addEventListener('change', function () { paintScan(el); });
+    $('#lab-scan-save', el).addEventListener('click', function () {
+      var f = readForm(el), pick = readScanPick(el), msg = $('#lab-scan-msg', el);
+      if (!SCAN_SETUPS.some(function (x) { return pick[x[0]]; })) { msg.innerHTML = '<p class="note bad">Tick at least one setup.</p>'; return; }
+      if ((pick.scanChoch || pick.bos || pick.scanSpring || pick.scanGapSpring) && !(pick.on4H || pick.onD || pick.onW)) {
+        msg.innerHTML = '<p class="note bad">Tick at least one chart (4 hour, daily or weekly).</p>';
+        return;
+      }
+      saveForm(f);
+      var params = {};
+      Object.keys(DEF).forEach(function (k) { if (k !== 'name' && f[k] !== '') params[k] = f[k]; });
+      var b = this;
+      b.disabled = true;
+      msg.innerHTML = '<p class="sub">Saving…</p>';
+      ask({ lab: { do: 'scan', name: f.name, rules: scanRules(f, pick), params: params } }).then(function (j) {
+        b.disabled = false;
+        ST.status = j; ST.scanTouched = false;
+        paintStatus(el);
+        paintScan(el, true);
+        msg.innerHTML = '<p class="note good" id="lab-scan-saved">Saved. Your laptop takes these within a minute while it is on; its next daily scan ' +
+          '(soon, if today\'s is done - it looks at the last 10 sessions again) lists with them.</p>';
+        waitTook(el, ST.gen, 0);
+      }, function (e) {
+        b.disabled = false;
+        msg.innerHTML = '<p class="note bad">' + esc(e && e.message || 'could not save') + '</p>';
+      });
+    });
+    $('#lab-scan-load', el).addEventListener('click', function () {
+      var sc = ST.status && ST.status.scan;
+      if (!sc || !sc.params || !Object.keys(sc.params).length) { $('#lab-scan-msg', el).innerHTML = '<p class="note">Nothing saved for the daily scan yet.</p>'; return; }
+      if (!window.confirm('Put the rules your daily scan uses into the form? (the form\'s other settings stay)')) return;
+      var f = form();
+      Object.keys(sc.params).forEach(function (k) { if (DEF[k] !== undefined && typeof sc.params[k] === typeof DEF[k]) f[k] = sc.params[k]; });
+      saveForm(f);
+      SB.route(true);
+    });
+  }
+
   // ---------- talking to the sheet (the laptop answers through it)
   function ask(body) {
     return SB.wlSync.owner(Object.assign({ op: 'lab' }, body), function (j) { return j.result === 'lab'; });
@@ -1002,6 +1202,8 @@
       ST.err = '';
       ST.fails = 0;
       paintStatus(el);
+      var nw = $('#lab-scan-now', el);
+      if (nw) nw.innerHTML = scanNowHtml();
       paintRuns(el);
       notePdf(el);
       if (now && (now.status === 'waiting' || now.status === 'running')) ST.timer = setTimeout(function () { poll(el, gen); }, POLL_MS);
@@ -1943,10 +2145,11 @@
         return;
       }
       var f = form();
-      el.innerHTML = head + '<div id="lab-status" class="lab-status"></div>' + formHtml(f) + libHtml() +
+      el.innerHTML = head + '<div id="lab-status" class="lab-status"></div>' + formHtml(f) + scanHtml(f) + libHtml() +
         '<section class="card"><div class="card-head"><div><h2>Your runs</h2><p>The newest 8 are kept in your sheet (tab Backtest_Lab). Open one to see it.</p></div></div>' +
         '<div id="lab-runs"><p class="empty">Loading…</p></div></section><div id="lab-result"></div>';
       bindForm(el);
+      bindScan(el);
       bindLib(el);
       paintStatus(el);
       var gen = ST.gen;
@@ -1955,6 +2158,7 @@
         if (gen !== ST.gen) return;
         ST.status = j;
         paintStatus(el);
+        paintScan(el, true);
         paintRuns(el);
         var id = want || (j.list && j.list[0] && j.list[0].id);
         if (id && ST.item && ST.item.id === id) { ST.itemId = id; paintRuns(el); paintResult(el); } else if (id) openRun(el, id);

@@ -1299,6 +1299,53 @@ function check(name, fn) {
     await own.p.waitForFunction(() => /Choose Timeframe: Daily/.test(document.querySelector('#lab-h4-note').textContent));
     await own.p.evaluate(() => { localStorage.removeItem('sb:lab:form'); window.SB.route(true); });     // back to the defaults
     await own.p.waitForFunction(() => document.querySelector('#lab-form [data-k="group"]').value === 'fvg' && !document.querySelector('#lab-h4-note'));
+    // My daily scan (owner, 16-Nov-2026, IREDA: "Backtestlab laye entha strategy lam venum, ena rules lam venum nu dailyscan ku angaiye
+    // setpanra mari venum ... enakh ethu daily scan ku venumo atha nan choose panikiren"): the setups ticked here + the form's rules ->
+    // the sheet -> the laptop's next poll; ChochRules.bat no longer needed
+    await own.p.waitForFunction(() => /Not set from this page yet/.test((document.querySelector('#lab-scan-now') || {}).textContent || ''));
+    assert.deepStrictEqual(await own.p.$$eval('#lab-scan [data-scan]', (xs) => xs.map((x) => [x.getAttribute('data-scan'), x.type === 'checkbox' ? x.checked : x.value])),
+      [['scanChoch', true], ['bos', true], ['scanSpring', true], ['scanGapSpring', true], ['scanH4', false], ['on4H', true], ['onD', true], ['onW', true], ['ltf', '15m']]);
+    assert.match(await own.p.$eval('#lab-scan-both', (x) => x.textContent), /CHoCH \+ FVG and BOS \+ FVG together/);
+    await own.p.click('[data-quick="smc"]');
+    await own.p.waitForFunction(() => document.querySelector('#lab-form [data-k="group"]').value === 'touch');
+    let scanTxt = await own.p.$eval('#lab-scan-rules', (x) => x.innerText);
+    assert.match(scanTxt, /Swings: 5 candles each side/);
+    assert.match(scanTxt, /Discount: Half way down - the 50% line \(discount\) - Its middle/);
+    assert.ok(!/Daily FVG \+ 4H Spring/.test(scanTxt));
+    await own.p.uncheck('#lab-scan [data-scan="scanSpring"]');
+    await own.p.check('#lab-scan [data-scan="scanH4"]');
+    await own.p.uncheck('#lab-scan [data-scan="on4H"]');
+    scanTxt = await own.p.$eval('#lab-scan-rules', (x) => x.innerText);
+    assert.match(scanTxt, /Daily FVG \+ 4H Spring: the first daily candle back into an FVG or Gap-up zone is red with a body of at least 0\.5 x ATR, closes above the zone bottom/);
+    // a rule the daily scan does not have (the Lab only) is said
+    await own.p.evaluate(() => { const f = JSON.parse(localStorage.getItem('sb:lab:form')); f.upWickMax = 5; localStorage.setItem('sb:lab:form', JSON.stringify(f)); window.SB.route(true); });
+    await own.p.waitForSelector('#lab-scan-unused');
+    assert.match(await own.p.$eval('#lab-scan-unused', (x) => x.textContent), /Not used by the daily scan \(the Backtest Lab only\): the Spring candle shape\./);
+    assert.strictEqual(await own.p.$eval('#lab-scan [data-scan="scanH4"]', (x) => x.checked), true, 'the ticks stay after a redraw');
+    await own.p.click('#lab-scan-save');
+    await own.p.waitForSelector('#lab-scan-saved');
+    let nowTxt = await own.p.$eval('#lab-scan-now', (x) => x.textContent);
+    assert.match(nowTxt, /Lists: CHoCH \+ FVG, BOS \+ FVG, Gap-up FVG \+ Spring on D, W; Daily FVG \+ 4H Spring \(the red day's body at least 0\.5 x ATR/);
+    assert.match(nowTxt, /CHoCH \/ BOS rules: swings of 5 candles, at least 3 lower highs \/ lows, the zone's middle at least 50% down the move/);
+    assert.match(nowTxt, /waiting for your laptop/);
+    const scanBody = sheet.bodies.filter((b) => b.op === 'lab' && b.lab.do === 'scan').pop();
+    assert.deepStrictEqual([scanBody.lab.rules.pivotN, scanBody.lab.rules.fib, scanBody.lab.rules.part, scanBody.lab.rules.scanSpring, scanBody.lab.rules.scanH4,
+      scanBody.lab.rules.on4H, scanBody.lab.rules.ltf, scanBody.lab.params.group], [5, 0.5, 'mid', false, true, false, '15m', 'touch']);
+    // the laptop's poll takes them; the page says so
+    const poll1 = JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll', scanAt: '' })));
+    assert.strictEqual(poll1.scan.rules.scanH4, true);
+    sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll', scanAt: poll1.scan.at });
+    await own.p.evaluate(() => window.SB.route(true));
+    await own.p.waitForFunction(() => /your laptop has it/.test((document.querySelector('#lab-scan-took') || {}).textContent || ''));
+    // "Put the daily scan's rules in the form": the saved form values come back
+    await own.p.evaluate(() => { const f = JSON.parse(localStorage.getItem('sb:lab:form')); f.pivotN = 10; localStorage.setItem('sb:lab:form', JSON.stringify(f)); window.SB.route(true); });
+    await own.p.waitForFunction(() => /10 candles/.test(document.querySelector('#lab-scan-rules').innerText));
+    own.p.once('dialog', (d) => d.accept());
+    await own.p.click('#lab-scan-load');
+    await own.p.waitForFunction(() => /Swings: 5 candles/.test(document.querySelector('#lab-scan-rules').innerText));
+    await guideShot(own.p, '00-daily-scan', '#lab-scan');
+    await own.p.evaluate(() => { localStorage.removeItem('sb:lab:form'); window.SB.route(true); });     // back to the defaults
+    await own.p.waitForFunction(() => document.querySelector('#lab-form [data-k="group"]').value === 'fvg');
     await own.p.click('[data-quick="fvg"]');
     await own.p.waitForSelector('.lab-quick .lab-rec.on [data-quick="fvg"]');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="group"]', (e) => e.value), 'fvg');

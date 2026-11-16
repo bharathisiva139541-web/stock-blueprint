@@ -12482,9 +12482,10 @@ const AB_ITD_CHOCH = 'CHoCH + FVG';
 // chart's CHoCH with its final low in the zone (the PC decides; their note is kept like the CHoCH one's)
 const AB_ITD_BOS = 'BOS + FVG';
 const AB_ITD_LTF = ['15m CHoCH in zone', '1H CHoCH in zone', 'D CHoCH in zone'];
-const AB_ITD_PATTERNS = [AB_ITD_CHOCH, AB_ITD_BOS].concat(AB_ITD_LTF, ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring', 'Twin Star Bottom + FVG',
-  'FVG First Touch Confirmed', 'FVG First Touch']);
-const AB_ITD_NOTED = [AB_ITD_CHOCH, AB_ITD_BOS].concat(AB_ITD_LTF);          // patterns whose PC note goes into FVG Detail
+const AB_ITD_PATTERNS = [AB_ITD_CHOCH, AB_ITD_BOS].concat(AB_ITD_LTF, ['Daily FVG + 4H Spring', 'Spring in FVG', 'Gap-up FVG + Spring', 'Spring',
+  'Twin Star Bottom + FVG', 'FVG First Touch Confirmed', 'FVG First Touch']);
+// patterns whose PC note goes into FVG Detail ('Daily FVG + 4H Spring' = AB_ITD_H4, 16-Nov-2026: the 4-hour / 15-minute words)
+const AB_ITD_NOTED = [AB_ITD_CHOCH, AB_ITD_BOS].concat(AB_ITD_LTF, ['Daily FVG + 4H Spring']);
 const AB_ITD_SPRINGS = ['Spring in FVG', 'Gap-up FVG + Spring', 'Spring'];   // Gap-up FVG + Spring: owner, 08-Nov-2026 (split off)
 const AB_ITD_TV = { '15m': '15', '30m': '30', '1H': '60', '2H': '120', '4H': '240', D: 'D', W: 'W', M: 'M' };
 const AB_ITD_KEEP_DAYS = 30;
@@ -12596,8 +12597,94 @@ function ab_chochRulesText_(r) {
   return out;
 }
 
+/** The daily scan's setups + rules (owner, 16-Nov-2026: "Backtestlab laye entha strategy lam venum, ena rules lam venum nu dailyscan ku
+ *  angaiye setpanra mari venum ... elathaiume optionla vai. enakh ethu daily scan ku venumo atha nan choose panikiren"): the Lab page's
+ *  "My daily scan" card saves them (Script Property AB_SCAN), the laptop takes them with its next Lab poll / the daily scan's symbol
+ *  list -> scan_rules.json (kite_intraday.py daily_rules = these keys and ranges: CHOCH_CFG / CHOCH_MORE / CHOCH_BOOLS / CHOCH_PICKS). */
+const AB_SCAN_PROP = 'AB_SCAN';                  // {at, rules, params, name}
+const AB_SCAN_TOOK_PROP = 'AB_SCAN_TOOK';        // {at (the rules' at), took (ms)} - the laptop has them
+const AB_ITD_H4 = 'Daily FVG + 4H Spring';       // owner, 15-Nov-2026 (the Lab's group 'fvg4h') - in the daily scan from 16-Nov-2026
+// [tick, the pattern's rows, its name on the page]
+const AB_SCAN_SETUPS = [['scanChoch', AB_ITD_CHOCH, 'CHoCH + FVG'], ['bos', AB_ITD_BOS, 'BOS + FVG'], ['scanSpring', 'Spring in FVG', 'FVG + Spring'],
+  ['scanGapSpring', 'Gap-up FVG + Spring', 'Gap-up FVG + Spring']];
+const AB_SCAN_CHARTS = [['4H', 'on4H'], ['D', 'onD'], ['W', 'onW']];
+
+function ab_scanRules_(r) {
+  r = r && typeof r === 'object' ? r : {};
+  const int = function (v, lo, hi, d) { const n = Number(v); return v !== null && v !== '' && typeof v !== 'boolean' && isFinite(n) && n >= lo && n <= hi ? Math.round(n) : d; };
+  const flt = function (v, lo, hi, d) { const n = Number(v); return v !== null && v !== '' && typeof v !== 'boolean' && isFinite(n) && n >= lo && n <= hi ? n : d; };
+  const pick = function (v, opts, d) { return opts.indexOf(v) !== -1 ? v : d; };
+  const bool = function (v, d) { return typeof v === 'boolean' ? v : d; };
+  return Object.assign(ab_chochRules_(r), {
+    bos: bool(r.bos, true), bosKind: pick(r.bosKind, ['both', 'first', 'trend'], 'both'), ltf: pick(r.ltf, ['15m', '1H', 'off'], '15m'),
+    scanChoch: bool(r.scanChoch, true), scanSpring: bool(r.scanSpring, true), scanGapSpring: bool(r.scanGapSpring, true), scanH4: bool(r.scanH4, false),
+    on4H: bool(r.on4H, true), onD: bool(r.onD, true), onW: bool(r.onW, true),
+    h4Body: flt(r.h4Body, 0, 5, 0.5), h4Zones: pick(r.h4Zones, ['both', 'fvg', 'gap'], 'both'), m15Choch: pick(r.m15Choch, ['show', 'only', 'off'], 'show'),
+    m15Pivot: int(r.m15Pivot, 2, 6, 3), m15Down: int(r.m15Down, 1, 6, 2) });
+}
+
+/** 'CHoCH + FVG, BOS + FVG, FVG + Spring, Gap-up FVG + Spring on 4H, D, W[; Daily FVG + 4H Spring (...)]' (= kite_intraday.py setup_words). */
+function ab_scanSetupsText_(r) {
+  const w = function (v) { return String(Math.round(Number(v) * 10) / 10); };
+  const names = AB_SCAN_SETUPS.filter(function (x) { return r[x[0]] !== false; }).map(function (x) { return x[2]; });
+  const charts = AB_SCAN_CHARTS.filter(function (x) { return r[x[1]] !== false; }).map(function (x) { return x[0]; });
+  let out = names.length ? names.join(', ') + ' on ' + (charts.join(', ') || 'no chart') : '';
+  if (r.scanH4) {
+    const body = Number(r.h4Body === undefined ? 0.5 : r.h4Body) || 0;
+    out += (out ? '; ' : '') + 'Daily FVG + 4H Spring (the red day\'s body ' + (body ? 'at least ' + w(body) + ' x ATR' : 'any size') + ', ' +
+      ({ fvg: 'FVG zones', gap: 'Gap-up zones' }[r.h4Zones] || 'FVG and Gap-up zones') + ', 15-minute CHoCH ' +
+      ({ only: 'required', off: 'not checked' }[r.m15Choch] || 'shown') + ')';
+  }
+  return out || 'none of the setups';
+}
+
+/** Is this pattern of the daily scan switched off on this chart by the "My daily scan" card? (the tab drops those rows) */
+function ab_scanOff_(sc, pattern, tf) {
+  if (pattern === AB_ITD_H4) return !sc.scanH4;
+  for (let k = 0; k < AB_SCAN_SETUPS.length; k++) {
+    if (AB_SCAN_SETUPS[k][1] !== pattern) continue;
+    if (sc[AB_SCAN_SETUPS[k][0]] === false) return true;
+    for (let c = 0; c < AB_SCAN_CHARTS.length; c++) if (AB_SCAN_CHARTS[c][0] === tf) return sc[AB_SCAN_CHARTS[c][1]] === false;
+  }
+  return false;
+}
+
+function ab_scanGet_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_SCAN_PROP) || 'null'); } catch (e) { return null; }
+}
+
+/** The laptop's side (its Lab poll and the daily scan's symbol list send `scanAt` = the rules it keeps): the newer rules for it, or
+ *  null - and when it has the newest, when it took them is noted for the page. */
+function ab_scanForPc_(req) {
+  const sc = ab_scanGet_();
+  if (!sc || !sc.at) return null;
+  const has = String(req && req.scanAt || '');
+  if (has !== String(sc.at)) return { at: sc.at, rules: sc.rules };
+  const props = PropertiesService.getScriptProperties();
+  let took = null;
+  try { took = JSON.parse(props.getProperty(AB_SCAN_TOOK_PROP) || 'null'); } catch (e) { took = null; }
+  if (!took || String(took.at) !== String(sc.at)) props.setProperty(AB_SCAN_TOOK_PROP, JSON.stringify({ at: sc.at, took: Date.now() }));
+  return null;
+}
+
+/** For the page: the rules in use (words), when saved, when the laptop took them, and the form values they came from. */
+function ab_scanView_() {
+  const sc = ab_scanGet_();
+  if (!sc || !sc.at) return null;
+  let took = null;
+  try { took = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_SCAN_TOOK_PROP) || 'null'); } catch (e) { took = null; }
+  const r = ab_scanRules_(sc.rules);
+  return { at: sc.at, name: sc.name || '', setups: ab_scanSetupsText_(r), rules: ab_chochRulesText_(r), values: r, params: sc.params || {},
+           took: took && String(took.at) === String(sc.at) ? took.took : null };
+}
+
 function ab_itdFromBridge_(req) {
-  if (req.op === 'syms') return { ok: true, syms: ab_p1Symbols_(), indices: ab_klIndexSyms_() };
+  if (req.op === 'syms') {
+    const out = { ok: true, syms: ab_p1Symbols_(), indices: ab_klIndexSyms_() };
+    const sc = ab_scanForPc_(req);           // the "My daily scan" rules, when the laptop does not have the newest (16-Nov-2026)
+    if (sc) out.scan = sc;
+    return out;
+  }
   if (req.op === 'zones') return ab_itdZonesFromBridge_(req);
   if (req.op === 'backtest') return ab_btFromBridge_(req);
   if (req.op === 'waiting') return ab_chwFromBridge_(req);
@@ -12616,8 +12703,11 @@ function ab_itdFromBridge_(req) {
       if (AB_ITD_TV[tf] && /m$|H$/.test(tf) && times.length) { slots[tf] = times; hasSlots = true; }
     });
   }
+  // the setups / charts of the Lab page's "My daily scan" card (16-Nov-2026): rows of one switched off leave the tab
+  const sc = ab_scanRules_(req.choch);
   const keepTf = function (tf, candle, pattern) {
     if (tfs && tfs.length && tfs.indexOf(tf) === -1) return false;
+    if (ab_scanOff_(sc, pattern, tf)) return false;
     return !slots[tf] || AB_ITD_SPRINGS.indexOf(pattern) === -1 || slots[tf].indexOf(String(candle || '').slice(11, 16)) !== -1;
   };
   // the first post of a scan replaces the rows of the sessions it covers (a rescan after new rules drops the old ones)
@@ -12634,7 +12724,7 @@ function ab_itdFromBridge_(req) {
   (Array.isArray(req.invalid) ? req.invalid : []).forEach(function (x) {
     const sym = String(x && x.sym || '').trim().toUpperCase();
     const p0 = String(x.pattern || '');
-    const pat = p0 === 'Gap-up FVG + Spring' || p0 === AB_ITD_CHOCH || p0 === AB_ITD_BOS ? p0 : 'Spring in FVG';   // an older PC sends no pattern
+    const pat = ['Gap-up FVG + Spring', AB_ITD_CHOCH, AB_ITD_BOS, AB_ITD_H4].indexOf(p0) !== -1 ? p0 : 'Spring in FVG';   // an older PC sends no pattern
     if (sym) gone[sym + '|' + String(x.tf || '') + '|' + pat + '|' + String(x.candle || '')] = true;
   });
   let replaced = 0, removed = 0;
@@ -12693,6 +12783,8 @@ function ab_itdFromBridge_(req) {
     'the first touch of that zone, a Spring on it or an FVG First Touch / Confirmed - rules: ' + ab_chochRulesText_(ab_chochRules_(req.choch)) + '. ' +
     'BOS + FVG: the same on a BOS move (a close above a higher high after a higher low - the 1st BOS after a CHoCH or one of a running up-trend). ' +
     '15m / 1H / D CHoCH in zone: after such a touch, the smaller chart\'s CHoCH with its final low in the zone (within 5 candles) - the confirmed entry. ' +
+    'Daily FVG + 4H Spring: the first daily candle back into an FVG / Gap-up zone is red and its 09:15 + 13:15 four-hour candles are a Spring (the 15-minute CHoCH that day in FVG Detail). ' +
+    'Your setups (Backtest Lab > My daily scan): ' + ab_scanSetupsText_(sc) + '. ' +
     (upto ? 'Last scan: session ' + upto + ' (' + found + '). ' : '') +
     'Kept ' + AB_ITD_KEEP_DAYS + ' days. Chart = TradingView at that timeframe. Research only, not a buy recommendation.';
   const out = rows.map(function (r) {
@@ -13613,11 +13705,18 @@ function ab_labFromSite_(req) {
     const r = ab_labGet_(String(q.id || ''), q.plain === true);
     return r ? { ok: true, result: 'lab', item: r } : { ok: false, error: 'that result is no longer kept' };
   }
-  if (q.do !== 'run' && q.do !== 'cancel' && q.do !== 'delete') return ab_labStatus_(now);
+  if (q.do !== 'run' && q.do !== 'cancel' && q.do !== 'delete' && q.do !== 'scan') return ab_labStatus_(now);
   const lock = ab_labLock_();
   if (!lock.tryLock(15000)) return { ok: false, error: 'sheet busy - try again' };
   try {
-    if (q.do === 'run') {
+    if (q.do === 'scan') {
+      // "My daily scan" (16-Nov-2026): the setups + rules the laptop's daily scan uses from now on (the laptop takes them with its next poll)
+      const rules = ab_scanRules_(ab_labParams_(q.rules));
+      const sc = { at: Utilities.formatDate(new Date(now), AB_TZ, 'yyyy-MM-dd HH:mm:ss'), rules: rules, params: ab_labParams_(q.params),
+                   name: String(q.name || '').replace(/\s+/g, ' ').trim().slice(0, 60) };
+      PropertiesService.getScriptProperties().setProperty(AB_SCAN_PROP, JSON.stringify(sc));
+      try { CacheService.getScriptCache().put(AB_LAB_WAKE_KEY, 'scan', 600); } catch (e) { /* the laptop's next poll takes them anyway */ }
+    } else if (q.do === 'run') {
       const cur = ab_labJobView_(now);
       if (cur && cur.status === 'running') {
         return { ok: false, error: 'a run is going on - wait for it (or cancel it)' };
@@ -13648,13 +13747,23 @@ function ab_labStatus_(now) {
   let pc = null;
   try { pc = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_LAB_PC_PROP) || 'null'); } catch (e) { pc = null; }
   const pcNote = pc && pc.note && now - Number(pc.at || 0) <= AB_LAB_PC_FRESH_MS ? String(pc.note).slice(0, 200) : '';
-  return { ok: true, result: 'lab', job: ab_labJobView_(now), pcSeenSec: seen ? Math.round((now - seen) / 1000) : null, pcNote: pcNote, list: ab_labList_() };
+  return { ok: true, result: 'lab', job: ab_labJobView_(now), pcSeenSec: seen ? Math.round((now - seen) / 1000) : null, pcNote: pcNote, list: ab_labList_(),
+           scan: ab_scanView_() };
 }
 
 /** The laptop's poll (16-Nov-2026): takes a waiting run at once; with `wait` (seconds, while the page was open in the last
  *  10 minutes) it waits up to AB_LAB_WAIT_MAX_S for one - the page's Run wakes it (CacheService), so a run is taken within a
  *  second instead of the next 10 / 120 s poll. `v` = this web app's Lab protocol (2: blob results, op 'pdf'). */
 function ab_labPoll_(req) {
+  const res = ab_labPollCore_(req);
+  if (res && res.ok) {
+    const sc = ab_scanForPc_(req);           // "My daily scan" rules the laptop does not have yet (16-Nov-2026)
+    if (sc) res.scan = sc;
+  }
+  return res;
+}
+
+function ab_labPollCore_(req) {
   const props = PropertiesService.getScriptProperties();
   const t0 = Date.now();
   props.setProperty(AB_LAB_SEEN_PROP, String(t0));
@@ -13692,6 +13801,11 @@ function ab_labPoll_(req) {
       if (g) {
         try { if (cache) cache.remove(AB_LAB_WAKE_KEY); } catch (e) { /* only a hint */ }
         return g;
+      }
+      // new "My daily scan" rules (16-Nov-2026): answered now, so the laptop has them within a second (ab_labPoll_ adds them)
+      if (wake === 'scan') {
+        try { if (cache) cache.remove(AB_LAB_WAKE_KEY); } catch (e) { /* only a hint */ }
+        return { ok: true, job: null, next: 0, waited: true, v: AB_LAB_PROTO };
       }
     }
   }

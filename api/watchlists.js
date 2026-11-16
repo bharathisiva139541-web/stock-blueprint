@@ -75,7 +75,7 @@
     return raw;
   }
 
-  const LAB_DO = ['run', 'status', 'result', 'delete', 'cancel'];
+  const LAB_DO = ['run', 'status', 'result', 'delete', 'cancel', 'scan'];
   const PUSH_DO = ['add', 'remove', 'test', 'list'];
 
   /** The Backtest Lab's rules: a flat object of short strings / numbers / booleans (the sheet and the PC check them again). */
@@ -103,6 +103,8 @@
       if (LAB_DO.indexOf(q.do) < 0) throw bad('lab.do must be one of ' + LAB_DO.join(', '));
       out.lab = { do: q.do };
       if (q.do === 'run') { out.lab.params = labParams(q.params); out.lab.name = String(q.name || '').slice(0, 60); }
+      // "My daily scan" (16-Nov-2026): the daily scan's setups + rules (flat, checked again by the sheet and the laptop) + the form they came from
+      if (q.do === 'scan') { out.lab.rules = labParams(q.rules); out.lab.params = labParams(q.params); out.lab.name = String(q.name || '').slice(0, 60); }
       if (q.do === 'result' || q.do === 'delete') {
         if (typeof q.id !== 'string' || !/^L[a-z0-9]{4,20}$/.test(q.id)) throw bad('lab.id missing');
         out.lab.id = q.id;
