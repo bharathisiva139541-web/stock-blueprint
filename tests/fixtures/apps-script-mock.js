@@ -544,6 +544,7 @@ function createEnv(workbook, opts) {
     }, env.calls),
     ScriptApp: makeLenient('ScriptApp', {
       getService: function () { return { getUrl: function () { return ''; } }; },
+      getScriptId: function () { return env.scriptId || 'test-script-id-0123456789abcdef'; },
       getProjectTriggers: function () { env.triggerReads = (env.triggerReads || 0) + 1; return env.triggers.map(triggerObj); },
       deleteTrigger: function (t) {
         const id = t && t.getUniqueId ? t.getUniqueId() : null;

@@ -45,3 +45,9 @@ android/build/
 android/local.properties
 *.jks
 *.keystore
+
+# the PC's auto update (16-Nov-2026): its Google login key, state and backups stay on the laptop
+pcbridge/ScreenerBridge/google_session.json
+pcbridge/ScreenerBridge/update_state.json
+pcbridge/ScreenerBridge/_update_backup/
+pcbridge/ScreenerBridge/_update_new/

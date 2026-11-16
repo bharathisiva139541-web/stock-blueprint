@@ -8958,6 +8958,9 @@ function doPost(e) {
   if (req.action === 'lab') {
     try { return ab_bridgeJson_(ab_labFromBridge_(req)); } catch (labErr) { return ab_bridgeJson_({ ok: false, error: labErr.message }); }
   }
+  // the PC's auto update (owner, 16-Nov-2026: "here after i won't do this job"): which Apps Script project this web app is - the
+  // PC puts new code into it through the Apps Script API with its own Google login (pcbridge self_update.py)
+  if (req.action === 'scriptid') return ab_bridgeJson_({ ok: true, scriptId: ScriptApp.getScriptId() });
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(120000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });

@@ -7,6 +7,19 @@ SETUP (one time)
  2. In your sheet: Auto Bhavcopy > 3. Quarterly Results & Trend Tags > PC Bridge: setup info.
  3. Double-click Setup.bat here and paste the two values when asked.
 
+AUTOMATIC UPDATES (16-Nov-2026): you never copy files or paste code again.
+ - Every 3 hours the background program asks GitHub (the project's repository) for the newest version. Changed files
+   of this folder are downloaded, checked and put here by themselves (the old ones kept in _update_backup\); then the
+   program restarts itself with them - never while the Kite scan, Kite live prices or a Backtest Lab run is going, never
+   in market hours (Mon-Fri 09:00-15:45). config.json, your logins and the data are never touched.
+ - The Google Sheet's code (Code.gs / Code2.gs) is put into the sheet the same way and the web app moves to the new
+   version by itself (same address - the same as Deploy > Manage deployments > New version).
+ - ONE TIME: a Google page opens in the browser by itself ("clasp - The Apps Script CLI" asks for your Apps Script
+   projects) - choose the Google account of your sheet and press Allow. Or double-click GoogleLogin.bat.
+   (script.google.com/home/usersettings must show "Google Apps Script API" On.)
+ - UpdateNow.bat   get the newest version right now.
+ - TestConnection line 10 shows when it last checked. config.json: "auto_update": false = off, "update_every_hours": 3.
+
 AFTER THAT it starts by itself every time you log in to Windows and stays in the background (no window) while the
 computer is on - no time limit:
  - a FULL ROUND 1 minute after log-in (as soon as the internet is connected), another 1 hour later, then every 3 hours;
@@ -37,6 +50,8 @@ computer is on - no time limit:
  - MoveDataToD.bat         keeps the big Kite / Backtest Lab data (intraday_data, lab_cache, lab_charts) on another drive
                             (Enter = D:\StockBlueprintData) and moves it there - see DATA ON THE D: DRIVE below
  - LiveNow.bat             Kite LIVE prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
+ - UpdateNow.bat           get the newest version (this folder + the sheet's code) right now - see AUTOMATIC UPDATES
+ - GoogleLogin.bat         the one-time Google login that lets the program put new code into your sheet
  - bridge.log       what it did (open with Notepad)
 To stop it: run  python screener_bridge.py uninstall
 
