@@ -9,6 +9,7 @@ pcbridge/ScreenerBridge/moneycontrol_codes.json
 pcbridge/ScreenerBridge/eod_state.json
 pcbridge/ScreenerBridge/history_state.json
 pcbridge/ScreenerBridge/calendar_state.json
+pcbridge/ScreenerBridge/announcements_state.json
 pcbridge/ScreenerBridge/run_state.json
 pcbridge/ScreenerBridge/ipo_state.json
 pcbridge/ScreenerBridge/xbrl_state.json

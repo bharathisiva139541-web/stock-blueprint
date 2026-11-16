@@ -1673,9 +1673,9 @@ def ann_rows(records):
     return sorted(best.values(), key=lambda r: (r[1], r[0])), timed
 
 
-def ann_fetch(opener, today):
-    """-> (records, None) or (None, reason)."""
-    f, t = (today - timedelta(days=ANN_DAYS)).strftime('%d-%m-%Y'), today.strftime('%d-%m-%Y')
+def ann_fetch(opener, today, start=None):
+    """NSE's announcements of start (default: ANN_DAYS before today) .. today -> (records, None) or (None, reason)."""
+    f, t = (start or today - timedelta(days=ANN_DAYS)).strftime('%d-%m-%Y'), today.strftime('%d-%m-%Y')
     try:
         status, raw = nse_get(opener, ANN_URL.format(f=f, t=t), referer=ANN_PAGE, timeout=90)
     except (OSError, urllib.error.URLError, socket.timeout) as e:
@@ -1701,13 +1701,101 @@ def ann_session():
     return opener
 
 
-def ann_step(cfg, today=None):
-    """Sends the result filings of the last days to the sheet. Never raises."""
+# The whole results season once (owner, 16-Nov-2026: 118 Main stocks had no Result Date although they had filed - the
+# Results tab knew only the pasted calendar + NSE's forthcoming meetings): the days from the season's start (the day after
+# the last quarter end) that no round sent yet are read too, ANN_BACK_DAYS a request, newest first, at most ANN_BACK_PER_ROUND
+# requests a round (AnnouncementsNow.bat: all) - the sheet adds the missing result dates from these filings.
+ANN_STATE_PATH = os.path.join(HERE, 'announcements_state.json')   # {season: 'yyyy-mm-dd', days: [the season's days sent]}
+ANN_BACK_DAYS = 4
+ANN_BACK_PER_ROUND = 3
+
+
+def ann_season_start(today):
+    """The day after the last quarter end before `today` (the results season's first day)."""
+    y, m = today.year, today.month
+    qm = ((m - 1) // 3) * 3                    # the last quarter-end month before this month (0 = December of last year)
+    end = date(y, qm + 1, 1) - timedelta(days=1) if qm else date(y - 1, 12, 31)
+    return end + timedelta(days=1)
+
+
+def ann_state_load(today):
+    try:
+        with open(ANN_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        st = {}
+    season = ann_season_start(today).isoformat()
+    if not isinstance(st, dict) or st.get('season') != season:
+        st = {'season': season, 'days': []}
+    st['days'] = sorted({d for d in st.get('days') or [] if isinstance(d, str) and d >= season})
+    return st
+
+
+def ann_state_save(st):
+    try:
+        with open(ANN_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f)
+    except OSError:
+        pass
+
+
+def ann_back_todo(today, st, limit):
+    """The season's days before the usual window that no round sent yet, in requests of ANN_BACK_DAYS consecutive days,
+    newest first -> [(first day, last day)] (at most `limit`)."""
+    have, out = set(st.get('days') or []), []
+    d, first = today - timedelta(days=ANN_DAYS + 1), date.fromisoformat(st['season'])
+    while d >= first and len(out) < limit:
+        if d.isoformat() in have:
+            d -= timedelta(days=1)
+            continue
+        end, n = d, 1
+        while n < ANN_BACK_DAYS and d - timedelta(days=1) >= first and (d - timedelta(days=1)).isoformat() not in have:
+            d -= timedelta(days=1)
+            n += 1
+        out.append((d, end))
+        d -= timedelta(days=1)
+    return out
+
+
+def ann_post(cfg, rows, start, end, backfill=False):
+    """-> the sheet's reply, or None after a logged refusal."""
+    body = {'ann': rows, 'from': start.isoformat(), 'to': end.isoformat()}
+    if backfill:
+        body['backfill'] = True
+    try:
+        res = api(cfg, 'results_ann', body, timeout=300)
+    except RuntimeError as e:
+        log('Result announcements: sending to the sheet failed (%s) - the next round tries again.' % e)
+        return None
+    if not res.get('ok'):
+        err = res.get('error') or 'unknown error'
+        if err == 'unknown action':
+            err = ('the sheet\'s web app does not know the result announcements yet - in Apps Script: Deploy > '
+                   'Manage deployments > pencil > Version: New version > Deploy')
+        log('Result announcements: the sheet refused - %s' % err)
+        return None
+    return res
+
+
+def ann_results_words(res):
+    """' - the Results tab got 3 result date(s) (ABC, DEF, GHI)' from the sheet's reply ('' when none)."""
+    r = res.get('results') if isinstance(res.get('results'), dict) else {}
+    syms = list(r.get('added') or []) + list(r.get('replaced') or [])
+    if res.get('resultsError'):
+        return ' - the result dates were not added: %s' % res['resultsError']
+    return (' - the Results tab got %d result date(s) from these filings (%s%s)'
+            % (len(syms), ', '.join(syms[:15]), ' ...' if len(syms) > 15 else '')) if syms else ''
+
+
+def ann_step(cfg, today=None, back_chunks=ANN_BACK_PER_ROUND):
+    """Sends the result filings of the last days to the sheet (+ the season's older days not sent yet). Never raises."""
     if not cfg.get('announcements', True):
         return
     try:
         today = today or date.today()
-        recs, err = ann_fetch(ann_session(), today)
+        st = ann_state_load(today)
+        opener = ann_session()
+        recs, err = ann_fetch(opener, today)
         if recs is None:
             log('Result announcements: could not read NSE - %s (the next round tries again).' % err)
             return
@@ -1715,22 +1803,46 @@ def ann_step(cfg, today=None):
         if recs and not timed:
             log('Result announcements: NSE\'s dates were not recognised - its fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
             return
-        try:
-            res = api(cfg, 'results_ann', {'ann': rows, 'from': (today - timedelta(days=ANN_DAYS)).isoformat(), 'to': today.isoformat()},
-                      timeout=180)
-        except RuntimeError as e:
-            log('Result announcements: sending to the sheet failed (%s) - the next round tries again.' % e)
+        start = today - timedelta(days=ANN_DAYS)
+        res = ann_post(cfg, rows, start, today)
+        if res is None:
             return
-        if not res.get('ok'):
-            err = res.get('error') or 'unknown error'
-            if err == 'unknown action':
-                err = ('the sheet\'s web app does not know the result announcements yet - in Apps Script: Deploy > '
-                       'Manage deployments > pencil > Version: New version > Deploy')
-            log('Result announcements: the sheet refused - %s' % err)
-            return
-        log('Result announcements: %d result filing(s) on NSE since %s, %d of your stocks (%d new)%s.'
-            % (len(rows), (today - timedelta(days=ANN_DAYS)).strftime('%d-%m-%Y'), res.get('main', 0), res.get('fresh', 0),
-               ' - morning email sent' if res.get('emailed') else ''))
+        log('Result announcements: %d result filing(s) on NSE since %s, %d of your stocks (%d new)%s%s.'
+            % (len(rows), start.strftime('%d-%m-%Y'), res.get('main', 0), res.get('fresh', 0),
+               ' - morning email sent' if res.get('emailed') else '', ann_results_words(res)))
+        d = start
+        while d < today:                         # today's filings keep coming: today is read again next round
+            if d.isoformat() >= st['season']:
+                st['days'].append(d.isoformat())
+            d += timedelta(days=1)
+        st['days'] = sorted(set(st['days']))
+        ann_state_save(st)
+        # the season's older days not sent yet (once a season; a round the laptop was off is caught up the same way)
+        todo = ann_back_todo(today, st, back_chunks)
+        for k, (a, b) in enumerate(todo):
+            recs, err = ann_fetch(opener, b, a)
+            if recs is None:
+                log('Result announcements: catching up %s .. %s - could not read NSE - %s (the next round tries again).'
+                    % (a.strftime('%d-%m'), b.strftime('%d-%m'), err))
+                break
+            rows, _timed = ann_rows(recs)
+            res = ann_post(cfg, rows, a, b, backfill=True)
+            if res is None:
+                break
+            d = a
+            while d <= b:
+                st['days'].append(d.isoformat())
+                d += timedelta(days=1)
+            st['days'] = sorted(set(st['days']))
+            ann_state_save(st)
+            log('Result announcements: catching up the results season %s .. %s - %d result filing(s), %d of your stocks%s.'
+                % (a.strftime('%d-%m'), b.strftime('%d-%m'), len(rows), res.get('main', 0), ann_results_words(res)))
+            if k + 1 < len(todo):
+                time.sleep(2)
+        left = ann_back_todo(today, st, 999)
+        if todo and left:
+            log('Result announcements: %d more part(s) of the season to catch up - the next rounds do them '
+                '(or AnnouncementsNow.bat all at once).' % len(left))
     except Exception as e:   # never let this stop the screener work
         log('Result announcements: unexpected problem - %s' % e)
 
@@ -4188,7 +4300,7 @@ def main(argv):
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
             return 1
-        ann_step(dict(cfg, announcements=True))
+        ann_step(dict(cfg, announcements=True), back_chunks=99)     # the whole season's missing days at once
         return 0
     if cmd == 'calendar':
         if not cfg.get('url') or not cfg.get('token'):

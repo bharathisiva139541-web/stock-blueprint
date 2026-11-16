@@ -449,7 +449,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
     const rd = infoBySym[sym].rd;
     if (!rd) return;
     const rdKey = ab_rsDayKey_(rd);
-    const age = ab_rsDaysBetween_(rdKey, todayKey);
+    const age = ab_rsAge_(sym, rdKey, todayKey);            // a result date added late counts from the day it was added
     if (age < 0 || age > AB_RS_MAX_WAIT_DAYS) return;
     const q = ab_rsExpectedQuarter_(rd);
     const key = sym + '|' + q.toUpperCase();
@@ -466,7 +466,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
 
   // 2. Give up on anyone who's waited too long; prune old finished rows.
   tr.list = tr.list.filter(function (t) {
-    const age = t.rdKey ? ab_rsDaysBetween_(t.rdKey, todayKey) : 0;
+    const age = t.rdKey ? ab_rsAge_(t.symbol, t.rdKey, todayKey) : 0;
     if (t.status === 'Pending' && age > AB_RS_MAX_WAIT_DAYS) {
       t.status = 'Gave up';
       t.last = nowStr();
@@ -500,7 +500,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
   const cands = tr.list.filter(function (t) {
     const prov = isProvisional(t) || isXbrlWait(t);
     if (t.status !== 'Pending' && !prov) return false;
-    if (prov && (!t.rdKey || ab_rsDaysBetween_(t.rdKey, todayKey) > AB_RS_MAX_WAIT_DAYS)) return false;
+    if (prov && (!t.rdKey || ab_rsAge_(t.symbol, t.rdKey, todayKey) > AB_RS_MAX_WAIT_DAYS)) return false;
     if (!rowsBySym[t.symbol]) { if (!prov) t.note = 'Symbol not found in Main'; return false; }
     // PC hasn't delivered it yet (screener.in page, or moneycontrol figures for a Pending row)
     if (AB_BRIDGE_ONLY && !ab_bridgeGet_(t.symbol) && (prov || !mcOn || !ab_mcGet_(t.symbol))) return false;
@@ -4801,8 +4801,10 @@ function ab_installResultDateFormula_() {
     const lookup = 'VLOOKUP($' + symbolColLetter + r + ',' + resultsRef + ',' + results.lookupIndex + ',0)';
     // "08-Oct-26" -> day=VALUE(LEFT,2)=8, month=SWITCH(MID(4,3))=10,
     // year=2000+VALUE(RIGHT,2)=2026 -> DATE(2026,10,8), a real date.
-    formulas.push(['=IFERROR(DATE(2000+VALUE(RIGHT(' + lookup + ',2)),SWITCH(MID(' + lookup +
-      ',4,3),' + monthSwitch + '),VALUE(LEFT(' + lookup + ',2))),"")']);
+    // v5 (16-Nov-2026): a DATE cell that is a real date (a pasted calendar Sheets turned into dates, or rows the
+    // calendar / filings step wrote in that style) is taken as it is - v4 read only the text and left those blank
+    formulas.push(['=IFERROR(IF(ISNUMBER(' + lookup + '),INT(' + lookup + '),DATE(2000+VALUE(RIGHT(' + lookup + ',2)),SWITCH(MID(' + lookup +
+      ',4,3),' + monthSwitch + '),VALUE(LEFT(' + lookup + ',2)))),"")']);
   }
   sh.getRange(firstDataRow, resultDateCol1Based, numRows, 1).setFormulas(formulas);
   // Real date values sort/filter chronologically on their own - this
@@ -4843,13 +4845,15 @@ function ab_ensureResultDateReal_() {
     const f = sh.getRange(first, layout.resultDate + 1, n, 1).getFormulas();
     let old = 0;
     for (let i = 0; i < f.length; i++) {
-      if (f[i][0] && String(f[i][0]).indexOf('&"/"&') !== -1) old++;
+      const x = String(f[i][0] || '');
+      // the text-style ones, and (16-Nov-2026) the v4 ones that left a real-date cell of the Results tab blank
+      if (x && (x.indexOf('&"/"&') !== -1 || (x.indexOf('VLOOKUP(') !== -1 && x.indexOf('ISNUMBER(') === -1))) old++;
     }
     if (!old) { props.setProperty(AB_RD_CHECK_PROP_, String(Date.now())); return false; }
     ab_installResultDateFormula_();
     SpreadsheetApp.flush();
     props.setProperty(AB_RD_CHECK_PROP_, String(Date.now()));
-    Logger.log('Result Date column: ' + old + ' text-style formula(s) replaced with real-date formulas (sorts chronologically now).');
+    Logger.log('Result Date column: ' + old + ' older formula(s) replaced (real dates, sorts chronologically, reads real-date cells too).');
     return true;
   } catch (e) {
     Logger.log('Result Date auto-fix skipped: ' + e.message);
@@ -11529,12 +11533,18 @@ function ab_annFromBridge_(req) {
   });
   const kept = ab_annSave_(store);
   const fresh2 = ab_annLoad_();
+  // the Results tab rows these filings say are missing (16-Nov-2026) - before the tracker column, so it shows them too
+  let results = { added: [], replaced: [] }, resultsError = '';
+  try { results = ab_annToResults_(fresh2, ab_rsDayKey_(new Date())); } catch (e) { resultsError = e.message; Logger.log('Result dates from the filings: ' + e.message); }
   let trackerRows = 0;
   try { trackerRows = ab_annFillTracker_(fresh2); } catch (e) { Logger.log('Results Tracker "Announced" not filled: ' + e.message); }
   let morning = { sent: false, note: '' };
-  try { morning = ab_annMorningEmail_(fresh2, new Date()); } catch (e) { morning = { sent: false, note: 'morning email failed: ' + e.message }; }
+  // a catch-up of older days (the PC's season backfill) never sends the morning email
+  if (req.backfill !== true) {
+    try { morning = ab_annMorningEmail_(fresh2, new Date()); } catch (e) { morning = { sent: false, note: 'morning email failed: ' + e.message }; }
+  }
   return { ok: true, received: list.length, main: main, fresh: fresh, kept: kept, tracker: trackerRows,
-           emailed: morning.sent, morning: morning.note };
+           emailed: morning.sent, morning: morning.note, results: results, resultsError: resultsError };
 }
 
 /** Results Tracker column 'Announced' for every row (one write). Returns how many rows have a time. */
@@ -11723,6 +11733,8 @@ function ab_calFromBridge_(req) {
     if (/^\d{1,2}-[A-Za-z]{3}-\d{2}(\d{2})?$/.test(t)) { style = { kind: 'text', year4: /\d{4}$/.test(t), fmt: '' }; break; }
   }
   const add = [], seen = {}, moves = [], ahead = [], prune = {};
+  // rows from the result FILINGS (ab_annToResults_, 16-Nov-2026): a calendar date of the same quarter is never moved
+  const filings = req.fromFilings === true;
   rows.slice(0, 5000).forEach(function (x) {
     if (!Array.isArray(x)) return;
     const sym = String(x[0] || '').trim().toUpperCase();
@@ -11737,7 +11749,7 @@ function ab_calFromBridge_(req) {
     prune[sym] = qNew;                                     // rows of an earlier quarter than this meeting go
     if (!first[sym] || first[sym] === iso) return;
     const qOld = ab_calQuarter_(first[sym]);
-    if (qNew === qOld) moves.push({ sym: sym, from: first[sym], to: iso, purpose: purpose });
+    if (qNew === qOld) { if (!filings) moves.push({ sym: sym, from: first[sym], to: iso, purpose: purpose }); }
     else if (qNew > qOld) ahead.push({ sym: sym, row: firstRow[sym], before: first[sym], purpose: purpose, iso: iso });
     else delete prune[sym];                                // NSE's meeting is older than the tab's: left alone
   });
@@ -11823,7 +11835,79 @@ function ab_calFromBridge_(req) {
     removedSyms[String(vals[r][cSym]).trim().toUpperCase()] = true;
   });
   return { ok: true, received: rows.length, added: add.map(function (a) { return a[0]; }), moved: moved, replaced: replaced,
-           removed: removed, removedSyms: Object.keys(removedSyms).sort(), later: later };
+           replacedSyms: ahead.map(function (a) { return a.sym; }), removed: removed, removedSyms: Object.keys(removedSyms).sort(), later: later };
+}
+
+/*****************************************************************
+ * RESULT DATES FROM THE RESULT FILINGS (owner, 16-Nov-2026: "out of all the stocks, only these stocks result dates are
+ * not updated in our sheet. i checked ECOSMOBILITY date in NSE, 13 nov 2026 ... these stocks have submitted their
+ * results. but our sheets have blank in result date. results updates are to be done" - 118 stocks, RELIANCE, MCX,
+ * MUTHOOTFIN ... among them). The Results tab (Main's Result Date formula reads it) had only the meetings of the hand
+ * paste + NSE's FORTHCOMING calendar (cal_step, from 01-Nov-2026): a meeting announced and held between the two, or
+ * one NSE's calendar lists without "Financial Results" as its purpose, never got a row. Now NSE's actual result
+ * FILINGS (Results_Announcements, the PC's announcements step - which also catches up the whole season once) give
+ * the missing dates: a Main company with a result filing of this results season and no row of this season on the
+ * Results tab gets one (the date of its first filing of the season; ab_calFromBridge_ with fromFilings: added at the
+ * bottom like the calendar's, a row of an earlier quarter gets the date; a calendar date of the same quarter stays).
+ * Such a result date can be older than the AB_RS_MAX_WAIT_DAYS window - Results Day then counts the window from the
+ * day it was added (AB_RS_LATE, ab_rsAge_), so its figures are still fetched and written.
+ *****************************************************************/
+const AB_RS_LATE_PROP = 'AB_RS_LATE';            // {SYM: 'rdKey>addedKey'} result dates added late from the filings
+const AB_RS_LATE_KEEP_DAYS = 60;
+let AB_RS_LATE_MEMO_ = null;
+
+function ab_rsLate_() {
+  if (AB_RS_LATE_MEMO_) return AB_RS_LATE_MEMO_;
+  let raw = {};
+  try { raw = JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_RS_LATE_PROP) || '{}') || {}; } catch (e) { raw = {}; }
+  const out = {};
+  Object.keys(raw).forEach(function (sym) {
+    const m = /^(\d{4}-\d{2}-\d{2})>(\d{4}-\d{2}-\d{2})$/.exec(String(raw[sym]));
+    if (m) out[sym] = { rd: m[1], day: m[2] };
+  });
+  AB_RS_LATE_MEMO_ = out;
+  return out;
+}
+
+/** Days since the result date - for a result date added late (ab_annToResults_) the days since it was added, when fewer. */
+function ab_rsAge_(sym, rdKey, todayKey) {
+  const age = ab_rsDaysBetween_(rdKey, todayKey);
+  const l = ab_rsLate_()[String(sym || '').toUpperCase()];
+  if (l && l.rd === rdKey && l.day > rdKey) return Math.min(age, ab_rsDaysBetween_(l.day, todayKey));
+  return age;
+}
+
+/** The Main companies with a result filing of this season and no Results tab row of it -> rows added (see above).
+ *  -> { added: [SYM], replaced: [SYM] } */
+function ab_annToResults_(store, todayKey) {
+  const season = ab_calQuarter_(todayKey);
+  const names = ab_itdNames_();
+  const rows = [];
+  Object.keys(store.bySym).forEach(function (sym) {
+    if (names[sym] === undefined) return;                  // not a Main company
+    const e = store.bySym[sym].filter(function (x) {
+      const d = x.at.slice(0, 10);
+      return d <= todayKey && ab_calQuarter_(d) === season;
+    })[0];                                                 // its first result filing of this season
+    if (!e) return;
+    rows.push([sym, names[sym] || sym, 'Financial Results (filed ' + ab_annCell_(e) + ' - from the NSE filing)', e.at.slice(0, 10)]);
+  });
+  if (!rows.length) return { added: [], replaced: [] };
+  const r = ab_calFromBridge_({ rows: rows, fromFilings: true });
+  if (!r.ok) throw new Error(r.error);
+  const done = (r.added || []).concat(r.replacedSyms || []);
+  if (done.length) {
+    const rdOf = {};
+    rows.forEach(function (x) { rdOf[x[0]] = x[3]; });
+    const late = {}, cutoff = ab_rsDayKey_(new Date(Date.parse(todayKey + 'T12:00:00Z') - AB_RS_LATE_KEEP_DAYS * 86400000));
+    const cur = ab_rsLate_();
+    Object.keys(cur).forEach(function (sym) { if (cur[sym].day >= cutoff) late[sym] = cur[sym].rd + '>' + cur[sym].day; });
+    done.forEach(function (sym) { if (rdOf[sym]) late[sym] = rdOf[sym] + '>' + todayKey; });
+    PropertiesService.getScriptProperties().setProperty(AB_RS_LATE_PROP, JSON.stringify(late));
+    AB_RS_LATE_MEMO_ = null;
+    Logger.log('Result dates from the NSE filings: ' + done.length + ' added to the Results tab - ' + done.slice(0, 40).join(', '));
+  }
+  return { added: r.added || [], replaced: r.replacedSyms || [] };
 }
 
 /*****************************************************************
@@ -11933,7 +12017,7 @@ function ab_xbrlWant_(tr, todayKey, basis, daily, ann) {
   const first = [], unseen = [], flag = [];
   tr.list.forEach(function (t) {
     if (t.status === 'Gave up' || !t.rdKey || !t.quarter) return;
-    const age = ab_rsDaysBetween_(t.rdKey, todayKey);
+    const age = ab_rsAge_(t.symbol, t.rdKey, todayKey);
     if (age < 0 || age > AB_RS_MAX_WAIT_DAYS || ab_xbrlHas_(t.symbol, t.quarter)) return;
     const needs = t.status === 'Pending' || t.source === AB_MC_SOURCE;
     if (needs && (t.source === AB_MC_SOURCE || (ann && ab_annFor_(ann, t.symbol, t.rdKey)))) first.push(t);
@@ -12170,7 +12254,7 @@ function ab_rsOtherIncome_(sym, quarter) {
 function ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey) {
   tr.list.forEach(function (t) {
     if (t.status !== 'Updated' || touched[t.symbol] || !t.rdKey || !rowsBySym[t.symbol]) return;
-    const age = ab_rsDaysBetween_(t.rdKey, todayKey);
+    const age = ab_rsAge_(t.symbol, t.rdKey, todayKey);
     if (age < 0 || age > AB_RS_MAX_WAIT_DAYS) return;
     const row = layout.data[rowsBySym[t.symbol][0]];
     const val = function (c) { return c === -1 ? '' : row[c]; };
