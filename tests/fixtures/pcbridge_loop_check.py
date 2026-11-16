@@ -63,8 +63,34 @@ class FakeRunner:
         EVENTS.append(('live', CLOCK[0]))
         return False
 
+    def busy(self):
+        return False
+
+    def live_busy(self):
+        return False
+
+
+class FakeUpdater:
+    """The auto update (owner, 16-Nov-2026): looked at on every tick before anything else; no network here."""
+    restart = []
+
+    def __init__(self, here=None, get=None):
+        pass
+
+    def restart_due(self, busy=None, now=None):
+        EVENTS.append(('upd', CLOCK[0]))
+        if FakeUpdater.restart:
+            FakeUpdater.restart.pop()
+            return not busy()
+        return False
+
+    def maybe_check(self, cfg, api, online=None):
+        EVENTS.append(('check', CLOCK[0]))
+        return False
+
 
 sb.itd.Runner = FakeRunner
+sb.UPD.Updater = FakeUpdater
 sb.run_once = lambda cfg: EVENTS.append(('full', CLOCK[0])) or 0
 sb.quick_check = lambda cfg, daily=None, lock=True: EVENTS.append(('quick', CLOCK[0])) or 0
 sb.internet_ok = lambda: ONLINE[0]
@@ -76,8 +102,9 @@ cfg = dict(sb.DEFAULTS)
 assert cfg['quick_check_minutes'] == 30 and cfg['full_round_every_hours'] == 3
 run_for(cfg, 8)
 assert at('full') == [0, 60, 240, 420], at('full')
-assert [e[0] for e in EVENTS[:3]] == ['kite', 'live', 'full'] and EVENTS[0][1] == EVENTS[2][1], \
-    ('the Kite scan (and the live prices) are started before the first full round', EVENTS[:3])
+assert [e[0] for e in EVENTS[:5]] == ['upd', 'check', 'kite', 'live', 'full'] and EVENTS[2][1] == EVENTS[4][1], \
+    ('the update check, then the Kite scan (and the live prices) are started before the first full round', EVENTS[:5])
+assert len(at('upd')) == len(at('check')) == len(at('kite')), 'the update is looked at on every tick (16-Nov-2026)'
 assert len(at('kite')) > 100, 'looked at on every tick'
 assert len(at('live')) == len(at('kite')), 'the Kite live prices are looked at on every tick too (owner, 08-Nov-2026)'
 q = at('quick')
@@ -132,6 +159,22 @@ run_for(cfg, 2)
 assert at('full') == [0, 60] and 'Unexpected problem: sheet said no' in LOGS, (EVENTS, LOGS)
 
 # ---------------------------------------------------------------- one background program per log-in
+# the program's files changed (an update / a zip extracted by hand): it restarts itself at the tick, before anything else runs
+RESTARTS = []
+
+
+def fake_restart():
+    RESTARTS.append(CLOCK[0])
+    raise Stop()
+
+
+sb.restart_self = fake_restart
+FakeUpdater.restart = [1]
+del EVENTS[:], LOGS[:]
+run_for(cfg, 1)
+assert len(RESTARTS) == 1 and [e[0] for e in EVENTS] == ['upd'], EVENTS
+assert 'The program files changed - the background program restarts itself to use them.' in LOGS, LOGS
+
 spec2 = importlib.util.spec_from_file_location('sb2', os.path.join(ROOT, 'pcbridge', 'ScreenerBridge', 'screener_bridge.py'))
 fresh = importlib.util.module_from_spec(spec2)
 spec2.loader.exec_module(fresh)

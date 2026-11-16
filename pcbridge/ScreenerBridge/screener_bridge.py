@@ -69,6 +69,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py lab [D|W|4H]  the Backtest Lab with its default rules on this computer (a check; the website's page sends its own)
   python screener_bridge.py live       Kite live prices every minute -> the sheet's "Kite Live" tab (close the window to stop)
   python screener_bridge.py datafolder [FOLDER]  keep the big Kite / Backtest Lab data in another folder (D:\\StockBlueprintData) and move it there
+  python screener_bridge.py update     get the newest version from GitHub now: this folder's files + the sheet's code (the background program does it every 3 hours)
+  python screener_bridge.py googlelogin  the one-time Google login that lets the program put new code into your sheet
   python screener_bridge.py reschedule re-create the log-in schedule only, keeps your settings
   python screener_bridge.py uninstall  remove the schedule
 
@@ -158,6 +160,8 @@ import kite_intraday as itd   # noqa: E402  (Zerodha Kite: intraday / weekly / m
 itd.log = log
 itd.backtest_lab.log = log
 import data_place as DP       # noqa: E402  (owner, 14-Nov-2026: the big data on the D: drive)
+import self_update as UPD     # noqa: E402  (owner, 16-Nov-2026: "here after i won't do this job" - updates by itself)
+UPD.log = log
 
 
 def nse_holidays():
@@ -3777,6 +3781,7 @@ def cmd_test(cfg):
     except Exception as e:
         print('   PROBLEM - %s' % e)
     print('9) Zerodha Kite (intraday patterns): ' + itd.status_line(cfg))
+    print('10) ' + UPD.status_line())
     return 0 if ok else 1
 
 
@@ -3951,6 +3956,14 @@ def run_after_login(cfg):
     fulls, next_full, next_quick, offline = 0, time.time(), None, False
     runner = itd.Runner()       # the Kite scan, once a trading day after the close, in its own thread
     lab = itd.backtest_lab.LabWorker()   # the website's Backtest Lab: runs on this computer's candles
+    updater = UPD.Updater(HERE)  # GitHub's newest version -> this folder + the sheet's code (16-Nov-2026), its own thread
+
+    def busy():
+        return bool(runner.busy() or runner.live_busy() or lab.running.is_set() or lab.pdf_jobs or
+                    (lab.pdf_thread and lab.pdf_thread.is_alive()))
+    if cfg.get('auto_update') is not False:
+        log('Auto update: on - every %g hours this program and the sheet\'s code get the newest version from GitHub by '
+            'themselves.' % float(cfg.get('update_every_hours', UPD.UPDATE_EVERY_H) or 0))
     if itd.configured(cfg) and cfg.get('intraday', True):
         log('Kite intraday patterns: on - after each trading day\'s close (or the next time this computer is on) the '
             'program asks you to log in to Kite once and then scans the candles.')
@@ -3963,6 +3976,20 @@ def run_after_login(cfg):
             else ' and in %d minutes' % SECOND_RUN_AFTER_MIN,
             (', the results check every %g minutes' % (quick_s / 60)) if quick_s else ''))
     while next_full is not None or next_quick is not None:
+        # this program's files changed (an update, or a zip extracted by hand): start again with them - only when nothing
+        # is going on and not in market hours
+        try:
+            due_restart = updater.restart_due(busy)
+        except Exception as e:
+            due_restart = False
+            log('Update: could not check the files - %s' % e)
+        if due_restart:
+            log('The program files changed - the background program restarts itself to use them.')
+            restart_self()
+        try:
+            updater.maybe_check(cfg, api, online=internet_ok)
+        except Exception as e:
+            log('Update: could not check - %s' % e)
         # the Kite scan first, in its own thread (owner, 08-Nov-2026: it no longer waits for the full round to finish)
         try:
             runner.maybe_start(cfg, api, nse_holidays(), online=internet_ok)
@@ -4008,6 +4035,19 @@ def run_after_login(cfg):
 
 
 SECOND_RUN_AFTER_MIN = 60   # on every log-in: run #1 after 1 minute, run #2 this many minutes later
+
+
+def restart_self():
+    """A new background program with this folder's files (no window), then this one ends; bridge_loop.json goes first so
+    the new one can take over."""
+    try:
+        os.remove(LOOP_PATH)
+    except OSError:
+        pass
+    py = pythonw_path() if os.name == 'nt' else sys.executable
+    flags = (0x00000008 | 0x00000200) if os.name == 'nt' else 0       # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen([py, os.path.abspath(__file__), 'login'], cwd=HERE, close_fds=True, creationflags=flags)
+    os._exit(0)
 
 
 def _remove_tasks():
@@ -4164,6 +4204,21 @@ def main(argv):
         return itd.setup(cfg, save_config)
     if cmd == 'chochrules':
         return itd.choch_setup(cfg, save_config)
+    if cmd == 'googlelogin':
+        print('A Google page opens in your browser: choose the Google account of your sheet, then Allow.')
+        return 0 if UPD.google_login(HERE) else 1
+    if cmd == 'update':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        done = UPD.Updater(HERE).check_once(cfg, api)
+        if done.get('sha'):
+            print('Newest version %s: %s; this folder %s.' % (
+                done['sha'][:7], {None: 'the sheet was not changed', 'same': 'the sheet already runs it'}.get(
+                    done.get('sheet'), 'the sheet now runs it (web app version %s)' % done.get('sheet')),
+                '%d file(s) updated - the background program restarts itself with them (not in market hours)' % len(done['files'])
+                if done['files'] else 'is up to date'))
+        return 0 if done.get('sha') else 1
     if cmd == 'intraday':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
