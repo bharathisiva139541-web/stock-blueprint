@@ -327,10 +327,10 @@ class Model:
                         prev = self.swV[k]
                         k -= 2
                     d = min(dh, dl)
+                    if self.prot:                 # a broken protected high starts a new fall - also with d = 0 (16-Nov-2026)
+                        self.sw_base = len(self.swP)
                     if d >= 1:
                         self.events.append([i, hi_, lvl, self.seg_min_bar, self.seg_min, d])
-                        if self.prot:
-                            self.sw_base = len(self.swP)
                         self.lc_b, self.lc_lf, self.lc_d, self.lc_seen, self.lc_dead = i, self.seg_min, d, False, False
                     if d >= self.down_n and not self.bos_mode:
                         self._set_setup(i, hi_, lvl, self.seg_min_bar, self.seg_min, d)

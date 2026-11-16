@@ -944,7 +944,8 @@ assert sent6[0][0] == 'intraday' and sent6[0][1]['op'] == 'waiting' and [r['sym'
 assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1]['downN'] == 3
 NEW6 = {'zoneMin': 0.0, 'zoneMax': 0.0, 'lineTol': 0.5, 'fibLevel': 0.618, 'fibTol': 1.0, 'gapEntry': True, 'lineOk': False,
         'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second', 'touchAgain': True,       # the 12-Nov-2026 refinements' defaults
-        'bos': True, 'bosKind': 'both', 'ltf': '15m'}                                       # + BOS + FVG and the 15m confirmation (13-Nov-2026)
+        'bos': True, 'bosKind': 'both', 'ltf': '15m',                                       # + BOS + FVG and the 15m confirmation (13-Nov-2026)
+        'chochMode': 'last'}                                                                # + the protected high (16-Nov-2026)
 assert sent6[0][1]['choch'] == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6)
 # the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
 D6 = K.choch_rules()
@@ -967,13 +968,13 @@ for rr6, n6 in ((dict(D6, part='top'), 2), (dict(D6, downN=4), 0), (dict(D6, fib
     if n6:
         assert '· first pullback · zone top 81% down the move · zone ' in got6[0]['note'], got6[0]['note']
 # ChochRules.bat: Enter keeps a value, a bad answer is asked again; config.json gets the five keys
-answers = iter(['', '4', '0.6', '0.618', '9', '2', '2'] + [''] * 11)
+answers = iter(['', '4', '', '0.6', '0.618', '9', '2', '2'] + [''] * 11)
 saved6 = {}
 assert K.choch_setup({'url': 'x'}, lambda c: saved6.update(c), ask=lambda q: next(answers)) == 0
 assert K.choch_rules(saved6) == dict({'pivotN': 5, 'downN': 4, 'fib': 0.618, 'part': 'top', 'zoneWhen': 'leg'}, **NEW6) and saved6['url'] == 'x', saved6
 # ... and the refinements of 12-Nov-2026: zone size 2 - 8 %, the FVG top, the CHoCH-line rule (+1 %), dark clouds left out,
 # the Fib + pattern entry in big zones at the 61.8 % line +/- 1.5 %
-answers = iter([''] * 5 + ['2', '2', '2', '8', '2', '2', '1', '2', '2', '', '1.5', '', '2', '2'])
+answers = iter([''] * 6 + ['2', '2', '2', '8', '2', '2', '1', '2', '2', '', '1.5', '', '2', '2'])
 saved7 = {}
 assert K.choch_setup({}, lambda c: saved7.update(c), ask=lambda q: next(answers)) == 0
 r7 = K.choch_rules(saved7)
@@ -986,6 +987,14 @@ assert K.choch_rules_words(r7).endswith(", zone size 2 - 8%, the whole FVG (not 
                                         "dark-cloud FVGs left out, big zones: a Spring / Harami + Inverted Hammer at the zone's 61.8% line, "
                                         "every discount zone, a zone touched before the CHoCH does not count again"), K.choch_rules_words(r7)
 assert K.choch_rules({'choch_zone_max_pct': 500, 'choch_dark_cloud': 'x', 'choch_gap_entry': 1, 'choch_fib_pattern': 'some'}) == D6
+# the protected high in the daily scan (owner, 16-Nov-2026, ASHOKA - his TradingView uses it): ChochRules.bat's 3rd question
+answers = iter(['', '', '5', '2'] + [''] * 20)
+saved8 = {}
+assert K.choch_setup({}, lambda c: saved8.update(c), ask=lambda q: next(answers)) == 0
+assert saved8['choch_mode'] == 'protected' and K.choch_rules(saved8) == dict(D6, chochMode='protected')
+assert K.choch_rules({'choch_mode': 'other'}) == D6 and K.choch_opts(D6) is None and K.choch_opts(K.choch_rules(saved8)) == {'choch': 'protected'}
+assert K.choch_rules_words(K.choch_rules(saved8)).endswith(', the 2nd discount zone when the move has two (the 1st only watched), '
+                                                           'the CHoCH breaks the protected high (the swing high before the lowest low)')
 # the zone size rule in the daily scan: the SUPREMEIND chart's zone is 4.3 % tall
 assert K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMax=3)) is None and K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMin=5)) is None
 wz = K.choch_waiting(w_at, w_at, 'D', rules=dict(D6, zoneMin=2, zoneMax=8))
@@ -998,6 +1007,8 @@ up6 = date.fromisoformat(r6[-1][0])
 st6 = {'scanned': '2999-01-01', 'tfs': K.chosen_tfs({}), 'slots': K.chosen_slots({}), 'rules': K.RULES_VERSION}
 kc6 = {'kite_api_key': 'abcdef', 'kite_api_secret': 'abcdefghijkl'}
 assert K.due(kc6, set(), state=dict(st6))[0] is False, 'an older state (no choch) = the defaults'
+old6 = {k: v for k, v in D6.items() if k != 'chochMode'}
+assert K.due(kc6, set(), state=dict(st6, choch=old6))[0] is False, 'a state from before a rule was added = its default: no rescan'
 assert K.due(dict(kc6, choch_lower_highs=4), set(), state=dict(st6))[0] is True
 assert K.due(dict(kc6, choch_lower_highs=4), set(), state=dict(st6, choch=K.choch_rules({'choch_lower_highs': 4})))[0] is False
 

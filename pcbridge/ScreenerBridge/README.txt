@@ -402,6 +402,11 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    the CHoCH is the signal (SWIGGY). ChochRules.bat asks "A zone price touched before the CHoCH": 1 = counts again,
    2 = not. IMPORTANT after extracting a new zip: sign out and in again (or restart the laptop) - the background program
    keeps running the old version until then (that is why the charts PDF had no volume bars).
+ - 16-Nov-2026 (ASHOKA): "the protected high" was stuck - once a protected high broke after a HIGHER high, it kept using
+   the old lowest low and found no CHoCH on the rest of the chart. Fixed in the Backtest Lab, the daily scan and the
+   TradingView script (copy the script again from the Lab page). ChochRules.bat now asks (3rd question) "The CHoCH = a
+   close above": 1 = the last swing high (as before), 2 = the protected high - choose 2 if your TradingView uses it, so
+   the website's CHoCH lists match your chart.
  - 13-Nov-2026 (later): five fixed rules of your CHoCH + FVG setup (Backtest Lab "Only my setup", the daily scan and the
    TradingView script): no zone wholly above the CHoCH line; the zone formed in the swing from the final low to the move
    high; before the move high at most 2 candles touched the zone and none closed under its middle; the 1st (watched)
