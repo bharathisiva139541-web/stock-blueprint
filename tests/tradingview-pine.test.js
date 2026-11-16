@@ -109,20 +109,25 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   assert.match(n.join(' '), /next candle's open/);
   assert.match(n.join(' '), /market condition \(NIFTY 50\)/);
   assert.match(n.join(' '), /Spring shape rules/);
-  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).length, 2, 'the timeframe + "only entry / stop / target"');
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0 }).length, 2, 'the timeframe + "only entry / stop / target"');
+  // the Lab-only rules of 16-Nov-2026 (owner: "Backtest lab la matum"): a gap-down open's near stop, no straight fall, the HH distance
+  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).join(' '), /A gap-down open into the zone: the Lab buys at the open with the stop 0\.5 x ATR under it \(or under the final low when nearer\); the script draws the usual stop under the zone\./);
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'close' }).length, 2, 'no gap rule without the zone-top order');
+  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0, structure: 'only', hhMax: 30 }).join(' '),
+    /Not drawn \(check them on the chart yourself\): the move high at most 30% above the zone top, no straight fall from the move high \(a lower high on the way down\)\./);
   // the lower-timeframe confirmation is said, not drawn (owner, 13-Nov-2026)
   assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', ltf: '15m' }).join(' '), /The confirmation on the 15-minute chart is not drawn: the BUY marks are the touches - after one, switch TradingView to the 15m chart/);
   // the filters of 12-Nov-2026 are said, not drawn; the structure options are drawn (owner, 12-Nov-2026), so not listed
   const n2 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', swingAtr: 1, chochMode: 'protected', eqAtr: 0.25, lagMin: 10, wkAbove: 21, sweep: true }).join(' ');
   assert.doesNotMatch(n2, /ZigZag|protected|equal highs|stand out/);
   assert.match(n2, /Not drawn \(check them on the chart yourself\): the days after the CHoCH, the sweep of the low, the weekly trend\./);
-  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', swingMode: 'zigzag', chochMode: 'protected', eqAtr: 0.5, gapEntry: true, stop: 'final' }).length, 2, 'nothing more to say');
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0, swingMode: 'zigzag', chochMode: 'protected', eqAtr: 0.5, gapEntry: true, stop: 'final' }).length, 2, 'nothing more to say');
   // the refinements of 12-Nov-2026 the script does not draw are said
   const n3 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', zoneMax: 10, lineOk: true, fibPat: 'big', darkCloud: 'exclude' }).join(' ');
   assert.match(n3, /the zone size range, zones short of the discount line under the CHoCH level, the Spring \/ Harami \+ Inverted Hammer at the zone's Fib line, the dark-cloud FVG rule\./);
   // the exits of 13-Nov-2026 are said (the ATR stop and the targets are drawn)
   const n4 = PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', partialPct: 50, beAt: 1, timeN: 10, stopAtr: 2, targetMode: 'mh' }).join(' ');
   assert.match(n4, /Exits are not drawn: selling 50% at the target, the stop to the entry at 1R, the time stop \(10 candles\)/);
-  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', stopAtr: 2, targetMode: 'pct', targetPct: 30 }).length, 2, 'drawn, not said');
-  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', partialPct: 50, after: 'fixed' }).length, 2, 'a fixed target sells it all');
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0, stopAtr: 2, targetMode: 'pct', targetPct: 30 }).length, 2, 'drawn, not said');
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0, partialPct: 50, after: 'fixed' }).length, 2, 'a fixed target sells it all');
 });

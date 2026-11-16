@@ -26,6 +26,12 @@ L.CHARTS_DIR = os.path.join(TMP, 'lab_charts')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
 L.LTF_DIR = os.path.join(K.DATA_DIR, 'ltf')           # (= K.ltf_dir(): the 1-hour / 15-minute files)
+# the owner's rules of 16-Nov-2026 (a gap-down open into the zone: the near stop; no straight fall from the move high): the
+# made charts of sections 2-28 pull back in a straight line and fill on wicks - they check other rules, so they run with both
+# off; section 29 checks them with the real defaults (put back there)
+REAL_16NOV = {'gapAtr': L.DEFAULTS['gapAtr'], 'fallLh': L.DEFAULTS['fallLh']}
+assert REAL_16NOV == {'gapAtr': 0.5, 'fallLh': True} and L.DEFAULTS['gapBelow'] == 2 and L.DEFAULTS['hhMax'] == 0
+L.DEFAULTS['gapAtr'], L.DEFAULTS['fallLh'] = 0.0, False
 
 
 def P(**kw):
@@ -420,7 +426,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-18:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow', 'h4', 'm15']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-21:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow', 'h4', 'm15', 'fill', 'gapo', 'hh']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -2279,7 +2285,7 @@ finally:
 # confirmation"; answers 1a 2a 3 ok 4b, 5 both, buy at the next day's open, stop the FVG bottom or the candle low (+ ATR), 6 same day)
 assert 'fvg4h' in L.CHOICES['group'] and L.GROUP_NAMES['fvg4h'] == 'Daily FVG + 4H Spring'
 assert (L.DEFAULTS['h4Body'], L.DEFAULTS['h4Zones'], L.DEFAULTS['m15Choch'], L.DEFAULTS['m15Pivot'], L.DEFAULTS['m15Down']) == (0.5, 'both', 'show', 3, 2)
-assert L.TRADE_COLS[-2:] == ['h4', 'm15']
+assert L.TRADE_COLS[-5:-3] == ['h4', 'm15']
 # the Spring rule on the two 4-hour candles = the sheet's / the daily scan's (kite_intraday.is_spring_pair)
 rnd28, yes28 = random.Random(28), 0
 for _ in range(4000):
@@ -2388,5 +2394,177 @@ w28 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf28
 for txt in ('the first candle to come back into the zone', 'On the 4-hour chart that day was two candles',
             'a 15-minute CHoCH formed that day at 14:15', 'Signals: Daily FVG + 4H Spring'):
     assert txt in w28, txt
+
+# ------------------------------------------------------------------ 29. a gap-down open into the zone + no straight fall (owner,
+# 16-Nov-2026, after his charts PDF: "price doesnot touch the Zone, instead it opens inside the Zone or slightly below the zone
+# (let's have buffer, X % below the ZOne bottom) by candle gapdown opening. In this type of Trading our stop loss should be half
+# the ATR. or if the gapup opening price is only slighlty above the LL final Low, stop loss should be below the LL final low";
+# RENT 21-Jan-2008 / PSB 12-Nov-2013: "from this steep high, price without forming any Structure touched this Zone in single
+# move ... we don't trade this"; answers: 2 % buffer, the nearer stop, no ATR widening, the zone-top order only; the straight-
+# fall rule always on; "zone top to HH at most Y %" an option, off)
+L.DEFAULTS.update(REAL_16NOV)
+D0 = date(2026, 1, 5)                                         # (section 28 used the name for a day ordinal)
+assert P()['gapAtr'] == 0.5 and P()['gapBelow'] == 2 and P()['fallLh'] is True and P()['hhMax'] == 0
+assert P(gapAtr=9, gapBelow=-1, hhMax=5000)['gapAtr'] == 5 and P(gapBelow=-1)['gapBelow'] == 0 and P(hhMax=5000)['hhMax'] == 1000
+assert L.TRADE_COLS[-3:] == ['fill', 'gapo', 'hh'] and {'straight', 'hhfar'} <= set(L.STRUCT_WHY)
+# the lower high between the move high (candle 0) and the signal candle: a swing high with 2 lower highs each side
+hs = [120, 118, 116, 114, 112, 110, 108]                      # a straight fall
+assert L.lower_high_between(lambda j: hs[j], 0, 7) == -1
+hs = [120, 117, 115, 116, 118, 116, 114, 111, 109]            # a bounce to 118 (candle 4), lower highs on both sides
+assert L.lower_high_between(lambda j: hs[j], 0, 9) == 4
+assert L.lower_high_between(lambda j: hs[j], 0, 7) == 4 and L.lower_high_between(lambda j: hs[j], 0, 6) == -1, \
+    'its 2nd candle after (candle 6) must come before the signal candle'
+assert L.lower_high_between(lambda j: hs[j], 0, 9, n=4) == -1, '4 candles each side: the move high (120) is one of them'
+hs = [120, 117, 118, 118, 116, 114, 112]                      # equal highs: the 2nd is not above the one before it
+assert L.lower_high_between(lambda j: hs[j], 0, 7) == -1
+sj29 = {'mh': 0, 'H': 120.0}
+assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P()) == ''
+assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(hhMax=19.9)) == 'hhfar'
+assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(hhMax=20)) == ''
+assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P()) == 'straight'
+assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P(fallLh=False)) == ''
+assert L.fall_fail({'mh': -1, 'H': None}, lambda j: 0, 7, 100.0, P(hhMax=1)) == '', 'no move high: nothing to judge'
+
+# the gap-down open, on simulate: the zone 95 - 99; the candles before stay above it; ATR(14) of candle 2 = (2 + 4 + 3) / 3 = 3
+BASE29 = [cdl(0, 104, 105, 103, 104), cdl(1, 104, 106, 102, 103), cdl(2, 103, 104, 101, 102)]
+ROW29 = [3, 'Z', 95.0, 99.0, 't', 1, 0, 50.0, 0]
+UP29 = [cdl(4, 97.5, 100.5, 97, 100.2), cdl(5, 100.2, 103, 99.5, 102.8)]
+
+
+def run29(c3, gf=None, after=None, **kw):
+    cs = cache_of({'X': (BASE29 + [c3] + (UP29 if after is None else after), [ROW29])})['X']
+    pp = P(**dict(dict(cost=0, lockTarget=False, entry='zone', after='fixed'), **kw))
+    atr = L.structure.atr_series([L._f(x) for x in cs.h], [L._f(x) for x in cs.l], [L._f(x) for x in cs.c])
+    return L.simulate(cs, ROW29, pp, None, None, atr, None, None, None, gap_final=gf)
+
+
+t, _ = run29(cdl(3, 97, 98, 96, 97.5))                        # opened inside the zone: 0.5 x 3 = 1.5 under 97
+assert (t['entry'], t['stop'], t['stopBy'], t['fill'], t['gapo']) == (97.0, 95.5, 'gapatr', 'in', 2.11), t
+assert t['tgt'] == 100.0 and t['reason'] == 'target' and t['R'] == 2.0 and t['jx'] == 4, t
+t, _ = run29(cdl(3, 97, 98, 96, 97.5), gf=96.5)               # the final low just under the buy: 96.5 x 0.995 = 96.0175 is nearer
+assert t['stopBy'] == 'gapfinal' and abs(t['stop'] - 96.02) < 1e-9 and abs(t['risk'] - (97 - 96.5 * 0.995)) < 1e-9, t
+t, _ = run29(cdl(3, 97, 98, 96, 97.5), gf=95.8)               # 95.32 is farther than the ATR stop: the ATR stop
+assert t['stopBy'] == 'gapatr' and t['stop'] == 95.5, t
+t, _ = run29(cdl(3, 97, 98, 96, 97.5), gf=97.5)               # opened under the final low: it is no stop
+assert t['stopBy'] == 'gapatr' and t['stop'] == 95.5, t
+t, _ = run29(cdl(3, 94, 98, 93.5, 97.5))                      # 1.05 % under the bottom: within 2 %
+assert (t['entry'], t['stop'], t['fill'], t['gapo']) == (94.0, 92.5, 'under', -1.05), t
+assert run29(cdl(3, 93, 98, 92.5, 97.5)) == (None, 'gapdeep'), '2.1 % under the bottom'
+t, _ = run29(cdl(3, 93, 98, 92.5, 97.5), gapBelow=3)
+assert t['entry'] == 93.0 and t['stop'] == 91.5 and t['fill'] == 'under', t
+t, _ = run29(cdl(3, 97, 98, 96, 97.5), stopAtr=3)             # no "x ATR whichever is lower" widening for a gap open
+assert t['stop'] == 95.5 and t['stopBy'] == 'gapatr', t
+t, _ = run29(cdl(3, 97, 101, 96, 100.5))                      # the high came after the buy at the open: the target that candle
+assert t['reason'] == 'target' and t['jx'] == 3 and t['days'] == 0 and t['exit'] == 100.0, t
+t, _ = run29(cdl(3, 97, 101, 95.4, 100.5))                    # a low under the stop the same candle: the stop (both = the stop)
+assert t['reason'] == 'stop' and t['R'] == -1.0 and t['jx'] == 3, t
+# off (gapAtr 0): the run's own stop as before; an open under that stop is skipped
+t, _ = run29(cdl(3, 97, 98, 96, 97.5), gapAtr=0)
+assert t['stop'] == 94.53 and t['stopBy'] == '' and t['fill'] == 'in' and t['gapo'] == 2.11, t
+assert run29(cdl(3, 94, 98, 93.5, 97.5), gapAtr=0) == (None, 'gap')
+t, _ = run29(cdl(3, 97, 101, 96, 100.5), gapAtr=0)            # the old way: the close counts on the entry candle, not the high
+assert t['reason'] == 'target' and t['jx'] == 3 and t['tgt'] == round(97 + 2 * (97 - 94.525), 2) and t['exit'] == t['tgt'] or t['jx'] > 3, t
+# a wick from above: the usual way (and the ATR widening still works there)
+t, _ = run29(cdl(3, 100, 100.5, 98, 99.5))
+assert (t['entry'], t['stop'], t['stopBy'], t['fill'], t['gapo']) == (99.0, 94.53, '', 'wick', None), t
+t, _ = run29(cdl(3, 100, 100.5, 98, 99.5), stopAtr=3)
+assert t['stopBy'] == 'atr' and t['stop'] == 90.0, t
+# the gap rule is for the zone-top order only: a close entry is unchanged
+cs29 = cache_of({'X': (BASE29 + [cdl(3, 97, 98, 96, 97.5)] + UP29, [ROW29])})['X']
+t, _ = L.simulate(cs29, ROW29, P(cost=0, entry='close', after='fixed'), None, None, [3.0] * 6, None, None, None, gap_final=96.5)
+assert t['stop'] == 94.53 and t['stopBy'] == '' and t['fill'] == '' and t['gapo'] is None, t
+
+
+# through run_job on a made chart (= section 10's DDD: 3 lower highs / lows, a CHoCH rally leaving the FVG 101.3 - 106 and a
+# smaller one 108.3 - 109.7 above it, the rally's high 117.3): the pullback falls straight / pauses at a lower high on the way
+def craft29(pause, touch=None):
+    rows, prev = [], 130.0
+    d0 = date(2010, 1, 4)
+
+    def put(o, h, l, c):
+        rows.append([(d0 + timedelta(days=len(rows))).isoformat(), round(o, 2), round(h, 2), round(l, 2), round(c, 2), 50000])
+
+    def go(to, k):
+        nonlocal prev
+        for x in leg(prev, to, k):
+            put(prev, max(prev, x) + 0.3, min(prev, x) - 0.3, x)
+            prev = x
+    for to in (122, 127, 117, 122, 112, 117, 106, 111, 100):
+        go(to, 4)
+    put(100, 101.3, 99.7, 101)
+    put(101, 108.3, 100.7, 108)
+    put(108, 110.3, 106, 110)
+    put(110, 113.3, 109.7, 113)
+    prev = 113
+    go(117, 2)                                                  # the rally's high 117.3
+    if pause:
+        go(111, 2)
+        go(115, 2)                                              # a lower high 115.3 on the way down
+    go(108, 2 if pause else 3)
+    if touch is None:
+        put(108, 108.3, 104.8, 105)                             # c1 red (the zone's first touch)
+        put(105.3, 105.6, 103, 105.1)                           # c2 = Spring, low 103 in the FVG
+        prev = 105.1
+    else:
+        put(*touch)                                             # the zone's first touch: opened inside it / under it
+        prev = touch[3]
+    go(126, 10)
+    go(118, 10)
+    return rows
+
+
+SET29 = {'tf': 'D', 'maxRisk': 0, 'structure': 'only', 'pivotN': 2, 'downN': 3, 'targetMode': 'swing', 'swingMinR': 1}
+
+
+def job29(sym, rows, **kw):
+    K.store_save(sym, {'v': 1, 'sym': sym, 'm15': [], 'day': rows, 'h4': []})
+    K.backtest_pass(set(), date.fromisoformat(rows[-1][0]), {}, out=lambda m: None)
+    r = L.run_job(dict(SET29, **kw))
+    return r, [dict(zip(L.TRADE_COLS, x)) for x in r['trades'] if x[0] == sym]
+
+
+r29, t29 = job29('STR', craft29(False), group='fvg')
+assert t29 == [] and r29['structWhy'].get('straight', 0) >= 1, (r29['structWhy'], t29)
+assert len(job29('STR', craft29(False), group='fvg', fallLh=False)[1]) == 1, 'the same signal without the rule'
+r29, t29 = job29('PAU', craft29(True), group='fvg')
+assert len(t29) == 1 and t29[0]['hh'] == round((117.3 - 106) / 106 * 100, 1) and t29[0]['fill'] == '', t29
+assert job29('PAU', craft29(True), group='fvg', hhMax=10)[1] == [] and \
+    job29('PAU', craft29(True), group='fvg', hhMax=10)[0]['structWhy'].get('hhfar', 0) >= 1
+assert len(job29('PAU', craft29(True), group='fvg', hhMax=11)[1]) == 1
+assert len(job29('PAU', craft29(True), group='fvg', structure='show')[1]) == 1
+# the charts PDF: the lower high in words, the rule on the cover
+pdf29 = L.run_job(dict(SET29, group='fvg'), charts=L.CHARTS_DIR, name='no straight fall')
+w29 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf29['pdf']['file'])))
+assert 'made a lower high on' in w29 and 'No straight fall: a lower high between the move high and the touch' in w29, w29[:400]
+# the zone-top order on a gap-down open: the first touch of the FVG opens at 105 inside it (the day before closed at 108)
+ATR29 = lambda rows, k: L.structure.atr_series([x[2] for x in rows], [x[3] for x in rows], [x[4] for x in rows])[k]
+c29 = craft29(True, (105, 105.6, 104, 105.3))
+k29 = next(k for k, x in enumerate(c29) if x[1] == 105)
+Z29 = dict(group='touch', entry='zone', stop='zone', targetMode='R')
+r29, t29 = job29('GAP', c29, **Z29)
+assert len(t29) == 1, (r29['skipped'], r29['structWhy'])
+g = t29[0]
+assert (g['entry'], g['fill'], g['gapo'], g['stopBy']) == (105.0, 'in', round((105 - 101.3) / 101.3 * 100, 2), 'gapatr'), g
+assert abs(g['stop'] - round(105 - 0.5 * ATR29(c29, k29 - 1), 2)) < 0.006, (g['stop'], ATR29(c29, k29 - 1))
+t29 = job29('GAP', c29, **dict(Z29, gapAtr=0))[1]
+assert t29[0]['stop'] == round(101.3 * 0.995, 2) and t29[0]['stopBy'] == '', t29
+c29 = craft29(True, (100, 100.5, 99.8, 100.4))               # 1.3 % under the zone bottom, just above the final low 99.7
+r29, t29 = job29('GAP', c29, **Z29)
+assert len(t29) == 1 and t29[0]['fill'] == 'under' and t29[0]['stopBy'] == 'gapfinal' and t29[0]['stop'] == round(99.7 * 0.995, 2), t29
+c29 = craft29(True, (98.5, 100.5, 98.2, 100.4))              # 2.8 % under the bottom
+r29, t29 = job29('GAP', c29, **Z29)
+assert t29 == [] and r29['skipped']['gapdeep'] == 1, r29['skipped']
+t29 = job29('GAP', c29, **dict(Z29, gapBelow=3))[1]
+assert len(t29) == 1 and t29[0]['stopBy'] == 'gapatr' and t29[0]['entry'] == 98.5, t29   # under the final low: the ATR stop
+# the breakdown "How the zone-top order filled" + the charts PDF sentence
+r29, _ = job29('GAP', craft29(True, (105, 105.6, 104, 105.3)), **Z29)
+bd29 = {b['key']: b for b in r29['breakdowns']}
+assert 'fill' not in bd29 or {r['label'] for r in bd29['fill']['rows']} <= {'price came down to the zone', 'opened inside the zone (gap down)',
+                                                                           'opened under the zone (gap down)'}
+pdf29 = L.run_job(dict(SET29, **Z29), charts=L.CHARTS_DIR, name='gap down open')
+w29 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf29['pdf']['file'])))
+for txt in ('it opened inside the zone', 'a gap down, so the order filled at the open', 'half the ATR',
+            'here the ATR stop was nearer', '(opened in the zone: 0.5 x ATR)', 'A gap-down open into the zone (inside it, or at most 2% under'):
+    assert txt in w29, txt
 
 print('OK')

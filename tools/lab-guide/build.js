@@ -100,7 +100,7 @@ function html() {
       ['Market structure - CHoCH / BOS', 'CHoCH விதிகள், discount, swing கண்டுபிடிக்கும் முறை, CHoCH candle-இன் வலிமை (அடுத்த பக்கம்).'],
       ['Spring candle shape', 'Spring candle-க்குக் கடுமையான விதிகள் (wick, body, dip). என் 5 பரிந்துரைகள் "Use this" உடன்.'],
       ['Trend filters', 'Signal candle EMA support / மேலே close; stock-இன் **weekly trend**; NIFTY போன்ற index-இன் நிலை.'],
-      ['Entry details', 'Close-இல் / அடுத்த open-இல் / **zone top order**; அதிகபட்ச risk %; zone-க்குள் எவ்வளவு ஆழம்; தேதிகள்; குறைந்த விலை / turnover.'],
+      ['Entry details', 'Close-இல் / அடுத்த open-இல் / **zone top order**; அதிகபட்ச risk %; zone-க்குள் எவ்வளவு ஆழம்; தேதிகள்; குறைந்த விலை / turnover. Zone top order-உடன்: **Opened into the zone (gap down)** - அடுத்த பக்கம்.'],
       ['Exit details', '**Target-இல் ஒரு பகுதி விற்பனை** (உதா. பாதி; மீதி trail-உடன்); target-க்கு முன் **xR மேலே போனதும் stop → entry**; **Time stop** (N candles-இல் xR மேலே போகவில்லை என்றால் அந்த candle close-இல் விற்பனை); அதிகபட்ச நாட்கள்; costs.'],
       ['Money details', 'ஒரு position அதிகபட்சம் %, ஒரே நேரத்தில் எத்தனை trades, லாபத்தை மீண்டும் முதலீடு.'],
       ['Checking the result', '**Validation part from** (3 பகுதி சோதனை) மற்றும் **Steady over time?** (ஒவ்வொரு N வருடத் தொகுதி).']]) +
@@ -113,7 +113,18 @@ function html() {
       ['Discount: the zone at least · judged on', 'Move-இன் எவ்வளவு கீழே zone இருக்க வேண்டும் (50% = பாதி; 65 / 70 / 75% புதியவை), zone-இன் நடுப்பகுதி / top / bottom வைத்து.'],
       ['Swings · stand out by · The CHoCH closes · Equal highs / lows', 'Swing / CHoCH கண்டுபிடிக்கும் **மாற்று வழிகள்** (E2, E3, E5): ZigZag, x ATR உயரம், protected high, சம highs. "the usual" = இப்போதைய baseline.'],
       ['The zone at most · Days after the CHoCH', 'Zone மிக ஆழமாக இருக்கக் கூடாது (உதா. 90%); CHoCH-க்குப் பின் குறைந்தது N நாட்கள்.'],
-      ['The CHoCH candle (displacement) · its volume · sweep', 'CHoCH candle-இன் body ≥ x ATR; volume ≥ x சராசரி; final low முந்தைய low-ஐ sweep செய்து மேலே close.']]), 5));
+      ['The CHoCH candle (displacement) · its volume · sweep', 'CHoCH candle-இன் body ≥ x ATR; volume ≥ x சராசரி; final low முந்தைய low-ஐ sweep செய்து மேலே close.'],
+      ['The move high (HH) above the zone top', 'Zone top-இலிருந்து move high (HH) அதிகபட்சம் இத்தனை % மேலே (RENT: 45%). இயல்பு **Off**. நேர் வீழ்ச்சி விதி: அடுத்த பக்கம்.']]), 5));
+  // ---------------------------------------------------------------- a gap-down open into the zone (owner, 16-Nov-2026)
+  pages.push(page('Gap-down open மற்றும் நேர் வீழ்ச்சி', p('உங்கள் charts PDF-இல் பார்த்தது: சில நாட்களில் price zone-க்கு **இறங்கி வராமல்**, ' +
+    'நேரடியாக zone-க்குள்ளோ சற்றுக் கீழோ **open** ஆகிறது. அப்போது stop-ஐ அருகில் வைத்து **+R-ஐ அதிகரிப்பது** இதன் நோக்கம்.') +
+    img('06b-entry', 'Entry details - zone top order-உடன் "Opened into the zone (gap down)": stop x ATR, open அதிகபட்சம் x% zone-க்குக் கீழே.') +
+    table(['Box', 'பொருள்'], [
+      ['Opened into the zone (gap down): stop', 'Touch candle zone-க்கு **இறங்கி வராமல்** நேரடியாக zone-க்குள் (அல்லது bottom-க்குச் சற்றுக் கீழே) **open** ஆனால், order அந்த open-இல் fill. Stop = buy-க்கு **0.5 x ATR** கீழே, அல்லது **final low** (BOS: higher low) அதைவிட அருகில் இருந்தால் அதன் கீழே - **risk குறைவானது**. "x ATR whichever is lower" விதி இங்கே இல்லை. **Off** = பழைய முறை.'],
+      ['… the open at most', 'Zone bottom-க்கு அதிகபட்சம் இத்தனை % கீழே open ஆனால் மட்டும் (இயல்பு **2%**). அதைவிட ஆழம் = skip ("opened too far under the zone").'],
+      ['(எப்போதும், box இல்லை) நேர் வீழ்ச்சி இல்லை', '"Only my setup"-இல்: move high-இலிருந்து zone வரை வரும் வழியில் குறைந்தது **ஒரு lower high** (இருபுறமும் 2 candles தாழ்வான swing high) வேண்டும். நிற்காமல் நேராக zone-க்குள் விழுந்தால் trade இல்லை (RENT, PSB). முடிவில் "price fell straight ..." என்று எண்ணப்படும்.'],
+      ['முடிவில்', 'Trades table: **Order filled** (Came down to it / Opened in the zone / Opened x% under it), **Stop from** (Gap open: ATR / final low), **HH above zone %**. "What worked best" → **How the zone-top order filled**, **Move high (HH) above the zone top**.']]) +
+    p('இவை **Backtest Lab-இல் மட்டும்** - தினசரி scan, waiting list, TradingView script மாறவில்லை. முடிவு (win rate, avg R) நன்றாக இருந்தால் சொல்லுங்கள்; அப்போது அங்கும் சேர்க்கலாம்.'), '5b'));
   // ---------------------------------------------------------------- BOS + FVG and the lower-timeframe confirmation (13-Nov-2026)
   pages.push(page('BOS + FVG மற்றும் சிறிய timeframe உறுதிப்படுத்தல்', p('**My BOS + FVG setup** card = அதே விதிகள் ஒரு **BOS move**-இல்: ' +
     'ஒரு higher high-க்கு மேலே close (BOS), அதற்கு முன் ஒரு higher low; move = அந்த higher low முதல் high வரை. அந்த move-இன் discount zone-க்கு ' +

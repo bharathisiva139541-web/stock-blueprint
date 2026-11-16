@@ -672,7 +672,8 @@ def chart_page(pdf, key, t, cs, s, P, page_no, pages, run_name, cx, emas=None):
         money(t['exit']), t.get('partPct', 50), money(t['part']), money(ex))
     line2 = '%s - entry %s - stop %s%s (risk %.2f%%) - target %s - exit %s on %s after %d day%s - best %.2fR - %s' % (
         (t.get('pname') or ZONE_NAME.get(t['code'], t['code'])) + (' (%s)' % WHERE.get(t.get('where'), '') if t.get('where') in WHERE else ''),
-        money(t['entry']), money(t['stop']), ' (%g x ATR)' % P.get('stopAtr') if t.get('stopBy') == 'atr' else '', t['riskPct'],
+        money(t['entry']), money(t['stop']), STOP_NOTE.get(t.get('stopBy'), '%.0s') % (P.get('gapAtr') if t.get('stopBy') == 'gapatr' else P.get('stopAtr')),
+        t['riskPct'],
         money(t['tgt']) if t.get('tgt') is not None else '-', ex_txt,
         day_text(cs.day[jx_full], cs.minute[jx_full], intraday), t['days'], '' if t['days'] == 1 else 's', t['maxR'],
         'in the account' if t.get('taken') else 'not taken by the account')
@@ -741,6 +742,10 @@ def _span(days):
 def _times(x):
     """1.0 -> 'one time', 2 -> '2 times', 1.5 -> '1.5 times'."""
     return 'one time' if abs(x - 1) < 1e-9 else '%g times' % x
+
+
+# line 2 of a chart page: how the stop was worked out (13-Nov-2026 ATR stop; 16-Nov-2026 a gap-down open into the zone)
+STOP_NOTE = {'atr': ' (%g x ATR)', 'gapatr': ' (opened in the zone: %g x ATR)', 'gapfinal': ' (opened in the zone: under the final low)%.0s'}
 
 
 def why_story(t, cs, s, P, cx):
@@ -827,6 +832,11 @@ def why_story(t, cs, s, P, cx):
         out.append(('Before the rise reached its high, no candle touched this zone - it was fresh.' if not m else
                     'Before the rise reached its high, %s touched this zone with a wick and none closed under its middle - '
                     'your rule allows at most 2.' % ('one candle' if m == 1 else '%d candles' % m)))
+    if ev and only and t.get('hh') is not None and P.get('hhMax'):
+        out.append('The high of the rise was %s above the zone top - within your limit of %s.' % (_pct_words(t['hh']), _pct_words(P['hhMax'])))
+    if ev and t.get('lh') is not None:
+        out.append('On the way down from that high the price paused and made a lower high on %s before it reached the zone - it '
+                   'did not fall straight into the zone (a straight fall is never traded).' % dt(t['lh']))
     if ev and t.get('again'):
         out.append('Price had already touched this zone once while the rise was forming (before the %s). Your rule counts '
                    'its first touch after the %s again - this one.' % (EVN, EVN))
@@ -962,6 +972,17 @@ def why_story(t, cs, s, P, cx):
         txt += ' Here the ATR stop was the lower one, so it was used.'
     elif t.get('stopBy') == 'rule':
         txt += ' Here the %s stop was the lower one, so the ATR stop was not needed.' % ('percentage' if mode == 'pct' else 'rule\'s')
+    if t.get('stopBy') in ('gapatr', 'gapfinal'):
+        # a gap-down open into the zone (owner, 16-Nov-2026): bought at the open, the near stop
+        g = t.get('gapo') or 0
+        where = ('inside the zone (%s above its bottom)' % _pct_words(g) if t.get('fill') == 'in' else
+                 '%s under the zone bottom (your limit is %s)' % (_pct_words(-g), _pct_words(P.get('gapBelow', 2))))
+        lowname = 'higher low of the BOS move' if bos_run else 'final low'
+        txt += (' But this candle did not come down to the zone - it opened %s, a gap down, so the order filled at the open. For '
+                'such a gap-down open the stop goes %s the ATR (the usual candle size) under the buy price, or just under the %s '
+                'when that is nearer - here %s, so one R is smaller.' % (
+                    where, 'half' if abs(P.get('gapAtr', 0.5) - 0.5) < 1e-9 else _times(P.get('gapAtr', 0.5)), lowname,
+                    'the ATR stop was nearer' if t['stopBy'] == 'gapatr' else 'the %s was nearer' % lowname))
     if P.get('beAt') and not (P.get('after') == 'fixed' and P['beAt'] >= P.get('targetR', 2) and P.get('targetMode') == 'R'):
         txt += ' Once the price is %s the risk up, the stop moves to the buy price.' % _times(P['beAt'])
     if P.get('timeN'):
@@ -1411,6 +1432,10 @@ def rule_lines(P):
                                 'next_open': "the next candle's open"}.get(P.get('entry'), P.get('entry')))
     if P.get('gapEntry'):
         out.append('An FVG with a gap-up zone inside it: the order waits at the gap-up zone top, the stop under the FVG bottom')
+    if P.get('entry') == 'zone' and P.get('gapAtr') and P.get('ltf', 'off') == 'off':
+        out.append('A gap-down open into the zone (inside it, or at most %s%% under its bottom): bought at the open, stop %g x ATR '
+                   'under it - or under the %s when that is nearer; deeper opens skipped' % (
+                       _pct1(P.get('gapBelow', 2)), P['gapAtr'], 'higher low' if bos_run else 'final low'))
     if P.get('zoneMin') or P.get('zoneMax'):
         out.append('Zone size: %s' % ('%g%% to %g%%' % (P.get('zoneMin') or 0, P['zoneMax']) if P.get('zoneMax') else 'at least %g%%' % P['zoneMin']))
     if P.get('fibPat') in ('big', 'all'):
@@ -1422,6 +1447,8 @@ def rule_lines(P):
         out.append('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one): %s' % (
             'left out' if P['darkCloud'] == 'exclude' else 'only these'))
     if P.get('structure') == 'only':
+        out.append('No straight fall: a lower high between the move high and the touch%s' % (
+            ('; the move high at most %s%% above the zone top' % _pct1(P['hhMax'])) if P.get('hhMax') else ''))
         out.append(('Two discount zones in the %s move: ' % EVN) + '%s' % ('every zone traded' if P.get('zonePick') == 'every' else
                                                                'the 2nd traded, the 1st only watched'))
         if P.get('moveVol'):

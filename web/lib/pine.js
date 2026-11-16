@@ -101,6 +101,10 @@
       n.push('The script draws BUY on the first touch of a zone ("First touch of a zone"); your Pattern is a different one - Spring candles show as small "S" marks, FVG First Touch / Confirmed are not drawn.');
     }
     if (p.entry === 'next_open') n.push('Buy "at the next candle\'s open" is drawn at the touch candle\'s close.');
+    if (p.entry === 'zone' && num(p.gapAtr, 0.5) > 0) {
+      n.push('A gap-down open into the zone: the Lab buys at the open with the stop ' + num(p.gapAtr, 0.5) + ' x ATR under it (or under the final low when nearer); ' +
+        'the script draws the usual stop under the zone.');
+    }
     if (p.mktIndex && (num(p.mktAbove, 0) || p.mktStack)) n.push('The market condition (' + String(p.mktIndex).replace(/_/g, ' ') + ') is not drawn - check the index chart yourself.');
     if (Object.keys(SHAPE_BASE).some(function (k) { return p[k] !== undefined && String(p[k]) !== String(SHAPE_BASE[k]); })) {
       n.push('The Spring shape rules (step 3) are not drawn - they apply to Spring signals.');
@@ -121,6 +125,9 @@
     if (p.darkCloud === 'exclude' || p.darkCloud === 'only') more.push('the dark-cloud FVG rule');
     if (p.whereIn && p.whereIn !== 'any') more.push('how deep the candle went into the zone');
     if (num(p.wkAbove, 0)) more.push('the weekly trend');
+    // the owner's rules of 16-Nov-2026 - the Lab only ("Backtest lab la matum"): the move high's distance, no straight fall
+    if (num(p.hhMax, 0)) more.push('the move high at most ' + num(p.hhMax, 0) + '% above the zone top');
+    if (p.structure === 'only' && p.fallLh !== false) more.push('no straight fall from the move high (a lower high on the way down)');
     if (more.length) n.push('Not drawn (check them on the chart yourself): ' + more.join(', ') + '.');
     var exits = [];
     if (num(p.partialPct, 0) && p.after !== 'fixed') exits.push('selling ' + num(p.partialPct, 0) + '% at the target');

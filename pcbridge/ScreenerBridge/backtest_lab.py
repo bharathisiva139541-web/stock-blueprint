@@ -280,6 +280,22 @@ DEFAULTS = {
     # h4Zones both / fvg / gap; m15Choch show (every trade marked, the breakdown compares) / only (confirmed ones) / off;
     # m15Pivot / m15Down = the 15-minute CHoCH's swings and lower highs / lows (its candle and its final low on that day)
     'h4Body': 0.5, 'h4Zones': 'both', 'm15Choch': 'show', 'm15Pivot': 3, 'm15Down': 2,
+    # A GAP-DOWN OPEN INTO THE ZONE (owner, 16-Nov-2026, after his charts PDF: "in some chart, price doesnot touch the Zone,
+    # instead it opens inside the Zone or slightly below the zone (let's have buffer, X % below the ZOne bottom) by candle
+    # gapdown opening. In this type of Trading our stop loss should be half the ATR. or if the gapup opening price is only
+    # slighlty above the LL final Low, stop loss should be below the LL final low. here our aim is to increase +R by reducing
+    # stoploss"; answers: 2 % by default, whichever stop is nearer the buy, the "x ATR whichever is lower" widening not used,
+    # the zone-top order only): with entry 'zone', a touch candle that OPENS under the zone top - inside the zone, or at most
+    # gapBelow % under its bottom - is bought at its open with the stop gapAtr x ATR(14) (of the candle before) under the buy,
+    # or just under the CHoCH's final low (a BOS run: the higher low; stopBuf %) when that is nearer the buy; an open deeper
+    # than gapBelow % = skipped ('gapdeep'); gapAtr 0 = off (the run's own stop as before - an open under it = 'gap')
+    'gapBelow': 2.0, 'gapAtr': 0.5,
+    # hhMax (owner, 16-Nov-2026, RENT 21-Jan-2008: "Matter is, from the Zone top to HH-move high is 45%"): the move high (HH) at
+    # most hhMax % above the zone top (0 = off; structure 'only' - the straight-fall rule beside it is always on, FALL_PIVOT)
+    'hhMax': 0.0,
+    # fallLh = the straight-fall rule (always on - the page has no box; the TradingView script check turns it off: the script
+    # does not draw it)
+    'fallLh': True,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -296,12 +312,18 @@ BIG_ZONE_PCT = 10.0            # fibPat 'big' without a zoneMax: zones bigger th
 # signal comes PREM_FAST_DAYS calendar days or less after the CHoCH candle
 MIT_MAX = 2
 PREM_FAST_DAYS = 4
+# THE STRAIGHT-FALL RULE (owner, 16-Nov-2026, RENT 21-Jan-2008 / PSB 12-Nov-2013: "from this steep high, price without forming
+# any Structure touched this Zone in single move. No LH,LL,..continuous selling candles only until touching the Zone. we don't
+# trade this"; always on with structure 'only' - "Compare panra mari vendam"): between the move high (HH) and the signal candle
+# price must make a lower high = a swing high with FALL_PIVOT candles each side (higher than the ones before, at / above the
+# ones after), all of them before the signal candle
+FALL_PIVOT = 2
 LOCK_PCT = 0.05                # = kite_intraday.CIRCUIT_LOCK_PCT: a candle whose range is <= 0.05 % (a Gap-up zone's touch never counts on it)
 SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2BodyMax', 'undercutMin', 'undercutMax', 'undAtr',
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
 BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull',
-         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain', 'pdfDrive')
+         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain', 'pdfDrive', 'fallLh')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
                          'touch', 'pattern', 'fvg4h'),
@@ -339,6 +361,7 @@ LIMITS = {   # key: (min, max, integer)
     'ltfPivot': (2, 10, True), 'ltfDown': (1, 6, True), 'ltfWait': (1, 30, True), 'ltfUnder': (0, 100, False),
     'ltfNear': (0, 100, False),
     'h4Body': (0, 5, False), 'm15Pivot': (2, 6, True), 'm15Down': (1, 6, True),
+    'gapBelow': (0, 20, False), 'gapAtr': (0, 5, False), 'hhMax': (0, 1000, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -365,7 +388,7 @@ REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'ope
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
               'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow',
-              'h4', 'm15']
+              'h4', 'm15', 'fill', 'gapo', 'hh']
 
 
 def _iso_date(s):
@@ -902,7 +925,7 @@ def market_filter(meta, P):
     return ok
 
 
-def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, mh=None, stop_at=None):
+def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, mh=None, stop_at=None, gap_final=None):
     """One signal row -> the trade under the rules P (see the module text), or (None, why skipped). `swing` (target mode
     'swing') = the Structure of these candles: the target is then the last swing high at least swingMinR R above the
     entry (none = skipped, 'noswing'). `atr` (trail 'atr') = the ATR(14) series; `lows` (trail 'swing') = the Structure
@@ -912,18 +935,32 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
     The owner's options of 13-Nov-2026: stopAtr (`atr` = the ATR(14) series) - the lower of the rule's stop and entry - stopAtr x
     ATR; target 'mh' (`mh` = the CHoCH move's high; none = skipped, 'nomh') / 'pct'; partialPct sold at the target (the exit
     price = the average of both parts, 'part' = where the first part went, 'xr' = the rest's exit); beAt (the stop to the entry
-    before the target, reason 'be'); timeN / timeR (reason 'tstop')."""
+    before the target, reason 'be'); timeN / timeR (reason 'tstop').
+    A gap-down open into the zone (16-Nov-2026, entry 'zone', gapAtr on): bought at the open, the stop gapAtr x ATR under it or
+    just under `gap_final` (the CHoCH's final low / the BOS's higher low) when that is nearer ('fill' / 'gapo' / 'stopBy')."""
     i, code, zb = row[0], row[1], row[2]
     n = cs.n
     if i >= n:
         return None, 'data'
     zone_in = P['entry'] == 'zone'
+    gap_open, gapo, fill = False, None, ''
     if zone_in:
         # a buy order waiting at the zone top (owner, 11-Nov-2026): filled on the first touch at the top - or at the open
         # when the candle opened under it; only first-touch signals (a Spring / Confirmed candle came after the touch)
         if code not in TOUCH_CODES or row[3] is None:
             return None, 'zoneentry'
-        entry = min(_f(cs.o[i]), _f(row[3]))
+        o0, top = _f(cs.o[i]), _f(row[3])
+        entry = min(o0, top)
+        if zb is not None and _f(zb) > 0:
+            bot = _f(zb)
+            fill = 'wick' if o0 >= top - 1e-9 else 'in' if o0 >= bot - 1e-9 else 'under'
+            if fill != 'wick':
+                gapo = round((o0 - bot) / bot * 100, 2)      # where it opened: % above (+) / under (-) the zone bottom
+            if fill != 'wick' and P.get('gapAtr') and stop_at is None:
+                # a gap-down open into the zone (owner, 16-Nov-2026): bought at the open, the near stop below
+                if o0 < bot * (1 - P['gapBelow'] / 100.0) - 1e-9:
+                    return None, 'gapdeep'
+                gap_open = True
     elif P['entry'] == 'close':
         entry = _f(cs.c[i])
     else:
@@ -932,6 +969,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
         entry = _f(cs.o[i + 1])
     j0 = i + 1
     low = _f(cs.l[i])
+    stop_by = ''
     mode = P['stop']
     if mode == 'zone' and zb is None:
         mode = 'spring'                       # every Spring has no zone: under its own low
@@ -939,6 +977,16 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
         mode = 'zone'                         # the touch candle's low is not known when the order fills
     if stop_at is not None:                   # the lower-timeframe confirmation worked its stop out (ltf_trade)
         stop = stop_at
+    elif gap_open:
+        # gapAtr x ATR(14) of the candle before (the buy is at the open) under the buy - or just under the final low / higher
+        # low when that is nearer the buy (the smaller risk); the stopAtr widening is not used here (owner's 1c)
+        if atr is None or i < 1 or i - 1 >= len(atr):
+            return None, 'data'
+        stop, stop_by = entry - P['gapAtr'] * atr[i - 1], 'gapatr'
+        if gap_final is not None:
+            sf = _f(gap_final) * (1 - P['stopBuf'] / 100.0)
+            if stop < sf < entry - 1e-9:
+                stop, stop_by = sf, 'gapfinal'
     elif mode == 'pct':
         stop = entry * (1 - P['stopPct'] / 100.0)
     elif mode == 'final':
@@ -948,8 +996,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
     else:
         base = low if mode == 'spring' else zb if mode == 'zone' else min(low, zb if zb is not None else low)
         stop = base * (1 - P['stopBuf'] / 100.0)
-    stop_by = ''
-    if P['stopAtr']:
+    if P['stopAtr'] and not gap_open:
         # the ATR stop (13-Nov-2026): whichever is LOWER - the rule's stop or stopAtr x ATR(14) under the entry; the zone-top
         # order fills during the touch candle, so it uses the ATR up to the candle before
         ja = i - 1 if zone_in else i
@@ -1007,11 +1054,12 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
         # the entry candle itself, after the fill: a low under the stop = stopped there; its close (surely after the fill)
         # at / above the target = reached (its high may have come before the fill - not counted)
         c0 = _f(cs.c[i])
+        top0 = _f(cs.h[i]) if gap_open else c0     # bought at the open: the candle's high surely came after the buy
         if low < stop:
             ex, why, jx = stop, 'stop', i
         else:
-            best = max(best, c0)
-            if c0 >= target:
+            best = max(best, top0)
+            if top0 >= target:
                 hit = True
                 if fixed:
                     ex, why, jx = target, 'target', i
@@ -1022,7 +1070,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
                     if lock:
                         cur = max(cur, target)
                     cur = trail_up(i, cur)
-            elif be_at is not None and c0 >= be_at:
+            elif be_at is not None and top0 >= be_at:
                 cur = max(cur, entry)
     for j in (range(j0, n) if ex is None else ()):
         if cs.day[j] > end:
@@ -1097,7 +1145,7 @@ def simulate(cs, row, P, ema=None, swing=None, atr=None, lows=None, final=None, 
             'ek': (cs.day[i if P['entry'] != 'next_open' else min(i + 1, n - 1)], cs.minute[i if P['entry'] != 'next_open' else min(i + 1, n - 1)]),
             'xk': (cs.day[jx], cs.minute[jx]), 'sigDay': cs.day[i], 'sigMin': cs.minute[i],
             'part': round(tp, 2) if part and tp is not None else None, 'xr': round(xr, 4), 'partPct': P['partialPct'] if part else 0,
-            'stopBy': stop_by}, None
+            'stopBy': stop_by, 'fill': fill, 'gapo': gapo}, None
 
 
 # ------------------------------------------------------------------ the lower-timeframe confirmation (owner, 13-Nov-2026)
@@ -1820,7 +1868,7 @@ def summarise(trades, P, skips, meta, secs):
                      t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', ''),
                      ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', ''),
                      t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', ''), t.get('setup', ''), t.get('ltfHow', ''),
-                     t.get('h4', ''), t.get('m15', '')])
+                     t.get('h4', ''), t.get('m15', ''), t.get('fill', ''), t.get('gapo', ''), t.get('hh', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1872,6 +1920,10 @@ BD_DIMS = (
     ('mv', 'Biggest volume in the CHoCH move (x the 20 candles before it)', 'num',
      ((0, 1.5, 'under 1.5x'), (1.5, 2, '1.5 - 2x'), (2, 3, '2 - 3x'), (3, 5, '3 - 5x'), (5, 10, '5 - 10x'), (10, 1e12, '10x or more'))),
     ('zn', 'Which discount zone of the CHoCH move', 'num', ((1, 2, '1st (the only / the higher one)'), (2, 3, '2nd'), (3, 1e9, '3rd or deeper'))),
+    ('fill', 'How the zone-top order filled', 'cat',
+     (('wick', 'price came down to the zone'), ('in', 'opened inside the zone (gap down)'), ('under', 'opened under the zone (gap down)'))),
+    ('hh', 'Move high (HH) above the zone top', 'num',
+     ((-1e9, 10, 'under 10%'), (10, 20, '10 - 20%'), (20, 30, '20 - 30%'), (30, 45, '30 - 45%'), (45, 60, '45 - 60%'), (60, 1e12, '60% or more'))),
     ('m15', '15-minute CHoCH on the Spring day (Daily FVG + 4H Spring)', 'cat',
      (('yes', 'with a 15m CHoCH'), ('no', 'no 15m CHoCH'), ('nodata', 'no 15m candles that day'))),
     ('ltfWait', 'Candles from the signal to the lower-timeframe CHoCH', 'num',
@@ -1891,7 +1943,7 @@ def _bd_value(t, key):
         return t.get('touch') or None
     if key == 'where':
         return t.get('where') if t.get('where') in ('t', 'm', 'b') else None
-    if key in ('setup', 'ltfHow', 'm15'):
+    if key in ('setup', 'ltfHow', 'm15', 'fill'):
         return t.get(key) or None
     v = t.get(key)
     return v if isinstance(v, (int, float)) and v == v else None
@@ -2077,7 +2129,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     hi = date.fromisoformat(P['to']).toordinal() if P['to'] else None
     trades, skips = [], {'risk': 0, 'gap': 0, 'price': 0, 'notyet': 0, 'data': 0, 'ema': 0, 'mkt': 0, 'shape': 0, 'struct': 0,
                          'noswing': 0, 'zoneentry': 0, 'where': 0, 'wk': 0, 'zsize': 0, 'dcloud': 0, 'gapin': 0, 'nofinal': 0,
-                         'fiblevel': 0, 'nomh': 0}
+                         'fiblevel': 0, 'nomh': 0, 'gapdeep': 0}
     if ltf_on:
         skips.update({k: 0 for k in LTF_WHY})
     lset = _LtfSet(d, meta, P) if ltf_on else None
@@ -2093,6 +2145,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
     final_stop = P['stop'] == 'final'
     again_on = P['touchAgain'] and smode == 'only' and P['group'] == 'touch'
     mh_tgt = P['targetMode'] == 'mh'
+    gap_on = P['entry'] == 'zone' and P['gapAtr'] > 0      # a gap-down open into the zone: the near stop (16-Nov-2026)
     need_struct = smode != 'off' or P['targetMode'] == 'swing' or (trail_on and P['trail'] == 'swing') or final_stop or mh_tgt
     if not need_struct:
         setups = setups[:1]                     # no market structure in the run: one pass
@@ -2125,7 +2178,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
             ema = ema_series(cs.c, P['emaN']) if P['after'] == 'trail' and P['trail'] == 'ema' else None
             emas = {n: ema_series([_f(x) for x in cs.c], n) for n in lens}
             atr = (structure.atr_series([_f(x) for x in cs.h], [_f(x) for x in cs.l], [_f(x) for x in cs.c])
-                   if (trail_on and P['trail'] == 'atr') or P['stopAtr'] else None)
+                   if (trail_on and P['trail'] == 'atr') or P['stopAtr'] or gap_on else None)
             wk = week_filter(fw, wk_index.get(sym), P['wkAbove']) if wk_index is not None else None
             ltf_box = []                        # the stock's small candles + events, read when a signal first needs them
             h4_box = []                         # Daily FVG + 4H Spring: [4-hour candles, (15-minute candles, events, ...)]
@@ -2258,6 +2311,8 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         lo_at, cl_at = (lambda j: _f(cs.l[j])), (lambda j: _f(cs.c[j]))
                         area = zrank[2] if (zrank is not None and P['zonePick'] == 'second' and zrank[1] == 2) else None
                         why = setup_fail(sj, zf_, r[2], r[3], lo_at, cl_at, cs.day[r[0]] - cs.day[st.s.events[sj['k']][0]], area)
+                        # the owner's rules of 16-Nov-2026: the move high at most hhMax % above the zone top; no straight fall
+                        why = why or fall_fail(sj, lambda j: _f(cs.h[j]), r[0], _f(r[3]) if r[3] is not None else None, P)
                         if why:
                             return None, ('struct', why)
                         if zf_ is not None and sj.get('mh', -1) >= 0:
@@ -2272,10 +2327,11 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         if not ok:
                             return None, ('ema', '')
                     final = st.s.events[sj['k']][4] if final_stop and sj is not None and sj['k'] >= 0 else None
+                    gfin = st.s.events[sj['k']][4] if gap_on and sj is not None and sj['k'] >= 0 else None
                     rs = r if not outer else [r[0], r[1], outer[0]] + list(r[3:])      # the stop under the FVG's bottom
                     mh = sj.get('H') if mh_tgt and sj is not None and sj['k'] >= 0 else None
                     t, why = simulate(cs, rs, PC if code in FIB_CODES else P, ema, st.s if P['targetMode'] == 'swing' else None, atr,
-                                      st.s if trail_on and P['trail'] == 'swing' else None, final, mh)
+                                      st.s if trail_on and P['trail'] == 'swing' else None, final, mh, gap_final=gfin)
                     if ltf_on:
                         # the lower-timeframe confirmation (13-Nov-2026): the trade above = the same signal without it (compared)
                         if t is not None and not grp_base:
@@ -2330,6 +2386,12 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                                 t['mv'] = round(max(mv), 1)
                             if sj.get('depth') is not None:
                                 t['depth'] = round(sj['depth'], 4)
+                            if sj.get('H') is not None and r[3] is not None and _f(r[3]) > 0:
+                                t['hh'] = round((_f(sj['H']) - _f(r[3])) / _f(r[3]) * 100, 1)   # the move high above the zone top
+                            if smode == 'only' and P['fallLh'] and sj.get('mh', -1) >= 0:
+                                lh_ = lower_high_between(lambda j: _f(cs.h[j]), sj['mh'], r[0])
+                                if lh_ >= 0:
+                                    t['lh'] = lh_                 # the lower high on the way down (the charts PDF)
                     zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                     t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
                     if len(r) > 10 and r[10] == 'A' and code in ('Z', 'Y'):
@@ -2658,6 +2720,30 @@ def setup_fail(sj, f, zb, zt, low_at, close_at, days, area=None):
     return ''
 
 
+def lower_high_between(h_at, mh, i, n=FALL_PIVOT):
+    """The straight-fall rule's lower high: the first candle k after the move high's candle mh whose high is above the n
+    highs before it and at / above the n after it, all of them before candle i (k + n < i) -> k, or -1 (a straight fall)."""
+    for k in range(max(mh + 1, n), i - n):
+        v = h_at(k)
+        if all(h_at(k - q) < v for q in range(1, n + 1)) and all(h_at(k + q) <= v for q in range(1, n + 1)):
+            return k
+    return -1
+
+
+def fall_fail(sj, h_at, i, zt, P):
+    """The owner's rules of 16-Nov-2026 on a signal (candle i, zone top zt) whose structure passed (sj with 'H' / 'mh'):
+    'hhfar' = the move high more than hhMax % above the zone top (RENT 21-Jan-2008: 45 %); 'straight' = no lower high between
+    the move high and candle i (FALL_PIVOT; RENT, PSB 12-Nov-2013) -> the rule it fails or ''."""
+    mh, H = sj.get('mh'), sj.get('H')
+    if mh is None or mh < 0 or H is None:
+        return ''
+    if P.get('hhMax') and zt and (_f(H) - zt) / zt * 100 > P['hhMax'] + 1e-9:
+        return 'hhfar'
+    if P.get('fallLh', True) and lower_high_between(h_at, mh, i) < 0:
+        return 'straight'
+    return ''
+
+
 def zone_rank(zones, i, zb, zt, li, judge_ok, broken):
     """The owner's 2nd-zone rule (12-Nov-2026, zonePick 'second'): a signal on candle i in the area zb .. zt (a Gap-up zone
     inside an FVG = that FVG) of a CHoCH whose final low is candle li. `zones` = every zone of the stock [(f, bottom, top,
@@ -2743,7 +2829,9 @@ STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows 
               'premfast': 'a premium zone (above your Fib line) with the signal 4 days or less after the CHoCH',
               'deepclose': 'a candle closed under the middle of its zone before the move high',
               'mitig': 'more than 2 candles touched its zone before the move high',
-              'zone1mit': 'the 1st (watched) zone was touched before the move high'}
+              'zone1mit': 'the 1st (watched) zone was touched before the move high',
+              'hhfar': 'the move high (HH) was more than your % above the zone top',
+              'straight': 'price fell straight from the move high (HH) into the zone - no lower high on the way'}
 
 
 def struct_fail(sj, P):

@@ -65,6 +65,9 @@ L = K.backtest_lab
 S = L.structure
 L.log = lambda m: None
 L.LAB_DIR = os.path.join(tempfile.mkdtemp(), 'lab_cache')
+# the Lab-only rules of 16-Nov-2026 (owner: "Backtest lab la matum") - the script does not draw them, so the model is compared
+# with the Lab without them: a gap-down open into the zone (the near stop) and the straight-fall rule (web/lib/pine.js notes)
+L.DEFAULTS['gapAtr'], L.DEFAULTS['fallLh'] = 0.0, False
 import pine_model as M  # noqa: E402
 
 D0 = date(2016, 1, 4)
