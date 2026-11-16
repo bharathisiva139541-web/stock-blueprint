@@ -556,8 +556,9 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
           rowsBySym[t.symbol].forEach(function (rowIdx) {
             // OPM QoQ% / OPM Qtr YoY stay the XBRL ones; screener.in's OPM Qtr YoY only where XBRL could not tell
             const qyBlank = cols.opmQYoY !== undefined && cols.opmQYoY !== -1 && ab_cellText_(layout.data[rowIdx][cols.opmQYoY]) === '';
+            const qBlank = cols.opmQoQ !== undefined && cols.opmQoQ !== -1 && ab_cellText_(layout.data[rowIdx][cols.opmQoQ]) === '';
             ab_qt_writeRow_(layout, cols, rowIdx, { quarterOk: false, tagsOk: true,
-              tags: { promoter: tg.promoter, fii: tg.fii, opmYoY: tg.opmYoY, opmQoQ: '', opmQYoY: qyBlank ? tg.opmQYoY : '' } });
+              tags: { promoter: tg.promoter, fii: tg.fii, opmYoY: tg.opmYoY, opmQoQ: qBlank ? tg.opmQoQ : '', opmQYoY: qyBlank ? tg.opmQYoY : '' } });
           });
         }
         t.source = AB_XBRL_SOURCE_DONE;
@@ -599,6 +600,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
       const xbrlRes = xr.combined;
       rowsBySym[t.symbol].forEach(function (rowIdx) {
         ab_qt_writeRow_(layout, cols, rowIdx, xbrlRes);
+        ab_rsOpmSet_(layout, cols, rowIdx, xbrlRes.tags, true);   // a word XBRL cannot tell: blank, not last quarter's
         if (tickIt) layout.sheet.getRange(rowIdx + 1, layout.qrCheckbox + 1).setValue(true);
         if (prov) ab_mcMarkRow_(layout, rowIdx, '');
       });
@@ -644,9 +646,10 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
       if (mcRes && !isNaN(mli) && !isNaN(ei) && mli >= ei) {
         const fetched = Utilities.formatDate(new Date(mcEntry.at), AB_TZ, AB_RS_TS_FMT);
         const mark = AB_MC_NOTE_PREFIX + ' for ' + mcRes.growth.latestQuarter + ' (' + mcEntry.data.basis + ', read ' + fetched +
-          '). screener.in replaces them when it shows ' + t.quarter + '. Trend tags (OPM, promoter, FII) are still from the earlier screener.in update.';
+          '). screener.in replaces them when it shows ' + t.quarter + '. OPM QoQ% / OPM Qtr YoY stay blank until then; OPM YoY, promoter, FII are still from the earlier screener.in update.';
         rowsBySym[t.symbol].forEach(function (rowIdx) {
           ab_qt_writeRow_(layout, cols, rowIdx, mcRes);
+          ab_rsOpmSet_(layout, cols, rowIdx, { opmQoQ: '', opmQYoY: '' }, true);   // moneycontrol has no OPM: blank, not last quarter's
           if (tickIt) layout.sheet.getRange(rowIdx + 1, layout.qrCheckbox + 1).setValue(true);
           ab_mcMarkRow_(layout, rowIdx, mark);
         });
@@ -721,7 +724,13 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
     res.failed += queue.length;
   } finally {
     try { res.gapFixed = ab_rsGapRepair_(tr, layout, cols, rowsBySym, season, touched, nowStr()); } catch (gErr) { Logger.log('Quarter-gap check skipped: ' + gErr.message); }
-    try { res.qyFilled = ab_opmQtrYoyBackfill_(layout, cols, touched); } catch (bErr) { Logger.log('OPM Qtr YoY fill skipped: ' + bErr.message); }
+    let opmOwn = {};
+    try {
+      const op = ab_rsOpmRepair_(tr, layout, cols, rowsBySym, season, touched);
+      opmOwn = op.own;
+      res.opmFixed = op.fixed;
+    } catch (oErr) { Logger.log('OPM words check skipped: ' + oErr.message); }
+    try { res.qyFilled = ab_opmQtrYoyBackfill_(layout, cols, Object.assign({}, touched, opmOwn)); } catch (bErr) { Logger.log('OPM Qtr YoY fill skipped: ' + bErr.message); }
     try { ab_rsFlagsPass_(tr, layout, rowsBySym, touched, todayKey); } catch (fErr) { Logger.log('Result flags skipped: ' + fErr.message); }
     // Always save progress, even if something above threw part-way.
     ab_rsWriteTracker_(tr);
@@ -1671,6 +1680,9 @@ function runUpcomingResultsEmailNow() {
 const AB_RP_SHEET = 'Results Performance';
 const AB_RP_MOVE_PCT = ab_setting_('AB_RP_MOVE_PCT', 5);
 const AB_RP_HEADER_ROW = 10;
+// a row's figures follow Main's while its quarter is the symbol's newest Updated one and the results are at most this old
+// (Main is overwritten by the next quarter only ~3 months later; owner, 16-Nov-2026)
+const AB_RP_FOLLOW_DAYS = 45;
 // 'Result Day %' = the INTRADAY move of the reaction session (owner, 03-Nov-2026: "use intraday movement as result day % -
 // VRL Logistics should show 14.5% instead of 6%"; "don't add [new] columns, just use the result day column"): its high or
 // its low vs the baseline, whichever went further. Where it closed stays in 'Result Day Close'.
@@ -1830,6 +1842,18 @@ function ab_rpRefresh_(opts) {
     return (r === undefined || colIdx === -1 || colIdx === undefined) ? '' : ab_cellText_(data[r][colIdx]);
   };
 
+  // the newest quarter each symbol is Updated for - Main holds that quarter's figures
+  const newestQ = {};
+  tr.list.forEach(function (t) {
+    const qi = t.status === 'Updated' ? ab_rsQuarterIndex_(t.quarter) : NaN;
+    if (!isNaN(qi) && !(newestQ[t.symbol] >= qi)) newestQ[t.symbol] = qi;
+  });
+  const figuresOf = function (r) {
+    return { revQoQ: mainNum(r, layout.qoqRev) / 100, revYoY: mainNum(r, layout.yoyRev) / 100,
+             npQoQ: mainNum(r, layout.qoqNp) / 100, npYoY: mainNum(r, layout.yoyNp) / 100,
+             opmQoQ: mainText(r, cols.opmQoQ), opmYoY: mainText(r, cols.opmYoY) };
+  };
+
   // New rows for every company the Results Day check has confirmed.
   tr.list.forEach(function (t) {
     if (t.status !== 'Updated' || !t.rdKey) return;
@@ -1837,6 +1861,14 @@ function ab_rpRefresh_(opts) {
     const p = t.rdKey.split('-').map(Number);
     if (rows[key]) {
       if (!rows[key].rd) rows[key].rd = ab_rsMakeDate_(p[0], p[1] - 1, p[2]); // Result Date cell was edited/cleared
+      // owner, 16-Nov-2026 (MARSONS: Profit QoQ +160% / OPM QoQ Aggressive Decrease here, +124% / Increasing in Main): the
+      // row's first copy may be moneycontrol's provisional figures with last quarter's OPM words - while Main still holds
+      // this quarter (its newest Updated quarter, results <= AB_RP_FOLLOW_DAYS old) the row follows Main's figures
+      const rr = mainRow[t.symbol];
+      if (rr !== undefined && newestQ[t.symbol] === ab_rsQuarterIndex_(t.quarter) &&
+          ab_rsDaysBetween_(t.rdKey, todayKey) <= AB_RP_FOLLOW_DAYS) {
+        Object.assign(rows[key], figuresOf(rr));
+      }
       return;
     }
     const r = mainRow[t.symbol];
@@ -1846,11 +1878,9 @@ function ab_rpRefresh_(opts) {
       symbol: t.symbol, company: t.company || mainText(r, layout.name),
       basicIndustry: mainText(r, layout.basicIndustry), quarter: t.quarter,
       rd: ab_rsMakeDate_(p[0], p[1] - 1, p[2]),
-      base: NaN, rdClose: NaN, nextClose: NaN, hi: NaN, lo: NaN, rdStored: NaN, annText: '', reactFrom: '',
-      revQoQ: mainNum(r, layout.qoqRev) / 100, revYoY: mainNum(r, layout.yoyRev) / 100,
-      npQoQ: mainNum(r, layout.qoqNp) / 100, npYoY: mainNum(r, layout.yoyNp) / 100,
-      opmQoQ: mainText(r, cols.opmQoQ), opmYoY: mainText(r, cols.opmYoY)
+      base: NaN, rdClose: NaN, nextClose: NaN, hi: NaN, lo: NaN, rdStored: NaN, annText: '', reactFrom: ''
     };
+    Object.assign(rows[key], figuresOf(r));
   });
 
   const keyOf = function (d) {
@@ -12338,6 +12368,91 @@ function ab_opmQtrYoyBackfill_(layout, cols, touched) {
   }
   if (n && vals.length) layout.sheet.getRange(first + 1, c + 1, vals.length, 1).setValues(vals);
   return n;
+}
+
+/*****************************************************************
+ * OPM WORDS OF THE NEW QUARTER (owner, 16-Nov-2026, MARSONS: "Data related to OPM is inconsistent with each one" - the
+ * Results Performance row said OPM QoQ Aggressive Decrease, Main Increasing; Main's OPM Qtr YoY Slightly Decreasing while
+ * screener.in shows 14% -> 19%). A write skips an empty word (Code.gs ab_qt_writeRow_), so moneycontrol (no OPM figures)
+ * and an NSE XBRL filing without the year-ago quarter left LAST quarter's OPM QoQ% / OPM Qtr YoY in Main, and screener.in
+ * later filled only blank cells. Now: such a word is blanked when the figures are written, and every Results Day run sets
+ * this season's moneycontrol / NSE XBRL rows to the right words (ab_rsOpmWords_); the blank-cell fill from the stored
+ * screener.in pages (ab_opmQtrYoyBackfill_) leaves those rows alone (their stored page may still be last quarter's).
+ *****************************************************************/
+
+/** Writes a row's OPM QoQ% / OPM Qtr YoY words (w.opmQoQ / w.opmQYoY, '' = blank); blankOnly = only the blank ones. -> cells changed. */
+function ab_rsOpmSet_(layout, cols, rowIdx, w, blankOnly) {
+  let n = 0;
+  if (!w) return 0;
+  [['opmQoQ', cols && cols.opmQoQ], ['opmQYoY', cols && cols.opmQYoY]].forEach(function (p) {
+    const c = p[1];
+    if (c === undefined || c === -1) return;
+    const v = w[p[0]] === undefined || w[p[0]] === null ? '' : String(w[p[0]]);
+    if (blankOnly && v !== '') return;
+    if (ab_cellText_(layout.data[rowIdx][c]) === v) return;
+    layout.sheet.getRange(rowIdx + 1, c + 1).setValue(v);
+    n++;
+  });
+  return n;
+}
+
+/** screener.in's stored OPM % of quarter index qi vs the quarter `back` months before, matched by name -> the OPM words, or ''. */
+function ab_rsOpmByName_(s, qi, back) {
+  if (!s || !Array.isArray(s.quarters) || !Array.isArray(s.opm)) return '';
+  let a = NaN, b = NaN;
+  for (let i = 0; i < s.quarters.length; i++) {
+    const k = ab_rsQuarterIndex_(s.quarters[i]);
+    const v = typeof s.opm[i] === 'number' && isFinite(s.opm[i]) ? s.opm[i] : NaN;
+    if (k === qi) b = v;
+    else if (k === qi - back) a = v;
+  }
+  return isNaN(a) || isNaN(b) ? '' : ab_tt_tagOpmPair_(a, b);
+}
+
+/** The OPM QoQ% / OPM Qtr YoY words Main should show for a tracker row whose new-quarter figures did not come from a
+ *  screener.in page: moneycontrol -> both blank (no OPM figures); NSE XBRL -> ab_xbrlOpmTags_ (the same file's quarters,
+ *  else screener.in's stored OPM of them), once screener.in shows the quarter its word where XBRL could not tell.
+ *  null = not known (the filing is no longer stored) -> left alone. */
+function ab_rsOpmWords_(t) {
+  if (t.source === AB_MC_SOURCE) return { opmQoQ: '', opmQYoY: '' };
+  if (t.source !== AB_XBRL_SOURCE && t.source !== AB_XBRL_SOURCE_DONE) return null;
+  const qi = ab_rsQuarterIndex_(t.quarter);
+  const e = ab_xbrlGet_(t.symbol);
+  if (isNaN(qi) || !e || ab_rsQuarterIndex_(e.data.quarter) !== qi) return null;
+  const b = ab_bridgeGet_(t.symbol);
+  const s = b && b.combined && b.combined.series ? b.combined.series : null;
+  const basis = String(s && s.basis || '');
+  const xd = e.data;
+  // the file of screener.in's basis, like ab_xbrlCombined_
+  const f = !/standalone/i.test(basis) ? (xd.cons || (/consolidated/i.test(basis) ? null : xd.stand)) : xd.stand;
+  if (!f) return null;
+  const w = ab_xbrlOpmTags_(f, xd.quarter, s);
+  if (t.source === AB_XBRL_SOURCE_DONE) {
+    if (!w.opmQoQ) w.opmQoQ = ab_rsOpmByName_(s, qi, 3);
+    if (!w.opmQYoY) w.opmQYoY = ab_rsOpmByName_(s, qi, 12);
+  }
+  return w;
+}
+
+/** Every Results Day run: this season's Updated rows on moneycontrol / NSE XBRL figures get this quarter's OPM words
+ *  (rows written in this run excepted - their write set them). -> { fixed: [SYM], own: {SYM: true} (rows decided here) }. */
+function ab_rsOpmRepair_(tr, layout, cols, rowsBySym, season, touched) {
+  const out = { fixed: [], own: {} };
+  const si = ab_rsQuarterIndex_(season);
+  if (isNaN(si)) return out;
+  tr.list.forEach(function (t) {
+    if (t.status !== 'Updated' || !rowsBySym[t.symbol] || ab_rsQuarterIndex_(t.quarter) !== si) return;
+    if (t.source !== AB_MC_SOURCE && t.source !== AB_XBRL_SOURCE && t.source !== AB_XBRL_SOURCE_DONE) return;
+    out.own[t.symbol] = true;
+    if (touched && touched[t.symbol]) return;
+    const w = ab_rsOpmWords_(t);
+    if (!w) return;
+    let n = 0;
+    rowsBySym[t.symbol].forEach(function (rowIdx) { n += ab_rsOpmSet_(layout, cols, rowIdx, w, false); });
+    if (n) out.fixed.push(t.symbol);
+  });
+  if (out.fixed.length) Logger.log('Results Day: OPM QoQ% / OPM Qtr YoY set to this quarter\'s words: ' + out.fixed.join(', '));
+  return out;
 }
 
 // ---------------------------------------------------------------------
