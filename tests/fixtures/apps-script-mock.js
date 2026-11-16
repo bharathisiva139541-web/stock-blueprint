@@ -476,7 +476,10 @@ function createEnv(workbook, opts) {
       getDocumentProperties: function () { return docProps; }
     }, env.calls),
     CacheService: makeLenient('CacheService', {
-      getScriptCache: cacheStore, getUserCache: cacheStore, getDocumentCache: cacheStore
+      // one store each, like Apps Script (16-Nov-2026: the Lab's wake-up mark is read by another run)
+      getScriptCache: function () { return env.scriptCache || (env.scriptCache = cacheStore()); },
+      getUserCache: function () { return env.userCache || (env.userCache = cacheStore()); },
+      getDocumentCache: function () { return env.docCache || (env.docCache = cacheStore()); }
     }, env.calls),
     Utilities: makeLenient('Utilities', {
       formatDate: function (d, zone, pattern) { return formatDate(d, zone, pattern); },
@@ -493,7 +496,10 @@ function createEnv(workbook, opts) {
       },
       sleep: function () { /* no waiting in tests */ },
       base64Encode: function (s) { return Buffer.from(String(s)).toString('base64'); },
-      base64Decode: function (s) { return Array.from(Buffer.from(String(s), 'base64')); }
+      base64Decode: function (s) { return Array.from(Buffer.from(String(s), 'base64')); },
+      // blobs (16-Nov-2026: the Backtest Lab's gzip results): newBlob(bytes) / ungzip(blob) -> .getDataAsString()
+      newBlob: function (bytes) { const b = Buffer.from(bytes); return { getBytes: function () { return Array.from(b); }, getDataAsString: function () { return b.toString('utf8'); }, _buf: b }; },
+      ungzip: function (blob) { const b = require('zlib').gunzipSync(blob._buf); return { getBytes: function () { return Array.from(b); }, getDataAsString: function () { return b.toString('utf8'); }, _buf: b }; }
     }, env.calls),
     ContentService: makeLenient('ContentService', {
       MimeType: { JSON: 'application/json', TEXT: 'text/plain', CSV: 'text/csv', JAVASCRIPT: 'application/javascript' },

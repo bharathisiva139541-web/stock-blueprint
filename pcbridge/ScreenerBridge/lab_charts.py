@@ -834,9 +834,22 @@ def why_story(t, cs, s, P, cx):
                     'your rule allows at most 2.' % ('one candle' if m == 1 else '%d candles' % m)))
     if ev and only and t.get('hh') is not None and P.get('hhMax'):
         out.append('The high of the rise was %s above the zone top - within your limit of %s.' % (_pct_words(t['hh']), _pct_words(P['hhMax'])))
-    if ev and t.get('lh') is not None:
-        out.append('On the way down from that high the price paused and made a lower high on %s before it reached the zone - it '
-                   'did not fall straight into the zone (your "no straight fall" rule).' % dt(t['lh']))
+    if ev and t.get('fbars') is not None:
+        # how price came down from the move high (owner, 16-Nov-2026: the fall into the zone)
+        nl, ng, nr = t.get('flh') or 0, t.get('fgr') or 0, t.get('frr') or 0
+        txt = ('On the way down from that high the price took %d candle%s to reach the zone: %s, %s and at most %s in a row.' % (
+            t['fbars'], '' if t['fbars'] == 1 else 's',
+            ('no lower high - a straight fall' if not nl else '%d lower high%s (the first on %s)' % (
+                nl, '' if nl == 1 else 's', dt(t['lh'])) if t.get('lh') is not None else '%d lower high%s' % (nl, '' if nl == 1 else 's')),
+            'no green candle' if not ng else '%d green candle%s' % (ng, '' if ng == 1 else 's'),
+            'one red candle' if nr == 1 else '%d red candles' % nr))
+        if t.get('fbig') is not None:
+            txt += ' Its biggest red candle was %s the zone\'s height.' % _times_x(t['fbig'])
+        if t.get('fvolr') is not None:
+            txt += ' The selling volume was %s the buying volume of the rise.' % _times_x(t['fvolr'])
+        if only and fall_on(P):
+            txt += ' Your rules for the fall: %s - met.' % fall_words(P)
+        out.append(txt)
     if ev and t.get('again'):
         out.append('Price had already touched this zone once while the rise was forming (before the %s). Your rule counts '
                    'its first touch after the %s again - this one.' % (EVN, EVN))
@@ -1376,6 +1389,37 @@ def _pct1(x):
     return ('%.1f' % x).rstrip('0').rstrip('.')
 
 
+FALL_KEYS = ('hhMax', 'fallLh', 'fallGreen', 'fallRedRun', 'fallBigRed', 'touchBig', 'fallBars', 'fallVol', 'fallTime')
+
+
+def fall_on(P):
+    return any(P.get(k) for k in FALL_KEYS)
+
+
+def fall_words(P):
+    """The run's rules for the fall from the move high into the zone (16-Nov-2026), in words."""
+    w = []
+    if P.get('hhMax'):
+        w.append('the move high at most %s%% above the zone top' % _pct1(P['hhMax']))
+    if P.get('fallLh'):
+        w.append('at least %d lower high%s on the way down' % (P['fallLh'], '' if P['fallLh'] == 1 else 's'))
+    if P.get('fallGreen'):
+        w.append('at least %d green candle%s on the way down' % (P['fallGreen'], '' if P['fallGreen'] == 1 else 's'))
+    if P.get('fallRedRun'):
+        w.append('at most %d red candles in a row' % P['fallRedRun'])
+    if P.get('fallBigRed'):
+        w.append('no red candle bigger than %s the zone' % _times_x(P['fallBigRed']))
+    if P.get('touchBig'):
+        w.append('the touch candle falling into the zone by at most %s the zone' % _times_x(P['touchBig']))
+    if P.get('fallBars'):
+        w.append('at least %d candles from the move high' % P['fallBars'])
+    if P.get('fallVol'):
+        w.append('the selling volume at most %s the rise\'s' % _times_x(P['fallVol']))
+    if P.get('fallTime'):
+        w.append('the fall at least %s as long as the rise' % _times_x(P['fallTime']))
+    return ', '.join(w)
+
+
 def rule_lines(P):
     out = []
     if P.get('group') == 'fvg4h':          # Daily FVG + 4H Spring (owner, 15-Nov-2026)
@@ -1447,10 +1491,8 @@ def rule_lines(P):
         out.append('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one): %s' % (
             'left out' if P['darkCloud'] == 'exclude' else 'only these'))
     if P.get('structure') == 'only':
-        if P.get('fallLh'):
-            out.append('No straight fall: a lower high between the move high and the touch')
-        if P.get('hhMax'):
-            out.append('The move high at most %s%% above the zone top' % _pct1(P['hhMax']))
+        if fall_on(P):
+            out.append('The fall into the zone: ' + fall_words(P))
         out.append(('Two discount zones in the %s move: ' % EVN) + '%s' % ('every zone traded' if P.get('zonePick') == 'every' else
                                                                'the 2nd traded, the 1st only watched'))
         if P.get('moveVol'):

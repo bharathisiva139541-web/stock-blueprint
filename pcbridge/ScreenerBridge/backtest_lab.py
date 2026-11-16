@@ -27,6 +27,7 @@ How it works:
    only tighten it (wicks, body, colour, the dip, the close, the red candle, a swing low taken out, a fall before).
 """
 import array
+import base64
 import bisect
 import re
 import gzip
@@ -54,6 +55,10 @@ import pattern_p3  # noqa: E402  (phase 3 detectors - NEEDS_BENCH)
 import ltf_data  # noqa: E402  (the 1-hour / 15-minute candle files - the lower-timeframe confirmation, 13-Nov-2026)
 
 LAB_DIR = os.path.join(HERE, 'lab_cache')
+# every result kept whole on the laptop (16-Nov-2026: "Newvolume D la than 100 gb iruku. atha vachu backtest speed and results
+# storage ku use paniko" - data_place.apply puts it next to the other big folders, e.g. D:\StockBlueprintData\lab_results)
+RESULTS_DIR = os.path.join(HERE, 'lab_results')
+RESULTS_KEEP = 300
 CHARTS_DIR = os.path.join(HERE, 'lab_charts')   # the runs' chart PDFs (lab_charts.py; owner, 12-Nov-2026)
 LTF_DIR = os.path.join(HERE, 'intraday_data', 'ltf')   # kite_intraday's 1-hour / 15-minute files (ltf_data.py)
 TFS = ('D', 'W', '4H')
@@ -64,7 +69,8 @@ CACHE_VERSION = 6               # 2 (10-Nov-2026): FVG First Touch / Confirmed r
                                 #   Gap-up zone; 'P' / 'Q' rows = a Spring / Bullish Harami + Inverted Hammer inside a zone
                                 # 6 (12-Nov-2026): 'V' rows = the zones price never came back to (the 2nd-zone rule needs
                                 #   every zone of a CHoCH move, touched or not)
-MAX_TRADES_OUT = 3000           # the trade list sent to the sheet (newest first); the figures use every trade
+MAX_TRADES_OUT = 20000          # the trade list sent to the sheet (newest first); the figures use every trade (16-Nov-2026: was
+                                # 3000 - the result now travels compressed, BLOB_MAX_CHARS)
 RESULT_MAX_CHARS = 1700000      # the sheet keeps a result in at most 40 cells of 45,000 characters (Code2.gs
                                 #   AB_LAB_MAX_PARTS / AB_LAB_PART = 1.8 M): a bigger one sends only the newest trades
                                 #   (owner, 14-Nov-2026: a 2,478-trade run with the long Structure / account / lower-
@@ -73,6 +79,7 @@ RESULT_MAX_CHARS = 1700000      # the sheet keeps a result in at most 40 cells o
 CURVE_POINTS = 360              # the equity curve sent (thinned)
 POLL_SLOW_S = 120               # the background program asks the sheet for a job this often ...
 POLL_FAST_S = 10                # ... and this often while the page is open (the sheet says which)
+POLL_WAIT_S = 25                # a web app of 16-Nov-2026 holds the poll this long for a run while the page is open
 BUILD_SAY_S = 30                # while the candle cache is made: its progress to the sheet at most this often
 log = print                     # screener_bridge sets its own
 
@@ -295,9 +302,27 @@ DEFAULTS = {
     # hhMax (owner, 16-Nov-2026, RENT 21-Jan-2008: "Matter is, from the Zone top to HH-move high is 45%"): the move high (HH) at
     # most hhMax % above the zone top (0 = off; structure 'only' - the straight-fall rule beside it is always on, FALL_PIVOT)
     'hhMax': 0.0,
-    # fallLh = the straight-fall rule (FALL_PIVOT; structure 'only') - an option, off by default (owner, 16-Nov-2026: first
-    # always on, then "ethuvum default ah on la vaika vendam")
-    'fallLh': False,
+    # THE FALL INTO THE ZONE (owner, 16-Nov-2026: first always on, then "ethuvum default ah on la vaika vendam"; then "intha field
+    # la more options add panu at the best interest of me. example, minium 1 lower high, or, minimum 2 green candle, Move high to
+    # Zone top vara elame Red candle ah irukakoodathu, FVG Zone size ah vida Periya Red candles iruka koodathu, or Zone Size ah
+    # vida periyda redcandle touch candle ah irukakoodathu") - how price came down from the move high (HH) to the signal candle,
+    # structure 'only' (fall_feats / fall_fail), every one 0 = off:
+    # fallLh = at least N lower highs on the way down (a swing high with FALL_PIVOT candles each side, known before the signal)
+    'fallLh': 0,
+    # fallGreen = at least N green candles on the way down; fallRedRun = at most N red candles in a row on the way down
+    'fallGreen': 0, 'fallRedRun': 0,
+    # fallBigRed = no red candle on the way down with a body bigger than x times the zone's height (a Gap-up zone inside an FVG:
+    # that FVG - size_zone)
+    'fallBigRed': 0.0,
+    # touchBig = the touch candle itself: with the zone-top order, its fall from the open down to the zone top (known when the
+    # order fills - its close is not) at most x times the zone's height; with a close / next-open buy, a red body at most that
+    'touchBig': 0.0,
+    # fallBars = at least N candles from the move high to the signal candle (a slower pullback)
+    'fallBars': 0,
+    # fallVol = the average volume on the way down at most x times the rise's (final low .. move high) - a quiet pullback
+    'fallVol': 0.0,
+    # fallTime = the fall took at least x times as many candles as the rise
+    'fallTime': 0.0,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -325,7 +350,7 @@ SHAPE_KEYS = ('upWickMax', 'loWickMin', 'closeMin', 'c2BodyMin', 'c2Color', 'c2B
               'closeAbove', 'recover', 'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN')
 EMA_LENS = (10, 21, 50)
 BOOLS = ('breakeven', 'compound', 'above10', 'above21', 'above50', 'emaStack', 'mktStack', 'recover', 'belowChoch', 'firstPull',
-         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain', 'pdfDrive', 'fallLh')
+         'sweep', 'lockTarget', 'gapEntry', 'lineOk', 'touchAgain', 'pdfDrive')
 CHOICES = {
     'tf': TFS, 'group': ('fvg', 'fvg_top', 'fvg_middle', 'fvg_bottom', 'gap', 'gapin', 'zone', 'spring', 'ft', 'conf', 'entry',
                          'touch', 'pattern', 'fvg4h'),
@@ -364,6 +389,8 @@ LIMITS = {   # key: (min, max, integer)
     'ltfNear': (0, 100, False),
     'h4Body': (0, 5, False), 'm15Pivot': (2, 6, True), 'm15Down': (1, 6, True),
     'gapBelow': (0, 20, False), 'gapAtr': (0, 5, False), 'hhMax': (0, 1000, False),
+    'fallLh': (0, 10, True), 'fallGreen': (0, 50, True), 'fallRedRun': (0, 50, True), 'fallBigRed': (0, 10, False),
+    'touchBig': (0, 10, False), 'fallBars': (0, 500, True), 'fallVol': (0, 10, False), 'fallTime': (0, 20, False),
 }
 GROUP_NAMES = {
     'fvg': 'FVG+Spring', 'fvg_top': 'FVG+Spring - zone top', 'fvg_middle': 'FVG+Spring - zone middle',
@@ -390,7 +417,7 @@ REASONS = ('stop', 'target', 'be', 'trail', 'lock', 'ema', 'tstop', 'time', 'ope
 TRADE_COLS = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret',
               'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
               'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow',
-              'h4', 'm15', 'fill', 'gapo', 'hh']
+              'h4', 'm15', 'fill', 'gapo', 'hh', 'flh', 'fgr', 'frr', 'fbars', 'fbig', 'ftouch', 'fvolr', 'ftime']
 
 
 def _iso_date(s):
@@ -421,6 +448,8 @@ def clean_params(p, unknown=None):
     for k in BOOLS:
         if isinstance(p.get(k), bool):
             out[k] = p[k]
+    if isinstance(p.get('fallLh'), bool):     # the first page of 16-Nov-2026 had a tick box: on = at least 1 lower high
+        out['fallLh'] = 1 if p['fallLh'] else 0
     for k in ('from', 'to', 'testFrom', 'valFrom'):
         out[k] = _iso_date(p.get(k) or '')
     if out['valFrom'] and not (out['testFrom'] and out['valFrom'] < out['testFrom']):
@@ -1870,7 +1899,9 @@ def summarise(trades, P, skips, meta, secs):
                      t.get('zpct', ''), t.get('pat', ''), t.get('zn', ''), t.get('mv', ''), t.get('mit', ''),
                      ('%g%% at %s' % (t['partPct'], _rs(t['part'], 2))) if t.get('part') is not None else '', t.get('stopBy', ''),
                      t.get('ltf', ''), t.get('ltfWait', ''), t.get('baseR', ''), t.get('setup', ''), t.get('ltfHow', ''),
-                     t.get('h4', ''), t.get('m15', ''), t.get('fill', ''), t.get('gapo', ''), t.get('hh', '')])
+                     t.get('h4', ''), t.get('m15', ''), t.get('fill', ''), t.get('gapo', ''), t.get('hh', ''),
+                     t.get('flh', ''), t.get('fgr', ''), t.get('frr', ''), t.get('fbars', ''), t.get('fbig', ''), t.get('ftouch', ''),
+                     t.get('fvolr', ''), t.get('ftime', '')])
     first = min((t['sigDay'] for t in trades), default=None)
     last = max((t['sigDay'] for t in trades), default=None)
     stats = _stats(closed)
@@ -1926,6 +1957,21 @@ BD_DIMS = (
      (('wick', 'price came down to the zone'), ('in', 'opened inside the zone (gap down)'), ('under', 'opened under the zone (gap down)'))),
     ('hh', 'Move high (HH) above the zone top', 'num',
      ((-1e9, 10, 'under 10%'), (10, 20, '10 - 20%'), (20, 30, '20 - 30%'), (30, 45, '30 - 45%'), (45, 60, '45 - 60%'), (60, 1e12, '60% or more'))),
+    # how price came down from the move high to the signal (16-Nov-2026) - one run shows which values worked
+    ('flh', 'Lower highs on the way down from the move high', 'num',
+     ((0, 1, 'none - a straight fall'), (1, 2, '1'), (2, 3, '2'), (3, 1e9, '3 or more'))),
+    ('fgr', 'Green candles on the way down', 'num', ((0, 1, 'none'), (1, 2, '1'), (2, 3, '2'), (3, 5, '3 - 4'), (5, 1e9, '5 or more'))),
+    ('frr', 'Most red candles in a row on the way down', 'num',
+     ((0, 2, '0 - 1'), (2, 3, '2'), (3, 4, '3'), (4, 6, '4 - 5'), (6, 1e9, '6 or more'))),
+    ('fbars', 'Candles from the move high to the signal', 'num',
+     ((0, 4, '1 - 3'), (4, 6, '4 - 5'), (6, 9, '6 - 8'), (9, 14, '9 - 13'), (14, 22, '14 - 21'), (22, 1e9, '22 or more'))),
+    ('fbig', 'Biggest red candle on the way down (x the zone height)', 'num',
+     ((-1e9, 0.5, 'under 0.5x'), (0.5, 1, '0.5 - 1x'), (1, 1.5, '1 - 1.5x'), (1.5, 2, '1.5 - 2x'), (2, 1e9, '2x or more'))),
+    ('ftouch', 'The touch candle\'s fall into the zone (x the zone height)', 'num',
+     ((-1e9, 0.0001, 'none'), (0.0001, 0.5, 'under 0.5x'), (0.5, 1, '0.5 - 1x'), (1, 2, '1 - 2x'), (2, 1e9, '2x or more'))),
+    ('fvolr', 'Volume on the way down (x the rise\'s)', 'num',
+     ((0, 0.6, 'under 0.6x'), (0.6, 0.8, '0.6 - 0.8x'), (0.8, 1, '0.8 - 1x'), (1, 1.5, '1 - 1.5x'), (1.5, 1e12, '1.5x or more'))),
+    ('ftime', 'Fall candles ÷ rise candles', 'num', ((0, 0.5, 'under 0.5x'), (0.5, 1, '0.5 - 1x'), (1, 2, '1 - 2x'), (2, 1e9, '2x or more'))),
     ('m15', '15-minute CHoCH on the Spring day (Daily FVG + 4H Spring)', 'cat',
      (('yes', 'with a 15m CHoCH'), ('no', 'no 15m CHoCH'), ('nodata', 'no 15m candles that day'))),
     ('ltfWait', 'Candles from the signal to the lower-timeframe CHoCH', 'num',
@@ -2095,9 +2141,11 @@ def _rolling(closed, years):
     return out if len(out) >= 2 else None
 
 
-def run_job(params, base=None, progress=None, charts=None, name=''):
+def run_job(params, base=None, progress=None, charts=None, name='', defer_charts=False):
     """One Backtest Lab run on the cache -> the result (summarise). Raises LabError when there is no cache yet. `charts` = a
-    folder: a PDF with a chart page per trade is made there (lab_charts.py; result 'pdf')."""
+    folder: a PDF with a chart page per trade is made there (lab_charts.py; result 'pdf'). defer_charts (16-Nov-2026: the
+    result first, "takunu vara mari"): pdf = {'pending': True} and res['_later'](progress, pause) makes it afterwards -> the
+    pdf info (the caller pops '_later' before sending)."""
     t0 = time.time()
     unknown = {}
     P = clean_params(params, unknown)
@@ -2244,6 +2292,23 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                     return zone_rank(zone_list(k_), i_, ab, at_, st.s.events[k_][3], jok,
                                      lambda f2, b2: any(cs.c[j] < b2 for j in range(f2 + 1, i_)))
 
+                fall_memo = {}
+
+                def fall_of(r, sj):
+                    """fall_feats of a signal row (remembered per row - the rule check and the trade's columns)."""
+                    key_ = (r[0], r[2], r[3], sj['k'])
+                    if key_ not in fall_memo:
+                        k_ = sj['k']
+                        if k_ < 0 or r[3] is None:
+                            fall_memo[key_] = None
+                        else:
+                            zb_, zt_ = size_zone(r, P)
+                            fall_memo[key_] = fall_feats(lambda j: _f(cs.o[j]), lambda j: _f(cs.h[j]), lambda j: _f(cs.l[j]),
+                                                         lambda j: _f(cs.c[j]), lambda j: float(cs.v[j]), sj['mh'], r[0],
+                                                         st.s.events[k_][3], _f(zb_), _f(zt_),
+                                                         P['entry'] == 'zone' and r[1] in TOUCH_CODES)
+                    return fall_memo[key_]
+
                 def attempt(r):
                     """One signal row -> (trade, None) or (None, (skip key, rule))."""
                     code = r[1]
@@ -2313,8 +2378,9 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                         lo_at, cl_at = (lambda j: _f(cs.l[j])), (lambda j: _f(cs.c[j]))
                         area = zrank[2] if (zrank is not None and P['zonePick'] == 'second' and zrank[1] == 2) else None
                         why = setup_fail(sj, zf_, r[2], r[3], lo_at, cl_at, cs.day[r[0]] - cs.day[st.s.events[sj['k']][0]], area)
-                        # the owner's rules of 16-Nov-2026: the move high at most hhMax % above the zone top; no straight fall
-                        why = why or fall_fail(sj, lambda j: _f(cs.h[j]), r[0], _f(r[3]) if r[3] is not None else None, P)
+                        # the owner's rules of 16-Nov-2026: the move high at most hhMax % above the zone top; the fall into the zone
+                        if not why and sj.get('mh', -1) >= 0:
+                            why = fall_fail(sj, _f(r[3]) if r[3] is not None else None, P, fall_of(r, sj))
                         if why:
                             return None, ('struct', why)
                         if zf_ is not None and sj.get('mh', -1) >= 0:
@@ -2390,10 +2456,14 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
                                 t['depth'] = round(sj['depth'], 4)
                             if sj.get('H') is not None and r[3] is not None and _f(r[3]) > 0:
                                 t['hh'] = round((_f(sj['H']) - _f(r[3])) / _f(r[3]) * 100, 1)   # the move high above the zone top
-                            if smode == 'only' and P['fallLh'] and sj.get('mh', -1) >= 0:
-                                lh_ = lower_high_between(lambda j: _f(cs.h[j]), sj['mh'], r[0])
-                                if lh_ >= 0:
-                                    t['lh'] = lh_                 # the lower high on the way down (the charts PDF)
+                            if sj.get('mh', -1) >= 0:          # how price came down from the move high (16-Nov-2026)
+                                fz = fall_of(r, sj)
+                                if fz is not None:
+                                    t['flh'], t['fgr'], t['frr'], t['fbars'] = fz['lh'], fz['green'], fz['redRun'], fz['bars']
+                                    for key_, val_ in (('fbig', fz['big']), ('ftouch', fz['touch']), ('fvolr', fz['vol']), ('ftime', fz['time'])):
+                                        t[key_] = round(val_, 2) if val_ is not None else None
+                                    if fz['first'] >= 0:
+                                        t['lh'] = fz['first']         # the first lower high on the way down (the charts PDF)
                     zf = r[8] if len(r) > 8 and r[8] is not None and r[8] >= 0 else None
                     t['zb'], t['zt'], t['zf'] = (r[2], r[3], zf) if zf is not None else (None, None, None)
                     if len(r) > 10 and r[10] == 'A' and code in ('Z', 'Y'):
@@ -2469,7 +2539,17 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
         res['warnings'].append('Your laptop\'s program did not know %s and used its own default%s - extract the newest '
                                'ScreenerBridge.zip, then sign out of Windows and sign in again.' % (
                                    ', '.join('%s "%s"' % (k, v) for k, v in sorted(unknown.items())), '' if len(unknown) == 1 else 's'))
-    if charts:
+    if charts and defer_charts:
+        res['pdf'] = {'pending': True}
+
+        def later(prog=None, pause=None):
+            try:
+                return make_charts(charts, d, P, trades, res, meta, prog, name, pause=pause)
+            except Exception as e:        # the run's figures went to the page already
+                log('Backtest Lab: the charts PDF could not be made - %s' % e)
+                return {'error': str(e)[:200]}
+        res['_later'] = later
+    elif charts:
         try:
             res['pdf'] = make_charts(charts, d, P, trades, res, meta, progress, name)
         except Exception as e:            # the run's figures still go to the page
@@ -2483,7 +2563,7 @@ def run_job(params, base=None, progress=None, charts=None, name=''):
 
 
 # ------------------------------------------------------------------ the charts PDF (lab_charts.py)
-def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
+def make_charts(folder, d, P, trades, res, meta, progress=None, name='', pause=None):
     """Every trade of a run in one PDF in `folder` (owner, 12-Nov-2026: laptop folder only, every trade, the losing ones
     first) - two pages a trade: the chart with the market structure (HH / HL / LH / LL, CHoCH, BOS, zone, BUY) and why it
     was taken / how it ended -> {'file', 'folder', 'pages', 'trades', 'shown'}. Reads each stock's candles once."""
@@ -2513,6 +2593,8 @@ def make_charts(folder, d, P, trades, res, meta, progress=None, name=''):
         done, said = 0, [time.time()]
         with open(os.path.join(d, tf + '.bin'), 'rb') as f:
             for sym in sorted(by_sym):
+                if pause:                     # a next run goes first (16-Nov-2026: the PDF is made behind the result)
+                    pause()
                 if sym not in index:
                     continue
                 cs = Candles(f, index[sym][0], index[sym][1])
@@ -2732,17 +2814,75 @@ def lower_high_between(h_at, mh, i, n=FALL_PIVOT):
     return -1
 
 
-def fall_fail(sj, h_at, i, zt, P):
-    """The owner's rules of 16-Nov-2026 on a signal (candle i, zone top zt) whose structure passed (sj with 'H' / 'mh'):
-    'hhfar' = the move high more than hhMax % above the zone top (RENT 21-Jan-2008: 45 %); 'straight' = no lower high between
-    the move high and candle i (FALL_PIVOT; RENT, PSB 12-Nov-2013) -> the rule it fails or ''."""
+def fall_feats(o, h, l, c, v, mh, i, li, zb, zt, zone_in):
+    """How price came down from the move high (candle mh) to the signal candle i (owner, 16-Nov-2026) - o / h / l / c / v =
+    candle -> number; li = the final low (the rise = li .. mh); zb / zt = the zone (its height = zt - zb); zone_in = bought
+    with the order at the zone top. The candles on the way down = mh+1 .. i-1 (the signal candle not counted) ->
+    {lh: swing highs (FALL_PIVOT each side, known before i), first: the first one's candle or -1, green, redRun (longest),
+    bars (i - mh), big (the biggest red body / the zone height), touch (the touch candle: open - zone top with the zone-top
+    order, else its red body, / the zone height), vol (the fall's average volume / the rise's), time (fall / rise candles)}."""
+    n = FALL_PIVOT
+    zh = (zt - zb) if (zt is not None and zb is not None and zt > zb) else None
+    lh, first, green, run, red_run, big = 0, -1, 0, 0, 0, 0.0
+    for k in range(mh + 1, i):
+        ok_, ck_ = o(k), c(k)
+        if ck_ > ok_:
+            green += 1
+            run = 0
+        elif ck_ < ok_:
+            run += 1
+            red_run = max(red_run, run)
+            big = max(big, ok_ - ck_)
+        else:
+            run = 0
+        if k - n >= 0 and k + n < i:
+            hv = h(k)
+            if all(h(k - q) < hv for q in range(1, n + 1)) and all(h(k + q) <= hv for q in range(1, n + 1)):
+                lh += 1
+                if first < 0:
+                    first = k
+    oi, ci = o(i), c(i)
+    if zone_in:
+        drop = max(0.0, oi - zt) if zt is not None else 0.0
+    else:
+        drop = max(0.0, oi - ci)
+    rv = [v(k) for k in range(max(0, li), mh + 1) if v(k) > 0]
+    fv = [v(k) for k in range(mh + 1, i) if v(k) > 0]
+    vol = (sum(fv) / len(fv)) / (sum(rv) / len(rv)) if rv and fv else None
+    rise = mh - li
+    return {'lh': lh, 'first': first, 'green': green, 'redRun': red_run, 'bars': i - mh,
+            'big': (big / zh) if zh else None, 'touch': (drop / zh) if zh else None, 'vol': vol,
+            'time': ((i - mh) / float(rise)) if rise > 0 else None}
+
+
+FALL_WHY = ('straight', 'fgreen', 'fredrun', 'fbigred', 'ftouchbig', 'fbars', 'fvol', 'ftime')
+
+
+def fall_fail(sj, zt, P, f):
+    """The owner's fall rules of 16-Nov-2026 on a signal whose structure passed (sj with 'H' / 'mh'; zt = the zone top the
+    order waits at; f = fall_feats) -> the first rule it fails (a STRUCT_WHY key) or ''. 'hhfar' = the move high more than
+    hhMax % above the zone top (RENT 21-Jan-2008: 45 %); 'straight' = fewer lower highs than fallLh (RENT, PSB 12-Nov-2013) ..."""
     mh, H = sj.get('mh'), sj.get('H')
-    if mh is None or mh < 0 or H is None:
+    if mh is None or mh < 0 or H is None or f is None:
         return ''
     if P.get('hhMax') and zt and (_f(H) - zt) / zt * 100 > P['hhMax'] + 1e-9:
         return 'hhfar'
-    if P.get('fallLh') and lower_high_between(h_at, mh, i) < 0:
+    if P.get('fallLh') and f['lh'] < P['fallLh']:
         return 'straight'
+    if P.get('fallGreen') and f['green'] < P['fallGreen']:
+        return 'fgreen'
+    if P.get('fallRedRun') and f['redRun'] > P['fallRedRun']:
+        return 'fredrun'
+    if P.get('fallBigRed') and f['big'] is not None and f['big'] > P['fallBigRed'] + 1e-9:
+        return 'fbigred'
+    if P.get('touchBig') and f['touch'] is not None and f['touch'] > P['touchBig'] + 1e-9:
+        return 'ftouchbig'
+    if P.get('fallBars') and f['bars'] < P['fallBars']:
+        return 'fbars'
+    if P.get('fallVol') and (f['vol'] is None or f['vol'] > P['fallVol'] + 1e-9):
+        return 'fvol'
+    if P.get('fallTime') and (f['time'] is None or f['time'] < P['fallTime'] - 1e-9):
+        return 'ftime'
     return ''
 
 
@@ -2833,7 +2973,14 @@ STRUCT_WHY = {'nochoch': 'no live CHoCH before it (after the lower highs / lows 
               'mitig': 'more than 2 candles touched its zone before the move high',
               'zone1mit': 'the 1st (watched) zone was touched before the move high',
               'hhfar': 'the move high (HH) was more than your % above the zone top',
-              'straight': 'price fell straight from the move high (HH) into the zone - no lower high on the way'}
+              'straight': 'fewer lower highs on the way down from the move high (HH) than your rule (a straight fall)',
+              'fgreen': 'fewer green candles on the way down than your rule',
+              'fredrun': 'more red candles in a row on the way down than your rule',
+              'fbigred': 'a red candle on the way down was bigger than your x-times-the-zone rule',
+              'ftouchbig': 'the touch candle fell into the zone with a bigger move than your x-times-the-zone rule',
+              'fbars': 'fewer candles from the move high to the signal than your rule',
+              'fvol': 'the volume on the way down was heavier than your rule (vs the rise)',
+              'ftime': 'the fall was quicker than your rule (fall candles vs rise candles)'}
 
 
 def struct_fail(sj, P):
@@ -2915,6 +3062,57 @@ def headline(res):
 def js_len(obj):
     """The length of JSON.stringify(obj) in the sheet (JavaScript counts UTF-16 units, writes no spaces, no escapes)."""
     return len(json.dumps(obj, ensure_ascii=False, separators=(',', ':')).encode('utf-16-le')) // 2
+
+
+BLOB_MAX_CHARS = 1750000        # the compressed result (base64 of gzip): the sheet keeps 40 cells of 45,000 characters
+
+
+def blob_result(res, limit=None):
+    """The result for the sheet (16-Nov-2026: ~4x smaller than the JSON) -> (summary, blob): blob = base64(gzip(JSON)) of the
+    whole result, at most `limit` characters (the newest trades kept - res['tradesCut']); summary = what the sheet's runs list
+    needs (no trades)."""
+    limit = limit or BLOB_MAX_CHARS
+    trades = res.get('trades') or []
+    keep = len(trades)
+    while True:
+        res['trades'] = trades[:keep]
+        if keep < len(trades):
+            res['tradesCut'] = len(trades) - keep
+        raw = json.dumps(res, ensure_ascii=False, separators=(',', ':'))
+        blob = base64.b64encode(gzip.compress(raw.encode('utf-8'), 6)).decode('ascii')
+        if len(blob) <= limit or not keep:
+            break
+        keep = int(keep * min(0.9, limit / float(len(blob)) * 0.95))
+    a = res.get('account') or {}
+    t = (res.get('split') or {}).get('test') or {}
+    summary = {'params': res.get('params') or {}, 'groupName': res.get('groupName', ''), 'cacheUpto': res.get('cacheUpto', ''),
+               'from': res.get('from', ''), 'to': res.get('to', ''), 'stats': res.get('stats') or {},
+               'account': {k: a.get(k) for k in ('returnPct', 'cagr', 'maxDD')}, 'split': {'test': {k: t.get(k) for k in ('avgR', 'trades')}}}
+    if res.get('pdf') is not None:
+        summary['pdf'] = res['pdf']
+    return summary, blob
+
+
+def save_result(res, name, jid):
+    """The whole result on the laptop (RESULTS_DIR, the newest RESULTS_KEEP) -> its path or ''."""
+    try:
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        stamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
+        safe = re.sub(r'[^A-Za-z0-9 ._+()-]', '', name or '')[:60].strip() or jid
+        path = os.path.join(RESULTS_DIR, '%s %s.json.gz' % (stamp, safe))
+        with gzip.open(path + '.tmp', 'wt', encoding='utf-8') as f:
+            json.dump(dict(res, id=jid, name=name), f, ensure_ascii=False, separators=(',', ':'))
+        os.replace(path + '.tmp', path)
+        old = sorted(x for x in os.listdir(RESULTS_DIR) if x.endswith('.json.gz'))
+        for x in old[:-RESULTS_KEEP]:
+            try:
+                os.remove(os.path.join(RESULTS_DIR, x))
+            except OSError:
+                pass
+        return path
+    except Exception as e:
+        log('Backtest Lab: the result could not be kept on the laptop - %s' % e)
+        return ''
 
 
 def fit_result(res, limit=None):
@@ -3075,6 +3273,12 @@ class LabWorker:
     def __init__(self):
         self.thread = None
         self.build = None            # fn(out) -> True when it built the cache (kite_intraday.lab_build_cache)
+        self.proto = 1               # the web app's Lab protocol (2: compressed results, op 'pdf', the waiting poll - 16-Nov-2026)
+        self.fast = False            # the page was open lately: the poll waits at the sheet for a run
+        self.running = threading.Event()   # a run is going: the charts PDF of the one before waits
+        self.pdf_jobs = []
+        self.pdf_thread = None
+        self.warm = False
 
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
@@ -3125,11 +3329,15 @@ class LabWorker:
                 self._build(cfg, api, hello)
             except Exception as e:
                 log('Backtest Lab: the candle cache could not be made - %s' % e)
+        self.prewarm()
         while rounds is None or k < rounds:
             k += 1
             wait = POLL_SLOW_S
             try:
-                res = api(cfg, 'lab', {'op': 'poll'}, tries=1, timeout=60)
+                ask = {'op': 'poll'}
+                if self.fast and self.proto >= 2:
+                    ask['wait'] = POLL_WAIT_S        # the sheet holds the poll until a run comes (16-Nov-2026)
+                res = api(cfg, 'lab', ask, tries=1, timeout=60)
                 if not res.get('ok'):
                     if 'unknown action' in str(res.get('error')):
                         if not old_app_said:
@@ -3140,16 +3348,59 @@ class LabWorker:
                     else:
                         wait = 300
                 else:
-                    wait = min(max(int(res.get('next') or POLL_SLOW_S), 5), 900)
+                    self.proto = int(res.get('v') or 1)
+                    nxt = res.get('next')
+                    self.fast = bool(res.get('waited')) or (nxt is not None and int(nxt) <= POLL_FAST_S)
+                    wait = (0.2 if res.get('waited') or nxt == 0 else
+                            min(max(int(nxt if nxt is not None else POLL_SLOW_S), 5), 900))
                     job = res.get('job')
                     if job:
                         self.run_one(cfg, api, job)
-                        wait = 5
+                        wait = 0.2 if self.proto >= 2 else 5
             except Exception as e:            # no internet / the sheet busy: try again later
                 log('Backtest Lab: %s' % e)
                 wait = 300
             if rounds is None:
                 time.sleep(wait)
+
+    def prewarm(self):
+        """Once per program start (16-Nov-2026): the daily chart's market structure for the usual setups worked out before the
+        first run (the first run used to spend ~10 s on it) - a quiet run of the CHoCH + BOS setup, nothing sent."""
+        if self.warm or not load_meta()[0]:
+            return
+        self.warm = True
+        t0 = time.time()
+        try:
+            run_job({'tf': 'D', 'group': 'touch', 'structure': 'only', 'setup': 'both', 'entry': 'zone'})
+            log('Backtest Lab: ready - the market structure is worked out (%.0f s).' % (time.time() - t0))
+        except Exception as e:
+            log('Backtest Lab: warm-up skipped - %s' % e)
+
+    def _pause(self):
+        """The charts PDF waits while a run goes (the next result first)."""
+        while self.running.is_set():
+            time.sleep(0.2)
+
+    def queue_pdf(self, cfg, api, jid, later, drive):
+        self.pdf_jobs.append((jid, later, drive))
+        if not (self.pdf_thread and self.pdf_thread.is_alive()):
+            self.pdf_thread = threading.Thread(target=self._pdf_loop, args=(cfg, api), daemon=True)
+            self.pdf_thread.start()
+
+    def _pdf_loop(self, cfg, api):
+        while self.pdf_jobs:
+            jid, later, drive = self.pdf_jobs.pop(0)
+            t0 = time.time()
+            pdf = later(None, self._pause)
+            if drive and pdf and pdf.get('file'):
+                pdf_to_drive(cfg, api, jid, pdf)
+            try:
+                reply = api(cfg, 'lab', {'op': 'pdf', 'id': jid, 'pdf': pdf}, tries=3, timeout=60)
+                if not reply.get('ok'):
+                    log('Backtest Lab: the sheet did not take the charts PDF note - %s' % reply.get('error'))
+            except Exception as e:
+                log('Backtest Lab: the charts PDF note could not be sent - %s' % e)
+            log('Backtest Lab: charts PDF %s (%.0f s).' % (pdf.get('file') or pdf.get('error'), time.time() - t0))
 
     def run_one(self, cfg, api, job):
         jid = job.get('id')
@@ -3173,17 +3424,35 @@ class LabWorker:
                     raise LabError('no Kite candles on this laptop yet - run KiteHistoryNow.bat')
                 base = 60
             charts = CHARTS_DIR if cfg.get('lab_charts') is not False else None
-            res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)), charts=charts, name=name)
-            if res.get('pdf') and (res.get('params') or {}).get('pdfDrive') and cfg.get('lab_pdf_drive') is not False:
+            self.running.set()
+            try:
+                res = run_job(job.get('params') or {}, progress=lambda p: progress(base + int(p * (100 - base) / 100)), charts=charts,
+                              name=name, defer_charts=self.proto >= 2)
+            finally:
+                self.running.clear()
+            later = res.pop('_later', None)
+            drive = (res.get('params') or {}).get('pdfDrive') is True and cfg.get('lab_pdf_drive') is not False
+            if not later and res.get('pdf') and drive:
                 pdf_to_drive(cfg, api, jid, res['pdf'], progress)      # asked for this run: the laptop copy stays, Drive gets one too
             sent = len(res.get('trades') or [])
-            fit_result(res)
-            reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
-            if not reply.get('ok') and 'too big' in str(reply.get('error') or ''):
-                fit_result(res, RESULT_MAX_CHARS // 2)      # the sheet counted more than we did: half and once more
+            reply = None
+            if self.proto >= 2:              # compressed (16-Nov-2026) - an older web app answers 'not a Backtest Lab result'
+                summary, blob = blob_result(res)
+                reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'summary': summary, 'blob': blob}, tries=3, timeout=180)
+                if not reply.get('ok') and 'not a Backtest Lab result' in str(reply.get('error') or ''):
+                    self.proto, reply = 1, None
+            if reply is None:
+                res['trades'] = res.get('trades') or []
+                fit_result(res)
                 reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
+                if not reply.get('ok') and 'too big' in str(reply.get('error') or ''):
+                    fit_result(res, RESULT_MAX_CHARS // 2)      # the sheet counted more than we did: half and once more
+                    reply = api(cfg, 'lab', {'op': 'result', 'id': jid, 'result': res}, tries=3, timeout=180)
             if not reply.get('ok'):
                 raise LabError('the sheet refused the result - %s' % reply.get('error'))
+            save_result(res, name, jid)
+            if later:                        # the charts PDF now, behind the result (it waits while a next run goes)
+                self.queue_pdf(cfg, api, jid, later, drive)
             if len(res.get('trades') or []) < sent:
                 log('Backtest Lab: the result was too big for the sheet - the website gets the newest %d of the %d trades '
                     '(the figures use every trade; the charts PDF has them all).' % (len(res['trades']), res.get('tradesTotal') or sent))

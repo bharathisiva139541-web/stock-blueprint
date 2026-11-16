@@ -1281,7 +1281,7 @@ function check(name, fn) {
       guide: (document.querySelector('#lab-form a[href$="Backtest-Lab-Guide.pdf"]') || {}).textContent }));
     assert.deepStrictEqual(lay.quick, ['smc', 'bos', 'both', 'fvg', 'gap', 'fvg4h']);
     await guideShot(own.p, '01-start', '#lab-form');
-    assert.deepStrictEqual(lay.secs, [['structure', false], ['zone', false], ['shape', false], ['trend', false], ['ltf', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
+    assert.deepStrictEqual(lay.secs, [['structure', false], ['fall', false], ['zone', false], ['shape', false], ['trend', false], ['ltf', false], ['entry', false], ['exit', false], ['money', false], ['check', false]]);
     assert.ok(lay.basics, 'the basics are on show');
     assert.match(lay.guide, /Guide/);
     // Daily FVG + 4H Spring (owner, 15-Nov-2026): the card fills its rules (buy at the next open, the lower of the zone bottom / the
@@ -1303,7 +1303,7 @@ function check(name, fn) {
     await own.p.waitForSelector('.lab-quick .lab-rec.on [data-quick="fvg"]');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="group"]', (e) => e.value), 'fvg');
     // open every section (remembered on this device) for the steps below
-    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'ltf', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'fall', 'shape', 'trend', 'ltf', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"][open]');
     // the owner's idea: 1 % under the zone, 2R, then the last 3 lows
     await own.p.fill('[data-k="stopBuf"]', '1');
@@ -1413,7 +1413,7 @@ function check(name, fn) {
     await guideShot(own.p, '02-ready', '.lab-quick');
     await guideShot(own.p, '03-basics', '#lab-form .form-grid');
     await guideShot(own.p, '04-more', '.lab-secs');
-    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'shape', 'trend', 'ltf', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
+    await own.p.evaluate(() => { localStorage.setItem('sb:lab:open', JSON.stringify(['structure', 'fall', 'shape', 'trend', 'ltf', 'entry', 'exit', 'money', 'check'])); window.SB.route(true); });
     await own.p.waitForSelector('details.lab-sec[data-sec="trend"][open]');
     await guideShot(own.p, '05-structure', 'details.lab-sec[data-sec="structure"]');
     await own.p.click('#lab-smc');
@@ -1431,10 +1431,21 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapAtr"]', (e) => e.value), '0', 'a gap-down open: off');
     assert.ok(!(await own.p.$('#lab-form select[data-k="gapBelow"]')), '... its "at most" box only when on');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="hhMax"]', (e) => e.value), '0', 'the move high\'s distance: off');
-    assert.strictEqual(await own.p.$eval('#lab-form [data-k="fallLh"]', (e) => e.checked), false, 'no straight fall: off');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="fallLh"]', (e) => e.value), '0', 'no straight fall: off');
+    // the fall into the zone (owner, 16-Nov-2026: "intha field la more options add panu") - its own section, every rule off
+    assert.deepStrictEqual(await own.p.$$eval('details.lab-sec[data-sec="fall"] select[data-k]', (x) => x.map((e) => e.getAttribute('data-k') + '=' + e.value)),
+      ['fallLh=0', 'fallGreen=0', 'fallRedRun=0', 'fallBigRed=0', 'touchBig=0', 'fallBars=0', 'fallVol=0', 'fallTime=0', 'hhMax=0']);
+    assert.match(await own.p.$eval('details.lab-sec[data-sec="fall"]', (x) => x.textContent), /run once with these off - "What worked best" then shows each of them/);
     assert.match(await plainText(), /A candle that opens under the zone top is bought at its open with the usual stop \(an open under that stop is skipped\)\./);
-    await own.p.check('#lab-form [data-k="fallLh"]');
-    await own.p.waitForFunction(() => /on the way down from the move high price made a lower high \(a swing high with 2 lower candles each side\) before the signal - no straight fall into the zone/.test(document.querySelector('#lab-plain').textContent));
+    await own.p.selectOption('#lab-form select[data-k="fallLh"]', '1');
+    await own.p.waitForFunction(() => /on the way down from the move high at least 1 lower high \(a swing high with 2 lower candles each side\) - no straight fall into the zone/.test(document.querySelector('#lab-plain').textContent));
+    await own.p.selectOption('#lab-form select[data-k="fallGreen"]', '2');
+    await own.p.selectOption('#lab-form select[data-k="fallBigRed"]', '1');
+    await own.p.selectOption('#lab-form select[data-k="touchBig"]', '1');
+    await own.p.waitForFunction(() => /at least 2 green candles on the way down; no red candle on the way down bigger than 1x the zone's height; the touch candle falling into the zone by at most 1x the zone's height/.test(document.querySelector('#lab-plain').textContent));
+    assert.match(await own.p.$eval('details.lab-sec[data-sec="fall"] summary', (x) => x.textContent), /4 changed/);
+    await guideShot(own.p, '05c-fall', 'details.lab-sec[data-sec="fall"]');
+    for (const k of ['fallGreen', 'fallBigRed', 'touchBig']) await own.p.selectOption('#lab-form select[data-k="' + k + '"]', '0');
     await own.p.selectOption('#lab-form select[data-k="gapAtr"]', '0.5');
     await own.p.waitForSelector('#lab-form select[data-k="gapBelow"]');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapBelow"]', (e) => e.value), '2', '... an open at most 2% under the zone');
@@ -1446,7 +1457,7 @@ function check(name, fn) {
     await own.p.waitForFunction(() => !document.querySelector('#lab-form select[data-k="gapBelow"]'));
     await own.p.selectOption('#lab-form select[data-k="hhMax"]', '0');
     await own.p.waitForFunction(() => !/at most 30% above the zone top/.test(document.querySelector('#lab-plain').textContent));
-    await own.p.uncheck('#lab-form [data-k="fallLh"]');
+    await own.p.selectOption('#lab-form select[data-k="fallLh"]', '0');
     await own.p.waitForFunction(() => !/no straight fall into the zone/.test(document.querySelector('#lab-plain').textContent));
     // BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this ... continuous BOS in uptrend. or BOS formed after Choch"):
     // the same setup on the BOS move in one click, its kinds, and the lower-timeframe confirmation
@@ -1577,7 +1588,7 @@ function check(name, fn) {
     assert.deepStrictEqual(missing, ['name', 'from', 'to', 'valFrom'], 'every rule reaches the laptop (empty dates left out)');
     assert.ok(got.job.params.swingMode === 'fractal' && got.job.params.rollYears === 3 && got.job.params.atrK === 3);
     const cols = ['sym', 'signal', 'zone', 'where', 'touch', 'entry', 'stop', 'riskPct', 'exit', 'exitOn', 'reason', 'R', 'ret', 'days', 'maxR', 'qty', 'pnl', 'taken', 'ema', 'upW', 'loW', 'dip', 'stage', 'struct', 'target', 'acct',
-      'stopBy', 'fill', 'gapo', 'hh'];
+      'stopBy', 'fill', 'gapo', 'hh', 'flh', 'fgr', 'frr', 'fbars'];
     const result = { v: 1, params: Object.assign({}, got.job.params), groupName: 'FVG+Spring', cacheUpto: '2026-11-06', from: '2010-01-04', to: '2026-10-20',
       stats: { trades: 3, winPct: 66.7, avgR: 1.21, medR: 1.5, totalR: 3.6, pf: 4.6, avgWinR: 2.3, avgLossR: -1, hitPct: 66.7, avgRet: 5.1, medRet: 4.2,
                avgDays: 21.5, bestR: 3.1, worstR: -1, avgMaxR: 2.6, maxLosingStreak: 1, avgRLo: -0.4, avgRHi: 2.8, edge: 'few' },
@@ -1618,11 +1629,11 @@ function check(name, fn) {
         drive: { id: '1AbCdEfGhIjKlMnOp_q-r', url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp_q-r/view' } },
       trades: [['ABC', '2026-10-30', 'Gap-up zone touch inside FVG', 'top', 1, 232.1, 228.4, 1.59, 232.1, '2026-11-06', 'open', 0, 0, 7, 0.4, 0, 0, 1, 'support 10 EMA · above 21', '', '', '', 'disc',
         'CHoCH 240.00 on 2026-10-10 (3 lower highs / lows, final low 220.00 on 2026-10-01) · move high 251.00 · zone middle 62% down the move (50% line 235.50)', 250, '40 shares, Rs 9,284 invested, Rs 148 at risk.',
-        'gapatr', 'in', 2.1, 8.2],
-               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, 'below', 'CHoCH 110.00 on 2026-08-20 (4 lower highs / lows, final low 92.00)', 115.5, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.', 'gapfinal', 'under', -1.3, 21.5],
-               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', 4.8, 62.5, 0.6, 'below', 'CHoCH 55.00 on 2026-02-20 (3 lower highs / lows, final low 45.00)', 53, '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.', '', 'wick', null, 12.0],
+        'gapatr', 'in', 2.1, 8.2, 2, 3, 2, 9],
+               ['XYZ', '2026-09-01', 'FVG', 'bottom', 2, 100, 95, 5, 115.5, '2026-09-25', 'trail', 3.1, 15.3, 24, 3.6, 2000, 31000, 1, 'support 10 EMA · above 21', 0, 80.5, 2.1, 'below', 'CHoCH 110.00 on 2026-08-20 (4 lower highs / lows, final low 92.00)', 115.5, '2000 shares, Rs 2,00,000 invested, Rs 10,000 at risk.', 'gapfinal', 'under', -1.3, 21.5, 0, 0, 5, 4],
+               ['PQR', '2026-03-02', 'FVG', 'middle', 1, 50, 48, 4, 53, '2026-03-20', 'trail', 1.5, 6, 18, 2.2, 5000, 15000, 1, 'support 10 EMA · above 21', 4.8, 62.5, 0.6, 'below', 'CHoCH 55.00 on 2026-02-20 (3 lower highs / lows, final low 45.00)', 53, '5000 shares, Rs 2,50,000 invested, Rs 10,000 at risk.', '', 'wick', null, 12.0, 1, 2, 3, 7],
                ['LMN', '2010-01-04', 'FVG', 'top', 1, 30435, 28825, 5, 31290, '2010-01-12', 'trail', 0.5, 2.6, 8, 0.9, 0, 0, 0, 'support 10 EMA · above 21', 9.1, 55, 3.4, 'below', 'CHoCH 32000.00 on 2009-12-20 (3 lower highs / lows, final low 28000.00)', 31290,
-                'Not taken: one share costs Rs 30,435, more than your position limit of Rs 15,000 (5% of the account, Money: "One position at most").', '', 'wick', null, 30.4]] };
+                'Not taken: one share costs Rs 30,435, more than your position limit of Rs 15,000 (5% of the account, Money: "One position at most").', '', 'wick', null, 30.4, 1, 1, 2, 6]] };
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: got.job.id, result: result }))), { ok: true, stored: true });
     // the page sees it done (it asks every 4 s) and opens it
     await own.p.waitForFunction(() => /Every signal/.test((document.querySelector('#lab-result') || {}).textContent || ''), null, { timeout: 20000 });
@@ -1645,10 +1656,10 @@ function check(name, fn) {
     assert.match(view, /Only Springs where the Spring candle has an upper wick of at most 5% of its range, a lower wick of at least 60% of its range\./);
     for (const h of ['Upper wick %', 'Lower wick %', 'Dip %', 'Structure', 'Target']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
     assert.match(view, /300 left out by your market-structure rules · 5 without a swing high above \(target\)/);
-    assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 20 its zone is not below the CHoCH level; 10 its zone was not in the discount part of the move \(above your Fib line\); 5 price fell straight from the move high \(HH\) into the zone - no lower high on the way\./);
+    assert.match(view, /Market structure: left out - 200 no live CHoCH before it; 70 a BOS came first \(not the first pullback\); 20 its zone is not below the CHoCH level; 10 its zone was not in the discount part of the move \(above your Fib line\); 5 fewer lower highs on the way down from the move high than your rule \(a straight fall\)\./);
     assert.match(view, /9 not first touches \(the zone-top order fills on those only\) · 4 opened too far under the zone \(gap down\)/);
     // the gap-down open (16-Nov-2026): how the order filled, which stop, how high the move high was
-    for (const h of ['Order filled', 'Stop from', 'HH above zone %']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
+    for (const h of ['Order filled', 'Stop from', 'HH above zone %', 'LH on the way', 'Green on the way', 'Red in a row', 'Fall candles']) assert.ok(await own.p.$('#lab-trades th:has-text("' + h + '")'), 'the ' + h + ' column');
     const fillTxt = await own.p.$$eval('#lab-trades tbody tr', (r) => r.map((x) => x.innerText));
     assert.ok(/Gap open: ATR/.test(fillTxt[0]) && /Opened in the zone \(\+2\.1%\)/.test(fillTxt[0]), fillTxt[0]);
     assert.ok(fillTxt.some((t) => /Gap open: final low/.test(t) && /Opened 1\.3% under it/.test(t)) && fillTxt.some((t) => /Came down to it/.test(t)), fillTxt.join('\n'));
@@ -1753,6 +1764,28 @@ function check(name, fn) {
         .catch(async (e) => { throw new Error(e.message + ' | status: ' + (await own.p.$eval('#lab-status', (x) => x.textContent).catch(() => '-')).slice(0, 300) +
           ' | result: ' + (await own.p.$eval('#lab-result', (x) => x.textContent).catch(() => '-')).slice(0, 400)); });
     }
+    // speed (owner, 16-Nov-2026: "takunu vara mari"): a compressed result unpacked here, the charts PDF told later (the page asks until
+    // it is there), a run opened again comes from this device (no sheet call)
+    await own.p.click('#lab-run');
+    await own.p.waitForFunction(() => /waiting for your laptop/.test((document.querySelector('#lab-status') || {}).textContent || ''), null, { timeout: 15000 });
+    const zj = JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'poll', wait: 3 })));
+    assert.strictEqual(zj.v, 2, 'the web app says it takes compressed results');
+    const zres = { v: 1, params: zj.job.params, groupName: 'Pattern library: K01 Hammer', cacheUpto: '2026-11-12', from: '', to: '', stats: { trades: 0 }, trades: [],
+      tradeCols: cols, tradesTotal: 0, open: 0, skipped: {}, secs: 0.3, warnings: [], engine: { version: 4, patterns: 192 }, pdf: { pending: true } };
+    const zblob = require('zlib').gzipSync(Buffer.from(JSON.stringify(zres))).toString('base64');
+    const zsum = { params: zres.params, groupName: zres.groupName, cacheUpto: zres.cacheUpto, from: '', to: '', stats: zres.stats, account: {}, split: { test: {} }, pdf: { pending: true } };
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'result', id: zj.job.id, summary: zsum, blob: zblob }))), { ok: true, stored: true });
+    await own.p.waitForSelector('#lab-pdf-pending', { timeout: 20000 });
+    assert.match(await own.p.$eval('#lab-engine', (x) => x.textContent), /pattern engine v4 · 192 patterns/, 'unpacked here');
+    sheet.gs.post({ token: 'bridge-token', action: 'lab', op: 'pdf', id: zj.job.id, pdf: { file: '2026-11-16 101500 fast.pdf', folder: 'lab_charts', path: 'D:\\StockBlueprintData\\lab_charts', pages: 3, trades: 0, shown: 0 } });
+    await own.p.waitForFunction(() => !document.querySelector('#lab-pdf-pending') && /Charts PDF on your laptop/.test((document.querySelector('#lab-pdf-box') || {}).textContent || ''), null, { timeout: 20000 });
+    const asked = () => sheet.bodies.filter((b) => b.op === 'lab' && b.lab && b.lab.do === 'result').length;
+    const before = asked();
+    await own.p.evaluate(() => { location.hash = '#lab'; });
+    await own.p.waitForFunction(() => !location.hash.includes('/'));
+    await own.p.evaluate((id) => { location.hash = '#lab/' + id; }, zj.job.id);
+    await own.p.waitForFunction(() => /Charts PDF on your laptop/.test((document.querySelector('#lab-pdf-box') || {}).textContent || ''), null, { timeout: 15000 });
+    assert.strictEqual(asked(), before, 'opened again from this device - no sheet call');
     // phone width: no sideways scroll on the page
     await own.p.setViewportSize({ width: 360, height: 780 });
     await own.p.keyboard.press('Escape');

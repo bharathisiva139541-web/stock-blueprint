@@ -539,3 +539,21 @@ A GAP-DOWN OPEN INTO THE ZONE + NO STRAIGHT FALL (16-Nov-2026, Backtest Lab only
  - More structure rules > "The move high (HH) above the zone top": at most 15 / 20 / 25 / 30 / 40 / 50% (default Off). The
    trades table's "HH above zone %" and "What worked best" > "Move high (HH) above the zone top" help to pick a value.
  - The daily scan, the CHoCH Waiting list and the TradingView script are unchanged (the script's notes say what it does not draw).
+
+THE FALL INTO THE ZONE + A FASTER BACKTEST LAB (16-Nov-2026)
+ - More rules > "The fall into the zone - how price came down from the move high" (Market structure "Only my setup"; every
+   rule Off by default): lower highs on the way down (at least 1 / 2 / 3), green candles on the way down, red candles in a
+   row (at most), big red candles (none bigger than x times the zone's height), the touch candle's fall into the zone (with the
+   zone-top order only its fall from the open down to the zone top counts - its close is not known when the order fills),
+   candles from the move high to the signal, the volume on the way down vs the rise, the time of the fall vs the rise, and the
+   move high's distance above the zone top. Every trade also gets these numbers (trades table columns "LH on the way", "Green on
+   the way", "Red in a row", "Fall candles", "Big red ÷ zone", ...) and "What worked best" has a table for each - one run with
+   the rules off shows which values work.
+ - Speed: while the Lab page is open the laptop waits at the sheet for your run and takes it within a second or two (it used
+   to look every 10 s, or every 2 minutes when the page had been shut); the result goes to the sheet compressed (~4x smaller)
+   and BEFORE the charts PDF - the PDF is made right after it and shows on the page by itself ("being made on your laptop");
+   a next run goes first and the PDF waits. The page reads the sheet without its watchlist lock (the "sheet feed timed out"
+   errors), asks again quietly when the sheet is slow, and keeps every opened result on the device (opened again at once). The
+   first run after the program starts no longer works out the market structure (done once at the start). Every result is also
+   kept whole on the laptop: lab_results (next to lab_charts, e.g. D:\StockBlueprintData\lab_results, the newest 300).
+ - These need the New version deploy of the sheet's web app (Code2.gs). Until then the laptop uses the older way by itself.
