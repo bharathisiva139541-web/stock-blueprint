@@ -11136,6 +11136,19 @@ function ab_wlFromSite_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
   if (['get', 'put', 'kite', 'lab', 'notes', 'push'].indexOf(req.op) < 0) return ab_bridgeJson_({ ok: false, error: 'unknown op' });
+  // the Lab / Kite / notes with the right PIN: no document lock (16-Nov-2026: a laptop write held it and the page timed out) -
+  // the Lab's writes take its own lock; a wrong PIN goes the locked way below (it is counted)
+  if ((req.op === 'lab' || req.op === 'kite' || req.op === 'notes') && ab_wlPinOk_(req.pin)) {
+    try {
+      if (req.op === 'lab') return ab_bridgeJson_(ab_labFromSite_(req));
+      if (req.op === 'notes') return ab_bridgeJson_(ab_noteFromSite_());
+      const kl = ab_klForSite_();
+      kl.notesNewest = ab_noteNewest_();
+      return ab_bridgeJson_(kl);
+    } catch (err) {
+      return ab_bridgeJson_({ ok: false, error: err.message });
+    }
+  }
   const lock = ab_wlLock_();
   if (!lock.tryLock(20000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
   try {
@@ -11185,6 +11198,17 @@ function ab_wlHash_(salt, pin) {
 }
 
 /** null when `pin` is the owner's PIN, else why not (wrong / locked / none set). */
+/** The PIN is right and not locked (read only - nothing counted). */
+function ab_wlPinOk_(pin) {
+  const props = PropertiesService.getScriptProperties();
+  const stored = String(props.getProperty(AB_WL_PIN_PROP) || '').split(':');
+  if (stored.length !== 2 || !stored[1] || typeof pin !== 'string' || pin.length > 64) return false;
+  let f = null;
+  try { f = JSON.parse(props.getProperty(AB_WL_FAILS_PROP) || 'null'); } catch (e) { f = null; }
+  if (f && f.until > Date.now()) return false;
+  return ab_wlHash_(stored[0], pin) === stored[1];
+}
+
 function ab_wlCheckPin_(pin) {
   const props = PropertiesService.getScriptProperties();
   const stored = String(props.getProperty(AB_WL_PIN_PROP) || '').split(':');
@@ -13267,6 +13291,16 @@ const AB_LAB_STALE_MS = 20 * 60000;              // a run taken by the PC and no
 const AB_LAB_WAIT_MS = 12 * 3600000;             // a run nobody took in 12 hours is dropped
 const AB_LAB_FAST_MS = 10 * 60000;
 const AB_LAB_HEADERS = ['Id', 'Saved', 'Name', 'Summary', 'Result (JSON, in parts)'];
+// SPEED (owner, 16-Nov-2026: "ovoru backtest um load agi varuthu ... maximum speedku Improve pana mudiuma. takunu vara mari ...
+// adikadi sheet feed timedout error varuthu. but page ah reload panuna results vanthuruthu"): the Lab has its own lock (the
+// user lock - the page's status / result reads take none), the laptop's poll waits up to AB_LAB_WAIT_MAX_S for a run (it is
+// taken within a second), results come gzip + base64 ('GZ:' in the parts - the page unpacks them; ~4x smaller) and the charts
+// PDF is told later (op 'pdf' -> the Summary's pdf), so the result does not wait for it
+const AB_LAB_PROTO = 2;
+const AB_LAB_WAKE_KEY = 'AB_LAB_WAKE';
+const AB_LAB_WAIT_MAX_S = 25;
+const AB_LAB_GZ = 'GZ:';
+const AB_LAB_BLOB_RE = /^[A-Za-z0-9+\/=]+$/;
 // the charts PDF in Google Drive too (owner, 15-Nov-2026: "suppose nan tablet la backtest run panren laptop on pani vachutu,
 // and pdf um tablet or phone la ye pakanumna epdi pakurathu?" - choice: an "Open PDF" button on the result, the PDF kept on
 // the laptop AND in Drive): the laptop asks for an upload address (op 'pdfup'), sends the file straight to Google Drive
@@ -13290,6 +13324,14 @@ function ab_labParams_(p) {
     if ((typeof v === 'number' && isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && /^[A-Za-z0-9_.-]{0,20}$/.test(v))) out[k] = v;
   });
   return out;
+}
+
+/** The Backtest Lab's own lock: the user lock (every web-app run is the owner's), else the script lock - never the document lock
+ *  the watchlists / Kite / notes share (16-Nov-2026: the laptop's result write held it and the page timed out). */
+function ab_labLock_() {
+  let l = null;
+  try { l = LockService.getUserLock(); } catch (e) { l = null; }
+  return l || LockService.getScriptLock();
 }
 
 function ab_labJob_() {
@@ -13338,16 +13380,35 @@ function ab_labSheet_(create) {
 function ab_labHead_(res, job) {
   const s = (res && res.stats) || {}, a = (res && res.account) || {}, p = (res && res.params) || {};
   const t = (res && res.split && res.split.test) || {};
-  return { tf: p.tf || '', group: res && res.groupName || '', trades: s.trades || 0, winPct: s.winPct, avgR: s.avgR, totalR: s.totalR,
+  const h = { tf: p.tf || '', group: res && res.groupName || '', trades: s.trades || 0, winPct: s.winPct, avgR: s.avgR, totalR: s.totalR,
            returnPct: a.returnPct, cagr: a.cagr, maxDD: a.maxDD, from: res && res.from || '', to: res && res.to || '',
            cacheUpto: res && res.cacheUpto || '', name: (job && job.name) || '',
            // the runs comparison (owner, 12-Nov-2026): the likely range, real-or-chance and the test part
            lo: s.avgRLo, hi: s.avgRHi, edge: s.edge || '', testAvgR: t.avgR, testTrades: t.trades || 0 };
+  const pdf = ab_labPdfClean_(res && res.pdf);
+  if (pdf) h.pdf = pdf;                        // the charts PDF (16-Nov-2026: made after the result - 'pending' until op 'pdf')
+  return h;
 }
 
-function ab_labStore_(job, res) {
+/** A result's charts-PDF info kept small: {pending} / {file, folder, path, pages, trades, shown, drive} / {error}. */
+function ab_labPdfClean_(p) {
+  if (!p || typeof p !== 'object') return null;
+  if (p.pending) return { pending: true };
+  if (p.error && !p.file) return { error: String(p.error).replace(/\s+/g, ' ').slice(0, 200) };
+  const out = {};
+  ['file', 'folder', 'path'].forEach(function (k) { if (p[k] !== undefined && p[k] !== null) out[k] = String(p[k]).slice(0, 300); });
+  ['pages', 'trades', 'shown'].forEach(function (k) { if (isFinite(Number(p[k]))) out[k] = Number(p[k]); });
+  if (p.drive && typeof p.drive === 'object') {
+    const d = { pdf: { drive: p.drive } };
+    ab_labDriveClean_(d);
+    out.drive = d.pdf.drive;
+  }
+  return out.file ? out : null;
+}
+
+function ab_labStore_(job, res, blob) {
   const sh = ab_labSheet_(true);
-  const text = JSON.stringify(res);
+  const text = blob ? AB_LAB_GZ + blob : JSON.stringify(res);   // blob: gzip + base64 of the whole result (16-Nov-2026)
   const parts = [];
   for (let i = 0; i < text.length && parts.length < AB_LAB_MAX_PARTS; i += AB_LAB_PART) parts.push(text.slice(i, i + AB_LAB_PART));
   if (parts.length * AB_LAB_PART < text.length) throw new Error('the result is too big to keep');
@@ -13369,7 +13430,9 @@ function ab_labList_() {
   }).filter(function (x) { return x.id; });
 }
 
-function ab_labGet_(id) {
+/** A stored result: {id, saved, name, head, blob} (a compressed one - the page unpacks it; `plain` = unpacked here for a browser
+ *  that cannot) or {id, saved, name, head, result}. */
+function ab_labGet_(id, plain) {
   const sh = ab_labSheet_(false);
   if (!sh || sh.getLastRow() < 2) return null;
   const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
@@ -13379,9 +13442,47 @@ function ab_labGet_(id) {
     const row = sh.getRange(i + 2, 1, 1, width).getValues()[0];
     let text = '';
     for (let c = 4; c < row.length; c++) text += String(row[c] || '');
-    try { return { id: String(row[0]), saved: String(row[1]), name: String(row[2] || ''), result: JSON.parse(text) }; } catch (e) { return null; }
+    let head = {};
+    try { head = JSON.parse(String(row[3] || '{}')); } catch (e) { head = {}; }
+    const item = { id: String(row[0]), saved: String(row[1]), name: String(row[2] || ''), head: head };
+    try {
+      if (text.indexOf(AB_LAB_GZ) === 0) {
+        if (!plain) { item.blob = text.slice(AB_LAB_GZ.length); return item; }
+        const raw = Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(text.slice(AB_LAB_GZ.length)), 'application/x-gzip')).getDataAsString('UTF-8');
+        item.result = JSON.parse(raw);
+        return item;
+      }
+      item.result = JSON.parse(text);
+      return item;
+    } catch (e) { return null; }
   }
   return null;
+}
+
+/** op 'pdf' (16-Nov-2026): the charts PDF of a stored result, made after it was sent -> its Summary's pdf. */
+function ab_labPdf_(req) {
+  const lock = ab_labLock_();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'sheet busy - try again' };
+  try {
+    const pdf = ab_labPdfClean_(req && req.pdf) || { error: 'the charts PDF could not be made' };
+    const sh = ab_labSheet_(false);
+    if (!sh || sh.getLastRow() < 2) return { ok: true, stored: false };
+    const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) !== String(req.id)) continue;
+      let head = {};
+      try { head = JSON.parse(String(sh.getRange(i + 2, 4).getValue() || '{}')); } catch (e) { head = {}; }
+      head.pdf = pdf;
+      sh.getRange(i + 2, 4).setNumberFormat('@').setValue(JSON.stringify(head));
+      if (pdf.drive && pdf.drive.id) {
+        try { ab_labDriveTidy_(ab_labDriveFolder_()); } catch (tErr) { Logger.log('Backtest Lab PDFs in Drive: ' + tErr.message); }
+      }
+      return { ok: true, stored: true };
+    }
+    return { ok: true, stored: false };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** The website's page (inside ab_wlFromSite_, after the PIN): req.lab = {do: run | status | result | delete | cancel, ...}. */
@@ -13390,33 +13491,36 @@ function ab_labFromSite_(req) {
   const props = PropertiesService.getScriptProperties();
   const now = Date.now();
   props.setProperty(AB_LAB_PAGE_PROP, String(now));
-  if (q.do === 'run') {
-    const cur = ab_labJobView_(now);
-    if (cur && cur.status === 'running') {
-      return { ok: false, error: 'a run is going on - wait for it (or cancel it)' };
-    }
-    const job = { id: 'L' + now.toString(36) + Math.floor(Math.random() * 1296).toString(36), name: String(q.name || '').replace(/\s+/g, ' ').trim().slice(0, 60), at: now,
-                  status: 'waiting', params: ab_labParams_(q.params) };
-    ab_labSaveJob_(job);
-    return ab_labStatus_(now);
-  }
-  if (q.do === 'cancel') {
-    const j = ab_labJob_();
-    // a running one too (11-Nov-2026): the laptop finishes its step; a new run is taken next
-    if (j && (j.status === 'waiting' || j.status === 'running')) { j.status = 'cancelled'; ab_labSaveJob_(j); }
-    return ab_labStatus_(now);
-  }
   if (q.do === 'result') {
-    const r = ab_labGet_(String(q.id || ''));
+    const r = ab_labGet_(String(q.id || ''), q.plain === true);
     return r ? { ok: true, result: 'lab', item: r } : { ok: false, error: 'that result is no longer kept' };
   }
-  if (q.do === 'delete') {
-    const sh = ab_labSheet_(false);
-    if (sh && sh.getLastRow() >= 2) {
-      const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
-      for (let i = ids.length - 1; i >= 0; i--) if (String(ids[i][0]) === String(q.id || '')) sh.deleteRow(i + 2);
+  if (q.do !== 'run' && q.do !== 'cancel' && q.do !== 'delete') return ab_labStatus_(now);
+  const lock = ab_labLock_();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'sheet busy - try again' };
+  try {
+    if (q.do === 'run') {
+      const cur = ab_labJobView_(now);
+      if (cur && cur.status === 'running') {
+        return { ok: false, error: 'a run is going on - wait for it (or cancel it)' };
+      }
+      const job = { id: 'L' + now.toString(36) + Math.floor(Math.random() * 1296).toString(36), name: String(q.name || '').replace(/\s+/g, ' ').trim().slice(0, 60), at: now,
+                    status: 'waiting', params: ab_labParams_(q.params) };
+      ab_labSaveJob_(job);
+      try { CacheService.getScriptCache().put(AB_LAB_WAKE_KEY, job.id, 600); } catch (e) { /* the laptop's poll looks again in 5 s */ }
+    } else if (q.do === 'cancel') {
+      const j = ab_labJob_();
+      // a running one too (11-Nov-2026): the laptop finishes its step; a new run is taken next
+      if (j && (j.status === 'waiting' || j.status === 'running')) { j.status = 'cancelled'; ab_labSaveJob_(j); }
+    } else {
+      const sh = ab_labSheet_(false);
+      if (sh && sh.getLastRow() >= 2) {
+        const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+        for (let i = ids.length - 1; i >= 0; i--) if (String(ids[i][0]) === String(q.id || '')) sh.deleteRow(i + 2);
+      }
     }
-    return ab_labStatus_(now);
+  } finally {
+    lock.releaseLock();
   }
   return ab_labStatus_(now);
 }
@@ -13429,28 +13533,69 @@ function ab_labStatus_(now) {
   return { ok: true, result: 'lab', job: ab_labJobView_(now), pcSeenSec: seen ? Math.round((now - seen) / 1000) : null, pcNote: pcNote, list: ab_labList_() };
 }
 
-/** The PC (doPost action 'lab', bridge token): poll (takes a waiting job) / progress / result / fail. */
+/** The laptop's poll (16-Nov-2026): takes a waiting run at once; with `wait` (seconds, while the page was open in the last
+ *  10 minutes) it waits up to AB_LAB_WAIT_MAX_S for one - the page's Run wakes it (CacheService), so a run is taken within a
+ *  second instead of the next 10 / 120 s poll. `v` = this web app's Lab protocol (2: blob results, op 'pdf'). */
+function ab_labPoll_(req) {
+  const props = PropertiesService.getScriptProperties();
+  const t0 = Date.now();
+  props.setProperty(AB_LAB_SEEN_PROP, String(t0));
+  const page = Number(props.getProperty(AB_LAB_PAGE_PROP)) || 0;
+  const fast = t0 - page <= AB_LAB_FAST_MS;
+  const claim = function () {
+    const lock = ab_labLock_();
+    if (!lock.tryLock(10000)) return null;
+    try {
+      const now = Date.now();
+      ab_labJobView_(now);                     // marks stale ones
+      const k = ab_labJob_();
+      if (!k || k.status !== 'waiting') return null;
+      k.status = 'running';
+      k.claimedAt = now;
+      k.pct = 0;
+      ab_labSaveJob_(k);
+      return { ok: true, job: { id: k.id, name: k.name, params: k.params }, next: 5, v: AB_LAB_PROTO };
+    } finally {
+      lock.releaseLock();
+    }
+  };
+  const got = claim();
+  if (got) return got;
+  const wait = fast ? Math.max(0, Math.min(AB_LAB_WAIT_MAX_S, Math.floor(Number(req && req.wait) || 0))) : 0;
+  if (!wait) return { ok: true, job: null, next: fast ? 10 : 60, v: AB_LAB_PROTO };
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  for (let n = 1; n <= wait; n++) {
+    Utilities.sleep(1000);
+    let wake = null;
+    try { wake = cache ? cache.get(AB_LAB_WAKE_KEY) : null; } catch (e) { wake = null; }
+    if (wake || n % 5 === 0) {
+      const g = claim();
+      if (g) {
+        try { if (cache) cache.remove(AB_LAB_WAKE_KEY); } catch (e) { /* only a hint */ }
+        return g;
+      }
+    }
+  }
+  return { ok: true, job: null, next: 0, waited: true, v: AB_LAB_PROTO };
+}
+
+/** The PC (doPost action 'lab', bridge token): poll (takes a waiting job) / progress / result / fail / pdf / pdfup / hello. */
 function ab_labFromBridge_(req) {
-  const lock = ab_wlLock_();
+  if (req.op === 'poll') return ab_labPoll_(req);
+  if (req.op === 'pdf') return ab_labPdf_(req);
+  const lock = ab_labLock_();
   if (!lock.tryLock(20000)) return { ok: false, error: 'sheet busy - try again' };
   try {
     const props = PropertiesService.getScriptProperties();
     const now = Date.now();
     props.setProperty(AB_LAB_SEEN_PROP, String(now));
     const page = Number(props.getProperty(AB_LAB_PAGE_PROP)) || 0;
-    const next = now - page <= AB_LAB_FAST_MS ? 10 : 120;
+    const next = now - page <= AB_LAB_FAST_MS ? 10 : 60;
     const j = ab_labJob_();
-    if (req.op === 'poll') {
-      ab_labJobView_(now);                     // marks stale ones
-      const k = ab_labJob_();
-      if (k && k.status === 'waiting') {
-        k.status = 'running';
-        k.claimedAt = now;
-        k.pct = 0;
-        ab_labSaveJob_(k);
-        return { ok: true, job: { id: k.id, name: k.name, params: k.params }, next: 5 };
-      }
-      return { ok: true, job: null, next: next };
+    if (req.op === 'pdfup') {                  // the charts PDF to Google Drive - also for a run already done (16-Nov-2026)
+      if (j && String(req.id) === String(j.id)) { j.beat = now; ab_labSaveJob_(j); }
+      return ab_labDriveStart_(req);
     }
     if (req.op === 'hello') {                  // busy without a run (preparing the candles): its words for the page
       props.setProperty(AB_LAB_PC_PROP, JSON.stringify({ note: String(req.note || '').slice(0, 200), at: now }));
@@ -13464,11 +13609,6 @@ function ab_labFromBridge_(req) {
       ab_labSaveJob_(j);
       return { ok: true };
     }
-    if (req.op === 'pdfup') {                  // the charts PDF to Google Drive: an upload address for this one file
-      j.beat = now;
-      ab_labSaveJob_(j);
-      return ab_labDriveStart_(req);
-    }
     if (req.op === 'fail') {
       j.status = 'failed';
       j.error = String(req.error || 'failed').slice(0, 300);
@@ -13477,10 +13617,17 @@ function ab_labFromBridge_(req) {
       return { ok: true };
     }
     if (req.op === 'result') {
-      const res = req.result;
-      if (!res || typeof res !== 'object' || !res.stats || !Array.isArray(res.trades)) return { ok: false, error: 'not a Backtest Lab result' };
-      ab_labDriveClean_(res);
-      ab_labStore_(j, res);
+      let res = req.result;
+      if (typeof req.blob === 'string') {      // gzip + base64 of the whole result + a small summary for the list (16-Nov-2026)
+        res = req.summary;
+        if (!res || typeof res !== 'object' || !res.stats || !req.blob || !AB_LAB_BLOB_RE.test(req.blob)) return { ok: false, error: 'not a Backtest Lab result' };
+        ab_labDriveClean_(res);
+        ab_labStore_(j, res, req.blob);
+      } else {
+        if (!res || typeof res !== 'object' || !res.stats || !Array.isArray(res.trades)) return { ok: false, error: 'not a Backtest Lab result' };
+        ab_labDriveClean_(res);
+        ab_labStore_(j, res);
+      }
       if (res.pdf && res.pdf.drive && res.pdf.drive.id) {
         try { ab_labDriveTidy_(ab_labDriveFolder_()); } catch (tErr) { Logger.log('Backtest Lab PDFs in Drive: ' + tErr.message); }
       }

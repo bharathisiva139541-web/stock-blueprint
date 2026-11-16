@@ -81,8 +81,9 @@
     h4Body: 0.5, h4Zones: 'both', m15Choch: 'show', m15Pivot: 3, m15Down: 2,
     // a gap-down open into the zone (owner, 16-Nov-2026): bought at the open, stop gapAtr x ATR under it or under the final low when
     // nearer; opens deeper than gapBelow % under the zone skipped; hhMax = the move high at most this % above the zone top (0 off);
-    // fallLh = no straight fall from the move high. All OFF by default (owner, 16-Nov-2026: "ethuvum default ah on la vaika vendam")
-    gapBelow: 2, gapAtr: 0, hhMax: 0, fallLh: false,
+    // the fall into the zone (owner, 16-Nov-2026: "intha field la more options add panu at the best interest of me") = section 'fall'.
+    // All OFF by default (owner, 16-Nov-2026: "ethuvum default ah on la vaika vendam")
+    gapBelow: 2, gapAtr: 0, hhMax: 0, fallLh: 0, fallGreen: 0, fallRedRun: 0, fallBigRed: 0, touchBig: 0, fallBars: 0, fallVol: 0, fallTime: 0,
     // the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also")
     ltfChoch: 'last'
   };
@@ -105,7 +106,8 @@
   var SECTIONS = [
     ['structure', 'Market structure - CHoCH / BOS setups', ['structure', 'setup', 'bosKind', 'upN', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
       'lineOk', 'lineTol', 'zonePick', 'touchAgain', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep',
-      'moveVol', 'moveVolN', 'hhMax', 'fallLh']],
+      'moveVol', 'moveVolN']],
+    ['fall', 'The fall into the zone - how price came down from the move high', ['hhMax', 'fallLh', 'fallGreen', 'fallRedRun', 'fallBigRed', 'touchBig', 'fallBars', 'fallVol', 'fallTime']],
     ['shape', 'Spring candle shape', null],
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
     ['zone', 'Zone rules - size, Gap-up zone inside, Fib + pattern, dark cloud', ['zoneMin', 'zoneMax', 'gapEntry', 'fibPat', 'fibLevel', 'fibTol', 'darkCloud']],
@@ -197,6 +199,16 @@
       [0.75, '0.75 x ATR under the buy'], [1, '1 x ATR under the buy']],
     gapBelow: [[0, 'Only inside the zone'], [0.5, 'At most 0.5% under the zone bottom'], [1, 'At most 1% under the zone bottom'],
       [2, 'At most 2% under the zone bottom'], [3, 'At most 3% under the zone bottom'], [5, 'At most 5% under the zone bottom']],
+    fallLh: [[0, 'Off'], [1, 'At least 1 lower high'], [2, 'At least 2 lower highs'], [3, 'At least 3 lower highs']],
+    fallGreen: [[0, 'Off'], [1, 'At least 1 green candle'], [2, 'At least 2 green candles'], [3, 'At least 3 green candles'], [5, 'At least 5 green candles']],
+    fallRedRun: [[0, 'Off'], [2, 'At most 2 red candles in a row'], [3, 'At most 3 in a row'], [4, 'At most 4 in a row'], [5, 'At most 5 in a row'], [6, 'At most 6 in a row']],
+    fallBigRed: [[0, 'Off'], [0.5, 'No red candle bigger than half the zone'], [1, 'No red candle bigger than the zone'], [1.5, 'No red candle bigger than 1.5x the zone'],
+      [2, 'No red candle bigger than 2x the zone']],
+    touchBig: [[0, 'Off'], [0.5, 'At most half the zone'], [1, 'At most the zone\'s height'], [1.5, 'At most 1.5x the zone'], [2, 'At most 2x the zone']],
+    fallBars: [[0, 'Off'], [3, 'At least 3 candles'], [5, 'At least 5 candles'], [8, 'At least 8 candles'], [13, 'At least 13 candles'], [21, 'At least 21 candles']],
+    fallVol: [[0, 'Off'], [1, 'Not heavier than the rise (1x)'], [0.8, 'At most 0.8x the rise\'s'], [0.6, 'At most 0.6x the rise\'s']],
+    fallTime: [[0, 'Off'], [0.5, 'At least half as many candles as the rise'], [1, 'At least as many candles as the rise'], [1.5, 'At least 1.5x the rise\'s candles'],
+      [2, 'At least 2x the rise\'s candles']],
     hhMax: [[0, 'Off - any height'], [15, 'At most 15% above the zone top'], [20, 'At most 20% above the zone top'], [25, 'At most 25% above the zone top'],
       [30, 'At most 30% above the zone top'], [40, 'At most 40% above the zone top'], [50, 'At most 50% above the zone top']],
     stopAtr: [[0, 'Off - only the stop above'], [1, '1 x ATR'], [1.5, '1.5 x ATR'], [2, '2 x ATR'], [2.5, '2.5 x ATR'], [3, '3 x ATR'], [4, '4 x ATR']],
@@ -268,7 +280,7 @@
     'c1BodyMin', 'c1LoWickMax', 'c1Atr', 'lowestN', 'fallN', 'fallPct', 'pivotN', 'downN', 'chochAge', 'swingMinR', 'discount',
     'zzAtr', 'swingAtr', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'wkAbove', 'atrK', 'rollYears',
     'zoneMin', 'zoneMax', 'lineTol', 'fibLevel', 'fibTol', 'moveVol', 'moveVolN', 'upN', 'ltfPivot', 'ltfDown', 'ltfWait', 'ltfUnder', 'ltfNear',
-    'gapBelow', 'gapAtr', 'hhMax'];
+    'gapBelow', 'gapAtr', 'hhMax', 'fallLh', 'fallGreen', 'fallRedRun', 'fallBigRed', 'touchBig', 'fallBars', 'fallVol', 'fallTime'];
   // the first market-structure rule a signal failed (= backtest_lab.py STRUCT_WHY) and the stages (structure.py)
   var STRUCT_WHY = { nochoch: 'no live CHoCH before it', zone: 'its zone did not form in the CHoCH move / after it',
     bos: 'a BOS came first (not the first pullback)', above: 'its zone is not below the CHoCH level',
@@ -287,7 +299,11 @@
     zone1mit: 'the 1st (watched) zone was touched before the move high',
     // the owner's rules of 16-Nov-2026: the straight-fall rule (always on) + the move high's distance (an option)
     hhfar: 'the move high (HH) was more than your % above the zone top',
-    straight: 'price fell straight from the move high (HH) into the zone - no lower high on the way' };
+    straight: 'fewer lower highs on the way down from the move high than your rule (a straight fall)',
+    fgreen: 'fewer green candles on the way down than your rule', fredrun: 'more red candles in a row on the way down than your rule',
+    fbigred: 'a red candle on the way down was bigger than your x-times-the-zone rule',
+    ftouchbig: 'the touch candle fell into the zone with a bigger move than your rule', fbars: 'fewer candles from the move high to the signal than your rule',
+    fvol: 'the volume on the way down was heavier than your rule', ftime: 'the fall was quicker than your rule' };
   var STAGE = { disc: ['Discount, 1st pullback', 's-good'], below: ['Below CHoCH, 1st pullback', 's-good'], prem: ['Premium (above the Fib line)', 's-warn'],
     above: ['At / above CHoCH level', 's-warn'], bos: ['After a BOS', 's-bad'], old: ['Zone older than the CHoCH low', 's-info'], none: ['No CHoCH', ''] };
   // a BOS + FVG run (13-Nov-2026): the same stages on the BOS move
@@ -322,6 +338,7 @@
     var f = ui.store.get('lab:form', null);
     var out = {};
     Object.keys(DEF).forEach(function (k) { out[k] = f && f[k] !== undefined && typeof f[k] === typeof DEF[k] ? f[k] : DEF[k]; });
+    if (f && f.fallLh === true) out.fallLh = 1;        // the first page of 16-Nov-2026 had a tick box
     return out;
   }
   function saveForm(f) { ui.store.set('lab:form', f); }
@@ -412,9 +429,8 @@
     w.push('the zone not wholly above the CHoCH level and formed in the one swing from the final low to the move high');
     w.push('before the move high at most 2 candles touched the zone and none closed under its middle');
     w.push('no premium zone (above the Fib line) when the signal comes 4 days or less after the CHoCH');
-    // the owner's rules of 16-Nov-2026 (RENT, PSB) - options: no straight fall from the move high; the move high's distance
-    if (p.fallLh) w.push('on the way down from the move high price made a lower high (a swing high with 2 lower candles each side) before the signal - no straight fall into the zone');
-    if (Number(p.hhMax)) w.push('the move high (HH) at most ' + pc(p.hhMax) + '% above the zone top');
+    // the owner's rules of 16-Nov-2026 (RENT, PSB) - options: how price came down from the move high into the zone
+    fallWords(p).forEach(function (x) { w.push(x); });
     if (p.group === 'touch') {
       w.push(p.touchAgain === false ? 'a zone price touched before the CHoCH does not count again' :
         'a zone price already touched before the CHoCH (while the rise was forming) counts again - its first touch after the CHoCH');
@@ -693,9 +709,7 @@
         field('The zone at most', sel('discountMax', f.discountMax)) + field('Days after the CHoCH', sel('lagMin', f.lagMin)) +
         field('The CHoCH candle (displacement)', sel('dispAtr', f.dispAtr)) + field('… and its volume', sel('dispVol', f.dispVol)) +
         field('Volume in the CHoCH move', sel('moveVol', f.moveVol), 'wide') + (Number(f.moveVol) ? field('… how many', sel('moveVolN', f.moveVolN)) : '') +
-        field('The move high (HH) above the zone top', sel('hhMax', f.hhMax), 'wide') +
-        '<div class="field lab-checks">' + check('sweep', f.sweep, 'The final low swept the low before it (wick under, closed back above)') +
-        check('fallLh', f.fallLh, 'No straight fall: a lower high (2 candles each side) between the move high and the signal') + '</div></div>' : '') +
+        '<div class="field lab-checks">' + check('sweep', f.sweep, 'The final low swept the low before it (wick under, closed back above)') + '</div></div>' : '') +
       '<p class="sub">A swing high = a candle whose high is above the candles on both sides (known only after those candles closed - the backtest never looks ahead). ' +
       'CHoCH = the first candle that CLOSES above the last swing high after the lower highs and lower lows; BOS = after it, the first close above the highest swing high since. ' +
       'The move = from the CHoCH\'s final low to the highest high before the signal candle (what you draw the Fibonacci on at that moment): 50% down = its middle. ' +
@@ -704,9 +718,42 @@
       'BOS + FVG: the same rules on a BOS move - from the higher low before the break to the highest high since; the setup is over at a close under that higher low ' +
       'or at the next BOS. "The CHoCH" in the boxes above means the BOS then. Both ticked: every zone touch is checked as CHoCH + FVG first, then as BOS + FVG ' +
       '(one trade a candle) - the result splits them ("What worked best" → Setup). ' +
-      '"No straight fall": on the way down from the move high price must make a lower high (a swing high with 2 lower candles each side) before ' +
-      'the signal - a straight fall into the zone is not traded (off unless ticked). ' +
+      'How price came down from the move high into the zone (lower highs, green candles, big red candles ...): the next section. ' +
       'The daily scan\'s lists use the values set on your laptop with <b>ChochRules.bat</b>.</p>';
+  }
+
+  /** The fall into the zone (owner, 16-Nov-2026: "intha field la more options add panu at the best interest of me. example, minium 1
+   *  lower high, or, minimum 2 green candle, Move high to Zone top vara elame Red candle ah irukakoodathu, FVG Zone size ah vida Periya
+   *  Red candles iruka koodathu, or Zone Size ah vida periyda redcandle touch candle ah irukakoodathu") - all off by default. */
+  function fallHtml(f) {
+    var only = f.structure === 'only';
+    return (only ? '' : '<p class="note warn" id="lab-fall-note">These rules look at the move high of the CHoCH / BOS move - set Market structure to "Only my setup" to use them.</p>') +
+      '<div class="form-grid">' +
+      field('Lower highs on the way down', sel('fallLh', f.fallLh), 'wide') + field('Green candles on the way down', sel('fallGreen', f.fallGreen), 'wide') +
+      field('Red candles in a row on the way down', sel('fallRedRun', f.fallRedRun), 'wide') + field('Big red candles on the way down', sel('fallBigRed', f.fallBigRed), 'wide') +
+      field('The touch candle\'s fall into the zone', sel('touchBig', f.touchBig), 'wide') + field('Candles from the move high to the signal', sel('fallBars', f.fallBars), 'wide') +
+      field('Volume on the way down (vs the rise)', sel('fallVol', f.fallVol), 'wide') + field('Time of the fall (vs the rise)', sel('fallTime', f.fallTime), 'wide') +
+      field('The move high (HH) above the zone top', sel('hhMax', f.hhMax), 'wide') + '</div>' +
+      '<p class="sub">The way down = the candles from the move high (HH) to the signal candle (that candle not counted). A lower high = a swing high with ' +
+      '2 lower candles each side. Big red candle = its body (open to close) compared with the zone\'s height (top - bottom). The touch candle: with the ' +
+      'order at the zone top only its fall from the open down to the zone top counts - its close is not known when the order fills. ' +
+      '<b>Tip:</b> run once with these off - "What worked best" then shows each of them (lower highs, green candles, red run, big red, fall candles, ' +
+      'volume, time) in its own table, so you see which value works without a run for every value.</p>';
+  }
+
+  /** The fall rules in words (16-Nov-2026) - one phrase per rule that is on. */
+  function fallWords(p) {
+    var w = [];
+    if (Number(p.fallLh)) w.push('on the way down from the move high at least ' + p.fallLh + ' lower high' + (Number(p.fallLh) === 1 ? '' : 's') + ' (a swing high with 2 lower candles each side) - no straight fall into the zone');
+    if (Number(p.fallGreen)) w.push('at least ' + p.fallGreen + ' green candle' + (Number(p.fallGreen) === 1 ? '' : 's') + ' on the way down');
+    if (Number(p.fallRedRun)) w.push('at most ' + p.fallRedRun + ' red candles in a row on the way down');
+    if (Number(p.fallBigRed)) w.push('no red candle on the way down bigger than ' + pc(p.fallBigRed) + 'x the zone\'s height');
+    if (Number(p.touchBig)) w.push('the touch candle falling into the zone by at most ' + pc(p.touchBig) + 'x the zone\'s height');
+    if (Number(p.fallBars)) w.push('at least ' + p.fallBars + ' candles from the move high to the signal');
+    if (Number(p.fallVol)) w.push('the volume on the way down at most ' + pc(p.fallVol) + 'x the rise\'s');
+    if (Number(p.fallTime)) w.push('the fall at least ' + pc(p.fallTime) + 'x as long as the rise (in candles)');
+    if (Number(p.hhMax)) w.push('the move high (HH) at most ' + pc(p.hhMax) + '% above the zone top');
+    return w;
   }
 
   /** The hard Spring rules + my recommendations (owner, 10-Nov-2026). */
@@ -898,7 +945,7 @@
       '<p class="sub">Test period: trades before that date = the <b>development</b> part (choose your rules there), from it = the <b>test</b> part (kept aside to check them). ' +
       'Rules that work only in the development part fit the past by luck. E.g. 2020-01-01.</p>' +
       '<h3 class="lab-h">3 · More rules (optional)' + (changed ? ' - ' + changed + ' changed' : '') + '</h3><div class="lab-secs">' +
-      sec('structure', secTitle('structure'), structHtml(f), f) + sec('zone', secTitle('zone'), zoneHtml(f), f) + sec('shape', secTitle('shape'), shapeHtml(f), f) +
+      sec('structure', secTitle('structure'), structHtml(f), f) + sec('fall', secTitle('fall'), fallHtml(f), f) + sec('zone', secTitle('zone'), zoneHtml(f), f) + sec('shape', secTitle('shape'), shapeHtml(f), f) +
       sec('trend', secTitle('trend'), trendHtml(f), f) + sec('ltf', secTitle('ltf'), ltfHtml(f), f) + sec('entry', secTitle('entry'), entryHtml(f), f) + sec('exit', secTitle('exit'), exitHtml(f), f) +
       sec('money', secTitle('money'), moneyHtml(f), f) + sec('check', secTitle('check'), checkHtml(f), f) +
       (changed ? '<button class="btn sm" type="button" id="lab-more-off">Clear all the "More rules"</button>' : '') + '</div>' +
@@ -940,6 +987,11 @@
     return SB.wlSync.owner(Object.assign({ op: 'lab' }, body), function (j) { return j.result === 'lab'; });
   }
   function stopPoll() { clearTimeout(ST.timer); ST.timer = 0; }
+  // a slow / busy sheet is not an error to show at once (owner, 16-Nov-2026: "adikadi sheet feed timedout error varuthu. but page ah
+  // reload panuna results vanthuruthu") - asked again quietly; said only after QUIET_FAILS in a row
+  var QUIET_FAILS = 3, PDF_POLL_MS = 6000, PDF_WAIT_MS = 30 * 60000;
+  function transient(e) { return !!(e && /^(timeout|busy|network|error|malformed)$/.test(e.code)); }
+  function pdfPending() { var r = ST.item && ST.item.result; return !!(r && r.pdf && r.pdf.pending); }
   function poll(el, gen) {
     stopPoll();
     if (gen !== ST.gen || !document.body.contains(el)) return;
@@ -948,15 +1000,99 @@
       var was = ST.status && ST.status.job, now = j.job;
       ST.status = j;
       ST.err = '';
+      ST.fails = 0;
       paintStatus(el);
       paintRuns(el);
+      notePdf(el);
       if (now && (now.status === 'waiting' || now.status === 'running')) ST.timer = setTimeout(function () { poll(el, gen); }, POLL_MS);
       else if (now && now.status === 'done' && was && was.id === now.id && was.status !== 'done') openRun(el, now.id);
+      else if (pdfPending() && Date.now() - (ST.pdfSince || Date.now()) < PDF_WAIT_MS) ST.timer = setTimeout(function () { poll(el, gen); }, PDF_POLL_MS);
     }, function (e) {
       if (gen !== ST.gen) return;
-      ST.err = e && e.message || 'the sheet could not be reached';
-      paintStatus(el);
-      if (!(e && /^(pin|nopin|locked|off)$/.test(e.code))) ST.timer = setTimeout(function () { poll(el, gen); }, POLL_MS * 4);
+      ST.fails = (ST.fails || 0) + 1;
+      if (!transient(e) || ST.fails >= QUIET_FAILS) {
+        ST.err = (e && e.message || 'the sheet could not be reached') + (transient(e) ? ' - still trying' : '');
+        paintStatus(el);
+      }
+      if (!(e && /^(pin|nopin|locked|off)$/.test(e.code))) ST.timer = setTimeout(function () { poll(el, gen); }, ST.fails < 10 ? POLL_MS : POLL_MS * 4);
+    });
+  }
+
+  /** The charts PDF made behind the result (16-Nov-2026): the runs list carries it when ready -> the open result's note. */
+  function notePdf(el) {
+    var it = ST.item;
+    if (!it || !it.result) return;
+    var li = ((ST.status && ST.status.list) || []).filter(function (x) { return x.id === it.id; })[0];
+    var pdf = li && li.head && li.head.pdf;
+    if (!pdf || JSON.stringify(pdf) === JSON.stringify(it.result.pdf)) return;
+    it.result.pdf = pdf;
+    cachePut(it.id, it);
+    var box = $('#lab-pdf-box', el);
+    if (box) box.innerHTML = pdfNote(pdf);
+  }
+
+  // ---------- results: unpacked here (16-Nov-2026: the sheet keeps them gzip + base64, ~4x smaller) and kept on this device
+  // (IndexedDB 'sb-lab') - a run opened again comes at once, without the sheet
+  var IDB = { p: null };
+  function idb() {
+    if (IDB.p) return IDB.p;
+    IDB.p = new Promise(function (ok) {
+      try {
+        if (!window.indexedDB) { ok(null); return; }
+        var rq = window.indexedDB.open('sb-lab', 1);
+        rq.onupgradeneeded = function () { rq.result.createObjectStore('results'); };
+        rq.onsuccess = function () { ok(rq.result); };
+        rq.onerror = function () { ok(null); };
+        rq.onblocked = function () { ok(null); };
+      } catch (e) { ok(null); }
+    });
+    return IDB.p;
+  }
+  function cacheGet(id) {
+    return idb().then(function (db) {
+      if (!db) return null;
+      return new Promise(function (ok) {
+        try {
+          var rq = db.transaction('results').objectStore('results').get(id);
+          rq.onsuccess = function () { ok(rq.result || null); };
+          rq.onerror = function () { ok(null); };
+        } catch (e) { ok(null); }
+      });
+    });
+  }
+  function cachePut(id, item) {
+    idb().then(function (db) {
+      if (!db) return;
+      try { db.transaction('results', 'readwrite').objectStore('results').put(JSON.parse(JSON.stringify(item)), id); } catch (e) { /* only a speed-up */ }
+    });
+  }
+  function cacheDel(id) {
+    idb().then(function (db) {
+      if (!db) return;
+      try { db.transaction('results', 'readwrite').objectStore('results').delete(id); } catch (e) { /* only a speed-up */ }
+    });
+  }
+  /** gzip + base64 -> the result (DecompressionStream; a browser without it asks the sheet to unpack). */
+  function unpack(b64) {
+    if (typeof DecompressionStream === 'undefined' || typeof Response === 'undefined') return Promise.reject(new Error('cannot unpack here'));
+    var bin = window.atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text().then(JSON.parse);
+  }
+  function fetchItem(id) {
+    return ask({ lab: { do: 'result', id: id } }).then(function (j) {
+      var it = j.item || {};
+      if (!it.blob) return it;
+      return unpack(it.blob).then(function (res) { it.result = res; delete it.blob; return it; }, function () {
+        return ask({ lab: { do: 'result', id: id, plain: true } }).then(function (k) { return k.item || {}; });
+      });
+    });
+  }
+  /** fn() again (twice at most) when the sheet was slow / busy. */
+  function retry(fn, n) {
+    return fn().then(null, function (e) {
+      if (n > 0 && transient(e)) return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return retry(fn, n - 1); });
+      throw e;
     });
   }
 
@@ -975,7 +1111,7 @@
       var pct = j.status === 'running' ? Math.max(3, j.pct || 0) : 0;
       h += '<div class="lab-run-state"><div><b>' + esc(j.name || 'Your run') + '</b> - ' + (j.status === 'waiting' ? 'waiting for your laptop' +
         (s.pcNote ? ' - it is ' + esc(s.pcNote) + '; your run comes right after' :
-          seen !== null && seen > 180 ? ' (it has not asked for a while - switch it on, it will pick this up)' : ' (it asks every 10 seconds while this page is open)') :
+          seen !== null && seen > 180 ? ' (it has not asked for a while - switch it on, it will pick this up)' : ' (while this page is open it listens and takes your run within seconds)') :
         'running on your laptop' + (j.note ? ': ' + esc(j.note) : '')) + '</div>' +
         '<div class="lab-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></div>' +
         '<button class="btn sm" type="button" id="lab-cancel" title="' + (j.status === 'running' ? 'Stop waiting for this run - the laptop finishes its current step, then takes your next run' : 'Cancel this run') +
@@ -1015,10 +1151,21 @@
     var box = $('#lab-result', el);
     if (box) box.innerHTML = ui.skeleton ? ui.skeleton(4) : '<p class="empty">Loading…</p>';
     paintRuns(el);
-    ask({ lab: { do: 'result', id: id } }).then(function (j) {
-      ST.item = j.item;
-      rememberIndices(el, j.item && j.item.result && j.item.result.indexNames);
+    cacheGet(id).then(function (hit) {
+      if (hit && hit.result) return hit;
+      return retry(function () { return fetchItem(id); }, 2).then(function (it) {
+        if (it && it.result) cachePut(id, it);
+        return it;
+      });
+    }).then(function (it) {
+      if (ST.itemId !== id) return;
+      if (!it || !it.result) throw new Error('that result could not be read');
+      var li = ((ST.status && ST.status.list) || []).filter(function (x) { return x.id === id; })[0];
+      if (li && li.head && li.head.pdf) it.result.pdf = li.head.pdf;         // the newest word on the charts PDF
+      ST.item = it;
+      rememberIndices(el, it.result.indexNames);
       paintResult(el);
+      if (pdfPending()) { ST.pdfSince = Date.now(); if (!ST.timer) ST.timer = setTimeout(function () { poll(el, ST.gen); }, PDF_POLL_MS); }
     }, function (e) {
       if (box) box.innerHTML = '<p class="note bad">' + esc(e && e.message || 'could not load that run') + '</p>';
     });
@@ -1086,6 +1233,10 @@
 
   function pdfNote(pdf) {
     if (!pdf) return '';
+    if (pdf.pending) {
+      return '<p class="note lab-pdf" id="lab-pdf-pending">📄 The charts PDF is being made on your laptop - it shows here by itself when it is ready. ' +
+        'The results below are already final.</p>';
+    }
     if (pdf.error) return '<p class="note warn">The charts PDF could not be made on your laptop: ' + esc(pdf.error) + '</p>';
     if (!pdf.file) return '';
     return driveHtml(pdf) + laptopNote(pdf);
@@ -1312,7 +1463,7 @@
       '<div class="actions"><button class="btn sm" type="button" id="lab-use">Use these rules</button>' +
       '<button class="btn sm" type="button" id="lab-res-pine" title="The TradingView indicator with this run\'s rules - to check its trades on the chart">📋 TradingView script</button>' +
       '<button class="btn sm danger" type="button" id="lab-del">Delete this run</button></div></div>' +
-      engineNote(it, res) + '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>' + pdfNote(res.pdf) +
+      engineNote(it, res) + '<p class="note lab-plain"><b>The rules:</b> ' + esc(plain(Object.assign({}, DEF, p))) + '</p>' + '<div id="lab-pdf-box">' + pdfNote(res.pdf) + '</div>' +
       '<div id="lab-res-pine-box" class="lab-pine"></div>';
     if (!s.trades) {
       box.innerHTML = h + '<p class="empty">No trade matched these rules' + (res.open ? ' (' + res.open + ' still running)' : '') + '.</p>' +
@@ -1489,6 +1640,15 @@
         { key: 'fill', label: 'Order filled', get: function (r) { return fillWords(r); },
           title: 'How the order at the zone top filled: price came down to the zone, or the candle opened inside / under it (a gap down - bought at the open)' },
         { key: 'hh', label: 'HH above zone %', type: 'num', digits: 1, title: 'How far the move high (HH) was above the zone top' },
+        // how price came down from the move high (16-Nov-2026) - sort / filter these to see what worked
+        { key: 'flh', label: 'LH on the way', type: 'num', digits: 0, title: 'Lower highs on the way down from the move high (0 = a straight fall)' },
+        { key: 'fgr', label: 'Green on the way', type: 'num', digits: 0, title: 'Green candles on the way down' },
+        { key: 'frr', label: 'Red in a row', type: 'num', digits: 0, title: 'The most red candles in a row on the way down' },
+        { key: 'fbars', label: 'Fall candles', type: 'num', digits: 0, title: 'Candles from the move high to the signal' },
+        { key: 'fbig', label: 'Big red ÷ zone', type: 'num', digits: 2, title: 'The biggest red candle on the way down, x the zone\'s height' },
+        { key: 'ftouch', label: 'Touch fall ÷ zone', type: 'num', digits: 2, title: 'The touch candle\'s fall into the zone, x the zone\'s height' },
+        { key: 'fvolr', label: 'Fall vol ÷ rise', type: 'num', digits: 2, title: 'The average volume on the way down, x the rise\'s' },
+        { key: 'ftime', label: 'Fall ÷ rise candles', type: 'num', digits: 2, title: 'Candles of the fall, x the candles of the rise' },
         { key: 'part', label: 'Sold at the target', get: function (r) { return r.part ? String(r.part).replace(/\bat /, 'at ₹') : ''; },
           title: 'The part sold at the target (the Exit column is the average of both parts)' },
         { key: 'taken', label: 'In the account', get: function (r) { return r.taken ? 'yes' : 'skipped'; },
@@ -1512,6 +1672,7 @@
         if (c.key === 'h4' || c.key === 'm15') return rows.some(function (r) { return r[c.key]; });       // Daily FVG + 4H Spring (15-Nov-2026)
         if (c.key === 'fill') return rows.some(function (r) { return r.fill; });                           // the zone-top order (16-Nov-2026)
         if (c.key === 'hh') return rows.some(function (r) { return isNum(r.hh); });
+        if (['flh', 'fgr', 'frr', 'fbars', 'fbig', 'ftouch', 'fvolr', 'ftime'].indexOf(c.key) >= 0) return rows.some(function (r) { return isNum(r[c.key]); });
         return true;
       })
     }).mount($('#lab-trades', box));
@@ -1557,6 +1718,7 @@
     if (del) del.addEventListener('click', function () {
       if (!window.confirm('Delete this run?')) return;
       ask({ lab: { do: 'delete', id: it.id } }).then(function (j) {
+        cacheDel(it.id);
         ST.status = j; ST.item = null; ST.itemId = null;
         location.hash = '#lab';
       }, function (e) { window.alert(e && e.message || 'could not delete'); });

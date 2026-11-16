@@ -21,7 +21,7 @@ import os
 import shutil
 import time
 
-BIG = ('intraday_data', 'lab_cache', 'lab_charts')
+BIG = ('intraday_data', 'lab_cache', 'lab_charts', 'lab_results')
 PLACE_FILE = 'data_place.json'
 MOVING_FILE = 'data_moving.json'   # {pid, src, dst, at} while a move runs (the other programs wait)
 DEFAULT_FOLDER = r'D:\StockBlueprintData'
@@ -280,4 +280,5 @@ def apply(base, itd):
     lab = itd.backtest_lab
     lab.LAB_DIR = os.path.join(base, 'lab_cache')
     lab.CHARTS_DIR = os.path.join(base, 'lab_charts')
+    lab.RESULTS_DIR = os.path.join(base, 'lab_results')    # every result kept whole (16-Nov-2026)
     lab.LTF_DIR = os.path.join(itd.DATA_DIR, 'ltf')

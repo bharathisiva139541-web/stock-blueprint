@@ -127,7 +127,15 @@
     if (num(p.wkAbove, 0)) more.push('the weekly trend');
     // the owner's rules of 16-Nov-2026 - the Lab only ("Backtest lab la matum"): the move high's distance, no straight fall
     if (num(p.hhMax, 0)) more.push('the move high at most ' + num(p.hhMax, 0) + '% above the zone top');
-    if (p.structure === 'only' && p.fallLh === true) more.push('no straight fall from the move high (a lower high on the way down)');
+    if (p.structure === 'only') {
+      if (p.fallLh === true || num(p.fallLh, 0) > 0) more.push('no straight fall from the move high (a lower high on the way down)');
+      if (num(p.fallGreen, 0)) more.push('the green candles on the way down');
+      if (num(p.fallRedRun, 0)) more.push('the red candles in a row on the way down');
+      if (num(p.fallBigRed, 0)) more.push('the big red candles on the way down');
+      if (num(p.touchBig, 0)) more.push('the touch candle\'s fall into the zone');
+      if (num(p.fallBars, 0) || num(p.fallTime, 0)) more.push('the length of the fall');
+      if (num(p.fallVol, 0)) more.push('the volume on the way down');
+    }
     if (more.length) n.push('Not drawn (check them on the chart yourself): ' + more.join(', ') + '.');
     var exits = [];
     if (num(p.partialPct, 0) && p.after !== 'fixed') exits.push('selling ' + num(p.partialPct, 0) + '% at the target');

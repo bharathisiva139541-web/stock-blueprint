@@ -107,6 +107,8 @@
         if (typeof q.id !== 'string' || !/^L[a-z0-9]{4,20}$/.test(q.id)) throw bad('lab.id missing');
         out.lab.id = q.id;
       }
+      // a browser that cannot unpack a compressed result asks the sheet to unpack it (16-Nov-2026)
+      if (q.do === 'result' && q.plain === true) out.lab.plain = true;
     }
     if (op === 'push') {
       const q = body.push || {};

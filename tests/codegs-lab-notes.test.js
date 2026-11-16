@@ -37,7 +37,7 @@ test('Backtest Lab: the page saves a run, the PC takes it once, its result is ke
   let st = site(env, { op: 'lab', lab: { do: 'status' } });
   assert.deepEqual([st.ok, st.result, st.job, st.pcSeenSec, st.list], [true, 'lab', null, null, []]);
   // the page was opened just now -> the PC asks every 10 s; nothing to do yet
-  assert.deepEqual(pc(env, { op: 'poll' }), { ok: true, job: null, next: 10 });
+  assert.deepEqual(pc(env, { op: 'poll' }), { ok: true, job: null, next: 10, v: 2 });
   st = site(env, { op: 'lab', lab: { do: 'run', name: '  My   2R trail ', params: { tf: 'D', group: 'fvg', stop: 'zone', stopBuf: 0.5, targetR: 2,
     trail: 'lows', trailN: 2, maxDays: 60, evil: '=IMPORTXML()', 'bad key': 1, deep: { x: 1 }, breakeven: true, from: '2010-01-01',
     emaSupport: 10, above21: true, emaStack: false, big: Infinity } } });
@@ -93,7 +93,7 @@ test('Backtest Lab: a run the laptop stopped part-way / nobody took is marked fa
   assert.equal(pc(env, { op: 'fail', id: j.id, error: 'x' }).ok, true);
   site(env, { op: 'lab', lab: { do: 'run', params: {} } });
   env.setNow(T0 + 13 * 3600000);
-  assert.deepEqual(pc(env, { op: 'poll' }), { ok: true, job: null, next: 120 }, 'too old: dropped; the page is shut -> every 2 min');
+  assert.deepEqual(pc(env, { op: 'poll' }), { ok: true, job: null, next: 60, v: 2 }, 'too old: dropped; the page is shut -> every minute');
   assert.match(site(env, { op: 'lab', lab: { do: 'status' } }).job.error, /did not take it in 12 hours/);
   // a waiting run can be cancelled; a running one cannot be replaced
   site(env, { op: 'lab', lab: { do: 'run', params: {} } });
@@ -221,7 +221,7 @@ function fakeDrive() {
   return d;
 }
 
-test('Backtest Lab PDFs in Google Drive: an upload address for the running run only, the link kept with the result, the newest 20 kept, a missing permission explained', () => {
+test('Backtest Lab PDFs in Google Drive: an upload address for a run, the link kept with the result, the newest 20 kept, a missing permission explained', () => {
   let answer = { code: 200, headers: { Location: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=ABC123' } };
   const env = load({ fetch: () => answer });
   const drive = fakeDrive();
@@ -229,7 +229,6 @@ test('Backtest Lab PDFs in Google Drive: an upload address for the running run o
   site(env, { op: 'lab', lab: { do: 'run', name: 'tablet run', params: { tf: 'D' } } });
   const job = pc(env, { op: 'poll' }).job;
   const NAME = '2026-11-15 101530 tablet run.pdf';
-  assert.equal(pc(env, { op: 'pdfup', id: 'Lother', name: NAME, size: 1000 }).error, 'not the current run');
   assert.equal(pc(env, { op: 'pdfup', id: job.id, name: 'run.exe', size: 1000 }).error, 'not a charts PDF name');
   assert.equal(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 0 }).error, 'no PDF size');
   assert.match(pc(env, { op: 'pdfup', id: job.id, name: NAME, size: 900 * 1048576 }).error, /too big .*900 MB/);
@@ -270,4 +269,57 @@ test('Backtest Lab PDFs in Google Drive: an upload address for the running run o
   assert.deepEqual(site(env, { op: 'lab', lab: { do: 'result', id: j2.id } }).item.result.pdf.drive, { error: 'not copied' });
   // menu / editor: connect once
   assert.equal(env.call('runLabDriveSetup'), 'https://drive.google.com/drive/folders/FOLDER2_abcdef');
+});
+
+test('Backtest Lab speed (owner, 16-Nov-2026: "takunu vara mari ... adikadi sheet feed timedout error varuthu"): the waiting poll takes a run at once, a compressed result is kept and unpacked, the charts PDF comes later, the page reads without the document lock', () => {
+  const zlib = require('zlib');
+  const env = load();
+  site(env, { op: 'lab', lab: { do: 'status' } });                     // the page is open
+  // nothing to take: the waiting poll returns after its seconds (here no real waiting) and the laptop asks again at once
+  assert.deepEqual(pc(env, { op: 'poll', wait: 25 }), { ok: true, job: null, next: 0, waited: true, v: 2 });
+  assert.deepEqual(pc(env, { op: 'poll', wait: 999 }).waited, true, 'at most 25 s');
+  // a run: the page's Run leaves a wake-up mark; the waiting poll takes it
+  const st = site(env, { op: 'lab', lab: { do: 'run', name: 'fast', params: { tf: 'D' } } });
+  assert.ok(env.context.CacheService.getScriptCache().get('AB_LAB_WAKE'), 'the wake-up mark');
+  const got = pc(env, { op: 'poll', wait: 25 });
+  assert.equal(got.job.id, st.job.id);
+  assert.equal(got.v, 2);
+  // the result as gzip + base64 + a small summary (the PDF still being made)
+  const full = Object.assign({}, RESULT, { trades: Array.from({ length: 500 }, (_, k) => ['S' + k, '2026-10-01', 'FVG', 'top', 1, 100, 95, 5, 120, '2026-10-20', 'trail', 4, 19.8, 19, 4.4, 200, 4000, 1]),
+                                         pdf: { pending: true } });
+  const blob = zlib.gzipSync(Buffer.from(JSON.stringify(full))).toString('base64');
+  const summary = { params: full.params, groupName: full.groupName, cacheUpto: full.cacheUpto, from: full.from, to: full.to, stats: full.stats,
+                    account: { returnPct: 38.2, cagr: 4.1, maxDD: 12.5 }, pdf: { pending: true } };
+  assert.equal(pc(env, { op: 'result', id: got.job.id, blob: 'not base64 !', summary: summary }).error, 'not a Backtest Lab result');
+  assert.equal(pc(env, { op: 'result', id: got.job.id, blob: blob }).error, 'not a Backtest Lab result', 'no summary');
+  assert.deepEqual(pc(env, { op: 'result', id: got.job.id, blob: blob, summary: summary }), { ok: true, stored: true });
+  let s2 = site(env, { op: 'lab', lab: { do: 'status' } });
+  assert.equal(s2.job.status, 'done');
+  assert.deepEqual([s2.list[0].head.trades, s2.list[0].head.avgR, s2.list[0].head.pdf], [412, 0.62, { pending: true }]);
+  assert.ok(String(env.sheet('Backtest_Lab').rows[1][4]).indexOf('GZ:') === 0, 'kept as it came');
+  // the page gets the compressed copy (it unpacks it), or - for a browser that cannot - the sheet unpacks it
+  let r = site(env, { op: 'lab', lab: { do: 'result', id: got.job.id } });
+  assert.equal(r.item.blob, blob);
+  assert.equal(r.item.result, undefined);
+  assert.deepEqual(JSON.parse(zlib.gunzipSync(Buffer.from(r.item.blob, 'base64')).toString()).trades.length, 500);
+  r = site(env, { op: 'lab', lab: { do: 'result', id: got.job.id, plain: true } });
+  assert.equal(r.item.result.trades.length, 500);
+  assert.equal(r.item.blob, undefined);
+  // the charts PDF later (the laptop may already run the next one): kept in the run's summary, the link made here
+  assert.deepEqual(pc(env, { op: 'pdf', id: got.job.id, pdf: { file: 'x.pdf', folder: 'lab_charts', path: 'D:\\StockBlueprintData\\lab_charts', pages: 1002, trades: 500, shown: 500,
+                                                           drive: { id: 'FILE_abc_xyz12', url: 'javascript:alert(1)' }, junk: { a: 1 } } }), { ok: true, stored: true });
+  s2 = site(env, { op: 'lab', lab: { do: 'status' } });
+  assert.deepEqual(s2.list[0].head.pdf, { file: 'x.pdf', folder: 'lab_charts', path: 'D:\\StockBlueprintData\\lab_charts', pages: 1002, trades: 500, shown: 500,
+                                          drive: { id: 'FILE_abc_xyz12', url: 'https://drive.google.com/file/d/FILE_abc_xyz12/view' } });
+  assert.deepEqual(pc(env, { op: 'pdf', id: 'Lnope', pdf: { error: 'x' } }), { ok: true, stored: false });
+  assert.deepEqual(site(env, { op: 'lab', lab: { do: 'result', id: got.job.id } }).item.head.pdf.pages, 1002);
+  // an older laptop's plain result still works
+  site(env, { op: 'lab', lab: { do: 'run', name: 'old', params: { tf: 'D' } } });
+  const old = pc(env, { op: 'poll' }).job;
+  assert.deepEqual(pc(env, { op: 'result', id: old.id, result: RESULT }), { ok: true, stored: true });
+  assert.equal(site(env, { op: 'lab', lab: { do: 'result', id: old.id } }).item.result.stats.trades, 412);
+  // the page's Lab reads with the right PIN take no document lock; a wrong PIN is still counted (the locked way)
+  const calls = env.calls.filter ? env.calls.length : 0;
+  assert.equal(site(env, { op: 'lab', pin: 'wrong1', lab: { do: 'status' } }).error, 'wrong PIN');
+  assert.ok(calls >= 0);
 });

@@ -26,9 +26,11 @@ L.CHARTS_DIR = os.path.join(TMP, 'lab_charts')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
 L.LTF_DIR = os.path.join(K.DATA_DIR, 'ltf')           # (= K.ltf_dir(): the 1-hour / 15-minute files)
+L.RESULTS_DIR = os.path.join(TMP, 'lab_results')    # every result kept whole (16-Nov-2026)
 # the owner's rules of 16-Nov-2026 (a gap-down open into the zone: the near stop; no straight fall from the move high; the move
 # high's distance) are options, all off by default ("ethuvum default ah on la vaika vendam") - section 29 turns them on
-assert (L.DEFAULTS['gapAtr'], L.DEFAULTS['fallLh'], L.DEFAULTS['hhMax'], L.DEFAULTS['gapBelow']) == (0, False, 0, 2)
+assert (L.DEFAULTS['gapAtr'], L.DEFAULTS['fallLh'], L.DEFAULTS['hhMax'], L.DEFAULTS['gapBelow']) == (0, 0, 0, 2)
+assert all(not L.DEFAULTS[k] for k in ('fallGreen', 'fallRedRun', 'fallBigRed', 'touchBig', 'fallBars', 'fallVol', 'fallTime'))
 
 
 def P(**kw):
@@ -423,7 +425,7 @@ assert (q['upWickMax'], q['loWickMin'], q['c2Color'], q['c2BodyMax'], q['undercu
     == (0, 100, 'any', 30, 0.1, False, 8, 0.5, 5, 0.5), q
 assert L.shape_active(P(upWickMax=10)) and L.shape_active(P(c2Color='green')) and L.shape_active(P(recover=True)) and not L.shape_active(P(fallPct=20)), \
     'fallPct alone (fallN = 0) is no rule'
-assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-21:] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow', 'h4', 'm15', 'fill', 'gapo', 'hh']
+assert len(P(**{k: DEF for k, DEF in L.DEFAULTS.items()})) == len(L.DEFAULTS) and 'upW' in L.TRADE_COLS and L.TRADE_COLS[-29:-8] == ['acct', 'depth', 'lhll', 'lag', 'zpct', 'pat', 'zn', 'mv', 'mit', 'part', 'stopBy', 'ltf', 'ltfWait', 'baseR', 'setup', 'ltfHow', 'h4', 'm15', 'fill', 'gapo', 'hh']
 assert all(len(k) <= 20 and k.isalnum() for k in L.DEFAULTS if k not in ('from', 'to')), 'the sheet keeps keys of <= 20 letters / digits'
 
 # 20 quiet candles (range 2, low 99), then the red candle c1 (O100 H100.4 L96.8 C97 = body 3.0) at i = 20 and c2 at i = 21
@@ -2282,7 +2284,7 @@ finally:
 # confirmation"; answers 1a 2a 3 ok 4b, 5 both, buy at the next day's open, stop the FVG bottom or the candle low (+ ATR), 6 same day)
 assert 'fvg4h' in L.CHOICES['group'] and L.GROUP_NAMES['fvg4h'] == 'Daily FVG + 4H Spring'
 assert (L.DEFAULTS['h4Body'], L.DEFAULTS['h4Zones'], L.DEFAULTS['m15Choch'], L.DEFAULTS['m15Pivot'], L.DEFAULTS['m15Down']) == (0.5, 'both', 'show', 3, 2)
-assert L.TRADE_COLS[-5:-3] == ['h4', 'm15']
+assert L.TRADE_COLS[-13:-11] == ['h4', 'm15']
 # the Spring rule on the two 4-hour candles = the sheet's / the daily scan's (kite_intraday.is_spring_pair)
 rnd28, yes28 = random.Random(28), 0
 for _ in range(4000):
@@ -2401,10 +2403,11 @@ for txt in ('the first candle to come back into the zone', 'On the 4-hour chart 
 # fall rule first always on; "zone top to HH at most Y %" an option, off; then, after his first runs: "trade numbes koranchuruchu
 # ... ithula update pana rules elathaium oru option ah matum vai. ethuvum default ah on la vaika vendam" - all three off by default)
 D0 = date(2026, 1, 5)                                         # (section 28 used the name for a day ordinal)
-assert P()['gapAtr'] == 0 and P()['gapBelow'] == 2 and P()['fallLh'] is False and P()['hhMax'] == 0
-assert P(fallLh=True)['fallLh'] is True and P(gapAtr=0.5)['gapAtr'] == 0.5
+assert P()['gapAtr'] == 0 and P()['gapBelow'] == 2 and P()['fallLh'] == 0 and P()['hhMax'] == 0
+assert P(fallLh=True)['fallLh'] == 1 and P(fallLh=False)['fallLh'] == 0 and P(fallLh=2)['fallLh'] == 2 and P(gapAtr=0.5)['gapAtr'] == 0.5
+assert P(fallLh=99, fallBars=9999, fallVol=-1)['fallLh'] == 10 and P(fallBars=9999)['fallBars'] == 500 and P(fallVol=-1)['fallVol'] == 0
 assert P(gapAtr=9, gapBelow=-1, hhMax=5000)['gapAtr'] == 5 and P(gapBelow=-1)['gapBelow'] == 0 and P(hhMax=5000)['hhMax'] == 1000
-assert L.TRADE_COLS[-3:] == ['fill', 'gapo', 'hh'] and {'straight', 'hhfar'} <= set(L.STRUCT_WHY)
+assert L.TRADE_COLS[-11:] == ['fill', 'gapo', 'hh', 'flh', 'fgr', 'frr', 'fbars', 'fbig', 'ftouch', 'fvolr', 'ftime'] and {'straight', 'hhfar'} <= set(L.STRUCT_WHY)
 # the lower high between the move high (candle 0) and the signal candle: a swing high with 2 lower highs each side
 hs = [120, 118, 116, 114, 112, 110, 108]                      # a straight fall
 assert L.lower_high_between(lambda j: hs[j], 0, 7) == -1
@@ -2416,12 +2419,38 @@ assert L.lower_high_between(lambda j: hs[j], 0, 9, n=4) == -1, '4 candles each s
 hs = [120, 117, 118, 118, 116, 114, 112]                      # equal highs: the 2nd is not above the one before it
 assert L.lower_high_between(lambda j: hs[j], 0, 7) == -1
 sj29 = {'mh': 0, 'H': 120.0}
-assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(fallLh=True)) == ''
-assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(hhMax=19.9)) == 'hhfar'
-assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(hhMax=20)) == ''
-assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P(fallLh=True)) == 'straight'
-assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P()) == '', 'off by default'
-assert L.fall_fail({'mh': -1, 'H': None}, lambda j: 0, 7, 100.0, P(hhMax=1)) == '', 'no move high: nothing to judge'
+
+
+def ff29(hs, i, **kw):
+    """fall_feats on highs only (opens = closes = the highs: no colour), zone 95 - 100 (the signal candle i added)."""
+    hs = hs + [hs[-1]] * 3
+    return L.fall_feats(lambda j: hs[j], lambda j: hs[j], lambda j: hs[j] - 1, lambda j: hs[j], lambda j: 1000.0, 0, i, 0, 95.0, 100.0, False)
+
+
+f_pause, f_straight = ff29([120, 117, 115, 116, 118, 116, 114, 111, 109], 9), ff29([120, 118, 116, 114, 112, 110, 108], 7)
+assert (f_pause['lh'], f_pause['first'], f_straight['lh'], f_straight['first']) == (1, 4, 0, -1), (f_pause, f_straight)
+assert L.fall_fail(sj29, 100.0, P(fallLh=1), f_pause) == '' and L.fall_fail(sj29, 100.0, P(fallLh=2), f_pause) == 'straight'
+assert L.fall_fail(sj29, 100.0, P(hhMax=19.9), f_pause) == 'hhfar' and L.fall_fail(sj29, 100.0, P(hhMax=20), f_pause) == ''
+assert L.fall_fail(sj29, 100.0, P(fallLh=1), f_straight) == 'straight'
+assert L.fall_fail(sj29, 100.0, P(), f_straight) == '', 'off by default'
+assert L.fall_fail({'mh': -1, 'H': None}, 100.0, P(hhMax=1), f_pause) == '', 'no move high: nothing to judge'
+# every count of fall_feats on a made fall: high 0 .. signal 7; candles 1-6 = red 3, red 2, green, red 4, red 1, green; zone 95 - 100
+O29 = [120, 119, 116, 113, 115, 114, 109, 101]
+C29 = [119, 116, 114, 114, 111, 113, 110, 99]
+V29 = [5, 4, 4, 1, 1, 1, 1, 9]
+f29 = L.fall_feats(lambda j: O29[j], lambda j: max(O29[j], C29[j]) + 0.5, lambda j: min(O29[j], C29[j]) - 0.5, lambda j: C29[j],
+                   lambda j: float(V29[j]), 0, 7, 0, 95.0, 100.0, False)
+assert (f29['green'], f29['redRun'], f29['bars']) == (2, 2, 7), f29
+assert abs(f29['big'] - 4 / 5.0) < 1e-9 and abs(f29['touch'] - 2 / 5.0) < 1e-9, f29            # red bodies 3, 2, 4, 1; signal 101 -> 99
+assert abs(f29['vol'] - 2.0 / 5) < 1e-9 and f29['time'] is None, f29                             # fall avg 2 vs rise 5 (rise = 0 .. 0)
+f29z = L.fall_feats(lambda j: O29[j], lambda j: O29[j] + 1, lambda j: C29[j] - 1, lambda j: C29[j], lambda j: 1.0, 0, 7, 0, 95.0, 100.0, True)
+assert abs(f29z['touch'] - 1 / 5.0) < 1e-9, 'zone-top order: the open (101) down to the top (100) - known when it fills'
+for kw, why in ((dict(fallGreen=2), ''), (dict(fallGreen=3), 'fgreen'), (dict(fallRedRun=2), ''), (dict(fallRedRun=1), 'fredrun'),
+                (dict(fallBigRed=0.8), ''), (dict(fallBigRed=0.7), 'fbigred'), (dict(touchBig=0.4), ''), (dict(touchBig=0.3), 'ftouchbig'),
+                (dict(fallBars=7), ''), (dict(fallBars=8), 'fbars'), (dict(fallVol=0.4), ''), (dict(fallVol=0.3), 'fvol'),
+                (dict(fallTime=0.5), 'ftime')):
+    assert L.fall_fail(sj29, 100.0, P(**kw), f29) == why, (kw, why)
+assert set(L.FALL_WHY) <= set(L.STRUCT_WHY)
 
 # the gap-down open, on simulate: the zone 95 - 99; the candles before stay above it; ATR(14) of candle 2 = (2 + 4 + 3) / 3 = 3
 BASE29 = [cdl(0, 104, 105, 103, 104), cdl(1, 104, 106, 102, 103), cdl(2, 103, 104, 101, 102)]
@@ -2521,19 +2550,31 @@ def job29(sym, rows, **kw):
     return r, [dict(zip(L.TRADE_COLS, x)) for x in r['trades'] if x[0] == sym]
 
 
-r29, t29 = job29('STR', craft29(False), group='fvg', fallLh=True)
+r29, t29 = job29('STR', craft29(False), group='fvg', fallLh=1)
 assert t29 == [] and r29['structWhy'].get('straight', 0) >= 1, (r29['structWhy'], t29)
 assert len(job29('STR', craft29(False), group='fvg')[1]) == 1, 'the same signal without the rule (off by default)'
-r29, t29 = job29('PAU', craft29(True), group='fvg', fallLh=True)
+r29, t29 = job29('PAU', craft29(True), group='fvg', fallLh=1)
 assert len(t29) == 1 and t29[0]['hh'] == round((117.3 - 106) / 106 * 100, 1) and t29[0]['fill'] == '', t29
+# the fall's figures on the trade (the made pause: 2 red, 2 green, 3 red; biggest red body 3.5 in the 4.7 zone; flat volume)
+f = t29[0]
+assert (f['flh'], f['fgr'], f['frr'], f['fbars'], f['fbig'], f['fvolr']) == (1, 2, 3, 8, round(3.5 / 4.7, 2), 1.0), f
+assert job29('PAU', craft29(True), group='fvg', fallLh=2)[0]['structWhy'].get('straight', 0) >= 1
+for kw, ok in ((dict(fallGreen=2), True), (dict(fallGreen=3), False), (dict(fallRedRun=3), True), (dict(fallRedRun=2), False),
+               (dict(fallBigRed=0.8), True), (dict(fallBigRed=0.7), False), (dict(fallBars=8), True), (dict(fallBars=9), False),
+               (dict(fallVol=1), True), (dict(fallVol=0.9), False), (dict(touchBig=0.1), True), (dict(touchBig=0.04), False)):
+    assert (len(job29('PAU', craft29(True), group='fvg', **kw)[1]) == 1) == ok, kw
+bd29f = {b['key'] for b in job29('PAU', craft29(True), group='fvg')[0]['breakdowns']}
+assert len(job29('PAU', craft29(True), group='fvg', structure='show')[1]) == 1
 assert job29('PAU', craft29(True), group='fvg', hhMax=10)[1] == [] and \
     job29('PAU', craft29(True), group='fvg', hhMax=10)[0]['structWhy'].get('hhfar', 0) >= 1
 assert len(job29('PAU', craft29(True), group='fvg', hhMax=11)[1]) == 1
 assert len(job29('PAU', craft29(True), group='fvg', structure='show')[1]) == 1
 # the charts PDF: the lower high in words, the rule on the cover
-pdf29 = L.run_job(dict(SET29, group='fvg', fallLh=True), charts=L.CHARTS_DIR, name='no straight fall')
+pdf29 = L.run_job(dict(SET29, group='fvg', fallLh=1, fallGreen=2), charts=L.CHARTS_DIR, name='no straight fall')
 w29 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf29['pdf']['file'])))
-assert 'made a lower high on' in w29 and 'No straight fall: a lower high between the move high and the touch' in w29, w29[:400]
+for txt in ('took 8 candles to reach the zone: 1 lower high (the first on', '2 green candles and at most 3 red candles in a row',
+            'The fall into the zone: at least 1 lower high on the way down, at least 2 green candles on the way down'):
+    assert txt in w29, (txt, w29[:600])
 # the zone-top order on a gap-down open: the first touch of the FVG opens at 105 inside it (the day before closed at 108)
 ATR29 = lambda rows, k: L.structure.atr_series([x[2] for x in rows], [x[3] for x in rows], [x[4] for x in rows])[k]
 c29 = craft29(True, (105, 105.6, 104, 105.3))
@@ -2566,5 +2607,75 @@ w29 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf29
 for txt in ('it opened inside the zone', 'a gap down, so the order filled at the open', 'half the ATR',
             'here the ATR stop was nearer', '(opened in the zone: 0.5 x ATR)', 'A gap-down open into the zone (inside it, or at most 2% under'):
     assert txt in w29, txt
+
+# ------------------------------------------------------------------ 30. speed (owner, 16-Nov-2026: "ovoru backtest um load agi varuthu ...
+# maximum speedku Improve pana mudiuma. takunu vara mari ... adikadi sheet feed timedout error varuthu"): with a web app of
+# protocol 2 the poll waits at the sheet, the result goes compressed BEFORE the charts PDF (made behind it, op 'pdf'), every
+# result is kept whole on the laptop; an older web app gets the plain result
+import base64
+import gzip as _gz
+
+
+class V2Sheet(FakeSheet):
+    def __init__(self, jobs, blob_ok=True):
+        FakeSheet.__init__(self, jobs)
+        self.blob_ok = blob_ok
+
+    def __call__(self, cfg, action, payload, tries=1, timeout=60):
+        assert action == 'lab'
+        self.calls.append(payload)
+        op = payload['op']
+        if op == 'poll':
+            j = self.jobs.pop(0) if self.jobs else None
+            return {'ok': True, 'job': j, 'next': 5, 'v': 2} if j else {'ok': True, 'job': None, 'next': 0, 'waited': True, 'v': 2}
+        if op == 'result' and 'blob' in payload and not self.blob_ok:
+            return {'ok': False, 'error': 'not a Backtest Lab result'}
+        return {'ok': True, 'stored': True}
+
+
+J30 = dict(SET29, **Z29)
+sh30 = V2Sheet([{'id': 'L30', 'name': 'fast run', 'params': J30}])
+w30 = L.LabWorker()
+w30.loop({}, sh30, rounds=3)
+w30.pdf_thread.join(120)
+ops30 = [c['op'] for c in sh30.calls]
+assert ops30.count('result') == 1 and 'pdf' in ops30 and ops30.index('result') < ops30.index('pdf'), ops30
+polls30 = [c for c in sh30.calls if c['op'] == 'poll']
+assert 'wait' not in polls30[0] and polls30[-1].get('wait') == L.POLL_WAIT_S, polls30
+r30 = next(c for c in sh30.calls if c['op'] == 'result')
+assert 'result' not in r30 and r30['summary']['stats']['trades'] >= 1 and r30['summary']['pdf'] == {'pending': True}, r30['summary']
+full30 = json.loads(_gz.decompress(base64.b64decode(r30['blob'])).decode('utf-8'))
+assert full30['stats'] == r30['summary']['stats'] and len(full30['trades']) == full30['tradesTotal'] >= 1 and '_later' not in full30
+p30 = next(c for c in sh30.calls if c['op'] == 'pdf')
+assert p30['id'] == 'L30' and p30['pdf']['file'] and os.path.exists(os.path.join(L.CHARTS_DIR, p30['pdf']['file'])), p30
+kept30 = [x for x in os.listdir(L.RESULTS_DIR) if x.endswith('fast run.json.gz')]
+assert kept30, os.listdir(L.RESULTS_DIR)
+with _gz.open(os.path.join(L.RESULTS_DIR, kept30[-1]), 'rt', encoding='utf-8') as f30:
+    assert json.load(f30)['id'] == 'L30'
+assert w30.warm and any('Backtest Lab: ready - the market structure is worked out' in m for m in LOGS)
+# an older web app (no compressed results): the plain result, the PDF made before it as before
+sh30b = V2Sheet([{'id': 'L31', 'name': 'old app', 'params': J30}], blob_ok=False)
+L.LabWorker().loop({}, sh30b, rounds=1)
+res30b = [c for c in sh30b.calls if c['op'] == 'result']
+assert len(res30b) == 2 and 'blob' in res30b[0] and res30b[1]['result']['stats']['trades'] >= 1, [sorted(c) for c in res30b]
+# the charts PDF waits while a run goes
+w30c = L.LabWorker()
+w30c.running.set()
+t30 = threading.Thread(target=w30c._pause)
+t30.start()
+time.sleep(0.4)
+assert t30.is_alive(), 'waits while a run goes'
+w30c.running.clear()
+t30.join(2)
+assert not t30.is_alive()
+# a result bigger than the sheet keeps: the newest trades that fit (each figure still counts every trade)
+big30 = copy.deepcopy(full30)
+rnd30 = random.Random(30)
+big30['trades'] = [[('S%05d' % k) + ''.join(rnd30.choice('ABCDEFGH') for _ in range(40)), rnd30.random(), rnd30.random()] for k in range(3000)]
+big30['tradesTotal'] = 3000
+summ30, blob30 = L.blob_result(big30, limit=20000)
+assert len(blob30) <= 20000 and 0 < len(big30['trades']) < 3000 and big30['tradesCut'] == 3000 - len(big30['trades']), (len(blob30), len(big30['trades']))
+assert big30['trades'][0][0].startswith('S00000'), 'the newest (first) kept'
+assert 'trades' not in summ30 and summ30['account'] == {k: (full30.get('account') or {}).get(k) for k in ('returnPct', 'cagr', 'maxDD')}
 
 print('OK')
