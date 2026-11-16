@@ -3279,6 +3279,10 @@ class LabWorker:
         self.pdf_jobs = []
         self.pdf_thread = None
         self.warm = False
+        # the daily scan's rules from the Lab page's "My daily scan" card (16-Nov-2026): () -> the 'at' kept here, and the
+        # keeper of a newer one (kite_intraday.scan_saved / save_scan, set by screener_bridge)
+        self.scan_at = None
+        self.scan_save = None
 
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
@@ -3337,7 +3341,14 @@ class LabWorker:
                 ask = {'op': 'poll'}
                 if self.fast and self.proto >= 2:
                     ask['wait'] = POLL_WAIT_S        # the sheet holds the poll until a run comes (16-Nov-2026)
+                if self.scan_at:
+                    ask['scanAt'] = self.scan_at() or ''
                 res = api(cfg, 'lab', ask, tries=1, timeout=60)
+                if res.get('ok') and res.get('scan') and self.scan_save:
+                    try:
+                        self.scan_save(res['scan'])  # the daily scan's new rules: the next poll tells the sheet they arrived
+                    except Exception as e:
+                        log('Backtest Lab: the daily scan\'s rules could not be kept - %s' % e)
                 if not res.get('ok'):
                     if 'unknown action' in str(res.get('error')):
                         if not old_app_said:

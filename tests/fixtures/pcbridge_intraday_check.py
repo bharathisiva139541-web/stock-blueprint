@@ -23,6 +23,7 @@ spec.loader.exec_module(K)
 TMP = tempfile.mkdtemp()
 K.SESSION_PATH = os.path.join(TMP, 'kite_session.json')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
+K.SCAN_PATH = os.path.join(TMP, 'scan_rules.json')
 K.INSTR_PATH = os.path.join(TMP, 'kite_instruments.json')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.backtest_lab.LAB_DIR = os.path.join(TMP, 'lab_cache')
@@ -413,6 +414,32 @@ assert not [c for c in CALLS if c[1].startswith('/instruments/historical/')], 'e
 assert any('the timeframes are now 4H, D' in m for m in LOGS), LOGS[-4:]
 assert any('older version' in m for m in LOGS[-12:]), 'the pretend sheet does not echo tfs: the hint'
 K.intraday_step(CFG, fake_api, HOL, now=datetime(2026, 11, 7, 10, 5))           # back to the four
+# the Lab page's "My daily scan" (16-Nov-2026): the symbol list brings newer rules (the Lab's poll did not yet) -> kept and used at
+# once (the last 10 sessions again); the symbol list says which rules the laptop has
+st_was = K.state_load()
+assert any(it['pattern'] == 'Spring in FVG' for p in POSTS if p['op'] == 'put' for it in p['items'])
+POSTS.clear()
+
+
+def fake_api_scan(cfg, action, payload=None, timeout=120, tries=3):
+    if payload['op'] == 'syms':
+        POSTS.append(payload)
+        return {'ok': True, 'syms': ['PARAGMILK', 'FLAT'], 'scan': {'at': '2026-11-07 10:20:00', 'rules': {'scanSpring': False, 'scanGapSpring': False}}}
+    return fake_api(cfg, action, payload, timeout, tries)
+
+
+assert K.intraday_step(CFG, fake_api_scan, HOL, now=datetime(2026, 11, 7, 10, 25), force=True) is not None
+assert POSTS[0] == {'op': 'syms', 'scanAt': ''}, POSTS[0]
+put = [p for p in POSTS if p['op'] == 'put'][0]
+assert put['since'] == '2026-10-23' and put['choch']['scanSpring'] is False and put['choch']['scanGapSpring'] is False, put['choch']
+assert not [it for p in POSTS if p['op'] == 'put' for it in p['items'] if it['pattern'] in ('Spring in FVG', 'Gap-up FVG + Spring')]
+assert K.scan_saved()['at'] == '2026-11-07 10:20:00' and K.state_load()['choch']['scanSpring'] is False
+assert any('new rules from the Backtest Lab page' in m for m in LOGS[-40:]), LOGS[-6:]
+POSTS.clear()
+K.intraday_step(CFG, fake_api_scan, HOL, now=datetime(2026, 11, 7, 10, 30), force=True)
+assert POSTS[0] == {'op': 'syms', 'scanAt': '2026-11-07 10:20:00'}, 'the symbol list says which rules it has'
+os.remove(K.SCAN_PATH)
+K.state_save(st_was)
 
 # the next session: only the new candles are read and only their patterns are sent
 SERIES['PARAGMILK'] = SERIES['PARAGMILK'] + m15_day('2026-11-09', 260)

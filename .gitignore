@@ -51,3 +51,5 @@ pcbridge/ScreenerBridge/google_session.json
 pcbridge/ScreenerBridge/update_state.json
 pcbridge/ScreenerBridge/_update_backup/
 pcbridge/ScreenerBridge/_update_new/
+# the daily scan's rules from the Backtest Lab page (16-Nov-2026) - kept by the laptop
+pcbridge/ScreenerBridge/scan_rules.json

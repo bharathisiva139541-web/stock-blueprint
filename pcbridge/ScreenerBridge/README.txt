@@ -422,6 +422,14 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    TradingView script (copy the script again from the Lab page). ChochRules.bat now asks (3rd question) "The CHoCH = a
    close above": 1 = the last swing high (as before), 2 = the protected high - choose 2 if your TradingView uses it, so
    the website's CHoCH lists match your chart.
+ - 16-Nov-2026 (later) - MY DAILY SCAN FROM THE WEBSITE: no more ChochRules.bat. Open the website > Backtest Lab: set
+   the rules in the form (test them with Run), then in the card "My daily scan" tick what the evening scan lists
+   (My CHoCH + FVG setup, My BOS + FVG setup - tick both for them together -, FVG + Spring, Gap-up FVG + Spring,
+   Daily FVG + 4H Spring) and the charts (4 hour / daily / weekly), and press "Use for my daily scan". This program
+   takes them within a minute (kept in scan_rules.json - they replace the ChochRules.bat values in config.json) and
+   scans the last 10 sessions again with them. ChochRules.bat now only shows the rules in use. "Daily FVG + 4H Spring"
+   rows (the first daily candle back into a zone is red and its 09:15 + 13:15 four-hour candles are a Spring, the
+   15-minute CHoCH said on the row) appear on the Patterns & FVG page - Zerodha section.
  - 13-Nov-2026 (later): five fixed rules of your CHoCH + FVG setup (Backtest Lab "Only my setup", the daily scan and the
    TradingView script): no zone wholly above the CHoCH line; the zone formed in the swing from the final low to the move
    high; before the move high at most 2 candles touched the zone and none closed under its middle; the 1st (watched)

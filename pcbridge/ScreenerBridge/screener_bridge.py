@@ -62,7 +62,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py kitesetup  your Kite Connect API key + secret, then the first Kite login
   python screener_bridge.py intraday   the Kite intraday / weekly / monthly pattern scan now (asks for the login if needed)
   python screener_bridge.py intradaycheck SYMBOL [4H] [YYYY-MM-DD]   a stock's Spring check on Kite's candles (nothing sent)
-  python screener_bridge.py chochrules the CHoCH + FVG rules of the daily scan (swing size, lower highs / lows, discount level, zone part)
+  python screener_bridge.py chochrules the CHoCH + FVG rules of the daily scan (swing size, lower highs / lows, discount level, zone part) - shows the website's when the Backtest Lab page set them
   python screener_bridge.py backtest   the FVG+Spring / Gap-up FVG + Spring backtest (30-day move, 1-5R) on the stored Kite candles -> the sheet (no login)
   python screener_bridge.py kitehistory  Kite's long history (daily ~20 years; 4H / 1-hour / 15-minute as far as Kite gives, up to 20 years) for the backtest at once, then the backtest
   python screener_bridge.py kitedepth [SYMBOL ...]  how many years of 15-minute / 1-hour candles Kite gives (a check, nothing stored)
@@ -3956,6 +3956,8 @@ def run_after_login(cfg):
     fulls, next_full, next_quick, offline = 0, time.time(), None, False
     runner = itd.Runner()       # the Kite scan, once a trading day after the close, in its own thread
     lab = itd.backtest_lab.LabWorker()   # the website's Backtest Lab: runs on this computer's candles
+    lab.scan_at = lambda: (itd.scan_saved() or {}).get('at')   # ... and hands over the daily scan's rules from its page
+    lab.scan_save = itd.save_scan
     updater = UPD.Updater(HERE)  # GitHub's newest version -> this folder + the sheet's code (16-Nov-2026), its own thread
 
     def busy():

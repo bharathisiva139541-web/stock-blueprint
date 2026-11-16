@@ -25,6 +25,7 @@ L.LAB_DIR = os.path.join(TMP, 'lab_cache')
 L.CHARTS_DIR = os.path.join(TMP, 'lab_charts')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
+K.SCAN_PATH = os.path.join(TMP, 'scan_rules.json')     # the Lab page's "My daily scan" rules (16-Nov-2026) - never the real folder's
 L.LTF_DIR = os.path.join(K.DATA_DIR, 'ltf')           # (= K.ltf_dir(): the 1-hour / 15-minute files)
 L.RESULTS_DIR = os.path.join(TMP, 'lab_results')    # every result kept whole (16-Nov-2026)
 # the owner's rules of 16-Nov-2026 (a gap-down open into the zone: the near stop; no straight fall from the move high; the move
@@ -945,7 +946,10 @@ assert sent6[0][1]['fib'] == 0.5 and sent6[0][1]['pivotN'] == 5 and sent6[0][1][
 NEW6 = {'zoneMin': 0.0, 'zoneMax': 0.0, 'lineTol': 0.5, 'fibLevel': 0.618, 'fibTol': 1.0, 'gapEntry': True, 'lineOk': False,
         'darkCloud': 'any', 'fibPat': 'off', 'zonePick': 'second', 'touchAgain': True,       # the 12-Nov-2026 refinements' defaults
         'bos': True, 'bosKind': 'both', 'ltf': '15m',                                       # + BOS + FVG and the 15m confirmation (13-Nov-2026)
-        'chochMode': 'last'}                                                                # + the protected high (16-Nov-2026)
+        'chochMode': 'last',                                                                # + the protected high (16-Nov-2026)
+        # + the Lab page's "My daily scan" setups / charts and Daily FVG + 4H Spring's rules (16-Nov-2026)
+        'scanChoch': True, 'scanSpring': True, 'scanGapSpring': True, 'scanH4': False, 'on4H': True, 'onD': True, 'onW': True,
+        'h4Body': 0.5, 'h4Zones': 'both', 'm15Choch': 'show', 'm15Pivot': 3, 'm15Down': 2}
 assert sent6[0][1]['choch'] == dict({'pivotN': 5, 'downN': 3, 'fib': 0.5, 'part': 'mid', 'zoneWhen': 'both'}, **NEW6)
 # the daily scan's CHoCH rules from config.json (owner, 12-Nov-2026: "Build 2" - ChochRules.bat, the same as his Lab / TradingView)
 D6 = K.choch_rules()
@@ -2688,5 +2692,117 @@ summ30, blob30 = L.blob_result(big30, limit=20000)
 assert len(blob30) <= 20000 and 0 < len(big30['trades']) < 3000 and big30['tradesCut'] == 3000 - len(big30['trades']), (len(blob30), len(big30['trades']))
 assert big30['trades'][0][0].startswith('S00000'), 'the newest (first) kept'
 assert 'trades' not in summ30 and summ30['account'] == {k: (full30.get('account') or {}).get(k) for k in ('returnPct', 'cagr', 'maxDD')}
+
+# ------------------------------------------------------------------ 31. My daily scan (owner, 16-Nov-2026, IREDA: "ovoruthadavayum Daily scan
+# ku chochrules ah run pani mathuramari iruku. Backtestlab laye entha strategy lam venum, ena rules lam venum nu dailyscan ku angaiye
+# setpanra mari venum ... My CHoCH + FVG setup My BOS + FVG setu CHoCH + FVG and BOS + FVG together FVG + Spring Gap-up FVG + Spring
+# Daily FVG + 4H Spring elathaiume optionla vai. enakh ethu daily scan ku venumo atha nan choose panikiren")
+D31 = K.choch_rules()
+assert K.setup_words(D31) == 'CHoCH + FVG, BOS + FVG, FVG + Spring, Gap-up FVG + Spring on 4H, D, W', K.setup_words(D31)
+w31 = dict(D31, scanChoch=False, onW=False, scanH4=True, h4Body=0.7, h4Zones='fvg', m15Choch='only')
+assert K.setup_words(w31) == ("BOS + FVG, FVG + Spring, Gap-up FVG + Spring on 4H, D; Daily FVG + 4H Spring (the red day's body at least 0.7 x ATR, "
+                              "FVG zones, 15-minute CHoCH required)"), K.setup_words(w31)
+assert K.setup_words(dict(D31, scanChoch=False, bos=False, scanSpring=False, scanGapSpring=False)) == 'none of the setups'
+assert K.setup_words(dict(D31, scanChoch=False, bos=False, scanSpring=False, scanGapSpring=False, scanH4=True, h4Body=0)) == \
+    'Daily FVG + 4H Spring (the red day\'s body any size, FVG and Gap-up zones, 15-minute CHoCH shown)'
+assert not K.setup_on(w31, K.CHOCH_PATTERN, 'D') and K.setup_on(w31, K.BOS_PATTERN, 'D') and not K.setup_on(w31, 'Spring in FVG', 'W')
+assert K.setup_on(w31, 'Spring in FVG', '4H') and K.setup_on(w31, 'Spring in FVG', '1H'), 'other charts: only the setup tick'
+# the setups ticked off leave the scan: EEE's CHoCH + FVG and Spring in FVG of section 13
+an31 = lambda **kw: {x['pattern'] for x in K.analyse({'sym': 'EEE', 'day': rows5, 'm15': [], 'h4': []}, since5, upto5, set(), ('D',), (),
+                                                      choch=dict(D31, **kw))['items']}
+assert {K.CHOCH_PATTERN, 'Spring in FVG'} <= an31()
+assert K.CHOCH_PATTERN not in an31(scanChoch=False) and 'Spring in FVG' in an31(scanChoch=False)
+assert 'Spring in FVG' not in an31(scanSpring=False) and K.CHOCH_PATTERN in an31(scanSpring=False)
+assert not ({K.CHOCH_PATTERN, 'Spring in FVG'} & an31(onD=False)) and {K.CHOCH_PATTERN, 'Spring in FVG'} <= an31(onW=False, on4H=False)
+w31b = K.analyse({'sym': 'SUP', 'day': r6[:t_prem], 'm15': [], 'h4': []}, r6[t_prem - 2][0], date.fromisoformat(r6[t_prem - 1][0]), set(), ('D',), (),
+                 choch=dict(D31, scanChoch=False))
+assert w31b['waiting'] == [], 'no CHoCH + FVG: nothing waiting either'
+
+# Daily FVG + 4H Spring in the daily scan = the Lab's rule (h4_check / m15_check) on section 28's chart: FVG1's first touch = a big red
+# day whose 4-hour candles are a Spring with a 15-minute CHoCH that day; FVG2's first touch: no 4-hour Spring
+lt31 = [{'t': r[0], 'day': r[0][:10], 'o': r[1], 'h': r[2], 'l': r[3], 'c': r[4], 'v': r[5]} for r in rows15]
+ltf_was = K.ltf_candles
+K.ltf_candles = lambda store, ltf, upto_iso: [c for c in lt31 if c['day'] <= upto_iso] if ltf == '15m' else ltf_was(store, ltf, upto_iso)
+st31 = {'sym': 'H4S', 'v': 1, 'm15': [], 'day': r28, 'h4': h4_28}
+up31 = date.fromisoformat(r28[-1][0])
+
+
+def h4scan(since=None, **kw):
+    out = K.analyse(st31, since or r28[t22a - 1][0], up31, set(), ('D',), (), choch=dict(D31, **dict({'scanH4': True, 'm15Pivot': 2}, **kw)))
+    return [x for x in out['items'] if x['pattern'] == K.H4_PATTERN], out
+
+
+i31, o31 = h4scan()
+assert [(x['tf'], x['candle'], x['zone'][:2], x['zone'][3]) for x in i31] == [('D', d28a, [140.3, 144.0], 'FVG')], i31
+assert i31[0]['note'] == 'first day back in the zone: red, body %s x ATR · 4H: 09:15 red, 13:15 Spring (under its low, closed back above) · ' \
+    '15m CHoCH 14:15 (2 lower highs / lows)' % K._num_words(body28), i31[0]['note']
+assert not re.search(r'\d\.\d\d', i31[0]['note']), 'no prices in the note'
+assert h4scan(scanH4=False)[0] == [] and h4scan(h4Zones='gap')[0] == [] and len(h4scan(h4Zones='fvg')[0]) == 1
+assert h4scan(h4Body=body28 + 0.2)[0] == []
+assert h4scan(m15Down=3)[0][0]['note'].endswith(' · no 15m CHoCH that day') and h4scan(m15Down=3, m15Choch='only')[0] == []
+assert h4scan(m15Choch='off')[0][0]['note'].endswith('closed back above)')
+assert h4scan(since=d28a)[0] == [], 'only the sessions after the last scan'
+# a later close under the day's low takes it off (the sheet's row too): invalid within KEEP_DAYS
+r31b = [list(r) for r in r28[:t22a + 3]] + [[r28[t22a + 3][0], 146.0, 146.5, 142.0, 143.0, 500000]]
+st31b = dict(st31, day=r31b, h4=[x for x in h4_28 if x[0][:10] <= r31b[-1][0]])
+o31b = K.analyse(st31b, r28[t22a - 1][0], date.fromisoformat(r31b[-1][0]), set(), ('D',), (), choch=dict(D31, scanH4=True, m15Pivot=2))
+assert not [x for x in o31b['items'] if x['pattern'] == K.H4_PATTERN]
+assert {'tf': 'D', 'candle': d28a, 'pattern': K.H4_PATTERN} in o31b['invalid'], o31b['invalid']
+K.ltf_candles = ltf_was
+
+# the website's rules kept on the laptop (scan_rules.json) replace config.json's (ChochRules.bat)
+assert K.scan_saved() is None and K.daily_rules({'choch_swing_candles': 8})['pivotN'] == 8
+logs31 = []
+K.log, log_was = logs31.append, K.log
+web31 = {'pivotN': 10, 'downN': 4, 'fib': 0.382, 'part': 'top', 'zoneWhen': 'leg', 'chochMode': 'protected', 'scanH4': True, 'h4Body': 0.7,
+         'm15Pivot': 9, 'scanSpring': False, 'onW': False, 'ltf': 'off', 'bosKind': 'first', 'zoneMax': 8, 'junk': 'x'}
+assert K.save_scan({'at': '2026-11-16 21:05:00', 'rules': web31}) is True
+assert K.save_scan({'at': '2026-11-16 21:05:00', 'rules': web31}) is False, 'the same rules again: nothing to do'
+assert K.save_scan({'at': '2026-11-16 21:06:00'}) is False and K.save_scan(None) is False and K.save_scan({'rules': web31}) is False
+assert logs31 and logs31[0].startswith('Daily scan: new rules from the Backtest Lab page - CHoCH + FVG, BOS + FVG, Gap-up FVG + Spring on 4H, D; '
+                                       'Daily FVG + 4H Spring (the red day\'s body at least 0.7 x ATR'), logs31
+assert 'swings of 10 candles, at least 4 lower highs / lows, the zone\'s top at least 38.2% down the move, the zone formed only in the CHoCH move' in logs31[0]
+K.log = log_was
+dr31 = K.daily_rules({'choch_swing_candles': 8, 'choch_lower_highs': 2})
+assert (dr31['pivotN'], dr31['downN'], dr31['fib'], dr31['part'], dr31['zoneWhen'], dr31['chochMode']) == (10, 4, 0.382, 'top', 'leg', 'protected'), dr31
+assert (dr31['scanH4'], dr31['h4Body'], dr31['m15Pivot'], dr31['scanSpring'], dr31['onW'], dr31['ltf'], dr31['bosKind'], dr31['zoneMax']) == \
+    (True, 0.7, 3, False, False, 'off', 'first', 8.0), dr31
+assert 'junk' not in dr31 and set(dr31) == set(D31)
+assert K.choch_opts(dr31) == {'choch': 'protected'}
+# the scan is due again with the website's rules (and only once they are the last scan's)
+assert K.due(kc6, set(), state=dict(st6))[0] is True
+assert K.due(kc6, set(), state=dict(st6, choch=dr31))[0] is False
+# ChochRules.bat only shows them now
+out31 = []
+import builtins
+pr_was = builtins.print
+builtins.print = lambda *a, **k: out31.append(' '.join(str(x) for x in a))
+try:
+    assert K.choch_setup({}, lambda c: (_ for _ in ()).throw(AssertionError('saved')), ask=lambda q: (_ for _ in ()).throw(AssertionError(q))) == 0
+finally:
+    builtins.print = pr_was
+txt31 = '\n'.join(out31)
+assert 'takes its setups and rules from the website (Backtest Lab > "My daily scan", saved 2026-11-16 21:05:00)' in txt31 and \
+    'Setups: CHoCH + FVG, BOS + FVG, Gap-up FVG + Spring on 4H, D; Daily FVG + 4H Spring' in txt31, txt31
+# the Lab worker hands them over: its poll says what it has (scanAt) and keeps newer ones from the reply
+sent31 = []
+
+
+def api31(cfg, action, body, **kw):
+    sent31.append(dict(body))
+    return {'ok': True, 'job': None, 'next': 60, 'v': 2, 'scan': {'at': '2026-11-16 22:00:00', 'rules': dict(web31, pivotN=7)}} if len(sent31) == 1 else \
+        {'ok': True, 'job': None, 'next': 60, 'v': 2}
+
+
+wk31 = L.LabWorker()
+wk31.scan_at = lambda: (K.scan_saved() or {}).get('at')
+wk31.scan_save = K.save_scan
+K.log = lambda m: None
+wk31.loop({}, api31, rounds=2)
+K.log = log_was
+assert [b.get('scanAt') for b in sent31] == ['2026-11-16 21:05:00', '2026-11-16 22:00:00'], sent31
+assert K.daily_rules({})['pivotN'] == 7
+os.remove(K.SCAN_PATH)
+assert K.daily_rules({}) == D31
 
 print('OK')
