@@ -126,7 +126,8 @@ test('Results Day: moneycontrol first while screener.in is behind, then screener
   assert.deepStrictEqual([t.ACUTAAS.Status, t.ACUTAAS.Source, t.ACUTAAS['Screener Latest Quarter']], ['Updated', 'moneycontrol', 'Jun 2026']);
   assert.match(t.ACUTAAS.Note, /^moneycontrol figures \(Consolidated\) - Screener still shows Jun 2026; screener\.in replaces them when it shows Sep 2026; trend tags wait for screener\.in$/);
   // the moneycontrol quarter: QoQ / YoY, TTM EPS (last 4) and last FY EPS (the 4 before) - same maths as screener.in
-  assert.deepStrictEqual(figures(e, 'ACUTAAS'), [33, 66, 42, 73, 53.64, 33.38, 'Stable', 'Increasing', 'Increasing', 'Decreasing']);
+  // OPM QoQ% blank (moneycontrol has no OPM - owner, 16-Nov-2026: never last quarter's word); OPM YoY% / promoter / FII wait
+  assert.deepStrictEqual(figures(e, 'ACUTAAS'), [33, 66, 42, 73, 53.64, 33.38, 'Stable', 'Increasing', 'Increasing', '']);
   assert.strictEqual(main(e, 'ACUTAAS').row[C.Checkbox], true);
   const note = e.sheet('Main').notes[main(e, 'ACUTAAS').idx + ',' + C['QoQ Revenue Growth %']];
   assert.match(note, /^Provisional - moneycontrol figures for Sep 2026 \(Consolidated, read 27\/10\/2026 19:30\)\. screener\.in replaces them/);
