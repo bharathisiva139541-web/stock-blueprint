@@ -1425,22 +1425,29 @@ function check(name, fn) {
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="discount"]', (e) => e.value), '0.5');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="entry"]', (e) => e.value), 'zone', 'an order at the zone top');
     assert.ok(await own.p.$('.lab-rec.on #lab-smc'), 'the setup card shows In use');
-    // the owner's rules of 16-Nov-2026: a gap-down open into the zone (the near stop) and no straight fall from the move high
-    assert.match(await plainText(), /on the way down from the move high price made a lower high \(a swing high with 2 lower candles each side\) before the signal - no straight fall into the zone/);
-    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapAtr"]', (e) => e.value), '0.5', 'a gap-down open: half an ATR');
-    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapBelow"]', (e) => e.value), '2', '... an open at most 2% under the zone');
+    // the owner's rules of 16-Nov-2026: a gap-down open into the zone (the near stop), no straight fall from the move high, the move
+    // high's distance - options, all OFF by default ("ethuvum default ah on la vaika vendam")
+    assert.doesNotMatch(await plainText(), /no straight fall into the zone/);
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapAtr"]', (e) => e.value), '0', 'a gap-down open: off');
+    assert.ok(!(await own.p.$('#lab-form select[data-k="gapBelow"]')), '... its "at most" box only when on');
     assert.strictEqual(await own.p.$eval('#lab-form select[data-k="hhMax"]', (e) => e.value), '0', 'the move high\'s distance: off');
+    assert.strictEqual(await own.p.$eval('#lab-form [data-k="fallLh"]', (e) => e.checked), false, 'no straight fall: off');
+    assert.match(await plainText(), /A candle that opens under the zone top is bought at its open with the usual stop \(an open under that stop is skipped\)\./);
+    await own.p.check('#lab-form [data-k="fallLh"]');
+    await own.p.waitForFunction(() => /on the way down from the move high price made a lower high \(a swing high with 2 lower candles each side\) before the signal - no straight fall into the zone/.test(document.querySelector('#lab-plain').textContent));
+    await own.p.selectOption('#lab-form select[data-k="gapAtr"]', '0.5');
+    await own.p.waitForSelector('#lab-form select[data-k="gapBelow"]');
+    assert.strictEqual(await own.p.$eval('#lab-form select[data-k="gapBelow"]', (e) => e.value), '2', '... an open at most 2% under the zone');
     assert.match(await plainText(), /When the touch candle opens inside the zone or at most 2% under its bottom \(a gap down\), it is bought at that open and the stop goes 0\.5 x ATR under it - or just under the final low when that is nearer; a deeper open is skipped\./);
     await own.p.selectOption('#lab-form select[data-k="hhMax"]', '30');
     await own.p.waitForFunction(() => /the move high \(HH\) at most 30% above the zone top/.test(document.querySelector('#lab-plain').textContent));
     await guideShot(own.p, '06b-entry', 'details.lab-sec[data-sec="entry"]');
     await own.p.selectOption('#lab-form select[data-k="gapAtr"]', '0');
     await own.p.waitForFunction(() => !document.querySelector('#lab-form select[data-k="gapBelow"]'));
-    assert.match(await plainText(), /A candle that opens under the zone top is bought at its open with the usual stop \(an open under that stop is skipped\)\./);
-    await own.p.selectOption('#lab-form select[data-k="gapAtr"]', '0.5');
-    await own.p.waitForSelector('#lab-form select[data-k="gapBelow"]');
     await own.p.selectOption('#lab-form select[data-k="hhMax"]', '0');
     await own.p.waitForFunction(() => !/at most 30% above the zone top/.test(document.querySelector('#lab-plain').textContent));
+    await own.p.uncheck('#lab-form [data-k="fallLh"]');
+    await own.p.waitForFunction(() => !/no straight fall into the zone/.test(document.querySelector('#lab-plain').textContent));
     // BOS + FVG (owner, 13-Nov-2026: "Shall we track BOS setup like this ... continuous BOS in uptrend. or BOS formed after Choch"):
     // the same setup on the BOS move in one click, its kinds, and the lower-timeframe confirmation
     await own.p.click('#lab-bos');

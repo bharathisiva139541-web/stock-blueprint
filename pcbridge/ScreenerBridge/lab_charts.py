@@ -836,7 +836,7 @@ def why_story(t, cs, s, P, cx):
         out.append('The high of the rise was %s above the zone top - within your limit of %s.' % (_pct_words(t['hh']), _pct_words(P['hhMax'])))
     if ev and t.get('lh') is not None:
         out.append('On the way down from that high the price paused and made a lower high on %s before it reached the zone - it '
-                   'did not fall straight into the zone (a straight fall is never traded).' % dt(t['lh']))
+                   'did not fall straight into the zone (your "no straight fall" rule).' % dt(t['lh']))
     if ev and t.get('again'):
         out.append('Price had already touched this zone once while the rise was forming (before the %s). Your rule counts '
                    'its first touch after the %s again - this one.' % (EVN, EVN))
@@ -1447,8 +1447,10 @@ def rule_lines(P):
         out.append('Dark-cloud FVGs (a red 3rd candle closing under the middle of the green one): %s' % (
             'left out' if P['darkCloud'] == 'exclude' else 'only these'))
     if P.get('structure') == 'only':
-        out.append('No straight fall: a lower high between the move high and the touch%s' % (
-            ('; the move high at most %s%% above the zone top' % _pct1(P['hhMax'])) if P.get('hhMax') else ''))
+        if P.get('fallLh'):
+            out.append('No straight fall: a lower high between the move high and the touch')
+        if P.get('hhMax'):
+            out.append('The move high at most %s%% above the zone top' % _pct1(P['hhMax']))
         out.append(('Two discount zones in the %s move: ' % EVN) + '%s' % ('every zone traded' if P.get('zonePick') == 'every' else
                                                                'the 2nd traded, the 1st only watched'))
         if P.get('moveVol'):

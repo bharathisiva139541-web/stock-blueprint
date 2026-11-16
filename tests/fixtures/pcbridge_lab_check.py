@@ -26,12 +26,9 @@ L.CHARTS_DIR = os.path.join(TMP, 'lab_charts')
 K.DATA_DIR = os.path.join(TMP, 'intraday_data')
 K.STATE_PATH = os.path.join(TMP, 'intraday_state.json')
 L.LTF_DIR = os.path.join(K.DATA_DIR, 'ltf')           # (= K.ltf_dir(): the 1-hour / 15-minute files)
-# the owner's rules of 16-Nov-2026 (a gap-down open into the zone: the near stop; no straight fall from the move high): the
-# made charts of sections 2-28 pull back in a straight line and fill on wicks - they check other rules, so they run with both
-# off; section 29 checks them with the real defaults (put back there)
-REAL_16NOV = {'gapAtr': L.DEFAULTS['gapAtr'], 'fallLh': L.DEFAULTS['fallLh']}
-assert REAL_16NOV == {'gapAtr': 0.5, 'fallLh': True} and L.DEFAULTS['gapBelow'] == 2 and L.DEFAULTS['hhMax'] == 0
-L.DEFAULTS['gapAtr'], L.DEFAULTS['fallLh'] = 0.0, False
+# the owner's rules of 16-Nov-2026 (a gap-down open into the zone: the near stop; no straight fall from the move high; the move
+# high's distance) are options, all off by default ("ethuvum default ah on la vaika vendam") - section 29 turns them on
+assert (L.DEFAULTS['gapAtr'], L.DEFAULTS['fallLh'], L.DEFAULTS['hhMax'], L.DEFAULTS['gapBelow']) == (0, False, 0, 2)
 
 
 def P(**kw):
@@ -2401,10 +2398,11 @@ for txt in ('the first candle to come back into the zone', 'On the 4-hour chart 
 # the ATR. or if the gapup opening price is only slighlty above the LL final Low, stop loss should be below the LL final low";
 # RENT 21-Jan-2008 / PSB 12-Nov-2013: "from this steep high, price without forming any Structure touched this Zone in single
 # move ... we don't trade this"; answers: 2 % buffer, the nearer stop, no ATR widening, the zone-top order only; the straight-
-# fall rule always on; "zone top to HH at most Y %" an option, off)
-L.DEFAULTS.update(REAL_16NOV)
+# fall rule first always on; "zone top to HH at most Y %" an option, off; then, after his first runs: "trade numbes koranchuruchu
+# ... ithula update pana rules elathaium oru option ah matum vai. ethuvum default ah on la vaika vendam" - all three off by default)
 D0 = date(2026, 1, 5)                                         # (section 28 used the name for a day ordinal)
-assert P()['gapAtr'] == 0.5 and P()['gapBelow'] == 2 and P()['fallLh'] is True and P()['hhMax'] == 0
+assert P()['gapAtr'] == 0 and P()['gapBelow'] == 2 and P()['fallLh'] is False and P()['hhMax'] == 0
+assert P(fallLh=True)['fallLh'] is True and P(gapAtr=0.5)['gapAtr'] == 0.5
 assert P(gapAtr=9, gapBelow=-1, hhMax=5000)['gapAtr'] == 5 and P(gapBelow=-1)['gapBelow'] == 0 and P(hhMax=5000)['hhMax'] == 1000
 assert L.TRADE_COLS[-3:] == ['fill', 'gapo', 'hh'] and {'straight', 'hhfar'} <= set(L.STRUCT_WHY)
 # the lower high between the move high (candle 0) and the signal candle: a swing high with 2 lower highs each side
@@ -2418,11 +2416,11 @@ assert L.lower_high_between(lambda j: hs[j], 0, 9, n=4) == -1, '4 candles each s
 hs = [120, 117, 118, 118, 116, 114, 112]                      # equal highs: the 2nd is not above the one before it
 assert L.lower_high_between(lambda j: hs[j], 0, 7) == -1
 sj29 = {'mh': 0, 'H': 120.0}
-assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P()) == ''
+assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(fallLh=True)) == ''
 assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(hhMax=19.9)) == 'hhfar'
 assert L.fall_fail(sj29, lambda j: [120, 117, 115, 116, 118, 116, 114, 111, 109][j], 9, 100.0, P(hhMax=20)) == ''
-assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P()) == 'straight'
-assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P(fallLh=False)) == ''
+assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P(fallLh=True)) == 'straight'
+assert L.fall_fail(sj29, lambda j: [120, 118, 116, 114, 112, 110, 108][j], 7, 100.0, P()) == '', 'off by default'
 assert L.fall_fail({'mh': -1, 'H': None}, lambda j: 0, 7, 100.0, P(hhMax=1)) == '', 'no move high: nothing to judge'
 
 # the gap-down open, on simulate: the zone 95 - 99; the candles before stay above it; ATR(14) of candle 2 = (2 + 4 + 3) / 3 = 3
@@ -2433,7 +2431,7 @@ UP29 = [cdl(4, 97.5, 100.5, 97, 100.2), cdl(5, 100.2, 103, 99.5, 102.8)]
 
 def run29(c3, gf=None, after=None, **kw):
     cs = cache_of({'X': (BASE29 + [c3] + (UP29 if after is None else after), [ROW29])})['X']
-    pp = P(**dict(dict(cost=0, lockTarget=False, entry='zone', after='fixed'), **kw))
+    pp = P(**dict(dict(cost=0, lockTarget=False, entry='zone', after='fixed', gapAtr=0.5), **kw))
     atr = L.structure.atr_series([L._f(x) for x in cs.h], [L._f(x) for x in cs.l], [L._f(x) for x in cs.c])
     return L.simulate(cs, ROW29, pp, None, None, atr, None, None, None, gap_final=gf)
 
@@ -2523,26 +2521,28 @@ def job29(sym, rows, **kw):
     return r, [dict(zip(L.TRADE_COLS, x)) for x in r['trades'] if x[0] == sym]
 
 
-r29, t29 = job29('STR', craft29(False), group='fvg')
+r29, t29 = job29('STR', craft29(False), group='fvg', fallLh=True)
 assert t29 == [] and r29['structWhy'].get('straight', 0) >= 1, (r29['structWhy'], t29)
-assert len(job29('STR', craft29(False), group='fvg', fallLh=False)[1]) == 1, 'the same signal without the rule'
-r29, t29 = job29('PAU', craft29(True), group='fvg')
+assert len(job29('STR', craft29(False), group='fvg')[1]) == 1, 'the same signal without the rule (off by default)'
+r29, t29 = job29('PAU', craft29(True), group='fvg', fallLh=True)
 assert len(t29) == 1 and t29[0]['hh'] == round((117.3 - 106) / 106 * 100, 1) and t29[0]['fill'] == '', t29
 assert job29('PAU', craft29(True), group='fvg', hhMax=10)[1] == [] and \
     job29('PAU', craft29(True), group='fvg', hhMax=10)[0]['structWhy'].get('hhfar', 0) >= 1
 assert len(job29('PAU', craft29(True), group='fvg', hhMax=11)[1]) == 1
 assert len(job29('PAU', craft29(True), group='fvg', structure='show')[1]) == 1
 # the charts PDF: the lower high in words, the rule on the cover
-pdf29 = L.run_job(dict(SET29, group='fvg'), charts=L.CHARTS_DIR, name='no straight fall')
+pdf29 = L.run_job(dict(SET29, group='fvg', fallLh=True), charts=L.CHARTS_DIR, name='no straight fall')
 w29 = ' '.join(' '.join(pg) for pg in pdf_pages(os.path.join(L.CHARTS_DIR, pdf29['pdf']['file'])))
 assert 'made a lower high on' in w29 and 'No straight fall: a lower high between the move high and the touch' in w29, w29[:400]
 # the zone-top order on a gap-down open: the first touch of the FVG opens at 105 inside it (the day before closed at 108)
 ATR29 = lambda rows, k: L.structure.atr_series([x[2] for x in rows], [x[3] for x in rows], [x[4] for x in rows])[k]
 c29 = craft29(True, (105, 105.6, 104, 105.3))
 k29 = next(k for k, x in enumerate(c29) if x[1] == 105)
-Z29 = dict(group='touch', entry='zone', stop='zone', targetMode='R')
+Z29 = dict(group='touch', entry='zone', stop='zone', targetMode='R', gapAtr=0.5)
 r29, t29 = job29('GAP', c29, **Z29)
 assert len(t29) == 1, (r29['skipped'], r29['structWhy'])
+t0 = job29('GAP', c29, **dict(Z29, gapAtr=None))[1]           # off by default: the usual stop under the zone
+assert len(t0) == 1 and t0[0]['stopBy'] == '' and t0[0]['stop'] == round(101.3 * 0.995, 2), t0
 g = t29[0]
 assert (g['entry'], g['fill'], g['gapo'], g['stopBy']) == (105.0, 'in', round((105 - 101.3) / 101.3 * 100, 2), 'gapatr'), g
 assert abs(g['stop'] - round(105 - 0.5 * ATR29(c29, k29 - 1), 2)) < 0.006, (g['stop'], ATR29(c29, k29 - 1))

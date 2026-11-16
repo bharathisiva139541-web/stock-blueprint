@@ -524,17 +524,18 @@ SMART LOWER-TIMEFRAME BUY + BOTH SETUPS IN ONE RUN (14-Nov-2026)
    the charts PDF was made. Now the laptop sends only the newest trades that fit (the page says "The trades (the newest N of
    M)"); every figure, table and breakdown still counts every trade, and the charts PDF has them all.
 
-A GAP-DOWN OPEN INTO THE ZONE + NO STRAIGHT FALL (16-Nov-2026, Backtest Lab only)
+A GAP-DOWN OPEN INTO THE ZONE + NO STRAIGHT FALL (16-Nov-2026, Backtest Lab only - all three are OPTIONS, OFF by default)
  - Entry details > "Opened into the zone (gap down): stop" (with "An order waiting at the zone top"): when the touch candle
    does not come down to the zone but OPENS inside it, or at most 2% under its bottom ("... the open at most": 0.5 / 1 / 2 / 3 /
-   5%), the order fills at that open and the stop goes half an ATR under it (0.3 / 0.5 / 0.75 / 1 x ATR) - or just under the
+   5%), the order fills at that open and the stop goes 0.3 / 0.5 / 0.75 / 1 x ATR under it (Off by default) - or just under the
    CHoCH's final low (BOS: the higher low) when that is nearer the buy. The "x ATR, whichever is lower" rule is not used for
-   these. A deeper open is skipped ("opened too far under the zone"). Off = the usual stop as before. The trades table shows
+   these. A deeper open is skipped ("opened too far under the zone"). Off = the usual stop. The trades table shows
    "Order filled" (came down to it / opened in the zone / opened x% under it) and "Stop from" (Gap open: ATR / final low);
    "What worked best" > "How the zone-top order filled" compares them.
- - Always with Market structure "Only my setup": on the way down from the move high (HH) price must make a lower high (a swing
-   high with 2 lower candles on each side) before the signal - a straight fall into the zone is not traded (RENT 21-Jan-2008,
-   PSB 12-Nov-2013). Counted as "price fell straight from the move high (HH) into the zone".
+ - More structure rules > tick box "No straight fall" (Market structure "Only my setup"; off by default): on the way down from
+   the move high (HH) price must make a lower high (a swing high with 2 lower candles on each side) before the signal - a
+   straight fall into the zone is not traded (RENT 21-Jan-2008, PSB 12-Nov-2013). Counted as "price fell straight from the move
+   high (HH) into the zone". (The first delivery had it always on - the trades dropped, so it became a tick box.)
  - More structure rules > "The move high (HH) above the zone top": at most 15 / 20 / 25 / 30 / 40 / 50% (default Off). The
    trades table's "HH above zone %" and "What worked best" > "Move high (HH) above the zone top" help to pick a value.
  - The daily scan, the CHoCH Waiting list and the TradingView script are unchanged (the script's notes say what it does not draw).

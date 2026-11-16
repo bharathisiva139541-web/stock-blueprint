@@ -111,9 +111,11 @@ test('the Lab form -> the TradingView script: every rule lands in its input, the
   assert.match(n.join(' '), /Spring shape rules/);
   assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0 }).length, 2, 'the timeframe + "only entry / stop / target"');
   // the Lab-only rules of 16-Nov-2026 (owner: "Backtest lab la matum"): a gap-down open's near stop, no straight fall, the HH distance
-  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).join(' '), /A gap-down open into the zone: the Lab buys at the open with the stop 0\.5 x ATR under it \(or under the final low when nearer\); the script draws the usual stop under the zone\./);
-  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'close' }).length, 2, 'no gap rule without the zone-top order');
-  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0, structure: 'only', hhMax: 30 }).join(' '),
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone' }).length, 2, 'all three are off by default');
+  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0.5 }).join(' '), /A gap-down open into the zone: the Lab buys at the open with the stop 0\.5 x ATR under it \(or under the final low when nearer\); the script draws the usual stop under the zone\./);
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'close', gapAtr: 0.5 }).length, 2, 'no gap rule without the zone-top order');
+  assert.strictEqual(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', structure: 'only' }).length, 2, 'no straight-fall note while it is off');
+  assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', gapAtr: 0, structure: 'only', hhMax: 30, fallLh: true }).join(' '),
     /Not drawn \(check them on the chart yourself\): the move high at most 30% above the zone top, no straight fall from the move high \(a lower high on the way down\)\./);
   // the lower-timeframe confirmation is said, not drawn (owner, 13-Nov-2026)
   assert.match(PINE.notes({ tf: 'D', group: 'touch', entry: 'zone', ltf: '15m' }).join(' '), /The confirmation on the 15-minute chart is not drawn: the BUY marks are the touches - after one, switch TradingView to the 15m chart/);
