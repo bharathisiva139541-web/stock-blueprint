@@ -196,6 +196,18 @@ for sym, rows in charts.items():
                 k = next(k for k, e in enumerate(st.events) if e[0] == b)
                 assert st.bos_before(k, cc, len(cc)) == x, (sym, n, opt, b, x)
 assert min(seen.values()) > 50, seen
+# a protected high broken after a HIGHER high (d = 0) starts a new fall (owner, 16-Nov-2026, ASHOKA: the base stayed at the
+# all-time low and no CHoCH came on the rest of the chart): up to 150, down to the all-time low 60 (the 150 top was a higher
+# high), back above 150, then 3 lower highs / lows above 60 and a close above the last lower high
+pts16, cs16 = [100, 150, 60, 160, 130, 155, 120, 145, 110, 135, 100, 170], []
+for a16, b16 in zip(pts16, pts16[1:]):
+    cs16 += [a16 + (b16 - a16) * k / 12 for k in range(12)]
+cs16.append(170)
+rows16 = [(x, x + 1, x - 1, x, 1000) for x in cs16]
+hh16, ll16 = [r[1] for r in rows16], [r[2] for r in rows16]
+ev16 = S.choch_events(hh16, ll16, cs16, 5)
+assert [e[5] for e in ev16] == [3] and S.choch_events(hh16, ll16, cs16, 5, opts={'choch': 'protected'}) == ev16
+assert model(rows16, L.clean_params(dict(pivotN=5, downN=1, structure='only', chochMode='protected'))).events == ev16
 # the options change what is found (not the baseline under another name)
 base = seen[str({})]
 assert all(v != base for k, v in seen.items() if k != str({})), seen

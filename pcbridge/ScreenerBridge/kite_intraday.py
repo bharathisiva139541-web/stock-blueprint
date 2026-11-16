@@ -1592,7 +1592,9 @@ CHOCH_BOOLS = (('gapEntry', 'choch_gap_entry', True), ('lineOk', 'choch_line_ok'
                ('bos', 'choch_bos', True))
 CHOCH_PICKS = (('darkCloud', 'choch_dark_cloud', 'any', ('any', 'exclude', 'only')), ('fibPat', 'choch_fib_pattern', 'off', ('off', 'big', 'all')),
                ('zonePick', 'choch_zone_pick', 'second', ('second', 'every')), ('bosKind', 'choch_bos_kind', 'both', ('both', 'first', 'trend')),
-               ('ltf', 'choch_ltf', '15m', ('15m', '1H', 'off')))
+               ('ltf', 'choch_ltf', '15m', ('15m', '1H', 'off')),
+               # owner, 16-Nov-2026 (ASHOKA: his TradingView uses the protected high): which swing high the CHoCH breaks
+               ('chochMode', 'choch_mode', 'last', ('last', 'protected')))
 
 
 def choch_rules(cfg=None):
@@ -1646,7 +1648,14 @@ def choch_rules_words(r):
     out += ', every discount zone' if r.get('zonePick') == 'every' else ', the 2nd discount zone when the move has two (the 1st only watched)'
     if r.get('touchAgain') is False:
         out += ', a zone touched before the CHoCH does not count again'
+    if r.get('chochMode') == 'protected':
+        out += ', the CHoCH breaks the protected high (the swing high before the lowest low)'
     return out
+
+
+def choch_opts(r):
+    """The structure options of the daily scan's rules (structure.py opts): the protected high, else the baseline."""
+    return {'choch': 'protected'} if (r or {}).get('chochMode') == 'protected' else None
 
 
 def _choch_fail(j, r):
@@ -1741,6 +1750,8 @@ def choch_setup(cfg, save_config, ask=input):
             print('  Please type 1 to %d.' % len(opts))
     num('Swing size - candles on each side of a swing high / low (2 to 20)', 'pivotN', 'choch_swing_candles', 2, 20)
     num('Lower highs and lower lows before the CHoCH, at least (1 to 8)', 'downN', 'choch_lower_highs', 1, 8)
+    pick('The CHoCH = a close above', 'chochMode', [('last', 'the last swing high'),
+                                                    ('protected', 'the protected high (the swing high before the lowest low of the fall)')])
     num('Discount - how far down the move (0.382 / 0.5 / 0.618 / 0.705 / 0.786)', 'fib', 'choch_fib', 0.2, 0.95, CHOCH_FIB_CHOICES)
     pick('Which part of the zone must be that deep', 'part', [('mid', 'its middle'), ('top', 'all of it (its top)'), ('bottom', 'any part (its bottom)')])
     pick('The zone formed', 'zoneWhen', [(w, CHOCH_WHEN_WORDS[w]) for w in CHOCH_WHENS])
@@ -1994,7 +2005,7 @@ def choch_setups(full_c, all_c, d, tf, slots, from_iso, cfg=None, st=None, touch
         pat = (_RangeMin([c['c'] for c in all_c]), [z['f'] for z in zones], WINDOW.get(tf, 300), cfg)
     highs = [c['h'] for c in full_c]
     if st is None:
-        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'])
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], [c['c'] for c in full_c], r['pivotN'], choch_opts(r))
     # a zone price touched on / before the CHoCH candle counts again after it (owner, 13-Nov-2026, SWIGGY)
     again = _again_map(full_c, off, st, r, zones, touches)
     tch = touches
@@ -2076,7 +2087,7 @@ def choch_waiting(full_c, all_c, tf, st=None, zones=None, touches=None, rules=No
     highs = [c['h'] for c in full_c]
     closes = [c['c'] for c in full_c]
     if st is None:
-        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], closes, r['pivotN'])
+        st = backtest_lab.structure.Structure(highs, [c['l'] for c in full_c], closes, r['pivotN'], choch_opts(r))
     k = st.active(n, r['downN'])
     if k < 0:
         return None
@@ -2253,11 +2264,11 @@ def analyse(store, since_iso, upto, holidays, timeframes=DEFAULT_TIMEFRAMES, fvg
             tch_c = zone_first_touches(all_c, zs_c) if zs_c else {}
             rules = choch or choch_rules()          # the daily scan's CHoCH rules (config.json / ChochRules.bat)
             fhl = ([c['h'] for c in full_c], [c['l'] for c in full_c], [c['c'] for c in full_c])
-            st_c = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'])
+            st_c = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], choch_opts(rules))
             runs = [(CHOCH_PATTERN, 'choch', st_c, rules)]
             if rules.get('bos', True):
                 # BOS + FVG (13-Nov-2026): the same rules on the BOS move; the BOS structure picked its events already
-                st_b = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], None,
+                st_b = backtest_lab.structure.Structure(fhl[0], fhl[1], fhl[2], rules['pivotN'], choch_opts(rules),
                                                         {'kind': 'bos', 'bos': rules.get('bosKind', 'both'), 'downN': rules['downN'], 'upN': 1})
                 runs.append((BOS_PATTERN, 'bos', st_b, dict(rules, downN=1)))
             found = []
@@ -2506,7 +2517,8 @@ def due(cfg, holidays, now=None, state=None):
 
 def _choch_state(st):
     """The CHoCH rules of the last scan (a state from before 12-Nov-2026 = the defaults)."""
-    return st.get('choch') or choch_rules()
+    # a key added later (e.g. chochMode, 16-Nov-2026) = its default: no rescan just for a new rule left as it was
+    return dict(choch_rules(), **(st.get('choch') or {}))
 
 
 def send_zones(cfg, api, upto, since, zones, mitigated):

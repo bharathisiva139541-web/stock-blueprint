@@ -917,7 +917,8 @@ if sz6 > 0
                 else
                     more := false
             int d = math.min(dh, dl)
-            if d >= 1 and isProt
+            // a broken protected high starts a new fall - also with d = 0 (16-Nov-2026, ASHOKA: the base stayed at the all-time low)
+            if isProt
                 swBase := sz6
             if d >= 1
                 lcB := bar_index
@@ -928,6 +929,11 @@ if sz6 > 0
             if d >= downN and isBosMode
                 line.new(hiBar, lvl, bar_index, lvl, color=color.new(C_CHOCH, 40), width=1, style=line.style_dashed)
                 label.new(bar_index, lvl, "CHoCH (" + str.tostring(d) + ")", style=label.style_label_down, color=color.new(C_CHOCH, 50), textcolor=color.white, size=size.tiny, tooltip="CHoCH " + fmtP(lvl) + " on " + fmtT(time) + " - the trend change; its 1st BOS can be a setup")
+            // a CHoCH with fewer lower highs / lows than the rule asks: shown grey, no setup (owner, 16-Nov-2026, ASHOKA: "why is
+            // the word CHoCH not marked")
+            if d >= 1 and d < downN and not isBosMode
+                line.new(hiBar, lvl, bar_index, lvl, color=color.new(color.gray, 40), width=1, style=line.style_dotted)
+                label.new(bar_index, lvl, "CHoCH (" + str.tostring(d) + ") - needs " + str.tostring(downN), style=label.style_label_down, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny, tooltip="A close above " + (isProt ? "the protected high " : "the last swing high ") + fmtP(lvl) + " on " + fmtT(time) + " after only " + str.tostring(d) + " lower highs / lows - your setting asks for " + str.tostring(downN) + ", so no setup from it")
             if d >= downN and not isBosMode
                 setNew := true
                 nHi := hiBar

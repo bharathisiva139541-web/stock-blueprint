@@ -197,8 +197,10 @@ def choch_events(h, l, c, n, ph=None, pl=None, opts=None, pts=None):
         d = min(dh, dl)
         if d >= 1:
             ev.append([i, hi, lvl, li, lf, d])
-            if protected:
-                base, kmin = len(sw), None
+        if protected:
+            # a broken protected high starts a new fall - also with d = 0 (owner, 16-Nov-2026, ASHOKA: the base stayed at the
+            # all-time low when its protected high broke after a HIGHER high, so no CHoCH came on the whole chart any more)
+            base, kmin = len(sw), None
     return ev
 
 
