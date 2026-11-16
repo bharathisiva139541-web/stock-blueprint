@@ -80,8 +80,9 @@
     pdfDrive: false,
     h4Body: 0.5, h4Zones: 'both', m15Choch: 'show', m15Pivot: 3, m15Down: 2,
     // a gap-down open into the zone (owner, 16-Nov-2026): bought at the open, stop gapAtr x ATR under it or under the final low when
-    // nearer; opens deeper than gapBelow % under the zone skipped; hhMax = the move high at most this % above the zone top (0 off)
-    gapBelow: 2, gapAtr: 0.5, hhMax: 0,
+    // nearer; opens deeper than gapBelow % under the zone skipped; hhMax = the move high at most this % above the zone top (0 off);
+    // fallLh = no straight fall from the move high. All OFF by default (owner, 16-Nov-2026: "ethuvum default ah on la vaika vendam")
+    gapBelow: 2, gapAtr: 0, hhMax: 0, fallLh: false,
     // the small CHoCH above the protected high (owner, 14-Nov-2026: "also add above the protected high in lowertimeframe also")
     ltfChoch: 'last'
   };
@@ -104,7 +105,7 @@
   var SECTIONS = [
     ['structure', 'Market structure - CHoCH / BOS setups', ['structure', 'setup', 'bosKind', 'upN', 'pivotN', 'downN', 'zoneWhen', 'chochAge', 'discount', 'discPart', 'belowChoch', 'firstPull',
       'lineOk', 'lineTol', 'zonePick', 'touchAgain', 'swingMode', 'zzAtr', 'swingAtr', 'chochMode', 'eqAtr', 'discountMax', 'lagMin', 'dispAtr', 'dispVol', 'sweep',
-      'moveVol', 'moveVolN', 'hhMax']],
+      'moveVol', 'moveVolN', 'hhMax', 'fallLh']],
     ['shape', 'Spring candle shape', null],
     ['trend', 'Trend filters - EMA, weekly trend, market', ['emaSupport', 'emaTouch', 'above10', 'above21', 'above50', 'emaStack', 'wkAbove', 'mktIndex', 'mktAbove', 'mktStack']],
     ['zone', 'Zone rules - size, Gap-up zone inside, Fib + pattern, dark cloud', ['zoneMin', 'zoneMax', 'gapEntry', 'fibPat', 'fibLevel', 'fibTol', 'darkCloud']],
@@ -411,8 +412,8 @@
     w.push('the zone not wholly above the CHoCH level and formed in the one swing from the final low to the move high');
     w.push('before the move high at most 2 candles touched the zone and none closed under its middle');
     w.push('no premium zone (above the Fib line) when the signal comes 4 days or less after the CHoCH');
-    // the owner's rules of 16-Nov-2026 (RENT, PSB): no straight fall from the move high; the move high's distance (an option)
-    w.push('on the way down from the move high price made a lower high (a swing high with 2 lower candles each side) before the signal - no straight fall into the zone');
+    // the owner's rules of 16-Nov-2026 (RENT, PSB) - options: no straight fall from the move high; the move high's distance
+    if (p.fallLh) w.push('on the way down from the move high price made a lower high (a swing high with 2 lower candles each side) before the signal - no straight fall into the zone');
     if (Number(p.hhMax)) w.push('the move high (HH) at most ' + pc(p.hhMax) + '% above the zone top');
     if (p.group === 'touch') {
       w.push(p.touchAgain === false ? 'a zone price touched before the CHoCH does not count again' :
@@ -693,7 +694,8 @@
         field('The CHoCH candle (displacement)', sel('dispAtr', f.dispAtr)) + field('… and its volume', sel('dispVol', f.dispVol)) +
         field('Volume in the CHoCH move', sel('moveVol', f.moveVol), 'wide') + (Number(f.moveVol) ? field('… how many', sel('moveVolN', f.moveVolN)) : '') +
         field('The move high (HH) above the zone top', sel('hhMax', f.hhMax), 'wide') +
-        '<div class="field lab-checks">' + check('sweep', f.sweep, 'The final low swept the low before it (wick under, closed back above)') + '</div></div>' : '') +
+        '<div class="field lab-checks">' + check('sweep', f.sweep, 'The final low swept the low before it (wick under, closed back above)') +
+        check('fallLh', f.fallLh, 'No straight fall: a lower high (2 candles each side) between the move high and the signal') + '</div></div>' : '') +
       '<p class="sub">A swing high = a candle whose high is above the candles on both sides (known only after those candles closed - the backtest never looks ahead). ' +
       'CHoCH = the first candle that CLOSES above the last swing high after the lower highs and lower lows; BOS = after it, the first close above the highest swing high since. ' +
       'The move = from the CHoCH\'s final low to the highest high before the signal candle (what you draw the Fibonacci on at that moment): 50% down = its middle. ' +
@@ -702,8 +704,8 @@
       'BOS + FVG: the same rules on a BOS move - from the higher low before the break to the highest high since; the setup is over at a close under that higher low ' +
       'or at the next BOS. "The CHoCH" in the boxes above means the BOS then. Both ticked: every zone touch is checked as CHoCH + FVG first, then as BOS + FVG ' +
       '(one trade a candle) - the result splits them ("What worked best" → Setup). ' +
-      'Always with "Only my setup": on the way down from the move high price must make a lower high (a swing high with 2 lower candles each side) before ' +
-      'the signal - a straight fall into the zone is not traded. ' +
+      '"No straight fall": on the way down from the move high price must make a lower high (a swing high with 2 lower candles each side) before ' +
+      'the signal - a straight fall into the zone is not traded (off unless ticked). ' +
       'The daily scan\'s lists use the values set on your laptop with <b>ChochRules.bat</b>.</p>';
   }
 

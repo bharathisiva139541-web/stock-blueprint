@@ -288,14 +288,16 @@ DEFAULTS = {
     # the zone-top order only): with entry 'zone', a touch candle that OPENS under the zone top - inside the zone, or at most
     # gapBelow % under its bottom - is bought at its open with the stop gapAtr x ATR(14) (of the candle before) under the buy,
     # or just under the CHoCH's final low (a BOS run: the higher low; stopBuf %) when that is nearer the buy; an open deeper
-    # than gapBelow % = skipped ('gapdeep'); gapAtr 0 = off (the run's own stop as before - an open under it = 'gap')
-    'gapBelow': 2.0, 'gapAtr': 0.5,
+    # than gapBelow % = skipped ('gapdeep'); gapAtr 0 = off (the run's own stop as before - an open under it = 'gap').
+    # OFF BY DEFAULT (owner, 16-Nov-2026, after his first runs: "trade numbes koranchuruchu. last ah update pana rules elathaium oru
+    # option ah matum vai. ethuvum default ah on la vaika vendam") - the page offers 0.3 / 0.5 / 0.75 / 1 x ATR
+    'gapBelow': 2.0, 'gapAtr': 0.0,
     # hhMax (owner, 16-Nov-2026, RENT 21-Jan-2008: "Matter is, from the Zone top to HH-move high is 45%"): the move high (HH) at
     # most hhMax % above the zone top (0 = off; structure 'only' - the straight-fall rule beside it is always on, FALL_PIVOT)
     'hhMax': 0.0,
-    # fallLh = the straight-fall rule (always on - the page has no box; the TradingView script check turns it off: the script
-    # does not draw it)
-    'fallLh': True,
+    # fallLh = the straight-fall rule (FALL_PIVOT; structure 'only') - an option, off by default (owner, 16-Nov-2026: first
+    # always on, then "ethuvum default ah on la vaika vendam")
+    'fallLh': False,
 }
 # the program's pattern engine - every result carries it, so the page can tell an older laptop program
 ENGINE = {'version': pattern_registry.VERSION, 'patterns': len(pattern_registry.implemented())}
@@ -314,7 +316,7 @@ MIT_MAX = 2
 PREM_FAST_DAYS = 4
 # THE STRAIGHT-FALL RULE (owner, 16-Nov-2026, RENT 21-Jan-2008 / PSB 12-Nov-2013: "from this steep high, price without forming
 # any Structure touched this Zone in single move. No LH,LL,..continuous selling candles only until touching the Zone. we don't
-# trade this"; always on with structure 'only' - "Compare panra mari vendam"): between the move high (HH) and the signal candle
+# trade this"; option fallLh with structure 'only', off by default since the owner's first runs): between the move high (HH) and the signal candle
 # price must make a lower high = a swing high with FALL_PIVOT candles each side (higher than the ones before, at / above the
 # ones after), all of them before the signal candle
 FALL_PIVOT = 2
@@ -2739,7 +2741,7 @@ def fall_fail(sj, h_at, i, zt, P):
         return ''
     if P.get('hhMax') and zt and (_f(H) - zt) / zt * 100 > P['hhMax'] + 1e-9:
         return 'hhfar'
-    if P.get('fallLh', True) and lower_high_between(h_at, mh, i) < 0:
+    if P.get('fallLh') and lower_high_between(h_at, mh, i) < 0:
         return 'straight'
     return ''
 
