@@ -186,7 +186,8 @@ function createEnv(workbook, opts) {
     const size = spec.size ? { rows: spec.size.rows, cols: spec.size.cols } : null;
     let hidden = !!spec.hidden;
     const notes = {};   // 'r,c' (0-based) -> cell note
-    tabs[spec.name] = { grid: grid, size: size, notes: notes, hidden: function () { return hidden; } };
+    const formulas = Object.assign({}, spec.formulas || {});   // 'r,c' (0-based) -> the formula written there (16-Nov-2026)
+    tabs[spec.name] = { grid: grid, size: size, notes: notes, formulas: formulas, hidden: function () { return hidden; } };
     function lastRow() {
       for (let r = grid.length - 1; r >= 0; r--) if (grid[r].some(function (v) { return v !== ''; })) return r + 1;
       return 0;
@@ -243,8 +244,8 @@ function createEnv(workbook, opts) {
         getDisplayValue: function () { return range.getDisplayValues()[0][0]; },
         getNumberFormats: function () { seen('formats'); return grid2(fmtOf); },
         getNumberFormat: function () { return fmtOf(row - 1, col - 1); },
-        getFormulas: function () { return grid2(function () { return ''; }); },
-        getFormula: function () { return ''; },
+        getFormulas: function () { return grid2(function (r, c) { return formulas[r + ',' + c] || ''; }); },
+        getFormula: function () { return formulas[(row - 1) + ',' + (col - 1)] || ''; },
         getRow: function () { return row; },
         getColumn: function () { return col; },
         getNumRows: function () { return nr; },
@@ -258,8 +259,12 @@ function createEnv(workbook, opts) {
         getSheet: function () { return sheet; },
         setValues: function (v) { write('values', v); return proxyRange; },
         setValue: function (v) { write('values', [[v]]); return proxyRange; },
-        setFormula: function () { write('formula'); return proxyRange; },
-        setFormulas: function () { write('formula'); return proxyRange; },
+        setFormula: function (f) { write('formula'); formulas[(row - 1) + ',' + (col - 1)] = String(f); return proxyRange; },
+        setFormulas: function (fs) {
+          write('formula');
+          (fs || []).forEach(function (line, r) { (line || []).forEach(function (f, c) { formulas[(row - 1 + r) + ',' + (col - 1 + c)] = String(f); }); });
+          return proxyRange;
+        },
         setNumberFormat: function () { write('format'); return proxyRange; },
         setNumberFormats: function () { write('format'); return proxyRange; },
         clear: function () { write('clear'); return proxyRange; },
@@ -585,7 +590,7 @@ function createEnv(workbook, opts) {
   env.sheet = function (name) {
     const t = tabs[name];
     if (!t || !sheets.some(function (x) { return x.getName() === name; })) return null;
-    return { rows: t.grid, size: t.size, hidden: t.hidden(), notes: t.notes };
+    return { rows: t.grid, size: t.size, hidden: t.hidden(), notes: t.notes, formulas: t.formulas };
   };
   return env;
 }

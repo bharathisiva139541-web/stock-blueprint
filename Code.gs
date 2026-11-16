@@ -8710,7 +8710,7 @@ function ab_bridgeWanted_(opts) {
       const rd = ab_rsToDate_(data[r][layout.resultDate]);
       if (rd) {
         const rdKey = ab_rsDayKey_(rd);
-        const age = ab_rsDaysBetween_(rdKey, todayKey);
+        const age = ab_rsAge_(sym, rdKey, todayKey);       // (Code2.gs: a result date added late counts from that day)
         if (age >= 0 && age <= AB_RS_MAX_WAIT_DAYS) {
           const q = ab_rsExpectedQuarter_(rd);
           const t = tr.byKey[sym + '|' + q.toUpperCase()];

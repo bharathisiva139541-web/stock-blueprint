@@ -422,6 +422,11 @@ BACKTEST LAB - YOUR OWN RULES ON THE LONG HISTORY (09-Nov-2026)
    TradingView script (copy the script again from the Lab page). ChochRules.bat now asks (3rd question) "The CHoCH = a
    close above": 1 = the last swing high (as before), 2 = the protected high - choose 2 if your TradingView uses it, so
    the website's CHoCH lists match your chart.
+ - 16-Nov-2026 (later) - RESULT DATES FROM THE FILINGS: some stocks had no Result Date in Main although they had filed
+   their results (the Results tab only knew the pasted calendar + NSE's upcoming meetings). Now every round also reads
+   NSE's result filings of the whole results season once (a few days a request, 3 requests a round; AnnouncementsNow.bat
+   does all at once), and the sheet adds a Results tab row for every Main stock that filed but had no date - Results Day
+   then fetches and writes its figures, even when the result date is more than 21 days old.
  - 16-Nov-2026 (later) - MY DAILY SCAN FROM THE WEBSITE: no more ChochRules.bat. Open the website > Backtest Lab: set
    the rules in the form (test them with Run), then in the card "My daily scan" tick what the evening scan lists
    (My CHoCH + FVG setup, My BOS + FVG setup - tick both for them together -, FVG + Spring, Gap-up FVG + Spring,
