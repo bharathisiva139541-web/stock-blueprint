@@ -683,6 +683,14 @@
       if (a.getAttribute('data-tab') === r.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     var app = $('#app');
+    // a quiet redraw (new prices every minute or few, a changed setting) keeps the viewer where they were reading (owner,
+    // 17-Nov-2026: "page la middle part pathutu irukumpothe, page top ku move aagiruthu"): the page keeps its height while
+    // it is drawn again - parts that come a moment later (the candles, a table) no longer shrink it, which pulled the
+    // window back to the top - the scroll position is put back, and each table stays on its page (ui.routeStart)
+    var quietY = quiet === true ? window.scrollY : null;
+    if (quiet === true) holdHeight(app);
+    else releaseHeight(app);
+    if (ui.routeStart) ui.routeStart(quiet === true);
     var host = document.createElement('div');   // fresh element per visit: no listener build-up
     host.className = quiet === true ? 'page' : 'page enter';
     app.replaceChildren(host);
@@ -692,11 +700,29 @@
       host.innerHTML = '<div class="note bad">This section could not be shown: ' + esc(err.message) + '</div>';
       if (window.console) console.error(err);
     }
+    if (quietY != null) {
+      window.scrollTo(0, quietY);
+      // the parts drawn a moment later: put the position back once more when they are in (unless the viewer scrolled since)
+      var at = window.scrollY;
+      setTimeout(function () { if (window.scrollY === at && Math.abs(window.scrollY - quietY) > 1) window.scrollTo(0, quietY); }, 600);
+    }
     var cur = document.querySelector('.tabs a[aria-current]');
-    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (quiet !== true && cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     document.title = (r.id === 'overview' ? '' : (cur ? cur.textContent + ' · ' : '')) + 'Stock Blueprint';
   }
   SB.route = route;
+  var heldTimer = null;
+  function holdHeight(app) {
+    var h = app.offsetHeight;
+    if (h > 0) app.style.minHeight = h + 'px';
+    clearTimeout(heldTimer);
+    heldTimer = setTimeout(function () { releaseHeight(app); }, 4000);
+  }
+  function releaseHeight(app) {
+    clearTimeout(heldTimer);
+    heldTimer = null;
+    app.style.minHeight = '';
+  }
 
   // ---------- global search ----------
   function initSearch() {

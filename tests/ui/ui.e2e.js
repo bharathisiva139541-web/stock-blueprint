@@ -625,6 +625,42 @@ function check(name, fn) {
           await page.waitForFunction(() => location.hash === '#today/final' && /^0 of 0/.test(document.querySelector('#td-count').textContent), null, { timeout: 15000 });
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
+        // owner, 17-Nov-2026: "page la middle part pathutu irukumpothe, page top ku move aagiruthu" - a quiet redraw (new prices
+        // every minute or few) must keep the scroll position (pages whose parts come a moment later too) and each table's page
+        await check('a quiet redraw keeps the scroll position and the table page (#results, #edge, #signals, #suggestions, #watchlist)', async () => {
+          errors.length = 0;
+          for (const pg of ['results', 'edge', 'signals', 'suggestions', 'watchlist']) {
+            await page.goto(base + '#' + pg, { waitUntil: 'load' });
+            await page.waitForTimeout(1500);
+            const r = await page.evaluate(async () => {
+              const pager = document.querySelector('#app .pager [data-page="1"]:not([disabled])');
+              let pagerText = null;
+              if (pager) { pager.click(); pagerText = document.querySelector('#app .pager span').textContent; }
+              const max = document.documentElement.scrollHeight - window.innerHeight;
+              const want = Math.round(max * 0.6);
+              window.scrollTo(0, want);
+              const before = window.scrollY;
+              window.SB.route(true);
+              const right = window.scrollY;
+              await new Promise((ok) => setTimeout(ok, 1200));
+              const later = window.scrollY;
+              const p2 = pager ? document.querySelector('#app .pager span') : null;
+              return { max, before, right, later, pagerText, pagerAfter: p2 ? p2.textContent : null };
+            });
+            assert.ok(r.max > 300, pg + ': a long page ' + JSON.stringify(r));
+            assert.ok(Math.abs(r.right - r.before) <= 2 && Math.abs(r.later - r.before) <= 2, pg + ': the scroll position stays ' + JSON.stringify(r));
+            if (r.pagerText) {
+              assert.ok(!/^1–/.test(r.pagerText), pg + ': on the 2nd page ' + r.pagerText);
+              assert.strictEqual(r.pagerAfter, r.pagerText, pg + ': the first table stays on its page ' + JSON.stringify(r));
+            }
+          }
+          // a real navigation still starts a table on its first page
+          await page.goto(base + '#overview', { waitUntil: 'load' });
+          await page.goto(base + '#watchlist', { waitUntil: 'load' });
+          await page.waitForTimeout(800);
+          assert.match(await page.$eval('#app .pager span', (x) => x.textContent), /^1–/);
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
         // owner, 17-Nov-2026: "Entha parameter edukurathu ... epdi edutha rally kana possibility iruku. make a separate page alone for this"
         await check('results edge: the season learned on the copy\'s data, the rally rule recomputes it, features / decide / every result', async () => {
           errors.length = 0;

@@ -235,6 +235,14 @@
   }
   function colKind(c) { return /^(num|pct|price)$/.test(c.type) ? 'num' : /^(date|datetime)$/.test(c.type) ? 'date' : 'text'; }
   function strHash(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  // a quiet redraw of the page (new prices, SB.route(true)) keeps each table on the page the viewer was reading (owner,
+  // 17-Nov-2026: "page la middle part pathutu irukumpothe, page top ku move aagiruthu"): the page number per table (its saved
+  // key + its place on the page), handed back to a table mounted within QUIET_MS of a quiet route
+  var PAGE_MEMO = {}, routeOrd = 0, quietUntil = 0, QUIET_MS = 4000;
+  function routeStart(quiet) {
+    routeOrd = 0;
+    quietUntil = quiet ? Date.now() + QUIET_MS : 0;
+  }
   function Table(opts) {
     this.o = opts;
     this.rows = opts.rows || [];
@@ -252,7 +260,13 @@
   Table.prototype.val = function (c, r) { return c.get ? c.get(r) : r[c.key]; };
   Table.prototype.col = function (k) { return this.o.columns.filter(function (x) { return x.key === k; })[0] || null; };
   Table.prototype.shown = function () { return this.o.columns.filter(function (c) { return !c.csvOnly && c.label; }); };
-  Table.prototype.setRows = function (rows) { this.rows = rows; this.page = 0; this.draw(); };
+  Table.prototype.setRows = function (rows) {
+    this.rows = rows;
+    // the page of a quiet redraw only for the rows set while it is drawn (a filter the viewer picks later starts at page 1)
+    if (this.restorePage != null && Date.now() < quietUntil) this.page = this.restorePage; else this.page = 0;
+    this.restorePage = null;
+    this.draw();
+  };
   /** One condition: true when the row passes (a condition still being typed passes). */
   Table.prototype.test = function (f, r) {
     var c = this.col(f.key);
@@ -368,6 +382,9 @@
   Table.prototype.mount = function (host) {
     this.host = host;
     var self = this;
+    this.memoKey = this.storeKey() + '#' + (routeOrd++);
+    this.restorePage = Date.now() < quietUntil && PAGE_MEMO[this.memoKey] ? PAGE_MEMO[this.memoKey] : null;
+    if (this.restorePage != null) this.page = this.restorePage;    // a table made with its rows (no setRows) too
     host.__sbTable = this;                       // re-mounting on the same host: only the newest table reacts
     host.innerHTML = '<div class="tbl-tools"></div><div class="tbl-panel" id="' + this.id + '-panel" hidden></div>' +
       '<div class="tbl-panel tbl-cols" id="' + this.id + '-cols" hidden></div><div class="tbl-body"></div>';
@@ -637,6 +654,7 @@
     var pages = Math.max(1, Math.ceil(rows.length / this.size));
     if (this.page >= pages) this.page = pages - 1;
     if (this.page < 0) this.page = 0;
+    if (this.memoKey) PAGE_MEMO[this.memoKey] = this.page;
     var slice = rows.slice(this.page * this.size, (this.page + 1) * this.size);
     var multi = this.sorts.length > 1;
     var h = '<div class="tbl-wrap"><table class="tbl"><thead><tr>';
@@ -866,7 +884,7 @@
   SB.ui = {
     $: $, esc: esc, isNum: isNum, objRows: objRows, parseDate: parseDate, iso: iso, dayDiff: dayDiff, F: F,
     deltaHtml: deltaHtml, badge: badge, logoHtml: logoHtml, logoUrls: logoUrls, flagPills: flagPills, stockCell: stockCell, stateBadge: stateBadge, leastFresh: leastFresh,
-    Table: Table, bars: bars, lineChart: lineChart, tile: tile, card: card, chips: chips, bindChips: bindChips,
+    Table: Table, routeStart: routeStart, bars: bars, lineChart: lineChart, tile: tile, card: card, chips: chips, bindChips: bindChips,
     textMatch: textMatch, skeleton: skeleton, store: store, toCsv: toCsv, download: download, loadScript: loadScript
   };
 })();

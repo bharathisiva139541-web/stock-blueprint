@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ta">
+<head>
+<meta charset="utf-8">
+<title>Results Edge - எப்படி வேலை செய்கிறது</title>
+<style>
+@page { size: A4; margin: 14mm 13mm 16mm; }
+* { box-sizing: border-box; }
+body { font-family: 'FreeSans', 'Noto Sans Tamil', 'Latha', 'Nirmala UI', sans-serif; color: #1c2430; font-size: 12.4px; line-height: 1.65; margin: 0; }
+h1 { font-size: 24px; margin: 0 0 4px; color: #1d4ed8; }
+h2 { font-size: 17px; margin: 22px 0 6px; color: #0f172a; border-bottom: 2px solid #dbeafe; padding-bottom: 3px; page-break-after: avoid; }
+h3 { font-size: 14px; margin: 14px 0 4px; color: #1e293b; page-break-after: avoid; }
+p { margin: 5px 0 7px; }
+ul, ol { margin: 4px 0 8px; padding-left: 20px; }
+li { margin: 2px 0; }
+.sub { color: #64748b; font-size: 11.5px; }
+.box { border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 12px; margin: 9px 0; background: #f8fafc; page-break-inside: avoid; }
+.ex { border-left: 4px solid #2563eb; background: #eff6ff; }
+.warn { border-left: 4px solid #d97706; background: #fffbeb; }
+.good { border-left: 4px solid #16a34a; background: #f0fdf4; }
+table { border-collapse: collapse; width: 100%; margin: 6px 0 10px; font-size: 11.6px; page-break-inside: avoid; }
+th, td { border: 1px solid #cbd5e1; padding: 4px 7px; text-align: left; vertical-align: top; }
+th { background: #e2e8f0; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+.yes { color: #15803d; font-weight: bold; }
+.no { color: #b91c1c; font-weight: bold; }
+.wait { color: #1d4ed8; font-weight: bold; }
+code { font-family: 'DejaVu Sans Mono', monospace; font-size: 11px; background: #f1f5f9; padding: 0 3px; border-radius: 3px; }
+.cover { border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.pb { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Results Edge - எப்படி வேலை செய்கிறது</h1>
+  <p>Website-இல் இடது menu → <b>Results Edge</b>. இந்த season-இல் வந்த results-ஐ வைத்து, results வந்த பிறகு எந்த stock-கள் rally ஆனன, அவற்றில் எந்த parameter-கள் பொதுவாக இருந்தன என்று இந்த page கணக்கிடுகிறது. ஒவ்வொரு புதிய result-க்கும் ஒரு <b>Rally chance %</b> தருகிறது.</p>
+  <p class="sub">இந்த PDF-இல் உள்ள உதாரணங்கள் உங்கள் settings-ஐ வைத்தவை: Quick jump 8% within <b>the entry session</b> · Steady rise 15% after <b>5 sessions</b> · A rally = <b>either one</b> · A group needs <b>15 results</b> · Stocks = <b>every size</b>.</p>
+</div>
+
+<h2>1. Data எங்கிருந்து வருகிறது</h2>
+<ul>
+  <li><b>Results Performance tab</b> (sheet): Rev / NP QoQ, YoY %, OPM QoQ, OPM YoY, Results Verdict, result எப்போது வந்தது (Announced), எந்த session react செய்யும் (Reaction From).</li>
+  <li><b>Main tab</b>: TTM EPS, TTM target, industry PE, EPS growth %, FII, Promoter, OPM Qtr YoY, market cap, sector.</li>
+  <li><b>Results Tracker</b>: Flags (profit faster than revenue, exceptional gain, other income high, revenue up profit down).</li>
+  <li><b>Daily candles</b> (History30 + History60, சுமார் 60 நாட்கள்): வாங்கும் விலை, பிறகு என்ன நடந்தது, results-க்கு முன் விலை எப்படி இருந்தது.</li>
+</ul>
+<p>எல்லாக் கணக்கும் உங்கள் browser-இலேயே நடக்கிறது. Sheet-இன் data மாறும் ஒவ்வொரு முறையும் (feed refresh) page மீண்டும் கணக்கிடுகிறது. Sheet-இல் எதுவும் மாற்றப்படுவதில்லை.</p>
+
+<h2>2. வாங்கும் விலை (Entry)</h2>
+<p>உங்கள் விதிப்படி: result வந்ததற்குப் பிறகு <b>market முதன்முதலில் react செய்யக்கூடிய session-இன் OPEN விலை</b>.</p>
+<table>
+  <tr><th>Result வந்த நேரம்</th><th>உதாரணம்</th><th>Entry</th></tr>
+  <tr><td>Market திறப்பதற்கு முன் (Before market, 09:15-க்கு முன்)</td><td>திங்கள் 08:40</td><td>திங்கள் open</td></tr>
+  <tr><td>Market நேரத்தில் (Market hours, 09:15 - 15:30)</td><td>திங்கள் 11:05</td><td>திங்கள் open (உங்கள் விதி: "same day morning")</td></tr>
+  <tr><td>Market முடிந்த பிறகு (After market, 15:30-க்கு பிறகு)</td><td>திங்கள் 17:20</td><td>செவ்வாய் open</td></tr>
+  <tr><td>விடுமுறை / சனி / ஞாயிறு (Market closed)</td><td>சனி 14:00</td><td>அடுத்த trading நாள் open</td></tr>
+</table>
+<p class="sub">Sheet-இன் "Reaction From" column இதையே சொல்கிறது. அது இல்லாத பழைய row-களுக்கு Result Date + Announced நேரம் வைத்துக் கணக்கிடப்படும்.</p>
+
+<h2>3. Outcome - ஒரு result "rally" ஆனதா? (உங்கள் settings)</h2>
+<div class="box">
+  <p><b>Quick jump:</b> entry session-இன் HIGH, entry விலையைவிட <b>8% அல்லது அதற்கு மேல்</b> போனால். ("within the entry session" = வாங்கிய அதே நாள் மட்டும். "2 sessions" என்றால் வாங்கிய நாள் + மறுநாள்.)</p>
+  <p><b>Steady rise:</b> <b>5-வது session-இன் CLOSE</b> entry விலையைவிட <b>15% அல்லது அதற்கு மேல்</b> இருந்தால். வாங்கிய நாள் = session 1.</p>
+  <p><b>A rally = either one:</b> இரண்டில் ஏதாவது ஒன்று நடந்தால் rally. ("quick jump only" / "steady rise only" என்றும் மாற்றலாம்.)</p>
+</div>
+
+<div class="box ex">
+  <h3>உதாரணம் - entry ₹200</h3>
+  <p>Quick jump-க்கு entry நாளின் high <b>₹216</b> (200 × 1.08) அல்லது மேல் போக வேண்டும். Steady rise-க்கு 5-வது session close <b>₹230</b> (200 × 1.15) அல்லது மேல் இருக்க வேண்டும்.</p>
+  <table>
+    <tr><th>Stock</th><th class="n">Entry நாள் high</th><th class="n">5-வது session close</th><th>முடிவு</th></tr>
+    <tr><td>A</td><td class="n">₹219 (+9.5%)</td><td class="n">₹205</td><td class="yes">Rallied · quick jump</td></tr>
+    <tr><td>B</td><td class="n">₹206 (+3%)</td><td class="n">₹232 (+16%)</td><td class="yes">Rallied · steady rise</td></tr>
+    <tr><td>C</td><td class="n">₹218 (+9%)</td><td class="n">₹236 (+18%)</td><td class="yes">Rallied · jump + steady rise</td></tr>
+    <tr><td>D</td><td class="n">₹210 (+5%)</td><td class="n">₹221 (+10.5%)</td><td class="no">No rally</td></tr>
+    <tr><td>E</td><td class="n">₹220 (+10%)</td><td class="n">(இதுவரை 3 session மட்டும்)</td><td class="wait">Still running · jumped already</td></tr>
+  </table>
+</div>
+
+<div class="box warn">
+  <p><b>E ஏன் இன்னும் கணக்கில் இல்லை?</b> ஒரு result அதன் <b>முழு window</b> (இங்கே 5 session) முடிந்த பிறகே கணக்கில் சேரும். இல்லையென்றால் jump ஆனவை சீக்கிரம் "rally" என்று சேர்ந்துவிடும்; rally ஆகாதவை 5 நாள் காத்திருக்கும். அதனால் ஆரம்பத்தில் rally சதவீதம் பொய்யாக அதிகமாகத் தெரியும். E-இன் 5-வது session முடிந்ததும் அது Rallied ஆகிவிடும் (jump ஏற்கனவே நடந்துவிட்டது).</p>
+</div>
+
+<p>ஒவ்வொரு result-க்கும் கூடவே காட்டப்படுபவை:</p>
+<ul>
+  <li><b>Best jump</b>: quick-jump window-க்குள் (இங்கே entry நாள்) உயர்ந்த high vs entry %.</li>
+  <li><b>5-session move</b>: 5-வது session close vs entry %.</li>
+  <li><b>Max gain / Max drawdown</b>: 5 session-க்குள் உயர்ந்த high / தாழ்ந்த low vs entry %.</li>
+</ul>
+<table>
+  <tr><th>Status</th><th>அர்த்தம்</th></tr>
+  <tr><td class="yes">Rallied</td><td>window முடிந்தது, விதி நிறைவேறியது</td></tr>
+  <tr><td class="no">No rally</td><td>window முடிந்தது, விதி நிறைவேறவில்லை</td></tr>
+  <tr><td class="wait">Still running</td><td>window இன்னும் முடியவில்லை (கணக்கில் இல்லை)</td></tr>
+  <tr><td>Not traded yet</td><td>entry session இன்னும் வரவில்லை (இன்று after-market result → நாளை entry). வாங்கும் விலைக்குப் பதில் இப்போதைய விலை வைத்து score.</td></tr>
+</table>
+
+<h2 class="pb">4. Parameters - எதையெல்லாம் பார்க்கிறது</h2>
+<p>ஒவ்வொரு parameter-உம் சில <b>குழுக்களாக (groups)</b> பிரிக்கப்படுகிறது. உதாரணம்: NP YoY % → "below -20%", "-20% to 0%", "0% to 15%", "15% to 40%", "40% to 100%", "over 100%".</p>
+<table>
+  <tr><th>வகை</th><th>Parameters</th><th>எந்த மதிப்பு</th></tr>
+  <tr><td>Results</td><td>NP YoY %, NP QoQ %, Revenue YoY %, Revenue QoQ %, EPS growth %, Results verdict</td><td>இந்த quarter-இன் results</td></tr>
+  <tr><td>Margins</td><td>OPM QoQ, OPM YoY (yearly), OPM Qtr YoY</td><td>இந்த quarter-இன் words</td></tr>
+  <tr><td>Flags</td><td>Profit faster than revenue, Revenue up profit down, Exceptional gain, Other income high</td><td>Results Tracker</td></tr>
+  <tr><td>Valuation</td><td>PE, PE vs industry PE, PEG, Upside to the TTM target, TTM Signal</td><td><b>வாங்கும் விலையில்</b> கணக்கிடப்படுகிறது</td></tr>
+  <tr><td>Holders</td><td>FII holding, Promoter holding</td><td>Main-இன் இப்போதைய மதிப்பு</td></tr>
+  <tr><td>Size</td><td>Market cap: Large ≥ ₹20,000 Cr · Mid ₹5,000–20,000 Cr · Small ₹1,000–5,000 Cr · Micro &lt; ₹1,000 Cr</td><td>வாங்கும் விலையில்</td></tr>
+  <tr><td>Timing</td><td>When the results came (before market / market hours / after market or closed)</td><td>NSE filing நேரம்</td></tr>
+  <tr><td>Price</td><td>Opening gap (entry நாள்), 20 session-இல் விலை மாற்றம் (results-க்கு முன்), 60-day high-இலிருந்து எவ்வளவு கீழே, 20 / 50-day average-க்கு மேலா கீழா, முந்தைய நாள் volume vs 20-day average</td><td><b>Entry-க்கு முந்தைய candles மட்டும்</b></td></tr>
+  <tr><td>Sector</td><td>Macro sector</td><td>Main</td></tr>
+</table>
+<div class="box ex">
+  <p><b>PE at the entry உதாரணம்:</b> entry ₹200, TTM EPS ₹8 → PE = 200 ÷ 8 = <b>25</b> → group "15 to 30". Upside: TTM target ₹260 → (260 ÷ 200 − 1) = <b>+30%</b> → group "15% to 40%".</p>
+</div>
+<div class="box warn">
+  <p>நீங்கள் "freeze வேண்டாம்" என்று சொன்னதால் <b>FII, Promoter, EPS growth, OPM Qtr YoY</b> ஆகியவை Main-இன் இப்போதைய மதிப்புகள். PE, PEG, Upside, TTM Signal, Market cap ஆகியவை வாங்கும் விலையில் கணக்கிடப்படுகின்றன. Price parameter-கள் entry-க்கு <b>முன்</b> உள்ள candles-இலிருந்து மட்டுமே வருகின்றன, அதனால் எதிர்கால விலை கலக்காது.</p>
+</div>
+
+<h2>5. "What mattered most" - ஒவ்வொரு parameter-ஐயும் தனியாகச் சோதித்தல்</h2>
+<p><b>Season rate:</b> முடிந்த results-இல் எத்தனை சதவீதம் rally ஆனது. உதாரணம்: 1,200 முடிந்தவை, 300 rally → <b>25%</b>. இதுதான் மற்றவற்றை ஒப்பிடும் அடிப்படை எண்.</p>
+<p>ஒவ்வொரு குழுவுக்கும் காட்டப்படுபவை:</p>
+<table>
+  <tr><th>Column</th><th>அர்த்தம்</th><th>உதாரணம் (NP YoY over 100%)</th></tr>
+  <tr><td>Results / Rallied</td><td>அந்தக் குழுவில் எத்தனை, அதில் எத்தனை rally</td><td>200 / 90 = <b>45%</b></td></tr>
+  <tr><td>Likely range</td><td>90% நம்பகமான வரம்பு (Wilson). குறைவான results என்றால் வரம்பு அகலமாக இருக்கும்.</td><td>39% – 51%</td></tr>
+  <tr><td>vs the rest</td><td>மற்ற results-ஐவிட தெளிவாக மேலா (Better) / கீழா (Worse) / அதிர்ஷ்டமாக இருக்கலாம் (Could be chance). <b>15 results-க்குக் குறைவு = Too few</b>.</td><td class="yes">Better</td></tr>
+  <tr><td>Earlier / Later part</td><td>Season-இன் முதல் 2/3 (entry நாள் வரிசையில்) / கடைசி 1/3 - இரண்டிலும் தனியாக rally %</td><td>46% / 43%</td></tr>
+  <tr><td>Held</td><td>இரண்டு பகுதியிலும் season rate-க்கு மேல் (அல்லது கீழ்) இருந்ததா</td><td class="yes">Yes</td></tr>
+</table>
+<div class="box">
+  <p><b>"Real" badge</b> வர மூன்றும் வேண்டும்: (1) குழுக்களுக்கு இடையிலான வித்தியாசம் அதிர்ஷ்டத்தால் வர வாய்ப்பு <b>0.3%-க்கும் குறைவு</b> (chi-square test). சுமார் 30 parameter-களைச் சோதிப்பதால் இந்தக் கடுமை தேவை. (2) அந்த parameter குறைந்தது <b>30 results-இல்</b> (15 × 2) இருக்க வேண்டும். (3) ஒரு Better அல்லது Worse குழு <b>Held = Yes</b> ஆக இருக்க வேண்டும்.</p>
+  <p><b>Bar நீளம்</b> = எவ்வளவு வலுவாகப் பிரிக்கிறது (Cramér's V). நீளமான bar = அந்த parameter rally-ஐ அதிகம் பிரிக்கிறது.</p>
+  <p class="sub">சோதனை: random (பொய்) data-வில் இந்த page எந்த parameter-ஐயும் "Real" என்று காட்டவில்லை. அதனால் "Real" வந்தால் அது data-வில் உண்மையாக இருக்கிறது.</p>
+</div>
+
+<h2 class="pb">6. Best combinations</h2>
+<p>2 அல்லது 3 நிபந்தனைகள் சேர்ந்தால் rally சதவீதம் எவ்வளவு என்று பார்க்கிறது. உதாரணம்: "NP YoY over 100% + OPM Qtr YoY Increasing".</p>
+<ol>
+  <li>Season-இன் <b>முதல் பகுதியில் (earlier part)</b> மட்டும் தேடுகிறது. ஒரு combination-இல் குறைந்தது <b>15 results</b> இருக்க வேண்டும் (உங்கள் setting).</li>
+  <li>அதன் Likely range-இன் கீழ் எல்லையே அந்தப் பகுதியின் rate-ஐவிட மேல் இருந்தால் மட்டுமே பட்டியலில் சேரும்.</li>
+  <li>பிறகு <b>பின் பகுதியில் (later part)</b> சோதிக்கப்படுகிறது. அங்கும் தெளிவாக மேல் இருந்தால் <b class="yes">Held = Yes</b>. மேல் இருந்தும் அதிர்ஷ்டமாக இருக்கலாம் என்றால் "Not sure". கீழ் என்றால் <b class="no">No</b>.</li>
+</ol>
+<div class="box ex"><p>உதாரணம்: Earlier part-இல் 40 results-இல் 24 rally (60%). Later part-இல் 20-இல் 11 (55%), அந்தப் பகுதியின் rate 26% → <b class="yes">Held = Yes</b>. இதை நம்பலாம். Earlier-இல் 70%, later-இல் 20% என்றால் <b class="no">No</b>: அது அதிர்ஷ்டம்.</p></div>
+
+<h2>7. Score - "Rally chance" எப்படிக் கணக்கிடப்படுகிறது</h2>
+<p>எல்லா parameter-களையும் சேர்த்து, முடிந்த results-இலிருந்து ஒரு model கற்றுக்கொள்கிறது (<b>logistic regression</b>). ஒவ்வொரு குழுவுக்கும் சில <b>points (+ அல்லது −)</b> கிடைக்கும்:</p>
+<ul>
+  <li>அந்தக் குழு season rate-ஐவிட அதிகமாக rally ஆனால் → + points.</li>
+  <li>குறைவாக rally ஆனால் → − points.</li>
+  <li>குறைவான results உள்ள குழுவின் points 0 பக்கம் இழுக்கப்படும். அதனால் அதிர்ஷ்டம் score-ஐ ஆட்டாது.</li>
+  <li>ஒன்றுக்கொன்று தொடர்புடைய parameter-கள் (உதா: NP YoY, EPS growth) இரண்டு முறை எண்ணப்படாமல் model பங்கிட்டுக் கொள்ளும்.</li>
+</ul>
+<p>ஒரு stock-இன் score = season-இன் தொடக்க நிலை + அந்த stock-இன் குழுக்களின் points. 10 points = 1 "log-odds". பிறகு அது % ஆக மாற்றப்படுகிறது.</p>
+<div class="box ex">
+  <h3>உதாரணம் - season rate 25%</h3>
+  <table>
+    <tr><th>Stock X-இன் குழு</th><th class="n">Points</th></tr>
+    <tr><td>Net profit YoY %: over 100%</td><td class="n yes">+6</td></tr>
+    <tr><td>OPM Qtr YoY: Increasing</td><td class="n yes">+3</td></tr>
+    <tr><td>PE at the entry: over 100</td><td class="n no">−4</td></tr>
+    <tr><th>மொத்தம்</th><th class="n">+5</th></tr>
+  </table>
+  <p>25% → +5 points → <b>Rally chance ≈ 35%</b>. (25% = 1:3 வாய்ப்பு; +5 points அதை சுமார் 1.65 மடங்கு ஆக்கும் → 35%.)</p>
+  <p>Stock Y: +6 +3 +4 (20 session-இல் 10–25% ஏற்றம்) = +13 points → <b>≈ 55%</b>.</p>
+  <p class="sub">Page-இல் "Why" column-இல் இந்த points badge-ஆகத் தெரியும்: பச்சை = +, சிவப்பு = −.</p>
+</div>
+
+<h2>8. Decision - Buy candidate / Watch / Neutral / Avoid</h2>
+<table>
+  <tr><th>Decision</th><th>விதி</th><th class="n">Season 25% என்றால்</th></tr>
+  <tr><td class="yes">Buy candidate</td><td>Rally chance ≥ season rate × 1.5, மற்றும் ≥ 20%</td><td class="n">≥ 37.5%</td></tr>
+  <tr><td>Watch</td><td>≥ season rate × 1.15</td><td class="n">≥ 28.75%</td></tr>
+  <tr><td>Neutral</td><td>இடையில்</td><td class="n">20% – 28.75%</td></tr>
+  <tr><td class="no">Avoid</td><td>&lt; season rate × 0.8</td><td class="n">&lt; 20%</td></tr>
+</table>
+<p>மேலே உள்ள உதாரணத்தில் X (35%) = <b>Watch</b>, Y (55%) = <b class="yes">Buy candidate</b>.</p>
+
+<h2 class="pb">9. "Does the score work?" - score-ஐ நம்பலாமா</h2>
+<ol>
+  <li>Model <b>முதல் பகுதி results-இல் மட்டும்</b> கற்றுக்கொள்கிறது.</li>
+  <li><b>பின் பகுதி</b> results (model பார்க்காதவை) score வரிசையில் 5 சம குழுக்களாகப் பிரிக்கப்படுகின்றன: Top fifth … Bottom fifth.</li>
+  <li>ஒவ்வொரு குழுவிலும் உண்மையில் எத்தனை சதவீதம் rally ஆனது என்று காட்டப்படுகிறது. Top fifth-இல் அதிகம், bottom-இல் குறைவு என்றால் score வேலை செய்கிறது.</li>
+  <li><b>Score check (x / 100)</b>: 50 = நாணயம் சுண்டுவது போல (பயன் இல்லை), 60-க்கு மேல் = பயனுள்ளது. Results குறைவாக இருந்தால் இந்த எண்ணின் நம்பகத்தன்மையும் கணக்கில் எடுக்கப்படும் (good / some / weak).</li>
+</ol>
+<div class="box ex"><p>உதாரணம்: Top fifth 52% rally, bottom fifth 12% rally, score check 66 / 100 → "a useful edge". Top 30%, bottom 25%, score check 53 → "weak - treat it as a hint only".</p></div>
+
+<h2>10. "Decide now" - புதிய results</h2>
+<ul>
+  <li><b>இன்னும் trade ஆகாதவை</b> (Not traded yet, entry = அடுத்த session) மற்றும் <b>கடைசி 3 session-களில் entry ஆனவை</b>.</li>
+  <li>Rally chance அதிகமானவை முதலில். Decision, காரணங்கள் (points badges), Now vs entry, "Jumped already" ஆகியவை தெரியும்.</li>
+  <li>மேலே உள்ள search box-இல் எந்த stock-ஐயும் type செய்தால் அதன் முழு விவரம் (outcome, chance, எல்லாக் காரணங்களும்) வரும்.</li>
+</ul>
+<p><b>உங்கள் பயன்பாடு:</b> ஒரு result Main-இல் update ஆனதும் (மாலை), Results Edge → Decide now-இல் அதன் Rally chance + Decision + காரணங்களைப் பார்த்து, மறுநாள் open-இல் வாங்கலாமா என்று முடிவு செய்யுங்கள்.</p>
+
+<h2>11. அடுத்த season</h2>
+<p>இந்த season-இல் குறைந்தது 200 results முடிந்ததும், model <b>உங்கள் browser-இல் சேமிக்கப்படும்</b> (கடைசி 4 seasons). அடுத்த season-இன் முதல் வாரங்களில் (200 results முடியும் வரை) புதிய results-க்கு இந்த season-இன் model score தரும். Page-இல் "uses the lessons of Sep 2026" என்று காட்டும்.</p>
+<p class="sub">இது device-வாரியானது: laptop-இல் சேமித்தது phone-இல் இருக்காது. எந்த device-இல் அடுத்த season பார்ப்பீர்களோ, அதில் இந்த season-இல் ஒருமுறையாவது Results Edge page-ஐத் திறந்து வையுங்கள்.</p>
+
+<h2>12. உங்கள் settings - எதை மாற்றலாம்</h2>
+<table>
+  <tr><th>Setting</th><th>உங்கள் மதிப்பு</th><th>அர்த்தம்</th></tr>
+  <tr><td>Quick jump: at least</td><td>8%</td><td>Entry-இலிருந்து high இவ்வளவு போனால் jump</td></tr>
+  <tr><td>within</td><td>the entry session</td><td>வாங்கிய நாள் மட்டும் (2 / 3 sessions என்றும் மாற்றலாம்)</td></tr>
+  <tr><td>Steady rise: at least</td><td>15%</td><td>இந்த session-இன் close இவ்வளவு மேல் இருந்தால்</td></tr>
+  <tr><td>after</td><td>5 sessions</td><td>5-வது session close (வாங்கிய நாள் = 1). இதுவே window நீளமும்: 5 session முடிந்த பிறகே result கணக்கில் சேரும்.</td></tr>
+  <tr><td>A rally =</td><td>either one</td><td>Jump அல்லது steady rise</td></tr>
+  <tr><td>A group needs</td><td>15 results</td><td>இதைவிடக் குறைவான குழு = Too few; combinations-க்கும் இதே குறைந்தபட்சம்; "Real"-க்கு 30</td></tr>
+  <tr><td>Stocks</td><td>every size</td><td>Large / Mid / Small / Micro மட்டும் என்றும் பார்க்கலாம்</td></tr>
+</table>
+<p class="sub">ஒரு setting-ஐ மாற்றியதும் page முழுவதும் உடனே மீண்டும் கணக்கிடப்படும். குறைந்த "group needs" (15) அதிக குழுக்களைக் காட்டும், ஆனால் அதிர்ஷ்ட வாய்ப்பும் அதிகம்.</p>
+
+<h2>13. கவனிக்க வேண்டியவை</h2>
+<div class="box warn">
+  <ul>
+    <li>இது ஒரு season-இன் data மட்டும்: இவை patterns, உறுதி அல்ல.</li>
+    <li>ஒரு parameter rally-உடன் சேர்ந்து வந்தது என்றால் அதுதான் காரணம் என்று அர்த்தமில்லை.</li>
+    <li>Website-இல் உள்ள candles சுமார் 60 நாட்கள் மட்டுமே. அதனால் season-இன் மிக முந்தைய results-க்கு candles இல்லாமல் போகலாம் ("without candles left out").</li>
+    <li>FII / Promoter / EPS growth / OPM Qtr YoY ஆகியவை Main-இன் இப்போதைய மதிப்புகள் (freeze இல்லை).</li>
+    <li>Research மட்டுமே, buy recommendation அல்ல.</li>
+  </ul>
+</div>
+</body>
+</html>
