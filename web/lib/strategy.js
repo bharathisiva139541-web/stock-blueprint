@@ -280,6 +280,14 @@
   // filing time ('02/11 17:39 After market', 'Market closed' on Saturday / Sunday; your PC reads it).
   var ANN_SESSIONS = ['After market', 'Market closed', 'Before market', 'Market hours'];
   /** Trading days (Mon-Fri) after day a up to and including day b ('YYYY-MM-DD'); b before a = negative. */
+  /** ' (close 233.7, zone 229.9 - 238)' - Kite's prices of a daily-scan row, when the feed has them */
+  function pxText(r) {
+    var p = [];
+    if (isNum(r.close)) p.push('close ' + round(r.close));
+    if (isNum(r.bottom) && isNum(r.top)) p.push('zone ' + round(r.bottom) + ' - ' + round(r.top));
+    else if (isNum(r.low)) p.push('low ' + round(r.low));
+    return p.length ? ' (' + p.join(', ') + ')' : '';
+  }
   function weekdaysAfter(a, b) {
     var pa = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(a || '')), pb = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(b || ''));
     if (!pa || !pb) return null;
@@ -338,8 +346,8 @@
       var ago = weekdaysAfter(hit.session, x.refDate);
       var when = ago == null ? '' : ago < 0 ? '' : ago === 0 ? ' (today)' : ' (' + ago + ' trading day' + (ago === 1 ? '' : 's') + ' ago)';
       var okDays = ago != null && ago >= 0 && ago <= p.days;
-      return { pass: okDays, value: hit.tf + ' ' + hit.candle,
-        detail: hit.tf + ' candle ' + hit.candle + when + (hit.detail ? ' - ' + hit.detail : '') + (okDays ? '' : waitText) };
+      return { pass: okDays, value: hit.tf + ' ' + hit.candle, zone: scanZone(hit),
+        detail: hit.tf + ' candle ' + hit.candle + when + pxText(hit) + (hit.detail ? ' - ' + hit.detail : '') + (okDays ? '' : waitText) };
     } });
 
   // EVERY setup of the owner's daily Zerodha scan (owner, 17-Nov-2026: "Daily Suggestions-இல் வருவது CHoCH / BOS setups மட்டுமே. Add all
@@ -363,11 +371,11 @@
       var ageOf = function (r) { return weekdaysAfter(r.session, x.refDate); };
       var fresh = rows.filter(function (r) { var a = ageOf(r); return a != null && a >= 0 && a <= p.days; });
       var when = function (r) { var a = ageOf(r); return a == null || a < 0 ? '' : a === 0 ? ' (today)' : ' (' + a + ' trading day' + (a === 1 ? '' : 's') + ' ago)'; };
-      var line = function (r) { return r.tf + ' ' + r.pattern + ' ' + r.candle + when(r) + (r.detail ? ' - ' + r.detail : ''); };
+      var line = function (r) { return r.tf + ' ' + r.pattern + ' ' + r.candle + when(r) + pxText(r) + (r.detail ? ' - ' + r.detail : ''); };
       if (!fresh.length) return { pass: false, value: rows[0].tf + ' ' + rows[0].pattern, detail: 'the newest: ' + line(rows[0]) };
       var names = [];
       fresh.forEach(function (r) { if (names.indexOf(r.pattern) < 0) names.push(r.pattern); });
-      return { pass: true, value: fresh[0].tf + ' ' + fresh[0].pattern, types: names, detail: fresh.slice(0, 4).map(line).join('; ') +
+      return { pass: true, value: fresh[0].tf + ' ' + fresh[0].pattern, types: names, zone: scanZone(fresh[0]), detail: fresh.slice(0, 4).map(line).join('; ') +
         (fresh.length > 4 ? '; +' + (fresh.length - 4) + ' more' : '') };
     } });
 
@@ -500,7 +508,7 @@
       ]
     },
     chochFvg: {
-      id: 'chochFvg', name: 'CHoCH + FVG (your SMC setup)', version: 1, source: 'request', mode: 'setup', style: 'swing', timeframe: '1d',
+      id: 'chochFvg', name: 'CHoCH + FVG (your SMC setup)', version: 2, source: 'request', mode: 'setup', style: 'swing', timeframe: '1d',
       description: 'Your setup: after a downtrend of at least 3 lower highs and 3 lower lows (swings of 5 candles), a candle CLOSES above the last lower high ' +
         '(CHoCH); an FVG / Gap-up zone formed in that move or after it, its middle in the discount half of the move (under the 50% line from the final low ' +
         'to the high); on the FIRST pullback into it (no BOS yet) the first touch of the zone, a Spring on it or an FVG First Touch / Confirmed. ' +
@@ -512,11 +520,11 @@
       universe: { categories: [], minBars: 2 }, filters: [{ id: 'liquidity', params: { minTurnover: 5000000 } }],
       triggers: [{ id: 'chochFvg', params: { tfs: ['D', '4H', 'W'], days: 1 } }],
       confirms: [], qualify: { minTriggers: 1 },
-      exits: { stop: { method: 'swing', bars: 5 }, target: { method: 'rr', rr: 2 }, minRR: 0 }, events: { warnDays: 7 },
+      exits: { stop: { method: 'zone' }, target: { method: 'rr', rr: 2 }, minRR: 0 }, events: { warnDays: 7 },
       assumptions: [
         'The setups come from your PC program (Zerodha Kite candles) after the close - with the laptop off, the list stops updating.',
         'Found at most 1 trading day before today (the scan of yesterday evening counts the next morning).',
-        'Your real stop is a little under the FVG zone; the website does not receive Kite\'s zone prices, so the trade plan here uses the lowest low of the last 5 candles and 2R - the Backtest Lab uses your zone stop and your target (R multiple or the last swing high).',
+        'Trade plan: entry = the latest close, stop 0.5% under the zone bottom (Zerodha Kite\'s price, sent by your PC - the Backtest Lab\'s default stop), target 2R; the Backtest Lab can test other stops and targets (R multiple, the last swing high, the move high).',
         'Liquidity filter: average daily turnover at least ₹50 lakh (the sheet\'s FVG rule).'
       ]
     },
@@ -529,12 +537,12 @@
       universe: { categories: [], minBars: 2 }, filters: [],
       triggers: [{ id: 'dailyScan', params: { pats: SCAN_DEFAULT.slice(), tfs: ['4H', 'D', 'W'], days: 1 } }],
       confirms: [], qualify: { minTriggers: 1 },
-      exits: { stop: { method: 'swing', bars: 5 }, target: { method: 'rr', rr: 2 }, minRR: 0 }, events: { warnDays: 7 },
+      exits: { stop: { method: 'zone' }, target: { method: 'rr', rr: 2 }, minRR: 0 }, events: { warnDays: 7 },
       assumptions: [
         'The setups come from your PC program (Zerodha Kite candles) after the close - with the laptop off, the list stops updating.',
         'Found at most 1 trading day before today (the scan of yesterday evening counts the next morning).',
-        'The website does not receive Kite\'s zone prices, so the trade plan here uses the lowest low of the last 5 candles and 2R - your real stop / ' +
-          'target are in the Backtest Lab (and the "waiting for the pullback" list shows Buy at / Stop under).',
+        'Trade plan: entry = the latest close, stop 0.5% under the zone bottom of the newest setup (no zone, e.g. a plain Spring = under its candle\'s ' +
+          'low; Zerodha Kite\'s prices, sent by your PC), target 2R - the Backtest Lab tests other stops / targets.',
         'No extra filter: the list is exactly what your daily scan found.'
       ]
     },
@@ -643,8 +651,11 @@
     else if (st.method === 'swing') { var lo = I.priorLow(x.candles, x.n, Math.min(st.bars || 10, x.n)); stop = lo < entry ? lo * 0.999 : NaN; note = 'below the ' + (st.bars || 10) + '-bar low'; }
     else if (st.method === 'zone') {
       /** @type {any} */ var z = null;
-      triggers.forEach(function (t) { if (t.res.value && t.res.value.bottom) z = t.res.value; });
-      if (z) { stop = z.bottom * 0.995; note = 'below the FVG zone bottom'; }
+      triggers.forEach(function (t) { if (!z && t.res.zone && t.res.zone.bottom) z = t.res.zone; else if (!z && t.res.value && t.res.value.bottom) z = t.res.value; });
+      if (z) {
+        stop = z.bottom * 0.995;
+        note = z.from ? '0.5% under the ' + z.what + ' ' + round(z.bottom) + ' (' + z.from + ', Zerodha Kite)' : 'below the FVG zone bottom';
+      }
       else { var a2 = atrOf(x); if (isNum(a2)) { stop = entry - 2 * a2; note = 'no zone - 2 × ATR14'; } }
     }
     if (!(stop > 0) || stop >= entry) return { entry: entry, stop: NaN, target: NaN, rr: NaN, stopNote: 'no valid stop below entry' };
@@ -794,6 +805,20 @@
 
   /** The sheet's Intraday Patterns rows (feed part intraday, {cols, rows}) -> { SYM: [CHoCH + FVG setups, newest first] }
    *  as stock.choch: {session, tf, candle, formed, detail}. */
+  // Kite's prices of a daily-scan row (site feed format 16, 17-Nov-2026): the pattern candle's low / close and the zone; null
+  // when the feed has no such column (an older sheet)
+  function scanPrices(g) {
+    var n = function (c) { var v = g(c); var x = v === '' ? NaN : Number(v); return isFinite(x) && x > 0 ? x : null; };
+    return { low: n('Low'), close: n('Close'), bottom: n('FVG Bottom'), top: n('FVG Top') };
+  }
+  /** the zone a stop goes under (the rules' res.zone, read by stopTarget 'zone'): the FVG / Gap-up zone, else the candle's low */
+  function scanZone(r) {
+    if (!r) return null;
+    var b = isNum(r.bottom) ? r.bottom : isNum(r.low) ? r.low : null;
+    if (b == null) return null;
+    return { bottom: b, top: isNum(r.top) ? r.top : null, low: r.low, close: r.close, what: isNum(r.bottom) ? 'zone bottom' : 'pattern low',
+      from: r.tf + ' ' + (r.pattern || 'CHoCH + FVG') + ' ' + r.candle };
+  }
   function chochIndex(table) {
     var out = {};
     if (!table || !Array.isArray(table.cols) || !Array.isArray(table.rows)) return out;
@@ -806,8 +831,10 @@
       if (!sym) return;
       var detail = g(r, 'FVG Detail');
       var zm = / · zone ([\d.]+)% tall\b/.exec(detail);           // the zone's size (12-Nov-2026 scans)
+      var px = scanPrices(function (c) { return g(r, c); });
       (out[sym] = out[sym] || []).push({ session: g(r, 'Session'), tf: g(r, 'Timeframe'), candle: g(r, 'Candle'), formed: g(r, 'FVG Formed'), detail: detail,
-        zpct: zm ? Number(zm[1]) : null });
+        zpct: zm ? Number(zm[1]) : px.bottom && px.top ? Math.round((px.top - px.bottom) / px.bottom * 10000) / 100 : null,
+        low: px.low, close: px.close, bottom: px.bottom, top: px.top });
     });
     Object.keys(out).forEach(function (k) {
       out[k].sort(function (a, b) { return a.session < b.session ? 1 : a.session > b.session ? -1 : a.candle < b.candle ? 1 : a.candle > b.candle ? -1 : 0; });
@@ -816,7 +843,7 @@
   }
 
   /** The sheet's Intraday Patterns rows (feed part intraday) -> { SYM: [every daily-scan row of SCAN_PATTERNS, newest first] } as
-   *  stock.scan: {session, tf, candle, formed, pattern, detail} (17-Nov-2026, rule dailyScan). */
+   *  stock.scan: {session, tf, candle, formed, pattern, detail, low, close, bottom, top (Kite's prices)} (17-Nov-2026, rule dailyScan). */
   function scanIndex(table) {
     var out = {};
     if (!table || !Array.isArray(table.cols) || !Array.isArray(table.rows)) return out;
@@ -826,8 +853,9 @@
     table.rows.forEach(function (r) {
       var pat = g(r, 'Pattern'), sym = g(r, 'Symbol').toUpperCase();
       if (!sym || SCAN_PATTERNS.indexOf(pat) < 0) return;
+      var px = scanPrices(function (c) { return g(r, c); });
       (out[sym] = out[sym] || []).push({ session: g(r, 'Session'), tf: g(r, 'Timeframe'), candle: g(r, 'Candle'), formed: g(r, 'FVG Formed'),
-        pattern: pat, detail: g(r, 'FVG Detail') });
+        pattern: pat, detail: g(r, 'FVG Detail'), low: px.low, close: px.close, bottom: px.bottom, top: px.top });
     });
     Object.keys(out).forEach(function (k) {
       out[k].sort(function (a, b) {

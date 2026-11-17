@@ -46,7 +46,7 @@
     { id: 'all', name: 'All styles', hold: 'Every strategy in one place', icon: 'all', looks: 'Your own, the ones from your sheet and the examples.' }
   ];
   var STOPS = [['atr', 'ATR based', 'N × the stock\'s normal daily move (ATR14) below the entry'], ['pct', 'Fixed %', 'a fixed percent below the entry'],
-    ['swing', 'Recent low', 'just below the lowest low of the last N days'], ['zone', 'Below the FVG zone', 'just below the gap the signal found (needs an FVG signal)']];
+    ['swing', 'Recent low', 'just below the lowest low of the last N days'], ['zone', 'Below the FVG zone', 'just below the zone the signal found - your Zerodha setups: 0.5% under the zone bottom from Kite (needs a zone signal)']];
   var TARGETS = [['pct', 'Fixed %', 'a fixed percent above the entry'], ['rr', 'Multiple of the risk', 'N × (entry − stop-loss) above the entry']];
   var STOP_KEY = { atr: 'mult', pct: 'pct', swing: 'bars', zone: null };
   var STOP_DEF = { atr: { mult: 2 }, pct: { pct: 5 }, swing: { bars: 10 }, zone: {} };

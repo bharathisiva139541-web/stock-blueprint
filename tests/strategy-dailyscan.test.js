@@ -78,3 +78,34 @@ test('the rule: any ticked setup on a ticked timeframe found today / yesterday q
   ['ABC', 'DEF', 'GHI', 'JKL'].forEach((s) => assert.strictEqual(r2.bySym[s].checks.find((c) => c.id === 'dailyScan').res.pass, true, s));
   assert.match(r2.bySym.ABC.checks.find((c) => c.id === 'dailyScan').res.detail, /4H Gap-up FVG \+ Spring 2026-11-13 13:15 \(2 trading days ago\)/);
 });
+
+test('Kite prices (site feed format 16, 17-Nov-2026): the trade plan\'s stop 0.5% under the setup\'s zone bottom', () => {
+  const cols = COLS.concat(['Low', 'Close', 'FVG Bottom', 'FVG Top']);
+  const tab = { cols, rows: [
+    ['2026-11-16', 'ABC', 'Abc Ltd', 'D', 'CHoCH + FVG', '2026-11-16', '2026-10-28', 'FVG middle (touch 1)', 228.1, 233.7, 229.9, 238],
+    ['2026-11-16', 'GHI', 'Ghi Ltd', 'D', 'Spring', '2026-11-16', '', '', 95, 99, null, null],
+    ['2026-11-16', 'LOW', 'Low Ltd', 'D', 'Spring in FVG', '2026-11-16', '2026-10-01', '', 48, 52, 49, 55]
+  ] };
+  const ix = S.scanIndex(tab);
+  assert.deepStrictEqual([ix.ABC[0].low, ix.ABC[0].close, ix.ABC[0].bottom, ix.ABC[0].top], [228.1, 233.7, 229.9, 238]);
+  assert.deepStrictEqual([ix.GHI[0].bottom, ix.GHI[0].low], [null, 95]);
+  const bar = (c) => [{ t: '2026-11-13', o: c, h: c + 1, l: c - 1, c: c, v: 1e6 }, { t: '2026-11-16', o: c, h: c + 1, l: c - 1, c: c, v: 1e6 }];
+  const cfg = S.clone(S.PRESETS.dailyScan);
+  cfg.triggers[0].params = { pats: S.SCAN_PATTERNS.slice(), tfs: ['D'], days: 1 };
+  const stocks = [{ sym: 'ABC', price: 240, scan: ix.ABC }, { sym: 'GHI', price: 100, scan: ix.GHI }, { sym: 'LOW', price: 45, scan: ix.LOW }];
+  const r = S.run(cfg, stocks, { ABC: bar(240), GHI: bar(100), LOW: bar(45) }, { refDate: '2026-11-17' });
+  const a = r.bySym.ABC;
+  assert.match(a.checks.find((c) => c.id === 'dailyScan').res.detail, /^D CHoCH \+ FVG 2026-11-16 \(1 trading day ago\) \(close 233\.7, zone 229\.9 - 238\) - FVG middle/);
+  assert.strictEqual(Math.round(a.stop * 1000) / 1000, Math.round(229.9 * 0.995 * 1000) / 1000, JSON.stringify(a));
+  assert.strictEqual(a.entry, 240);
+  assert.strictEqual(Math.round(a.target * 1000) / 1000, Math.round((240 + 2 * (240 - 229.9 * 0.995)) * 1000) / 1000);
+  assert.match(a.stopNote, /0\.5% under the zone bottom 229\.9 \(D CHoCH \+ FVG 2026-11-16, Zerodha Kite\)/);
+  assert.match(r.bySym.GHI.stopNote, /under the pattern low 95 \(D Spring 2026-11-16/, 'no zone: under the candle\'s low');
+  assert.ok(!(r.bySym.LOW.stop > 0), 'the price fell under the zone: no valid stop');
+  // the CHoCH + FVG preset uses the same stop
+  const ch = S.chochIndex(tab);
+  assert.deepStrictEqual([ch.ABC[0].bottom, ch.ABC[0].zpct], [229.9, 3.52]);
+  const r2 = S.run(S.PRESETS.chochFvg, [{ sym: 'ABC', price: 240, choch: ch.ABC, turnover: 1e8 }], { ABC: bar(240) }, { refDate: '2026-11-17' });
+  assert.strictEqual(S.PRESETS.chochFvg.exits.stop.method, 'zone');
+  assert.ok(Math.abs(r2.bySym.ABC.stop - 229.9 * 0.995) < 1e-9, JSON.stringify(r2.bySym.ABC));
+});

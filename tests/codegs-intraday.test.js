@@ -3,7 +3,7 @@
 // pattern formed in an FVG; due to lack of this intraday data I missed this opportunity"): the PC (kite_intraday.py)
 // asks for PatternData's symbols ({op: 'syms'}) and sends the Spring / Spring in FVG it found on Kite's candles
 // ({op: 'put'}) -> tab "Intraday Patterns"; the site feed part 'intraday' (Code.gs ab_site_itd_) = export_xlsx.py
-// intraday_patterns(): the allowed columns only (no Kite prices), the newest 10 sessions.
+// intraday_patterns(): the allowed columns (Kite prices since 17-Nov-2026 - the owner's choice), the newest 10 sessions.
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
@@ -295,7 +295,7 @@ test('the FVG+Spring backtest tabs from the PC (owner, 09-Nov-2026: the 30-day m
   assert.strictEqual(e.sheet('Spring Backtest').rows[2][3], 6.25);
 });
 
-test('site feed part "intraday": the allowed columns only (no prices), newest 10 sessions = export_xlsx.py', () => {
+test('site feed part "intraday": the allowed columns (+ Kite prices, 17-Nov-2026), newest 10 sessions = export_xlsx.py', () => {
   const e = env();
   const items = [];
   for (let k = 0; k < 13; k++) {
@@ -307,14 +307,18 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
   const it = data.intraday;
-  assert.deepStrictEqual(it.cols, ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail']);
+  assert.deepStrictEqual(it.cols, ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail', 'Low', 'Close', 'FVG Bottom', 'FVG Top']);
   assert.match(it.note, /^Spring, Spring in FVG and Gap-up FVG \+ Spring from Zerodha Kite/);
   const days = [...new Set(it.rows.map((r) => r[0]))];
   assert.strictEqual(days.length, 10);
   assert.deepStrictEqual([days[0], days[9]], ['2026-10-30', '2026-10-14'], 'the newest 10 sessions');
-  assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null]);
-  assert.ok(!JSON.stringify(it).includes('228.05') && !JSON.stringify(it).includes('tradingview'), 'no Kite prices, no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 15);
+  // owner, 17-Nov-2026 ("Website-க்கு Kite zone விலைகள் வருவதில்லை. Yen varuvathilai. We don't need to follow zerodha rules."):
+  // the candle's low / close and the zone come along
+  assert.deepStrictEqual(it.rows.find((r) => r[1] === 'PARAGMILK'), ['2026-10-30', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'Spring in FVG', '2026-10-30 13:15', '2026-08-24 09:15', null,
+    228.05, 233.7, 232.1, 246]);
+  assert.deepStrictEqual(it.rows.find((r) => r[1] === 'FLAT').slice(8), [10, 11, null, null], 'no zone: empty');
+  assert.ok(!JSON.stringify(it).includes('tradingview'), 'no chart formula');
+  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 16);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
@@ -328,7 +332,7 @@ test('site feed part "intraday": the allowed columns only (no prices), newest 10
   assert.deepStrictEqual(JSON.parse(r.stdout), it);
 });
 
-test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py', () => {
+test('site feed parts zones4h (+ zone prices, 17-Nov-2026) + springBacktest + every mitigated row, = export_xlsx.py', () => {
   const e = mock.loadCodeGs(zoneBook(), { props: { AB_BRIDGE_TOKEN: TOKEN }, now: NOW });
   e.post(zput([{ sym: 'PARAGMILK', tf: '4H', zone: [229.9, 238, '2026-10-20 13:15', 'FVG'] }, { sym: 'M&M', tf: '4H', zone: [2950, 3040, '2026-11-03 09:15', 'Gap-up'] }]));
   e.post({ token: TOKEN, action: 'intraday', op: 'backtest', upto: '2026-11-06', days: 30, targets: [1, 1.5, 2, 3, 5], total: 1,
@@ -339,17 +343,17 @@ test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py
   e.run('ab_logMitigation_("4H FVG", "PARAGMILK", 229.9, 238, 3.52, 237, "Live")');
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
-  assert.deepStrictEqual(data.zones4h.cols, ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG']);
-  assert.deepStrictEqual(data.zones4h.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 3.52, '2026-10-20 13:15', 0.84, null, null]);
+  assert.deepStrictEqual(data.zones4h.cols, ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG', 'Zone Bottom', 'Zone Top']);
+  assert.deepStrictEqual(data.zones4h.rows[1], ['PARAGMILK', 'Parag Milk Foods Ltd.', 'FVG', 3.52, '2026-10-20 13:15', 0.84, null, null, 229.9, 238]);
   assert.deepStrictEqual(data.springBacktest.summary.rows[0], ['4H', 'FVG+Spring', 1, 9.4, 9.4, 100, 100, 100, 100, 0, 100, 3.4, 3.4, 0,
     '2026-09-30 13:15', '2026-09-30 13:15']);
   assert.deepStrictEqual(data.springBacktest.list.rows[0], ['2026-09-30 13:15', 'PARAGMILK', 'Parag Milk Foods Ltd.', '4H', 'FVG', 'Bottom', 3, 9.4, 3.4, '3R reached']);
-  assert.deepStrictEqual(data.mitigatedLog.rows.map((r) => r[2] + ' ' + r[3]), ['Gap-up FVG M&M'], 'the 4H rows (Kite prices) stay on the sheet');
+  assert.deepStrictEqual(data.mitigatedLog.rows.map((r) => r[2] + ' ' + r[3]).sort(), ['4H FVG PARAGMILK', 'Gap-up FVG M&M'], 'the 4H rows come along (17-Nov-2026)');
   const txt = JSON.stringify([data.zones4h, data.springBacktest, data.mitigatedLog]);
   // the Vercel api/site.js guard (08-Nov-2026: a "trades" key blocked the whole live feed)
   const site = require('../api/site.js');
   assert.deepStrictEqual(site.PERSONAL_MARKERS.filter((re) => re.test(JSON.stringify(data))).map(String), [], 'no personal-data marker in the main part');
-  assert.ok(!/229\.9|238|2950|3040|tradingview/.test(txt), 'no zone prices, no chart formula');
+  assert.ok(!/tradingview/.test(txt), 'no chart formula');
 
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);
   if (!py) return;
@@ -357,7 +361,7 @@ test('site feed parts zones4h + springBacktest: no Kite prices, = export_xlsx.py
   const code = ['import importlib.util, json, sys', 'spec = importlib.util.spec_from_file_location("ex", sys.argv[1])',
     'ex = importlib.util.module_from_spec(spec); spec.loader.exec_module(ex)', 'd = json.load(sys.stdin)',
     'print(json.dumps({"z": ex.zones_4h(ex.Rows(d["z"])), "b": ex.spring_backtest(ex.Rows(d["b"]), ex.Rows(d["t"])),',
-    '                  "m": ex.no_kite(ex.table(ex.Rows(d["m"]), "Date", stop_blank=False))}))'].join('\n');
+    '                  "m": ex.table(ex.Rows(d["m"]), "Date", stop_blank=False)}))'].join('\n');
   const r = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'tools', 'export_xlsx.py')],
     { input: JSON.stringify({ z: tab('4H FVG Zones'), b: tab('Spring Backtest'), t: tab('Spring Backtest Trades'), m: tab('Mitigated FVG Log') }), encoding: 'utf8', timeout: 60000 });
   assert.strictEqual(r.status, 0, r.stderr);
@@ -437,7 +441,7 @@ test('alerts use Kite\'s live price while the laptop sends it (fresh <= 3 min), 
     [{ FLAT: 99, PARAGMILK: 240 }, { FLAT: true }]);
 });
 
-test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s words in FVG Detail, no prices on the site, taken off when broken', () => {
+test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s words in FVG Detail, prices on the site (17-Nov-2026), taken off when broken', () => {
   const e = env();
   const ch = { sym: 'PARAGMILK', tf: 'D', pattern: 'CHoCH + FVG', candle: '2026-11-05', session: '2026-11-05', low: 228.1, close: 233.7,
     zone: [229.9, 238, '2026-10-20', 'FVG', 'middle', 1], note: '=Spring · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback\nX' };
@@ -453,13 +457,12 @@ test('intraday: CHoCH + FVG rows (owner, 10-Nov-2026: his SMC setup) - the PC\'s
   e.post(put([], { choch: { pivotN: 8, downN: 10, fib: 0.618, part: 'bottom', zoneWhen: 'after' } }));
   assert.match(e.sheet('Intraday Patterns').rows[0][0], /rules: swings of 8 candles, at least 3 lower highs \/ lows, the zone's bottom at least 61\.8% down the move, the zone formed only after the CHoCH candle, the 2nd discount zone when the move has two \(the 1st only watched\)\./,
     'the laptop\'s rules (downN 10 is out of range: the default 3)');
-  // the site feed: the words come along, the prices do not
+  // the site feed: the words come along, and Kite's prices (17-Nov-2026)
   const data = JSON.parse(JSON.stringify(e.run('(function () { const ss = SpreadsheetApp.getActiveSpreadsheet();' +
     ' return ab_site_main_({ ss: ss, tz: AB_TZ, tabs: {}, dates: {} }, "2026-11-06 19:00"); })()')));
   const row = data.intraday.rows.find((x) => x[4] === 'CHoCH + FVG' && x[3] === 'D');
   assert.deepStrictEqual(row, ['2026-11-05', 'PARAGMILK', 'Parag Milk Foods Ltd.', 'D', 'CHoCH + FVG', '2026-11-05', '2026-10-20',
-    'FVG middle (touch 1) · Spring · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback X']);
-  assert.ok(!JSON.stringify(data.intraday).includes('229.9') && !JSON.stringify(data.intraday).includes('233.7'), 'no Kite prices');
+    'FVG middle (touch 1) · Spring · CHoCH 2026-10-22 after 3 lower highs / lows · first pullback X', 228.1, 233.7, 229.9, 238]);
   const markers = require('../api/site.js').PERSONAL_MARKERS;
   assert.ok(markers.every((m) => !m.test(JSON.stringify(data.intraday))), 'nothing the site\'s privacy guard would block');
   // a later close under the entry candle's low: the PC lists it as invalid -> the row leaves the tab (the Spring in FVG row stays)

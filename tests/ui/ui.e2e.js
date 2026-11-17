@@ -79,15 +79,16 @@ const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
 RP_ROW[RPT.cols.indexOf('Result Day %')] = 14.5;
 RP_ROW[RPT.cols.indexOf('Pre-Result Close')] = 100;
 RP_ROW[RPT.cols.indexOf('Result Day Close')] = 106;
-// Zerodha Kite patterns (site feed format 9, part 'intraday' - the PC program's "Intraday Patterns" tab, no prices)
+// Zerodha Kite patterns (site feed format 9, part 'intraday' - the PC program's "Intraday Patterns" tab; Kite's prices since format 16)
 LIVE_MAIN.intraday = { note: 'Spring and Spring in FVG from Zerodha Kite candles (your PC program) ... Last scan: session 2026-10-20 (2026-10-20 19:05). Kept 30 days.',
-  cols: ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail'],
-  rows: [['2026-10-20', FLAG_SYM, 'Flag Co', '4H', 'Spring in FVG', '2026-10-20 13:15', '2026-08-24 09:15', 'FVG bottom (touch 3)'],
+  cols: ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail', 'Low', 'Close', 'FVG Bottom', 'FVG Top'],
+  rows: [['2026-10-20', FLAG_SYM, 'Flag Co', '4H', 'Spring in FVG', '2026-10-20 13:15', '2026-08-24 09:15', 'FVG bottom (touch 3)', 4321.5, 4388.25, 4330, 4410.75],
     ['2026-10-20', FLAG_SYM, 'Flag Co', '1H', 'Spring', '2026-10-20 14:15', null, null],
     ['2026-10-20', SENT_SYM, null, '4H', 'FVG First Touch', '2026-10-20 09:15', '2026-10-14 13:15', 'FVG'],
     ['2026-10-17', SENT_SYM, null, 'W', 'Spring', '2026-10-13', null, null],
     // the owner's CHoCH + FVG setup (10-Nov-2026): the PC's words, no prices
-    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'],
+    ['2026-10-20', FLAG_SYM, 'Flag Co', 'D', 'CHoCH + FVG', '2026-10-20', '2026-10-07', 'FVG middle (touch 1) · Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback',
+      4300.1, 4351.6, 4290.4, 4365.9],
     // 13-Nov-2026: BOS + FVG and the smaller chart's CHoCH in the zone (the confirmed entry)
     ['2026-10-20', SENT_SYM, null, 'D', 'BOS + FVG', '2026-10-19', '2026-10-08', 'FVG top (touch 1) · Zone first touch · BOS 2026-10-14 (2 higher highs / lows) · first pullback · zone middle 60% down the move'],
     ['2026-10-20', SENT_SYM, null, 'D', '15m CHoCH in zone', '2026-10-20 11:30', '2026-10-08', 'FVG · D BOS + FVG zone touched 2026-10-19 · 15m CHoCH after 2 lower highs / lows, its final low in the zone · 1 candle after the touch · buy at its close · stop under its final low']] };
@@ -99,8 +100,8 @@ LIVE_MAIN.chochWait = { note: 'CHoCH + FVG setups WAITING for the pullback, from
   rows: [[SENT_SYM, null, 'D', '2026-10-15', 117.39, 4, 98.78, '2026-10-06', 123.99, 111.39, 'FVG', 104.1, 108.24, '2026-10-08', 83, 119.25, '2026-10-20', 9.23, 1],
     [SENT_SYM, null, '4H', '2026-10-16 13:15', 120.5, 3, 110.2, '2026-10-14 09:15', 123.99, 117.1, 'Gap-up (inside FVG)', 112, 113.5, '2026-10-15 09:15', 78, 119.25, '2026-10-20 13:15', 4.82, 0]] };
 // format 10: 4H FVG zones (no prices) + the FVG+Spring backtest (R only)
-LIVE_MAIN.zones4h = { note: '4H FVG zones still untouched ...', cols: ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted'],
-  rows: [[FLAG_SYM, 'Flag Co', 'FVG', 3.52, '2026-10-14 13:15', 1.2, null], [SENT_SYM, null, 'Gap-up', 4.1, '2026-10-16 09:15', 6.5, null],
+LIVE_MAIN.zones4h = { note: '4H FVG zones still untouched ...', cols: ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG', 'Zone Bottom', 'Zone Top'],
+  rows: [[FLAG_SYM, 'Flag Co', 'FVG', 3.52, '2026-10-14 13:15', 1.2, null, null, 4211.25, 4359.5], [SENT_SYM, null, 'Gap-up', 4.1, '2026-10-16 09:15', 6.5, null],
     [SENT_SYM, null, 'FVG', 2.2, '2026-10-01 13:15', -0.4, 'Y']] };
 // format 13 (owner, 09-Nov-2026): the 30-day move, 1R - 5R, the highest R before the stop - no prices
 const BT_COLS = ['Timeframe', 'Group', 'Signals', 'Avg Up % (30d)', 'Median Up % (30d)', 'Hit 1R %', 'Hit 1.5R %', 'Hit 2R %',
@@ -889,6 +890,16 @@ function check(name, fn) {
     assert.match(r.note, /Last scan: session 2026-10-20/);
     assert.ok(r.jump, 'in the page\'s jump chips');
     assert.ok(await p.$eval('#sg-itd-t', (x) => x.textContent.includes('FVG bottom (touch 3)')), 'the Where column');
+    // Kite's prices (owner, 17-Nov-2026: "Website-க்கு Kite zone விலைகள் வருவதில்லை. Yen varuvathilai.")
+    const px = await p.evaluate((sym) => {
+      const ths = [...document.querySelectorAll('#sg-itd-t thead th')].map((th) => th.textContent.replace(/[↑↓]/g, '').trim());
+      const tr = [...document.querySelectorAll('#sg-itd-t tbody tr')].find((x) => x.textContent.includes('Spring in FVG') && x.textContent.includes(sym));
+      return { ths, cells: [...tr.children].map((td) => td.textContent.trim()) };
+    }, FLAG_SYM);
+    ['Close', 'Low', 'Zone bottom', 'Zone top', 'Stop under', 'Now vs close'].forEach((h) => assert.ok(px.ths.indexOf(h) > 0, h + ': ' + px.ths.join(' | ')));
+    const cell = (h) => px.cells[px.ths.indexOf(h)];
+    assert.deepStrictEqual([cell('Close'), cell('Low'), cell('Zone bottom'), cell('Zone top'), cell('Stop under')].map((x) => x.replace(/[₹,]/g, '')),
+      ['4388.25', '4321.50', '4330.00', '4410.75', (Math.round(4330 * 0.995 * 100) / 100).toFixed(2)], JSON.stringify(px.cells));
     // Daily % (owner, 08-Nov-2026) = the stock's s.chg, as in the Watchlist's Today column
     const dp = await p.evaluate(() => {
       const ths = [...document.querySelectorAll('#sg-itd-t thead th')].map((th) => th.textContent.trim());
@@ -913,6 +924,7 @@ function check(name, fn) {
       first: document.querySelector('#app section.card').id, note: document.querySelector('#sg-choch .card-head p').textContent }));
     assert.deepStrictEqual([ch.count, ch.link, ch.jump, ch.first], ['3 of 3', 'TradingView D ↗', true, 'sg-choch'], JSON.stringify(ch));
     assert.ok(ch.text.includes('Spring · CHoCH 2026-10-09 after 3 lower highs / lows · first pullback'), ch.text);
+    assert.ok(/4,?290\.40/.test(ch.text) && /4,?365\.90/.test(ch.text), 'the zone prices in the CHoCH table: ' + ch.text);
     // BOS + FVG and the smaller chart's CHoCH in the zone (owner, 13-Nov-2026): a Setup column + chips
     assert.deepStrictEqual(await p.$$eval('[data-chip="sgchset"]', (b) => b.map((x) => x.textContent)),
       ['Every setup', 'CHoCH + FVG (1)', 'BOS + FVG (1)', 'Confirmed on a smaller chart (1)']);
@@ -988,6 +1000,8 @@ function check(name, fn) {
     }));
     assert.strictEqual(z.count, '3 of 3');
     assert.ok(z.status.filter(Boolean).length === 1 && z.link === 'TradingView 4H ↗' && z.jump, JSON.stringify(z));
+    assert.ok(await p.$eval('#sg-z4-t', (x) => /4,?211\.25/.test(x.textContent) && /4,?359\.50/.test(x.textContent) && x.textContent.includes('Zone bottom')),
+      'the 4H zone prices (17-Nov-2026)');
     await p.click('[data-chip="sgz4"][data-v="near"]');
     assert.strictEqual(await p.$eval('#sg-z4-count', (x) => x.textContent), '2 of 3', 'within 2% of the top (or inside)');
     await p.click('[data-chip="sgz4"][data-v="Gap-up"]');
