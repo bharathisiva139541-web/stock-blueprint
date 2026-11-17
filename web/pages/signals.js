@@ -232,7 +232,7 @@
         '<button class="btn" type="button" id="sg-bt-csv">Export CSV</button>');
       h += sectionHtml('sg-ml', 'Mitigated FVG log', 'When the price reached a watched zone (the sheet\'s Mitigated FVG Log). ' + ui.stateBadge('CACHED', snapAsOf, 'Mitigated FVG Log tab'),
         '<div class="controls"><input class="search" id="sg-ml-q" type="search" placeholder="Search symbol" aria-label="Search mitigated log" value="' + esc(ST.mlQ) + '">' +
-        ui.chips('sgml', [['all', 'All'], ['Unmitigated FVG', 'Unmitigated FVG'], ['Gap-up FVG', 'Gap-up FVG']], ST.mlType) + '<span class="count" id="sg-ml-count"></span></div><div id="sg-ml-t"></div>');
+        ui.chips('sgml', [['all', 'All'], ['Unmitigated FVG', 'Unmitigated FVG'], ['Gap-up FVG', 'Gap-up FVG'], ['4H', '4H (Zerodha)']], ST.mlType) + '<span class="count" id="sg-ml-count"></span></div><div id="sg-ml-t"></div>');
 
       // 7. watch log
       h += sectionHtml('sg-wl', 'Signal watchlist log', 'Stocks flagged by the sheet engine, newest first. "Since flag" compares with the latest price shown ' +
@@ -282,6 +282,27 @@
   });
 
   function itdRows(ctx) { return ui.objRows(ctx.D.intraday); }
+  // Kite's prices of a daily-scan row (site feed format 16 - owner, 17-Nov-2026: "Website-க்கு Kite zone விலைகள் வருவதில்லை. Yen
+  // varuvathilai. We don't need to follow zerodha rules."): the pattern candle's close / low, the zone, the stop a little under the
+  // zone bottom (the Backtest Lab's default stop, 0.5% under; no zone = under the candle's low) and the price now vs that close
+  var STOP_BUF = 0.005;
+  function itdStop(r) {
+    var b = isNum(r['FVG Bottom']) ? r['FVG Bottom'] : isNum(r.Low) ? r.Low : null;
+    return b == null ? null : Math.round(b * (1 - STOP_BUF) * 100) / 100;
+  }
+  function itdPriceCols(ctx) {
+    return [
+      { key: 'Close', label: 'Close', type: 'price', title: 'The pattern candle\'s close (Zerodha Kite)' },
+      { key: 'Low', label: 'Low', type: 'price', title: 'The pattern candle\'s low (Zerodha Kite)' },
+      { key: 'FVG Bottom', label: 'Zone bottom', type: 'price', title: 'The FVG / Gap-up zone\'s bottom (Zerodha Kite)' },
+      { key: 'FVG Top', label: 'Zone top', type: 'price', title: 'The FVG / Gap-up zone\'s top (Zerodha Kite)' },
+      { key: 'stop', label: 'Stop under', type: 'price', get: itdStop,
+        title: 'A stop just under the zone bottom (0.5% under - the Backtest Lab\'s default; no zone = under the candle\'s low)' },
+      { key: 'vsClose', label: 'Now vs close', type: 'pct', digits: 2,
+        title: 'The price shown now (Kite live with your PIN, else the delayed / sheet price) vs the pattern candle\'s close',
+        get: function (r) { var st = ctx.bySym[r.Symbol]; return st && isNum(st.price) && isNum(r.Close) && r.Close > 0 ? (st.price / r.Close - 1) * 100 : null; } }
+    ];
+  }
 
   // the daily scan's CHoCH rules (owner, 12-Nov-2026: "Build 2" - set on the laptop with ChochRules.bat): the words the sheet
   // writes in its tab notes (Code2.gs ab_chochRulesText_ = kite_intraday.py choch_rules_words), read back; else the defaults
@@ -345,12 +366,13 @@
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
         { key: 'Pattern', label: 'Setup', html: function (r) { var k = smcKind(r.Pattern); return ui.badge(r.Pattern || '–', k === 'ltf' ? 's-good' : k === 'bos' ? 's-warn' : 's-info'); },
           title: 'CHoCH + FVG / BOS + FVG = the touch of the zone; "15m CHoCH in zone" = the smaller chart\'s CHoCH that confirmed it (its candle in the next column)' },
-        { key: 'Candle', label: 'Entry candle', title: 'The candle of the entry pattern (start time, IST; W = the week starting that Monday)' },
+        { key: 'Candle', label: 'Entry candle', title: 'The candle of the entry pattern (start time, IST; W = the week starting that Monday)' }
+      ].concat(itdPriceCols(ctx), [
         { key: 'FVG Detail', label: 'Entry pattern & structure', title: 'The zone and where the entry candle sat in it, the entry pattern, the CHoCH candle and the lower highs / lows before it' },
         { key: 'FVG Formed', label: 'Zone formed', title: 'When the FVG / Gap-up zone formed (same timeframe)' },
         { key: 'chart', label: 'Chart', get: function () { return null; },
           html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
-      ]
+      ])
     }).mount(box);
     function apply() {
       var rows = all.filter(function (r) {
@@ -513,12 +535,13 @@
           get: function (r) { var s = ctx.bySym[r.Symbol]; return s && typeof s.chg === 'number' && isFinite(s.chg) ? s.chg : null; } },
         { key: 'Timeframe', label: 'Timeframe', html: function (r) { return ui.badge(r.Timeframe || '–', 's-info'); } },
         { key: 'Pattern', label: 'Pattern', html: function (r) { return ui.badge(r.Pattern || '–', r.Pattern === 'Spring in FVG' || r.Pattern === 'Gap-up FVG + Spring' || r.Pattern === H4 || SMC_PATS.indexOf(r.Pattern) >= 0 ? 's-good' : r.Pattern === 'Spring' ? '' : 's-info'); } },
-        { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' },
+        { key: 'Candle', label: 'Candle', title: 'The candle of the pattern (start time, IST; W = the week starting that Monday, M = that month)' }
+      ].concat(itdPriceCols(ctx), [
         { key: 'FVG Detail', label: 'Where', title: 'Spring in FVG: where its low sat - top (upper half) / middle / bottom (at or under the bottom line) of an FVG / Gap-up zone, with the touch number; the other FVG patterns: the zone kind' },
         { key: 'FVG Formed', label: 'Zone formed', title: 'When the zone formed (same timeframe)' },
         { key: 'chart', label: 'Chart', get: function () { return null; },
           html: function (r) { return '<a class="btn sm" href="' + esc(tvUrl(r.Symbol, r.Timeframe)) + '" target="_blank" rel="noopener">TradingView ' + esc(r.Timeframe) + ' ↗</a>'; } }
-      ]
+      ])
     }).mount(box);
     function apply() {
       var rows = all.filter(function (r) {
@@ -536,13 +559,13 @@
   }
 
   // 4H FVG zones from the PC (owner, 08-Nov-2026: "I want FVG to be tracked in 4hr timeframe also"): the sheet's
-  // "4H FVG Zones" tab (feed part zones4h) - no Kite prices, the zone size and the distance from the sheet's price only
+  // "4H FVG Zones" tab (feed part zones4h) - the zone prices from Kite (17-Nov-2026), the distance from the price shown
   function z4SectionHtml(ctx) {
     var z = ctx.D.zones4h, rows = ui.objRows(z);
     var sub = '4H fair value gaps from Zerodha Kite candles (your PC program, after each day\'s close): the latest 3-candle FVG of each stock when never touched, ' +
       'and every Gap-up of 3-5% - <b>a Gap-up stays after its first touch</b> (mitigated, emailed once) until a 4H candle closes below its bottom; ' +
       '<b>inside FVG</b> = the Gap-up lies in a 3-candle FVG (the strongest kind). During market hours your sheet watches them: price at or under a zone top = mitigated, in the hourly <b>Mitigated FVG</b> email. ' +
-      'Distance = the sheet\'s delayed price vs the zone top.';
+      'Zone bottom / top from Zerodha Kite; Distance = the price shown now vs the zone top.';
     var body;
     if (!rows.length) {
       body = '<p class="empty">Nothing yet - the PC program sends the 4H zones after its next Zerodha scan (it needs the new ScreenerBridge files and the sheet\'s new version).</p>';
@@ -562,10 +585,13 @@
     // stays where it was, so the sheet's distance is moved from the sheet's price (Main's, as exported) to the price now
     var all = ui.objRows(ctx.D.zones4h).map(function (r) {
       var st = ctx.bySym[r.Symbol];
-      if (!(SB.livePrice && SB.livePrice(st)) || !st.base || !(st.base.price > 0) || !isNum(r['Distance %'])) return r;
+      if (!(SB.livePrice && SB.livePrice(st))) return r;
       var o = {};
       Object.keys(r).forEach(function (k) { o[k] = r[k]; });
-      o['Distance %'] = SB.rebasePct(r['Distance %'], st.base.price, st.price);
+      // the zone top from Kite (17-Nov-2026): the distance straight from it; an older feed: moved from the sheet's price
+      if (isNum(r['Zone Top']) && st.price > 0) o['Distance %'] = (st.price / r['Zone Top'] - 1) * 100;
+      else if (st.base && st.base.price > 0 && isNum(r['Distance %'])) o['Distance %'] = SB.rebasePct(r['Distance %'], st.base.price, st.price);
+      else return r;
       return o;
     });
     var t = new ui.Table({
@@ -575,6 +601,8 @@
         { key: 'Kind', label: 'Zone', get: function (r) { return r.Kind === 'Gap-up' ? 'Gap-up' + (r['Inside FVG'] === 'Y' ? ' (inside FVG)' : '') : '3-candle FVG'; },
           html: function (r) { return ui.badge(r.Kind === 'Gap-up' ? 'Gap-up' + (r['Inside FVG'] === 'Y' ? ' · inside FVG' : '') : '3-candle FVG', r['Inside FVG'] === 'Y' ? 's-good' : 's-info'); } },
         { key: 'Formed', label: 'Formed (4H candle)' },
+        { key: 'Zone Bottom', label: 'Zone bottom', type: 'price', title: 'The zone\'s bottom (Zerodha Kite)' },
+        { key: 'Zone Top', label: 'Zone top', type: 'price', title: 'The zone\'s top (Zerodha Kite)' },
         { key: 'Zone %', label: 'Zone size', type: 'num', digits: 2, title: 'Zone height as % of its bottom' },
         { key: 'Distance %', label: 'Distance', type: 'pct', digits: 2, title: 'The price now (Kite live with your PIN / delayed, else the sheet\'s) vs the zone top (negative = at / inside the zone)' },
         { key: 'Mitigated Alerted', label: 'Status', get: function (r) { return r['Mitigated Alerted'] === 'Y' ? 'Mitigated' : 'Watching'; },
@@ -1137,7 +1165,7 @@
     }).mount($('#sg-ml-t', el));
     function applyMl() {
       var list = ml.filter(function (r) {
-        if (ST.mlType !== 'all' && r.Type !== ST.mlType) return false;
+        if (ST.mlType === '4H' ? !/^4H /.test(String(r.Type || '')) : ST.mlType !== 'all' && r.Type !== ST.mlType) return false;
         return ui.textMatch(ST.mlQ, [r.Symbol]);
       });
       $('#sg-ml-count', el).textContent = F.int(list.length) + ' entries';

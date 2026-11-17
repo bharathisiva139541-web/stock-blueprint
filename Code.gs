@@ -9275,7 +9275,8 @@ function ab_site_main_(cx, readAt) {
   const bt = ab_site_tab_(cx, 'FVG Backtest');
   if (bt) data.fvgBacktest = ab_site_table_(cx, bt, 'Flagged On', { stopBlank: false });
   const ml = ab_site_tab_(cx, 'Mitigated FVG Log');
-  if (ml) data.mitigatedLog = ab_site_noKite_(ab_site_table_(cx, ml, 'Date', { stopBlank: false }));
+  // every row, the 4H ones (Zerodha Kite zones) too (owner, 17-Nov-2026: "We don't need to follow zerodha rules")
+  if (ml) data.mitigatedLog = ab_site_table_(cx, ml, 'Date', { stopBlank: false });
 
   // Alerts: watch-level alerts only (see ab_site_alerts_)
   data.alerts = ab_site_alerts_(cx, ab_site_tab_(cx, 'Alert Log'), priv);
@@ -9296,10 +9297,11 @@ function ab_site_main_(cx, readAt) {
   if (hi) data.high52 = ab_site_noteTable_(cx, hi, 'Symbol', { stopBlank: false });
   const dl = ab_site_tab_(cx, 'Delivery %');
   if (dl) data.delivery = ab_site_table_(cx, dl, 'Symbol', { stopBlank: false });
-  // Zerodha Kite patterns (PC bridge): which pattern formed when - no prices (Kite's data is for the owner's own use)
+  // Zerodha Kite patterns (PC bridge): which pattern formed when + the candle's low / close and the zone (Kite prices - owner,
+  // 17-Nov-2026: "Website-க்கு Kite zone விலைகள் வருவதில்லை. Yen varuvathilai. We don't need to follow zerodha rules.")
   const itd = ab_site_tab_(cx, 'Intraday Patterns');
   if (itd) data.intraday = ab_site_itd_(cx, itd);
-  // 4H FVG zones + the FVG+Spring backtest (PC bridge, 08-Nov-2026): no Kite prices - zone size / distance % and R only.
+  // 4H FVG zones (with the zone prices since 17-Nov-2026) + the FVG+Spring backtest (PC bridge, 08-Nov-2026; R only).
   // The backtest's signal list is under 'list': a "trades" key is one of api/site.js's personal-data markers (the owner's
   // Trade Log) and blocked the whole live feed (08-Nov-2026) - never use that key in the feed
   const z4 = ab_site_tab_(cx, '4H FVG Zones');
@@ -9321,7 +9323,7 @@ function ab_site_main_(cx, readAt) {
 }
 
 // export_xlsx.py Z4_COLS / BT_COLS / BTT_COLS + pick(): the only columns of those tabs the website gets
-const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG'];
+const AB_SITE_Z4_COLS = ['Symbol', 'Company', 'Kind', 'Zone %', 'Formed', 'Distance %', 'Mitigated Alerted', 'Inside FVG', 'Zone Bottom', 'Zone Top'];
 const AB_SITE_Z4_MAX = 6000;
 const AB_SITE_CHW_COLS = ['Symbol', 'Company', 'Timeframe', 'CHoCH Candle', 'CHoCH Level', 'Lower Highs / Lows', 'Final Low', 'Final Low On',
   'Move High', '50% Line', 'Zone Kind', 'Zone Bottom', 'Zone Top', 'Zone Formed', 'Zone Depth %', 'Zone %', 'Buy At', 'Stop Under', 'Entry',
@@ -9333,15 +9335,6 @@ const AB_SITE_BT_COLS = ['Timeframe', 'Group', 'Signals', 'Avg Up % (30d)', 'Med
 const AB_SITE_BTT_COLS = ['Candle', 'Symbol', 'Company', 'Timeframe', 'Zone', 'Where', 'Touch', 'Up % (30d)', 'Max R', 'Result'];
 const AB_SITE_BTT_MAX = 1000;
 
-/** The Mitigated FVG Log without its 4H rows (zones from Zerodha Kite candles - Kite's prices stay on the sheet) =
- *  export_xlsx.py no_kite(). */
-function ab_site_noKite_(t) {
-  const ti = t && t.cols ? t.cols.indexOf('Type') : -1;
-  if (ti === -1) return t;
-  t.rows = t.rows.filter(function (r) { return !/^4H /.test(String(r[ti] === null || r[ti] === undefined ? '' : r[ti])); });
-  return t;
-}
-
 /** {note, cols, rows} -> the same with only `cols` (in that order; a missing column = null), at most `max` rows. */
 function ab_site_pick_(t, cols, max) {
   const idx = cols.map(function (c) { return t.cols.indexOf(c); });
@@ -9349,7 +9342,8 @@ function ab_site_pick_(t, cols, max) {
 }
 
 // export_xlsx.py INTRADAY_COLS / intraday_patterns(): the columns the website may show and how much of the tab
-const AB_SITE_ITD_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail'];
+const AB_SITE_ITD_COLS = ['Session', 'Symbol', 'Company', 'Timeframe', 'Pattern', 'Candle', 'FVG Formed', 'FVG Detail', 'Low', 'Close',
+  'FVG Bottom', 'FVG Top'];
 const AB_SITE_ITD_SESSIONS = 10;
 const AB_SITE_ITD_MAX = 4000;
 
@@ -9863,7 +9857,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 15;   // 15: chochWait + 'Zone %' / 'Buy At' / 'Stop Under' / 'Entry' (12-Nov-2026 refinements); 14: + chochWait (CHoCH Waiting tab, with Kite prices - 12-Nov-2026); 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 16;   // 16: Kite prices - intraday + 'Low' / 'Close' / 'FVG Bottom' / 'FVG Top', zones4h + 'Zone Bottom' / 'Zone Top', mitigatedLog keeps its 4H rows (17-Nov-2026); 15: chochWait + 'Zone %' / 'Buy At' / 'Stop Under' / 'Entry' (12-Nov-2026 refinements); 14: + chochWait (CHoCH Waiting tab, with Kite prices - 12-Nov-2026); 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;
