@@ -119,6 +119,7 @@ DEFAULTS = {
     'xbrl': True,              # read NSE's XBRL results filings of the results the sheet waits for (Results Day figures)
     'max_xbrl_per_run': 60,
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
+    'nse_pe': True,            # NSE's daily PE file: Main's PE where there is no TTM EPS, Industry PE medians
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
     'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
@@ -942,6 +943,203 @@ def eod_step(cfg, today=None):
             log('NSE end-of-day: up to date (latest day sent: %s).' % (date.fromisoformat(st['last']).strftime('%d-%m-%Y') if st.get('last') else '-'))
     except Exception as e:   # never let these reports stop the screener work
         log('NSE end-of-day: unexpected problem - %s' % e)
+
+
+# ------------------------------------------------------------------ NSE's daily PE file
+# Owner, 17-Nov-2026: "PE ratio cell of any stock in our sheet is using Google finance formula ... NSE daily update PE ratio
+# file in their reports page"; choice "Both": Main's PE Ratio = MKT Price / TTM EPS (the sheet's own, from the results
+# engine), and NSE's PE where Main has no TTM EPS. NSE > All Reports > Equities > "PE ratio" = PE_DDMMYY.csv (published on
+# the All Reports page since 24-Mar-2025, circular CMTR67119): symbol-wise P/E and adjusted P/E of the trading day. The
+# newest day the sheet does not have yet goes to action 'nsepe' {day, rows {SYM: [pe, adjusted pe]}} - the sheet keeps it
+# in its hidden NSE_PE tab (Main's PE formula reads it) and works out the Industry PE medians.
+NSE_PE_URLS = ('https://nsearchives.nseindia.com/content/equities/peDetail/PE_{d}.csv',
+               'https://archives.nseindia.com/content/equities/peDetail/PE_{d}.csv')
+NSE_PE_LINK_RE = r'(https?:\\?/\\?/[^"\s]+?PE_(\d{2})(\d{2})(\d{2})\.csv)'
+NSE_PE_LOOKBACK_DAYS = 6
+NSE_PE_STATE_PATH = os.path.join(HERE, 'nsepe_state.json')
+
+
+def _pe_num(v):
+    v = str(v or '').strip().replace(',', '')
+    if not v or v in ('-', 'NA', 'N.A.', 'NIL', 'nil'):
+        return None
+    try:
+        x = float(v)
+    except ValueError:
+        return None
+    return round(x, 2) if x == x and abs(x) < 1e7 else None
+
+
+def pe_parse(raw):
+    """{SYM: [pe, adjusted pe]} from NSE's PE_DDMMYY.csv, None when it is not that file (a web page came back).
+    Column names are matched loosely: the symbol, the series (mainboard EQ / BE / BZ kept, EQ first), P/E and adjusted P/E."""
+    try:
+        text = raw.decode('utf-8-sig', errors='replace')
+    except AttributeError:
+        text = str(raw)
+    if '<html' in text[:500].lower():
+        return None
+    rows = list(csv.reader(io.StringIO(text)))
+
+    def is_pe(c):
+        return 'P/E' in c or 'PE' in c.replace('/', ' ').replace('_', ' ').split()
+
+    hi = -1
+    for i, r in enumerate(rows[:10]):
+        u = [str(c).strip().upper() for c in r]
+        if any(c.startswith('SYMBOL') and not is_pe(c) for c in u) and any(is_pe(c) for c in u):
+            hi = i
+            break
+    if hi < 0:
+        return None
+    head = [str(c).strip().upper() for c in rows[hi]]
+    sym = next((k for k, c in enumerate(head) if c == 'SYMBOL'), None)
+    if sym is None:
+        sym = next((k for k, c in enumerate(head) if c.startswith('SYMBOL') and not is_pe(c)), None)
+    ser = next((k for k, c in enumerate(head) if c == 'SERIES'), None)
+    pes = [k for k, c in enumerate(head) if is_pe(c)]
+    adj = next((k for k in pes if 'ADJ' in head[k]), None)
+    pe = next((k for k in pes if k != adj), None)
+    if sym is None or pe is None:
+        return None
+    out, rank = {}, {}
+    for r in rows[hi + 1:]:
+        if len(r) <= max(sym, pe):
+            continue
+        s = str(r[sym]).strip().upper()
+        if not s:
+            continue
+        series = str(r[ser]).strip().upper() if ser is not None and ser < len(r) else 'EQ'
+        if series not in EOD_SERIES:
+            continue
+        k = EOD_SERIES.index(series)
+        if s in rank and rank[s] <= k:
+            continue
+        rank[s] = k
+        out[s] = [_pe_num(r[pe]), _pe_num(r[adj]) if adj is not None and adj < len(r) else None]
+    return out
+
+
+def pe_links_from_api(opener):
+    """{date: url} of the PE files listed on NSE's All Reports page."""
+    try:
+        status, raw = nse_get(opener, PB_REPORTS_API, timeout=30)
+    except (OSError, urllib.error.URLError, socket.timeout):
+        return {}
+    if status != 200:
+        return {}
+    out = {}
+    for m in re.finditer(NSE_PE_LINK_RE, raw.decode('utf-8', errors='replace')):
+        try:
+            out[date(2000 + int(m.group(4)), int(m.group(3)), int(m.group(2)))] = m.group(1).replace('\\/', '/')
+        except ValueError:
+            pass
+    return out
+
+
+def pe_fetch(opener, day, url=None):
+    """('ok', rows) | ('missing', None) | ('error', reason) for one trading day."""
+    tag = day.strftime('%d%m%y')
+    outcomes = []
+    for u in ([url] if url else [t.format(d=tag) for t in NSE_PE_URLS]):
+        try:
+            status, raw = nse_get(opener, u, timeout=60)
+        except (OSError, urllib.error.URLError, socket.timeout) as e:
+            outcomes.append('NSE did not answer (%s)' % e)
+            continue
+        if status == 404:
+            outcomes.append('missing')
+            continue
+        if status != 200:
+            outcomes.append('HTTP %s from NSE' % status)
+            continue
+        val = pe_parse(raw)
+        if not val:
+            outcomes.append('NSE did not send the PE file (a web page or an empty file came back)')
+            continue
+        return 'ok', val
+    if outcomes and all(o == 'missing' for o in outcomes):
+        return 'missing', None
+    return 'error', next((o for o in outcomes if o != 'missing'), 'nothing tried')
+
+
+def pe_load_state():
+    try:
+        with open(NSE_PE_STATE_PATH, 'r', encoding='utf-8') as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def pe_save_state(st):
+    try:
+        with open(NSE_PE_STATE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(st, f, indent=2)
+    except OSError:
+        pass
+
+
+def pe_step(cfg, today=None, opener=None):
+    """Sends NSE's newest PE file the sheet has not had yet (action 'nsepe'). Never raises; returns True when sent."""
+    if not cfg.get('nse_pe', True):
+        return False
+    try:
+        st = pe_load_state()
+        today = today or date.today()
+        last = None
+        try:
+            last = date.fromisoformat(st['last']) if st.get('last') else None
+        except ValueError:
+            last = None
+        days = [today - timedelta(days=k) for k in range(NSE_PE_LOOKBACK_DAYS + 1)]
+        days = [d for d in days if d.weekday() < 5 and (last is None or d > last)]
+        if not days:
+            log('NSE PE: up to date (latest day sent: %s).' % last.strftime('%d-%m-%Y'))
+            return False
+        opener = opener or nse_session()
+        links, problems = None, []
+        for d in days:                                   # newest first: only the newest file matters
+            kind, rows = pe_fetch(opener, d)
+            if kind != 'ok':
+                if links is None:
+                    links = pe_links_from_api(opener)
+                if d in links:
+                    kind, rows = pe_fetch(opener, d, url=links[d])
+            if kind == 'missing':
+                continue
+            if kind == 'error':
+                problems.append('%s: %s' % (d.strftime('%d-%m-%Y'), rows))
+                continue
+            label = d.strftime('%d-%m-%Y')
+            try:
+                res = api(cfg, 'nsepe', {'day': d.isoformat(), 'rows': rows}, timeout=180)
+            except RuntimeError as e:
+                log('NSE PE %s: sending to the sheet failed (%s) - the next run tries again.' % (label, e))
+                return False
+            if not res.get('ok'):
+                err = res.get('error') or 'unknown error'
+                if err == 'unknown action':
+                    err = ('the sheet\'s web app does not know this yet - New version deploy (Deploy > Manage deployments > '
+                           'pencil > Version: New version > Deploy), or wait for the automatic update')
+                log('NSE PE %s: the sheet refused - %s' % (label, err))
+                return False
+            ipe = res.get('industryPe') or {}
+            log('NSE PE %s: %d stocks from NSE -> the sheet (%s of your Main stocks)%s.'
+                % (label, len(rows), res.get('matched', '?'),
+                   ('; Industry PE worked out for %s industries' % ipe['industries']) if ipe.get('industries') else ''))
+            st['last'] = d.isoformat()
+            st['sent_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+            pe_save_state(st)
+            return True
+        if problems:
+            log('NSE PE: could not download - %s.' % '; '.join(problems[:2]))
+        else:
+            log('NSE PE: no new file yet (NSE publishes it in the evening) - the next run tries again.')
+        return False
+    except Exception as e:   # never let this stop the other work
+        log('NSE PE: unexpected problem - %s' % e)
+        return False
 
 
 # ------------------------------------------------------------------ NSE daily candles for History60
@@ -3632,6 +3830,7 @@ def run_once(cfg):
         price_bands_step(cfg)
         ipo_step(cfg)
         eod_step(cfg)
+        pe_step(cfg)               # NSE's daily PE file (Main's PE where there is no TTM EPS + Industry PE)
         hist_step(cfg, ans.get('h60'))
 
         state = run_state_resume(cfg)
@@ -4276,6 +4475,14 @@ def main(argv):
             return 1
         ipo_step(dict(cfg, ipos=True))
         return 0
+    if cmd == 'nsepe':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        st = pe_load_state()
+        st.pop('last', None)                     # send the newest file again
+        pe_save_state(st)
+        return 0 if pe_step(dict(cfg, nse_pe=True)) else 1
     if cmd == 'eod':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

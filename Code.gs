@@ -1047,6 +1047,7 @@ function onOpen() {
         .addItem('Fill Missing Chart/Screener Links', 'runFillChartScreenerLinks')
         .addItem('Fill Prev Day Volume', 'runPrevDayVolumeNow')
         .addItem('Apply Updated Industry PE to Main (from BasicIndustry PE tab)', 'runApplyUpdatedIndustryPeNow')
+        .addItem('PE Ratio + Industry PE: update now (price / TTM EPS, median of Main stocks)', 'runIndustryPeAutoNow')
         .addSeparator()
         .addItem('Fill Sector/Industry from Basic Industry', 'runFillSectorIndustryFromBasicIndustry')
         .addItem('Audit Industry Classification vs NSE list', 'auditIndustryClassification')
@@ -1997,6 +1998,7 @@ function ab_dailyPhase4Work_() {
     Logger.log('IPO base watch failed: ' + baseErr.message);
   }
   note += ab_rpEveningRefresh_();
+  note += ab_peEveningRefresh_();      // PE Ratio formula + Industry PE medians (Code2.gs, 17-Nov-2026)
   return note;
 }
 
@@ -9016,6 +9018,9 @@ function doPost(e) {
     }
     if (req.action === 'eod') {
       return ab_bridgeJson_(ab_eodFromBridge_(req));
+    }
+    if (req.action === 'nsepe') {
+      return ab_bridgeJson_(ab_nsePeFromBridge_(req));     // NSE's daily PE file -> NSE_PE tab + Industry PE (Code2.gs)
     }
     if (req.action === 'hist') {
       return ab_bridgeJson_(ab_h60FromBridge_(req));
