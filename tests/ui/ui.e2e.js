@@ -219,7 +219,7 @@ async function pageState(page) {
 
 const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
-  'strategy', 'signals', 'excel', 'results', 'today', 'alerts', 'backtest', 'markets'];
+  'strategy', 'signals', 'excel', 'results', 'today', 'edge', 'alerts', 'backtest', 'markets'];
 let failures = 0;
 // tools/lab-guide/build.js (the Backtest Lab guide, 12-Nov-2026) runs only the Lab check (E2E_ONLY) and keeps its screenshots (GUIDE_SHOTS)
 const GUIDE = process.env.GUIDE_SHOTS || '';
@@ -623,6 +623,50 @@ function check(name, fn) {
           assert.ok(r.tab, 'a tab of its own');
           await page.click('a.tile-link[href="#today/final"]');
           await page.waitForFunction(() => location.hash === '#today/final' && /^0 of 0/.test(document.querySelector('#td-count').textContent), null, { timeout: 15000 });
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
+        // owner, 17-Nov-2026: "Entha parameter edukurathu ... epdi edutha rally kana possibility iruku. make a separate page alone for this"
+        await check('results edge: the season learned on the copy\'s data, the rally rule recomputes it, features / decide / every result', async () => {
+          errors.length = 0;
+          await page.evaluate(() => { try { localStorage.removeItem('sb:edge:opts'); } catch (e) { /* ignore */ } });
+          await page.goto(base + '#edge', { waitUntil: 'load' });
+          await page.waitForSelector('#edge-sum', { timeout: 20000 });
+          const r = await page.evaluate(() => ({
+            tab: !!document.querySelector('.tabs a[data-tab="edge"]'),
+            rule: document.querySelector('#edge-rule').textContent,
+            tiles: [...document.querySelectorAll('#edge-sum .tile .label')].map((x) => x.textContent),
+            feats: document.querySelectorAll('#edge-feat [data-feat]').length,
+            groups: !!document.querySelector('#edge-groups table'),
+            all: document.querySelectorAll('#edge-all-t tbody tr').length,
+            chips: [...document.querySelectorAll('[data-chip="edgelist"]')].map((b) => b.textContent),
+            heads: [...document.querySelectorAll('#edge-all-t thead th')].map((th) => th.textContent.replace(/[↑↓]/g, '').trim()),
+            now: !!document.querySelector('#edge-now-t table')
+          }));
+          assert.ok(r.tab, 'a tab of its own');
+          assert.match(r.rule, /open of the first session that could react/);
+          assert.match(r.rule, /at least 8% above the entry within the first 2 sessions .*or.* the close of the 10th session was at least 10% above the entry/);
+          assert.deepStrictEqual(r.tiles, ['Results with an outcome', 'Rallied', 'Average 10-session move', 'Score check']);
+          assert.ok(r.feats >= 25 && r.groups && r.now, JSON.stringify(r));
+          assert.ok(r.all > 0, 'every result listed');
+          assert.match(r.chips.join('|'), /^All \(\d+\)\|Rallied \(\d+\)\|No rally \(\d+\)\|Still running \(\d+\)\|Not traded yet \(\d+\)$/);
+          ['Stock', 'Result date', 'Entry', 'Outcome', 'Best jump', '10-session move', 'Rally chance', 'Decision', 'NP YoY', 'OPM Qtr YoY', 'PE', 'FII', 'Promoter'].forEach((h) =>
+            assert.ok(r.heads.includes(h), h + ' in ' + r.heads.join(' | ')));
+          // the counts add up: All = the four lists
+          const n = r.chips.map((c) => +/\((\d+)\)/.exec(c)[1]);
+          assert.strictEqual(n[0], n[1] + n[2] + n[3] + n[4]);
+          // a shorter rule: everything is worked out again (more results have an outcome after 5 sessions)
+          const before = await page.$eval('#edge-sum .tile .value', (x) => x.textContent);
+          await page.selectOption('[data-eo="trendDays"]', '5');
+          await page.waitForFunction((b) => /close of the 5th session/.test(document.querySelector('#edge-rule').textContent) && document.querySelector('#edge-sum .tile .value') &&
+            document.querySelector('#edge-sum .tile .value').textContent !== b, before, { timeout: 15000 });
+          // a figure's groups + checking one stock
+          await page.click('#edge-feat [data-feat="npY"]');
+          assert.match(await page.$eval('#edge-groups', (x) => x.textContent), /Net profit YoY %/);
+          const sym = await page.$eval('#edge-all-t tbody tr [data-sym]', (b) => b.getAttribute('data-sym'));
+          await page.fill('#edge-q', sym);
+          await page.waitForSelector('#edge-one .edge-one', { timeout: 5000 });
+          assert.match(await page.$eval('#edge-one', (x) => x.textContent), new RegExp(sym + '[\\s\\S]*Rally chance'));
+          await page.selectOption('[data-eo="trendDays"]', '10');
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         await check('results: "fell after results, then back above" card (daily closes) and its lists', async () => {
