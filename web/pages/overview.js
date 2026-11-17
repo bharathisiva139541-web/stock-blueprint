@@ -1,5 +1,5 @@
 /* Overview: benchmarks, breadth, sector performance, strategy setups,
-   watchlist highlights, upcoming results, alerts/risk and data status. */
+   watchlist highlights, upcoming results and data status. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, isNum = ui.isNum, $ = ui.$;
@@ -108,12 +108,10 @@
       var season = (D.resultsPerf && D.resultsPerf.seasons || [])[0];
       var tracker = ui.objRows(D.resultsTracker).filter(function (r) { return !season || r['Quarter Expected'] === season.season; });
       var pend = tracker.filter(function (r) { return r.Status === 'Pending'; }).length;
-      var alerts = ui.objRows(D.alerts), openA = alerts.filter(function (a) { return a.Outcome === 'Open'; }).length;
-      var myRules = (ui.store.get('alerts:rules', []) || []).filter(function (r) { return r && r.enabled !== false; }).length;
       var idx = ui.objRows(D.indices);
       var n50 = idx.filter(function (r) { return r['NSE Symbol'] === 'NIFTY_50'; })[0];
 
-      var h = '<div class="page-head"><div><h1>Market overview</h1><p>Your ' + F.int(stocks.length) + '-stock NSE watchlist: benchmarks, breadth, sectors, strategy setups, results and alerts. ' +
+      var h = '<div class="page-head"><div><h1>Market overview</h1><p>Your ' + F.int(stocks.length) + '-stock NSE watchlist: benchmarks, breadth, sectors, strategy setups and results. ' +
         ui.stateBadge(ctx.market.state, ctx.market.asOf, ctx.market.source) + '</p></div></div>';
       h += marketStats(D, ctx);
       h += '<div class="tiles">' +
@@ -121,8 +119,6 @@
         ui.tile('Breadth', adv + ' / ' + dec, 'advancing / declining · ' + flat + ' unchanged') +
         ui.tile('Strategy setups', '<span id="ov-q">…</span>', '<span id="ov-qn">active strategy</span>') +
         ui.tile('Results season' + (season ? ' · ' + season.season : ''), F.int(season ? season.tracked : 0), F.int(pend) + ' still waiting on screener.in') +
-        ui.tile('Open alerts', F.int(openA), 'sheet watch alerts · ' + myRules + ' of your own rules') +
-        ui.tile('Portfolio heat', '<span id="ov-heat">–</span>', '<span id="ov-heatn">from your trade journal</span>') +
         '</div>';
 
       // sector performance by dashboard category
@@ -166,16 +162,6 @@
         rows: soon, pageSize: 8, sort: { key: 'rdate', dir: 1 }, empty: 'No result dates in the next 7 days',
         columns: [{ key: 'rdate', label: 'Date', type: 'date' }, { key: 'sym', label: 'Stock', type: 'sym', name: 'name' }, { key: 'chg', label: 'Today', type: 'pct', digits: 2 }]
       }).mount($('#ov-soon', el));
-
-      // portfolio heat from the viewer's own journal + risk settings (this browser only)
-      try {
-        var open = SB.journal ? SB.journal.open() : [];
-        if (open.length) {
-          var pr = SB.journal.portfolio(ctx);
-          $('#ov-heat', el).innerHTML = F.num(pr.heatPct, 1) + '%';
-          $('#ov-heatn', el).textContent = open.length + ' open journal positions · limit ' + pr.heatLimitPct + '%';
-        } else $('#ov-heatn', el).textContent = 'no open journal positions';
-      } catch (e) { /* journal unreadable: keep the dash */ }
 
       SB.strategies.runActive().then(function (run) {
         var cfg = run.config, q = run.lists.qualified;

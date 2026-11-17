@@ -219,7 +219,7 @@ async function pageState(page) {
 
 const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
-  'strategy', 'signals', 'excel', 'results', 'today', 'edge', 'alerts', 'backtest', 'markets'];
+  'strategy', 'signals', 'results', 'today', 'edge', 'markets'];
 let failures = 0;
 // tools/lab-guide/build.js (the Backtest Lab guide, 12-Nov-2026) runs only the Lab check (E2E_ONLY) and keeps its screenshots (GUIDE_SHOTS)
 const GUIDE = process.env.GUIDE_SHOTS || '';
@@ -659,6 +659,26 @@ function check(name, fn) {
           await page.goto(base + '#watchlist', { waitUntil: 'load' });
           await page.waitForTimeout(800);
           assert.match(await page.$eval('#app .pager span', (x) => x.textContent), /^1–/);
+          assert.deepStrictEqual(errors, [], 'console/page errors');
+        });
+        // owner, 17-Nov-2026: "remove excel analysis, backtesting, alerts and trade page from website"
+        await check('removed pages: no Excel Analysis / Backtesting / Alerts & Trades tab, their old links open the Overview', async () => {
+          errors.length = 0;
+          for (const old of ['excel', 'alerts', 'backtest', 'alerts/journal']) {
+            await page.goto(base + '#' + old, { waitUntil: 'load' });
+            await page.waitForSelector('#app h1', { timeout: 20000 });
+            assert.match(await page.$eval('#app h1', (x) => x.textContent), /Market overview/, old);
+          }
+          const tabs = await page.$$eval('.tabs a', (a) => a.map((x) => x.getAttribute('data-tab')));
+          ['excel', 'alerts', 'backtest'].forEach((t) => assert.ok(!tabs.includes(t), t + ' tab'));
+          assert.ok(tabs.includes('lab') && tabs.includes('edge'), tabs.join(','));
+          const tiles = await page.$$eval('#app .tile .label', (l) => l.map((x) => x.textContent));
+          assert.ok(!tiles.some((t) => /Open alerts|Portfolio heat/.test(t)), tiles.join(' | '));
+          await page.goto(base + '#suggestions', { waitUntil: 'load' });
+          await page.waitForSelector('[data-chip="sgl"]', { timeout: 20000 });
+          const lists = await page.$$eval('[data-chip="sgl"]', (b) => b.map((x) => x.getAttribute('data-v')));
+          assert.ok(!lists.includes('exits'), lists.join(','));
+          assert.ok(!/Position size|journal/i.test(await page.$eval('#app', (x) => x.textContent)), 'no journal / position size on Daily Suggestions');
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         // owner, 17-Nov-2026: "Entha parameter edukurathu ... epdi edutha rally kana possibility iruku. make a separate page alone for this"
