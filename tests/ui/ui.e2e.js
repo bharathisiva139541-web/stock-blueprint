@@ -682,11 +682,14 @@ function check(name, fn) {
           assert.match(r.rule, /open of the first session that could react/);
           assert.match(r.rule, /at least 8% above the entry within the first 2 sessions .*or.* the close of the 10th session was at least 10% above the entry/);
           assert.deepStrictEqual(r.tiles, ['Results with an outcome', 'Rallied', 'Average 10-session move', 'Score check']);
-          assert.ok(r.feats >= 25 && r.groups && r.now, JSON.stringify(r));
+          assert.ok(r.feats >= 20 && r.groups && r.now, JSON.stringify(r));
           assert.ok(r.all > 0, 'every result listed');
           assert.match(r.chips.join('|'), /^All \(\d+\)\|Rallied \(\d+\)\|No rally \(\d+\)\|Still running \(\d+\)\|Not traded yet \(\d+\)$/);
-          ['Stock', 'Result date', 'Entry', 'Outcome', 'Best jump', '10-session move', 'Rally chance', 'Decision', 'NP YoY', 'OPM Qtr YoY', 'PE', 'FII', 'Promoter'].forEach((h) =>
+          ['Stock', 'Result date', 'Entry', 'Outcome', 'Best jump', '10-session move', 'Rally chance', 'Decision', 'NP YoY', 'OPM Qtr YoY', 'PE'].forEach((h) =>
             assert.ok(r.heads.includes(h), h + ' in ' + r.heads.join(' | ')));
+          // owner, 17-Nov-2026: FII, promoter, the 20-session move, the 60-day high and the 50-day average are gone
+          ['FII', 'Promoter', '20-session move before'].forEach((h) => assert.ok(!r.heads.includes(h), h));
+          assert.strictEqual(await page.$$eval('#edge-feat [data-feat]', (b) => b.filter((x) => /^(fii|promo|run20|fromHigh|sma50)$/.test(x.getAttribute('data-feat'))).length), 0);
           // the counts add up: All = the four lists
           const n = r.chips.map((c) => +/\((\d+)\)/.exec(c)[1]);
           assert.strictEqual(n[0], n[1] + n[2] + n[3] + n[4]);
@@ -703,6 +706,36 @@ function check(name, fn) {
           await page.waitForSelector('#edge-one .edge-one', { timeout: 5000 });
           assert.match(await page.$eval('#edge-one', (x) => x.textContent), new RegExp(sym + '[\\s\\S]*Rally chance'));
           await page.selectOption('[data-eo="trendDays"]', '10');
+          await page.fill('#edge-q', '');
+          // owner, 17-Nov-2026: "option to see the whole results as one single session instead of two (earlier, later)"
+          await page.selectOption('[data-eo="view"]', 'whole');
+          await page.waitForFunction(() => /as one part/.test(document.querySelector('#edge-rule').textContent) && document.querySelector('#edge-groups table'), null, { timeout: 15000 });
+          await page.click('#edge-feat [data-feat="npY"]');
+          const gh = await page.$$eval('#edge-groups thead th', (t) => t.map((th) => th.textContent.replace(/[↑↓]/g, '').trim()));
+          assert.ok(gh.includes('vs the rest') && !gh.includes('Earlier part') && !gh.includes('Held'), gh.join(' | '));
+          assert.match(await page.$eval('#edge-feat', (x) => x.textContent), /over the whole season/);
+          // "possibility of stocks opening in gapup if its result came after or closed market hours" (the copy has no announcement
+          // times: every result made an after-market one for this check)
+          await page.evaluate(() => { const t = window.SB.ctx.D.resultsPerf.table; t.cols.push('Announced'); t.rows.forEach((x) => x.push('18:00 After market')); });
+          await page.selectOption('[data-eo="goal"]', 'gapup');
+          await page.waitForFunction(() => /opened at least 3%/.test(document.querySelector('#edge-rule').textContent) && document.querySelector('#edge-all-t table'), null, { timeout: 15000 });
+          const g = await page.evaluate(() => ({
+            pop: !!document.querySelector('[data-eo="popPct"]'), gapSel: !!document.querySelector('[data-eo="gapPct"]'),
+            tiles: [...document.querySelectorAll('#edge-sum .tile .label')].map((x) => x.textContent),
+            finished: +document.querySelector('#edge-sum .tile .value').textContent.replace(/,/g, ''),
+            chips: [...document.querySelectorAll('[data-chip="edgelist"]')].map((b) => b.textContent),
+            heads: [...document.querySelectorAll('#edge-all-t thead th')].map((th) => th.textContent.replace(/[↑↓]/g, '').trim()),
+            nowHeads: [...document.querySelectorAll('#edge-now-t thead th')].map((th) => th.textContent.replace(/[↑↓]/g, '').trim()),
+            feats: [...document.querySelectorAll('#edge-feat [data-feat]')].map((b) => b.getAttribute('data-feat'))
+          }));
+          assert.ok(!g.pop && g.gapSel, 'the gap-up rule replaces the rally rule');
+          assert.deepStrictEqual(g.tiles, ['Results with an outcome', 'Gapped up', 'Average opening gap', 'Score check']);
+          assert.ok(g.finished > 50, 'the copy\'s results now count: ' + g.finished);
+          assert.match(g.chips.join('|'), /^All \(\d+\)\|Gapped up \(\d+\)\|No gap-up \(\d+\)\|Not opened yet \(\d+\)$/);
+          ['Opened', 'Close before', 'Opening gap', 'Gap-up chance', 'Decision'].forEach((h) => assert.ok(g.heads.includes(h), h + ' in ' + g.heads.join(' | ')));
+          assert.ok(!g.heads.includes('When') && g.nowHeads.includes('Gap-up chance'), g.nowHeads.join(' | '));
+          assert.ok(!g.feats.includes('gap') && !g.feats.includes('session'), 'the gap is the outcome');
+          await page.evaluate(() => { try { localStorage.removeItem('sb:edge:opts'); } catch (e) { /* ignore */ } });
           assert.deepStrictEqual(errors, [], 'console/page errors');
         });
         await check('results: "fell after results, then back above" card (daily closes) and its lists', async () => {

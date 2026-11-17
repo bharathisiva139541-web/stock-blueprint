@@ -6,11 +6,16 @@
    vangalama venamanu oru decision edukura mari venum"; answers: the entry = "if the result released in the market hours,
    same day morning ... after market hour or closed, buy on next trading day"; a rally = "same day or next day 8% ku mela rise
    ... or consistent ah 10 day la nala rise"; the values at result time are NOT frozen in the sheet - Main's values now).
+   Owner, 17-Nov-2026 (on the first version): "these parameters doesn't make sense ... erase: price below 60 high, price vs 50
+   day average, price move in the 20 session before, FII holding, Promotor holding" (removed); "option to see the whole results
+   as one single session instead of two (earlier, later)" (`view` 'whole'); "possibility of stocks opening in gapup if its
+   result came after or closed market hours" (`goal` 'gapup': only those results, a win = the next session opened gapPct %
+   or more above the close before it; the price figures at that close - the price known in the evening).
 
    Browser + Node, no DOM. Learns from the season's results on the website's own data:
      the Results Performance rows (figures, verdict, announcement time, reaction session), Main (PE / PE vs industry /
-     PEG / upside / TTM Signal / EPS growth / FII / promoter / OPM Qtr YoY / market cap - Main's values NOW, the price
-     ones moved to the entry price), the Results Tracker's flags and the daily candles (History30 + History60).
+     PEG / upside / TTM Signal / EPS growth / OPM Qtr YoY / market cap - Main's values NOW, the price ones moved to the
+     entry price), the Results Tracker's flags and the daily candles (History30 + History60).
 
    SB.edge = {
      DEFAULTS, FEATURES, bucket(feature, value),
@@ -28,10 +33,12 @@
 
   // the owner's rally (17-Nov-2026): a jump of popPct within popDays sessions from the entry (the high), OR the close
   // trendDays sessions after the entry (the entry day = session 1) at least trendPct above it
-  var DEFAULTS = { popPct: 8, popDays: 2, trendPct: 10, trendDays: 10, rally: 'either', minN: 25, cap: 'all' };
+  // goal 'gapup': only the results that came after the market / on a closed day, a win = the next session's open at least
+  // gapPct % above the close before it; view 'whole' = the season as one part (no earlier / later check of the figures)
+  var DEFAULTS = { goal: 'rally', popPct: 8, popDays: 2, trendPct: 10, trendDays: 10, rally: 'either', gapPct: 3, minN: 25, cap: 'all', view: 'split' };
   var CHOICES = {
-    popPct: [5, 8, 10, 15, 20], popDays: [1, 2, 3], trendPct: [5, 8, 10, 15, 20], trendDays: [5, 10, 15, 20],
-    rally: ['either', 'pop', 'trend'], minN: [15, 25, 40], cap: ['all', 'large', 'mid', 'small', 'micro']
+    goal: ['rally', 'gapup'], popPct: [5, 8, 10, 15, 20], popDays: [1, 2, 3], trendPct: [5, 8, 10, 15, 20], trendDays: [5, 10, 15, 20],
+    rally: ['either', 'pop', 'trend'], gapPct: [1, 2, 3, 5, 8], minN: [15, 25, 40], cap: ['all', 'large', 'mid', 'small', 'micro'], view: ['split', 'whole']
   };
 
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
@@ -50,7 +57,6 @@
   var GROWTH = [[-Infinity, -20, 'below -20%'], [-20, 0, '-20% to 0%'], [0, 15, '0% to 15%'], [15, 40, '15% to 40%'],
     [40, 100, '40% to 100%'], [100, Infinity, 'over 100%']];
   var OPM_WORDS = ['Aggressive Increase', 'Increasing', 'Slightly Increasing', 'Stagnant', 'Slightly Decreasing', 'Decreasing', 'Aggressive Decrease'];
-  var TREND_WORDS = ['Increasing', 'Stagnant', 'Decreasing', 'Volatile'];
   var FEATURES = [
     { id: 'npY', label: 'Net profit YoY %', topic: 'Results', bands: GROWTH },
     { id: 'npQ', label: 'Net profit QoQ %', topic: 'Results', bands: GROWTH },
@@ -74,24 +80,23 @@
     { id: 'upside', label: 'Upside to the TTM target', topic: 'Valuation', bands: [[-Infinity, 0, 'above the target'], [0, 15, '0% to 15%'],
       [15, 40, '15% to 40%'], [40, 100, '40% to 100%'], [100, Infinity, 'over 100%']] },
     { id: 'sig', label: 'TTM Signal at the entry', topic: 'Valuation', words: ['Buy', 'Avoid'] },
-    { id: 'fii', label: 'FII holding', topic: 'Holders', words: TREND_WORDS },
-    { id: 'promo', label: 'Promoter holding', topic: 'Holders', words: TREND_WORDS },
     { id: 'cap', label: 'Market cap', topic: 'Size', words: ['Large cap', 'Mid cap', 'Small cap', 'Micro cap'] },
     { id: 'session', label: 'When the results came', topic: 'Timing', words: ['Before market', 'Market hours', 'After market / closed'] },
     { id: 'gap', label: 'Opening gap on the entry day', topic: 'Price', bands: [[-Infinity, -3, 'down over 3%'], [-3, -1, 'down 1-3%'],
       [-1, 1, 'flat (within 1%)'], [1, 3, 'up 1-3%'], [3, 8, 'up 3-8%'], [8, Infinity, 'up over 8%']] },
-    { id: 'run20', label: 'Price move in the 20 sessions before', topic: 'Price', bands: [[-Infinity, -10, 'fell over 10%'], [-10, -3, 'fell 3-10%'],
-      [-3, 3, 'flat (within 3%)'], [3, 10, 'rose 3-10%'], [10, 25, 'rose 10-25%'], [25, Infinity, 'rose over 25%']] },
-    { id: 'fromHigh', label: 'Below the 60-day high', topic: 'Price', bands: [[-Infinity, 3, 'within 3%'], [3, 10, '3% to 10% below'],
-      [10, 20, '10% to 20% below'], [20, 35, '20% to 35% below'], [35, Infinity, 'over 35% below']] },
     { id: 'sma20', label: 'Price vs its 20-day average', topic: 'Price', words: ['Above', 'Below'] },
-    { id: 'sma50', label: 'Price vs its 50-day average', topic: 'Price', words: ['Above', 'Below'] },
     { id: 'vol', label: 'Volume the day before vs its 20-day average', topic: 'Price', bands: [[-Infinity, 0.7, 'quiet (under 0.7x)'],
       [0.7, 1.5, 'normal'], [1.5, 3, 'busy (1.5x to 3x)'], [3, Infinity, 'very busy (over 3x)']] },
     { id: 'sector', label: 'Sector', topic: 'Sector', words: null }
   ];
   var FEAT = {};
   FEATURES.forEach(function (f) { FEAT[f.id] = f; });
+  // the gap-up study: the opening gap IS the outcome and every result came after the market - both left out
+  var GAP_OUT = { gap: 1, session: 1 };
+  /** the figures a study looks at */
+  function featuresFor(P) {
+    return P && P.goal === 'gapup' ? FEATURES.filter(function (f) { return !GAP_OUT[f.id]; }) : FEATURES;
+  }
 
   /** a feature value -> { key, label, order } (null when unknown) */
   function bucket(f, v) {
@@ -149,7 +154,7 @@
  *  has a 'Flags' column).
    *  opt: DEFAULTS. -> { rows, skipped: {nostock, nocandles, nodate} } */
   function dataset(input, opt) {
-    var P = clean(opt);
+    var P = clean(opt), gapGoal = P.goal === 'gapup', feats = featuresFor(P);
     input = input || {};
     var H = input.H || { dates: [], bars: {} };
     var bySym = {};
@@ -160,7 +165,7 @@
       var k = String(t.Symbol).toUpperCase() + '|' + String(t['Quarter Expected'] || '').toUpperCase();
       if (t.Flags) flags[k] = t.Flags;
     });
-    var rows = [], skipped = { nostock: 0, nocandles: 0, nodate: 0 };
+    var rows = [], skipped = { nostock: 0, nocandles: 0, nodate: 0, notAfter: 0 };
     var lastDay = H.dates && H.dates.length ? H.dates[H.dates.length - 1] : '';
     (input.perf || []).forEach(function (r) {
       var sym = String(r.Symbol || '').toUpperCase();
@@ -168,6 +173,8 @@
       if (!s) { skipped.nostock++; return; }
       var rf = reactFrom(r);
       if (!rf) { skipped.nodate++; return; }
+      // the gap-up study: only results the market could not react to the same day (after the market / a closed day)
+      if (gapGoal && !rf.strict) { skipped.notAfter++; return; }
       var bars = ((H.bars || {})[sym] || []).filter(function (b) { return H.dates[b[0]] && isNum(b[4]) && b[4] > 0; });
       // the entry: the reaction session's open
       var e = -1;
@@ -177,10 +184,12 @@
       }
       // no candle on / after the reaction session: not traded yet (a session after the newest candles), else a gap in the data
       if (e < 0 && (!lastDay || (rf.strict ? rf.day < lastDay : rf.day <= lastDay))) { skipped.nocandles++; return; }
+      // a gap needs the close before the entry
+      if (gapGoal && e === 0) { skipped.nocandles++; return; }
       var base = s.base && isNum(s.base.price) && s.base.price > 0 ? s.base.price : s.price;
       var row = { sym: sym, name: s.name || r.Company || '', season: String(r.Quarter || ''), rdate: dayOf(r['Result Date']), ann: r.Announced || '',
-        reactDay: rf.day, strict: rf.strict, entryDay: '', entry: null, status: 'upcoming', kind: '', popMax: null, ret: null, maxGain: null,
-        maxDD: null, sessions: 0, f: {}, g: {} };
+        reactDay: rf.day, strict: rf.strict, entryDay: '', entry: null, prevClose: null, openGap: null, status: 'upcoming', kind: '', popMax: null,
+        ret: null, maxGain: null, maxDD: null, sessions: 0, f: {}, g: {} };
       var f = row.f;
       if (e >= 0) {
         var eb = bars[e];
@@ -201,32 +210,36 @@
         var popDone = row.sessions >= P.popDays, trendDone = row.sessions >= P.trendDays;
         if (trendDone) row.ret = (bars[e + P.trendDays - 1][4] / row.entry - 1) * 100;
         var popHit = row.popMax >= P.popPct - 1e-9, trendHit = row.ret != null && row.ret >= P.trendPct - 1e-9;
-        var usePop = P.rally !== 'trend', useTrend = P.rally !== 'pop';
-        // a result counts only once its WHOLE window is over - a quick jump decided early while a no waits the full window
-        // would make the early numbers look better than they are (it is kept as 'pending' with early = 'pop')
-        var done = (!usePop || popDone) && (!useTrend || trendDone);
-        if (!done) {
-          row.status = 'pending';
-          if (usePop && popHit) row.early = 'pop';
-        } else if ((usePop && popHit) || (useTrend && trendHit)) {
-          row.status = 'rally';
-          row.kind = usePop && popHit && useTrend && trendHit ? 'both' : usePop && popHit ? 'pop' : 'trend';
-        } else row.status = 'no';
-        if (e > 0) f.gap = (row.entry / bars[e - 1][4] - 1) * 100;
+        if (e > 0) {
+          row.prevClose = bars[e - 1][4];
+          row.openGap = f.gap = (row.entry / row.prevClose - 1) * 100;
+        }
+        if (gapGoal) {
+          // decided by the entry session's open alone
+          row.status = row.openGap >= P.gapPct - 1e-9 ? 'rally' : 'no';
+        } else {
+          var usePop = P.rally !== 'trend', useTrend = P.rally !== 'pop';
+          // a result counts only once its WHOLE window is over - a quick jump decided early while a no waits the full window
+          // would make the early numbers look better than they are (it is kept as 'pending' with early = 'pop')
+          var done = (!usePop || popDone) && (!useTrend || trendDone);
+          if (!done) {
+            row.status = 'pending';
+            if (usePop && popHit) row.early = 'pop';
+          } else if ((usePop && popHit) || (useTrend && trendHit)) {
+            row.status = 'rally';
+            row.kind = usePop && popHit && useTrend && trendHit ? 'both' : usePop && popHit ? 'pop' : 'trend';
+          } else row.status = 'no';
+        }
       }
       // the price features use only the candles BEFORE the entry
       var before = e >= 0 ? bars.slice(0, e) : bars;
-      var price = row.entry != null ? row.entry : isNum(s.price) && s.price > 0 ? s.price : null;
+      // the price the figures are judged at: the entry (rally); the close before the open (gap-up - the open IS the outcome);
+      // not traded yet: the price now
+      var price = gapGoal ? row.prevClose : row.entry;
+      if (price == null) price = isNum(s.price) && s.price > 0 ? s.price : null;
       var n = before.length;
-      if (n >= 21) f.run20 = (before[n - 1][4] / before[n - 21][4] - 1) * 100;
-      if (n >= 5) {
-        var top = -Infinity;
-        before.slice(-60).forEach(function (b) { top = Math.max(top, b[2]); });
-        f.fromHigh = (1 - before[n - 1][4] / top) * 100;
-      }
       var avgClose = function (m) { var t = 0; for (var q = n - m; q < n; q++) t += before[q][4]; return t / m; };
       if (n >= 20) f.sma20 = before[n - 1][4] >= avgClose(20) ? 'Above' : 'Below';
-      if (n >= 50) f.sma50 = before[n - 1][4] >= avgClose(50) ? 'Above' : 'Below';
       if (n >= 21 && isNum(before[n - 1][5])) {
         var vs = 0, vn = 0;
         for (var q = n - 21; q < n - 1; q++) if (isNum(before[q][5])) { vs += before[q][5]; vn++; }
@@ -250,10 +263,9 @@
         f.sig = input.sigAt ? input.sigAt(s, price) : s.sig;
         if (isNum(s.mcap) && base > 0) f.cap = capOf(s.mcap * price / base);
       }
-      f.fii = s.fii; f.promo = s.promo;
       f.session = sessionWord(r);
       f.sector = s.sector || '';
-      FEATURES.forEach(function (ft) { var b = bucket(ft, f[ft.id]); if (b) row.g[ft.id] = b.key; });
+      feats.forEach(function (ft) { var b = bucket(ft, f[ft.id]); if (b) row.g[ft.id] = b.key; });
       rows.push(row);
     });
     if (P.cap !== 'all') {
@@ -267,8 +279,19 @@
   var Z90 = 1.645;
   function wilson(w, n) {
     if (!n) return [null, null];
-    var p = w / n, z2 = Z90 * Z90, d = 1 + z2 / n, c = (p + z2 / (2 * n)) / d, h = Z90 * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / d;
+    var z = Z90, p = w / n, z2 = z * z, d = 1 + z2 / n, c = (p + z2 / (2 * n)) / d, h = z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / d;
     return [Math.max(0, c - h), Math.min(1, c + h)];
+  }
+  /** P(at least w wins in n | a win rate p) - the exact binomial tail (log space) */
+  function binomTail(w, n, p) {
+    if (w <= 0) return 1;
+    if (w > n || !(p > 0)) return 0;
+    if (p >= 1) return 1;
+    var lf = [0];
+    for (var i = 1; i <= n; i++) lf[i] = lf[i - 1] + Math.log(i);
+    var lp = Math.log(p), lq = Math.log(1 - p), t = 0;
+    for (var k = w; k <= n; k++) t += Math.exp(lf[n] - lf[k] - lf[n - k] + k * lp + (n - k) * lq);
+    return Math.min(1, t);
   }
   // two-proportion z: the group vs the rest
   function vsRest(w, n, W, N, minN) {
@@ -303,8 +326,9 @@
     return { dev: s.slice(0, cut), test: s.slice(cut), at: s[cut] ? s[cut].entryDay : null };
   }
 
-  function featureStats(done, parts, minN) {
-    return FEATURES.map(function (ft) {
+  /** whole = the season as one part: no earlier / later columns, "real" without the held check */
+  function featureStats(done, parts, minN, feats, whole) {
+    return (feats || FEATURES).map(function (ft) {
       var known = done.filter(function (r) { return r.g[ft.id] != null; });
       var N = known.length, Wk = known.filter(isWin).length;
       var by = {};
@@ -312,12 +336,13 @@
         var k = r.g[ft.id], b = by[k];
         if (!b) {
           var bk = bucket(ft, r.f[ft.id]);
-          b = by[k] = { key: k, label: bk.label, order: bk.order, n: 0, wins: 0, rets: [], pops: [] };
+          b = by[k] = { key: k, label: bk.label, order: bk.order, n: 0, wins: 0, rets: [], pops: [], gaps: [] };
         }
         b.n++;
         if (isWin(r)) b.wins++;
         if (isNum(r.ret)) b.rets.push(r.ret);
         if (isNum(r.popMax)) b.pops.push(r.popMax);
+        if (isNum(r.openGap)) b.gaps.push(r.openGap);
       });
       var base = N ? Wk / N : null;
       var partRate = function (rows, key) {
@@ -338,7 +363,7 @@
           held = up === tup ? 'yes' : 'no';
         }
         return { key: k, label: b.label, order: b.order, n: b.n, wins: b.wins, rate: b.n ? b.wins / b.n : null, lo: ci[0], hi: ci[1],
-          avgRet: mean(b.rets), avgPop: mean(b.pops), lift: base != null && b.n ? b.wins / b.n - base : null,
+          avgRet: mean(b.rets), avgPop: mean(b.pops), avgGap: mean(b.gaps), lift: base != null && b.n ? b.wins / b.n - base : null,
           verdict: vsRest(b.wins, b.n, Wk, N, minN), dev: d, test: t, held: held };
       }).sort(function (a, b) { return a.order - b.order || (a.label < b.label ? -1 : 1); });
       var p = df > 0 ? chiP(chi, df) : 1;
@@ -346,20 +371,23 @@
       var v = N && df > 0 ? Math.sqrt(chi / N) : 0;
       var good = groups.filter(function (g) { return g.verdict === 'better'; }).sort(function (a, b) { return b.rate - a.rate; });
       var bad = groups.filter(function (g) { return g.verdict === 'worse'; }).sort(function (a, b) { return a.rate - b.rate; });
-      // "real": the groups differ beyond luck even after testing ~30 figures (p < 0.3% = 10% shared out), and a clear group pointed the same
-      // way in the earlier and the later part of the season
-      var heldOne = good.concat(bad).some(function (g) { return g.held === 'yes'; });
+      // "real": the groups differ beyond luck even after testing ~25 figures (p < 0.3% = 10% shared out), and a clear group pointed the same
+      // way in the earlier and the later part of the season (the whole-season view: a clear group is enough)
+      var heldOne = good.concat(bad).some(function (g) { return whole || g.held === 'yes'; });
       return { id: ft.id, label: ft.label, topic: ft.topic, n: N, wins: Wk, base: base, groups: groups, chi: chi, p: p,
         strength: v, real: p < 0.003 && N >= minN * 2 && heldOne, best: good[0] || null, worst: bad[0] || null };
     }).sort(function (a, b) { return (b.real ? 1 : 0) - (a.real ? 1 : 0) || b.strength - a.strength; });
   }
 
   // ---------- combinations of 2 or 3 conditions ----------
-  function combos(parts, minN) {
+  // split: found on the earlier part, checked on the later one; whole: found on every result - with nothing left to check them
+  // on, a combination is 'yes' (beyond luck) only when that many wins out of its results would happen less than 10% / (the
+  // combinations tried) of the time at the season's own rate (the exact binomial tail)
+  function combos(parts, minN, feats, whole) {
     var dev = parts.dev, test = parts.test;
     if (dev.length < minN * 3) return [];
-    var conds = [];
-    FEATURES.forEach(function (ft) {
+    var conds = [], tried = 0;
+    (feats || FEATURES).forEach(function (ft) {
       if (ft.id === 'sector') return;
       var keys = {};
       dev.forEach(function (r) { var k = r.g[ft.id]; if (k != null) keys[k] = (keys[k] || 0) + 1; });
@@ -382,6 +410,7 @@
         for (var c = 0; c < set.length && ok; c++) ok = set[c].bits[i];
         if (ok) { n++; w += win[i]; }
       }
+      if (n >= minN) tried++;
       return { n: n, w: w, lo: wilson(w, n)[0] };
     }
     var pairs = [];
@@ -408,15 +437,20 @@
       seen[key] = true;
       return c.lo > devBase;                        // clearly above the earlier part's rate, not just by luck
     }).sort(function (x, y) { return y.lo - x.lo; }).slice(0, 12);
+    var luck = 0.1 / Math.max(1, tried);
+    var of = function (rows, c) { return rows.filter(function (r) { return c.set.every(function (s) { return r.g[s.f] === s.k; }); }); };
+    var avg = function (rows, k) { return mean(rows.map(function (r) { return r[k]; }).filter(isNum)); };
     return all.map(function (c) {
-      var t = test.filter(function (r) { return c.set.every(function (s) { return r.g[s.f] === s.k; }); });
+      var t = of(test, c), d = of(dev, c);
       var tw = t.filter(isWin).length;
       var tb = test.length ? test.filter(isWin).length / test.length : null;
-      var rets = t.map(function (r) { return r.ret; }).filter(isNum);
-      return { label: c.set.map(function (s) { return s.label; }), conds: c.set.map(function (s) { return { f: s.f, k: s.k }; }),
-        devN: c.n, devRate: c.w / c.n, devLo: c.lo, testN: t.length, testRate: t.length ? tw / t.length : null, testBase: tb, testAvgRet: mean(rets),
+      var held = whole ? (binomTail(c.w, c.n, devBase) < luck ? 'yes' : 'unclear')
         // held = in the later part it is clearly above that part's own rate (90%); 'no' = at or under it; 'unclear' between
-        held: t.length >= 10 && tb != null ? (wilson(tw, t.length)[0] > tb ? 'yes' : tw / t.length <= tb ? 'no' : 'unclear') : '' };
+        : t.length >= 10 && tb != null ? (wilson(tw, t.length)[0] > tb ? 'yes' : tw / t.length <= tb ? 'no' : 'unclear') : '';
+      return { label: c.set.map(function (s) { return s.label; }), conds: c.set.map(function (s) { return { f: s.f, k: s.k }; }),
+        devN: c.n, devRate: c.w / c.n, devLo: c.lo, devHi: wilson(c.w, c.n)[1], devBase: devBase, devAvgRet: avg(d, 'ret'), devAvgGap: avg(d, 'openGap'),
+        testN: t.length, testRate: t.length ? tw / t.length : null, testBase: tb, testAvgRet: avg(t, 'ret'), testAvgGap: avg(t, 'openGap'),
+        held: held, tried: tried };
     });
   }
 
@@ -535,9 +569,12 @@
     var done = rows.filter(function (r) { return r.status === 'rally' || r.status === 'no'; });
     var rallied = done.filter(isWin);
     var base = done.length ? rallied.length / done.length : null;
+    var whole = P.view === 'whole', list = featuresFor(P);
+    // the score check always splits (a score judged on the results it learned from would only be checking itself)
     var parts = split(done);
-    var feats = featureStats(done, parts, P.minN);
-    var cmb = base != null ? combos(parts, P.minN) : [];
+    var one = { dev: done, test: [], at: null };
+    var feats = featureStats(done, whole ? { dev: [], test: [] } : parts, P.minN, list, whole);
+    var cmb = base != null ? combos(whole ? one : parts, P.minN, list, whole) : [];
     var chk = check(parts);
     var model = done.length >= 60 ? train(done) : null;
     var kinds = { pop: 0, trend: 0, both: 0 };
@@ -553,9 +590,10 @@
       upcoming: rows.filter(function (r) { return r.status === 'upcoming'; }).length,
       split: { at: parts.at, dev: parts.dev.length, test: parts.test.length },
       avgRet: mean(done.map(function (r) { return r.ret; }).filter(isNum)),
+      avgGap: mean(done.map(function (r) { return r.openGap; }).filter(isNum)),
       features: feats, combos: cmb, check: chk, model: model };
   }
 
-  return { DEFAULTS: DEFAULTS, CHOICES: CHOICES, FEATURES: FEATURES, bucket: bucket, dataset: dataset, analyse: analyse, train: train,
+  return { DEFAULTS: DEFAULTS, CHOICES: CHOICES, FEATURES: FEATURES, featuresFor: featuresFor, bucket: bucket, dataset: dataset, analyse: analyse, train: train,
     score: score, auc: auc, wilson: wilson, decision: decision, clean: clean, capOf: capOf, reactFrom: reactFrom };
 });
