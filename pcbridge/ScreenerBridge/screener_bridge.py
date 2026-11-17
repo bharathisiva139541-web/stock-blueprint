@@ -54,6 +54,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
   python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
+  python screener_bridge.py histpe [PAGES]  Historical PE now: up to PAGES (200) more screener.in pages for the EPS history, then the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
   python screener_bridge.py calendar   add NSE's forthcoming result meetings missing from the Results tab now
@@ -120,6 +121,8 @@ DEFAULTS = {
     'max_xbrl_per_run': 60,
     'eod': True,               # NSE end-of-day files: Delivery %, 52-week highs, market statistics
     'nse_pe': True,            # NSE's daily PE file: Main's PE where there is no TTM EPS, Industry PE medians
+    'pe_history': True,        # median PE 1Y / 3Y / 5Y + the 5-year peak (Kite closes / screener.in EPS) -> Main's columns
+    'pe_history_pages_per_run': 40,  # extra screener.in pages a full round for the EPS history (stocks not read yet)
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
     'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
@@ -163,6 +166,8 @@ itd.backtest_lab.log = log
 import data_place as DP       # noqa: E402  (owner, 14-Nov-2026: the big data on the D: drive)
 import self_update as UPD     # noqa: E402  (owner, 16-Nov-2026: "here after i won't do this job" - updates by itself)
 UPD.log = log
+import pe_history as PEH      # noqa: E402  (owner, 17-Nov-2026: median PE 1Y / 3Y / 5Y + the 5-year peak of every stock)
+PEH.log = lambda m: log(m)   # (the module's log at call time - a test's replacement too)
 
 
 def nse_holidays():
@@ -3867,6 +3872,7 @@ def run_once(cfg):
         if not todo and not resumed:
             state['stage'] = 'done'
             run_state_save(state)
+            histpe_step(cfg)
             return 0
 
         pending_items, posted, fails_in_row, aborted = [], 0, 0, False
@@ -3895,6 +3901,7 @@ def run_once(cfg):
                         kind, html = fetch_page(cfg, d['sym'], consolidated=False)
                         if kind == 'ok':
                             extra.append({'sym': d['sym'], 'html2': html})
+                            PEH.keep_page(d['sym'], html)       # the EPS history (Historical PE)
                     except Blocked as e:
                         log('  %s standalone page skipped (%s)' % (d['sym'], e))
             if extra:
@@ -3918,6 +3925,7 @@ def run_once(cfg):
                     log('[%d/%d] %s  not on screener (404)' % (i + 1, len(todo), sym))
                 else:
                     pending_items.append({'sym': sym, 'html': html})
+                    PEH.keep_page(sym, html)                    # the EPS history (Historical PE)
                     log('[%d/%d] %s  ok (%d KB)' % (i + 1, len(todo), sym, len(html) // 1024))
             except Blocked as e:
                 fails_in_row += 1
@@ -3947,10 +3955,25 @@ def run_once(cfg):
         if processed:
             state['stage'] = 'done'
             run_state_save(state)
+        histpe_step(cfg)
         log('Run finished.')
         return 0
     finally:
+        PEH.save()
         release_lock()
+
+
+def histpe_step(cfg, pages=None, max_s=None, force=False):
+    """Historical PE (pe_history.py): the EPS history of the stocks not read yet (a few screener.in pages a round), then
+    the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet when the Kite candles or the EPS changed. Never
+    raises."""
+    if not cfg.get('pe_history', True):
+        return None
+    try:
+        return PEH.step(cfg, api, itd.backtest_lab, fetch_page, polite_sleep, Blocked, pages=pages, max_s=max_s, force=force)
+    except Exception as e:                      # never stops a round
+        log('Historical PE: %s' % e)
+        return None
 
 
 # ----------------------------------------------------------------- commands
@@ -4483,6 +4506,22 @@ def main(argv):
         st.pop('last', None)                     # send the newest file again
         pe_save_state(st)
         return 0 if pe_step(dict(cfg, nse_pe=True)) else 1
+    if cmd == 'histpe':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        pages = int(argv[2]) if len(argv) > 2 and argv[2].isdigit() else 200
+        if not acquire_lock(LOCK_WAIT_S):
+            log('Another round is still running - try again when it is done.')
+            return 1
+        try:
+            log('Historical PE now: up to %d screener.in page(s) for the EPS history (about 4 a minute), then every stock '
+                'to the sheet ...' % pages)
+            n = histpe_step(dict(cfg, pe_history=True), pages=pages, max_s=pages * 60, force=True)
+        finally:
+            PEH.save()
+            release_lock()
+        return 0 if n is not None else 1
     if cmd == 'eod':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

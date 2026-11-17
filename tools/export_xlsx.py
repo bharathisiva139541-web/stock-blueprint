@@ -67,6 +67,10 @@ MAIN_COLS = [
     ('zone', 'Zone', 'str'),
     ('volchg', '%vol Change', 'frac'),
     ('ipo', 'IPO Level', 'str'),
+    ('pem1', 'Median PE 1Y', 'num'),
+    ('pem3', 'Median PE 3Y', 'num'),
+    ('pem5', 'Median PE 5Y', 'num'),
+    ('pepk', 'Peak PE 5Y', 'num'),
 ]
 
 

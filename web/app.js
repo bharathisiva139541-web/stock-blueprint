@@ -90,6 +90,7 @@
       s.sigSheet = s.sig;               // the cell as exported; s.sig follows the price shown
       keepBase(s);
       applySignal(s);
+      SB.pe.apply(s);                   // PE vs its own median PE (Historical PE) + PE check
       return s;
     });
     // the latest Results Performance row of each stock (post-results strategy rules read s.rp)
@@ -179,6 +180,7 @@
     ['pe', 'pevs', 'peg', 'mcap'].forEach(function (f) { if (isNum(b[f])) s[f] = b[f] * k; });   // all = price x a fixed figure
     if (isNum(s.tgt) && s.tgt > 0) s.up = (s.tgt / s.price - 1) * 100;
     else if (isNum(b.up)) s.up = ((1 + b.up / 100) / k - 1) * 100;
+    SB.pe.apply(s);
   }
   /** A price newer than the sheet's copy: Kite (owner) or the quote provider, refreshed after the page loaded. */
   function livePrice(s) { return !!(s && (s.priceState === 'LIVE' || s.priceState === 'DELAYED' || s.kiteLast) && isNum(s.price) && s.price > 0); }
@@ -758,6 +760,12 @@
   }
 
   // ---------- stock drawer ----------
+  /** 'median (5Y) · PE x times it' - the stock's own median PE the comparison uses */
+  function peOwnHtml(s) {
+    var m = SB.pe.ownMedian(s);
+    if (!m) return '–';
+    return F.num(m.value) + ' <span class="sub">(' + m.years + 'Y median' + (isNum(s.peOwn) ? ' · PE now ' + F.num(s.peOwn, 2) + '× it' : '') + ')</span>';
+  }
   function openStock(sym, opener) {
     var s = ctx.bySym[sym];
     var body = $('#drawer-body');
@@ -775,7 +783,9 @@
       var kv = [
         ['Category', esc(s.catName)], ['Sector', esc(s.sector || '–')], ['Basic industry', esc(s.ind || '–')], ['Index', esc(s.idx || '–')],
         ['Market cap', F.cr(s.mcap)], ['10-day', ui.deltaHtml(s.d10)], ['30-day', ui.deltaHtml(s.d30)], ['52W high', F.price(s.hi52)],
-        ['From 52W high', ui.deltaHtml(s.down52)], ['PE', F.num(s.pe)], ['Industry PE', F.num(s.ipe)], ['PE / Industry PE', F.num(s.pevs)],
+        ['From 52W high', ui.deltaHtml(s.down52)], ['PE', F.num(s.pe)], ['Own median PE', peOwnHtml(s)], ['Industry PE', F.num(s.ipe)], ['PE / Industry PE', F.num(s.pevs)],
+        ['PE check', s.peCheck ? ui.badge(s.peCheck) : '–'], ['Median PE 1Y / 3Y / 5Y', [s.pem1, s.pem3, s.pem5].map(function (v) { return isNum(v) ? F.num(v) : '–'; }).join(' / ')],
+        ['Peak PE 5Y', F.num(s.pepk)],
         ['TTM PEG', F.num(s.peg)], ['TTM EPS growth', F.num(s.epsg)], ['Target price', F.price(s.tgt)], ['Upside', ui.deltaHtml(s.up, 0)],
         ['Result date', F.date(s.rdate) + (s.done ? ' ✓' : '')], ['Revenue QoQ', ui.deltaHtml(s.qrev, 0)], ['Profit QoQ', ui.deltaHtml(s.qnp, 0)],
         ['Revenue YoY', ui.deltaHtml(s.yrev, 0)], ['Profit YoY', ui.deltaHtml(s.ynp, 0)], ['Promoter holding', esc(s.promo || '–')],

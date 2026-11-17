@@ -73,6 +73,18 @@ TRK.rows.forEach((r) => r.push(r === FLAG_ROW ? FLAGS_TEXT : ''));
 // Main's 'OPM Qtr YoY' (site feed format 8, key opmqy) for the same stock
 LIVE_MAIN.main.cols.push('opmqy');
 LIVE_MAIN.main.rows.forEach((r) => r.push(r[LIVE_MAIN.main.cols.indexOf('sym')] === FLAG_SYM ? 'Aggressive Increase' : null));
+// Historical PE (feed format 17, owner 17-Nov-2026): Main's Median PE 1Y / 3Y / 5Y + Peak PE 5Y from the laptop - the flag stock
+// is below its own 5-year median AND below the industry; SENT_SYM has only a 1-year median, far under its PE
+['pem1', 'pem3', 'pem5', 'pepk'].forEach((k) => LIVE_MAIN.main.cols.push(k));
+LIVE_MAIN.main.rows.forEach((r) => {
+  const sym = r[LIVE_MAIN.main.cols.indexOf('sym')];
+  if (sym === FLAG_SYM) {
+    r[LIVE_MAIN.main.cols.indexOf('pe')] = 20;
+    r[LIVE_MAIN.main.cols.indexOf('pevs')] = 0.8;
+  }
+  if (sym === SENT_SYM) r[LIVE_MAIN.main.cols.indexOf('pe')] = 30;
+  r.push.apply(r, sym === FLAG_SYM ? [22, 24, 25, 61.5] : sym === SENT_SYM ? [5, null, null, null] : [null, null, null, null]);
+});
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -1254,6 +1266,53 @@ function check(name, fn) {
     assert.ok(shownAgain.indexOf('Industry') === 1, 'Show all: ' + shownAgain);
     assert.deepStrictEqual(list, ['REV \u2191 PROFIT \u2193', 'OTHER INCOME HIGH'], 'the lists');
     assert.ok(drawer && /REV \u2191 PROFIT \u2193/.test(drawer) && /OTHER INCOME HIGH/.test(drawer) && /results$/.test(drawer), 'drawer: ' + drawer);
+  });
+
+  await check('historical PE: Watchlist columns + filters, the drawer (live feed with Main\'s Median PE 1Y / 3Y / 5Y)', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), []);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#watchlist', { waitUntil: 'load' });
+    await p.waitForSelector('#wl-table table', { timeout: 15000 });
+    const heads = await p.$$eval('#wl-table thead th', (t) => t.map((x) => x.innerText.trim()));
+    const syms = () => p.$$eval('#wl-table tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym')));
+    await p.click('[data-chip="wl"][data-v="peown"]');
+    await p.waitForTimeout(200);
+    const own = await syms();
+    const row = await p.$eval('#wl-table tbody tr', (tr) => {
+      const hs = [...document.querySelectorAll('#wl-table thead th')].map((x) => x.innerText.trim());
+      const cell = (h) => (tr.children[hs.findIndex((x) => x.indexOf(h) === 0)] || {}).innerText;
+      return { med: cell('Own median PE'), ratio: cell('PE / own median'), check: cell('PE check') };
+    });
+    await p.click('[data-chip="wl"][data-v="peboth"]');
+    await p.waitForTimeout(200);
+    const both = await syms();
+    // the 1Y / 3Y / 5Y medians + the peak: hidden until ticked in Columns
+    await p.click('#wl-table [data-tt="cols"]');
+    await p.check('#wl-table .tbl-cols input[data-tc="pem5"]');
+    const heads2 = await p.$$eval('#wl-table thead th', (t) => t.map((x) => x.innerText.trim()));
+    const drawer = await p.evaluate((sym) => {
+      window.SB.openStock(sym);
+      const kv = {};
+      document.querySelectorAll('#drawer-body dt').forEach((dt) => { kv[dt.textContent] = dt.nextElementSibling.textContent; });
+      return kv;
+    }, FLAG_SYM);
+    const other = await p.evaluate((sym) => { const s = window.SB.ctx.bySym[sym]; return [s.peOwn, s.peOwnYears, s.peCheck]; }, SENT_SYM);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    ['PE', 'Own median PE', 'PE / own median', 'PE / Ind PE', 'PE check'].forEach((h) => assert.ok(heads.some((x) => x.indexOf(h) === 0), h + ': ' + heads.join(' | ')));
+    assert.ok(!heads.some((x) => /^Median PE|^Peak PE/.test(x)), 'hidden at first: ' + heads.join(' | '));
+    assert.deepStrictEqual(own, [FLAG_SYM], 'PE below own median');
+    assert.deepStrictEqual(both, [FLAG_SYM], 'PE below own + industry median');
+    assert.ok(/^25\s*5Y$/.test(row.med) && row.ratio === '0.8' && row.check === 'Below own + industry median', JSON.stringify(row));
+    assert.ok(heads2.some((x) => x.indexOf('Median PE 5Y') === 0), 'ticked: ' + heads2.join(' | '));
+    assert.match(drawer['Own median PE'], /^25 \(5Y median · PE now 0\.8× it\)$/);
+    assert.strictEqual(drawer['PE check'], 'Below own + industry median');
+    assert.strictEqual(drawer['Median PE 1Y / 3Y / 5Y'], '22 / 24 / 25');
+    assert.strictEqual(drawer['Peak PE 5Y'], '61.5');
+    assert.deepStrictEqual(other.slice(0, 2), [6, 1], 'only a 1-year median: PE 30 / 5');
+    assert.match(String(other[2]), /^(Above own median|Above both|Below industry median)$/);
   });
 
   // the other six themes (owner, 03-Nov-2026): the main pages render with their own tokens, no overflow

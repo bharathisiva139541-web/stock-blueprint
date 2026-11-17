@@ -14435,7 +14435,9 @@ function ab_peEveningRefresh_() {
     const f = ab_ensurePeFormula_();
     SpreadsheetApp.flush();
     const r = ab_industryPeAuto_();
-    return ' PE Ratio formula: ' + (f.skipped ? 'skipped (' + f.skipped + ')' : f.rows ? f.rows + ' row(s) set' : 'in place') + '.' +
+    let h = null;
+    try { h = ab_hpeEnsureFormulas_(); } catch (e) { h = { skipped: e.message }; }
+    return (h && h.rows ? ' Historical PE formulas: ' + h.rows + ' cell(s) set.' : '') + ' PE Ratio formula: ' + (f.skipped ? 'skipped (' + f.skipped + ')' : f.rows ? f.rows + ' row(s) set' : 'in place') + '.' +
       ' Industry PE: ' + (r.skipped ? 'skipped (' + r.skipped + ')' : r.industries + ' industries (median of Main\'s stocks)') + '.';
   } catch (e) {
     Logger.log('PE / Industry PE refresh failed: ' + e.message);
@@ -14461,4 +14463,200 @@ function runIndustryPeAutoNow() {
     ui.alert('PE Ratio / Industry PE failed: ' + err.message);
     throw err;
   }
+}
+
+
+/*****************************************************************
+ * HISTORICAL PE - MEDIAN PE 1Y / 3Y / 5Y + PEAK PE 5Y (owner, 17-Nov-2026)
+ * -----------------------------------------------------------------
+ * "Oru stock oda Peak PE ratio, 5 year median, 3 year median, 1 year median PE Ratio ku data enga irunthu kedaikum" ...
+ * "intha PE Ratio va nan first athoda Historical PE Ratio, then industry median PE kooda compare panrathuku useful";
+ * "Okay do as per your recommendation" = the laptop works it out (pcbridge/ScreenerBridge/pe_history.py): each day's
+ * Kite close / the TTM EPS known that day (screener.in's quarterly EPS, before that its yearly EPS), split / bonus evened
+ * out, loss days left out. doPost action 'histpe':
+ *   op 'seed' {want: [SYM]} -> the stored quarterly figures of those stocks (Screener_Bridge 'series') for the stocks
+ *       the laptop has read no screener.in page of yet;
+ *   op 'put' {upto, rows: {SYM: [1Y, 3Y, 5Y, peak 5Y, peak day, PE now, TTM EPS, quarterly share %, EPS from, note]}}
+ *       -> hidden tab PE_History (rebuilt) + Main's columns Median PE 1Y / 3Y / 5Y, Peak PE 5Y (values, by symbol) and
+ *       the formulas PE vs Own Median (PE Ratio / the 5-year median, else 3-year, else 1-year) + PE Check (below its own
+ *       median and / or below the Industry PE) - added after Main's last column the first time.
+ *****************************************************************/
+const AB_HPE_SHEET = 'PE_History';
+const AB_HPE_HEADERS = ['Symbol', 'Median PE 1Y', 'Median PE 3Y', 'Median PE 5Y', 'Peak PE 5Y', 'Peak On', 'PE Now (Kite close)',
+  'TTM EPS (laptop)', 'Quarterly EPS share 5Y %', 'EPS From', 'Note', 'Prices Up To'];
+const AB_HPE_MAIN = ['Median PE 1Y', 'Median PE 3Y', 'Median PE 5Y', 'Peak PE 5Y'];
+const AB_HPE_OWN_HEADER = 'PE vs Own Median';
+const AB_HPE_CHECK_HEADER = 'PE Check';
+const AB_HPE_PROP = 'AB_HPE_AT';
+const AB_HPE_MAX = 4000;
+
+function ab_histPeFromBridge_(req) {
+  const op = String(req.op || '');
+  if (op === 'seed') return ab_histPeSeed_(req.want);
+  if (op === 'put') return ab_histPePut_(req);
+  return { ok: false, error: 'unknown op' };
+}
+
+/** The stored screener.in quarterly figures of the wanted stocks -> {ok, series: {SYM: [basis C|S, quarters, eps, net profit, at s]}}. */
+function ab_histPeSeed_(want) {
+  const map = ab_bridgeLoad_();
+  const out = {};
+  (Array.isArray(want) ? want : []).slice(0, AB_HPE_MAX).forEach(function (s) {
+    const sym = String(s || '').trim().toUpperCase();
+    const b = map[sym];
+    const se = b && b.combined && b.combined.quarterOk ? b.combined.series : null;
+    if (!se || !Array.isArray(se.quarters) || !se.quarters.length || !Array.isArray(se.eps)) return;
+    out[sym] = [/^consolidated/i.test(String(se.basis || '')) ? 'C' : se.basis ? 'S' : '', se.quarters, se.eps,
+      Array.isArray(se.netProfit) ? se.netProfit : [], Math.round((b.at || 0) / 1000)];
+  });
+  return { ok: true, series: out, n: Object.keys(out).length };
+}
+
+function ab_hpeSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_HPE_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AB_HPE_SHEET);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** A number rounded to 2 decimals, else ''. */
+function ab_hpeNum_(v) {
+  const n = Number(v);
+  return v !== null && v !== '' && v !== undefined && typeof v !== 'boolean' && isFinite(n) ? Math.round(n * 100) / 100 : '';
+}
+
+/** One cell's text: plain, short, never a formula. */
+function ab_hpeText_(v, max) {
+  return String(v === null || v === undefined ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/^[=+\-@]+/, '').slice(0, max || 300);
+}
+
+function ab_histPePut_(req) {
+  const rows = req.rows && typeof req.rows === 'object' ? req.rows : null;
+  if (!rows) return { ok: false, error: 'no rows' };
+  const upto = /^\d{4}-\d{2}-\d{2}/.test(String(req.upto || '')) ? String(req.upto).slice(0, 10) : '';
+  const out = [];
+  Object.keys(rows).slice(0, AB_HPE_MAX).forEach(function (k) {
+    const sym = String(k).trim().toUpperCase();
+    const v = rows[k];
+    if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym) || !Array.isArray(v)) return;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(v[4] || '')) ? String(v[4]) : '';
+    out.push([sym, ab_hpeNum_(v[0]), ab_hpeNum_(v[1]), ab_hpeNum_(v[2]), ab_hpeNum_(v[3]), day, ab_hpeNum_(v[5]), ab_hpeNum_(v[6]),
+      ab_hpeNum_(v[7]), ab_hpeText_(v[8], 80), ab_hpeText_(v[9], 300), upto]);
+  });
+  out.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+  const sh = ab_hpeSheet_();
+  const when = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
+  sh.clearContents();
+  sh.getRange(1, 1).setValue('Historical PE from your laptop (Kite daily closes / screener.in EPS; 1Y exact, 3Y nearly exact, ' +
+    '5Y approximate - a year\'s EPS before the quarterly table starts). Prices up to ' + (upto || '?') + ', received ' + when +
+    '. A blank median: see Note. Main\'s columns ' + AB_HPE_MAIN.join(' / ') + ' are filled from here.');
+  sh.getRange(2, 1, 1, AB_HPE_HEADERS.length).setValues([AB_HPE_HEADERS]).setFontWeight('bold');
+  if (out.length) {
+    sh.getRange(3, 1, out.length, 1).setNumberFormat('@');
+    sh.getRange(3, 1, out.length, AB_HPE_HEADERS.length).setValues(out);
+  }
+  let main = null;
+  try { main = ab_hpeMainWrite_(out); } catch (e) { main = { error: e.message }; }
+  const res = { at: when, upto: upto, stocks: out.length, main: main && main.rows !== undefined ? main.rows : main && main.error || main && main.skipped };
+  PropertiesService.getScriptProperties().setProperty(AB_HPE_PROP, JSON.stringify(res));
+  return { ok: true, stocks: out.length, main: res.main, added: main && main.added || [], formulas: main && main.formulas };
+}
+
+/** Main's historical PE columns: added after the last column when missing (format of PE Ratio). -> the headers added. */
+function ab_hpeEnsureCols_(layout) {
+  const sh = layout.sheet, hdr = layout.headerRowIdx + 1;
+  const cPe = ab_qt_findCol_(layout.header, AB_PE_HEADER);
+  const added = [];
+  AB_HPE_MAIN.concat([AB_HPE_OWN_HEADER, AB_HPE_CHECK_HEADER]).forEach(function (name) {
+    if (ab_qt_findCol_(layout.header, name) !== -1) return;
+    const last = sh.getLastColumn();
+    if (sh.getMaxColumns() <= last) sh.insertColumnsAfter(last, 1);
+    const CPT = SpreadsheetApp.CopyPasteType;
+    try {
+      if (CPT && cPe !== -1) {
+        sh.getRange(hdr, cPe + 1).copyTo(sh.getRange(hdr, last + 1), CPT.PASTE_FORMAT, false);
+        const n = sh.getLastRow() - hdr;
+        if (n > 0) sh.getRange(hdr + 1, cPe + 1, n, 1).copyTo(sh.getRange(hdr + 1, last + 1, n, 1), CPT.PASTE_FORMAT, false);
+      }
+    } catch (e) { /* formatting is cosmetic */ }
+    sh.getRange(hdr, last + 1).setValue(name);
+    layout.header[last] = name;
+    added.push(name);
+  });
+  if (added.length) Logger.log('Main: column(s) ' + added.join(', ') + ' added after the last column.');
+  return added;
+}
+
+/** PE vs Own Median / PE Check formulas in R1C1 for the given 1-based columns (vs / ipe 0 = not in Main). */
+function ab_hpeFormulasR1C1_(cPe, c1, c3, c5, cOwn, cVs, cIpe) {
+  const pe = 'RC' + cPe, own = 'RC' + cOwn;
+  const med = 'IF(N(RC' + c5 + ')>0,RC' + c5 + ',IF(N(RC' + c3 + ')>0,RC' + c3 + ',RC' + c1 + '))';
+  const fOwn = '=IFERROR(IF(N(' + pe + ')>0,ROUND(' + pe + '/' + med + ',2),""),"")';
+  // a #DIV/0! in PE vs Industry PE (no Industry PE) must not blank the own-median words
+  const ind = cVs ? 'IFERROR(N(RC' + cVs + '),0)' : cIpe ? 'IFERROR(IF(N(RC' + cIpe + ')>0,' + pe + '/RC' + cIpe + ',0),0)' : '0';
+  const fChk = '=IFERROR(IF(N(' + pe + ')<=0,"",IF(N(' + own + ')<=0,IF(' + ind + '<=0,"",IF(' + ind + '<1,"No own history - below industry",' +
+    '"No own history - above industry")),IF(' + ind + '<=0,IF(' + own + '<1,"Below own median","Above own median"),' +
+    'IF(AND(' + own + '<1,' + ind + '<1),"Below own + industry median",IF(' + own + '<1,"Below own median",' +
+    'IF(' + ind + '<1,"Below industry median","Above both")))))),"")';
+  return { own: fOwn, check: fChk };
+}
+
+/** PE vs Own Median + PE Check formulas on every stock row whose formula differs. -> rows set, or {skipped}. */
+function ab_hpeEnsureFormulas_(layout) {
+  layout = layout || ab_getMainLayout_();
+  const f = function (n) { return ab_qt_findCol_(layout.header, n); };
+  const cPe = f(AB_PE_HEADER), c1 = f(AB_HPE_MAIN[0]), c3 = f(AB_HPE_MAIN[1]), c5 = f(AB_HPE_MAIN[2]);
+  const cOwn = f(AB_HPE_OWN_HEADER), cChk = f(AB_HPE_CHECK_HEADER), cVs = f('PE vs Industry PE'), cIpe = f('Industry PE');
+  if ([cPe, c1, c3, c5, cOwn, cChk].indexOf(-1) !== -1) return { skipped: 'no historical PE columns in Main yet' };
+  let lastSym = -1;
+  for (let r = layout.data.length - 1; r > layout.headerRowIdx; r--) {
+    if (String(layout.data[r][layout.symbol] || '').trim()) { lastSym = r; break; }
+  }
+  if (lastSym === -1) return { skipped: 'no stock rows' };
+  const first = layout.headerRowIdx + 2, n = lastSym - layout.headerRowIdx;
+  const want = ab_hpeFormulasR1C1_(cPe + 1, c1 + 1, c3 + 1, c5 + 1, cOwn + 1, cVs === -1 ? 0 : cVs + 1, cIpe === -1 ? 0 : cIpe + 1);
+  let set = 0;
+  [[cOwn, want.own], [cChk, want.check]].forEach(function (p) {
+    const rng = layout.sheet.getRange(first, p[0] + 1, n, 1);
+    const have = rng.getFormulasR1C1();
+    let differ = 0;
+    for (let i = 0; i < n; i++) if (String(have[i][0] || '') !== p[1]) differ++;
+    if (!differ) return;
+    const col = [];
+    for (let i = 0; i < n; i++) col.push([p[1]]);
+    rng.setFormulasR1C1(col);
+    set += differ;
+  });
+  return { rows: set };
+}
+
+/** The laptop's figures -> Main's four value columns (every row of a symbol; a stock not sent = blank). */
+function ab_hpeMainWrite_(out) {
+  const layout = ab_getMainLayout_();
+  if (layout.symbol === -1) return { skipped: 'Main has no SYMBOL column' };
+  const added = ab_hpeEnsureCols_(layout);
+  const cols = AB_HPE_MAIN.map(function (n) { return ab_qt_findCol_(layout.header, n); });
+  const by = {};
+  out.forEach(function (r) { by[r[0]] = r; });
+  const first = layout.headerRowIdx + 1, data = layout.data, n = data.length - first;
+  let rows = 0;
+  if (n > 0) {
+    const vals = cols.map(function () { return []; });
+    for (let r = first; r < data.length; r++) {
+      const sym = String(data[r][layout.symbol] || '').trim().toUpperCase();
+      const got = sym ? by[sym] : null;
+      if (got) rows++;
+      for (let k = 0; k < cols.length; k++) {
+        const old = cols[k] < data[r].length ? data[r][cols[k]] : '';
+        vals[k].push([got ? got[k + 1] : sym ? '' : (old === undefined ? '' : old)]);
+      }
+    }
+    cols.forEach(function (c, k) { if (c !== -1) layout.sheet.getRange(first + 1, c + 1, n, 1).setValues(vals[k]); });
+  }
+  let formulas = null;
+  try { formulas = ab_hpeEnsureFormulas_(ab_getMainLayout_()); } catch (e) { formulas = { error: e.message }; }
+  return { rows: rows, added: added, formulas: formulas };
 }
