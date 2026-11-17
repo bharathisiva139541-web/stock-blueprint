@@ -13,11 +13,11 @@
 
   var PAGES = SB.pages;            // filled by web/pages/*.js via SB.page()
 
+  // owner, 17-Nov-2026: "remove excel analysis, backtesting, alerts and trade page from website" (old links open the Overview)
   var NAV = [
     ['overview', 'Overview'], ['watchlist', 'Watchlist'], ['lists', 'My Watchlists'], ['suggestions', 'Daily Suggestions'],
     ['industries', 'Industries & Sectors'], ['strategy', 'Strategy Settings'], ['signals', 'Patterns & FVG'],
-    ['excel', 'Excel Analysis'], ['results', 'Results & Events'], ['today', 'Results Today'], ['edge', 'Results Edge'], ['alerts', 'Alerts & Trades'],
-    ['backtest', 'Backtesting'], ['lab', 'Backtest Lab'], ['markets', 'IPOs & Markets']
+    ['results', 'Results & Events'], ['today', 'Results Today'], ['edge', 'Results Edge'], ['lab', 'Backtest Lab'], ['markets', 'IPOs & Markets']
   ];
 
   // section icons (16 px line drawings, currentColor) - drawn for this site
@@ -29,12 +29,9 @@
     industries: '<path d="M3 21h18"/><path d="M5 21V8.5L11 5v16"/><path d="M11 21V9.5l8 3V21"/><path d="M8 10.5v.01M8 14v.01M8 17.5v.01M15 15v.01M15 18v.01"/>',
     strategy: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
     signals: '<path d="M7 3v4M7 15v6M17 3v3M17 14v7"/><rect x="5" y="7" width="4" height="8" rx="1"/><rect x="15" y="6" width="4" height="8" rx="1"/>',
-    excel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 14.5h18M9 4v16"/>',
     results: '<path d="M14 3H6.5A2.5 2.5 0 0 0 4 5.5v13A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V9z"/><path d="M14 3v6h6"/><path d="M8.5 17v-3M12 17v-5M15.5 17v-2"/>',
     today: '<path d="M13 2.5L4.5 13.5H11L10 21.5l8.5-11H12z"/>',
     edge: '<path d="M3 20h18"/><path d="M5 16l4.5-5 3.5 3 6-7"/><path d="M15 7h4v4"/><circle cx="9.5" cy="11" r="1.2"/>',
-    alerts: '<path d="M6 9a6 6 0 0 1 12 0c0 6.5 2.5 8.5 2.5 8.5h-17S6 15.5 6 9"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/>',
-    backtest: '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5"/><path d="M12 7.5V12l3 2"/>',
     lab: '<path d="M9 3h6M10 3v6.5L4.6 18.2A1.9 1.9 0 0 0 6.2 21h11.6a1.9 1.9 0 0 0 1.6-2.8L14 9.5V3"/><path d="M7.2 14.5h9.6"/>',
     markets: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9M12 3c-2.6 2.6-3.8 5.6-3.8 9s1.2 6.4 3.8 9"/>',
     palette: '<path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.3-1-1.7-1-3 0-1.1.9-2 2-2h2.2A3.8 3.8 0 0 0 21 10.2C21 6.2 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.1"/><circle cx="10" cy="7" r="1.1"/><circle cx="14.5" cy="7" r="1.1"/>'

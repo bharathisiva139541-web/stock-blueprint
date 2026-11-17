@@ -1,6 +1,7 @@
 /* Daily Suggestions - powered by the active strategy (web/lib/strategy.js).
    Workflow: data -> freshness check -> indicators -> rules per stock ->
-   filters -> ranking (score, confluence, R:R) -> explanations + risk.
+   filters -> ranking (score, confluence, R:R) -> explanations. The trade journal / risk settings page (Alerts & Trades) was
+   removed on 17-Nov-2026 (owner), so the exit warnings for journal positions and the position size are gone too.
    Layout (owner, 03-Nov-2026: "looking awkward and not engaging - present it so everyone can easily understand it"):
    the strategy (switchable here) with today's headline number, three steps "your rules -> every stock checked ->
    ranked ideas", a bar of where every stock landed (click a part = that list), a line saying what the chosen list
@@ -13,7 +14,7 @@
 
   var LISTS = [
     ['qualified', 'Qualified'], ['breakout', 'Breakout'], ['pullback', 'Pullback'], ['watch', 'Watchlist candidates'],
-    ['exits', 'Exit / risk warnings'], ['avoid', 'Avoid / no-trade'], ['insufficient', 'Insufficient data'], ['none', 'No valid signal']
+    ['avoid', 'Avoid / no-trade'], ['insufficient', 'Insufficient data'], ['none', 'No valid signal']
   ];
   // what each list means, in one plain line
   var LIST_HELP = {
@@ -21,7 +22,6 @@
     breakout: 'Ideas whose signal is a breakout above a recent high.',
     pullback: 'Ideas where the price came back to a support (FVG zone or EMA) in an up-move.',
     watch: 'Some signals fired but not every requirement is met yet - worth keeping an eye on.',
-    exits: 'Warnings for the open positions in your trade journal (stop-loss near, target reached ...).',
     avoid: 'Stopped by a safety filter (too little trading, circuit-locked, results too close ...).',
     insufficient: 'Not enough daily prices to judge (new listing, or the newest candle is missing).',
     none: 'Checked, but no signal of this strategy today.'
@@ -29,9 +29,6 @@
   // where every stock landed - the parts of the bar, in this order
   var FUNNEL = [['qualified', 'Qualified', 's-good'], ['watch', 'Watch', 's-warn'], ['avoid', 'Avoid', 's-bad'], ['none', 'No signal', ''], ['insufficient', 'Insufficient data', 's-muted']];
   var FUNNEL_HELP = { qualified: 'every rule met', watch: 'some signals, not all requirements', avoid: 'failed a filter', none: 'no signal today', insufficient: 'missing / stale candles' };
-
-  // open journal positions, read through the journal page's own cleaner (side included)
-  function journalOpen() { return SB.journal ? SB.journal.open() : []; }
 
   /** Every rule, passed / failed, in plain words. */
   function checksHtml(r) {
@@ -75,10 +72,7 @@
     return h + '</div>';
   }
 
-  function itemHtml(r, s, run, risk, rc, rank) {
-    var size = null;
-    // sized like the journal's calculator: your risk settings + open journal positions (heat, max positions, daily loss)
-    if (r.stop > 0 && r.entry > 0) size = SB.risk.sizePosition({ entry: r.entry, stop: r.stop, target: r.target, industry: s.catName }, risk, rc);
+  function itemHtml(r, s, run, rank) {
     var setup = (r.setupTypes || []).filter(function (t) { return t !== 'screen'; }).map(function (t) { return t === 'pullback' ? 'Pullback / support' : t === 'reversal' ? 'Reversal pattern' : t === 'breakout' ? 'Breakout' : t; });
     var screen = run.config.mode === 'screen';
     var h = '<article class="sugg-item sg-card' + (rank <= 3 && r.status === 'qualified' ? ' sg-top' : '') + '">';
@@ -102,10 +96,7 @@
           : '<dt>Entry ref.</dt><dd>' + F.price(r.entry) + ' <span class="sub">close ' + esc(r.asOf || '') + '</span></dd>' +
           '<dt>Stop-loss</dt><dd>' + (r.stop > 0 ? F.price(r.stop) + ' <span class="sub">' + esc(r.stopNote || '') + '</span>' : '–') + '</dd>' +
           '<dt>Target</dt><dd>' + (r.target > 0 ? F.price(r.target) + ' <span class="sub">' + esc(r.targetNote || '') + '</span>' : '–') + '</dd>') +
-        '<dt>Reward : risk</dt><dd>' + (isNum(r.rr) ? '<span class="sg-rr' + (r.rr >= 2 ? ' good' : '') + '">1 : ' + F.num(r.rr, 2) + '</span>' : '–') + '</dd>' +
-        '<dt>Position size</dt><dd>' + (size && size.ok ? F.int(size.qty) + ' sh · risk ' + F.inr(size.riskAmount) +
-          (size.warnings.length ? ' <span class="sub">(' + esc(size.warnings[0]) + ')</span>' : '') : size ? '<span class="sub">' + esc(size.errors[0] || 'n/a') + '</span>' : '–') +
-          '<div class="sub">your risk settings' + (rc && rc.openPositions.length ? ' + ' + rc.openPositions.length + ' open journal position' + (rc.openPositions.length === 1 ? '' : 's') : '') + '</div></dd></dl></div>';
+        '<dt>Reward : risk</dt><dd>' + (isNum(r.rr) ? '<span class="sg-rr' + (r.rr >= 2 ? ' good' : '') + '">1 : ' + F.num(r.rr, 2) + '</span>' : '–') + '</dd></dl></div>';
     } else {
       h += '<div class="sg-plan"><div class="sg-sec-t">Key figures</div>' + snapshotHtml(s) + '</div>';
     }
@@ -144,7 +135,7 @@
         '<li>Evaluate every filter, signal and requirement of the strategy for each stock.</li>' +
         '<li>Apply the liquidity / circuit-lock / event filters - failures go to "Avoid".</li>' +
         '<li>Rank by match score (share of requirements met), then confluence, then reward:risk.</li>' +
-        '<li>Compute entry reference, stop-loss, target, reward:risk and a position size from your risk settings (Alerts &amp; Trades page).</li>' +
+        '<li>Compute entry reference, stop-loss, target and reward:risk.</li>' +
         '<li>Show the data date, source and strategy version.</li></ol></details>';
       $('#sg-strat', el).addEventListener('change', function (e) {
         SB.strategies.setActive(e.target.value);
@@ -188,11 +179,8 @@
   }
 
   function draw(el, ctx, run) {
-    var risk = ui.store.get('risk:settings', {});
-    var rc = SB.journal ? SB.journal.riskContext(ctx) : null;
-    var exits = SB.strategy.positionWarnings(journalOpen(), ctx.bySym, SB.strategies.candles());
     var counts = {};
-    LISTS.forEach(function (l) { counts[l[0]] = l[0] === 'exits' ? exits.filter(function (x) { return x.warnings.length; }).length : (run.lists[l[0]] || []).length; });
+    LISTS.forEach(function (l) { counts[l[0]] = (run.lists[l[0]] || []).length; });
     drawIntro(el, ctx, run, counts);
     var cats = {};
     ctx.stocks.forEach(function (s) { if (s.cat) cats[s.cat] = s.catName; });
@@ -212,7 +200,6 @@
       }).join('') + '</select><span class="count" id="sg-count"></span></div><div id="sg-list"></div>';
 
     function rows() {
-      if (ST.list === 'exits') return exits;
       return (run.lists[ST.list] || []).filter(function (r) {
         var s = ctx.bySym[r.sym];
         if (!s) return false;
@@ -225,15 +212,6 @@
       $('#sg-count', body).textContent = F.int(list.length) + ' stocks';
       $('#sg-help', body).innerHTML = '<b>' + esc((LISTS.filter(function (l) { return l[0] === ST.list; })[0] || ['', ''])[1]) + ':</b> ' + esc(LIST_HELP[ST.list] || '');
       body.querySelectorAll('[data-funnel]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-funnel') === ST.list)); });
-      if (ST.list === 'exits') {
-        if (!list.length) { host.innerHTML = '<p class="empty">No open positions in your trade journal (Alerts &amp; Trades page). Exit warnings are checked for journal positions only - never for broker accounts.</p>'; return; }
-        host.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Stock</th><th>Side</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Price</th><th class="num">P&amp;L</th><th>Warnings</th></tr></thead><tbody>' +
-          list.map(function (x) {
-            return '<tr><td>' + ui.stockCell(x.sym, ctx.bySym[x.sym] && ctx.bySym[x.sym].name) + '</td><td>' + (x.position.side === 'short' ? 'Short' : 'Long') + '</td><td class="num">' + F.price(x.position.entry) + '</td><td class="num">' + F.price(x.position.stop) +
-              '</td><td class="num">' + F.price(x.price) + '</td><td class="num">' + ui.deltaHtml(x.pnlPct, 2) + '</td><td class="wrap">' + (x.warnings.length ? x.warnings.map(function (w) { return ui.badge(w, /stop|below/.test(w) ? 's-bad' : 's-warn'); }).join(' ') : '<span class="sub">no warning</span>') + '</td></tr>';
-          }).join('') + '</tbody></table></div>';
-        return;
-      }
       if (!list.length) {
         host.innerHTML = '<p class="empty">' + (ST.list === 'qualified' ? 'No qualifying setup currently.' : 'Nothing in this list for the current filters.') + '</p>' +
           (ST.list === 'breakout' && !run.config.triggers.some(function (t) { return t.id === 'breakout' && t.enabled !== false; }) ? '<p class="sub" style="text-align:center">The active strategy has no breakout rule - your sheet does not define one. You can add the standard "Close above the prior N-bar high" rule in Strategy settings.</p>' : '');
@@ -250,7 +228,7 @@
         return;
       }
       var showN = Math.min(ST.shown, list.length);
-      host.innerHTML = '<div class="sugg">' + list.slice(0, showN).map(function (r, i) { return itemHtml(r, ctx.bySym[r.sym], run, risk, rc, i + 1); }).join('') + '</div>' +
+      host.innerHTML = '<div class="sugg">' + list.slice(0, showN).map(function (r, i) { return itemHtml(r, ctx.bySym[r.sym], run, i + 1); }).join('') + '</div>' +
         (list.length > showN ? '<div style="text-align:center;margin-top:12px"><button class="btn" type="button" id="sg-more">Show ' + Math.min(20, list.length - showN) + ' more (' + (list.length - showN) + ' left)</button></div>' : '');
       var more = $('#sg-more', host);
       if (more) more.addEventListener('click', function () {
@@ -274,7 +252,6 @@
       var list = rows();
       var out = [['List', 'Symbol', 'Company', 'Exchange', 'Category', 'Basic industry', 'Price', 'Price state', 'Price as of', 'Status', 'Score %', 'Confluence', 'Entry ref', 'Stop', 'Target', 'R:R', 'Signals', 'Not qualified because', 'Warnings', 'Strategy', 'Version', 'Candles as of']];
       list.forEach(function (r) {
-        if (ST.list === 'exits') { out.push(['exits', r.sym, '', 'NSE', '', '', r.price, '', '', '', '', '', r.position.entry, r.position.stop, r.position.target, '', '', '', r.warnings.join('; '), run.config.name, run.config.version, run.dataAsOf]); return; }
         var s = ctx.bySym[r.sym];
         out.push([ST.list, r.sym, s.name, s.exchange, s.catName, s.ind, s.price, s.priceState, s.priceAsOf, r.statusLabel, r.score, r.confluence, r.entry, r.stop, r.target, isNum(r.rr) ? r.rr.toFixed(2) : '',
           (r.triggersPassed || []).join(' + '), (r.failed || []).join('; '), (r.warnings || []).join('; '), run.config.name, run.config.version, r.asOf]);
