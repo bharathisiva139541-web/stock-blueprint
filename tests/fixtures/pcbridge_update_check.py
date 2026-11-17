@@ -284,6 +284,10 @@ def browser(url):
 
 
 assert U.google_login(d5, hub, wait_s=20, open_browser=browser, port=18899) is True
+for _ in range(100):                     # the browser thread reads the answer page a moment after the login got the code
+    if hasattr(browser, 'page'):
+        break
+    time.sleep(0.05)
 assert 'Google login received' in browser.page
 assert browser.challenge == base64.urlsafe_b64encode(hashlib.sha256(hub.verifier.encode()).digest()).decode().rstrip('='), 'PKCE'
 assert json.load(open(os.path.join(d5, U.SESSION_FILE)))['refresh_token'] == 'refresh-1'

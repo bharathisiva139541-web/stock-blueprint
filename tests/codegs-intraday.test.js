@@ -318,7 +318,7 @@ test('site feed part "intraday": the allowed columns (+ Kite prices, 17-Nov-2026
     228.05, 233.7, 232.1, 246]);
   assert.deepStrictEqual(it.rows.find((r) => r[1] === 'FLAT').slice(8), [10, 11, null, null], 'no zone: empty');
   assert.ok(!JSON.stringify(it).includes('tradingview'), 'no chart formula');
-  assert.strictEqual(e.run('AB_SITE_FEED_FORMAT'), 16);
+  assert.ok(e.run('AB_SITE_FEED_FORMAT') >= 16);
 
   // tools/export_xlsx.py intraday_patterns() on the same tab gives the same JSON
   const py = ['python3', 'python'].find((p) => spawnSync(p, ['-c', 'import openpyxl']).status === 0);

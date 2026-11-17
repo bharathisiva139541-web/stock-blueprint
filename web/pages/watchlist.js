@@ -26,14 +26,19 @@
         '</select></div>' +
         '<div class="controls">' + ui.chips('wl', [
           ['all', 'All'], ['qualified', 'Strategy: qualified'], ['buy', 'TTM Buy'], ['pattern', 'Has pattern'], ['fvg', 'Has FVG'],
-          ['ema', 'EMA support'], ['results', 'Result due ≤14 days'], ['done', 'Results ticked'], ['near', 'Within 10% of 52W high'], ['new52', 'New 52W high (NSE)'], ['notes', 'With notes']
+          ['ema', 'EMA support'], ['results', 'Result due ≤14 days'], ['done', 'Results ticked'], ['near', 'Within 10% of 52W high'], ['new52', 'New 52W high (NSE)'],
+          ['peown', 'PE below own median'], ['peboth', 'PE below own + industry median'], ['notes', 'With notes']
         ], ST.f) + '<span class="count" id="wl-count"></span></div>' +
         '<p class="sub" id="wl-strat">Strategy column: ' + esc(cfg.name) + ' v' + cfg.version + ' ' + ui.badge(dsc.tag, dsc.cls) + ' <span id="wl-strat-st">' + (strat ? '' : '· running…') + '</span></p>' +
         '<div id="wl-table"></div></section>';
       el.innerHTML = h;
 
+      // Historical PE (17-Nov-2026): the columns before it - the viewer's saved sort / filter / columns carry over; the
+      // 1Y / 3Y / 5Y medians + the 5-year peak start hidden ("▦ Columns" shows them)
+      var OLD_KEYS = ['sym', 'name', 'catName', 'ind', 'price', 'chg', 'deliv', 'd10', 'd30', 'down52', 'pevs', 'sig', 'opmqy', 'strat', 'pat', 'rdate', 'note'];
       var t = new ui.Table({
         rows: [], pageSize: 50, sort: { key: 'chg', dir: -1 }, empty: 'No stocks match these filters',
+        legacyKeys: OLD_KEYS, hide: ['pem1', 'pem3', 'pem5', 'pepk'],
         columns: [
           { key: 'sym', label: 'Stock', type: 'sym', name: 'name', csv: function (r) { return r.sym; } },
           { key: 'name', label: 'Company', csvOnly: true },
@@ -46,7 +51,19 @@
           { key: 'd10', label: '10D', type: 'pct' },
           { key: 'd30', label: '30D', type: 'pct' },
           { key: 'down52', label: 'From 52W high', type: 'pct' },
+          { key: 'pe', label: 'PE', type: 'num', title: 'PE ratio now (price / TTM EPS) - follows the price shown' },
+          { key: 'peOwnMed', label: 'Own median PE', type: 'num',
+            title: 'The stock\'s own median PE of the last 5 years (else 3 years, else 1 year) - from your laptop: each day\'s Kite close / the TTM EPS known that day',
+            get: function (r) { var m = SB.pe.ownMedian(r); return m ? m.value : null; },
+            html: function (r) { var m = SB.pe.ownMedian(r); return m ? F.num(m.value) + ' <span class="sub">' + m.years + 'Y</span>' : '<span class="sub">–</span>'; } },
+          { key: 'peOwn', label: 'PE / own median', type: 'num', digits: 2, title: 'PE now divided by its own median PE - below 1 = cheaper than its usual PE' },
           { key: 'pevs', label: 'PE / Ind PE', type: 'num', title: 'PE ratio divided by industry PE' },
+          { key: 'peCheck', label: 'PE check', title: 'PE vs its own median first, then vs the industry PE (the sheet\'s PE Check)',
+            html: function (r) { return r.peCheck ? ui.badge(r.peCheck, /^Below own \+/.test(r.peCheck) ? 's-good' : /^Below own/.test(r.peCheck) ? 's-info' : /^Above both/.test(r.peCheck) ? 's-bad' : '') : '<span class="sub">–</span>'; } },
+          { key: 'pem1', label: 'Median PE 1Y', type: 'num', title: 'Median daily PE of the last year' },
+          { key: 'pem3', label: 'Median PE 3Y', type: 'num', title: 'Median daily PE of the last 3 years (yearly EPS before the quarterly table starts - nearly exact)' },
+          { key: 'pem5', label: 'Median PE 5Y', type: 'num', title: 'Median daily PE of the last 5 years (approximate - a year\'s EPS stands for its quarters)' },
+          { key: 'pepk', label: 'Peak PE 5Y', type: 'num', title: 'Highest daily PE of the last 5 years' },
           { key: 'sig', label: 'TTM Signal', type: 'badge' },
           { key: 'opmqy', label: 'OPM Qtr YoY', type: 'badge', title: 'This quarter\'s operating margin vs the same quarter a year ago (Main "OPM Qtr YoY")' },
           { key: 'strat', label: 'Strategy', title: cfg.name + ' v' + cfg.version + ' - ' + dsc.tag,
@@ -72,6 +89,8 @@
             case 'done': return s.done === true;
             case 'near': return isNum(s.down52) && s.down52 >= -10;
             case 'new52': return !!(s.nse52 && s.nse52.isNew);
+            case 'peown': return isNum(s.peOwn) && s.peOwn < 1;
+            case 'peboth': return s.peCheck === 'Below own + industry median';
             case 'notes': return !!notes[s.sym];
             case 'results':
               var d = ui.parseDate(s.rdate);

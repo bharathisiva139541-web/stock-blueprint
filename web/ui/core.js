@@ -218,6 +218,7 @@
   // "▦ Columns" (owner, 03-Nov-2026: "hide unhide column in a simplest way"): tick / untick columns; the first column
   // (the stock) always stays; hidden columns are left out of the CSV too; kept with the sort & filter (store 'h').
   // opts.legacyKeys: the column keys the table had before (its saved sort / filter / columns are read once from there).
+  // opts.hide: keys of columns hidden until the viewer ticks them (also for a state read from legacyKeys - new columns).
   // "Sort & filter" (above the table): several sort levels and several conditions
   // ("Result day ≥ 10" AND "Verdict is Strong"...). A text column with few values
   // (Verdict, OPM QoQ...) offers them as ticks: "is" = any ticked value, "is not" =
@@ -354,9 +355,11 @@
   Table.prototype.load = function () {
     if (this.o.tools === false) return;
     var self = this, st = store.get(this.storeKey(), null);
-    if ((!st || typeof st !== 'object') && this.o.legacyKeys) st = store.get(this.storeKey(this.o.legacyKeys), null);
-    if (!st || typeof st !== 'object') return;
     var ok = function (k) { var c = self.col(k); return c && !c.csvOnly && c.label; };
+    var fresh = !st || typeof st !== 'object';
+    if (fresh && this.o.legacyKeys) st = store.get(this.storeKey(this.o.legacyKeys), null);
+    if (fresh && Array.isArray(this.o.hide)) this.hidden = this.o.hide.filter(ok);
+    if (!st || typeof st !== 'object') return;
     if (Array.isArray(st.s) && st.s.length) {
       var s = st.s.filter(function (x) { return x && ok(x.key); }).map(function (x) { return { key: x.key, dir: x.dir < 0 ? -1 : 1 }; });
       if (s.length) this.sorts = s;
@@ -370,7 +373,8 @@
     }
     if (Array.isArray(st.h)) {
       var first = this.shown()[0];
-      this.hidden = st.h.filter(function (k) { return ok(k) && (!first || k !== first.key); });
+      var hid = st.h.filter(function (k) { return ok(k) && (!first || k !== first.key); });
+      this.hidden = fresh ? hid.concat(this.hidden.filter(function (k) { return hid.indexOf(k) < 0; })) : hid;
     }
     this.sort = this.sorts[0] || null;
   };

@@ -187,6 +187,23 @@ The sheet then works out each Basic Industry's Industry PE = the median PE of yo
  - Send the newest file again now: run  py -3 screener_bridge.py nsepe
  - To switch it off: in config.json add  "nse_pe": false
 
+HISTORICAL PE (since 17-Nov-2026)
+Main gets six columns at its right end: Median PE 1Y, Median PE 3Y, Median PE 5Y, Peak PE 5Y (worked out here on
+your computer), PE vs Own Median (PE Ratio / the 5-year median, else 3-year, else 1-year - below 1 = cheaper than
+usual) and PE Check (below its own median and / or below the Industry PE). Hidden tab PE_History has the details.
+How: each day's PE = the Kite daily close / the TTM EPS known that day - the 4 newest quarters of screener.in's
+quarterly table (about 3 years), before that the yearly EPS of its Profit & Loss table (so 1Y exact, 3Y nearly
+exact, 5Y approximate); a split / bonus is evened out; loss days have no PE. A median stays blank (the reason is
+in PE_History) when the stock is listed for less than that, the EPS history is shorter, or it had a loss on most days.
+ - The EPS history comes from the screener.in pages this program reads (eps_history.json). Stocks not read yet:
+   the sheet's stored quarterly figures first (1Y), and every full round reads 40 more pages (about 10 minutes)
+   until every stock has its yearly EPS too - about 1 to 2 weeks. In a hurry: HistPeNow.bat reads 200 pages
+   (about 50 minutes; the 30-minute results check is skipped meanwhile) - HistPeNow.bat 500 reads 500.
+ - The prices come from the Kite daily candles (the Backtest Lab cache the daily Kite scan makes) - Kite is needed.
+ - The figures go to the sheet after each daily Kite scan (the next full round). bridge.log: "Historical PE (prices
+   up to ...): N stock(s) -> the sheet - 1Y median for ..., 3Y ..., 5Y ...".
+ - To switch it off: in config.json add  "pe_history": false   (fewer pages a round: "pe_history_pages_per_run": 20)
+
 RESULTS: NSE XBRL FIRST, SCREENER.IN AFTER (since 02-Nov-2026)
 A round used to take 40 minutes in the results season: screener.in lets about 12 pages through every 3 minutes, and
 it was asked every company whose results were due. Now:

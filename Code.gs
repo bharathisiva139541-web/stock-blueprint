@@ -9022,6 +9022,9 @@ function doPost(e) {
     if (req.action === 'nsepe') {
       return ab_bridgeJson_(ab_nsePeFromBridge_(req));     // NSE's daily PE file -> NSE_PE tab + Industry PE (Code2.gs)
     }
+    if (req.action === 'histpe') {
+      return ab_bridgeJson_(ab_histPeFromBridge_(req));    // Historical PE from the laptop -> PE_History + Main (Code2.gs)
+    }
     if (req.action === 'hist') {
       return ab_bridgeJson_(ab_h60FromBridge_(req));
     }
@@ -9190,7 +9193,8 @@ const AB_SITE_MAIN_COLS = [
   ['promo', 'Promotor Holding', 'str'], ['fii', 'FII Activity', 'str'], ['opmy', 'OPM YoY%', 'str'],
   ['opmq', 'OPM QoQ%', 'str'], ['opmqy', 'OPM Qtr YoY', 'str'], ['pat', 'Pattern', 'str'], ['fvg', 'FVG', 'str'],
   ['e10', '10 EMA', 'str'], ['e21', '21 EMA', 'str'], ['zone', 'Zone', 'str'],
-  ['volchg', '%vol Change', 'frac'], ['ipo', 'IPO Level', 'str']
+  ['volchg', '%vol Change', 'frac'], ['ipo', 'IPO Level', 'str'],
+  ['pem1', 'Median PE 1Y', 'num'], ['pem3', 'Median PE 3Y', 'num'], ['pem5', 'Median PE 5Y', 'num'], ['pepk', 'Peak PE 5Y', 'num']
 ];
 
 // Alert Log columns that may be published (no personal position data)
@@ -9862,7 +9866,7 @@ function ab_site_isBlank_(v) { return v === null || v === undefined || v === '';
 // the allow-list changes: a copy built by older code is then rebuilt by the
 // next trigger run and never served by the newer deployed version.
 // ---------------------------------------------------------------------
-const AB_SITE_FEED_FORMAT = 16;   // 16: Kite prices - intraday + 'Low' / 'Close' / 'FVG Bottom' / 'FVG Top', zones4h + 'Zone Bottom' / 'Zone Top', mitigatedLog keeps its 4H rows (17-Nov-2026); 15: chochWait + 'Zone %' / 'Buy At' / 'Stop Under' / 'Entry' (12-Nov-2026 refinements); 14: + chochWait (CHoCH Waiting tab, with Kite prices - 12-Nov-2026); 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
+const AB_SITE_FEED_FORMAT = 17;   // 17: Main + Median PE 1Y / 3Y / 5Y, Peak PE 5Y (pem1 / pem3 / pem5 / pepk - Historical PE, 17-Nov-2026); 16: Kite prices - intraday + 'Low' / 'Close' / 'FVG Bottom' / 'FVG Top', zones4h + 'Zone Bottom' / 'Zone Top', mitigatedLog keeps its 4H rows (17-Nov-2026); 15: chochWait + 'Zone %' / 'Buy At' / 'Stop Under' / 'Entry' (12-Nov-2026 refinements); 14: + chochWait (CHoCH Waiting tab, with Kite prices - 12-Nov-2026); 13: springBacktest = the 30-day move / 1-5R targets (09-Nov-2026); 12: zones4h 'Inside FVG', GapUpFVG 'Mitigated On' / 'Inside FVG' (Gap-up zones kept after the first touch); 11: springBacktest.trades -> .list (api/site.js blocks a "trades" key); 10: + intraday 'FVG Detail', zones4h (4H FVG Zones), springBacktest (Spring Backtest tabs); 2: + ipoTracker (IPO Tracker tab); 3: + marketStats, high52, delivery (NSE end-of-day tabs); 4: + marketDay; 5: + part history60; 6: + ipoTracker.listed; 7: + Results Tracker 'Flags'; 8: + Main 'OPM Qtr YoY' (opmqy); 9: + intraday (Intraday Patterns tab, Zerodha Kite)
 const AB_SITE_FEED_SHEET = 'Site_Feed';
 const AB_SITE_FEED_PARTS = ['main', 'history', 'history60'];
 const AB_SITE_FEED_CHUNK = 45000;
