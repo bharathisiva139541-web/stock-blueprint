@@ -14231,3 +14231,234 @@ function ab_pushFromSite_(req) {
 function ab_noteFromSite_() {
   return { ok: true, result: 'notes', newest: ab_noteNewest_(), items: ab_noteList_(100), devices: ab_pushSubs_().length };
 }
+
+// =====================================================================
+// PE RATIO = MKT PRICE / TTM EPS (NSE's PE where there is none) + INDUSTRY PE = MEDIAN OF MAIN'S STOCKS
+// =====================================================================
+// Owner, 17-Nov-2026: "PE ratio cell of any stock in our sheet is using Google finance formula ... NSE daily update PE
+// ratio file in their reports page" + "Industry PE fulla enoda manual work than ... Industry PE Values sheet la irukurathu
+// elame old values ... These all should happen without my intervention"; choices: PE = "Both" (MKT Price / TTM EPS - the
+// sheet's own TTM EPS from the results engine, live with the price - and NSE's PE only where Main has no TTM EPS),
+// Industry PE = the median PE of the Main stocks of the same Basic Industry, every day.
+//   1. The PC sends NSE's newest PE_DDMMYY.csv (action 'nsepe') -> hidden tab NSE_PE (Symbol / NSE PE / Adjusted PE / Day).
+//   2. Main's "PE Ratio" column = one formula per row (no GOOGLEFINANCE): TTM EPS > 0 -> ROUND(MKT Price / TTM EPS, 2);
+//      TTM EPS <= 0 (a loss) -> blank; no TTM EPS -> NSE's PE. ab_ensurePeFormula_ puts it in (Phase 1 / every NSE PE
+//      post / Industry PE run) and puts it back on a row whose formula is different (new rows copy it anyway).
+//   3. ab_industryPeAuto_ (Phase 4 ~19:20, after every NSE PE post, menu): the median of Main's positive PE Ratio values per
+//      Basic Industry (>= AB_IPE_MIN_STOCKS stocks) -> the BasicIndustry PE tab's "Industry PE" column (Main's Industry PE
+//      formula reads it); industries Main has but the tab lacks are added at the bottom; fewer stocks -> the typed value
+//      stays; columns "Stocks in median" / "Median worked out" say what was used.
+const AB_NSE_PE_SHEET = 'NSE_PE';
+const AB_NSE_PE_DAY_PROP = 'AB_NSE_PE_DAY';
+const AB_PE_HEADER = 'PE Ratio';
+const AB_TTM_EPS_HEADER = 'TTM EPS';
+const AB_IPE_MIN_STOCKS = 3;
+const AB_IPE_PROP = 'AB_IPE_AUTO';
+const AB_IPE_COUNT_HEADER = 'Stocks in median';
+const AB_IPE_AT_HEADER = 'Median worked out';
+
+/** The hidden NSE_PE tab (made with its header when missing - Main's PE formula reads columns A:B). */
+function ab_nsePeSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_NSE_PE_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AB_NSE_PE_SHEET);
+    sh.getRange(1, 1).setValue('NSE\'s daily PE file (NSE > All Reports > PE ratio), sent by your PC. Main\'s PE Ratio uses it ' +
+      'only for stocks without a TTM EPS. Do not edit - it is rewritten every day.');
+    sh.getRange(2, 1, 1, 4).setValues([['Symbol', 'NSE PE', 'Adjusted PE', 'Day']]).setFontWeight('bold');
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** action 'nsepe' from the PC: {day 'yyyy-MM-dd', rows {SYM: [pe, adjusted pe]}} -> the NSE_PE tab (Main's symbols). */
+function ab_nsePeFromBridge_(req) {
+  const day = String(req.day || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { ok: false, error: 'bad day' };
+  const rows = req.rows && typeof req.rows === 'object' ? req.rows : null;
+  if (!rows) return { ok: false, error: 'no rows' };
+  const props = PropertiesService.getScriptProperties();
+  const had = props.getProperty(AB_NSE_PE_DAY_PROP) || '';
+  if (had && day < had) return { ok: true, day: had, older: true, matched: 0 };
+  const layout = ab_getMainLayout_();
+  const want = {};
+  for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
+    const s = String(layout.data[r][layout.symbol] || '').trim().toUpperCase();
+    if (s) want[s] = true;
+  }
+  const num = function (v) { const n = Number(v); return v !== null && v !== '' && isFinite(n) ? Math.round(n * 100) / 100 : ''; };
+  const out = [];
+  Object.keys(rows).forEach(function (k) {
+    const s = String(k).trim().toUpperCase();
+    if (!want[s]) return;
+    const v = Array.isArray(rows[k]) ? rows[k] : [rows[k]];
+    out.push([s, num(v[0]), num(v[1]), day]);
+  });
+  out.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+  const sh = ab_nsePeSheet_();
+  const last = sh.getLastRow();
+  if (last > 2) sh.getRange(3, 1, last - 2, 4).clearContent();
+  if (out.length) {
+    sh.getRange(3, 1, out.length, 1).setNumberFormat('@');
+    sh.getRange(3, 1, out.length, 4).setValues(out);
+  }
+  props.setProperty(AB_NSE_PE_DAY_PROP, day);
+  let formula = null, ipe = null;
+  try { formula = ab_ensurePeFormula_(); } catch (e) { formula = { error: e.message }; }
+  try { SpreadsheetApp.flush(); ipe = ab_industryPeAuto_(); } catch (e2) { ipe = { error: e2.message }; }
+  return { ok: true, day: day, matched: out.length, sent: Object.keys(rows).length, formula: formula, industryPe: ipe };
+}
+
+/** Main's PE Ratio formula in R1C1 for the given 1-based columns (symbol, price, TTM EPS). */
+function ab_peFormulaR1C1_(cSym, cPrice, cEps) {
+  const eps = 'RC' + cEps, nse = 'IFERROR(VLOOKUP(RC' + cSym + ",'" + AB_NSE_PE_SHEET + "'!C1:C2,2,FALSE),\"\")";
+  return '=IFERROR(IF(N(' + eps + ')>0,ROUND(RC' + cPrice + '/' + eps + ',2),IF(LEN(' + eps + '),"",' + nse + ')),' + nse + ')';
+}
+
+/** Puts Main's PE Ratio formula (price / TTM EPS, NSE's PE when there is none) on every stock row whose formula differs.
+ *  -> {rows (written), checked} or {skipped: reason}. Never touches anything when the columns are not found. */
+function ab_ensurePeFormula_() {
+  const layout = ab_getMainLayout_();
+  const h = layout.header;
+  const cPe = h.indexOf(AB_PE_HEADER), cEps = h.indexOf(AB_TTM_EPS_HEADER), cPrice = layout.mktPrice, cSym = layout.symbol;
+  if (cPe === -1 || cEps === -1 || cPrice === -1 || cSym === -1) {
+    return { skipped: 'Main has no ' + [cPe === -1 ? '"PE Ratio"' : '', cEps === -1 ? '"TTM EPS"' : '', cPrice === -1 ? '"MKT Price"' : '',
+      cSym === -1 ? '"SYMBOL"' : ''].filter(String).join(' / ') + ' column' };
+  }
+  let lastSym = -1;
+  for (let r = layout.data.length - 1; r > layout.headerRowIdx; r--) {
+    if (String(layout.data[r][cSym] || '').trim()) { lastSym = r; break; }
+  }
+  if (lastSym === -1) return { skipped: 'no stock rows' };
+  ab_nsePeSheet_();
+  const first = layout.headerRowIdx + 2, n = lastSym - layout.headerRowIdx;
+  const want = ab_peFormulaR1C1_(cSym + 1, cPrice + 1, cEps + 1);
+  const rng = layout.sheet.getRange(first, cPe + 1, n, 1);
+  const have = rng.getFormulasR1C1();
+  let differ = 0;
+  for (let i = 0; i < n; i++) if (String(have[i][0] || '') !== want) differ++;
+  if (!differ) return { rows: 0, checked: n };
+  const f = [];
+  for (let i = 0; i < n; i++) f.push([want]);
+  rng.setFormulasR1C1(f);
+  Logger.log('PE Ratio: ' + differ + ' row(s) now MKT Price / TTM EPS (NSE\'s PE where there is no TTM EPS).');
+  return { rows: differ, checked: n };
+}
+
+function ab_median_(a) {
+  const s = a.slice().sort(function (x, y) { return x - y; }), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/** Industry PE = the median PE Ratio of Main's stocks per Basic Industry -> the BasicIndustry PE tab. -> summary. */
+function ab_industryPeAuto_() {
+  const layout = ab_getMainLayout_();
+  const cPe = layout.header.indexOf(AB_PE_HEADER);
+  if (cPe === -1 || layout.basicIndustry === -1) return { skipped: 'Main has no "PE Ratio" / "Basic Industry" column' };
+  const groups = {};
+  for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
+    const row = layout.data[r];
+    const name = String(row[layout.basicIndustry] || '').trim();
+    if (!name || !String(row[layout.symbol] || '').trim()) continue;
+    const k = ab_ipeKey_(name);
+    const g = groups[k] || (groups[k] = { name: name, pes: [] });
+    const pe = ab_ipeNum_(row[cPe]);
+    if (pe !== null && pe > 0) g.pes.push(pe);
+  }
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ip = ss.getSheetByName(AB_INDUSTRY_PE_SHEET);
+  if (!ip) return { skipped: 'no "' + AB_INDUSTRY_PE_SHEET + '" tab' };
+  const vals = ip.getDataRange().getValues();
+  let h = -1, cInd = -1, cIpe = -1;
+  for (let r = 0; r < Math.min(10, vals.length); r++) {
+    const row = vals[r].map(ab_normHeader_);
+    let ind = row.indexOf('BASICINDUSTRYTYPE');
+    if (ind === -1) ind = row.indexOf('BASICINDUSTRY');
+    const pe = row.indexOf('INDUSTRYPE');
+    if (ind !== -1 && pe !== -1) { h = r; cInd = ind; cIpe = pe; break; }
+  }
+  if (h === -1) return { skipped: 'the ' + AB_INDUSTRY_PE_SHEET + ' tab has no "Basic Industry Type" + "Industry PE" header' };
+  // the two note columns (added after the last header cell the first time)
+  const hdr = vals[h].map(function (v) { return String(v).trim(); });
+  let lastHdr = hdr.length;
+  while (lastHdr > 0 && !hdr[lastHdr - 1]) lastHdr--;
+  let cCnt = hdr.indexOf(AB_IPE_COUNT_HEADER), cAt = hdr.indexOf(AB_IPE_AT_HEADER);
+  if (cCnt === -1) { cCnt = lastHdr++; ip.getRange(h + 1, cCnt + 1).setValue(AB_IPE_COUNT_HEADER).setFontWeight('bold'); }
+  if (cAt === -1) { cAt = lastHdr++; ip.getRange(h + 1, cAt + 1).setValue(AB_IPE_AT_HEADER).setFontWeight('bold'); }
+  const when = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
+  const nRows = Math.max(0, vals.length - h - 1);
+  const peCol = [], cntCol = [], atCol = [];
+  const forms = nRows ? ip.getRange(h + 2, cIpe + 1, nRows, 1).getFormulas() : [];
+  const seen = {};
+  let updated = 0, kept = 0;
+  for (let i = 0; i < nRows; i++) {
+    const row = vals[h + 1 + i];
+    const k = ab_ipeKey_(row[cInd]);
+    const g = k ? groups[k] : null;
+    if (k) seen[k] = true;
+    const old = forms[i][0] ? forms[i][0] : row[cIpe];
+    const oldCnt = row[cCnt] === undefined ? '' : row[cCnt], oldAt = row[cAt] === undefined ? '' : row[cAt];
+    if (g && g.pes.length >= AB_IPE_MIN_STOCKS && !forms[i][0]) {
+      peCol.push([Math.round(ab_median_(g.pes) * 100) / 100]); cntCol.push([g.pes.length]); atCol.push([when]); updated++;
+    } else {
+      peCol.push([old]);
+      if (k && g) { cntCol.push(['fewer than ' + AB_IPE_MIN_STOCKS + ' (' + g.pes.length + ') - your value kept']); atCol.push([when]); kept++; }
+      else { cntCol.push([oldCnt]); atCol.push([oldAt]); }
+    }
+  }
+  if (nRows) {
+    ip.getRange(h + 2, cIpe + 1, nRows, 1).setValues(peCol);
+    ip.getRange(h + 2, cCnt + 1, nRows, 1).setValues(cntCol);
+    ip.getRange(h + 2, cAt + 1, nRows, 1).setValues(atCol);
+  }
+  // Main's industries the tab does not have yet
+  const add = [];
+  Object.keys(groups).sort().forEach(function (k) {
+    const g = groups[k];
+    if (seen[k] || g.pes.length < AB_IPE_MIN_STOCKS) return;
+    const row = [];
+    for (let c = 0; c < lastHdr; c++) row.push('');
+    row[cInd] = g.name; row[cIpe] = Math.round(ab_median_(g.pes) * 100) / 100; row[cCnt] = g.pes.length; row[cAt] = when;
+    add.push(row);
+  });
+  if (add.length) ip.getRange(h + 2 + nRows, 1, add.length, lastHdr).setValues(add);
+  const res = { industries: updated + add.length, updated: updated, added: add.length, kept: kept, at: when };
+  PropertiesService.getScriptProperties().setProperty(AB_IPE_PROP, JSON.stringify(res));
+  Logger.log('Industry PE: ' + res.industries + ' industries = the median PE of their Main stocks (' + add.length + ' added, ' +
+    kept + ' with fewer than ' + AB_IPE_MIN_STOCKS + ' stocks kept).');
+  return res;
+}
+
+/** Phase 4 (~19:20, after Phase 1's prices): PE formula check + Industry PE medians. -> a note for the run log. */
+function ab_peEveningRefresh_() {
+  try {
+    const f = ab_ensurePeFormula_();
+    SpreadsheetApp.flush();
+    const r = ab_industryPeAuto_();
+    return ' PE Ratio formula: ' + (f.skipped ? 'skipped (' + f.skipped + ')' : f.rows ? f.rows + ' row(s) set' : 'in place') + '.' +
+      ' Industry PE: ' + (r.skipped ? 'skipped (' + r.skipped + ')' : r.industries + ' industries (median of Main\'s stocks)') + '.';
+  } catch (e) {
+    Logger.log('PE / Industry PE refresh failed: ' + e.message);
+    return ' PE / Industry PE refresh failed: ' + e.message + '.';
+  }
+}
+
+/** Menu: 8. Symbols, Indices & Main Upkeep > Industry PE: update now (median of Main's stocks) */
+function runIndustryPeAutoNow() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const f = ab_ensurePeFormula_();
+    SpreadsheetApp.flush();
+    const r = ab_industryPeAuto_();
+    ui.alert('PE Ratio + Industry PE',
+      'PE Ratio (Main): ' + (f.skipped ? 'not changed - ' + f.skipped : (f.rows ? f.rows + ' row(s) now ' : 'already ') +
+        'MKT Price / TTM EPS (NSE\'s PE for stocks without a TTM EPS)') + '.\n\n' +
+      'Industry PE: ' + (r.skipped ? 'not changed - ' + r.skipped : r.industries + ' industries now carry the median PE of their Main stocks' +
+        (r.added ? ' (' + r.added + ' new industries added to the ' + AB_INDUSTRY_PE_SHEET + ' tab)' : '') +
+        (r.kept ? '; ' + r.kept + ' industries have fewer than ' + AB_IPE_MIN_STOCKS + ' stocks - your typed value stays' : '')) +
+      '.\n\nThis runs by itself every evening (Phase 4) and whenever your PC sends NSE\'s PE file.', ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert('PE Ratio / Industry PE failed: ' + err.message);
+    throw err;
+  }
+}

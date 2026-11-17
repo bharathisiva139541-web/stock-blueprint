@@ -178,6 +178,15 @@ Watchlist and the stock details (Delivery %).
  - bridge.log shows "NSE end-of-day dd-mm-yyyy: ..." for each day.
  - To switch it off: in config.json add  "eod": false
 
+NSE PE FILE (since 17-Nov-2026)
+Every round also downloads NSE's daily PE file (NSE > All Reports > PE ratio, PE_DDMMYY.csv, out in the evening)
+and sends the newest day to the sheet (hidden tab NSE_PE). The sheet's PE Ratio column is now MKT Price / TTM EPS
+(your own TTM EPS from the results engine, live with the price); NSE's PE is used only for stocks without a TTM EPS.
+The sheet then works out each Basic Industry's Industry PE = the median PE of your Main stocks in it.
+ - bridge.log shows "NSE PE dd-mm-yyyy: N stocks from NSE -> the sheet (M of your Main stocks) ...".
+ - Send the newest file again now: run  py -3 screener_bridge.py nsepe
+ - To switch it off: in config.json add  "nse_pe": false
+
 RESULTS: NSE XBRL FIRST, SCREENER.IN AFTER (since 02-Nov-2026)
 A round used to take 40 minutes in the results season: screener.in lets about 12 pages through every 3 minutes, and
 it was asked every company whose results were due. Now:

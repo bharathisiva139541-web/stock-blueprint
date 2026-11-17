@@ -245,6 +245,13 @@ function createEnv(workbook, opts) {
         getNumberFormats: function () { seen('formats'); return grid2(fmtOf); },
         getNumberFormat: function () { return fmtOf(row - 1, col - 1); },
         getFormulas: function () { return grid2(function (r, c) { return formulas[r + ',' + c] || ''; }); },
+        // R1C1 formulas are kept as written (the A1 form of a cell set this way is the same text)
+        getFormulasR1C1: function () { return grid2(function (r, c) { return formulas[r + ',' + c] || ''; }); },
+        setFormulasR1C1: function (fs) {
+          write('formula');
+          (fs || []).forEach(function (line, r) { (line || []).forEach(function (f, c) { formulas[(row - 1 + r) + ',' + (col - 1 + c)] = String(f); }); });
+          return proxyRange;
+        },
         getFormula: function () { return formulas[(row - 1) + ',' + (col - 1)] || ''; },
         getRow: function () { return row; },
         getColumn: function () { return col; },
