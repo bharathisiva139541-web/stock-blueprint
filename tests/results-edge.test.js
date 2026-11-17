@@ -297,3 +297,35 @@ test('the whole-season view on random data: no "real" figure, no combination bey
     assert.deepStrictEqual(A.combos.filter((c) => c.held === 'yes').map((c) => c.label.join(' + ')), [], JSON.stringify(o));
   });
 });
+
+test('figures left out with ×: no group, no combination, no score points from them; + puts them back', () => {
+  assert.deepStrictEqual(E.clean({ off: ['sector', 'nope', 'sector', 'npY'] }).off, ['npY', 'sector'], 'known ids, once, in the list order');
+  assert.deepStrictEqual(E.clean({ off: 'gap,cap' }).off, ['cap', 'gap']);
+  assert.deepStrictEqual(E.clean({}).off, []);
+  // the planted edge of the earlier test: leave out NP YoY - it is gone everywhere, OPM Qtr YoY still found
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const perf = [], stocks = [], bars = {};
+  for (let k = 0; k < 600; k++) {
+    const sym = 'S' + k, at = 25 + (k % 30);
+    const big = rnd() < 0.3, opm = rnd() < 0.5;
+    const rally = rnd() < (big && opm ? 0.7 : big || opm ? 0.25 : 0.18);
+    bars[sym] = chart(at, rally ? [101, 103, 105, 106, 107, 108, 109, 110, 111, 112] : [100, 99.5, 99, 100, 100.5, 101, 100, 99, 100, 101]);
+    perf.push(rp(sym, DATES[at], 'Market hours', { 'NP YoY %': big ? 150 : 5 + rnd() * 30, 'Rev YoY %': rnd() * 40 }));
+    stocks.push(stock(sym, { opmqy: opm ? 'Increasing' : 'Decreasing', sector: rnd() < 0.5 ? 'IT' : 'Banks' }));
+  }
+  const input = { perf, stocks, H: { dates: DATES, bars } };
+  const o = { off: ['npY', 'sector'] };
+  const A = E.analyse(E.dataset(input, o), o);
+  assert.ok(!A.features.some((f) => f.id === 'npY' || f.id === 'sector'), A.features.map((f) => f.id).join(','));
+  assert.strictEqual(A.features[0].id, 'opmqy');
+  assert.ok(A.rows.every((r) => r.g.npY === undefined && r.g.sector === undefined && r.f.npY != null), 'the value stays on the row, out of the groups');
+  assert.ok(!A.combos.some((c) => c.conds.some((x) => x.f === 'npY' || x.f === 'sector')));
+  assert.ok(!A.model.cols.some((c) => /^(npY|sector)\|/.test(c)), 'not in the score');
+  assert.ok(A.rows.every((r) => r.reasons.every((x) => x.f !== 'npY')));
+  // back again
+  const B = E.analyse(E.dataset(input, { off: [] }));
+  assert.ok(B.features.some((f) => f.id === 'npY') && B.model.cols.some((c) => /^npY\|/.test(c)));
+  // the study's own figures: gap / session are never shown as "left out" in the gap-up study
+  assert.deepStrictEqual(E.studyFeatures({ goal: 'gapup' }).filter((f) => f.id === 'gap' || f.id === 'session'), []);
+});

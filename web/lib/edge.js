@@ -11,6 +11,8 @@
    as one single session instead of two (earlier, later)" (`view` 'whole'); "possibility of stocks opening in gapup if its
    result came after or closed market hours" (`goal` 'gapup': only those results, a win = the next session opened gapPct %
    or more above the close before it; the price figures at that close - the price known in the evening).
+   Owner, 17-Nov-2026: "Can u make this parameters as per my customization. If I want to exclude sector. There should be cross
+   mark and addition mark" - `off` = the figures left out (by id): no group, no combination, no score points from them.
 
    Browser + Node, no DOM. Learns from the season's results on the website's own data:
      the Results Performance rows (figures, verdict, announcement time, reaction session), Main (PE / PE vs industry /
@@ -50,6 +52,10 @@
       if (typeof DEFAULTS[k] === 'number') v = Number(v);
       out[k] = CHOICES[k].indexOf(v) >= 0 ? v : DEFAULTS[k];
     });
+    // the figures the viewer left out (known ids only, once each, in a fixed order)
+    var off = o && o.off;
+    off = Array.isArray(off) ? off : typeof off === 'string' && off ? off.split(',') : [];
+    out.off = FEATURES.map(function (f) { return f.id; }).filter(function (id) { return off.indexOf(id) >= 0; });
     return out;
   }
 
@@ -93,9 +99,14 @@
   FEATURES.forEach(function (f) { FEAT[f.id] = f; });
   // the gap-up study: the opening gap IS the outcome and every result came after the market - both left out
   var GAP_OUT = { gap: 1, session: 1 };
-  /** the figures a study looks at */
-  function featuresFor(P) {
+  /** the figures a study can look at */
+  function studyFeatures(P) {
     return P && P.goal === 'gapup' ? FEATURES.filter(function (f) { return !GAP_OUT[f.id]; }) : FEATURES;
+  }
+  /** the figures a study looks at: those of the study minus the ones the viewer left out */
+  function featuresFor(P) {
+    var off = (P && P.off) || [];
+    return studyFeatures(P).filter(function (f) { return off.indexOf(f.id) < 0; });
   }
 
   /** a feature value -> { key, label, order } (null when unknown) */
@@ -594,6 +605,6 @@
       features: feats, combos: cmb, check: chk, model: model };
   }
 
-  return { DEFAULTS: DEFAULTS, CHOICES: CHOICES, FEATURES: FEATURES, featuresFor: featuresFor, bucket: bucket, dataset: dataset, analyse: analyse, train: train,
+  return { DEFAULTS: DEFAULTS, CHOICES: CHOICES, FEATURES: FEATURES, featuresFor: featuresFor, studyFeatures: studyFeatures, bucket: bucket, dataset: dataset, analyse: analyse, train: train,
     score: score, auc: auc, wilson: wilson, decision: decision, clean: clean, capOf: capOf, reactFrom: reactFrom };
 });

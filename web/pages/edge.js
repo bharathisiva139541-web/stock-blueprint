@@ -7,7 +7,8 @@
    list for the newest results. Recomputed whenever the data changes (every feed refresh).
    Owner, 17-Nov-2026 (second look): five figures removed (60-day high, 50-day average, 20-session move, FII, promoter), a
    "Show: whole season as one" choice next to "earlier vs later part", and a "Study: gap-up open" for results that came after
-   the market / on a closed day (Gap-up chance, Likely gap-up / Maybe / Unlikely). */
+   the market / on a closed day (Gap-up chance, Likely gap-up / Maybe / Unlikely). Then: "If I want to exclude sector.
+   There should be cross mark and addition mark" - × on every figure leaves it out of everything below, + puts it back. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, R = SB.results, E = SB.edge;
@@ -132,6 +133,7 @@
       F.int(A.rows.length) + ' results with candles' + (Wd.gap ? ' that came after the market or on a closed day' + (A.skipped && A.skipped.notAfter ? ' (' +
         F.int(A.skipped.notAfter) + ' before / during market hours left out)' : '') : '') +
       (A.skipped && A.skipped.nocandles ? ' (' + F.int(A.skipped.nocandles) + ' without candles left out)' : '') +
+      (leftOut(A.opt).length ? ' · ' + F.int(leftOut(A.opt).length) + ' figure' + (leftOut(A.opt).length === 1 ? '' : 's') + ' left out by you' : '') +
       '. Worked out again whenever your sheet\'s data changes.</p></div></div>';
     var chk = tile('Score check', A.check && A.check.auc != null ? (A.check.auc * 100).toFixed(0) + ' / 100' : '–', A.check ? 'on the later ' + F.int(A.check.n) +
       ' results (50 = a coin toss)' : 'needs about 100 finished results', '', 'The score is always learned on the earlier part and judged on the later one');
@@ -209,20 +211,33 @@
       '<div class="controls"><input class="search" id="edge-q" type="search" placeholder="Check any stock: symbol or company" aria-label="Check a stock" value="' + esc(ST.q) + '">' +
       '<span class="count" id="edge-now-count"></span></div><div id="edge-now-t"></div><div id="edge-one"></div></section>';
   }
+  /** the figures of this study the viewer left out (with ×) */
+  function leftOut(o) {
+    var off = o.off || [];
+    return E.studyFeatures(o).filter(function (f) { return off.indexOf(f.id) >= 0; });
+  }
+  function offHtml(o) {
+    var out = leftOut(o);
+    if (!out.length) return '<p class="sub edge-off-tip" id="edge-off">Tap <b>×</b> next to a figure to leave it out - the groups, combinations and scores are then worked out without it.</p>';
+    return '<div class="edge-off" id="edge-off"><span class="edge-off-l">Left out by you (' + F.int(out.length) + '):</span> ' + out.map(function (f) {
+      return '<button type="button" class="chip edge-plus" data-feat-on="' + esc(f.id) + '" title="Put it back" aria-label="Put back ' + esc(f.label) + '">+ ' + esc(f.label) + '</button>';
+    }).join(' ') + (out.length > 1 ? ' <button type="button" class="btn ghost edge-plus-all" data-feat-on="*">Put all back</button>' : '') + '</div>';
+  }
   function featHtml(A) {
     var Wd = words(A.opt);
     var max = Math.max.apply(null, A.features.map(function (f) { return f.strength; }).concat([0.0001]));
     return '<section class="card" id="edge-feat"><div class="card-head"><div><h2>What mattered most</h2><p>Every figure, one at a time: how often the results ' +
       'in each of its groups ' + Wd.win + '. <b>Real</b> = the groups differ far more than luck would explain (even after checking ~' + A.features.length +
       ' figures)' + (Wd.whole ? ' over the whole season' : ' and the difference held in the later part of the season') +
-      '; the bar = how strongly. Pick one to see its groups.</p></div></div>' +
-      '<div class="edge-feats">' + A.features.map(function (f) {
+      '; the bar = how strongly. Pick one to see its groups.</p></div></div>' + offHtml(A.opt) +
+      (A.features.length ? '<div class="edge-feats">' + A.features.map(function (f) {
         var w = Math.max(2, Math.round(f.strength / max * 100));
-        return '<button type="button" class="edge-feat' + (ST.feat === f.id ? ' on' : '') + '" data-feat="' + esc(f.id) + '"><span class="edge-feat-l">' + esc(f.label) +
+        return '<div class="edge-feat-row"><button type="button" class="edge-feat' + (ST.feat === f.id ? ' on' : '') + '" data-feat="' + esc(f.id) + '"><span class="edge-feat-l">' + esc(f.label) +
           ' <span class="badge' + (f.real ? ' s-good' : '') + '">' + (f.real ? 'Real' : f.n < ST.opt.minN * 2 ? 'Too few' : 'Could be chance') + '</span></span>' +
           '<span class="bar-track"><span class="bar pos" style="width:' + w + '%"></span></span>' +
-          '<span class="edge-feat-n">' + (f.best ? 'best: ' + esc(f.best.label) + ' ' + pc(f.best.rate) : f.n ? F.int(f.n) + ' results' : 'no data') + '</span></button>';
-      }).join('') + '</div><div id="edge-groups"></div></section>';
+          '<span class="edge-feat-n">' + (f.best ? 'best: ' + esc(f.best.label) + ' ' + pc(f.best.rate) : f.n ? F.int(f.n) + ' results' : 'no data') + '</span></button>' +
+          '<button type="button" class="edge-x" data-feat-off="' + esc(f.id) + '" title="Leave this figure out" aria-label="Leave out ' + esc(f.label) + '">×</button></div>';
+      }).join('') + '</div>' : '<p class="empty">Every figure is left out - press + above to put some back.</p>') + '<div id="edge-groups"></div></section>';
   }
   function comboHtml(A) {
     var Wd = words(A.opt);
@@ -437,6 +452,24 @@
             ST.feat = b.getAttribute('data-feat');
             body.querySelectorAll('[data-feat]').forEach(function (x) { x.classList.toggle('on', x === b); });
             drawGroups(body, A);
+          });
+        });
+        // × leaves a figure out, + puts it back (kept on this device with the other choices)
+        var setOff = function (off) {
+          ST.opt.off = off;
+          ST.opt = E.clean(ST.opt);
+          store(OPT_KEY, ST.opt);
+          SB.route(true);
+        };
+        body.querySelectorAll('[data-feat-off]').forEach(function (b) {
+          b.addEventListener('click', function () { setOff((ST.opt.off || []).concat([b.getAttribute('data-feat-off')])); });
+        });
+        body.querySelectorAll('[data-feat-on]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var id = b.getAttribute('data-feat-on');
+            var keep = E.studyFeatures(ST.opt).map(function (f) { return f.id; });
+            setOff(id === '*' ? (ST.opt.off || []).filter(function (x) { return keep.indexOf(x) < 0; })
+              : (ST.opt.off || []).filter(function (x) { return x !== id; }));
           });
         });
       }, function (e) {
