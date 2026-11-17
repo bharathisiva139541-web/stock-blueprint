@@ -1593,6 +1593,16 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 .edge-opt select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); max-width: 100%; }
 .edge-says { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; line-height: 1.5; }
 .edge-feats { display: grid; gap: 4px; margin-bottom: 12px; }
+.edge-feat-row { display: flex; align-items: center; gap: 6px; }
+.edge-feat-row .edge-feat { flex: 1; min-width: 0; }
+.edge-x { flex: none; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); font-size: 18px; line-height: 1; cursor: pointer; }
+.edge-x:hover, .edge-x:focus-visible { color: var(--down); border-color: var(--down); background: rgba(var(--down-rgb), 0.08); }
+.edge-off { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; padding: 10px 12px; border: 1px dashed var(--border);
+  border-radius: 12px; font-size: 13px; }
+.edge-off-l { color: var(--ink-2); }
+.edge-plus { color: var(--up); border-color: rgba(var(--up-rgb), 0.45); }
+.edge-off-tip { margin: 0 0 10px; }
 .edge-feat { display: grid; grid-template-columns: minmax(150px, 38%) 1fr minmax(120px, 28%); align-items: center; gap: 10px; padding: 6px 8px;
   border: 1px solid transparent; border-radius: 10px; background: none; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .edge-feat:hover, .edge-feat:focus-visible { background: var(--surface-3); }

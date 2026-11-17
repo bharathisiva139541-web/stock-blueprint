@@ -707,6 +707,28 @@ function check(name, fn) {
           assert.match(await page.$eval('#edge-one', (x) => x.textContent), new RegExp(sym + '[\\s\\S]*Rally chance'));
           await page.selectOption('[data-eo="trendDays"]', '10');
           await page.fill('#edge-q', '');
+          // owner, 17-Nov-2026: "If I want to exclude sector. There should be cross mark and addition mark"
+          assert.match(await page.$eval('#edge-off', (x) => x.textContent), /Tap × next to a figure/);
+          await page.click('[data-feat-off="sector"]');
+          await page.waitForSelector('#edge-off [data-feat-on="sector"]', { timeout: 15000 });
+          const ex = await page.evaluate(() => ({
+            feat: !!document.querySelector('#edge-feat [data-feat="sector"]'),
+            chip: document.querySelector('#edge-off').textContent,
+            sum: document.querySelector('#edge-sum .card-head p').textContent,
+            kept: JSON.parse(localStorage.getItem('sb:edge:opts')).off
+          }));
+          assert.ok(!ex.feat, 'Sector is out of the list');
+          assert.match(ex.chip, /Left out by you \(1\):\s*\+ Sector/);
+          assert.match(ex.sum, /1 figure left out by you/);
+          assert.deepStrictEqual(ex.kept, ['sector'], 'kept on this device');
+          await page.click('[data-feat-off="cap"]');
+          await page.waitForSelector('#edge-off [data-feat-on="*"]', { timeout: 15000 });
+          await page.click('#edge-off [data-feat-on="sector"]');
+          await page.waitForSelector('#edge-feat [data-feat="sector"]', { timeout: 15000 });
+          assert.ok(!(await page.$('#edge-feat [data-feat="cap"]')), 'Market cap still out');
+          await page.click('#edge-off [data-feat-on="cap"]');
+          await page.waitForSelector('#edge-feat [data-feat="cap"]', { timeout: 15000 });
+          assert.match(await page.$eval('#edge-off', (x) => x.textContent), /Tap × next to a figure/);
           // owner, 17-Nov-2026: "option to see the whole results as one single session instead of two (earlier, later)"
           await page.selectOption('[data-eo="view"]', 'whole');
           await page.waitForFunction(() => /as one part/.test(document.querySelector('#edge-rule').textContent) && document.querySelector('#edge-groups table'), null, { timeout: 15000 });
