@@ -959,6 +959,18 @@ function check(name, fn) {
       return { n: (s.choch || []).length, pass: r.bySym[sym].checks.find((c) => c.id === 'chochFvg').res.pass };
     }, FLAG_SYM);
     assert.deepStrictEqual(st, { n: 1, pass: true });
+    // 17-Nov-2026 ("Daily Suggestions-இல் வருவது CHoCH / BOS setups மட்டுமே. Add all others too"): preset 'My daily scan' takes every setup
+    const ds = await p.evaluate((syms) => {
+      const S = window.SB.strategy, bars = [{ t: '2026-10-19', o: 10, h: 11, l: 9, c: 10, v: 1e6 }, { t: '2026-10-20', o: 10, h: 11, l: 9, c: 10.5, v: 1e6 }];
+      const stocks = syms.map((x) => window.SB.ctx.bySym[x]), hist = {};
+      syms.forEach((x) => { hist[x] = bars; });
+      const r = S.run(S.PRESETS.dailyScan, stocks, hist, { refDate: '2026-10-21' });
+      return syms.map((x) => { const c = r.bySym[x].checks.find((k) => k.id === 'dailyScan').res; return [x, c.pass, c.detail]; });
+    }, [FLAG_SYM, SENT_SYM]);
+    assert.strictEqual(ds[0][1], true, JSON.stringify(ds));
+    assert.match(ds[0][2], /D CHoCH \+ FVG 2026-10-20 \(1 trading day ago\).*; 4H Spring in FVG 2026-10-20 13:15/);
+    assert.strictEqual(ds[1][1], true, JSON.stringify(ds));
+    assert.match(ds[1][2], /D BOS \+ FVG 2026-10-19 \(1 trading day ago\)/);
     await p.goto(base + '#strategy');
     await p.waitForFunction(() => /Strategy|strategy/.test((document.querySelector('#app') || {}).textContent || ''), null, { timeout: 15000 });
     const allBtn = await p.$('[data-style="all"]');
@@ -1172,6 +1184,46 @@ function check(name, fn) {
     assert.deepStrictEqual(errors, [], 'console/page errors');
     assert.ok(st.banner && /Live data could not be loaded: /.test(st.banner), 'banner: ' + st.banner);
     assert.ok(/st-CACHED/.test(st.pillCls), 'pill CACHED');
+  });
+
+  // owner, 17-Nov-2026 ("why these tables are empty. when page is not live. Make all pages and tables availabe alltime"): a good live
+  // read is kept on the device (IndexedDB 'sb-site'); a later failed read shows that copy - every table filled, a warn banner
+  await check('live feed fails after a good read: the last live copy kept on this device fills every page (Zerodha tables too)', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    let mode = 'ok';
+    const okApi = liveApi({ priceState: 'DELAYED', session: 'open' }), failApi = liveApi({ site: 'fail', session: 'open' });
+    await routeAll(c, base, (u, req) => (mode === 'ok' ? okApi(u, req) : failApi(u, req)), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#suggestions', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB && window.SB.ctx && window.SB.ctx.history && window.SB.ctx.history.live, null, { timeout: 15000 });
+    // wait until the three parts are kept
+    await p.waitForFunction(() => Promise.all(['main', 'history', 'history60'].map((k) => window.SB.keep.get(k))).then((a) => a.every(Boolean)), null, { timeout: 15000 });
+    mode = 'fail';
+    const before = calls.length;
+    await p.goto(base + '#signals', { waitUntil: 'load' });
+    await p.reload({ waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB && window.SB.ctx && window.SB.ctx.D && window.SB.ctx.site.kept, null, { timeout: 15000 });
+    await p.waitForSelector('#sg-itd-t table', { timeout: 15000 });
+    const st = await pageState(p);
+    const got = await p.evaluate((sym) => ({ price: window.SB.ctx.bySym[sym].price, itd: document.querySelectorAll('#sg-itd-t tbody tr').length,
+      z4: !!document.querySelector('#sg-z4'), stale: window.SB.ctx.site.stale, reason: window.SB.ctx.site.staleReason }), SENT_SYM);
+    await p.goto(base + '#suggestions', { waitUntil: 'load' });
+    await p.waitForFunction(() => window.SB.ctx.history, null, { timeout: 15000 });
+    const H = await p.evaluate(() => ({ live: window.SB.ctx.history.live, kept: window.SB.ctx.history.kept, readAt: window.SB.ctx.history.readAt,
+      older: window.SB.ctx.history.older && window.SB.ctx.history.older.days, reason60: window.SB.ctx.site.history60Reason }));
+    await p.waitForTimeout(300);
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+    assert.strictEqual(st.live, true, 'the kept copy is the live feed\'s');
+    assert.ok(got.stale && /mock failure: sheet is updating/.test(got.reason), JSON.stringify(got));
+    assert.ok(st.banner && /Live data could not be read just now/.test(st.banner) && /last live copy this device kept/.test(st.banner) &&
+      /Every table is filled from it/.test(st.banner), 'banner: ' + st.banner);
+    assert.strictEqual(got.price, SENTINEL, 'the live prices of the kept copy, not the saved copy\'s');
+    assert.ok(got.itd > 0 && got.z4, 'the Zerodha tables are filled: ' + JSON.stringify(got));
+    assert.ok(H.live && H.kept && H.readAt === READ_AT && H.older === 5 && !H.reason60, 'the kept candles + older days: ' + JSON.stringify(H));
+    assert.ok(!calls.slice(before).some((u) => /part=history/.test(u)), 'no second wait for the candles: ' + calls.slice(before).join(' '));
   });
 
   await check('the owner\'s Kite live prices: with the PIN, price + Today % come from Kite with the LIVE label; without it nothing changes', async () => {

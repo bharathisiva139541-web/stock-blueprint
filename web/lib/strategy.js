@@ -77,6 +77,11 @@
   // pit: false = uses today's fundamentals -> excluded from backtests (would be look-ahead)
   var C = {};
   function def(id, o) { o.id = id; C[id] = o; }
+  // the daily Zerodha scan's patterns (= Code2.gs AB_ITD_PATTERNS): the setups of the Backtest Lab page's "My daily scan" card and
+  // their lower-timeframe confirmations first (counted by default), then the scan's plain patterns
+  var SCAN_PATTERNS = ['CHoCH + FVG', 'BOS + FVG', '15m CHoCH in zone', '1H CHoCH in zone', 'D CHoCH in zone', 'Daily FVG + 4H Spring', 'Spring in FVG',
+    'Gap-up FVG + Spring', 'Spring', 'FVG First Touch Confirmed', 'FVG First Touch', 'Twin Star Bottom + FVG'];
+  var SCAN_DEFAULT = SCAN_PATTERNS.slice(0, 8);
 
   def('liquidity', { label: 'Average turnover ≥ ₹{minTurnover}', kind: 'sheet', setGroup: 'filter', pit: true,
     params: [{ key: 'minTurnover', label: 'Min avg daily turnover (₹)', def: 5000000 }],
@@ -337,6 +342,35 @@
         detail: hit.tf + ' candle ' + hit.candle + when + (hit.detail ? ' - ' + hit.detail : '') + (okDays ? '' : waitText) };
     } });
 
+  // EVERY setup of the owner's daily Zerodha scan (owner, 17-Nov-2026: "Daily Suggestions-இல் வருவது CHoCH / BOS setups மட்டுமே. Add all
+  // others too"): the sheet's Intraday Patterns rows (feed part intraday) of the chosen patterns, joined to each stock as stock.scan
+  // (scanIndex) - the setups ticked on the Backtest Lab page's "My daily scan" card + their lower-timeframe confirmations by default;
+  // the scan's plain patterns can be ticked too. Not point-in-time (the website's own backtests leave it out).
+  def('dailyScan', { label: 'Your daily Zerodha scan found one of {pats} on {tfs}, at most {days} trading day(s) before today', kind: 'sheet', setGroup: 'trigger',
+    type: 'pullback', pit: false,
+    ref: 'PC program kite_intraday.py (Backtest Lab > My daily scan) + the sheet\'s Intraday Patterns tab',
+    params: [{ key: 'pats', label: 'Setups', def: SCAN_DEFAULT.slice(), options: SCAN_PATTERNS.slice() },
+      { key: 'tfs', label: 'Timeframes', def: ['4H', 'D', 'W'], options: ['4H', 'D', 'W', 'M'] },
+      { key: 'days', label: 'Found at most this many trading days before today (0 = today; the scan runs after the close)', def: 1 }],
+    eval: function (x, p) {
+      var pats = p.pats || [], tfs = p.tfs || [];
+      var all = (x.stock || {}).scan || [];
+      var rows = all.filter(function (r) { return pats.indexOf(r.pattern) >= 0 && tfs.indexOf(r.tf) >= 0; });
+      if (!rows.length) {
+        return { pass: false, detail: all.length ? 'only ' + all.slice(0, 3).map(function (r) { return r.tf + ' ' + r.pattern; }).join(', ') + ' (not ticked here)' :
+          'none of your setups in the last 30 days of your PC\'s scans' };
+      }
+      var ageOf = function (r) { return weekdaysAfter(r.session, x.refDate); };
+      var fresh = rows.filter(function (r) { var a = ageOf(r); return a != null && a >= 0 && a <= p.days; });
+      var when = function (r) { var a = ageOf(r); return a == null || a < 0 ? '' : a === 0 ? ' (today)' : ' (' + a + ' trading day' + (a === 1 ? '' : 's') + ' ago)'; };
+      var line = function (r) { return r.tf + ' ' + r.pattern + ' ' + r.candle + when(r) + (r.detail ? ' - ' + r.detail : ''); };
+      if (!fresh.length) return { pass: false, value: rows[0].tf + ' ' + rows[0].pattern, detail: 'the newest: ' + line(rows[0]) };
+      var names = [];
+      fresh.forEach(function (r) { if (names.indexOf(r.pattern) < 0) names.push(r.pattern); });
+      return { pass: true, value: fresh[0].tf + ' ' + fresh[0].pattern, types: names, detail: fresh.slice(0, 4).map(line).join('; ') +
+        (fresh.length > 4 ? '; +' + (fresh.length - 4) + ' more' : '') };
+    } });
+
   // standard rules (not in the sheet)
   def('breakout', { label: 'Close above the prior {length}-bar high', kind: 'std', setGroup: 'trigger', type: 'breakout', pit: true,
     params: [{ key: 'length', label: 'Lookback bars', def: 20 }, { key: 'minRelVol', label: 'Min relative volume', def: 1.5 }],
@@ -486,6 +520,24 @@
         'Liquidity filter: average daily turnover at least ₹50 lakh (the sheet\'s FVG rule).'
       ]
     },
+    dailyScan: {
+      id: 'dailyScan', name: 'My daily scan - all your Zerodha setups', version: 1, source: 'request', mode: 'setup', style: 'swing', timeframe: '1d',
+      description: 'Every stock your PC\'s daily Zerodha scan listed after the last close: your CHoCH + FVG and BOS + FVG setups (and their 15-minute / ' +
+        '1-hour CHoCH confirmations), Daily FVG + 4H Spring, FVG + Spring and Gap-up FVG + Spring - the setups you tick on the Backtest Lab page ' +
+        '("My daily scan"), with the rules set there. Tick off a setup here to leave it out of this list; the scan\'s plain patterns (Spring, FVG ' +
+        'First Touch / Confirmed, Twin Star Bottom + FVG) can be ticked too.',
+      universe: { categories: [], minBars: 2 }, filters: [],
+      triggers: [{ id: 'dailyScan', params: { pats: SCAN_DEFAULT.slice(), tfs: ['4H', 'D', 'W'], days: 1 } }],
+      confirms: [], qualify: { minTriggers: 1 },
+      exits: { stop: { method: 'swing', bars: 5 }, target: { method: 'rr', rr: 2 }, minRR: 0 }, events: { warnDays: 7 },
+      assumptions: [
+        'The setups come from your PC program (Zerodha Kite candles) after the close - with the laptop off, the list stops updating.',
+        'Found at most 1 trading day before today (the scan of yesterday evening counts the next morning).',
+        'The website does not receive Kite\'s zone prices, so the trade plan here uses the lowest low of the last 5 candles and 2R - your real stop / ' +
+          'target are in the Backtest Lab (and the "waiting for the pullback" list shows Buy at / Stop under).',
+        'No extra filter: the list is exactly what your daily scan found.'
+      ]
+    },
     demo: {
       id: 'demo', name: 'DEMO - EMA trend pullback (for testing only)', version: 1, source: 'demo', mode: 'setup', style: 'swing', timeframe: '1d',
       description: 'A generic example strategy to test the engine. It is NOT your strategy and its signals are not recommendations.',
@@ -575,6 +627,7 @@
       if (k === 'minTurnover') v = (v / 1e5) + ' lakh';
       if (k === 'field') v = FIELD_LABEL[v] || v;
       if ((k === 'values' || k === 'sessions') && Array.isArray(v)) v = v.join(' / ');
+      if (rule.id === 'dailyScan' && Array.isArray(v)) v = k === 'pats' ? 'your ' + v.length + ' setup' + (v.length === 1 ? '' : 's') : v.join(' / ');
       if ((k === 'min' || k === 'max') && rule.id === 'fieldRange' && (v === '' || v == null)) v = k === 'min' ? '−∞' : '∞';
       s = s.replace('{' + k + '}', Array.isArray(v) ? v.length + ' selected' : v);
     });
@@ -762,6 +815,29 @@
     return out;
   }
 
+  /** The sheet's Intraday Patterns rows (feed part intraday) -> { SYM: [every daily-scan row of SCAN_PATTERNS, newest first] } as
+   *  stock.scan: {session, tf, candle, formed, pattern, detail} (17-Nov-2026, rule dailyScan). */
+  function scanIndex(table) {
+    var out = {};
+    if (!table || !Array.isArray(table.cols) || !Array.isArray(table.rows)) return out;
+    var ix = {};
+    table.cols.forEach(function (c, i) { ix[c] = i; });
+    var g = function (r, c) { return ix[c] == null || r[ix[c]] == null ? '' : String(r[ix[c]]).trim(); };
+    table.rows.forEach(function (r) {
+      var pat = g(r, 'Pattern'), sym = g(r, 'Symbol').toUpperCase();
+      if (!sym || SCAN_PATTERNS.indexOf(pat) < 0) return;
+      (out[sym] = out[sym] || []).push({ session: g(r, 'Session'), tf: g(r, 'Timeframe'), candle: g(r, 'Candle'), formed: g(r, 'FVG Formed'),
+        pattern: pat, detail: g(r, 'FVG Detail') });
+    });
+    Object.keys(out).forEach(function (k) {
+      out[k].sort(function (a, b) {
+        return a.session < b.session ? 1 : a.session > b.session ? -1 : SCAN_PATTERNS.indexOf(a.pattern) - SCAN_PATTERNS.indexOf(b.pattern) ||
+          (a.candle < b.candle ? 1 : a.candle > b.candle ? -1 : 0);
+      });
+    });
+    return out;
+  }
+
   /** The sheet's "CHoCH Waiting" rows (feed part chochWait, {cols, rows}; owner, 12-Nov-2026) -> { SYM: [{tf, choch, level,
    *  bottom, top, dist, depth, kind}] } as stock.chochWait: the CHoCH + FVG setups still waiting for the pullback. */
   function chochWaitIndex(table) {
@@ -808,6 +884,6 @@
     CONDITIONS: C, PRESETS: PRESETS, BULLISH_PATTERNS: BULLISH_PATTERNS, buildContext: buildContext, evaluate: evaluate, run: run,
     validate: validate, diff: diff, label: label, ttmSignal: ttmSignal, positionWarnings: positionWarnings, clone: clone,
     rpIndex: rpIndex, rpSupport: rpSupport, RP_TYPES: RP_TYPES, ANN_SESSIONS: ANN_SESSIONS, weekdaysAfter: weekdaysAfter, chochIndex: chochIndex,
-    chochWaitIndex: chochWaitIndex
+    chochWaitIndex: chochWaitIndex, scanIndex: scanIndex, SCAN_PATTERNS: SCAN_PATTERNS, SCAN_DEFAULT: SCAN_DEFAULT
   };
 });
