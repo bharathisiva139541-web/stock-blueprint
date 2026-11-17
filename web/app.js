@@ -100,6 +100,9 @@
     // the owner's CHoCH + FVG setups found by his PC program (Intraday Patterns rows) - the chochFvg strategy rule reads s.choch
     var ch = SB.strategy.chochIndex ? SB.strategy.chochIndex(data.intraday) : {};
     stocks.forEach(function (s) { s.choch = ch[s.sym] || null; });
+    // every setup of the daily scan (17-Nov-2026) - the dailyScan strategy rule reads s.scan
+    var sc = SB.strategy.scanIndex ? SB.strategy.scanIndex(data.intraday) : {};
+    stocks.forEach(function (s) { s.scan = sc[s.sym] || null; });
     // ... and the ones still waiting for the pullback (CHoCH Waiting tab, 12-Nov-2026) - the rule's detail says so
     var cw = SB.strategy.chochWaitIndex ? SB.strategy.chochWaitIndex(data.chochWait) : {};
     stocks.forEach(function (s) { s.chochWait = cw[s.sym] || null; });
@@ -131,7 +134,8 @@
       m.fetchedAt = readMs !== null ? readMs : Date.now();   // DELAYED expires like a quote (checkExpiry) unless refreshed
       m.message = 'Read from your Google Sheet at ' + F.dateTime(r.readAt) + ' IST' +
         (aged ? ' - over ' + Math.round(QUOTE_TTL.DELAYED / 60000) + ' minutes ago, so shown as CACHED; reload the page for newer data' : '') +
-        (r.stale ? ' - the last good copy: the newest read failed (' + (r.staleReason || 'unknown reason') + ')' : '') + '.';
+        (r.kept ? ' - the last live copy kept on this device: the newest read failed (' + (r.staleReason || 'unknown reason') + ')' :
+          r.stale ? ' - the last good copy: the newest read failed (' + (r.staleReason || 'unknown reason') + ')' : '') + '.';
     } else {
       ctx.refDate = ui.parseDate(data.asOf) || ui.parseDate(data.generated) || new Date();
       m.source = 'Sheet snapshot (saved copy)';
@@ -141,7 +145,7 @@
     ctx.site = {
       live: live, apiBase: ctx.site.apiBase, generated: data.generated || null, asOf: data.asOf || null,
       readAt: live ? r.readAt || null : null, fetchedAt: live ? r.fetchedAt || null : null,
-      stale: live && !!r.stale, staleReason: live ? r.staleReason || null : null,
+      stale: live && !!r.stale, staleReason: live ? r.staleReason || null : null, kept: live && !!r.kept,
       reason: live ? null : (meta && meta.reason) || null, historyReason: null, history60Reason: null
     };
   }
@@ -183,6 +187,70 @@
   SB.livePrice = livePrice;
   SB.rebasePct = rebasePct;
 
+  // ---------- the last live copy, kept on this device ----------
+  // Owner, 17-Nov-2026 (#signals with empty Zerodha tables): "why these tables are empty. when page is not live. Make all pages and
+  // tables available alltime." A failed live read fell back to the saved copy (data/dashboard.js, exported by hand - it has no
+  // Zerodha / Kite parts and is weeks old), so those tables were empty. Every good live read of the parts main / history /
+  // history60 is kept in this browser (IndexedDB 'sb-site', as JSON text, the newest read wins); when a read fails, the kept copy
+  // is used as the live feed's "last good copy" (the banner says so and how old it is) - the saved copy only when nothing is kept.
+  var KEEP_DB = 'sb-site', KEEP_STORE = 'parts', KEEP_MAX_DAYS = 60;
+  var keepDb = null;
+  function keepOpen() {
+    if (keepDb) return keepDb;
+    keepDb = new Promise(function (ok) {
+      var idb = null;
+      try { idb = window.indexedDB || null; } catch (e) { idb = null; }
+      if (!idb) { ok(null); return; }
+      var rq;
+      try { rq = idb.open(KEEP_DB, 1); } catch (e) { ok(null); return; }
+      rq.onupgradeneeded = function () { try { rq.result.createObjectStore(KEEP_STORE); } catch (e) { /* made already */ } };
+      rq.onsuccess = function () { ok(rq.result); };
+      rq.onerror = function () { ok(null); };
+      rq.onblocked = function () { ok(null); };
+    });
+    return keepDb;
+  }
+  /** keep a good live reply (the text is taken now - the page changes the objects later) */
+  function keepPut(part, resp, text) {
+    if (typeof text !== 'string') {
+      try { text = JSON.stringify(resp); } catch (e) { return Promise.resolve(false); }
+    }
+    var at = (resp && resp.readAt) || '';
+    return keepOpen().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (ok) {
+        try {
+          var tx = db.transaction(KEEP_STORE, 'readwrite'), st = tx.objectStore(KEEP_STORE), rq = st.get(part);
+          rq.onsuccess = function () {
+            var old = rq.result;
+            if (old && old.readAt && at && String(old.readAt) > String(at)) return;    // a newer read is kept already
+            st.put({ keptAt: Date.now(), readAt: at, text: text }, part);
+          };
+          tx.oncomplete = function () { ok(true); };
+          tx.onerror = tx.onabort = function () { ok(false); };
+        } catch (e) { ok(false); }
+      });
+    }, function () { return false; });
+  }
+  /** the kept reply of a part (null: none, unreadable or older than KEEP_MAX_DAYS) */
+  function keepGet(part) {
+    return keepOpen().then(function (db) {
+      if (!db) return null;
+      return new Promise(function (ok) {
+        try {
+          var rq = db.transaction(KEEP_STORE).objectStore(KEEP_STORE).get(part);
+          rq.onsuccess = function () {
+            var k = rq.result;
+            if (!k || typeof k.text !== 'string' || !(Date.now() - (k.keptAt || 0) < KEEP_MAX_DAYS * 864e5)) { ok(null); return; }
+            try { var r = JSON.parse(k.text); ok(r && r.ok === true && r.data ? r : null); } catch (e) { ok(null); }
+          };
+          rq.onerror = function () { ok(null); };
+        } catch (e) { ok(null); }
+      });
+    }, function () { return null; });
+  }
+  SB.keep = { put: keepPut, get: keepGet };
+
   function validMain(d) {
     return !!(d && d.main && Array.isArray(d.main.cols) && Array.isArray(d.main.rows) && d.main.rows.length && d.main.cols.indexOf('sym') >= 0);
   }
@@ -211,10 +279,31 @@
       return withOlder(window.SB_HISTORY || null, staticOlder());
     }).then(function (H) { ctx.history = H; return H; });
   }
+  function validOlder(d) { return !!(d && Array.isArray(d.dates)); }
+  function keptOlder(e) {
+    return keepGet('history60').then(function (k) {
+      if (k && validOlder(k.data)) return k.data;
+      throw e || new Error('no History60 part kept on this device');
+    });
+  }
   function liveOlder() {
+    if (ctx.site.kept) return keptOlder(null);                         // the page runs on the kept copy: no second wait
     return apiGet('api/site?part=history60', SITE_TIMEOUT_MS).then(function (r) {
-      if (!r || r.ok !== true || !r.data || !Array.isArray(r.data.dates)) throw new Error((r && r.message) || 'the live feed returned no History60 part');
+      if (!r || r.ok !== true || !validOlder(r.data)) throw new Error((r && r.message) || 'the live feed returned no History60 part');
+      keepPut('history60', r);
       return r.data;
+    }).catch(keptOlder);
+  }
+  function keptHistory(reason) {
+    return keepGet('history').then(function (k) {
+      if (!k || !validHistory(k.data)) return staticHistory();
+      var H = k.data;
+      H.live = true;
+      H.readAt = k.readAt || null;
+      H.stale = true;
+      H.kept = true;
+      if (reason) ctx.site.historyReason = reason + ' - showing the candles kept on this device (read ' + (k.readAt || 'earlier') + ')';
+      return withOlder(H, keptOlder(null)).then(function (M) { ctx.history = M; return M; });
     });
   }
   SB.loadHistory = function () {
@@ -224,8 +313,9 @@
       return Promise.resolve(ctx.history);
     }
     if (historyLoad) return historyLoad;                                // one request for every page asking at once
-    var p = !ctx.site.live ? staticHistory() : apiGet('api/site?part=history', SITE_TIMEOUT_MS).then(function (r) {
+    var p = !ctx.site.live ? staticHistory() : ctx.site.kept ? keptHistory(null) : apiGet('api/site?part=history', SITE_TIMEOUT_MS).then(function (r) {
       if (!r || r.ok !== true || !validHistory(r.data)) throw new Error((r && r.message) || 'the live feed returned no candle data');
+      keepPut('history', r);
       var H = r.data;
       H.live = true;
       H.readAt = r.readAt || null;
@@ -233,7 +323,7 @@
       return withOlder(H, liveOlder()).then(function (M) { ctx.history = M; return M; });
     }).catch(function (e) {
       ctx.site.historyReason = e.message || String(e);
-      return staticHistory();
+      return keptHistory(ctx.site.historyReason);
     });
     historyLoad = p.then(function (H) { historyLoad = null; return H; }, function (e) { historyLoad = null; throw e; });
     return historyLoad;
@@ -558,7 +648,12 @@
     var el = $('#site-banner'), S = ctx.site, h = '';
     if (!el) return;
     if (S.live) {
-      if (S.stale) {
+      if (S.kept) {
+        var kd = ui.parseDate(S.readAt), kn = kd ? ui.dayDiff(new Date(), kd) : null;
+        h = '<div class="note warn"><b>Live data could not be read just now</b> (' + esc(S.staleReason || 'unknown reason') + ') - showing the last live copy ' +
+          'this device kept, read from your Google Sheet at ' + F.dateTime(S.readAt) + (kn == null ? '' : kn <= 0 ? ' (today)' : ' (' + kn + (kn === 1 ? ' day' : ' days') + ' old)') +
+          '. Every table is filled from it; reload the page in a few minutes for the newest data.</div>';
+      } else if (S.stale) {
         h = '<div class="note">Live feed: showing the last good copy read from your Google Sheet at ' + F.dateTime(S.readAt) +
           '. The newest read failed: ' + esc(S.staleReason || 'unknown reason') + '.</div>';
       }
@@ -898,9 +993,23 @@
   }
   function loadLive() {
     return apiGet('api/site?part=main', SITE_TIMEOUT_MS).then(function (r) {
-      if (r && r.ok === true && validMain(r.data)) return { resp: r };
+      if (r && r.ok === true && validMain(r.data)) {
+        var text = null;
+        try { text = JSON.stringify(r); } catch (e) { text = null; }   // taken before the page changes the objects; kept once it reads
+        return { resp: r, text: text };
+      }
       return { reason: (r && r.message) || 'the live feed returned no data' };
     }, function (e) { return { reason: e.message || String(e) }; });
+  }
+  /** the last live main part kept on this device, as a stale live reply (null: none) */
+  function loadKept(reason) {
+    return keepGet('main').then(function (k) {
+      if (!k || !validMain(k.data)) return null;
+      k.stale = true;
+      k.kept = true;
+      k.staleReason = reason || 'unknown reason';
+      return k;
+    }, function () { return null; });
   }
   function start() {
     if (SB.notify) SB.notify.setup();          // the bell + phone pop-ups + the app's service worker (09-Nov-2026)
@@ -923,15 +1032,23 @@
         try { prepare(o.resp.data, { live: true, resp: o.resp }); } catch (e) {
           o = { reason: 'the live data could not be read (' + e.message + ')' };   // malformed feed: use the saved copy
         }
-        if (o.resp) { start(); return; }
+        if (o.resp) { if (o.text) keepPut('main', o.resp, o.text); start(); return; }
       }
-      return loadStatic().then(function (D) {
-        if (D) { prepare(D, { live: false, reason: o.reason }); start(); return; }
-        ctx.market.state = 'UNAVAILABLE';
-        ctx.market.message = 'No data could be loaded.';
-        setStatus();
-        $('#app').innerHTML = '<div class="note bad">No data file found (data/dashboard.js). Run tools/export_xlsx.py first.' +
-          (o.reason ? ' Live data could not be loaded either: ' + esc(o.reason) + '.' : '') + '</div>';
+      return (base == null ? Promise.resolve(null) : loadKept(o.reason)).then(function (k) {
+        if (k) {
+          try { prepare(k.data, { live: true, resp: k }); start(); return true; } catch (e) { /* unreadable: the saved copy */ }
+        }
+        return false;
+      }).then(function (done) {
+        if (done) return;
+        return loadStatic().then(function (D) {
+          if (D) { prepare(D, { live: false, reason: o.reason }); start(); return; }
+          ctx.market.state = 'UNAVAILABLE';
+          ctx.market.message = 'No data could be loaded.';
+          setStatus();
+          $('#app').innerHTML = '<div class="note bad">No data file found (data/dashboard.js). Run tools/export_xlsx.py first.' +
+            (o.reason ? ' Live data could not be loaded either: ' + esc(o.reason) + '.' : '') + '</div>';
+        });
       });
     }).catch(function (e) {
       if (window.console) console.error(e);
