@@ -12,8 +12,8 @@ comparison column (marked 'c'); the other basis only when the stock's own basis 
 like screener.in's: Sales, Expenses (without interest / depreciation), Operating Profit, OPM %, Other Income, Exceptional
 items, Interest, Depreciation, PBT, Tax %, Net Profit (all owners), EPS.
 
-Runs: `Worker` in the background program - one request every GAP_S seconds, at most DAY_FILES files a day, never in market
-hours (Mon-Fri 09:00-15:45 IST), never while a round or a results check runs
+Runs: `Worker` in the background program - one request every GAP_S seconds, at most DAY_STOCKS stocks a day (any hour),
+never while a round or a results check runs
 (they keep NSE for themselves); XbrlHistoryNow.bat = the same in a window (the same pace and limits); XbrlHistoryCheck.bat SYMBOL ... = a few
 stocks with the table printed and compared with screener.in (nothing sent). The tables go to the sheet (action 'xbrlhist'
 op 'put' -> hidden tab Financials) and from there to the website's stock window; Historical PE (pe_history.py) uses the
@@ -57,8 +57,8 @@ PAGE_FULL = 20
 GAP_S = 6.0            # between two NSE requests (owner, 18-Nov-2026: "5-10 seconds", a day's limit, never in market hours)
 CMD_GAP_S = GAP_S      # ... XbrlHistoryNow.bat the same (it was 1.2 s)
 MIN_GAP_S = 5.0        # config.json `xbrl_history_gap_s` is never taken below this
-DAY_FILES = 300        # files downloaded a day at most (config.json `xbrl_history_files_per_day`); a stock begun is finished
-MARKET = (9 * 60, 15 * 60 + 45)   # Mon-Fri 09:00-15:45 IST: no XBRL history requests (None = no such rule - tests)
+DAY_STOCKS = 100       # stocks read from NSE a day at most (config.json `xbrl_history_stocks_per_day`; owner, 18-Nov-2026)
+MARKET = None          # (start, end) minutes IST, Mon-Fri = no requests then; None = any time (owner, 18-Nov-2026: "anytime")
 IST = timezone(timedelta(hours=5, minutes=30))
 BLOCK_PAUSE_S = 30 * 60    # NSE refused twice in a row: the background program tries again this much later
 REST_S = 6 * 3600          # every stock up to date: looked at again this much later
@@ -1211,15 +1211,15 @@ def gap_of(cfg):
         return GAP_S
 
 
-def files_per_day(cfg):
+def stocks_per_day(cfg):
     try:
-        return max(1, int((cfg or {}).get('xbrl_history_files_per_day') or DAY_FILES))
+        return max(1, int((cfg or {}).get('xbrl_history_stocks_per_day') or DAY_STOCKS))
     except (TypeError, ValueError):
-        return DAY_FILES
+        return DAY_STOCKS
 
 
 def market_open(now):
-    """Mon-Fri 09:00-15:45 IST (NSE's busy hours) - no XBRL history then."""
+    """Inside the MARKET window (Mon-Fri, IST) - no XBRL history then. MARKET None (the default) = never."""
     if not MARKET:
         return False
     t = datetime.fromtimestamp(now, IST)
@@ -1227,11 +1227,11 @@ def market_open(now):
 
 
 def _day_count(state, now):
-    """Files downloaded today (IST) -> the state's counter, reset each day."""
+    """Stocks read from NSE (and their files) today (IST) -> the state's counter, reset each day."""
     d = datetime.fromtimestamp(now, IST).date().isoformat()
     c = state.get('day') if isinstance(state.get('day'), dict) else {}
-    if c.get('d') != d:
-        c = {'d': d, 'files': 0}
+    if c.get('d') != d or 'stocks' not in c:
+        c = {'d': d, 'stocks': 0, 'files': 0}
         state['day'] = c
     return c
 
@@ -1282,12 +1282,11 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             res['sent'] = sent or 0
             save_state(state)
             return res
-        cap = files_per_day(cfg)
+        cap = stocks_per_day(cfg)
         out('NSE XBRL history: %d of %d stock(s) to read (5 years of quarterly results, one file a quarter) - one request '
-            'every %g s, at most %d files a day, never in market hours (Mon-Fri 09:00-15:45)%s.'
+            'every %g s, at most %d stocks a day%s.'
             % (len(todo), len(syms), gap, cap, '' if what != 'background' else ', never while a round runs'))
         nse = Nse(gap, sleep)
-        avg = 22.0
         last_post, pend = clock(), 0
         t0, paused = clock(), 0.0
         for k, sym in enumerate(todo):
@@ -1308,13 +1307,13 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             day = _day_count(state, clock())
             if market_open(clock()):
                 res['paused'] = 'market'
-                out('NSE XBRL history: market hours (Mon-Fri 09:00-15:45) - it goes on after the close.')
+                out('NSE XBRL history: market hours - it goes on after the close.')
                 break
-            if day['files'] >= cap:
+            if day['stocks'] >= cap:
                 res['paused'] = 'cap'
-                days = int(math.ceil(res['left'] * avg / cap)) if res['left'] else 0
-                out('NSE XBRL history: today\'s %d files are done - the rest tomorrow (%d stock(s) left, about %d more '
-                    'day(s) at %d files a day).' % (day['files'], res['left'], days, cap))
+                left = len(todo) - k
+                out('NSE XBRL history: today\'s %d stocks are done - the rest tomorrow (%d stock(s) left, about %d more '
+                    'day(s) at %d a day).' % (day['stocks'], left, int(math.ceil(left / float(cap))), cap))
                 break
             try:
                 st, got = process_stock(nse, sym, today)
@@ -1327,10 +1326,9 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                 continue
             res['done'] += 1
             res['files'] += got
+            day['stocks'] += 1
             day['files'] += got
             res['left'] = len(todo) - k - 1
-            if res['files']:
-                avg = max(1.0, res['files'] / float(res['done']))
             if st.get('table'):
                 pend += 1
             state['changed'] = clock()
@@ -1338,9 +1336,9 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             if (k + 1) % every == 0:
                 save_state(state)
                 per = max(0.0, clock() - t0 - paused) / (k + 1)
-                out('NSE XBRL history: %d of %d stock(s) read (%d file(s) downloaded today of %d a day%s).'
-                    % (k + 1, len(todo), day['files'], cap,
-                       _left_words(min(per * (len(todo) - k - 1), per * max(0.0, cap - day['files']) / avg))))
+                out('NSE XBRL history: %d of %d stock(s) read (today %d of %d stocks, %d file(s) downloaded%s).'
+                    % (k + 1, len(todo), day['stocks'], cap, day['files'],
+                       _left_words(per * min(len(todo) - k - 1, max(0, cap - day['stocks'])))))
             if pend >= POST_N or (pend and clock() - last_post >= POST_EVERY_S):
                 res['sent'] += post(cfg, api, state) or 0
                 last_post, pend = clock(), 0
