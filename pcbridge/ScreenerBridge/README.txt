@@ -211,9 +211,9 @@ standalone one - and makes a table like screener.in's: Sales, Expenses, Operatin
 Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit, EPS - 20 quarters and the years.
  - The files are KEPT (not deleted): <data folder>\xbrl_data\files\<SYMBOL>\ (on D: when MoveDataToD.bat moved the data).
  - It runs by itself in the background, slowly: one NSE request every 6 seconds (config.json "xbrl_history_gap_s",
-   never under 5), at most 300 files a day ("xbrl_history_files_per_day"), never in market hours (Mon-Fri
-   09:00-15:45) and never while a round or a results check runs. At 300 files a day all stocks take about 4 months;
-   files already kept are never asked again, and after that only new results.
+   never under 5), at most 100 stocks a day ("xbrl_history_stocks_per_day"), at any hour, never while a round or a
+   results check runs. At 100 stocks a day all stocks take about 2 to 3 weeks; files already kept are never asked
+   again, and after that only new results.
  - The tables go to the sheet (hidden tab Financials) and the website shows them in each stock's window
    (Quarterly / Yearly, CSV). Historical PE then uses these quarterly EPS too (exact 3- and 5-year medians).
  - Check a few stocks first: XbrlHistoryCheck.bat, type e.g.  TCS HDFCBANK BSE  - it prints each stock's table and

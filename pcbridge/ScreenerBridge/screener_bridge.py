@@ -127,7 +127,7 @@ DEFAULTS = {
     'pe_history_pages_per_run': 40,  # extra screener.in pages a full round for the EPS history (stocks not read yet)
     'xbrl_history': True,      # 5 years of NSE XBRL result filings per stock (kept in xbrl_data) -> the website's results table
     'xbrl_history_gap_s': 6,         # seconds between two NSE requests of it (at least 5)
-    'xbrl_history_files_per_day': 300,   # files it downloads a day at most (never in market hours)
+    'xbrl_history_stocks_per_day': 100,  # stocks it reads from NSE a day at most (any hour)
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
     'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
