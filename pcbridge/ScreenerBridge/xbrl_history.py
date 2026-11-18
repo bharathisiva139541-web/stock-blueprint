@@ -740,6 +740,11 @@ def keep_screener(sym, html, now=None):
         log('NSE XBRL history: could not keep screener.in\'s tables of %s (%s)' % (sym, e))
 
 
+def wants_screener(sym):
+    """pe_history's backfill reads a page read before this version once more for its tables (none kept yet)."""
+    return not os.path.exists(_sc_path(str(sym).upper()))
+
+
 def refresh_screener(syms, state, today=None):
     """Stocks whose screener.in tables changed since their table was made -> the table made again (no NSE). -> how many."""
     seen = state.setdefault('scSeen', {})

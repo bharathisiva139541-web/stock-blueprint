@@ -175,6 +175,7 @@ import xbrl_history as XH     # noqa: E402  (owner, 18-Nov-2026: 5 years of quar
 XH.log = lambda m: log(m)
 PEH.log = lambda m: log(m)   # (the module's log at call time - a test's replacement too)
 PEH.ON_PAGE.append(XH.keep_screener)   # screener.in's tables fill the periods NSE has no filing for (18-Nov-2026)
+PEH.WANT_PAGE = XH.wants_screener       # ... so a page read before them is read once more
 
 
 def nse_holidays():
