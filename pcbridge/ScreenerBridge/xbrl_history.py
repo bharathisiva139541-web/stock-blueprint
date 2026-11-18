@@ -37,7 +37,7 @@ from datetime import date, datetime, timedelta
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
 VERSION = 3                                    # the reading rules: a change reads the kept files again (no NSE)
-LIST_VERSION = 2                               # which files a stock reads: a change reads every stock's lists again
+LIST_VERSION = 3                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
     ('integrated filing', 'https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol={s}&period=Quarterly'),
@@ -46,6 +46,13 @@ LISTS = (   # NSE's lists of a company's result filings (both: the integrated on
 # the older list again with dates, when its plain answer does not reach back YEARS years (it may give only recent ones)
 DATED = ('financial results (dated)', 'https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol={s}'
          '&period=Quarterly&from_date={f}&to_date={t}')
+# NSE's integrated list answers with the NEWEST 20 filings only (owner's check, 18-Nov-2026: TCS / HDFCBANK / BSE all exactly
+# 20 records, HDFCBANK's 31-Mar-2025 filings - on NSE's page - missing): a full page is asked again half a year at a time,
+# from the start of integrated filing up to the oldest filing it gave
+INT_DATED = ('integrated filing (dated)', 'https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol={s}'
+             '&period=Quarterly&from_date={f}&to_date={t}')
+INT_FROM = date(2024, 10, 1)
+PAGE_FULL = 20
 GAP_S = 2.5            # between two NSE requests in the background program
 CMD_GAP_S = 1.2        # ... in XbrlHistoryNow.bat
 BLOCK_PAUSE_S = 30 * 60    # NSE refused twice in a row: the background program tries again this much later
@@ -713,27 +720,50 @@ class Nse:
 
 
 def _list(nse, name, url, say):
-    """One list -> (records' metas, answered)."""
+    """One list -> (records' metas, answered, number of records)."""
     status, raw = nse.get(url)
     if status != 200:
         if say:
             say('   %-18s %s' % (name + ':', 'HTTP %s' % status if status else 'no answer'))
-        return [], status is not None
+        return [], status is not None, 0
     try:
         obj = json.loads(raw.decode('utf-8', errors='replace'))
     except ValueError:
         if say:
             say('   %-18s a web page came back, not data' % (name + ':'))
-        return [], True
+        return [], True, 0
     recs = D['records'](obj) or []
     metas = [m for m in (rec_meta(r) for r in recs if isinstance(r, dict)) if m]
     if say:
         ends = sorted(m['end'] for m in metas if m['end'])
         keys = sorted(recs[0].keys())[:20] if recs and isinstance(recs[0], dict) else []
-        say('   %-18s %d record(s), %d XBRL file(s)%s%s' % (
+        extra = ''
+        if len(recs) >= PAGE_FULL and isinstance(obj, dict):    # a page of a longer list? its other fields may say
+            sc = ['%s=%s' % (k, v) for k, v in obj.items() if isinstance(v, (int, float, str)) and len(str(v)) <= 40]
+            extra = ('; the answer also has: ' + ', '.join(sc[:8])) if sc else ''
+        say('   %-18s %d record(s), %d XBRL file(s)%s%s%s' % (
             name + ':', len(recs), len(metas), (', quarters %s .. %s' % (ends[0], ends[-1])) if ends else '',
-            ('; fields: ' + ', '.join(keys)) if keys and (not metas or not ends) else ''))
-    return metas, True
+            ('; fields: ' + ', '.join(keys)) if keys and (not metas or not ends) else '', extra))
+    return metas, True, len(recs)
+
+
+def half_years(start, end):
+    """[(from, to)] half-year windows from `start` until the one holding `end`."""
+    out, a = [], start
+    while a <= end:
+        y, m = a.year + (a.month + 5) // 12, (a.month + 5) % 12 + 1
+        b = date(y, m, 1) - timedelta(days=1)
+        out.append((a, b))
+        a = b + timedelta(days=1)
+    return out
+
+
+def _stamp_day(m):
+    s = m.get('stamp') or ''
+    try:
+        return date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+    except ValueError:
+        return None
 
 
 def list_filings(nse, sym, say=None, since=''):
@@ -741,24 +771,29 @@ def list_filings(nse, sym, say=None, since=''):
     internet / NSE down - the stock is not marked as read)."""
     out, seen, answered = [], set(), False
     q = sym.replace('&', '%26')
-    for name, url in LISTS:
-        metas, ok = _list(nse, name, url.format(s=q), say)
-        answered = answered or ok
+
+    def add(metas):
         for m in metas:
             if m['name'] not in seen:
                 seen.add(m['name'])
                 out.append(m)
+    for name, url in LISTS:
+        metas, ok, n = _list(nse, name, url.format(s=q), say)
+        answered = answered or ok
+        add(metas)
+        if url == LISTS[0][1] and n >= PAGE_FULL:
+            days = [d for d in (_stamp_day(m) for m in metas) if d] or [date.today()]
+            for f, t in half_years(INT_FROM, min(days)):
+                more, _, _ = _list(nse, '%s %s..%s' % (INT_DATED[0], f.strftime('%d-%m-%y'), t.strftime('%d-%m-%y')),
+                                   INT_DATED[1].format(s=q, f=f.strftime('%d-%m-%Y'), t=t.strftime('%d-%m-%Y')), say)
+                add(more)
     if not answered:
         raise Blocked('NSE did not answer')
     ends = sorted(m['end'] for m in out if m['end'])
     if since and ends and ends[0] > (date.fromisoformat(since) + timedelta(days=120)).isoformat():
         t = date.today()
         f = date.fromisoformat(since)
-        metas, _ = _list(nse, DATED[0], DATED[1].format(s=q, f=f.strftime('%d-%m-%Y'), t=t.strftime('%d-%m-%Y')), say)
-        for m in metas:
-            if m['name'] not in seen:
-                seen.add(m['name'])
-                out.append(m)
+        add(_list(nse, DATED[0], DATED[1].format(s=q, f=f.strftime('%d-%m-%Y'), t=t.strftime('%d-%m-%Y')), say)[0])
     return out
 
 
