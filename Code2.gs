@@ -14710,14 +14710,19 @@ function ab_finClean_(fin) {
         vals.push(r[i] === null || r[i] === undefined || r[i] === '' || typeof r[i] === 'boolean' || !isFinite(n) ? null : Math.round(n * 100) / 100);
       }
       const flag = String(r[AB_FIN_COLS.length + 1] || '');
-      out.push([String(r[0])].concat(vals, [/^[cs]$/.test(flag) ? flag : '']));
+      out.push([String(r[0])].concat(vals, [/^[csq]$/.test(flag) ? flag : '']));
     });
     return out;
   };
   const q = rows(fin.q, 40), y = rows(fin.y, 12);
   if (!q.length && !y.length) return null;
-  return { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: Math.max(0, Math.round(Number(fin.files) || 0)),
+  const out = { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: Math.max(0, Math.round(Number(fin.files) || 0)),
     at: /^\d{4}-\d{2}-\d{2}$/.test(String(fin.at || '')) ? String(fin.at) : '' };
+  // the laptop's note (EPS adjusted for a bonus / split) - plain words only; 'k' bank = screener.in's bank row names
+  const note = String(fin.note || '').replace(/[^A-Za-z0-9 .,;:()'\/%-]/g, '').replace(/^[=+\-@\s]+/, '').slice(0, 200);
+  if (note) out.note = note;
+  if (fin.k === 'bank') out.k = 'bank';
+  return out;
 }
 
 function ab_finSheet_() {

@@ -217,7 +217,20 @@ Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit,
  - Check a few stocks first: XbrlHistoryCheck.bat, type e.g.  TCS HDFCBANK BSE  - it prints each stock's table and
    compares it with screener.in (nothing is sent). Please send me what it prints.
  - All at once instead (several hours; close the window to stop, it carries on next time): XbrlHistoryNow.bat
- - Banks / NBFCs / insurers file a different format - their tables may have empty rows for now.
+ - Banks file a different format: the program tries the banking names (interest expended, operating expenses,
+   provisions) and shows them like screener.in's bank table (Revenue, Financing Profit, Financing Margin %).
+ - Version 2 (18-Nov-2026, after your check of TCS / HDFCBANK / BSE):
+     * EPS before a bonus / split is put on today's share count (BSE's 2:1 bonus of 2025: older EPS divided by 3);
+       the table says so under it.
+     * a year with no yearly figures read = the sum of its 4 quarters (marked + in the check, Σ on the website);
+     * the March quarter's year file is read too when the quarter file has no year;
+     * a file that cannot be used is remembered with the reason (a refused / web-page answer is tried again later,
+       a missing file or an unreadable one is not);
+     * every stock's lists are read once more by itself (no need to do anything).
+ - XbrlHistoryCheck.bat now also prints: which files could not be used and why, which quarters are missing and why,
+   every figure compared with screener.in (quarters AND years), for a quarter that differs the figures of every kept
+   file + every number of its own filing. Type  facts  after the symbols (e.g.  HDFCBANK facts) to see every number of
+   the newest quarter's filing too.
  - bridge.log: "NSE XBRL history: N of M stock(s) read ..." and "... table(s) sent to the sheet".
  - To switch it off: in config.json add  "xbrl_history": false
 
