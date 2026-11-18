@@ -6,7 +6,8 @@
    fin = { b: 'C' | 'S', q: [[label, rev, exp, op, opm, oi, exc, int, dep, pbt, taxp, np, eps, flag], ...] oldest first,
            y: [...same, years], files, at, note?, k? }   flag '' = the filing's own period, 'c' = a later filing's
                                                 comparison column, 's' = the other basis's filing, 'q' = a year with no
-                                                yearly figures read = the sum of its 4 quarters; note = EPS adjusted for
+                                                yearly figures read = the sum of its 4 quarters, 'r' = screener.in's
+                                                figures (no NSE filing: before the listing / a gap); note = EPS adjusted for
                                                 a bonus / split; k 'bank' = screener.in's bank rows (Revenue, Financing
                                                 Profit, Financing Margin %)
 
@@ -51,7 +52,7 @@
       kind: k, basis: fin.b === 'S' ? 'S' : 'C', at: fin.at || '', files: fin.files || 0, bank: bank,
       note: typeof fin.note === 'string' ? fin.note : '',
       labels: src.map(function (r) { return String(r[0]); }),
-      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return f === 'c' || f === 's' || f === 'q' ? f : ''; }),
+      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return f === 'c' || f === 's' || f === 'q' || f === 'r' ? f : ''; }),
       rows: rows
     };
   }
@@ -81,7 +82,7 @@
     v.rows.forEach(function (r) { out.push([r.label].concat(r.vals.map(function (x) { return isNum(x) ? x : ''; }))); });
     out.push(['From'].concat(v.flags.map(function (f) {
       return f === 'c' ? 'a later filing (comparison column)' : f === 's' ? (v.basis === 'C' ? 'standalone filing' : 'consolidated filing')
-        : f === 'q' ? 'the sum of its 4 quarters' : 'its own filing';
+        : f === 'q' ? 'the sum of its 4 quarters' : f === 'r' ? 'screener.in (no NSE filing figures)' : 'its own filing';
     })));
     if (v.note) out.push([v.note]);
     return out;

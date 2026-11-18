@@ -240,8 +240,16 @@ def store():
     return _STORE
 
 
+ON_PAGE = []      # more readers of every page (screener_bridge adds xbrl_history.keep_screener - its yearly / quarterly tables)
+
+
 def keep_page(sym, html, now=None):
-    """A screener.in page this program read -> the stock's EPS history (never raises)."""
+    """A screener.in page this program read -> the stock's EPS history (never raises) + the ON_PAGE readers."""
+    for fn in ON_PAGE:
+        try:
+            fn(sym, html, now)
+        except Exception as e:
+            log('screener.in page of %s: %s' % (sym, e))
     try:
         rec = parse_eps(html)
         if rec:

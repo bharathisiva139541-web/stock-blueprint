@@ -14710,7 +14710,7 @@ function ab_finClean_(fin) {
         vals.push(r[i] === null || r[i] === undefined || r[i] === '' || typeof r[i] === 'boolean' || !isFinite(n) ? null : Math.round(n * 100) / 100);
       }
       const flag = String(r[AB_FIN_COLS.length + 1] || '');
-      out.push([String(r[0])].concat(vals, [/^[csq]$/.test(flag) ? flag : '']));
+      out.push([String(r[0])].concat(vals, [/^[csqr]$/.test(flag) ? flag : '']));   // r = screener.in's (no NSE filing)
     });
     return out;
   };

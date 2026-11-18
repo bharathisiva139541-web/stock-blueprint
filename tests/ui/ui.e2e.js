@@ -90,7 +90,7 @@ const FIN_Q = ['Dec 2025', 'Mar 2026', 'Jun 2026', 'Sep 2026', 'Dec 2026'].map((
   [l, 100 + i * 10, 80 + i * 5, 20 + i * 5, Math.round((20 + i * 5) / (100 + i * 10) * 1000) / 10, 5, i === 1 ? -3.5 : null, 2, 3, 20 + i * 5,
     25, 15 + i * 4, 1.5 + i * 0.4, i === 0 ? 'c' : '']);
 FIN_Q.unshift(['Sep 2025', 90, 75, 15, 16.7, 5, null, 2, 3, 15, 25, 11.25, 1.13, '']);
-const FIN_Y = [['Mar 2024', 300, 250, 50, 16.7, 20, null, 8, 12, 50, 25, 37.5, 3.75, 'q'],
+const FIN_Y = [['Mar 2023', 250, 210, 40, 16, 15, null, 7, 11, 37, 26, 27, 2.7, 'r'], ['Mar 2024', 300, 250, 50, 16.7, 20, null, 8, 12, 50, 25, 37.5, 3.75, 'q'],
   ['Mar 2025', 350, 290, 60, 17.1, 20, null, 8, 12, 60, 25, 45, 4.5, 'c'], ['Mar 2026', 410, 330, 80, 19.5, 20, -3.5, 8, 12, 76.5, 25, 57.4, 5.74, '']];
 const FIN_NOTE = "EPS adjusted for a bonus / split (today's share count): up to Mar 2025 divided by 3";
 const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18', note: FIN_NOTE };
@@ -1312,32 +1312,52 @@ function check(name, fn) {
       return kv;
     }, FLAG_SYM);
     const other = await p.evaluate((sym) => { const s = window.SB.ctx.bySym[sym]; return [s.peOwn, s.peOwnYears, s.peCheck]; }, SENT_SYM);
-    // the 5-year results table in the stock window (NSE XBRL filings via the laptop, 18-Nov-2026)
-    await p.waitForSelector('#drawer-fin .fin-t', { timeout: 10000 });
+    // the 5-year results table: on a wide screen two doors - the tables on the left, the stock window on the right (18-Nov-2026)
+    await p.waitForSelector('#door-fin-q .fin-t', { timeout: 10000 });
+    await p.waitForSelector('#door-fin-y .fin-t', { timeout: 10000 });
+    await p.waitForTimeout(500);                       // the doors have finished sliding in
     const fin = await p.evaluate(() => {
-      const t = document.querySelector('#drawer-fin .fin-t');
+      const t = document.querySelector('#door-fin-q .fin-t');
       const rows = {};
       t.querySelectorAll('tbody tr').forEach((tr) => { rows[tr.querySelector('th').textContent] = [...tr.querySelectorAll('td')].map((x) => x.textContent); });
-      const sc = document.querySelector('#drawer-fin .fin-scroll');
-      return { heads: [...t.querySelectorAll('thead th')].map((x) => x.textContent), rows, note: document.querySelector('#drawer-fin .fin-note').textContent,
-        csv: !document.querySelector('[data-fin-csv]').hidden, scrolled: sc.scrollLeft + sc.clientWidth >= sc.scrollWidth - 2,
-        panelOk: document.querySelector('.drawer-panel').scrollWidth <= document.querySelector('.drawer-panel').clientWidth + 1 };
+      const sc = document.querySelector('#door-fin-q .fin-scroll');
+      const door = document.querySelector('#fin-door').getBoundingClientRect(), panel = document.querySelector('.drawer-panel').getBoundingClientRect();
+      return { heads: [...t.querySelectorAll('thead th')].map((x) => x.textContent), rows, note: document.querySelector('#door-note').textContent,
+        yHeads: [...document.querySelectorAll('#door-fin-y .fin-t thead th')].map((x) => x.textContent),
+        notesInTables: document.querySelectorAll('#fin-door .fin-body .fin-note').length, inPanel: !!document.querySelector('#drawer-body #drawer-fin'),
+        csv: [...document.querySelectorAll('#fin-door [data-fin-csv]')].filter((b) => !b.hidden).length,
+        scrolled: sc.scrollLeft + sc.clientWidth >= sc.scrollWidth - 2, door: [door.left, door.right], panel: [panel.left, panel.right],
+        doorFits: document.querySelector('#fin-door').scrollWidth <= document.querySelector('#fin-door').clientWidth + 1 };
     });
-    await p.click('#drawer-fin [data-fin-kind="y"]');
-    const finY = await p.$$eval('#drawer-fin .fin-t thead th', (t) => t.map((x) => x.textContent));
-    const finYNote = await p.$eval('#drawer-fin .fin-note', (x) => x.textContent);
-    const kept = await p.evaluate(() => localStorage.getItem('sb:fin:kind'));
-    await p.click('#drawer-fin [data-fin-kind="q"]');
     const none = await p.evaluate((sym) => new Promise((ok) => {
       window.SB.openStock(sym);
       const t0 = Date.now();
       (function wait() {
-        const b = document.querySelector('#drawer-fin .fin-body');
+        const b = document.querySelector('#door-fin-q .fin-body');
         if (b && !/Loading/.test(b.textContent)) return ok(b.textContent);
         if (Date.now() - t0 > 8000) return ok('timeout');
         setTimeout(wait, 50);
       })();
     }), SENT_SYM);
+    await p.mouse.click(Math.round((fin.door[1] + fin.panel[0]) / 2), 450);          // the space between the doors closes them
+    const closed = await p.evaluate(() => document.querySelector('#drawer').hidden);
+    // a phone: no doors - the table stays inside the stock window with the Quarterly / Yearly chips
+    await p.setViewportSize({ width: 390, height: 820 });
+    await p.evaluate((sym) => window.SB.openStock(sym), FLAG_SYM);
+    await p.waitForSelector('#drawer-fin .fin-t', { timeout: 10000 });
+    await p.waitForTimeout(400);
+    const phone = await p.evaluate(() => ({ door: document.querySelector('#fin-door').hidden, doors: document.querySelector('#drawer').classList.contains('doors'),
+      panelOk: document.querySelector('#drawer-fin .fin-scroll').getBoundingClientRect().right <= document.querySelector('.drawer-panel').getBoundingClientRect().right,
+      note: document.querySelector('#drawer-fin .fin-note').textContent }));
+    await p.click('#drawer-fin [data-fin-kind="y"]');
+    const finY = await p.$$eval('#drawer-fin .fin-t thead th', (t) => t.map((x) => x.textContent));
+    const finYNote = await p.$eval('#drawer-fin .fin-note', (x) => x.textContent);
+    const kept = await p.evaluate(() => localStorage.getItem('sb:fin:kind'));
+    await p.click('#drawer-fin [data-fin-kind="q"]');
+    // wider again while the stock is open: it opens as two doors
+    await p.setViewportSize({ width: 1366, height: 900 });
+    await p.waitForSelector('#door-fin-q .fin-t', { timeout: 10000 });
+    const flipped = await p.evaluate(() => document.querySelector('#drawer').classList.contains('doors') && !document.querySelector('#drawer-body #drawer-fin'));
     await c.close();
     assert.deepStrictEqual(fin.heads, ['', 'Sep 2025', 'Dec 2025*', 'Mar 2026', 'Jun 2026', 'Sep 2026', 'Dec 2026'], fin.heads.join(' | '));
     assert.deepStrictEqual(fin.rows.Sales, ['90.00', '100', '110', '120', '130', '140']);
@@ -1345,12 +1365,17 @@ function check(name, fn) {
     assert.deepStrictEqual(fin.rows['Exceptional items'], ['–', '–', '-3.50', '–', '–', '–'], 'a row with a figure somewhere is shown');
     assert.deepStrictEqual(fin.rows['EPS in Rs'], ['1.13', '1.50', '1.90', '2.30', '2.70', '3.10']);
     assert.ok(fin.rows['Sales growth YoY (same quarter)'] && /\+44%/.test(fin.rows['Sales growth YoY (same quarter)'][4]), JSON.stringify(fin.rows));
-    assert.match(fin.note, /^Consolidated figures, Rs crore, from the company's NSE filings · \* = a later filing's comparison column/);
-    assert.ok(fin.csv && fin.scrolled && fin.panelOk, JSON.stringify(fin));
-    assert.ok(fin.note.indexOf(' · ' + FIN_NOTE) > 0, 'the EPS note under the table: ' + fin.note);
-    assert.deepStrictEqual(finY, ['', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'Σ = a year summed from its 4 quarters');
-    assert.match(finYNote, /\* = a later filing's comparison column · Σ = the sum of its 4 quarters · EPS adjusted/);
+    assert.match(fin.note, /^Consolidated figures, Rs crore, from the company's NSE filings and screener.in · \* = a later filing's comparison column · Σ = the sum of its 4 quarters · sc = screener.in's figures/);
+    assert.ok(fin.note.indexOf(' · ' + FIN_NOTE) > 0, 'the EPS note above the tables: ' + fin.note);
+    assert.deepStrictEqual(fin.yHeads, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'both tables on the left door at once');
+    assert.ok(fin.csv === 2 && fin.scrolled && fin.doorFits && fin.notesInTables === 0 && !fin.inPanel, JSON.stringify(fin));
+    assert.ok(fin.door[0] === 0 && fin.panel[1] === 1366 && fin.panel[0] - fin.door[1] >= 40 && fin.panel[0] - fin.door[1] <= 70, 'two doors with a gap: ' + JSON.stringify(fin));
+    assert.strictEqual(closed, true, 'a click between the doors closes both');
+    assert.ok(phone.door && !phone.doors && phone.panelOk && /from the company's NSE filings · /.test(phone.note), JSON.stringify(phone));
+    assert.deepStrictEqual(finY, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'Σ = a year summed from its 4 quarters, sc = screener.in');
+    assert.match(finYNote, /\* = a later filing's comparison column · Σ = the sum of its 4 quarters · sc = screener.in's figures .* EPS adjusted/);
     assert.strictEqual(kept, '"y"', 'the choice is kept');
+    assert.strictEqual(flipped, true, 'wider window: two doors');
     assert.match(none, /No table for .* yet - your laptop reads/);
 
     assert.deepStrictEqual(errors, [], 'console/page errors');

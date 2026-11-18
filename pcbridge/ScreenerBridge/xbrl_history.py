@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 5                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 6                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 3                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -86,6 +86,12 @@ SPLIT_MIN = 1.4        # net profit / EPS (the share count) this many times off 
 NICE = (1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 20, 25, 40, 50, 100)
 SNAP_TOL = 0.08        # ... when within 8 % of one of these ratios (a merger's odd ratio is left alone)
 QUARTER_READS = 3      # at most this many files downloaded for one quarter (the year file of a March quarter included)
+YEARS_SHOWN = 12       # the yearly table keeps up to this many years (screener.in's own table has up to 12)
+SC_ROWS = (('rev', ('sales', 'revenue')), ('exp', ('expenses',)), ('op', ('operating profit', 'financing profit')),
+           ('opm', ('opm %', 'opm', 'financing margin %')), ('oi', ('other income',)), ('int', ('interest',)),
+           ('dep', ('depreciation',)), ('pbt', ('profit before tax',)), ('taxp', ('tax %',)), ('np', ('net profit',)),
+           ('eps', ('eps in rs', 'eps')))
+SC_LABEL = re.compile(r'^([A-Za-z]{3})\s+(\d{4})\s*(?:\((S|C)\))?$')   # 'Mar 2024', 'Mar 2020 (S)' (not 'TTM' / '9m')
 _MON = ('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
 CRORE = 1e7
 
@@ -571,16 +577,26 @@ def year_end_month(mis):
     return max(cnt, key=lambda m: (cnt[m], m == 3)) if cnt else 3
 
 
-def build(store, today=None):
-    """The stock's kept files -> {'b': C|S, 'q': [[label, *COLS values, flag], ...] oldest first (the last YEARS years),
-    'y': [...] (the last YEARS + 1 years), 'files': n, 'at', 'note' (EPS adjusted), 'k' ('bank')} or None. flag '' = the
-    filing's own period, 'c' = shown as a comparison column of a later filing, 's' = the other basis's filing (the stock's
-    own basis has nothing for it), 'q' = a year with no filing read = the sum of its 4 quarters."""
+def build(store, today=None, sc=None):
+    """The stock's kept files (+ screener.in's tables `sc`, see keep_screener) -> {'b': C|S, 'q': [[label, *COLS values,
+    flag], ...] oldest first (the last YEARS years), 'y': [...] (up to YEARS_SHOWN years), 'files': n, 'at', 'note' (EPS
+    adjusted), 'k' ('bank')} or None. flag '' = the filing's own period, 'c' = shown as a comparison column of a later
+    filing, 's' = the other basis's filing (the stock's own basis has nothing for it), 'q' = a year with no filing read =
+    the sum of its 4 quarters (consolidated and standalone quarters together when it has both), 'r' = no NSE filing figures
+    for it - screener.in's (owner, 18-Nov-2026, ARSSBL: NSE has filings only since the listing, screener.in shows the years
+    before it from the IPO papers)."""
+    if sc is None:
+        sc = load_sc(store.get('sym') or '')
     files = [f for f in (store.get('files') or {}).values() if f.get('periods')]
-    if not files:
+    page = (sc or {}).get('C') or (sc or {}).get('S')
+    if not files and not page:
         return None
-    newest = max(main_end(f) for f in files)
-    primary = 'C' if any(main_end(f) == newest and f.get('basis') == 'C' for f in files) else 'S'
+    if files:
+        newest = max(main_end(f) for f in files)
+        primary = 'C' if any(main_end(f) == newest and f.get('basis') == 'C' for f in files) else 'S'
+        page = (sc or {}).get(primary) or page
+    else:
+        primary = page.get('b') or 'C'
     best = {3: {}, 12: {}}
     for f in files:
         own = main_end(f)              # a 12-month period is the filing's own only when it ends with its quarter (March)
@@ -594,7 +610,7 @@ def build(store, today=None):
             if cur is None or rank > cur[0]:
                 flag = '' if rank[0] and mine else 'c' if rank[0] else 's'
                 best[p['m']][mi] = (rank, p['f'], flag)
-    last_q = max(best[3]) if best[3] else mi_of(newest)
+    last_q = max(best[3]) if best[3] else mi_of(newest) if files else None
     factors, note = eps_factors([('q', mi, v[1]) for mi, v in best[3].items()] + [('y', mi, v[1]) for mi, v in best[12].items()])
 
     def row(kind, mi, f):
@@ -607,7 +623,7 @@ def build(store, today=None):
     years = {mi: row('y', mi, v[1]) + [v[2]] for mi, v in best[12].items()}
     ye = year_end_month(best[12]) if best[12] else 3
     first = min(best[3]) if best[3] else last_q
-    for mi in range(first + 9, last_q + 1):
+    for mi in (range(first + 9, last_q + 1) if best[3] else ()):
         if (mi - 1) % 12 + 1 != ye:
             continue
         qs = [mi - 9, mi - 6, mi - 3, mi]
@@ -615,23 +631,134 @@ def build(store, today=None):
         if (cur is not None and cur[-1] != 's') or not all(q in qrows for q in qs):
             continue
         other = {qrows[q][-1] == 's' for q in qs}
-        if len(other) > 1 or (cur is not None and True in other):
-            continue                    # mixed bases, or the other basis's own year beats a sum of the other basis's quarters
+        if cur is not None and True in other:
+            continue                    # the other basis's own year beats a sum with the other basis's quarters
         r = row_of(_sum_figs([best[3][q][1] for q in qs]))
         eps = [qrows[q][11] for q in qs]
         r[11] = round(sum(eps), 2) if all(e is not None for e in eps) else None
         years[mi] = r + ['q']
+    nse_last = last_q
+    for kind, have in (('q', qrows), ('y', years)):     # what NSE's filings do not give: screener.in's figures
+        for r in (page or {}).get(kind) or []:
+            mi = _mi_label(r[0])
+            if mi is not None and mi not in have and len(r) >= len(COLS) + 1:
+                have[mi] = list(r[1:len(COLS) + 1]) + ['r']
+    if not qrows and not years:
+        return None
+    last_q = max(qrows) if qrows else last_q
     out = {'b': primary, 'q': [], 'y': [], 'files': len(files), 'at': (today or date.today()).isoformat()}
     for mi in sorted(qrows):
-        if mi > last_q - 12 * YEARS:
+        if last_q is None or mi > last_q - 12 * YEARS:
             out['q'].append([label_of(mi)] + qrows[mi])
-    for mi in sorted(years)[-(YEARS + 1):]:
+    for mi in sorted(years)[-YEARS_SHOWN:]:
         out['y'].append([label_of(mi)] + years[mi])
     if note:
         out['note'] = note
-    if best[3] and is_bank(best[3][last_q][1]):
+    if nse_last in best[3] and is_bank(best[3][nse_last][1]):
+        out['k'] = 'bank'
+    elif not files and page.get('k') == 'bank':
         out['k'] = 'bank'
     return out if out['q'] or out['y'] else None
+
+
+# ------------------------------------------------------------------ screener.in's tables (the periods NSE has no filing for)
+def _sc_path(sym):
+    return os.path.join(DIR, 'screener', re.sub(r'[^A-Za-z0-9&_.-]', '_', sym) + '.json')
+
+
+def screener_parse(html):
+    """A screener.in company page -> {'b': 'C' | 'S' | '', 'k': 'bank' | '', 'q': [[label, *COLS values, mark], ...],
+    'y': [...]} from its Quarterly Results and Profit & Loss tables (TTM and odd '9m' columns left out; amounts in crore as
+    shown; mark 's' / 'c' = a '(S)' / '(C)' column, '' = the page's own basis) or None."""
+    import pe_history as P
+    out = {'b': '', 'k': '', 'q': [], 'y': []}
+    for key, sid in (('q', 'quarters'), ('y', 'profit-loss')):
+        sec = P._section(html or '', sid)
+        if not sec:
+            continue
+        if key == 'q':
+            out['b'] = P._basis(sec)
+        p = P._Tables()
+        try:
+            p.feed(sec)
+        except Exception:
+            pass
+        for tb in p.tables:
+            if not tb:
+                continue
+            head = tb[0]
+            labs = []
+            for k, c in enumerate(head):
+                m = SC_LABEL.match(str(c).strip())
+                if m and m.group(1).lower() in _MON:
+                    labs.append((k, m.group(1).title() + ' ' + m.group(2), (m.group(3) or '').lower()))
+            if len(labs) < 1:
+                continue
+            figs = {}
+            for r in tb[1:]:
+                if not r:
+                    continue
+                name = re.sub(r'\s*\+\s*$', '', str(r[0])).strip().lower()
+                col = next((c for c, names in SC_ROWS if name in names), None)
+                if not col or col in figs:
+                    continue
+                if name in ('revenue', 'financing profit', 'financing margin %'):
+                    out['k'] = 'bank'
+                shift = len(r) - len(head)
+                figs[col] = {lab: P._num(r[k + shift]) for k, lab, _ in labs if 0 <= k + shift < len(r)}
+            if not figs.get('rev') and not figs.get('np'):
+                continue
+            seen = {}
+            for _, lab, mark in labs:
+                vals = [figs.get(c, {}).get(lab) for c in COLS]
+                if any(v is not None for v in vals):
+                    seen[lab] = [lab] + vals + [mark]
+            out[key] = sorted(seen.values(), key=lambda r: _mi_label(r[0]))
+            break
+    return out if out['q'] or out['y'] else None
+
+
+def load_sc(sym):
+    sc = _read_json(_sc_path(sym)) if sym else None
+    return sc if isinstance(sc, dict) else {}
+
+
+def keep_screener(sym, html, now=None):
+    """A screener.in page the program read (pe_history.keep_page hands every one over) -> xbrl_data/screener/<SYM>.json
+    {C: tables, S: tables} (never raises). The stock's table takes them at the next run_all (refresh_screener)."""
+    try:
+        rec = screener_parse(html)
+        if not rec:
+            return
+        rec['at'] = now or time.time()
+        path = _sc_path(str(sym).upper())
+        cur = _read_json(path) or {}
+        cur = cur if isinstance(cur, dict) else {}
+        cur[rec['b'] or 'C'] = rec
+        _write_json(path, cur)
+    except Exception as e:                     # a strange page never stops a round
+        log('NSE XBRL history: could not keep screener.in\'s tables of %s (%s)' % (sym, e))
+
+
+def refresh_screener(syms, state, today=None):
+    """Stocks whose screener.in tables changed since their table was made -> the table made again (no NSE). -> how many."""
+    seen = state.setdefault('scSeen', {})
+    n = 0
+    for sym in syms:
+        try:
+            at = os.path.getmtime(_sc_path(sym))
+        except OSError:
+            continue
+        if seen.get(sym) == at:
+            continue
+        st = load_stock(sym)
+        t = build(st, today)
+        if t != st.get('table'):
+            st['table'] = t
+            save_stock(st)
+            n += 1
+        seen[sym] = at
+    return n
 
 
 def eps_quarters(table):
@@ -640,7 +767,7 @@ def eps_quarters(table):
     for r in (table or {}).get('q') or []:
         m = re.match(r'^([A-Za-z]{3}) (\d{4})$', r[0])
         eps, np_ = r[1 + COLS.index('eps')], r[1 + COLS.index('np')]
-        if m and eps is not None:
+        if m and eps is not None and r[-1] != 'r':          # screener.in's own rows: pe_history has them already
             out.append([int(m.group(2)) * 12 + _MON.index(m.group(1).lower()) + 1, eps, np_])
     return (table or {}).get('b', ''), out
 
@@ -1090,6 +1217,11 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                 state['changed'] = clock()
                 out('NSE XBRL history: %d stock(s) read again from the kept files (new reading rules).' % n)
             save_state(state)
+        n = refresh_screener(syms, state, today)
+        if n:
+            state['changed'] = clock()
+            out('NSE XBRL history: %d table(s) made again with screener.in\'s figures for the periods NSE has none.' % n)
+        save_state(state)
         todo = [s for s in syms if due(s, load_stock(s) if os.path.exists(_stock_path(s)) else {}, today, now)]
         res['left'] = len(todo)
         if not todo:
