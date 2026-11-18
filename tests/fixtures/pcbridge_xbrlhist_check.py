@@ -328,6 +328,10 @@ assert [c[1]['op'] for c in CALLS] == ['syms', 'put', 'put'], [c[1]['op'] for c 
 assert [c[1]['items'][0]['sym'] for c in CALLS[1:]] == ['ABC', 'XYZ'] and CALLS[1][1]['items'][0]['fin']['q'][-1][0] == 'Sep 2026'
 assert res['files'] == 0, 'every file was kept from before - nothing downloaded again'
 assert any('3 of 3 stock(s) to read' in x for x in LOGS) and any('2 table(s) sent to the sheet' in x for x in LOGS), LOGS[-3:]
+assert any('waiting - the laptop\'s regular round is running (just started)' in x for x in LOGS), 'a line when it waits'
+assert any('the round finished - reading again' in x for x in LOGS)
+assert X._left_words(30) == '' and X._left_words(150) == ', about 2 min left' and X._left_words(15 * 3600 + 600) == ', about 15 h 10 min left'
+assert X.CMD_SAY_EVERY == 5 and 'every=XH.CMD_SAY_EVERY' in open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()
 del CALLS[:]
 res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY)
 assert res['done'] == 0 and [c[1]['op'] for c in CALLS] == [], 'nothing due, nothing new to send (the stocks asked a day ago)'

@@ -65,6 +65,8 @@ POST_N = 50                # tables sent to the sheet in posts of this many ...
 POST_EVERY_S = 15 * 60     # ... or at least this often while reading
 POST_MAX = 100
 SAY_EVERY = 25
+CMD_SAY_EVERY = 5          # XbrlHistoryNow.bat's window: a line every 5 stocks (owner, 18-Nov-2026)
+WAIT_SAY_S = 300           # ... and, while it waits for the laptop's round, a line every 5 minutes
 LOCK_STALE_S = 10 * 60
 COLS = ('rev', 'exp', 'op', 'opm', 'oi', 'exc', 'int', 'dep', 'pbt', 'taxp', 'np', 'eps')
 COL_NAMES = ('Sales', 'Expenses', 'Operating Profit', 'OPM %', 'Other Income', 'Exceptional items', 'Interest',
@@ -1196,6 +1198,14 @@ def post(cfg, api, state, syms=None):
 
 
 # ------------------------------------------------------------------ the whole job
+def _left_words(sec):
+    """Seconds still to go -> ', about 2 h 10 min left' ('' when done or unknown)."""
+    if not sec or sec < 60:
+        return ''
+    m = int(sec // 60)
+    return ', about %s left' % ('%d h %d min' % divmod(m, 60) if m >= 60 else '%d min' % m)
+
+
 def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, today=None, clock=time.time,
             sleep=time.sleep, every=SAY_EVERY, what='background'):
     """Every Main stock that is due: lists + files of the last YEARS years -> tables -> the sheet. Never while a round
@@ -1238,11 +1248,20 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             % (len(todo), len(syms), '' if what != 'background' else ' - a little at a time, never while a round runs'))
         nse = Nse(gap, sleep)
         last_post, pend = clock(), 0
+        t0, paused = clock(), 0.0
         for k, sym in enumerate(todo):
+            waited = 0
             while round_busy():
                 if stop is not None and stop.is_set():
                     break
+                if waited % WAIT_SAY_S == 0:
+                    out('NSE XBRL history: waiting - the laptop\'s regular round is running (%s); it goes on by itself '
+                        'when that round finishes.' % ('just started' if not waited else '%d min so far' % (waited // 60)))
                 sleep(20)
+                waited += 20
+            if waited:
+                paused += waited
+                out('NSE XBRL history: the round finished - reading again.')
             if stop is not None and stop.is_set():
                 break
             try:
@@ -1263,7 +1282,9 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             lock_beat(what)
             if (k + 1) % every == 0:
                 save_state(state)
-                out('NSE XBRL history: %d of %d stock(s) read (%d file(s) downloaded so far).' % (k + 1, len(todo), res['files']))
+                per = max(0.0, clock() - t0 - paused) / (k + 1)
+                out('NSE XBRL history: %d of %d stock(s) read (%d file(s) downloaded so far%s).'
+                    % (k + 1, len(todo), res['files'], _left_words(per * (len(todo) - k - 1))))
             if pend >= POST_N or (pend and clock() - last_post >= POST_EVERY_S):
                 res['sent'] += post(cfg, api, state) or 0
                 last_post, pend = clock(), 0

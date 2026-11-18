@@ -4553,7 +4553,8 @@ def main(argv):
             return 1
         print('NSE XBRL history: 5 years of quarterly results of every Main stock (files kept in %s).' % XH.DIR)
         print('Stop any time with Ctrl+C or by closing this window - the next run carries on where it stopped.')
-        res = XH.run_all(dict(cfg, xbrl_history=True), api, round_running, XH.CMD_GAP_S, out=log, what='XbrlHistoryNow')
+        res = XH.run_all(dict(cfg, xbrl_history=True), api, round_running, XH.CMD_GAP_S, out=log, what='XbrlHistoryNow',
+                         every=XH.CMD_SAY_EVERY)
         return 0 if res is not None else 1
     if cmd == 'eod':
         if not cfg.get('url') or not cfg.get('token'):
