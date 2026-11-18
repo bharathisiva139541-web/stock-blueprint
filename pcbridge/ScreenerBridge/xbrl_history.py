@@ -12,8 +12,9 @@ comparison column (marked 'c'); the other basis only when the stock's own basis 
 like screener.in's: Sales, Expenses (without interest / depreciation), Operating Profit, OPM %, Other Income, Exceptional
 items, Interest, Depreciation, PBT, Tax %, Net Profit (all owners), EPS.
 
-Runs: `Worker` in the background program - one request every GAP_S seconds, never while a round or a results check runs
-(they keep NSE for themselves); XbrlHistoryNow.bat = the same in a window, faster; XbrlHistoryCheck.bat SYMBOL ... = a few
+Runs: `Worker` in the background program - one request every GAP_S seconds, at most DAY_FILES files a day, never in market
+hours (Mon-Fri 09:00-15:45 IST), never while a round or a results check runs
+(they keep NSE for themselves); XbrlHistoryNow.bat = the same in a window (the same pace and limits); XbrlHistoryCheck.bat SYMBOL ... = a few
 stocks with the table printed and compared with screener.in (nothing sent). The tables go to the sheet (action 'xbrlhist'
 op 'put' -> hidden tab Financials) and from there to the website's stock window; Historical PE (pe_history.py) uses the
 quarterly EPS for exact 3- and 5-year medians.
@@ -32,7 +33,7 @@ import os
 import re
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
@@ -53,8 +54,12 @@ INT_DATED = ('integrated filing (dated)', 'https://www.nseindia.com/api/integrat
              '&period=Quarterly&from_date={f}&to_date={t}')
 INT_FROM = date(2024, 10, 1)
 PAGE_FULL = 20
-GAP_S = 2.5            # between two NSE requests in the background program
-CMD_GAP_S = 1.2        # ... in XbrlHistoryNow.bat
+GAP_S = 6.0            # between two NSE requests (owner, 18-Nov-2026: "5-10 seconds", a day's limit, never in market hours)
+CMD_GAP_S = GAP_S      # ... XbrlHistoryNow.bat the same (it was 1.2 s)
+MIN_GAP_S = 5.0        # config.json `xbrl_history_gap_s` is never taken below this
+DAY_FILES = 300        # files downloaded a day at most (config.json `xbrl_history_files_per_day`); a stock begun is finished
+MARKET = (9 * 60, 15 * 60 + 45)   # Mon-Fri 09:00-15:45 IST: no XBRL history requests (None = no such rule - tests)
+IST = timezone(timedelta(hours=5, minutes=30))
 BLOCK_PAUSE_S = 30 * 60    # NSE refused twice in a row: the background program tries again this much later
 REST_S = 6 * 3600          # every stock up to date: looked at again this much later
 RELIST_DAYS = 45           # a stock's lists read again after this many days (revised filings) ...
@@ -1198,6 +1203,39 @@ def post(cfg, api, state, syms=None):
 
 
 # ------------------------------------------------------------------ the whole job
+def gap_of(cfg):
+    """The seconds between two NSE requests: config.json `xbrl_history_gap_s`, at least MIN_GAP_S."""
+    try:
+        return max(MIN_GAP_S, float((cfg or {}).get('xbrl_history_gap_s') or GAP_S))
+    except (TypeError, ValueError):
+        return GAP_S
+
+
+def files_per_day(cfg):
+    try:
+        return max(1, int((cfg or {}).get('xbrl_history_files_per_day') or DAY_FILES))
+    except (TypeError, ValueError):
+        return DAY_FILES
+
+
+def market_open(now):
+    """Mon-Fri 09:00-15:45 IST (NSE's busy hours) - no XBRL history then."""
+    if not MARKET:
+        return False
+    t = datetime.fromtimestamp(now, IST)
+    return t.weekday() < 5 and MARKET[0] <= t.hour * 60 + t.minute < MARKET[1]
+
+
+def _day_count(state, now):
+    """Files downloaded today (IST) -> the state's counter, reset each day."""
+    d = datetime.fromtimestamp(now, IST).date().isoformat()
+    c = state.get('day') if isinstance(state.get('day'), dict) else {}
+    if c.get('d') != d:
+        c = {'d': d, 'files': 0}
+        state['day'] = c
+    return c
+
+
 def _left_words(sec):
     """Seconds still to go -> ', about 2 h 10 min left' ('' when done or unknown)."""
     if not sec or sec < 60:
@@ -1244,9 +1282,12 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             res['sent'] = sent or 0
             save_state(state)
             return res
-        out('NSE XBRL history: %d of %d stock(s) to read (5 years of quarterly results, one file a quarter)%s.'
-            % (len(todo), len(syms), '' if what != 'background' else ' - a little at a time, never while a round runs'))
+        cap = files_per_day(cfg)
+        out('NSE XBRL history: %d of %d stock(s) to read (5 years of quarterly results, one file a quarter) - one request '
+            'every %g s, at most %d files a day, never in market hours (Mon-Fri 09:00-15:45)%s.'
+            % (len(todo), len(syms), gap, cap, '' if what != 'background' else ', never while a round runs'))
         nse = Nse(gap, sleep)
+        avg = 22.0
         last_post, pend = clock(), 0
         t0, paused = clock(), 0.0
         for k, sym in enumerate(todo):
@@ -1264,6 +1305,17 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                 out('NSE XBRL history: the round finished - reading again.')
             if stop is not None and stop.is_set():
                 break
+            day = _day_count(state, clock())
+            if market_open(clock()):
+                res['paused'] = 'market'
+                out('NSE XBRL history: market hours (Mon-Fri 09:00-15:45) - it goes on after the close.')
+                break
+            if day['files'] >= cap:
+                res['paused'] = 'cap'
+                days = int(math.ceil(res['left'] * avg / cap)) if res['left'] else 0
+                out('NSE XBRL history: today\'s %d files are done - the rest tomorrow (%d stock(s) left, about %d more '
+                    'day(s) at %d files a day).' % (day['files'], res['left'], days, cap))
+                break
             try:
                 st, got = process_stock(nse, sym, today)
             except Blocked as e:
@@ -1275,7 +1327,10 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                 continue
             res['done'] += 1
             res['files'] += got
+            day['files'] += got
             res['left'] = len(todo) - k - 1
+            if res['files']:
+                avg = max(1.0, res['files'] / float(res['done']))
             if st.get('table'):
                 pend += 1
             state['changed'] = clock()
@@ -1283,8 +1338,9 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             if (k + 1) % every == 0:
                 save_state(state)
                 per = max(0.0, clock() - t0 - paused) / (k + 1)
-                out('NSE XBRL history: %d of %d stock(s) read (%d file(s) downloaded so far%s).'
-                    % (k + 1, len(todo), res['files'], _left_words(per * (len(todo) - k - 1))))
+                out('NSE XBRL history: %d of %d stock(s) read (%d file(s) downloaded today of %d a day%s).'
+                    % (k + 1, len(todo), day['files'], cap,
+                       _left_words(min(per * (len(todo) - k - 1), per * max(0.0, cap - day['files']) / avg))))
             if pend >= POST_N or (pend and clock() - last_post >= POST_EVERY_S):
                 res['sent'] += post(cfg, api, state) or 0
                 last_post, pend = clock(), 0
@@ -1307,6 +1363,19 @@ class Worker:
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
 
+    @staticmethod
+    def rest(res, now=None):
+        """Seconds until the next start: the day's files done -> just after IST midnight; market hours -> 30 min;
+        NSE refused / an error -> BLOCK_PAUSE_S; everything read -> REST_S."""
+        now = time.time() if now is None else now
+        if res and res.get('paused') == 'cap':
+            t = datetime.fromtimestamp(now, IST)
+            nxt = datetime(t.year, t.month, t.day, tzinfo=IST) + timedelta(days=1, minutes=5)
+            return max(60.0, nxt.timestamp() - now)
+        if res and res.get('paused') == 'market':
+            return 30 * 60.0
+        return REST_S if res and not res.get('blocked') else BLOCK_PAUSE_S
+
     def maybe_start(self, cfg, api, round_busy, now=None):
         if not cfg.get('xbrl_history', True) or not cfg.get('url') or not D:
             return False
@@ -1316,11 +1385,11 @@ class Worker:
 
         def go():
             try:
-                res = run_all(cfg, api, round_busy, float(cfg.get('xbrl_history_gap_s') or GAP_S), stop=self.stop)
+                res = run_all(cfg, api, round_busy, gap_of(cfg), stop=self.stop)
             except Exception as e:
                 log('NSE XBRL history: stopped - %s' % e)
                 res = {'blocked': 'error'}
-            self.next_at = time.time() + (REST_S if res and not res.get('blocked') else BLOCK_PAUSE_S)
+            self.next_at = time.time() + self.rest(res)
         self.thread = threading.Thread(target=go, name='xbrl-history', daemon=True)
         self.thread.start()
         return True
@@ -1526,7 +1595,7 @@ def check(cfg, syms, out=print, today=None):
     today = today or date.today()
     toks = [s.strip().upper() for s in syms if s.strip()]
     facts = any(x in ('FACTS', '-FACTS', '--FACTS') for x in toks)
-    nse = Nse(1.0)
+    nse = Nse(MIN_GAP_S)
     for sym in [x for x in toks if x not in ('FACTS', '-FACTS', '--FACTS')]:
         out('')
         out('%s - NSE XBRL filings of the last %d years:' % (sym, YEARS))

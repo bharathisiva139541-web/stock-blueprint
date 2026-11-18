@@ -126,7 +126,8 @@ DEFAULTS = {
     'pe_history': True,        # median PE 1Y / 3Y / 5Y + the 5-year peak (Kite closes / screener.in EPS) -> Main's columns
     'pe_history_pages_per_run': 40,  # extra screener.in pages a full round for the EPS history (stocks not read yet)
     'xbrl_history': True,      # 5 years of NSE XBRL result filings per stock (kept in xbrl_data) -> the website's results table
-    'xbrl_history_gap_s': 2.5,       # seconds between two NSE requests of it in the background
+    'xbrl_history_gap_s': 6,         # seconds between two NSE requests of it (at least 5)
+    'xbrl_history_files_per_day': 300,   # files it downloads a day at most (never in market hours)
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
     'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
@@ -4553,7 +4554,7 @@ def main(argv):
             return 1
         print('NSE XBRL history: 5 years of quarterly results of every Main stock (files kept in %s).' % XH.DIR)
         print('Stop any time with Ctrl+C or by closing this window - the next run carries on where it stopped.')
-        res = XH.run_all(dict(cfg, xbrl_history=True), api, round_running, XH.CMD_GAP_S, out=log, what='XbrlHistoryNow',
+        res = XH.run_all(dict(cfg, xbrl_history=True), api, round_running, XH.gap_of(cfg), out=log, what='XbrlHistoryNow',
                          every=XH.CMD_SAY_EVERY)
         return 0 if res is not None else 1
     if cmd == 'eod':
