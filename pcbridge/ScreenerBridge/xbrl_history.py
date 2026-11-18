@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 2                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 3                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 2                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -72,6 +72,9 @@ EXTRA_FACTS = (
     ('pbt_ord', ('ProfitLossFromOrdinaryActivitiesBeforeTax',)),
     ('eps_x', ('BasicEarningsPerShareAfterExtraordinaryItems', 'BasicEarningsPerShareBeforeExtraordinaryItems')),
 )
+# read by the start of the element's name (the full name is long and differs between formats): the share of the profit of
+# associates / joint ventures - BSE's 'ShareOfProfitLossOfAssociatesAndJointVentures...', a bank's 'ShareOfProfitLossOfAssociates'
+PREFIX_FACTS = (('assoc', ('shareofprofitlossofassociates',)),)
 SPLIT_MIN = 1.4        # net profit / EPS (the share count) this many times off the next period = a bonus / split ...
 NICE = (1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 20, 25, 40, 50, 100)
 SNAP_TOL = 0.08        # ... when within 8 % of one of these ratios (a merger's odd ratio is left alone)
@@ -232,28 +235,37 @@ def _local(tag):
 
 
 def _contexts(root):
-    """-> ({context id: (start, end)} of the contexts without a segment / scenario, count of all contexts, an example of a
-    dimension member)."""
+    """-> ({context id: (start, end, dimension members)} of every context with a start and an end, count of all contexts,
+    an example of a dimension member)."""
     ctx, total, member = {}, 0, ''
     for c in root.iter():
         if _local(c.tag) != 'context':
             continue
         total += 1
         start = end = None
-        dim = False
+        dims = 0
         for e in c.iter():
             n = _local(e.tag)
             if n == 'startDate':
                 start = (e.text or '').strip()[:10]
             elif n in ('endDate', 'instant'):
                 end = (e.text or '').strip()[:10]
+            elif n in ('explicitMember', 'typedMember'):
+                dims += 1
+                if not member:
+                    member = (e.text or '').strip()[:60] or str(e.get('dimension') or '')[:60]
             elif n in ('segment', 'scenario'):
-                dim = True
-            elif n in ('explicitMember', 'typedMember') and not member:
-                member = (e.text or '').strip()[:60] or str(e.get('dimension') or '')[:60]
-        if not dim and start and end:
-            ctx[c.get('id')] = (start, end)
+                dims += 0.5           # a segment / scenario with no member counted too (never 0)
+        if start and end:
+            ctx[c.get('id')] = (start, end, dims)
     return ctx, total, member
+
+
+def _usable(ctx):
+    """The contexts to read: the ones without a dimension (the company's own figures); a file that has none - the older
+    NSE format puts a member on every context - is read through all of them, the fewest members first (`older`)."""
+    plain = {cid: v for cid, v in ctx.items() if not v[2]}
+    return (plain, False) if plain else (ctx, bool(ctx))
 
 
 def _months(s, e):
@@ -264,17 +276,31 @@ def _months(s, e):
     return 3 if 80 <= days <= 100 else 12 if 350 <= days <= 380 else 0
 
 
+def _pick(vals, ids, ctx):
+    """Of an element's [(context, text)] in document order -> the number of the context with the fewest dimension members."""
+    best = None
+    for k, (r, t) in enumerate(vals):
+        if r in ids:
+            v = _num(t)
+            if v is not None:
+                key = (ctx[r][2], k)
+                if best is None or key < best[0]:
+                    best = (key, v)
+    return None if best is None else best[1]
+
+
 def parse_periods(raw, why=None):
-    """An XBRL file (bytes) -> {'nature': 'C' | 'S' | '', 'periods': [{'start', 'end', 'm' (3 | 12), 'f': {our name: value}}]}
-    (amounts in crore, EPS in rupees) or None. Only contexts without segments (the company's own figures). `why` (a list)
-    gets the reason when nothing usable is in it."""
+    """An XBRL file (bytes) -> {'nature': 'C' | 'S' | '', 'periods': [{'start', 'end', 'm' (3 | 12), 'f': {our name: value}}],
+    'older': read through dimension contexts} (amounts in crore, EPS in rupees) or None. Only the company's own figures
+    (contexts without a segment; see `_usable`). `why` (a list) gets the reason when nothing usable is in it."""
     why = why if isinstance(why, list) else []
     root = _xml(raw, why)
     if root is None:
         return None
-    ctx, total, member = _contexts(root)
+    allc, total, member = _contexts(root)
+    ctx, older = _usable(allc)
     if not ctx:
-        why.append('no context without a segment / scenario (%d context(s)%s)' % (total, ', e.g. ' + member if member else ''))
+        why.append('no context with a period (%d context(s)%s)' % (total, ', e.g. ' + member if member else ''))
         return None
     facts = {}
     for e in root.iter():
@@ -292,8 +318,9 @@ def parse_periods(raw, why=None):
             if nature:
                 break
     groups = {}
-    for cid, (s, e) in ctx.items():
+    for cid, (s, e, _) in ctx.items():
         groups.setdefault((s, e), set()).add(cid)
+    prefixed = {name: sorted((k for k in facts if any(k.startswith(x) for x in pre)), key=len) for name, pre in PREFIX_FACTS}
     periods, spans = [], []
     for (s, e), ids in sorted(groups.items()):
         m = _months(s, e)
@@ -302,11 +329,11 @@ def parse_periods(raw, why=None):
         if not m:
             continue
         fig = {}
-        for name, names in tuple(D.get('facts', ())) + EXTRA_FACTS:
+        for name, names in tuple(D.get('facts', ())) + EXTRA_FACTS + tuple((n, tuple(prefixed[n])) for n, _ in PREFIX_FACTS):
             if name in fig:
                 continue
             for n in names:
-                v = next((_num(t) for r, t in facts.get(n.lower(), []) if r in ids and _num(t) is not None), None)
+                v = _pick(facts.get(n.lower(), []), ids, ctx)
                 if v is not None:
                     fig[name] = v if name in ('eps', 'eps_x') else round(v / CRORE, 4)
                     break
@@ -318,33 +345,38 @@ def parse_periods(raw, why=None):
             why.append('none of the figures we know is in it (elements: %s)' % ', '.join(names))
         else:
             why.append('no 3- or 12-month period in it (periods: %s)' % (', '.join(spans[:4]) or 'none'))
-    return {'nature': nature, 'periods': periods}
+    out = {'nature': nature, 'periods': periods}
+    if older and periods:
+        out['older'] = member or 'dimension contexts'
+    return out
 
 
 def facts_dump(raw, end, months=3):
-    """Every number a filing gives for one period (contexts without a segment) -> [(element, value)], amounts in crore
-    (EPS / shares / ratios as filed) - for XbrlHistoryCheck.bat (which element holds what, e.g. in a bank's filing)."""
+    """Every number a filing gives for one period (the contexts `parse_periods` reads) -> [(element, value)], amounts in
+    crore (EPS / shares / ratios as filed) - for XbrlHistoryCheck.bat (which element holds what, e.g. in a bank's filing)."""
     root = _xml(raw, [])
     if root is None:
         return []
-    ctx, _, _ = _contexts(root)
-    ids = {cid for cid, (s, e) in ctx.items() if e == end and _months(s, e) == months}
+    ctx, _ = _usable(_contexts(root)[0])
+    ids = {cid for cid, (s, e, _) in ctx.items() if e == end and _months(s, e) == months}
     money = {}
     for u in root.iter():
         if _local(u.tag) == 'unit':
             ms = [(m.text or '').strip().lower() for m in u.iter() if _local(m.tag) == 'measure']
             divide = any(_local(x.tag) == 'divide' for x in u.iter())
             money[u.get('id')] = not divide and len(ms) == 1 and ms[0].endswith(':inr')
-    out, seen = [], set()
-    for e in root.iter():
-        if e.get('contextRef') in ids and len(e) == 0:
+    best = {}
+    for k, e in enumerate(root.iter()):
+        r = e.get('contextRef')
+        if r in ids and len(e) == 0:
             v = _num(e.text)
             name = _local(e.tag)
-            if v is None or name in seen:
+            if v is None:
                 continue
-            seen.add(name)
-            out.append((name, round(v / CRORE, 2) if money.get(e.get('unitRef')) else v))
-    return out
+            key = (ctx[r][2], k)
+            if name not in best or key < best[name][0]:
+                best[name] = (key, round(v / CRORE, 2) if money.get(e.get('unitRef')) else v)
+    return [(n, v) for n, (_, v) in sorted(best.items(), key=lambda x: x[1][0][1])]
 
 
 def main_end(info):
@@ -378,11 +410,23 @@ def row_of(f):
         op = rev - exp if rev is not None and exp is not None else None
     opm = op / rev * 100 if op is not None and rev else None
     pbt = f.get('pbt') if f.get('pbt') is not None else f.get('pbt_ord')
-    tax = f.get('tax')
+    tax, pat, oi, exc = f.get('tax'), f.get('pat'), f.get('other_income'), f.get('exceptional')
+    if is_bank(f):
+        # screener.in leaves a bank's exceptional items out of PBT and Net Profit (owner's HDFCBANK check, 18-Nov-2026:
+        # PBT 28,663 = operating profit - provisions, the filing's 27,825 after its 'ExceptionalItems' -837)
+        if exc:
+            pbt = pbt - exc if pbt is not None else None
+            pat = pat - exc if pat is not None else None
+    else:
+        a = f.get('assoc')
+        # the share of associates' profit added AFTER tax in the filing (BSE: PBT 1,044.87 - tax 264.87 + 27.52 = 807.52):
+        # screener.in counts it in Other Income and PBT (owner's BSE check, 18-Nov-2026: 145 / 1,072)
+        if a and None not in (pbt, tax, pat) and abs(pbt - tax + a - pat) + 0.01 < abs(pbt - tax - pat):
+            pbt += a
+            oi = (oi or 0) + a
     taxp = tax / pbt * 100 if tax is not None and pbt else None
     eps = f.get('eps') if f.get('eps') is not None else f.get('eps_x')
-    return [_r(rev), _r(exp), _r(op), _r(opm, 1), _r(f.get('other_income')), _r(f.get('exceptional')), _r(fin), _r(dep),
-            _r(pbt), _r(taxp, 1), _r(f.get('pat')), _r(eps)]
+    return [_r(rev), _r(exp), _r(op), _r(opm, 1), _r(oi), _r(exc), _r(fin), _r(dep), _r(pbt), _r(taxp, 1), _r(pat), _r(eps)]
 
 
 def _shares(f):
@@ -760,6 +804,8 @@ def since_iso(today):
 def _info(c, p, why, retry):
     info = {'url': c['url'], 'end': c['end'], 'basis': c['basis'] or (p or {}).get('nature', ''), 'rev': c['rev'],
             'stamp': c['stamp'], 'v': VERSION, 'periods': (p or {}).get('periods') or []}
+    if (p or {}).get('older'):
+        info['older'] = p['older']
     if why:
         info['fail'], info['retry'] = why[:200], bool(retry)
     if not info['end']:
@@ -829,8 +875,10 @@ def reread(sym, today=None):
         reasons = []
         p = parse_periods(raw, reasons)
         info['periods'], info['v'] = (p or {}).get('periods') or [], VERSION
-        info.pop('fail', None)
-        info.pop('retry', None)
+        for k in ('fail', 'retry', 'older'):
+            info.pop(k, None)
+        if (p or {}).get('older'):
+            info['older'] = p['older']
         if not info['periods']:
             info['fail'], info['retry'] = (reasons[0] if reasons else 'nothing usable in it')[:200], False
         if p and not info.get('basis'):
@@ -1231,6 +1279,10 @@ def check(cfg, syms, out=print, today=None):
         files = st.get('files') or {}
         good = [f for f in files.values() if f.get('periods')]
         out('   %d file(s) asked from NSE now; %d file(s) with figures kept in %s' % (got, len(good), _files_dir(sym)))
+        old = sorted(f.get('end') or '' for f in good if f.get('older'))
+        if old:
+            out('   %d file(s) of NSE\'s older format read through their dimension contexts (%s .. %s) - check those quarters'
+                ' against screener.in below' % (len(old), old[0], old[-1]))
         bad = sorted([(f.get('end') or '', n, f) for n, f in files.items() if f.get('fail')], reverse=True)
         if bad:
             out('   %d file(s) could not be used:' % len(bad))
