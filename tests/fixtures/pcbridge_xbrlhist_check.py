@@ -517,18 +517,23 @@ NSE[FDIM] = filing(22).replace(b'<xbrli:identifier scheme="x">X</xbrli:identifie
                                b'</xbrli:segment></xbrli:entity>')
 F6M = url_of(19, sym='FAIL')
 NSE[F6M] = xml('Consolidated', [(qstart(QS[19][1], 6), QS[19][1], figs(19))])
+FNOP = url_of(18, sym='FAIL')
+NSE[FNOP] = xml('Consolidated', [])                      # an instant context only - no period at all
 NSE[url_of(23, sym='FAIL')] = filing(23)
-LIST['FAIL'] = ({'data': recs('FAIL', (19, 20, 21, 22, 23))}, [])
+LIST['FAIL'] = ({'data': recs('FAIL', (18, 19, 20, 21, 22, 23))}, [])
 sf = X.process_stock(nse, 'FAIL', TODAY)[0]
-fl = {u: sf['files'][X.file_name(u)] for u in (F404, FHTML, FDIM, F6M)}
+fl = {u: sf['files'][X.file_name(u)] for u in (F404, FHTML, FDIM, F6M, FNOP)}
 assert (fl[F404]['fail'], fl[F404]['retry']) == ('NSE answered HTTP 404', False), fl[F404]
 assert fl[FHTML]['fail'] == 'a web page came back, not the XML file' and fl[FHTML]['retry'] is True
 assert not os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FHTML))), 'a web page is not kept as a filing'
-assert fl[FDIM]['fail'].startswith('no context without a segment / scenario') and 'ConsolidatedMember' in fl[FDIM]['fail'], fl[FDIM]
-assert os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FDIM))), 'the filing itself is kept (a later rule may read it)'
+# NSE's older format (owner's HDFCBANK 2021-2023 / BSE 2021-22 files): a member on every context -> read through them
+assert 'fail' not in fl[FDIM] and fl[FDIM]['older'] == 'in-bse-fin:ConsolidatedMember', fl[FDIM]
+assert fl[FNOP]['fail'] == 'no context with a period (1 context(s))' and fl[FNOP]['retry'] is False, fl[FNOP]
+assert os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FNOP))), 'the filing itself is kept (a later rule may read it)'
 assert fl[F6M]['fail'] == 'no 3- or 12-month period in it (periods: 2025-04-01..2025-09-30)' and fl[F6M]['retry'] is False, fl[F6M]
-bq = {r[0]: r[-1] for r in sf['table']['q']}
-assert bq.get('Jun 2026') == 'c' and bq.get('Sep 2025') == 'c' and 'Dec 2025' not in bq and 'Mar 2026' not in bq, bq
+bq = {r[0]: r for r in sf['table']['q']}
+assert bq['Jun 2026'][-1] == '' and bq['Jun 2026'][1] == 122.0, 'read from the older-format file (the segment value 999 not taken)'
+assert [bq.get(l, [''])[-1] for l in ('Mar 2026', 'Sep 2025', 'Jun 2025')] == ['c', 'c', 'c'] and 'Dec 2025' not in bq, bq.keys()
 assert sf['tried']['2025-12-31'] == [[X.file_name(F404), 'NSE answered HTTP 404']], sf['tried']
 before = len(REQ)
 X.process_stock(nse, 'FAIL', TODAY)
@@ -549,7 +554,9 @@ LIST.setdefault('NOPE', ({'data': []}, []))
 X.check({}, ['fail'], out=out.append, today=TODAY)
 text = '\n'.join(out)
 assert 'could not be used:' in text and '2025-12-31  ' + X.file_name(F404) + ' - NSE answered HTTP 404' in text, text
-assert 'quarters: 6 of 20 in the table (Dec 2021 .. Sep 2026)' in text and 'Dec 2024 missing - no XBRL file for it in NSE\'s lists' in text, text
+assert '2025-06-30  ' + X.file_name(FNOP) + ' - no context with a period (1 context(s))' in text, text
+assert "1 file(s) of NSE's older format read through their dimension contexts (2026-06-30 .. 2026-06-30)" in text, text
+assert 'quarters: 7 of 20 in the table (Dec 2021 .. Sep 2026)' in text and 'Dec 2024 missing - no XBRL file for it in NSE\'s lists' in text, text
 o3 = []
 labels = [X.label_of(2026 * 12 + 3 - 3 * k) for k in range(20)][::-1]
 X.coverage({'tried': {'2025-12-31': [['A_WEB.xml', 'NSE answered HTTP 404']], '2025-09-30': [['B_WEB.xml', 'ok']]}},
@@ -601,6 +608,32 @@ assert X.parse_periods(b'<a>', why=[]) is None
 w = []
 X.parse_periods(b'<x', w)
 assert w and w[0].startswith('not readable as XML'), w
+
+# h) version 3 (the owner's HDFCBANK / BSE check with 'facts', 18-Nov-2026)
+# the older format: the context with the fewest members wins, wherever it stands in the file
+seg = ('<xbrli:context id="S"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier><xbrli:segment>'
+       '<xbrldi:explicitMember dimension="a:A">a:One</xbrldi:explicitMember><xbrldi:explicitMember dimension="a:B">a:Seg1'
+       '</xbrldi:explicitMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:startDate>2026-07-01</xbrli:startDate>'
+       '<xbrli:endDate>2026-09-30</xbrli:endDate></xbrli:period></xbrli:context>')
+main = seg.replace('id="S"', 'id="M"').replace('<xbrldi:explicitMember dimension="a:B">a:Seg1</xbrldi:explicitMember>', '')
+doc = ('<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:a="x">'
+       + seg + main + '<a:RevenueFromOperations contextRef="S">5000000000</a:RevenueFromOperations>'
+       '<a:RevenueFromOperations contextRef="M">1230000000</a:RevenueFromOperations></xbrli:xbrl>').encode()
+pp = X.parse_periods(doc)
+assert pp['periods'][0]['f'] == {'revenue': 123.0} and pp['older'] == 'a:One', pp
+assert X.facts_dump(doc, '2026-09-30') == [('RevenueFromOperations', 1230000000.0)], 'no unit: as filed'
+# BSE: the share of associates' profit added after tax -> screener.in's Other Income and PBT (145 / 1,072)
+bse = {'revenue': 1432.66, 'expenses': 505.67, 'finance_costs': 0.0, 'depreciation': 46.07, 'other_income': 117.88,
+       'exceptional': 0.0, 'pbt': 1044.87, 'tax': 264.87, 'pat': 807.52, 'assoc': 27.52, 'eps': 19.64}
+assert X.row_of(bse) == [1432.66, 459.6, 973.06, 67.9, 145.4, 0.0, 0.0, 46.07, 1072.39, 24.7, 807.52, 19.64], X.row_of(bse)
+above = dict(bse, pbt=1072.39)                         # a filing whose PBT already has it: nothing added
+assert X.row_of(above)[4] == 117.88 and X.row_of(above)[8] == 1072.39
+assoc_doc = xml('Consolidated', [(date(2026, 7, 1), date(2026, 9, 30), dict(figs(23), ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod=2.5e7))])
+assert X.parse_periods(assoc_doc)['periods'][0]['f']['assoc'] == 2.5, 'read by the start of its long name'
+# HDFCBANK: screener.in leaves the bank's ExceptionalItems out of PBT and Net Profit (28,663 / 21,537)
+hdfc = {'revenue': 95131.63, 'int_exp': 50667.0, 'opex': 45820.0, 'provisions': 4209.0, 'other_income': 34227.06,
+        'exceptional': -837.06, 'pbt_ord': 27825.0, 'tax': 7125.0, 'pat': 20700.03, 'eps_x': 13.43, 'assoc': 0.0}
+assert X.row_of(hdfc) == [95131.63, 50029.0, -5564.37, -5.8, 34227.06, -837.06, 50667.0, None, 28662.06, 24.9, 21537.09, 13.43], X.row_of(hdfc)
 
 # g) the background job reads every stock's lists again once (LIST_VERSION) and the kept files with the new rules
 st_ = X.load_stock('ABC')
