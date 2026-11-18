@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 3                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 4                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 3                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -81,7 +81,7 @@ EXTRA_FACTS = (
 )
 # read by the start of the element's name (the full name is long and differs between formats): the share of the profit of
 # associates / joint ventures - BSE's 'ShareOfProfitLossOfAssociatesAndJointVentures...', a bank's 'ShareOfProfitLossOfAssociates'
-PREFIX_FACTS = (('assoc', ('shareofprofitlossofassociates',)),)
+PREFIX_FACTS = (('assoc', ('shareofprofitlossofassociates',)), ('disc', ('profitlossfromdiscontinuedoperationsaftertax',)))
 SPLIT_MIN = 1.4        # net profit / EPS (the share count) this many times off the next period = a bonus / split ...
 NICE = (1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 20, 25, 40, 50, 100)
 SNAP_TOL = 0.08        # ... when within 8 % of one of these ratios (a merger's odd ratio is left alone)
@@ -242,8 +242,8 @@ def _local(tag):
 
 
 def _contexts(root):
-    """-> ({context id: (start, end, dimension members)} of every context with a start and an end, count of all contexts,
-    an example of a dimension member)."""
+    """-> ({context id: (start | None, end | None, dimension members)} of every context, count of all contexts, an example of
+    a dimension member)."""
     ctx, total, member = {}, 0, ''
     for c in root.iter():
         if _local(c.tag) != 'context':
@@ -263,16 +263,49 @@ def _contexts(root):
                     member = (e.text or '').strip()[:60] or str(e.get('dimension') or '')[:60]
             elif n in ('segment', 'scenario'):
                 dims += 0.5           # a segment / scenario with no member counted too (never 0)
-        if start and end:
-            ctx[c.get('id')] = (start, end, dims)
+        ctx[c.get('id')] = (start, end, dims)
     return ctx, total, member
 
 
+# a context without a start date (an instant) whose reporting period the filing states in these elements
+PERIOD_FACTS = (('dateofstartofreportingperiod', 'dateofendofreportingperiod'),)
+
+
+def _iso(t):
+    d = _date(t)
+    return d.isoformat() if d else None
+
+
+def _fill_periods(ctx, facts):
+    """Contexts without a start date get the reporting period the filing states for them (older NSE files)."""
+    for a, b in PERIOD_FACTS:
+        starts = {r: _iso(t) for r, t in facts.get(a, [])}
+        ends = {r: _iso(t) for r, t in facts.get(b, [])}
+        for cid, (s0, e0, dims) in list(ctx.items()):
+            if not s0 and starts.get(cid):
+                ctx[cid] = (starts[cid], ends.get(cid) or e0, dims)
+
+
 def _usable(ctx):
-    """The contexts to read: the ones without a dimension (the company's own figures); a file that has none - the older
-    NSE format puts a member on every context - is read through all of them, the fewest members first (`older`)."""
-    plain = {cid: v for cid, v in ctx.items() if not v[2]}
-    return (plain, False) if plain else (ctx, bool(ctx))
+    """The contexts to read: the ones with a period and without a dimension (the company's own figures); a file that
+    has none - the older NSE format puts a member on every context - is read through all of them, the fewest members
+    first (`older`)."""
+    dur = {cid: v for cid, v in ctx.items() if v[0] and v[1]}
+    plain = {cid: v for cid, v in dur.items() if not v[2]}
+    return (plain, False) if plain else (dur, bool(dur))
+
+
+def _why_none(facts, allc):
+    """Why a file's known figures are in no 3- / 12-month period: the context of the first one found."""
+    for name, names in tuple(D.get('facts', ())) + EXTRA_FACTS:
+        for n in names:
+            for r, t in facts.get(n.lower(), []):
+                if r not in allc:
+                    return '%s: its context %s is not in the file' % (n, r)
+                s0, e0, dims = allc[r]
+                per = ('%s..%s' % (s0, e0)) if s0 else ('instant %s' % e0) if e0 else 'no period'
+                return '%s: context %s = %s, %s member(s)' % (n, r, per, dims)
+    return ''
 
 
 def _months(s, e):
@@ -305,15 +338,16 @@ def parse_periods(raw, why=None):
     if root is None:
         return None
     allc, total, member = _contexts(root)
-    ctx, older = _usable(allc)
-    if not ctx:
-        why.append('no context with a period (%d context(s)%s)' % (total, ', e.g. ' + member if member else ''))
-        return None
     facts = {}
     for e in root.iter():
         ref = e.get('contextRef')
         if ref is not None and len(e) == 0:
             facts.setdefault(_local(e.tag).lower(), []).append((ref, (e.text or '').strip()))
+    _fill_periods(allc, facts)
+    ctx, older = _usable(allc)
+    if not ctx:
+        why.append('no context with a period (%d context(s)%s)' % (total, ', e.g. ' + member if member else ''))
+        return None
     nature = ''
     for _, names in [t for t in D.get('texts', ()) if t[0] == 'nature'] or [('nature', ('NatureOfReportStandaloneConsolidated', 'NatureOfReport'))]:
         for n in names:
@@ -348,8 +382,8 @@ def parse_periods(raw, why=None):
             periods.append({'start': s, 'end': e, 'm': m, 'f': fig})
     if not periods:
         if any(_months(*x.split('..')) for x in spans):
-            names = sorted({k for k, v in facts.items() if any(_num(t) is not None for _, t in v)})[:8]
-            why.append('none of the figures we know is in it (elements: %s)' % ', '.join(names))
+            why.append('none of the figures we know is in a 3- or 12-month period (%s)' % (_why_none(facts, allc) or
+                       'elements: ' + ', '.join(sorted({k for k, v in facts.items() if any(_num(t) is not None for _, t in v)})[:6])))
         else:
             why.append('no 3- or 12-month period in it (periods: %s)' % (', '.join(spans[:4]) or 'none'))
     out = {'nature': nature, 'periods': periods}
@@ -364,7 +398,13 @@ def facts_dump(raw, end, months=3):
     root = _xml(raw, [])
     if root is None:
         return []
-    ctx, _ = _usable(_contexts(root)[0])
+    allc = _contexts(root)[0]
+    facts = {}
+    for e in root.iter():
+        if e.get('contextRef') is not None and len(e) == 0:
+            facts.setdefault(_local(e.tag).lower(), []).append((e.get('contextRef'), (e.text or '').strip()))
+    _fill_periods(allc, facts)
+    ctx, _ = _usable(allc)
     ids = {cid for cid, (s, e, _) in ctx.items() if e == end and _months(s, e) == months}
     money = {}
     for u in root.iter():
@@ -424,13 +464,15 @@ def row_of(f):
         if exc:
             pbt = pbt - exc if pbt is not None else None
             pat = pat - exc if pat is not None else None
-    else:
-        a = f.get('assoc')
-        # the share of associates' profit added AFTER tax in the filing (BSE: PBT 1,044.87 - tax 264.87 + 27.52 = 807.52):
-        # screener.in counts it in Other Income and PBT (owner's BSE check, 18-Nov-2026: 145 / 1,072)
-        if a and None not in (pbt, tax, pat) and abs(pbt - tax + a - pat) + 0.01 < abs(pbt - tax - pat):
-            pbt += a
-            oi = (oi or 0) + a
+    elif None not in (pbt, tax, pat):
+        # what the filing adds AFTER tax - the share of associates' profit (BSE: 1,044.87 - 264.87 + 27.52 = 807.52) and the
+        # discontinued operations (BSE Jun 2025: + 11.95) - screener.in counts in Other Income and PBT (owner's BSE checks,
+        # 18-Nov-2026: 145 / 1,072 and 115 / 713); taken only when it explains the filing's net profit (to 0.2 %)
+        a, d = f.get('assoc') or 0, f.get('disc') or 0
+        best = min(((abs(pbt - tax + x - pat), x) for x in {a + d, a, d} if x), default=None)
+        if best and best[0] <= max(0.1, abs(pat) * 0.002) < abs(pbt - tax - pat):
+            pbt += best[1]
+            oi = (oi or 0) + best[1]
     taxp = tax / pbt * 100 if tax is not None and pbt else None
     eps = f.get('eps') if f.get('eps') is not None else f.get('eps_x')
     return [_r(rev), _r(exp), _r(op), _r(opm, 1), _r(oi), _r(exc), _r(fin), _r(dep), _r(pbt), _r(taxp, 1), _r(pat), _r(eps)]
