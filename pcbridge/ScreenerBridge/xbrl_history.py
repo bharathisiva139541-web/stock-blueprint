@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 4                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 5                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 3                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -263,7 +263,7 @@ def _contexts(root):
                     member = (e.text or '').strip()[:60] or str(e.get('dimension') or '')[:60]
             elif n in ('segment', 'scenario'):
                 dims += 0.5           # a segment / scenario with no member counted too (never 0)
-        ctx[c.get('id')] = (start, end, dims)
+        ctx[(c.get('id') or '').strip()] = (start, end, dims)
     return ctx, total, member
 
 
@@ -277,13 +277,34 @@ def _iso(t):
 
 
 def _fill_periods(ctx, facts):
-    """Contexts without a start date get the reporting period the filing states for them (older NSE files)."""
+    """Older NSE files: a context without a start date gets the reporting period the filing states for it; a context the
+    figures name but the file does not define (seen: HDFCBANK 2021-23 / BSE 2021-22 - the figures on 'OneD', the file
+    defining only 'One...D'-style dimension contexts) gets that stated period, else the one period every other context
+    of the same column (same first word, same last letter) has. -> the ids given a period that way."""
+    guessed = []
     for a, b in PERIOD_FACTS:
         starts = {r: _iso(t) for r, t in facts.get(a, [])}
         ends = {r: _iso(t) for r, t in facts.get(b, [])}
         for cid, (s0, e0, dims) in list(ctx.items()):
             if not s0 and starts.get(cid):
                 ctx[cid] = (starts[cid], ends.get(cid) or e0, dims)
+        for cid in starts:
+            if cid not in ctx and starts[cid] and ends.get(cid):
+                ctx[cid] = (starts[cid], ends[cid], 0)
+                guessed.append(cid)
+    refs = {r for v in facts.values() for r, _ in v}
+    for r in sorted(refs - set(ctx)):
+        m = re.match(r'^([A-Z][a-z]+)(.*?)([A-Za-z])$', r)
+        if not m:
+            continue
+        same = {(s0, e0) for cid, (s0, e0, _) in ctx.items()
+                if cid != r and cid.startswith(m.group(1)) and cid.endswith(m.group(3)) and s0 and e0
+                and not cid.startswith(m.group(1) + m.group(1))}
+        if len(same) == 1:
+            s0, e0 = same.pop()
+            ctx[r] = (s0, e0, 0)
+            guessed.append(r)
+    return guessed
 
 
 def _usable(ctx):
@@ -301,7 +322,9 @@ def _why_none(facts, allc):
         for n in names:
             for r, t in facts.get(n.lower(), []):
                 if r not in allc:
-                    return '%s: its context %s is not in the file' % (n, r)
+                    ids = sorted(allc)
+                    return '%s: its context %s is not in the file; its %d context(s): %s%s' % (
+                        n, r, len(ids), ', '.join(ids[:8]), ' ...' if len(ids) > 8 else '')
                 s0, e0, dims = allc[r]
                 per = ('%s..%s' % (s0, e0)) if s0 else ('instant %s' % e0) if e0 else 'no period'
                 return '%s: context %s = %s, %s member(s)' % (n, r, per, dims)
@@ -342,8 +365,8 @@ def parse_periods(raw, why=None):
     for e in root.iter():
         ref = e.get('contextRef')
         if ref is not None and len(e) == 0:
-            facts.setdefault(_local(e.tag).lower(), []).append((ref, (e.text or '').strip()))
-    _fill_periods(allc, facts)
+            facts.setdefault(_local(e.tag).lower(), []).append((ref.strip(), (e.text or '').strip()))
+    guessed = _fill_periods(allc, facts)
     ctx, older = _usable(allc)
     if not ctx:
         why.append('no context with a period (%d context(s)%s)' % (total, ', e.g. ' + member if member else ''))
@@ -387,7 +410,9 @@ def parse_periods(raw, why=None):
         else:
             why.append('no 3- or 12-month period in it (periods: %s)' % (', '.join(spans[:4]) or 'none'))
     out = {'nature': nature, 'periods': periods}
-    if older and periods:
+    if guessed and periods:
+        out['older'] = 'contexts %s not in the file - their period from the file\'s other contexts' % ', '.join(guessed[:6])
+    elif older and periods:
         out['older'] = member or 'dimension contexts'
     return out
 
@@ -402,7 +427,7 @@ def facts_dump(raw, end, months=3):
     facts = {}
     for e in root.iter():
         if e.get('contextRef') is not None and len(e) == 0:
-            facts.setdefault(_local(e.tag).lower(), []).append((e.get('contextRef'), (e.text or '').strip()))
+            facts.setdefault(_local(e.tag).lower(), []).append((e.get('contextRef').strip(), (e.text or '').strip()))
     _fill_periods(allc, facts)
     ctx, _ = _usable(allc)
     ids = {cid for cid, (s, e, _) in ctx.items() if e == end and _months(s, e) == months}
@@ -414,7 +439,7 @@ def facts_dump(raw, end, months=3):
             money[u.get('id')] = not divide and len(ms) == 1 and ms[0].endswith(':inr')
     best = {}
     for k, e in enumerate(root.iter()):
-        r = e.get('contextRef')
+        r = (e.get('contextRef') or '').strip()
         if r in ids and len(e) == 0:
             v = _num(e.text)
             name = _local(e.tag)
