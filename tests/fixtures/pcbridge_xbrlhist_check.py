@@ -186,6 +186,14 @@ def fake_get(opener, url, referer='', timeout=30):
         if not lists:
             return 200, b'{"data": []}'
         obj = lists[0] if 'integrated' in url else lists[1]
+        if 'integrated' in url and isinstance(obj, dict):       # NSE: the newest 20 filings only, or those of the dates asked
+            data = obj['data']
+            stamp = lambda r: X.stamp_of(X.file_name(r['xbrl']))
+            if 'from_date=' in url:
+                f, t = (url.split(k + '=')[1].split('&')[0] for k in ('from_date', 'to_date'))
+                iso = lambda d: d[6:10] + d[3:5] + d[0:2]
+                data = [r for r in data if iso(f) <= stamp(r)[:8] <= iso(t)]
+            obj = dict(obj, data=sorted(data, key=lambda r: (stamp(r), r['xbrl']), reverse=True)[:20], total=len(data))
         return 200, json.dumps(obj).encode()
     if url in NSE:
         return 200, NSE[url]
@@ -634,6 +642,28 @@ assert X.parse_periods(assoc_doc)['periods'][0]['f']['assoc'] == 2.5, 'read by t
 hdfc = {'revenue': 95131.63, 'int_exp': 50667.0, 'opex': 45820.0, 'provisions': 4209.0, 'other_income': 34227.06,
         'exceptional': -837.06, 'pbt_ord': 27825.0, 'tax': 7125.0, 'pat': 20700.03, 'eps_x': 13.43, 'assoc': 0.0}
 assert X.row_of(hdfc) == [95131.63, 50029.0, -5564.37, -5.8, 34227.06, -837.06, 50667.0, None, 28662.06, 24.9, 21537.09, 13.43], X.row_of(hdfc)
+
+# i) NSE's integrated list gives the newest 20 filings only (owner's HDFCBANK Mar 2025, on NSE's page but not read):
+#    a full page is asked again half a year at a time, back to the start of integrated filing
+CAPR = []
+for k in range(17, 24):
+    for kind in ('C', 'S'):
+        u = url_of(k, kind, sym='CAP')
+        NSE[u] = filing(k, 'Consolidated' if kind == 'C' else 'Standalone')
+        CAPR.append({'xbrl': u, 'qe_Date': QS[k][1].strftime('%d-%b-%Y'), 'consolidated': 'Consolidated' if kind == 'C' else 'Standalone'})
+    CAPR.append({'xbrl': 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_GOVERNANCE_CAP_%s_WEB.xml'
+                 % (QS[k][1] + timedelta(days=60)).strftime('%d%m%Y183000'), 'qe_Date': QS[k][1].strftime('%d-%b-%Y')})
+LIST['CAP'] = ({'data': CAPR}, [])                     # 21 filings: Mar 2025's consolidated one is the 21st
+before = len(REQ)
+out = []
+sc = X.process_stock(nse, 'CAP', TODAY, say=out.append)[0]
+asked = [u for u in REQ[before:] if 'from_date=' in u and 'integrated' in u]
+assert [u.split('from_date=')[1] for u in asked] == ['01-10-2024&to_date=31-03-2025', '01-04-2025&to_date=30-09-2025'], asked
+assert {r[0]: r[-1] for r in sc['table']['q']}['Mar 2025'] == '', 'the consolidated Mar 2025 filing found by the dated ask'
+text = '\n'.join(out)
+assert 'integrated filing: 20 record(s)' in text and 'the answer also has: total=21' in text, text
+assert 'integrated filing (dated) 01-04-25..30-09-25: 6 record(s)' in text, text
+assert X.due('CAP', dict(X.load_stock('CAP'), lv=2), TODAY, time.time()), 'every stock read once more (LIST_VERSION 3)'
 
 # g) the background job reads every stock's lists again once (LIST_VERSION) and the kept files with the new rules
 st_ = X.load_stock('ABC')
