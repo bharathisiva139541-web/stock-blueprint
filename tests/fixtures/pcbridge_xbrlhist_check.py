@@ -800,6 +800,21 @@ assert sorted(X.load_sc('ARS')) == ['C', 'S']
 many = {'b': 'C', 'q': [], 'y': [['Mar %d' % y, 100.0 + y] + [None] * 11 + [''] for y in range(2005, 2027)]}
 assert [r[0] for r in X.build({'sym': 'ARS', 'files': {}}, TODAY, sc={'C': many})['y']] == ['Mar %d' % y for y in range(2015, 2027)]
 
+# pages Historical PE read before this version: read once more (their tables were not kept), never a stock not on screener.in
+P_ = sb.PEH
+assert P_.WANT_PAGE is X.wants_screener
+saved_store = P_._STORE
+P_._STORE = P_.Store(os.path.join(TMP, 'eps_history.json'))
+P_._STORE.syms = {s_: {'src': 'page', 'at': time.time(), 'tried': time.time()} for s_ in ('ARS', 'OLD1', 'OLD2')}
+P_._STORE.syms['GONE'] = {'src': 'page', 'at': time.time(), 'tried': time.time(), 'none': 1}
+P_._STORE.syms['OLD2']['scx'] = 1
+assert P_.backfill_order(['ARS', 'OLD1', 'OLD2', 'GONE', 'NEW']) == ['NEW', 'OLD1'], P_.backfill_order(['ARS', 'OLD1', 'OLD2', 'GONE', 'NEW'])
+pages_ = []
+P_.backfill({}, lambda cfg, sym, cons=True: (pages_.append(sym), ('ok', sc_page()))[1], lambda c: None, RuntimeError, ['OLD1'], pages=5)
+assert pages_ == ['OLD1'] and P_._STORE.syms['OLD1'].get('scx') == 1 and X.load_sc('OLD1').get('C')
+assert P_.backfill_order(['OLD1']) == [], 'once'
+P_._STORE = saved_store
+
 # a year with consolidated and standalone quarters: the sum of its 4 quarters all the same (owner: "take that also")
 def bfile(end, basis, rev):
     f = qfile(end, rev, 10.0, 1.0)

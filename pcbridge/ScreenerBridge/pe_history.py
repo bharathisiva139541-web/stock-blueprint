@@ -240,6 +240,7 @@ def store():
     return _STORE
 
 
+WANT_PAGE = None  # f(sym) -> True while another reader still needs the stock's page (xbrl_history.wants_screener)
 ON_PAGE = []      # more readers of every page (screener_bridge adds xbrl_history.keep_screener - its yearly / quarterly tables)
 
 
@@ -534,10 +535,12 @@ def backfill_order(syms, now=None):
     EPS row)."""
     now = time.time() if now is None else now
     S = store()
-    none, sheet, old = [], [], []
+    none, sheet, old, want = [], [], [], []
     for s in sorted(syms):
         r = S.syms.get(s)
         if r and now - float(r.get('tried') or 0) <= STALE_DAYS * 86400:
+            if WANT_PAGE and not r.get('none') and not r.get('scx') and WANT_PAGE(s):
+                want.append(s)          # read once more for another reader (the results tables), then left alone again
             continue
         if not r:
             none.append(s)
@@ -545,7 +548,7 @@ def backfill_order(syms, now=None):
             sheet.append(s)
         elif now - float(r.get('at') or 0) > STALE_DAYS * 86400:
             old.append((float(r.get('at') or 0), s))
-    return none + sheet + [s for _, s in sorted(old)]
+    return none + sheet + want + [s for _, s in sorted(old)]
 
 
 def backfill(cfg, fetch, sleep, blocked, syms, pages=None, max_s=None, clock=time.time):
@@ -580,6 +583,8 @@ def backfill(cfg, fetch, sleep, blocked, syms, pages=None, max_s=None, clock=tim
         if r is None:                          # not on screener.in / no EPS row: a marker, so it is not asked every round
             r = S.syms[sym] = {'src': 'page', 'at': round(clock()), 'basis': '', 'q': [], 'y': [], 'none': 1}
         r['tried'] = round(clock())
+        if WANT_PAGE:
+            r['scx'] = 1
         S.dirty = True
         done += 1
         if done % 10 == 0:
