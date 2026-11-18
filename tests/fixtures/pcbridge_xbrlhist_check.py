@@ -672,6 +672,29 @@ assert X.parse_periods((head + ctxi + ctxd + '<a:Other contextRef="Cf">5</a:Othe
 assert w == ['none of the figures we know is in a 3- or 12-month period (RevenueFromOperations: context OneI = instant 2025-09-30, '
              '1.5 member(s))'], w
 
+# k) version 5: the owner's older files name 'OneD' for their figures but define only dimension contexts of that column
+def octx(cid, s0, e0, mem):
+    return ('<xbrli:context id="%s"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>'
+            '<xbrli:period><xbrli:startDate>%s</xbrli:startDate><xbrli:endDate>%s</xbrli:endDate></xbrli:period>'
+            '<xbrli:scenario><xbrldi:explicitMember dimension="a:A">a:%s</xbrldi:explicitMember></xbrli:scenario>'
+            '</xbrli:context>' % (cid, s0, e0, mem))
+odoc = (head + octx('OneOperatingExpenses01D', '2023-07-01', '2023-09-30', 'OneOperatingExpenses01Member')
+        + octx('OneOperatingExpenses02D', '2023-07-01', '2023-09-30', 'OneOperatingExpenses02Member')
+        + octx('FourOperatingExpenses01D', '2023-04-01', '2023-09-30', 'FourOperatingExpenses01Member')
+        + '<a:RevenueFromOperations contextRef="OneD">1230000000</a:RevenueFromOperations>'
+        '<a:RevenueFromOperations contextRef="FourD">2400000000</a:RevenueFromOperations>'
+        '<a:OtherExpenses contextRef="OneOperatingExpenses01D">10000000</a:OtherExpenses>'
+        '<a:BasicEarningsLossPerShare contextRef=" OneD ">1.5</a:BasicEarningsLossPerShare></xbrli:xbrl>').encode()
+pk = X.parse_periods(odoc)
+assert [(q['start'], q['end'], q['f']) for q in pk['periods']] == [('2023-07-01', '2023-09-30', {'revenue': 123.0, 'eps': 1.5})], pk
+assert pk['older'] == "contexts FourD, OneD not in the file - their period from the file's other contexts", pk['older']
+assert ('RevenueFromOperations', 1230000000.0) in X.facts_dump(odoc, '2023-09-30')
+w = []
+X.parse_periods((head + octx('Ax', '2023-07-01', '2023-09-30', 'M') + '<a:Other contextRef="Ax">1</a:Other>'
+                 '<a:RevenueFromOperations contextRef="OneD">1230000000</a:RevenueFromOperations></xbrli:xbrl>').encode(), w)
+assert w == ["none of the figures we know is in a 3- or 12-month period (RevenueFromOperations: its context OneD is not in the "
+             "file; its 1 context(s): Ax)"], w
+
 # i) NSE's integrated list gives the newest 20 filings only (owner's HDFCBANK Mar 2025, on NSE's page but not read):
 #    a full page is asked again half a year at a time, back to the start of integrated filing
 CAPR = []
