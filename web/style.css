@@ -1293,6 +1293,28 @@ a.sg-step:hover { text-decoration: none; border-color: rgba(var(--accent-rgb), 0
 .fin-t tr.fin-np th, .fin-t tr.fin-np td, .fin-t tr.fin-op th, .fin-t tr.fin-op td { font-weight: 600; }
 .fin-t tr.fin-g th { font-weight: 500; color: var(--muted); }
 .fin-t sup { color: var(--muted); font-size: 9px; margin-left: 1px; }
+/* two doors (18-Nov-2026): the results tables on the left, the stock window on the right, the page between them = close */
+.drawer { --door-gap: 56px; --door-right: 500px; }
+.drawer.doors .drawer-back { cursor: pointer; }
+.drawer-door {
+  position: absolute; left: 0; top: 0; bottom: 0; width: calc(100% - var(--door-right) - var(--door-gap)); overflow-y: auto;
+  overflow-x: hidden; background: var(--card-bg); border-right: 1px solid var(--border-strong); padding: 22px 20px 30px;
+  box-shadow: var(--shadow-pop);
+}
+.drawer-door::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--grad); }
+.door-head { display: flex; align-items: center; gap: 12px; padding-right: 48px; }
+.door-head h2 { font-size: 21px; margin: 0; }
+.door-head p { margin: 2px 0 0; }
+.door-note { margin: 12px 0 4px; }
+.fin-door-part { margin-top: 18px; }
+.fin-door-part .fin-scroll { width: fit-content; max-width: 100%; }
+.fin-door-part .fin-t { font-size: 12.5px; }
+.fin-door-part .fin-t th, .fin-door-part .fin-t td { padding: 6px 9px; }
+.door-tip { margin-top: 16px; font-size: 12px; }
+.fin-scroll.dragging { cursor: grabbing; -webkit-user-select: none; user-select: none; }
+@media (min-width: 1100px) {
+  .drawer.doors .drawer-panel { width: var(--door-right); }
+}
 
 /* industry explorer (web/pages/industry-explorer.js) */
 .chip:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1479,6 +1501,8 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
   .ticker-run { animation: tape var(--tape-s, 60s) linear infinite; }
   .ticker-in:hover .ticker-run, .ticker-in:focus-within .ticker-run { animation-play-state: paused; }
   .drawer-panel { animation: slide 0.22s cubic-bezier(.2, .7, .2, 1); }
+  .drawer.doors .drawer-panel { animation: door-r 0.34s cubic-bezier(.2, .7, .2, 1); }
+  .drawer-door { animation: door-l 0.34s cubic-bezier(.2, .7, .2, 1); }
   .drawer-back { animation: fade 0.2s ease-out; }
   .theme-pop, .search-results, .wl-pop, .ix-list { animation: pop 0.16s cubic-bezier(.2, .7, .2, 1); }
   :root[data-theme="aurora"] body::before { animation: aurora 26s ease-in-out infinite alternate; }
@@ -1498,6 +1522,8 @@ a.mstat-t:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes slide { from { transform: translateX(28px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+@keyframes door-l { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes door-r { from { transform: translateX(100%); } to { transform: none; } }
 @keyframes tape { from { transform: translateX(0); } to { transform: translateX(-100%); } }
 @keyframes pulse-up { 0% { box-shadow: 0 0 0 0 rgba(var(--up-rgb), 0.55); } 70%, 100% { box-shadow: 0 0 0 8px rgba(var(--up-rgb), 0); } }
 @keyframes pulse-acc { 0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.55); } 70%, 100% { box-shadow: 0 0 0 8px rgba(var(--accent-rgb), 0); } }

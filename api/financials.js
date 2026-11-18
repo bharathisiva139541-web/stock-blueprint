@@ -36,7 +36,7 @@
         const out = [String(r[0])];
         for (let i = 1; i <= COLS.length; i++) out.push(typeof r[i] === 'number' && isFinite(r[i]) ? r[i] : null);
         const f = r[COLS.length + 1];
-        out.push(f === 'c' || f === 's' || f === 'q' ? f : '');
+        out.push(f === 'c' || f === 's' || f === 'q' || f === 'r' ? f : '');
         return out;
       });
     };

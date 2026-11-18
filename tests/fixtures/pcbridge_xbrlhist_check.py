@@ -722,4 +722,94 @@ st_ = X.load_stock('ABC')
 st_['lv'] = 1
 X.save_stock(st_)
 assert X.due('ABC', st_, TODAY, time.time())
+
+# ------------------------------------------------------------------ 11. screener.in fills what NSE has no filing for
+# (owner, 18-Nov-2026, ARSSBL: listed on NSE on 30-09-2025, so its filings start with the Sep 2025 quarter - screener.in
+# shows quarters from Jun 2024 and the years from Mar 2020 (S), from the IPO papers; "take that also")
+assert sb.PEH.ON_PAGE and sb.PEH.ON_PAGE[-1] is X.keep_screener, 'every screener.in page the program reads is handed over'
+QH = ['Jun 2024', 'Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026', 'Sep 2026']
+SCQ = {'Sales +': [211, 231, 204, 200, 201, 227, 248, 256, 246, 273], 'Expenses +': [135, 145, 127, 127, 126, 135, 147, 145, 149, 173],
+       'Operating Profit': [76, 86, 77, 73, 75, 93, 101, 110, 97, 100], 'OPM %': ['36%', '37%', '38%', '37%', '37%', '41%', '41%', '43%', '40%', '37%'],
+       'Other Income +': [0, 0, 0, 0, 1, 1, 1, 0, -21, 0], 'Interest': [30, 35, 43, 39, 38, 50, 46, 50, 40, 38],
+       'Depreciation': [6, 6, 6, 8, 6, 7, 6, 7, 5, 6], 'Profit before tax': [41, 45, 29, 26, 30, 38, 50, 54, 31, 56],
+       'Tax %': ['25%', '27%', '25%', '28%', '25%', '26%', '26%', '23%', '26%', '25%'], 'Net Profit +': [31, 33, 22, 18, 23, 28, 37, 42, 23, 42],
+       'EPS in Rs': [4.90, 5.30, 3.45, 2.95, 3.66, 4.45, 5.90, 6.63, 3.70, 6.65]}
+YH = ['Mar 2020 (S)', 'Mar 2021 (S)', 'Mar 2022 (S)', 'Mar 2023', 'Mar 2024', 'Mar 2025', 'Mar 2026', 'TTM']
+SCY = {'Sales +': [246, 303, 423, 468, 682, 846, 932, '1,023'], 'Expenses +': [201, 253, 309, 353, 451, 534, 553, 615],
+       'Operating Profit': [44, 49, 114, 115, 231, 311, 380, 409], 'OPM %': ['18%', '16%', '27%', '25%', '34%', '37%', '41%', '40%'],
+       'Other Income +': [4, 0, 0, 1, 1, 1, 2, -19], 'Interest': [27, 21, 37, 49, 97, 147, 184, 174],
+       'Depreciation': [11, 10, 13, 15, 20, 25, 26, 25], 'Profit before tax': [10, 19, 64, 51, 115, 140, 172, 191],
+       'Tax %': ['31%', '29%', '20%', '26%', '33%', '26%', '25%', ''], 'Net Profit +': [7, 13, 51, 38, 77, 104, 129, 144],
+       'EPS in Rs': [1.08, 2.11, 8.20, 6.05, 12.39, 16.60, 20.61, 22.88], 'Dividend Payout %': ['0%'] * 7 + ['']}
+
+
+def sc_page(basis='Consolidated'):
+    def table(head, rows):
+        return ('<table class="data-table"><thead><tr><th class="text"></th>%s</tr></thead><tbody>%s</tbody></table>' % (
+            ''.join('<th>%s</th>' % h for h in head),
+            ''.join('<tr><td class="text"><button>%s</button></td>%s</tr>' % (k, ''.join('<td>%s</td>' % v for v in vs)) for k, vs in rows.items())))
+    return ('<html><section id="quarters" class="card"><div><h2>Quarterly Results</h2><p>%s Figures in Rs. Crores / View Standalone</p>'
+            '</div>%s</section><section id="profit-loss"><h2>Profit &amp; Loss</h2><p>%s Figures in Rs. Crores</p>%s'
+            '<p>(S): Standalone figures, shown where consolidated figures are not available.</p></section>'
+            '<section id="balance-sheet"><table><tr><th></th><th>Mar 2026</th></tr><tr><td>Reserves</td><td>1</td></tr></table></section>'
+            '</html>' % (basis, table(QH, SCQ), basis, table(YH, SCY)))
+
+
+p_ = X.screener_parse(sc_page())
+assert p_['b'] == 'C' and p_['k'] == '' and [r[0] for r in p_['q']] == QH, p_['q']
+assert [r[0] for r in p_['y']] == [h[:8] for h in YH[:-1]], 'TTM left out, the (S) years kept'
+assert p_['y'][0] == ['Mar 2020', 246, 201, 44, 18, 4, None, 27, 11, 10, 31, 7, 1.08, 's'], p_['y'][0]
+assert p_['q'][-1][1:] == [273, 173, 100, 37, 0, None, 38, 6, 56, 25, 42, 6.65, ''], p_['q'][-1]
+
+
+def qfile(end, rev, np_, eps, year=None):
+    per = [{'start': end[:8] + '01', 'end': end, 'm': 3, 'f': {'revenue': rev, 'expenses': rev * 0.6, 'finance_costs': 40.0,
+           'depreciation': 6.0, 'other_income': 0.5, 'pbt': np_ * 1.35, 'tax': np_ * 0.35, 'pat': np_, 'eps': eps}}]
+    if year:
+        per.append({'start': '2025-04-01', 'end': end, 'm': 12, 'f': {'revenue': year, 'expenses': year * 0.6, 'finance_costs': 180.0,
+                    'depreciation': 26.0, 'other_income': 2.0, 'pbt': 172.0, 'tax': 43.0, 'pat': 129.4, 'eps': 20.6}})
+    return {'url': 'u', 'end': end, 'basis': 'C', 'rev': False, 'stamp': end.replace('-', '') + '180000', 'v': X.VERSION, 'periods': per}
+
+
+X.save_stock({'sym': 'ARS', 'files': {'f%d' % k: qfile(e, r, n, ep, y) for k, (e, r, n, ep, y) in enumerate([
+    ('2025-09-30', 227.4, 28.1, 4.46, None), ('2025-12-31', 248.2, 37.0, 5.9, None), ('2026-03-31', 256.0, 42.2, 6.63, 932.4),
+    ('2026-06-30', 246.1, 23.0, 3.7, None), ('2026-09-30', 273.3, 42.4, 6.65, None)])}})
+t0 = X.build(X.load_stock('ARS'), TODAY)
+assert [r[0] for r in t0['q']] == QH[5:] and [r[0] for r in t0['y']] == ['Mar 2026'], 'NSE alone: the 5 quarters since listing'
+X.keep_screener('ARS', sc_page(), 1000.0)
+state_ = {}
+assert X.refresh_screener(['ARS', 'NOPE'], state_, TODAY) == 1 and X.refresh_screener(['ARS'], state_, TODAY) == 0
+t = X.load_stock('ARS')['table']
+fl = {r[0]: r[-1] for r in t['q']}
+assert [r[0] for r in t['q']] == QH and [fl[q] for q in QH] == ['r'] * 5 + [''] * 5, fl
+assert {r[0]: r[1] for r in t['q']}['Sep 2025'] == 227.4, 'NSE\'s own figure where there is one'
+fy = {r[0]: r for r in t['y']}
+assert list(fy) == ['Mar 2020', 'Mar 2021', 'Mar 2022', 'Mar 2023', 'Mar 2024', 'Mar 2025', 'Mar 2026'], list(fy)
+assert fy['Mar 2026'][-1] == '' and fy['Mar 2026'][1] == 932.4 and fy['Mar 2020'][-1] == 'r' and fy['Mar 2020'][1] == 246
+assert fy['Mar 2020'][1 + X.COLS.index('eps')] == 1.08 and fy['Mar 2020'][1 + X.COLS.index('taxp')] == 31
+assert len(X.eps_quarters(t)[1]) == 5, 'pe_history keeps its own screener.in EPS - only the filings\' quarters go to it'
+# a standalone page read later does not push the consolidated one out; a stock with no filing read yet: screener.in alone
+X.keep_screener('ARS', sc_page('Standalone'), 2000.0)
+assert sorted(X.load_sc('ARS')) == ['C', 'S']
+t2 = X.build({'sym': 'ARS', 'files': {}}, TODAY)
+assert t2['b'] == 'C' and t2['files'] == 0 and {r[-1] for r in t2['q'] + t2['y']} == {'r'} and len(t2['y']) == 7
+assert X.build({'sym': 'NONE', 'files': {}}, TODAY) is None
+X.keep_screener('ARS', '<html>nothing</html>')                # a page without the tables changes nothing
+assert sorted(X.load_sc('ARS')) == ['C', 'S']
+# years: 12 at most (screener.in's own table has up to 12)
+many = {'b': 'C', 'q': [], 'y': [['Mar %d' % y, 100.0 + y] + [None] * 11 + [''] for y in range(2005, 2027)]}
+assert [r[0] for r in X.build({'sym': 'ARS', 'files': {}}, TODAY, sc={'C': many})['y']] == ['Mar %d' % y for y in range(2015, 2027)]
+
+# a year with consolidated and standalone quarters: the sum of its 4 quarters all the same (owner: "take that also")
+def bfile(end, basis, rev):
+    f = qfile(end, rev, 10.0, 1.0)
+    f['basis'] = basis
+    return f
+
+
+mix = {'sym': 'MIX', 'files': {'a': bfile('2023-06-30', 'S', 100.0), 'b': bfile('2023-09-30', 'S', 110.0),
+                                 'c': bfile('2023-12-31', 'C', 120.0), 'd': bfile('2024-03-31', 'C', 130.0)}}
+tm = X.build(mix, TODAY, sc={})
+assert tm['b'] == 'C' and [r[-1] for r in tm['q']] == ['s', 's', '', ''] and tm['y'][0][0] == 'Mar 2024' and tm['y'][0][-1] == 'q' \
+    and tm['y'][0][1] == 460.0, tm['y']
 print('OK')

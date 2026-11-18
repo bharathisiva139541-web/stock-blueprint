@@ -803,21 +803,87 @@
           (s.nse52.isNew ? ' ' + ui.badge('New 52W high', 'new52') : isNum(s.nse52.below) ? ' <span class="sub">· ' + F.num(s.nse52.below, 1) + '% below</span>' : '')]);
       }
       h += '<dl class="kv">' + kv.map(function (p) { return '<div><dt>' + p[0] + '</dt><dd>' + p[1] + '</dd></div>'; }).join('') + '</dl>' +
-        finSection(s.sym) +
+        (doorWide() ? '' : finSection(s.sym)) +
         '<div id="drawer-chart" style="margin-top:14px"></div>';
     }
     h += '<div class="links"><a class="btn" target="_blank" rel="noopener" href="https://www.screener.in/company/' + encodeURIComponent(sym) + '/">Screener.in ↗</a>' +
       '<a class="btn" target="_blank" rel="noopener" href="https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + sym) + '">Chart ↗</a></div>';
     body.innerHTML = h;
-    var dr = $('#drawer');
+    var dr = $('#drawer'), door = $('#fin-door');
+    var doors = !!(s && door && doorWide());
+    dr.classList.toggle('doors', doors);
+    if (door) {
+      door.hidden = !doors;
+      door.innerHTML = doors ? doorHtml(s) : '';
+    }
+    if (dr.hidden || dr._sym !== sym) dr._opener = opener || document.activeElement;
+    dr._sym = sym;
     dr.hidden = false;
-    dr._opener = opener || document.activeElement;
     document.body.style.overflow = 'hidden';
     $('.drawer-x', dr).focus();
-    if (s) finStart(s.sym, body);
+    if (s) {
+      if (doors) doorStart(s.sym, door);
+      else finStart(s.sym, body);
+    }
     if (s && SB.onStockDrawer) SB.onStockDrawer(s, body);
   }
   SB.openStock = openStock;
+
+  // ---------- two doors (owner, 18-Nov-2026: "the screen should come like 2 doors opening - one from the left and one
+  // from the right at the same time, giving a little space in between; a click between both doors closes them; the left
+  // side is for the quarterly and yearly tables") - wide screens only; a phone keeps the table inside the stock window
+  var DOOR_MQ = '(min-width: 1100px)';
+  function doorWide() { return !!(window.matchMedia && window.matchMedia(DOOR_MQ).matches); }
+  function doorHtml(s) {
+    var part = function (kind, title) {
+      return '<section class="fin fin-door-part" id="door-fin-' + kind + '" data-fin-sym="' + esc(s.sym) + '"><div class="fin-head"><h3>' + title + '</h3>' +
+        '<button type="button" class="btn sm" data-fin-csv hidden>CSV</button></div><div class="fin-body"><p class="sub">Loading…</p></div></section>';
+    };
+    return '<button class="icon-btn drawer-x door-x" type="button" data-close aria-label="Close">✕</button>' +
+      '<div class="door-head">' + ui.logoHtml(s.sym) + '<div><h2 class="sym-line">' + esc(s.sym) + ' <span class="sub">results</span></h2>' +
+      '<p class="sub">' + esc(s.name || '') + '</p></div></div>' +
+      '<p class="sub fin-note door-note" id="door-note"></p>' +
+      part('q', 'Quarterly results') + part('y', 'Profit &amp; Loss (yearly)') +
+      '<p class="sub door-tip">Drag a table sideways to see older periods · click the space between the two panels (or press Esc) to close.</p>';
+  }
+  function doorStart(sym, door) {
+    if (!SB.fin) return;
+    var q = $('#door-fin-q', door), y = $('#door-fin-y', door), note = $('#door-note', door);
+    finLoad(sym).then(function (r) {
+      if (!door.isConnected || !q.isConnected || q.getAttribute('data-fin-sym') !== sym) return;
+      finRender(q, sym, r, 'q', { note: note });
+      finRender(y, sym, r, 'y', { note: note.innerHTML ? null : note });
+    });
+  }
+  if (window.matchMedia) {
+    var doorMq = window.matchMedia(DOOR_MQ);
+    var doorFlip = function () {          // the window got wider / narrower while a stock is open: open it the other way
+      var dr = $('#drawer');
+      if (dr && !dr.hidden && dr._sym && dr.classList.contains('doors') !== doorMq.matches) openStock(dr._sym, dr._opener);
+    };
+    if (doorMq.addEventListener) doorMq.addEventListener('change', doorFlip);
+    else if (doorMq.addListener) doorMq.addListener(doorFlip);
+  }
+  /** Mouse drag pans a wide table sideways (touch screens scroll it natively). */
+  function dragScroll(el) {
+    if (!el || el._drag) return;
+    el._drag = true;
+    var x0 = 0, s0 = 0, on = false, moved = false;
+    el.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'mouse' || e.button !== 0 || el.scrollWidth <= el.clientWidth) return;
+      on = true; moved = false; x0 = e.clientX; s0 = el.scrollLeft;
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (!on) return;
+      var dx = e.clientX - x0;
+      if (!moved && Math.abs(dx) < 4) return;
+      if (!moved) { moved = true; el.classList.add('dragging'); try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } }
+      el.scrollLeft = s0 - dx;
+    });
+    var stop = function () { on = false; el.classList.remove('dragging'); };
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointercancel', stop);
+  }
 
   // ---------- 5 years of results from NSE's XBRL filings (owner, 18-Nov-2026: "a table like Screener.in") ----------
   // The laptop reads the filings (xbrl_history.py), the sheet keeps one table a stock (tab Financials); the stock window
@@ -853,8 +919,11 @@
     var t = SB.fin.cell(v, kind);
     return '<td' + (isNum(v) && v < 0 ? ' class="neg"' : '') + '>' + (t || '<span class="sub">–</span>') + '</td>';
   }
-  function finRender(box, sym, res, kind) {
+  /** opt.note: an element that gets the note line instead of the table's own (null = no note line - the two doors) */
+  function finRender(box, sym, res, kind, opt) {
+    opt = opt || {};
     var bodyEl = $('.fin-body', box), csvBtn = $('[data-fin-csv]', box);
+    if (opt.note && (res.error || !res.fin)) opt.note.textContent = '';
     if (res.error) {
       csvBtn.hidden = true;
       bodyEl.innerHTML = '<p class="sub">' + (res.error === 'local'
@@ -876,8 +945,9 @@
       var f = v.flags[i];
       return '<th scope="col"' + (f ? ' data-tip="' + (f === 'c' ? 'From a later filing\'s comparison column (this period has no filing of its own in the 5 years read)'
         : f === 'q' ? 'The sum of its 4 quarters (no yearly figures were read for this year)'
+        : f === 'r' ? 'From screener.in - NSE has no filing figures for this period (for example before the company listed)'
         : (v.basis === 'C' ? 'Standalone' : 'Consolidated') + ' filing - the stock\'s own basis has none for this period') + '"' : '') + '>' +
-        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 'q' ? '<sup>Σ</sup>' : f === 's' ? '<sup>' + (v.basis === 'C' ? 'S' : 'C') + '</sup>' : '') + '</th>';
+        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 'q' ? '<sup>Σ</sup>' : f === 'r' ? '<sup>sc</sup>' : f === 's' ? '<sup>' + (v.basis === 'C' ? 'S' : 'C') + '</sup>' : '') + '</th>';
     }).join('') + '</tr>';
     var rows = v.rows.map(function (r) {
       return '<tr class="fin-' + r.k + '"><th scope="row">' + esc(r.label) + '</th>' + r.vals.map(function (x) { return finCellHtml(x, r.kind); }).join('') + '</tr>';
@@ -889,15 +959,20 @@
     };
     rows.push(gRow('Sales growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gSales));
     rows.push(gRow('Profit growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gNp));
-    bodyEl.innerHTML = '<p class="sub fin-note">' + (v.basis === 'C' ? 'Consolidated' : 'Standalone') + ' figures, Rs crore, from the company\'s NSE filings' +
+    var flags = opt.note ? (SB.fin.view(res.fin, 'q') || { flags: [] }).flags.concat((SB.fin.view(res.fin, 'y') || { flags: [] }).flags) : v.flags;
+    var noteHtml = (v.basis === 'C' ? 'Consolidated' : 'Standalone') + ' figures, Rs crore, from the company\'s NSE filings' +
+      (flags.indexOf('r') >= 0 ? ' and screener.in' : '') +
       (res.kept ? ' (the copy kept on this device - could not refresh just now)' : '') +
-      (v.flags.indexOf('c') >= 0 ? ' · <sup>*</sup> = a later filing\'s comparison column' : '') +
-      (v.flags.indexOf('q') >= 0 ? ' · <sup>Σ</sup> = the sum of its 4 quarters' : '') +
-      (v.note ? ' · ' + esc(v.note) : '') + '</p>' +
+      (flags.indexOf('c') >= 0 ? ' · <sup>*</sup> = a later filing\'s comparison column' : '') +
+      (flags.indexOf('q') >= 0 ? ' · <sup>Σ</sup> = the sum of its 4 quarters' : '') +
+      (flags.indexOf('r') >= 0 ? ' · <sup>sc</sup> = screener.in\'s figures (no NSE filing for it, e.g. before the listing)' : '') +
+      (v.note ? ' · ' + esc(v.note) : '');
+    if (opt.note) opt.note.innerHTML = noteHtml;
+    bodyEl.innerHTML = (opt.note === undefined ? '<p class="sub fin-note">' + noteHtml + '</p>' : '') +
       '<div class="fin-scroll"><table class="fin-t" aria-label="' + esc(sym) + ' ' + (kind === 'y' ? 'yearly' : 'quarterly') + ' results">' +
       '<thead>' + head + '</thead><tbody>' + rows.join('') + '</tbody></table></div>';
     var sc = $('.fin-scroll', bodyEl);
-    if (sc) sc.scrollLeft = sc.scrollWidth;          // the newest on the right, like screener.in
+    if (sc) { sc.scrollLeft = sc.scrollWidth; dragScroll(sc); }          // the newest on the right, like screener.in
     csvBtn.onclick = function () { ui.download(sym + '-results-' + (kind === 'y' ? 'yearly' : 'quarterly') + '.csv', ui.toCsv(SB.fin.csv(v, sym))); };
   }
   function finStart(sym, body) {
@@ -925,6 +1000,7 @@
     var dr = $('#drawer');
     if (dr.hidden) return;
     dr.hidden = true;
+    dr._sym = null;
     document.body.style.overflow = '';
     if (dr._opener && dr._opener.focus) dr._opener.focus();
   }

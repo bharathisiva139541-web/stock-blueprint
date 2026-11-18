@@ -174,6 +174,7 @@ import pe_history as PEH      # noqa: E402  (owner, 17-Nov-2026: median PE 1Y / 
 import xbrl_history as XH     # noqa: E402  (owner, 18-Nov-2026: 5 years of quarterly + yearly results from NSE's XBRL files)
 XH.log = lambda m: log(m)
 PEH.log = lambda m: log(m)   # (the module's log at call time - a test's replacement too)
+PEH.ON_PAGE.append(XH.keep_screener)   # screener.in's tables fill the periods NSE has no filing for (18-Nov-2026)
 
 
 def nse_holidays():

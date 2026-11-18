@@ -147,6 +147,18 @@ test('version 2 tables: a year summed from its 4 quarters (flag q), the EPS note
   assert.deepStrictEqual(csv[csv.length - 1], [NOTE]);
 });
 
+test('screener.in\'s figures for the periods NSE has no filing for (flag r) pass the sheet, the api and the page', () => {
+  const T3 = Object.assign({}, TABLE, { y: [Q('Mar 2020', 246, 'r'), Q('Mar 2026', 932, 'x')] });
+  const e = env();
+  e.post({ token: TOKEN, action: 'xbrlhist', op: 'put', items: [{ sym: 'ARSSBL', fin: T3 }] });
+  const s = e.post({ token: FEED, action: 'site', part: 'fin', sym: 'ARSSBL' }).fin;
+  assert.deepStrictEqual([s.y[0][13], s.y[1][13]], ['r', ''], 'r kept, an unknown flag dropped');
+  assert.deepStrictEqual(api.cleanFin(s).y.map((r) => r[13]), ['r', '']);
+  const v = FIN.view(s, 'y');
+  assert.deepStrictEqual(v.flags, ['r', '']);
+  assert.deepStrictEqual(FIN.csv(v, 'ARSSBL').filter((r) => r[0] === 'From')[0], ['From', 'screener.in (no NSE filing figures)', 'its own filing']);
+});
+
 test('the laptop, the sheet, the api and the page agree on the 12 figures in one order', () => {
   const py = fs.readFileSync(path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'xbrl_history.py'), 'utf8');
   const m = /^COLS = \(([^)]*)\)/m.exec(py);
