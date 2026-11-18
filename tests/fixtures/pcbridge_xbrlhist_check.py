@@ -643,6 +643,35 @@ hdfc = {'revenue': 95131.63, 'int_exp': 50667.0, 'opex': 45820.0, 'provisions': 
         'exceptional': -837.06, 'pbt_ord': 27825.0, 'tax': 7125.0, 'pat': 20700.03, 'eps_x': 13.43, 'assoc': 0.0}
 assert X.row_of(hdfc) == [95131.63, 50029.0, -5564.37, -5.8, 34227.06, -837.06, 50667.0, None, 28662.06, 24.9, 21537.09, 13.43], X.row_of(hdfc)
 
+# j) version 4 (the owner's HDFCBANK / BSE check after the dated asks, 18-Nov-2026)
+# BSE Jun 2025: discontinued operations (after tax) + associates' share -> screener.in's Other Income / PBT (115 / 713)
+jun = {'revenue': 958.39, 'expenses': 359.34, 'finance_costs': 0.0, 'depreciation': 26.88, 'other_income': 86.06,
+       'exceptional': 0.0, 'pbt': 685.11, 'tax': 175.18, 'pat': 538.17, 'assoc': 16.29, 'disc': 11.95, 'eps': 13.09}
+assert X.row_of(jun)[4] == 114.3 and X.row_of(jun)[8] == 713.35 and X.row_of(jun)[9] == 24.6, X.row_of(jun)
+assert X.row_of(dict(jun, disc=0.0, pat=526.22))[4] == 102.35, 'associates only'
+assert X.row_of(dict(jun, pat=543.0))[4] == 86.06, 'nothing explains the net profit: nothing added'
+disc_doc = xml('Consolidated', [(date(2026, 7, 1), date(2026, 9, 30), dict(figs(23), ProfitLossFromDiscontinuedOperationsAfterTax=1.5e7))])
+assert X.parse_periods(disc_doc)['periods'][0]['f']['disc'] == 1.5
+# an older file whose figures sit on an instant context, the period stated in DateOfStart / EndOfReportingPeriod
+ctxi = ('<xbrli:context id="OneI"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>'
+        '<xbrli:period><xbrli:instant>2025-09-30</xbrli:instant></xbrli:period><xbrli:scenario><xbrldi:explicitMember '
+        'dimension="a:A">a:One</xbrldi:explicitMember></xbrli:scenario></xbrli:context>')
+ctxd = ('<xbrli:context id="Cf"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>'
+        '<xbrli:period><xbrli:startDate>2025-07-01</xbrli:startDate><xbrli:endDate>2025-09-30</xbrli:endDate></xbrli:period>'
+        '<xbrli:scenario><xbrldi:explicitMember dimension="a:A">a:Two</xbrldi:explicitMember></xbrli:scenario></xbrli:context>')
+head = '<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:a="x">'
+old_doc = (head + ctxi + '<a:DateOfStartOfReportingPeriod contextRef="OneI">2025-07-01</a:DateOfStartOfReportingPeriod>'
+           '<a:DateOfEndOfReportingPeriod contextRef="OneI">2025-09-30</a:DateOfEndOfReportingPeriod>'
+           '<a:RevenueFromOperations contextRef="OneI">1230000000</a:RevenueFromOperations></xbrli:xbrl>').encode()
+po = X.parse_periods(old_doc)
+assert po['periods'][0]['start'] == '2025-07-01' and po['periods'][0]['f'] == {'revenue': 123.0}, po
+assert X.facts_dump(old_doc, '2025-09-30')[-1] == ('RevenueFromOperations', 1230000000.0)
+w = []
+assert X.parse_periods((head + ctxi + ctxd + '<a:Other contextRef="Cf">5</a:Other>'
+                        '<a:RevenueFromOperations contextRef="OneI">1230000000</a:RevenueFromOperations></xbrli:xbrl>').encode(), w)['periods'] == []
+assert w == ['none of the figures we know is in a 3- or 12-month period (RevenueFromOperations: context OneI = instant 2025-09-30, '
+             '1.5 member(s))'], w
+
 # i) NSE's integrated list gives the newest 20 filings only (owner's HDFCBANK Mar 2025, on NSE's page but not read):
 #    a full page is asked again half a year at a time, back to the start of integrated filing
 CAPR = []
