@@ -58,3 +58,5 @@ pcbridge/ScreenerBridge/scan_rules.json
 pcbridge/ScreenerBridge/nsepe_state.json
 pcbridge/ScreenerBridge/eps_history.json
 pcbridge/ScreenerBridge/histpe_state.json
+# NSE XBRL result filings of 5 years (18-Nov-2026) - kept on the laptop
+pcbridge/ScreenerBridge/xbrl_data/

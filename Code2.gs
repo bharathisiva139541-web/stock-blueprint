@@ -14660,3 +14660,124 @@ function ab_hpeMainWrite_(out) {
   try { formulas = ab_hpeEnsureFormulas_(ab_getMainLayout_()); } catch (e) { formulas = { error: e.message }; }
   return { rows: rows, added: added, formulas: formulas };
 }
+
+
+/*****************************************************************
+ * FINANCIALS - 5 YEARS OF QUARTERLY + YEARLY RESULTS FROM NSE XBRL (owner, 18-Nov-2026)
+ * -----------------------------------------------------------------
+ * "if we download all XBRL file from NSE for upto 5 years, can we able to build a table like Screener.in in our
+ * website?" -> "yes, முதலில் Quarterly + வருட P&L மட்டும் போதுமா, yes". The laptop (pcbridge/ScreenerBridge/
+ * xbrl_history.py) reads every Main stock's NSE result filings of 5 years and posts each stock's table here -
+ * doPost action 'xbrlhist': op 'syms' = Main's symbols; op 'put' {items: [{sym, fin}]} -> hidden tab Financials (one
+ * row a stock, the table as JSON). The website asks for ONE stock's table when its window opens (doPost action 'site'
+ * part 'fin' + sym = ab_finForSite_, through Vercel api/financials).
+ * fin = {b: 'C'|'S', q: [[label 'Sep 2026', 12 numbers (AB_FIN_COLS), flag ''|'c'|'s'], ...] oldest first, y: [...],
+ * files, at}.
+ *****************************************************************/
+const AB_FIN_SHEET = 'Financials';
+const AB_FIN_HEADERS = ['Symbol', 'Basis', 'Quarters', 'Years', 'Newest Quarter', 'Table Made', 'Received', 'Data (JSON)'];
+const AB_FIN_COLS = ['rev', 'exp', 'op', 'opm', 'oi', 'exc', 'int', 'dep', 'pbt', 'taxp', 'np', 'eps'];
+const AB_FIN_MAX_ITEMS = 200;
+const AB_FIN_MAX_CHARS = 45000;
+const AB_FIN_LABEL_RE = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}$/;
+
+function ab_xhFromBridge_(req) {
+  const op = String(req.op || '');
+  if (op === 'syms') {
+    const layout = ab_getMainLayout_();
+    const seen = {}, out = [];
+    for (let r = layout.headerRowIdx + 1; r < layout.data.length; r++) {
+      const s = String(layout.data[r][layout.symbol] || '').trim().toUpperCase();
+      if (s && !seen[s]) { seen[s] = true; out.push(s); }
+    }
+    return { ok: true, syms: out };
+  }
+  if (op === 'put') return ab_finPut_(req.items);
+  return { ok: false, error: 'unknown op' };
+}
+
+/** A table from the laptop checked and made plain (numbers or null, known labels / flags) -> the table or null. */
+function ab_finClean_(fin) {
+  if (!fin || typeof fin !== 'object') return null;
+  const rows = function (a, max) {
+    if (!Array.isArray(a)) return [];
+    const out = [];
+    a.slice(-max).forEach(function (r) {
+      if (!Array.isArray(r) || !AB_FIN_LABEL_RE.test(String(r[0]))) return;
+      const vals = [];
+      for (let i = 1; i <= AB_FIN_COLS.length; i++) {
+        const n = Number(r[i]);
+        vals.push(r[i] === null || r[i] === undefined || r[i] === '' || typeof r[i] === 'boolean' || !isFinite(n) ? null : Math.round(n * 100) / 100);
+      }
+      const flag = String(r[AB_FIN_COLS.length + 1] || '');
+      out.push([String(r[0])].concat(vals, [/^[cs]$/.test(flag) ? flag : '']));
+    });
+    return out;
+  };
+  const q = rows(fin.q, 40), y = rows(fin.y, 12);
+  if (!q.length && !y.length) return null;
+  return { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: Math.max(0, Math.round(Number(fin.files) || 0)),
+    at: /^\d{4}-\d{2}-\d{2}$/.test(String(fin.at || '')) ? String(fin.at) : '' };
+}
+
+function ab_finSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_FIN_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AB_FIN_SHEET);
+    sh.getRange(1, 1, 1, AB_FIN_HEADERS.length).setValues([AB_FIN_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** The laptop's tables -> one row a stock (a stock's row replaced, new stocks added at the bottom). */
+function ab_finPut_(items) {
+  if (!Array.isArray(items)) return { ok: false, error: 'no items' };
+  if (items.length > AB_FIN_MAX_ITEMS) return { ok: false, error: 'too many items (' + items.length + ')' };
+  const sh = ab_finSheet_();
+  const last = sh.getLastRow();
+  const at = {};
+  if (last > 1) {
+    sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r, i) {
+      const s = String(r[0] || '').trim().toUpperCase();
+      if (s && at[s] === undefined) at[s] = i + 2;
+    });
+  }
+  const when = Utilities.formatDate(new Date(), AB_TZ, 'dd-MMM-yyyy HH:mm');
+  let stored = 0, bad = 0, next = last + 1;
+  const adds = [];
+  items.forEach(function (it) {
+    const sym = String(it && it.sym || '').trim().toUpperCase();
+    const fin = ab_finClean_(it && it.fin);
+    const text = fin ? JSON.stringify(fin) : '';
+    if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym) || !fin || text.length > AB_FIN_MAX_CHARS) { bad++; return; }
+    const row = [sym, fin.b, fin.q.length, fin.y.length, fin.q.length ? fin.q[fin.q.length - 1][0] : '', fin.at, when, text];
+    if (at[sym]) sh.getRange(at[sym], 1, 1, row.length).setValues([row]);
+    else { adds.push(row); at[sym] = next++; }
+    stored++;
+  });
+  if (adds.length) {
+    sh.getRange(last + 1, 1, adds.length, 1).setNumberFormat('@');
+    sh.getRange(last + 1, 1, adds.length, AB_FIN_HEADERS.length).setValues(adds);
+  }
+  return { ok: true, stored: stored, bad: bad, total: Object.keys(at).length };
+}
+
+/** One stock's table for the website (doPost action 'site' part 'fin'). */
+function ab_finForSite_(sym) {
+  sym = String(sym || '').trim().toUpperCase();
+  if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym)) return { ok: false, error: 'bad symbol' };
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_FIN_SHEET);
+  const last = sh ? sh.getLastRow() : 0;
+  if (last < 2) return { ok: true, sym: sym, fin: null };
+  const syms = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (let i = 0; i < syms.length; i++) {
+    if (String(syms[i][0] || '').trim().toUpperCase() !== sym) continue;
+    let fin = null;
+    try { fin = ab_finClean_(JSON.parse(String(sh.getRange(i + 2, AB_FIN_HEADERS.length).getValue() || ''))); } catch (e) { fin = null; }
+    return { ok: true, sym: sym, fin: fin, cols: AB_FIN_COLS };
+  }
+  return { ok: true, sym: sym, fin: null };
+}

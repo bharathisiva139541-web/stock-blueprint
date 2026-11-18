@@ -413,8 +413,28 @@ def closes_from_cache(lab, syms=None):
     return out, str(meta.get('upto') or '')
 
 
-def compute(prices, recs, upto_iso=''):
-    """-> {SYM: [Median PE 1Y, 3Y, 5Y, Peak PE 5Y, peak day, PE now, TTM EPS, quarterly share %, EPS from, note]}."""
+def merge_xbrl(rec, xq):
+    """A stock's screener.in EPS history + the quarters of NSE's XBRL filings (xbrl_history.py, 18-Nov-2026: 5 years of
+    quarterly EPS) of the same basis -> one record. The screener.in quarters stay (Main's TTM EPS comes from them); the
+    filings add the older quarters (exact 3- / 5-year medians) and a newer one screener.in does not show yet."""
+    if not xq or not xq[1]:
+        return rec
+    basis, qs = xq
+    if rec and rec.get('basis') and basis and rec['basis'] != basis:
+        return rec
+    out = dict(rec or {'src': 'xbrl', 'basis': basis, 'q': [], 'y': [], 'at': 0})
+    have = {r[0] for r in out.get('q') or []}
+    add = [list(r) for r in qs if r[0] not in have]
+    if not add:
+        return rec
+    out['q'] = sorted([list(r) for r in out.get('q') or []] + add)
+    out['xbrl'] = len(add)
+    return out
+
+
+def compute(prices, recs, upto_iso='', xq=None):
+    """-> {SYM: [Median PE 1Y, 3Y, 5Y, Peak PE 5Y, peak day, PE now, TTM EPS, quarterly share %, EPS from, note]}.
+    xq = {SYM: (basis, [[month index, EPS, net profit], ...])} of NSE's XBRL filings (merge_xbrl)."""
     upto = None
     try:
         upto = date.fromisoformat(upto_iso[:10]).toordinal() if upto_iso else None
@@ -423,6 +443,8 @@ def compute(prices, recs, upto_iso=''):
     rows = {}
     for sym in sorted(prices):
         rec = recs.get(sym)
+        if xq:
+            rec = merge_xbrl(rec, xq.get(sym))
         if not rec:
             continue
         first, days, closes = prices[sym]
@@ -432,7 +454,10 @@ def compute(prices, recs, upto_iso=''):
         why = '; '.join('%s: %s' % (k, v) for k, v in st['why'].items())
         note = '; '.join(x for x in (st['note'], why) if x)
         src = ('screener.in page %s' % datetime.fromtimestamp(float(rec.get('at') or 0)).strftime('%d-%m-%Y')
-               if rec.get('src') == 'page' else 'the sheet (quarterly figures only)')
+               if rec.get('src') == 'page' else 'NSE XBRL filings' if rec.get('src') == 'xbrl'
+               else 'the sheet (quarterly figures only)')
+        if rec.get('xbrl') and rec.get('src') != 'xbrl':
+            src += ' + %d quarter(s) from NSE XBRL filings' % rec['xbrl']
         rows[sym] = [st['m'].get('1Y'), st['m'].get('3Y'), st['m'].get('5Y'), st['peak'], st['peakDay'], st['now'],
                      st['ttm'], st['qShare'], src, note[:300]]
         if len(rows) >= MAX_ROWS:
@@ -556,7 +581,7 @@ def backfill(cfg, fetch, sleep, blocked, syms, pages=None, max_s=None, clock=tim
     return read, max(0, len(todo) - done)
 
 
-def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None):
+def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None, xbrl=None):
     """The full round's step: the sheet's stored EPS for stocks not read yet, a few more screener.in pages, then - when the
     Kite cache was rebuilt (the daily scan) or the EPS changed since the last post - every stock's figures to the sheet.
     -> rows sent or None."""
@@ -591,14 +616,20 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
                 log('Historical PE: read %d more screener.in page(s) for the EPS history - %s'
                     % (read, ('%d stock(s) still to read' % left) if left else 'every stock read'))
     save()
-    if not force and st.get('build') == build and float(st.get('posted') or 0) >= S.changed:
+    xch, xq = 0.0, None
+    if xbrl is not None:                       # NSE's XBRL quarters (xbrl_history.hist_quarters)
+        try:
+            xch, xq = xbrl()
+        except Exception as e:
+            log('Historical PE: the NSE XBRL quarters could not be read (%s)' % e)
+    if not force and st.get('build') == build and float(st.get('posted') or 0) >= max(S.changed, xch):
         _save_state(st)
         return None
     if prices is None:
         prices, upto = closes_from_cache(lab)
     recs = {s: r for s, r in S.syms.items() if not r.get('none')}
     t0 = time.time()
-    rows = compute(prices, recs, upto)
+    rows = compute(prices, recs, upto, xq)
     try:
         ans = api(cfg, 'histpe', {'op': 'put', 'upto': upto, 'rows': rows,
                                   'made': datetime.now().isoformat(timespec='seconds')}, tries=2, timeout=240)
@@ -612,7 +643,7 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
                                                          if 'unknown action' in err else ''))
         _save_state(st)
         return None
-    st['build'], st['upto'], st['posted'] = build, upto, max(now, S.changed)
+    st['build'], st['upto'], st['posted'] = build, upto, max(now, S.changed, xch)
     _save_state(st)
     log('Historical PE (prices up to %s): %d stock(s) -> the sheet - 1Y median for %d, 3Y %d, 5Y %d (%.1f s); Main got %s.'
         % (upto, len(rows), sum(1 for r in rows.values() if r[0] is not None),

@@ -54,6 +54,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
   python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
+  python screener_bridge.py xbrlhistcheck SYMBOL ...  5 years of a stock's NSE XBRL result filings: the table + screener.in side by side (nothing sent)
+  python screener_bridge.py xbrlhistory  the NSE XBRL result filings of every Main stock (5 years) now, then the tables -> the sheet
   python screener_bridge.py histpe [PAGES]  Historical PE now: up to PAGES (200) more screener.in pages for the EPS history, then the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
@@ -123,6 +125,8 @@ DEFAULTS = {
     'nse_pe': True,            # NSE's daily PE file: Main's PE where there is no TTM EPS, Industry PE medians
     'pe_history': True,        # median PE 1Y / 3Y / 5Y + the 5-year peak (Kite closes / screener.in EPS) -> Main's columns
     'pe_history_pages_per_run': 40,  # extra screener.in pages a full round for the EPS history (stocks not read yet)
+    'xbrl_history': True,      # 5 years of NSE XBRL result filings per stock (kept in xbrl_data) -> the website's results table
+    'xbrl_history_gap_s': 2.5,       # seconds between two NSE requests of it in the background
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
     'announcements': True,     # when NSE got each company's results (before / during / after market hours)
     'calendar': True,          # once a day: NSE's forthcoming result meetings missing from the Results tab
@@ -167,6 +171,8 @@ import data_place as DP       # noqa: E402  (owner, 14-Nov-2026: the big data on
 import self_update as UPD     # noqa: E402  (owner, 16-Nov-2026: "here after i won't do this job" - updates by itself)
 UPD.log = log
 import pe_history as PEH      # noqa: E402  (owner, 17-Nov-2026: median PE 1Y / 3Y / 5Y + the 5-year peak of every stock)
+import xbrl_history as XH     # noqa: E402  (owner, 18-Nov-2026: 5 years of quarterly + yearly results from NSE's XBRL files)
+XH.log = lambda m: log(m)
 PEH.log = lambda m: log(m)   # (the module's log at call time - a test's replacement too)
 
 
@@ -3963,6 +3969,11 @@ def run_once(cfg):
         release_lock()
 
 
+def round_running():
+    """A full round or a results check holds bridge.lock (this program or another one)."""
+    return os.path.exists(LOCK_PATH) and not lock_is_stale()
+
+
 def histpe_step(cfg, pages=None, max_s=None, force=False):
     """Historical PE (pe_history.py): the EPS history of the stocks not read yet (a few screener.in pages a round), then
     the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet when the Kite candles or the EPS changed. Never
@@ -3970,7 +3981,8 @@ def histpe_step(cfg, pages=None, max_s=None, force=False):
     if not cfg.get('pe_history', True):
         return None
     try:
-        return PEH.step(cfg, api, itd.backtest_lab, fetch_page, polite_sleep, Blocked, pages=pages, max_s=max_s, force=force)
+        return PEH.step(cfg, api, itd.backtest_lab, fetch_page, polite_sleep, Blocked, pages=pages, max_s=max_s, force=force,
+                        xbrl=XH.hist_quarters)
     except Exception as e:                      # never stops a round
         log('Historical PE: %s' % e)
         return None
@@ -4204,6 +4216,7 @@ def use_data_place(cfg):
     is still waiting else None)."""
     base, pending = DP.current(cfg, HERE)
     DP.apply(base, itd)
+    XH.DIR = os.path.join(base, 'xbrl_data')       # the NSE XBRL files (kept) live with the other big data
     return base, pending
 
 
@@ -4218,7 +4231,7 @@ def data_start(cfg):
     return use_data_place(cfg)[0]
 
 
-DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab')    # the commands that read / write the big data
+DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck')    # the commands that read / write the big data
 
 
 def cmd_datafolder(cfg, args=(), ask=input, out=print):
@@ -4293,6 +4306,7 @@ def run_after_login(cfg):
     lab.scan_at = lambda: (itd.scan_saved() or {}).get('at')   # ... and hands over the daily scan's rules from its page
     lab.scan_save = itd.save_scan
     updater = UPD.Updater(HERE)  # GitHub's newest version -> this folder + the sheet's code (16-Nov-2026), its own thread
+    xhist = XH.Worker()          # 5 years of NSE XBRL result filings, a little at a time (18-Nov-2026), its own thread
 
     def busy():
         return bool(runner.busy() or runner.live_busy() or lab.running.is_set() or lab.pdf_jobs or
@@ -4337,6 +4351,11 @@ def run_after_login(cfg):
                 log('Backtest Lab: on - runs from the website\'s Backtest Lab page are done on this computer.')
         except Exception as e:
             log('Backtest Lab: could not start - %s' % e)
+        # NSE's XBRL result filings of the last 5 years (owner, 18-Nov-2026) - paced, never while a round / results check runs
+        try:
+            xhist.maybe_start(cfg, api, round_running)
+        except Exception as e:
+            log('NSE XBRL history: could not start - %s' % e)
         # Kite live prices on trading days 09:10-15:35 (owner, 08-Nov-2026: start it every day by itself) -> the "Kite Live" tab
         try:
             runner.maybe_start_live(cfg, api, nse_holidays(), online=internet_ok)
@@ -4522,6 +4541,18 @@ def main(argv):
             PEH.save()
             release_lock()
         return 0 if n is not None else 1
+    if cmd == 'xbrlhistcheck':
+        syms = [a for a in argv[2:] if a.strip()] or ['TCS']
+        print('NSE XBRL history check - 5 years of result filings, the table and screener.in side by side (nothing is sent)')
+        return XH.check(cfg, syms, out=print)
+    if cmd == 'xbrlhistory':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        print('NSE XBRL history: 5 years of quarterly results of every Main stock (files kept in %s).' % XH.DIR)
+        print('Stop any time with Ctrl+C or by closing this window - the next run carries on where it stopped.')
+        res = XH.run_all(dict(cfg, xbrl_history=True), api, round_running, XH.CMD_GAP_S, out=log, what='XbrlHistoryNow')
+        return 0 if res is not None else 1
     if cmd == 'eod':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
@@ -4647,6 +4678,10 @@ def main(argv):
         return 0
     print(__doc__)
     return 2
+
+
+XH.bind(session=nse_session, get=nse_get, records=ipo_records, facts=XBRL_FACTS, texts=XBRL_TEXTS, page=XBRL_PAGE,
+        pid_alive=_pid_alive, screener=lambda cfg, sym, cons=True: fetch_page(cfg, sym, cons), screener_q=screener_quarters)
 
 
 if __name__ == '__main__':

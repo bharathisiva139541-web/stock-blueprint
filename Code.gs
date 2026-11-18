@@ -9025,6 +9025,9 @@ function doPost(e) {
     if (req.action === 'histpe') {
       return ab_bridgeJson_(ab_histPeFromBridge_(req));    // Historical PE from the laptop -> PE_History + Main (Code2.gs)
     }
+    if (req.action === 'xbrlhist') {
+      return ab_bridgeJson_(ab_xhFromBridge_(req));        // 5 years of NSE XBRL results from the laptop -> Financials (Code2.gs)
+    }
     if (req.action === 'hist') {
       return ab_bridgeJson_(ab_h60FromBridge_(req));
     }
@@ -9229,6 +9232,8 @@ function ab_feedSite_(req) {
   const real = ab_feedToken_(false);
   if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
   const part = req.part;
+  // one stock's 5-year results table (Financials tab, from the laptop's NSE XBRL files - 18-Nov-2026), asked when its window opens
+  if (part === 'fin') return ab_bridgeJson_(ab_finForSite_(req.sym));
   if (AB_SITE_FEED_PARTS.indexOf(part) === -1) return ab_bridgeJson_({ ok: false, error: 'unknown part' });
   try { ab_siteFeedTriggerCheck_(); } catch (e) { /* never break the answer over the trigger */ }
   try {

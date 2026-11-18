@@ -1277,6 +1277,22 @@ a.sg-step:hover { text-decoration: none; border-color: rgba(var(--accent-rgb), 0
 .kv dt { color: var(--muted); font-size: 12px; }
 .kv dd { margin: 2px 0 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+/* the stock window's 5-year results table (NSE XBRL filings, 18-Nov-2026) */
+.fin { margin-top: 16px; }
+.fin-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fin-head h3 { font-size: 15px; margin: 0; flex: 1 1 auto; }
+.fin-kind { margin: 0; }
+.fin-note { margin: 6px 0; font-size: 12px; }
+.fin-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; max-width: 100%; }
+.fin-t { border-collapse: separate; border-spacing: 0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-t th, .fin-t td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+.fin-t thead th { color: var(--muted); font-weight: 600; background: var(--surface); }
+.fin-t th[scope="row"] { position: sticky; left: 0; z-index: 1; text-align: left; background: var(--card-bg); color: var(--ink-2); font-weight: 600; }
+.fin-t thead th:first-child { position: sticky; left: 0; z-index: 2; }
+.fin-t td.neg { color: var(--down); }
+.fin-t tr.fin-np th, .fin-t tr.fin-np td, .fin-t tr.fin-op th, .fin-t tr.fin-op td { font-weight: 600; }
+.fin-t tr.fin-g th { font-weight: 500; color: var(--muted); }
+.fin-t sup { color: var(--muted); font-size: 9px; margin-left: 1px; }
 
 /* industry explorer (web/pages/industry-explorer.js) */
 .chip:disabled { opacity: 0.45; cursor: not-allowed; }
