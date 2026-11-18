@@ -875,8 +875,9 @@
     var head = '<tr><th scope="col"></th>' + v.labels.map(function (l, i) {
       var f = v.flags[i];
       return '<th scope="col"' + (f ? ' data-tip="' + (f === 'c' ? 'From a later filing\'s comparison column (this period has no filing of its own in the 5 years read)'
+        : f === 'q' ? 'The sum of its 4 quarters (no yearly figures were read for this year)'
         : (v.basis === 'C' ? 'Standalone' : 'Consolidated') + ' filing - the stock\'s own basis has none for this period') + '"' : '') + '>' +
-        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 's' ? '<sup>' + (v.basis === 'C' ? 'S' : 'C') + '</sup>' : '') + '</th>';
+        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 'q' ? '<sup>Σ</sup>' : f === 's' ? '<sup>' + (v.basis === 'C' ? 'S' : 'C') + '</sup>' : '') + '</th>';
     }).join('') + '</tr>';
     var rows = v.rows.map(function (r) {
       return '<tr class="fin-' + r.k + '"><th scope="row">' + esc(r.label) + '</th>' + r.vals.map(function (x) { return finCellHtml(x, r.kind); }).join('') + '</tr>';
@@ -890,7 +891,9 @@
     rows.push(gRow('Profit growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gNp));
     bodyEl.innerHTML = '<p class="sub fin-note">' + (v.basis === 'C' ? 'Consolidated' : 'Standalone') + ' figures, Rs crore, from the company\'s NSE filings' +
       (res.kept ? ' (the copy kept on this device - could not refresh just now)' : '') +
-      (v.flags.some(Boolean) ? ' · <sup>*</sup> = a later filing\'s comparison column' : '') + '</p>' +
+      (v.flags.indexOf('c') >= 0 ? ' · <sup>*</sup> = a later filing\'s comparison column' : '') +
+      (v.flags.indexOf('q') >= 0 ? ' · <sup>Σ</sup> = the sum of its 4 quarters' : '') +
+      (v.note ? ' · ' + esc(v.note) : '') + '</p>' +
       '<div class="fin-scroll"><table class="fin-t" aria-label="' + esc(sym) + ' ' + (kind === 'y' ? 'yearly' : 'quarterly') + ' results">' +
       '<thead>' + head + '</thead><tbody>' + rows.join('') + '</tbody></table></div>';
     var sc = $('.fin-scroll', bodyEl);

@@ -90,8 +90,10 @@ const FIN_Q = ['Dec 2025', 'Mar 2026', 'Jun 2026', 'Sep 2026', 'Dec 2026'].map((
   [l, 100 + i * 10, 80 + i * 5, 20 + i * 5, Math.round((20 + i * 5) / (100 + i * 10) * 1000) / 10, 5, i === 1 ? -3.5 : null, 2, 3, 20 + i * 5,
     25, 15 + i * 4, 1.5 + i * 0.4, i === 0 ? 'c' : '']);
 FIN_Q.unshift(['Sep 2025', 90, 75, 15, 16.7, 5, null, 2, 3, 15, 25, 11.25, 1.13, '']);
-const FIN_Y = [['Mar 2025', 350, 290, 60, 17.1, 20, null, 8, 12, 60, 25, 45, 4.5, 'c'], ['Mar 2026', 410, 330, 80, 19.5, 20, -3.5, 8, 12, 76.5, 25, 57.4, 5.74, '']];
-const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18' };
+const FIN_Y = [['Mar 2024', 300, 250, 50, 16.7, 20, null, 8, 12, 50, 25, 37.5, 3.75, 'q'],
+  ['Mar 2025', 350, 290, 60, 17.1, 20, null, 8, 12, 60, 25, 45, 4.5, 'c'], ['Mar 2026', 410, 330, 80, 19.5, 20, -3.5, 8, 12, 76.5, 25, 57.4, 5.74, '']];
+const FIN_NOTE = "EPS adjusted for a bonus / split (today's share count): up to Mar 2025 divided by 3";
+const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18', note: FIN_NOTE };
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -1323,6 +1325,7 @@ function check(name, fn) {
     });
     await p.click('#drawer-fin [data-fin-kind="y"]');
     const finY = await p.$$eval('#drawer-fin .fin-t thead th', (t) => t.map((x) => x.textContent));
+    const finYNote = await p.$eval('#drawer-fin .fin-note', (x) => x.textContent);
     const kept = await p.evaluate(() => localStorage.getItem('sb:fin:kind'));
     await p.click('#drawer-fin [data-fin-kind="q"]');
     const none = await p.evaluate((sym) => new Promise((ok) => {
@@ -1344,7 +1347,9 @@ function check(name, fn) {
     assert.ok(fin.rows['Sales growth YoY (same quarter)'] && /\+44%/.test(fin.rows['Sales growth YoY (same quarter)'][4]), JSON.stringify(fin.rows));
     assert.match(fin.note, /^Consolidated figures, Rs crore, from the company's NSE filings · \* = a later filing's comparison column/);
     assert.ok(fin.csv && fin.scrolled && fin.panelOk, JSON.stringify(fin));
-    assert.deepStrictEqual(finY, ['', 'Mar 2025*', 'Mar 2026']);
+    assert.ok(fin.note.indexOf(' · ' + FIN_NOTE) > 0, 'the EPS note under the table: ' + fin.note);
+    assert.deepStrictEqual(finY, ['', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'Σ = a year summed from its 4 quarters');
+    assert.match(finYNote, /\* = a later filing's comparison column · Σ = the sum of its 4 quarters · EPS adjusted/);
     assert.strictEqual(kept, '"y"', 'the choice is kept');
     assert.match(none, /No table for .* yet - your laptop reads/);
 

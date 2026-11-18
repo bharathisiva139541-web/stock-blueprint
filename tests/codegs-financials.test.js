@@ -124,6 +124,29 @@ test('web/lib/fin.js: rows like screener.in (empty rows left out), flags, growth
   assert.deepStrictEqual(csv[csv.length - 1], ['From', 'a later filing (comparison column)', 'its own filing']);
 });
 
+test('version 2 tables: a year summed from its 4 quarters (flag q), the EPS note, a bank\'s row names - sheet, api, page', async () => {
+  const NOTE = "EPS adjusted for a bonus / split (today's share count): up to Mar 2025 divided by 3";
+  const T2 = Object.assign({}, TABLE, { y: [Q('Mar 2025', 380, 'q'), Q('Mar 2026', 400)], note: NOTE, k: 'bank' });
+  const e = env();
+  e.post({ token: TOKEN, action: 'xbrlhist', op: 'put', items: [{ sym: 'TCS', fin: T2 },
+    { sym: 'BSE', fin: Object.assign({}, TABLE, { note: '=HYPERLINK("http://x")<b>', k: 'insurer' }) }] });
+  const s = e.post({ token: FEED, action: 'site', part: 'fin', sym: 'TCS' }).fin;
+  assert.deepStrictEqual([s.y[0][13], s.y[1][13], s.note, s.k], ['q', '', NOTE, 'bank']);
+  const b = e.post({ token: FEED, action: 'site', part: 'fin', sym: 'BSE' }).fin;
+  assert.strictEqual(b.note, 'HYPERLINK(http://x)b', 'no formula, no markup - plain words only');
+  assert.strictEqual(b.k, undefined);
+  const c = api.cleanFin(Object.assign({}, T2, { note: '<script>x</script>' }));
+  assert.deepStrictEqual([c.y[0][13], c.note, c.k], ['q', 'scriptx/script', 'bank']);
+  assert.strictEqual(api.cleanFin(TABLE).note, undefined);
+  const v = FIN.view(T2, 'y');
+  assert.deepStrictEqual([v.flags, v.note, v.bank], [['q', ''], NOTE, true]);
+  assert.deepStrictEqual(v.rows.slice(0, 4).map((r) => r.label), ['Revenue', 'Expenses', 'Financing Profit', 'Financing Margin %']);
+  assert.strictEqual(FIN.view(TABLE, 'q').rows[0].label, 'Sales', 'other companies keep screener.in\'s usual names');
+  const csv = FIN.csv(v, 'TCS');
+  assert.deepStrictEqual(csv[csv.length - 2], ['From', 'the sum of its 4 quarters', 'its own filing']);
+  assert.deepStrictEqual(csv[csv.length - 1], [NOTE]);
+});
+
 test('the laptop, the sheet, the api and the page agree on the 12 figures in one order', () => {
   const py = fs.readFileSync(path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'xbrl_history.py'), 'utf8');
   const m = /^COLS = \(([^)]*)\)/m.exec(py);

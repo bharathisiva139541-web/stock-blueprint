@@ -3,7 +3,7 @@
 // reads NSE's XBRL result filings (pcbridge/ScreenerBridge/xbrl_history.py, 18-Nov-2026) and posts each stock's table to
 // the hidden tab Financials; Code.gs doPost action 'site' part 'fin' answers one stock (the same read-only token as the
 // site feed). Asked by the website when a stock's window opens - public company figures, no personal data.
-// -> 200 { ok:true, sym, fin: {b, q, y, files, at} | null, cols, fetchedAt }
+// -> 200 { ok:true, sym, fin: {b, q, y, files, at, note?, k?} | null, cols, fetchedAt }
 //    200 { ok:false, sym, message }   (not configured / the sheet failed)
 //    400 { error } for a bad symbol
 (function () {
@@ -35,14 +35,19 @@
       }).slice(-40).map(function (r) {
         const out = [String(r[0])];
         for (let i = 1; i <= COLS.length; i++) out.push(typeof r[i] === 'number' && isFinite(r[i]) ? r[i] : null);
-        out.push(r[COLS.length + 1] === 'c' || r[COLS.length + 1] === 's' ? r[COLS.length + 1] : '');
+        const f = r[COLS.length + 1];
+        out.push(f === 'c' || f === 's' || f === 'q' ? f : '');
         return out;
       });
     };
     const q = rows(fin.q), y = rows(fin.y);
     if (!q.length && !y.length) return null;
-    return { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: typeof fin.files === 'number' ? fin.files : 0,
+    const out = { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: typeof fin.files === 'number' ? fin.files : 0,
       at: /^\d{4}-\d{2}-\d{2}$/.test(String(fin.at || '')) ? fin.at : '' };
+    const note = String(fin.note || '').replace(/[^A-Za-z0-9 .,;:()'\/%-]/g, '').slice(0, 200).trim();
+    if (note) out.note = note;
+    if (fin.k === 'bank') out.k = 'bank';
+    return out;
   }
 
   /** deps (tests): { env, fetch, now, cache, timeoutMs } */

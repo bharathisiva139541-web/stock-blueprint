@@ -4,13 +4,16 @@
    and api/financials?sym= hands it to the stock window.
 
    fin = { b: 'C' | 'S', q: [[label, rev, exp, op, opm, oi, exc, int, dep, pbt, taxp, np, eps, flag], ...] oldest first,
-           y: [...same, years], files, at }   flag '' = the filing's own period, 'c' = a later filing's comparison column,
-                                                's' = the other basis's filing
+           y: [...same, years], files, at, note?, k? }   flag '' = the filing's own period, 'c' = a later filing's
+                                                comparison column, 's' = the other basis's filing, 'q' = a year with no
+                                                yearly figures read = the sum of its 4 quarters; note = EPS adjusted for
+                                                a bonus / split; k 'bank' = screener.in's bank rows (Revenue, Financing
+                                                Profit, Financing Margin %)
 
    SB.fin = {
      ROWS                  -> [{k, label, kind 'cr' | 'pct' | 'eps'}] in screener.in's order
-     view(fin, kind)       -> null | { kind, basis, labels, flags, rows: [{k, label, kind, vals}] } (rows with no figure left
-                              out; kind 'q' quarters / 'y' years)
+     view(fin, kind)       -> null | { kind, basis, bank, note, labels, flags, rows: [{k, label, kind, vals}] } (rows with
+                              no figure left out; kind 'q' quarters / 'y' years)
      growth(view, k, lag)  -> [% change vs lag periods before, ...] (lag 4 = a year for quarters, 1 for years)
      cell(v, kind)         -> the text of one figure
      csv(view, sym)        -> [[...], ...] rows for a CSV file
@@ -29,6 +32,7 @@
     { k: 'pbt', label: 'Profit before tax', kind: 'cr' }, { k: 'taxp', label: 'Tax %', kind: 'pct' },
     { k: 'np', label: 'Net Profit', kind: 'cr' }, { k: 'eps', label: 'EPS in Rs', kind: 'eps' }
   ];
+  var BANK = { rev: 'Revenue', op: 'Financing Profit', opm: 'Financing Margin %' };
   var LABEL_RE = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}$/;
 
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
@@ -38,15 +42,16 @@
     var k = kind === 'y' ? 'y' : 'q';
     var src = (Array.isArray(fin[k]) ? fin[k] : []).filter(function (r) { return Array.isArray(r) && LABEL_RE.test(String(r[0])); });
     if (!src.length) return null;
-    var rows = [];
+    var rows = [], bank = fin.k === 'bank';
     ROWS.forEach(function (row, i) {
       var vals = src.map(function (r) { return isNum(r[i + 1]) ? r[i + 1] : null; });
-      if (vals.some(isNum)) rows.push({ k: row.k, label: row.label, kind: row.kind, vals: vals });
+      if (vals.some(isNum)) rows.push({ k: row.k, label: (bank && BANK[row.k]) || row.label, kind: row.kind, vals: vals });
     });
     return {
-      kind: k, basis: fin.b === 'S' ? 'S' : 'C', at: fin.at || '', files: fin.files || 0,
+      kind: k, basis: fin.b === 'S' ? 'S' : 'C', at: fin.at || '', files: fin.files || 0, bank: bank,
+      note: typeof fin.note === 'string' ? fin.note : '',
       labels: src.map(function (r) { return String(r[0]); }),
-      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return f === 'c' || f === 's' ? f : ''; }),
+      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return f === 'c' || f === 's' || f === 'q' ? f : ''; }),
       rows: rows
     };
   }
@@ -75,8 +80,10 @@
     var out = [[(sym || '') + (v.kind === 'y' ? ' - yearly (Rs crore)' : ' - quarterly (Rs crore)')].concat(v.labels)];
     v.rows.forEach(function (r) { out.push([r.label].concat(r.vals.map(function (x) { return isNum(x) ? x : ''; }))); });
     out.push(['From'].concat(v.flags.map(function (f) {
-      return f === 'c' ? 'a later filing (comparison column)' : f === 's' ? (v.basis === 'C' ? 'standalone filing' : 'consolidated filing') : 'its own filing';
+      return f === 'c' ? 'a later filing (comparison column)' : f === 's' ? (v.basis === 'C' ? 'standalone filing' : 'consolidated filing')
+        : f === 'q' ? 'the sum of its 4 quarters' : 'its own filing';
     })));
+    if (v.note) out.push([v.note]);
     return out;
   }
 

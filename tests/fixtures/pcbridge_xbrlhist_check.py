@@ -74,7 +74,11 @@ def xml(nature, periods):
              '<xbrli:context id="I1"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>'
              '<xbrli:period><xbrli:instant>2026-01-01</xbrli:instant></xbrli:period></xbrli:context>',
              '<in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="I1">%s</in-bse-fin:NatureOfReportStandaloneConsolidated>'
-             % nature]
+             % nature,
+             '<xbrli:unit id="INR"><xbrli:measure>iso4217:INR</xbrli:measure></xbrli:unit>',
+             '<xbrli:unit id="INRPerShare"><xbrli:divide><xbrli:unitNumerator><xbrli:measure>iso4217:INR</xbrli:measure>'
+             '</xbrli:unitNumerator><xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator>'
+             '</xbrli:divide></xbrli:unit>']
     for n, (s, e, f) in enumerate(periods):
         cid = 'D%d' % n
         parts.append('<xbrli:context id="%s"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>'
@@ -85,7 +89,8 @@ def xml(nature, periods):
                      '</xbrli:entity><xbrli:period><xbrli:startDate>%s</xbrli:startDate><xbrli:endDate>%s</xbrli:endDate>'
                      '</xbrli:period></xbrli:context>' % (cid, s.isoformat(), e.isoformat()))
         for el, v in f.items():
-            parts.append('<in-bse-fin:%s contextRef="%s" unitRef="INR" decimals="-5">%s</in-bse-fin:%s>' % (el, cid, repr(v), el))
+            unit = 'INRPerShare' if el.startswith('Basic') else 'INR'
+            parts.append('<in-bse-fin:%s contextRef="%s" unitRef="%s" decimals="-5">%s</in-bse-fin:%s>' % (el, cid, unit, repr(v), el))
             parts.append('<in-bse-fin:%s contextRef="%sS" unitRef="INR" decimals="-5">999</in-bse-fin:%s>' % (el, cid, el))
     parts.append('</xbrli:xbrl>')
     return '\n'.join(parts).encode('utf-8')
@@ -187,13 +192,16 @@ def fake_get(opener, url, referer='', timeout=30):
     return 404, b''
 
 
-def screener_page(rows):
-    """A trimmed screener.in page: rows = [(quarter, sales, net profit, eps, opm)]."""
-    head = ''.join('<th>%s</th>' % r[0] for r in rows)
-    line = lambda name, i: '<tr><td>%s</td>%s</tr>' % (name, ''.join('<td>%s</td>' % r[i] for r in rows))
-    return ('<html><section id="quarters"><table><thead><tr><th></th>%s</tr></thead><tbody>%s%s%s%s</tbody></table></section>'
-            '<section id="profit-loss"></section></html>' % (head, line('Sales +', 1), line('Net Profit +', 2),
-                                                           line('EPS in Rs', 3), line('OPM %', 4)))
+def screener_page(rows, years=()):
+    """A trimmed screener.in page: rows / years = [(period, sales, net profit, eps, opm)]."""
+    def table(rs, ttm=False):         # the yearly table ends with a TTM column, like screener.in's
+        head = ''.join('<th>%s</th>' % r[0] for r in rs) + ('<th>TTM</th>' if ttm else '')
+        line = lambda name, i: '<tr><td>%s</td>%s</tr>' % (name, ''.join('<td>%s</td>' % r[i] for r in rs) + ('<td>9</td>' if ttm else ''))
+        return '<table><thead><tr><th></th>%s</tr></thead><tbody>%s%s%s%s</tbody></table>' % (
+            head, line('Sales +', 1), line('Net Profit +', 2), line('EPS in Rs', 3), line('OPM %', 4))
+    return ('<html><section id="quarters">%s</section><section id="profit-loss">%s</section>'
+            '<section id="balance-sheet"><table><tr><th></th><th>Mar 2026</th></tr><tr><td>Sales</td><td>1</td></tr></table>'
+            '</section></html>' % (table(rows), table(years, True) if years else ''))
 
 
 X.bind(session=Opener, get=fake_get, screener=lambda cfg, sym, cons=True: ('ok', screener_page(
@@ -282,11 +290,13 @@ assert X.eps_quarters(t)[0] == 'C' and X.eps_quarters(t)[1][-1] == [2026 * 12 + 
 # ------------------------------------------------------------------ 4. when a stock is read again
 now = time.time()
 assert X.due('NEW', {}, TODAY, now)
-assert not X.due('ABC', {'listed': now, 'table': t}, TODAY, now)
-assert X.due('ABC', {'listed': now - 46 * 86400, 'table': t}, TODAY, now), 'every 45 days (revised filings)'
-assert not X.due('ABC', {'listed': now - 8 * 86400, 'table': t}, date(2027, 2, 18), now), 'Dec 2026 results not due yet (31-Dec + 50 days)'
-assert X.due('ABC', {'listed': now - 8 * 86400, 'table': t}, date(2027, 2, 19), now), 'the next quarter\'s results are due'
-assert not X.due('ABC', {'listed': now - 3 * 86400, 'table': t}, date(2027, 2, 19), now), 'at most once a week'
+LV = X.LIST_VERSION
+assert not X.due('ABC', {'listed': now, 'table': t, 'lv': LV}, TODAY, now)
+assert X.due('ABC', {'listed': now, 'table': t, 'lv': LV - 1}, TODAY, now), 'new listing rules: every stock read again'
+assert X.due('ABC', {'listed': now - 46 * 86400, 'table': t, 'lv': LV}, TODAY, now), 'every 45 days (revised filings)'
+assert not X.due('ABC', {'listed': now - 8 * 86400, 'table': t, 'lv': LV}, date(2027, 2, 18), now), 'Dec 2026 results not due yet (31-Dec + 50 days)'
+assert X.due('ABC', {'listed': now - 8 * 86400, 'table': t, 'lv': LV}, date(2027, 2, 19), now), 'the next quarter\'s results are due'
+assert not X.due('ABC', {'listed': now - 3 * 86400, 'table': t, 'lv': LV}, date(2027, 2, 19), now), 'at most once a week'
 
 # ------------------------------------------------------------------ 5. the whole job: sheet, posts, pauses, NSE refusing
 CALLS = []
@@ -358,9 +368,15 @@ assert X.check({}, ['abc'], out=out.append, today=TODAY) == 0
 text = '\n'.join(out)
 assert 'integrated filing:' in text and 'financial results:' in text and 'Quarterly results (consolidated, Rs crore)' in text, text
 assert 'Profit & Loss (years)' in text and 'OPM %' in text and 'Sep 2026' in text, text
-assert 'Jun 2026  Sales 122.00 | Net Profit 18.75 | EPS 1.88 | OPM % 20.5%' in text, text   # 25 / 122 vs screener.in's 20 %: agrees
+assert '   Jun 2026  4 agree\n' in text, text            # OPM 25 / 122 = 20.5 % vs screener.in's 20 %: agrees
 assert 'compared with screener.in:' in text and 'nothing was sent to the sheet' in text, text
-assert 'Sep 2026  Sales 125.00 (screener.in 130.00)' in text, 'a difference is shown'
+assert 'Sep 2026  0 agree | Sales 125.00 (screener.in 130.00)' in text, 'a difference is shown'
+assert 'quarters: 20 of 20 in the table (Dec 2021 .. Sep 2026) - none missing' in text, text
+assert 'years: Mar 2021 (comparison column), Mar 2022,' in text, text
+# a differing quarter: every kept file's figures of it (the revised filing and the original) + its own elements
+assert "Sep 2026 in each kept file:" in text and text.count("(its own quarter, consolidated, filed 2026-11-14 18:30, revised): Sales 125.00 · Expenses 98.00") == 1, text
+assert 'every figure of Sep 2026 in INTEGRATED_FILING_INDAS_ABC_CR_' in text and 'RevenueFromOperations = 125.0' in text, text
+assert 'BasicEarningsLossPerShare = 2.02' in text, 'EPS as filed, not in crore'
 
 # ------------------------------------------------------------------ 8. Historical PE: the filings' quarters
 PEH = sb.PEH
@@ -388,4 +404,207 @@ with open(sb.LOCK_PATH, 'w') as f:
 assert sb.round_running() is True
 base, _ = sb.use_data_place({'data_folder': ''})
 assert X.DIR == os.path.join(base, 'xbrl_data')
+# ------------------------------------------------------------------ 10. version 2 (the owner's check of TCS / HDFCBANK / BSE)
+X.DIR = os.path.join(TMP, 'xbrl_data')        # section 9 pointed it at the program's own folder
+X.bind(get=fake_get)
+nse = X.Nse(0, nap)
+
+
+def recs(sym, ks, kind='C', urls=None):
+    out = []
+    for k in ks:
+        e = QS[k][1]
+        out.append({'xbrl': (urls or {}).get(k) or url_of(k, kind, sym=sym), 'qe_Date': e.strftime('%d-%b-%Y'),
+                    'consolidated': 'Consolidated' if kind == 'C' else 'Standalone'})
+    return out
+
+
+# a) BSE's 2:1 bonus (3x shares) from Jun 2025: the filings before it give EPS on 10 crore shares, the later ones (and their
+#    comparison columns - restated) on 30 crore -> the table's EPS on today's 30 crore everywhere + a note
+def bon_filing(k):
+    S = 30.0 if k >= 18 else 10.0
+
+    def f(kk):
+        d = figs(kk)
+        d['BasicEarningsLossPerShare'] = round(d['ProfitLossForPeriod'] / 1e7 / S, 2)
+        return d
+
+    def yf(ks):
+        d = year_figs(ks)
+        d['BasicEarningsLossPerShare'] = round(sum(f(x)['BasicEarningsLossPerShare'] for x in ks), 2)
+        return d
+    e = QS[k][1]
+    per = [(qstart(e, 3), e, f(k)), (qstart(QS[k - 1][1], 3), QS[k - 1][1], f(k - 1)), (qstart(QS[k - 4][1], 3), QS[k - 4][1], f(k - 4))]
+    if e.month == 3:
+        per += [(qstart(e, 12), e, yf(range(k - 3, k + 1))), (qstart(QS[k - 4][1], 12), QS[k - 4][1], yf(range(k - 7, k - 3)))]
+    return xml('Consolidated', per)
+
+
+for k in range(8, 24):
+    NSE[url_of(k, sym='BON')] = bon_filing(k)
+LIST['BON'] = ({'data': recs('BON', range(8, 24))}, [])
+tb = X.process_stock(nse, 'BON', TODAY)[0]['table']
+qe = {r[0]: r[12] for r in tb['q']}
+assert qe['Mar 2025'] == 0.63 and qe['Jun 2025'] == 0.62 and qe['Dec 2022'] == 0.63, qe     # 1.88 / 3 and the filed 0.62
+ye_ = {r[0]: r[12] for r in tb['y']}
+assert ye_['Mar 2025'] == 2.51 and ye_['Mar 2026'] == 2.48 and ye_['Mar 2022'] == 2.51, ye_      # 7.52 / 3
+assert tb['note'] == "EPS adjusted for a bonus / split (today's share count): up to Mar 2025 divided by 3", tb['note']
+assert {r[0]: r[11] for r in tb['q']}['Mar 2025'] == 18.75, 'only the EPS changes'
+assert X.eps_quarters(tb)[1][0][1] == 0.63, 'Historical PE gets the adjusted EPS'
+# the share-count steps: a clear ratio only, a period that cannot tell takes the newer one's factor, offsetting steps
+fa, note = X.eps_factors([('q', 100, {'pat': 17.0, 'eps': 1.0}), ('q', 97, {'pat': 10.0, 'eps': 1.0})])
+assert fa == {('q', 100): 1.0, ('q', 97): 1.0} and note == '', 'a merger\'s odd ratio (1.7) is left alone'
+fa, note = X.eps_factors([('q', 100, {'pat': 10.0, 'eps': 10.0}), ('q', 97, {'pat': 10.0, 'eps': 1.0})])
+assert abs(fa[('q', 97)] - 0.1) < 1e-9 and note.endswith('up to Jan 8 multiplied by 10'), (fa, note)   # a reverse split
+fa, note = X.eps_factors([('q', 100, {'pat': 30.0, 'eps': 1.0}), ('q', 97, {'pat': 1.0, 'eps': 0.3}),
+                          ('q', 94, {'pat': 10.0, 'eps': 1.0}), ('q', 91, {'pat': 30.0, 'eps': 1.0}),
+                          ('q', 88, {'pat_owners': 9.0, 'pat': 12.0, 'eps': 0.9})])
+assert [fa[('q', m)] for m in (100, 97, 94, 91, 88)] == [1.0, 1.0, 3.0, 1.0, 3.0], fa
+assert note.endswith('up to Oct 7 divided by 3, up to Apr 7 divided by 3'), note
+
+# b) a year with no yearly figures read = the sum of its 4 quarters (flag 'q'): QQQ's March files carry the quarter only
+def q_filing(k):
+    e = QS[k][1]
+    return xml('Consolidated', [(qstart(e, 3), e, figs(k)), (qstart(QS[k - 1][1], 3), QS[k - 1][1], figs(k - 1)),
+                                (qstart(QS[k - 4][1], 3), QS[k - 4][1], figs(k - 4))])
+
+
+for k in range(4, 24):
+    NSE[url_of(k, sym='QQQ')] = q_filing(k)
+LIST['QQQ'] = ({'data': recs('QQQ', range(4, 24))}, [])
+tq = X.process_stock(nse, 'QQQ', TODAY)[0]['table']
+assert [(r[0], r[-1]) for r in tq['y']] == [('Mar 2022', 'q'), ('Mar 2023', 'q'), ('Mar 2024', 'q'), ('Mar 2025', 'q'),
+                                            ('Mar 2026', 'q')], tq['y']        # Mar 2021: its Jun 2020 quarter is not known
+yq = {r[0]: r for r in tq['y']}['Mar 2026']
+assert yq[1] == sum(100 + k for k in (18, 19, 20, 21)) and yq[10] == 25.0 and yq[11] == 75.0 and yq[12] == 7.52, yq
+assert yq[4] == round(100.0 / yq[1] * 100, 1), 'OPM of the year = its operating profit / its sales'
+
+# c) the March quarter: the quarter file has no year -> the year file (cumulative) of the same quarter is read too; then no more
+e21 = QS[21][1]
+MA = url_of(21, sym='MAR')
+NSE[MA] = q_filing(21)
+MB = MA.replace('_WEB.xml', '_CUM_WEB.xml').replace('10052026', '12052026')
+MC = MA.replace('_WEB.xml', '_CUM_WEB.xml').replace('10052026', '11052026')
+NSE[MB] = xml('Consolidated', [(qstart(e21, 12), e21, year_figs(range(18, 22))),
+                               (qstart(QS[17][1], 12), QS[17][1], year_figs(range(14, 18)))])
+NSE[MC] = NSE[MB]
+for k in (22, 23):
+    NSE[url_of(k, sym='MAR')] = filing(k)
+cum = lambda u, c: {'xbrl': u, 'qe_Date': '31-Mar-2026', 'consolidated': 'Consolidated', 'cumulative': c}
+LIST['MAR'] = ({'data': recs('MAR', (22, 23)) + [cum(MC, 'Cumulative'), cum(MA, 'Non-cumulative'), cum(MB, 'Cumulative')]}, [])
+before = len(REQ)
+tm = X.process_stock(nse, 'MAR', TODAY)[0]['table']
+asked = REQ[before:]
+assert MA in asked and MB in asked and MC not in asked, asked
+assert [(r[0], r[-1]) for r in tm['y']] == [('Mar 2025', 'c'), ('Mar 2026', '')], tm['y']
+# at most QUARTER_READS downloads for one quarter
+many = [MA.replace('_WEB.xml', '_%d_WEB.xml' % n) for n in range(5)]
+for u in many:
+    NSE[u] = q_filing(21)
+LIST['MR2'] = ({'data': [cum(u, 'Non-cumulative') for u in many]}, [])
+before = len(REQ)
+X.process_stock(nse, 'MR2', TODAY)
+assert len([u for u in REQ[before:] if u in many]) == X.QUARTER_READS == 3
+
+# d) files that cannot be used: remembered with the reason; tried again only when the reason may pass
+F404 = url_of(20, sym='FAIL')
+FHTML = url_of(21, sym='FAIL')
+NSE[FHTML] = b'<!DOCTYPE html><html><body>Access Denied</body></html>'
+FDIM = url_of(22, sym='FAIL')
+NSE[FDIM] = filing(22).replace(b'<xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>',
+                               b'<xbrli:identifier scheme="x">X</xbrli:identifier><xbrli:segment><xbrldi:explicitMember '
+                               b'dimension="in-bse-fin:NatureAxis">in-bse-fin:ConsolidatedMember</xbrldi:explicitMember>'
+                               b'</xbrli:segment></xbrli:entity>')
+F6M = url_of(19, sym='FAIL')
+NSE[F6M] = xml('Consolidated', [(qstart(QS[19][1], 6), QS[19][1], figs(19))])
+NSE[url_of(23, sym='FAIL')] = filing(23)
+LIST['FAIL'] = ({'data': recs('FAIL', (19, 20, 21, 22, 23))}, [])
+sf = X.process_stock(nse, 'FAIL', TODAY)[0]
+fl = {u: sf['files'][X.file_name(u)] for u in (F404, FHTML, FDIM, F6M)}
+assert (fl[F404]['fail'], fl[F404]['retry']) == ('NSE answered HTTP 404', False), fl[F404]
+assert fl[FHTML]['fail'] == 'a web page came back, not the XML file' and fl[FHTML]['retry'] is True
+assert not os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FHTML))), 'a web page is not kept as a filing'
+assert fl[FDIM]['fail'].startswith('no context without a segment / scenario') and 'ConsolidatedMember' in fl[FDIM]['fail'], fl[FDIM]
+assert os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FDIM))), 'the filing itself is kept (a later rule may read it)'
+assert fl[F6M]['fail'] == 'no 3- or 12-month period in it (periods: 2025-04-01..2025-09-30)' and fl[F6M]['retry'] is False, fl[F6M]
+bq = {r[0]: r[-1] for r in sf['table']['q']}
+assert bq.get('Jun 2026') == 'c' and bq.get('Sep 2025') == 'c' and 'Dec 2025' not in bq and 'Mar 2026' not in bq, bq
+assert sf['tried']['2025-12-31'] == [[X.file_name(F404), 'NSE answered HTTP 404']], sf['tried']
+before = len(REQ)
+X.process_stock(nse, 'FAIL', TODAY)
+assert [u for u in REQ[before:] if u.endswith('.xml')] == [FHTML], 'only the web page is asked again'
+NSE[FHTML] = filing(21)
+sf = X.process_stock(nse, 'FAIL', TODAY)[0]
+assert 'fail' not in sf['files'][X.file_name(FHTML)] and 'Mar 2026' in {r[0] for r in sf['table']['q']}
+# a web page an earlier version kept as a filing: read again from NSE
+with open(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(F6M)), 'wb') as fh:
+    fh.write(b'<html><body>Access Denied</body></html>')
+X.reread('FAIL', TODAY)
+assert X.load_stock('FAIL')['files'][X.file_name(F6M)]['v'] == 0
+before = len(REQ)
+X.process_stock(nse, 'FAIL', TODAY)
+assert F6M in REQ[before:]
+out = []
+LIST.setdefault('NOPE', ({'data': []}, []))
+X.check({}, ['fail'], out=out.append, today=TODAY)
+text = '\n'.join(out)
+assert 'could not be used:' in text and '2025-12-31  ' + X.file_name(F404) + ' - NSE answered HTTP 404' in text, text
+assert 'quarters: 6 of 20 in the table (Dec 2021 .. Sep 2026)' in text and 'Dec 2024 missing - no XBRL file for it in NSE\'s lists' in text, text
+o3 = []
+labels = [X.label_of(2026 * 12 + 3 - 3 * k) for k in range(20)][::-1]
+X.coverage({'tried': {'2025-12-31': [['A_WEB.xml', 'NSE answered HTTP 404']], '2025-09-30': [['B_WEB.xml', 'ok']]}},
+           {'q': [[l] + [None] * 12 + [''] for l in labels if l not in ('Sep 2025', 'Dec 2025')], 'y': []}, o3.append)
+assert o3 == ['   quarters: 18 of 20 in the table (Jun 2021 .. Mar 2026)',
+              '      Sep 2025 missing - B_WEB.xml: read, but no 3-month figures of this quarter in it',
+              '      Dec 2025 missing - A_WEB.xml: NSE answered HTTP 404'], o3
+
+# e) a bank (the banking format): Interest = interest expended, Expenses = operating expenses + provisions, Financing Profit
+def bank_figs(k):
+    cr = 1e7
+    rev, intx, opex, prov, oi = 1000.0 + k, 600.0, 200.0, 50.0, 100.0
+    pbt = rev - intx - opex - prov + oi
+    tax = pbt * 0.25
+    pat = pbt - tax
+    return {'InterestEarned': rev * cr, 'InterestExpended': intx * cr, 'OperatingExpenses': opex * cr,
+            'ProvisionsOtherThanTaxAndContingencies': prov * cr, 'OtherIncome': oi * cr,
+            'ProfitLossFromOrdinaryActivitiesBeforeTax': pbt * cr, 'TaxExpense': tax * cr, 'ProfitLossForThePeriod': pat * cr,
+            'BasicEarningsPerShareAfterExtraordinaryItems': round(pat / 100, 2)}
+
+
+for k in (22, 23):
+    e = QS[k][1]
+    NSE[url_of(k, sym='BNK')] = xml('Consolidated', [(qstart(e, 3), e, bank_figs(k)), (qstart(QS[k - 1][1], 3), QS[k - 1][1], bank_figs(k - 1))])
+LIST['BNK'] = ({'data': recs('BNK', (22, 23))}, [])
+tk = X.process_stock(nse, 'BNK', TODAY)[0]['table']
+rk = {r[0]: r for r in tk['q']}['Sep 2026']
+assert tk['k'] == 'bank' and rk[1:13] == [1023.0, 250.0, 173.0, 16.9, 100.0, None, 600.0, None, 273.0, 25.0, 204.75, 2.05], rk
+out = []
+X.check({}, ['BNK', 'facts'], out=out.append, today=TODAY)
+text = '\n'.join(out)
+assert 'Financing Profit' in text and '   Revenue ' in text and 'Financing Margin %' in text, text
+assert 'every figure of Sep 2026 in' in text and 'InterestExpended = 600.0' in text, 'facts: the newest quarter\'s elements'
+assert 'FACTS - NSE' not in text, '"facts" is not a symbol'
+
+# f) the comparison: years too, Other Income with the exceptional items (screener.in's way), EPS within 2 %
+X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page(
+    [('Jun 2026', 122, 18.75, 1.86, 20), ('Sep 2026', 125, 20.25, 2.02, 22)],
+    [('Mar 2025', 462, 75, 7.52, 22), ('Mar 2026', 478, 80, 7.52, 21)])))
+out = []
+X.check({}, ['abc'], out=out.append, today=TODAY)
+text = '\n'.join(out)
+assert '   Jun 2026  4 agree\n' in text, 'EPS 1.88 vs 1.86: within 2 %'
+assert '   Mar 2025  4 agree\n' in text and 'Mar 2026  3 agree | Net Profit 75.00 (screener.in 80.00)' in text, text
+row = ['Sep 2026', 100.0, 80.0, 20.0, 20.0, 5.0, -2.0, 1.0, 1.0, 22.0, 25.0, 16.5, 1.65, '']
+o2 = []
+assert X.compare_rows({}, [row], {'other_income': {'Sep 2026': 3.0}}, o2.append) == (1, 0, [], 1), o2
+assert X.parse_periods(b'<a>', why=[]) is None
+w = []
+X.parse_periods(b'<x', w)
+assert w and w[0].startswith('not readable as XML'), w
+
+# g) the background job reads every stock's lists again once (LIST_VERSION) and the kept files with the new rules
+st_ = X.load_stock('ABC')
+st_['lv'] = 1
+X.save_stock(st_)
+assert X.due('ABC', st_, TODAY, time.time())
 print('OK')
