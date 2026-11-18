@@ -23,6 +23,7 @@ LOGS = []
 sb.log = LOGS.append
 X = sb.XH
 X.DIR = os.path.join(TMP, 'xbrl_data')
+X.MARKET = None                                  # the market-hours rule has its own test (section 12)
 X.log = LOGS.append
 assert X.D.get('facts') is sb.XBRL_FACTS and X.D.get('records') is sb.ipo_records, 'screener_bridge binds its helpers'
 TODAY = date(2026, 11, 18)
@@ -831,4 +832,43 @@ mix = {'sym': 'MIX', 'files': {'a': bfile('2023-06-30', 'S', 100.0), 'b': bfile(
 tm = X.build(mix, TODAY, sc={})
 assert tm['b'] == 'C' and [r[-1] for r in tm['q']] == ['s', 's', '', ''] and tm['y'][0][0] == 'Mar 2024' and tm['y'][0][-1] == 'q' \
     and tm['y'][0][1] == 460.0, tm['y']
+
+# ------------------------------------------------------------------ 12. slower and gentler (owner, 18-Nov-2026, NSE's terms:
+# "5-10 seconds between requests, at most ~300 files a day, only outside market hours")
+from datetime import datetime as _dt
+assert X.GAP_S == 6.0 and X.CMD_GAP_S == X.GAP_S and X.DAY_FILES == 300
+assert X.gap_of({}) == 6.0 and X.gap_of({'xbrl_history_gap_s': 2.5}) == 5.0 and X.gap_of({'xbrl_history_gap_s': 8}) == 8.0
+assert X.gap_of({'xbrl_history_gap_s': 'x'}) == 6.0 and X.files_per_day({'xbrl_history_files_per_day': 50}) == 50
+assert sb.DEFAULTS['xbrl_history_gap_s'] == 6 and sb.DEFAULTS['xbrl_history_files_per_day'] == 300
+assert 'XH.gap_of(cfg)' in open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read(), 'XbrlHistoryNow too'
+X.MARKET = (9 * 60, 15 * 60 + 45)
+mon10 = _dt(2026, 11, 16, 10, 0, tzinfo=X.IST).timestamp()
+assert X.market_open(mon10) and not X.market_open(mon10 + 6 * 3600) and not X.market_open(mon10 - 2 * 3600)
+assert not X.market_open(_dt(2026, 11, 21, 11, 0, tzinfo=X.IST).timestamp()), 'Saturday'
+assert X.Worker.rest({'paused': 'market'}) == 1800 and X.Worker.rest({'blocked': 'x'}) == X.BLOCK_PAUSE_S
+assert X.Worker.rest({'done': 1}) == X.REST_S and X.Worker.rest(None) == X.BLOCK_PAUSE_S
+r_ = X.Worker.rest({'paused': 'cap'}, mon10)
+assert abs(r_ - (14 * 3600 + 5 * 60)) < 2, 'the next day just after midnight IST: %s' % r_
+if os.path.exists(X._stock_path('ABC')):
+    os.remove(X._stock_path('ABC'))                   # due again (its files stay kept)
+del LOGS[:]
+n_req = len(REQ)
+res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY, clock=lambda: mon10)
+assert res['paused'] == 'market' and res['done'] == 0 and len(REQ) == n_req, res
+assert any('market hours (Mon-Fri 09:00-15:45)' in x for x in LOGS), LOGS
+sat = _dt(2026, 11, 21, 20, 0, tzinfo=X.IST).timestamp()
+st_ = X.load_state()
+st_['day'] = {'d': '2026-11-21', 'files': 300}
+X.save_state(st_)
+res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY, clock=lambda: sat)
+assert res['paused'] == 'cap' and res['done'] == 0 and len(REQ) == n_req, res
+assert any("today's 300 files are done - the rest tomorrow" in x for x in LOGS), LOGS
+assert any('one request every 0 s, at most 300 files a day, never in market hours' in x for x in LOGS)
+res = X.run_all({'url': 'x', 'xbrl_history_files_per_day': 1000}, api, gap=0, sleep=nap, today=TODAY, clock=lambda: sat)
+assert not res.get('paused') and res['done'] >= 1 and len(REQ) > n_req, res
+assert X.load_state()['day']['d'] == '2026-11-21', 'counted on its IST day'
+st_ = {'day': {'d': '2026-11-21', 'files': 300}}
+assert X._day_count(st_, sat + 86400) == {'d': '2026-11-22', 'files': 0} and st_['day']['d'] == '2026-11-22', 'a new day starts at 0'
+assert X._day_count({'day': {'d': '2026-11-21', 'files': 7}}, sat)['files'] == 7
+X.MARKET = None
 print('OK')

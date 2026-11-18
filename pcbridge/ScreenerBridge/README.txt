@@ -210,13 +210,16 @@ Financial Results) for the last 5 years - one file a quarter, the consolidated o
 standalone one - and makes a table like screener.in's: Sales, Expenses, Operating Profit, OPM %, Other Income,
 Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit, EPS - 20 quarters and the years.
  - The files are KEPT (not deleted): <data folder>\xbrl_data\files\<SYMBOL>\ (on D: when MoveDataToD.bat moved the data).
- - It runs by itself in the background, slowly (one NSE request every 2.5 seconds) and never while a round or a
-   results check runs. All stocks take about 1 to 2 weeks of the computer being on; after that only new results.
+ - It runs by itself in the background, slowly: one NSE request every 6 seconds (config.json "xbrl_history_gap_s",
+   never under 5), at most 300 files a day ("xbrl_history_files_per_day"), never in market hours (Mon-Fri
+   09:00-15:45) and never while a round or a results check runs. At 300 files a day all stocks take about 4 months;
+   files already kept are never asked again, and after that only new results.
  - The tables go to the sheet (hidden tab Financials) and the website shows them in each stock's window
    (Quarterly / Yearly, CSV). Historical PE then uses these quarterly EPS too (exact 3- and 5-year medians).
  - Check a few stocks first: XbrlHistoryCheck.bat, type e.g.  TCS HDFCBANK BSE  - it prints each stock's table and
    compares it with screener.in (nothing is sent). Please send me what it prints.
- - All at once instead (several hours; close the window to stop, it carries on next time): XbrlHistoryNow.bat
+ - XbrlHistoryNow.bat = the same in a window, with the same pace and the same daily limit (close the window to
+   stop, it carries on next time).
  - Banks file a different format: the program tries the banking names (interest expended, operating expenses,
    provisions) and shows them like screener.in's bank table (Revenue, Financing Profit, Financing Margin %).
  - Version 2 (18-Nov-2026, after your check of TCS / HDFCBANK / BSE):
