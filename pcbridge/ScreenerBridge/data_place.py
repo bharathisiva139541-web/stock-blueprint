@@ -21,7 +21,7 @@ import os
 import shutil
 import time
 
-BIG = ('intraday_data', 'lab_cache', 'lab_charts', 'lab_results')
+BIG = ('intraday_data', 'lab_cache', 'lab_charts', 'lab_results', 'xbrl_data')   # xbrl_data: NSE XBRL files (18-Nov-2026)
 PLACE_FILE = 'data_place.json'
 MOVING_FILE = 'data_moving.json'   # {pid, src, dst, at} while a move runs (the other programs wait)
 DEFAULT_FOLDER = r'D:\StockBlueprintData'

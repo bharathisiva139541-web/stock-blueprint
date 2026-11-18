@@ -803,6 +803,7 @@
           (s.nse52.isNew ? ' ' + ui.badge('New 52W high', 'new52') : isNum(s.nse52.below) ? ' <span class="sub">· ' + F.num(s.nse52.below, 1) + '% below</span>' : '')]);
       }
       h += '<dl class="kv">' + kv.map(function (p) { return '<div><dt>' + p[0] + '</dt><dd>' + p[1] + '</dd></div>'; }).join('') + '</dl>' +
+        finSection(s.sym) +
         '<div id="drawer-chart" style="margin-top:14px"></div>';
     }
     h += '<div class="links"><a class="btn" target="_blank" rel="noopener" href="https://www.screener.in/company/' + encodeURIComponent(sym) + '/">Screener.in ↗</a>' +
@@ -813,9 +814,110 @@
     dr._opener = opener || document.activeElement;
     document.body.style.overflow = 'hidden';
     $('.drawer-x', dr).focus();
+    if (s) finStart(s.sym, body);
     if (s && SB.onStockDrawer) SB.onStockDrawer(s, body);
   }
   SB.openStock = openStock;
+
+  // ---------- 5 years of results from NSE's XBRL filings (owner, 18-Nov-2026: "a table like Screener.in") ----------
+  // The laptop reads the filings (xbrl_history.py), the sheet keeps one table a stock (tab Financials); the stock window
+  // asks api/financials for its own table only. Kept on this device too (SB.keep 'fin:SYM'), so it shows offline.
+  var FIN_MEMO = {}, FIN_KIND_KEY = 'fin:kind';
+  function finSection(sym) {
+    var kind = ui.store.get(FIN_KIND_KEY, 'q') === 'y' ? 'y' : 'q';
+    return '<section class="fin" id="drawer-fin" data-fin-sym="' + esc(sym) + '"><div class="fin-head"><h3>Results (NSE filings)</h3>' +
+      '<div class="chips fin-kind" role="group" aria-label="Quarterly or yearly">' +
+      '<button type="button" class="chip' + (kind === 'q' ? ' on' : '') + '" data-fin-kind="q" aria-pressed="' + (kind === 'q') + '">Quarterly</button>' +
+      '<button type="button" class="chip' + (kind === 'y' ? ' on' : '') + '" data-fin-kind="y" aria-pressed="' + (kind === 'y') + '">Yearly</button></div>' +
+      '<button type="button" class="btn sm" data-fin-csv hidden>CSV</button></div><div class="fin-body"><p class="sub">Loading the 5-year results table…</p></div></section>';
+  }
+  function finLoad(sym) {
+    if (FIN_MEMO[sym]) return FIN_MEMO[sym];
+    var keepKey = 'fin:' + sym;
+    var p = (ctx.site.apiBase == null ? Promise.reject(new Error('local')) : SB.api('api/financials?sym=' + encodeURIComponent(sym), 20000))
+      .then(function (r) {
+        if (!r || !r.ok) throw new Error((r && r.message) || 'the sheet did not answer');
+        if (r.fin && SB.keep) SB.keep.put(keepKey, { ok: true, readAt: r.fetchedAt || '', data: r.fin });
+        return { fin: r.fin || null };
+      })
+      .catch(function (e) {
+        delete FIN_MEMO[sym];
+        return (SB.keep ? SB.keep.get(keepKey) : Promise.resolve(null)).then(function (k) {
+          return k ? { fin: k.data, kept: k.readAt || true } : { error: e && e.message === 'local' ? 'local' : (e && e.message) || 'failed' };
+        });
+      });
+    FIN_MEMO[sym] = p;
+    return p;
+  }
+  function finCellHtml(v, kind) {
+    var t = SB.fin.cell(v, kind);
+    return '<td' + (isNum(v) && v < 0 ? ' class="neg"' : '') + '>' + (t || '<span class="sub">–</span>') + '</td>';
+  }
+  function finRender(box, sym, res, kind) {
+    var bodyEl = $('.fin-body', box), csvBtn = $('[data-fin-csv]', box);
+    if (res.error) {
+      csvBtn.hidden = true;
+      bodyEl.innerHTML = '<p class="sub">' + (res.error === 'local'
+        ? 'The 5-year results table comes from your laptop through the live website - open the live site to see it.'
+        : 'Could not load the results table: ' + esc(res.error) + '.') + '</p>';
+      return;
+    }
+    var v = SB.fin.view(res.fin, kind);
+    if (!v) {
+      csvBtn.hidden = true;
+      bodyEl.innerHTML = '<p class="sub">' + (res.fin ? 'No ' + (kind === 'y' ? 'yearly' : 'quarterly') + ' figures in its NSE filings yet.'
+        : 'No table for ' + esc(sym) + ' yet - your laptop reads every stock\'s NSE result filings of 5 years a little at a time.') + '</p>';
+      return;
+    }
+    csvBtn.hidden = false;
+    var lag = kind === 'y' ? 1 : 4;
+    var gSales = SB.fin.growth(v, 'rev', lag), gNp = SB.fin.growth(v, 'np', lag);
+    var head = '<tr><th scope="col"></th>' + v.labels.map(function (l, i) {
+      var f = v.flags[i];
+      return '<th scope="col"' + (f ? ' data-tip="' + (f === 'c' ? 'From a later filing\'s comparison column (this period has no filing of its own in the 5 years read)'
+        : (v.basis === 'C' ? 'Standalone' : 'Consolidated') + ' filing - the stock\'s own basis has none for this period') + '"' : '') + '>' +
+        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 's' ? '<sup>' + (v.basis === 'C' ? 'S' : 'C') + '</sup>' : '') + '</th>';
+    }).join('') + '</tr>';
+    var rows = v.rows.map(function (r) {
+      return '<tr class="fin-' + r.k + '"><th scope="row">' + esc(r.label) + '</th>' + r.vals.map(function (x) { return finCellHtml(x, r.kind); }).join('') + '</tr>';
+    });
+    var gRow = function (label, g) {
+      return '<tr class="fin-g"><th scope="row">' + label + '</th>' + g.map(function (x) {
+        return '<td>' + (isNum(x) ? ui.deltaHtml(x, 0) : '<span class="sub">–</span>') + '</td>';
+      }).join('') + '</tr>';
+    };
+    rows.push(gRow('Sales growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gSales));
+    rows.push(gRow('Profit growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gNp));
+    bodyEl.innerHTML = '<p class="sub fin-note">' + (v.basis === 'C' ? 'Consolidated' : 'Standalone') + ' figures, Rs crore, from the company\'s NSE filings' +
+      (res.kept ? ' (the copy kept on this device - could not refresh just now)' : '') +
+      (v.flags.some(Boolean) ? ' · <sup>*</sup> = a later filing\'s comparison column' : '') + '</p>' +
+      '<div class="fin-scroll"><table class="fin-t" aria-label="' + esc(sym) + ' ' + (kind === 'y' ? 'yearly' : 'quarterly') + ' results">' +
+      '<thead>' + head + '</thead><tbody>' + rows.join('') + '</tbody></table></div>';
+    var sc = $('.fin-scroll', bodyEl);
+    if (sc) sc.scrollLeft = sc.scrollWidth;          // the newest on the right, like screener.in
+    csvBtn.onclick = function () { ui.download(sym + '-results-' + (kind === 'y' ? 'yearly' : 'quarterly') + '.csv', ui.toCsv(SB.fin.csv(v, sym))); };
+  }
+  function finStart(sym, body) {
+    var box = $('#drawer-fin', body);
+    if (!box || !SB.fin) return;
+    var res = null;
+    var kind = function () { return ui.store.get(FIN_KIND_KEY, 'q') === 'y' ? 'y' : 'q'; };
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-fin-kind]');
+      if (!b) return;
+      ui.store.set(FIN_KIND_KEY, b.getAttribute('data-fin-kind'));
+      box.querySelectorAll('[data-fin-kind]').forEach(function (x) {
+        var on = x === b;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-pressed', String(on));
+      });
+      if (res) finRender(box, sym, res, kind());
+    });
+    finLoad(sym).then(function (r) {
+      res = r;
+      if (box.isConnected && box.getAttribute('data-fin-sym') === sym) finRender(box, sym, r, kind());
+    });
+  }
   function closeDrawer() {
     var dr = $('#drawer');
     if (dr.hidden) return;

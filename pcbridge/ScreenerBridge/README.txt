@@ -204,6 +204,23 @@ in PE_History) when the stock is listed for less than that, the EPS history is s
    up to ...): N stock(s) -> the sheet - 1Y median for ..., 3Y ..., 5Y ...".
  - To switch it off: in config.json add  "pe_history": false   (fewer pages a round: "pe_history_pages_per_run": 20)
 
+5 YEARS OF RESULTS FROM NSE'S XBRL FILES (since 18-Nov-2026)
+The program now reads every Main stock's result filings on NSE (both lists: Integrated Filing - Financials and the older
+Financial Results) for the last 5 years - one file a quarter, the consolidated one when the company files one, else the
+standalone one - and makes a table like screener.in's: Sales, Expenses, Operating Profit, OPM %, Other Income,
+Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit, EPS - 20 quarters and the years.
+ - The files are KEPT (not deleted): <data folder>\xbrl_data\files\<SYMBOL>\ (on D: when MoveDataToD.bat moved the data).
+ - It runs by itself in the background, slowly (one NSE request every 2.5 seconds) and never while a round or a
+   results check runs. All stocks take about 1 to 2 weeks of the computer being on; after that only new results.
+ - The tables go to the sheet (hidden tab Financials) and the website shows them in each stock's window
+   (Quarterly / Yearly, CSV). Historical PE then uses these quarterly EPS too (exact 3- and 5-year medians).
+ - Check a few stocks first: XbrlHistoryCheck.bat, type e.g.  TCS HDFCBANK BSE  - it prints each stock's table and
+   compares it with screener.in (nothing is sent). Please send me what it prints.
+ - All at once instead (several hours; close the window to stop, it carries on next time): XbrlHistoryNow.bat
+ - Banks / NBFCs / insurers file a different format - their tables may have empty rows for now.
+ - bridge.log: "NSE XBRL history: N of M stock(s) read ..." and "... table(s) sent to the sheet".
+ - To switch it off: in config.json add  "xbrl_history": false
+
 RESULTS: NSE XBRL FIRST, SCREENER.IN AFTER (since 02-Nov-2026)
 A round used to take 40 minutes in the results season: screener.in lets about 12 pages through every 3 minutes, and
 it was asked every company whose results were due. Now:

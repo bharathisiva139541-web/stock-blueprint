@@ -326,9 +326,10 @@ sb.LOG_PATH = os.path.join(TMP, 'bridge.log')
 sb.log = LOGS.append
 sb.PEH = H
 seen = []
-H.step = lambda cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None: \
-    seen.append((lab is K.backtest_lab or lab.__name__, fetch is sb.fetch_page, blocked is sb.Blocked, pages, force)) or 7
-assert sb.histpe_step({'pe_history': True}) == 7 and seen[-1][1:] == (True, True, None, False), seen
+H.step = lambda cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None, xbrl=None: \
+    seen.append((lab is K.backtest_lab or lab.__name__, fetch is sb.fetch_page, blocked is sb.Blocked, pages, force,
+                 xbrl is sb.XH.hist_quarters)) or 7
+assert sb.histpe_step({'pe_history': True}) == 7 and seen[-1][1:] == (True, True, None, False, True), seen
 assert sb.histpe_step({'pe_history': False}) is None
 H.step = lambda *a, **k: 1 / 0
 assert sb.histpe_step({'pe_history': True}) is None, 'never raises'

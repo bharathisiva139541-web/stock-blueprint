@@ -85,6 +85,13 @@ LIVE_MAIN.main.rows.forEach((r) => {
   if (sym === SENT_SYM) r[LIVE_MAIN.main.cols.indexOf('pe')] = 30;
   r.push.apply(r, sym === FLAG_SYM ? [22, 24, 25, 61.5] : sym === SENT_SYM ? [5, null, null, null] : [null, null, null, null]);
 });
+// 5 years of results from the laptop's NSE XBRL files (18-Nov-2026) - api/financials answers the flag stock only
+const FIN_Q = ['Dec 2025', 'Mar 2026', 'Jun 2026', 'Sep 2026', 'Dec 2026'].map((l, i) =>
+  [l, 100 + i * 10, 80 + i * 5, 20 + i * 5, Math.round((20 + i * 5) / (100 + i * 10) * 1000) / 10, 5, i === 1 ? -3.5 : null, 2, 3, 20 + i * 5,
+    25, 15 + i * 4, 1.5 + i * 0.4, i === 0 ? 'c' : '']);
+FIN_Q.unshift(['Sep 2025', 90, 75, 15, 16.7, 5, null, 2, 3, 15, 25, 11.25, 1.13, '']);
+const FIN_Y = [['Mar 2025', 350, 290, 60, 17.1, 20, null, 8, 12, 60, 25, 45, 4.5, 'c'], ['Mar 2026', 410, 330, 80, 19.5, 20, -3.5, 8, 12, 76.5, 25, 57.4, 5.74, '']];
+const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18' };
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -150,6 +157,10 @@ function liveApi(o) {
             session: { state: o.session, now: '2026-10-21 10:06', lastCompletedSession: '2026-10-20' }, status: { ok: false, state: 'UNAVAILABLE', message: 'mock provider: sheet feed timed out' } }
         : { provider: { name: 'none', configured: false, requires: ['MARKET_DATA_PROVIDER'], licensing: '' },
             session: { state: o.session, now: '2026-10-21 10:06', lastCompletedSession: '2026-10-20' }, status: { ok: false, state: 'UNAVAILABLE', message: 'no provider' } } };
+    }
+    if (u.pathname === '/api/financials') {
+      const sym = u.searchParams.get('sym');
+      return { json: { ok: true, sym, fin: sym === FLAG_SYM ? FIN_SAMPLE : null, fetchedAt: istAgo(1) } };
     }
     if (u.pathname === '/api/quotes') {
       return { json: { state: 'UNAVAILABLE', source: 'sheet', asOf: null, items: [], errors: [{ symbol: '*', reason: 'mock provider: sheet feed timed out' }], message: 'mock provider: sheet feed timed out' } };
@@ -1299,7 +1310,44 @@ function check(name, fn) {
       return kv;
     }, FLAG_SYM);
     const other = await p.evaluate((sym) => { const s = window.SB.ctx.bySym[sym]; return [s.peOwn, s.peOwnYears, s.peCheck]; }, SENT_SYM);
+    // the 5-year results table in the stock window (NSE XBRL filings via the laptop, 18-Nov-2026)
+    await p.waitForSelector('#drawer-fin .fin-t', { timeout: 10000 });
+    const fin = await p.evaluate(() => {
+      const t = document.querySelector('#drawer-fin .fin-t');
+      const rows = {};
+      t.querySelectorAll('tbody tr').forEach((tr) => { rows[tr.querySelector('th').textContent] = [...tr.querySelectorAll('td')].map((x) => x.textContent); });
+      const sc = document.querySelector('#drawer-fin .fin-scroll');
+      return { heads: [...t.querySelectorAll('thead th')].map((x) => x.textContent), rows, note: document.querySelector('#drawer-fin .fin-note').textContent,
+        csv: !document.querySelector('[data-fin-csv]').hidden, scrolled: sc.scrollLeft + sc.clientWidth >= sc.scrollWidth - 2,
+        panelOk: document.querySelector('.drawer-panel').scrollWidth <= document.querySelector('.drawer-panel').clientWidth + 1 };
+    });
+    await p.click('#drawer-fin [data-fin-kind="y"]');
+    const finY = await p.$$eval('#drawer-fin .fin-t thead th', (t) => t.map((x) => x.textContent));
+    const kept = await p.evaluate(() => localStorage.getItem('sb:fin:kind'));
+    await p.click('#drawer-fin [data-fin-kind="q"]');
+    const none = await p.evaluate((sym) => new Promise((ok) => {
+      window.SB.openStock(sym);
+      const t0 = Date.now();
+      (function wait() {
+        const b = document.querySelector('#drawer-fin .fin-body');
+        if (b && !/Loading/.test(b.textContent)) return ok(b.textContent);
+        if (Date.now() - t0 > 8000) return ok('timeout');
+        setTimeout(wait, 50);
+      })();
+    }), SENT_SYM);
     await c.close();
+    assert.deepStrictEqual(fin.heads, ['', 'Sep 2025', 'Dec 2025*', 'Mar 2026', 'Jun 2026', 'Sep 2026', 'Dec 2026'], fin.heads.join(' | '));
+    assert.deepStrictEqual(fin.rows.Sales, ['90.00', '100', '110', '120', '130', '140']);
+    assert.deepStrictEqual(fin.rows['OPM %'], ['17%', '20%', '23%', '25%', '27%', '29%']);
+    assert.deepStrictEqual(fin.rows['Exceptional items'], ['–', '–', '-3.50', '–', '–', '–'], 'a row with a figure somewhere is shown');
+    assert.deepStrictEqual(fin.rows['EPS in Rs'], ['1.13', '1.50', '1.90', '2.30', '2.70', '3.10']);
+    assert.ok(fin.rows['Sales growth YoY (same quarter)'] && /\+44%/.test(fin.rows['Sales growth YoY (same quarter)'][4]), JSON.stringify(fin.rows));
+    assert.match(fin.note, /^Consolidated figures, Rs crore, from the company's NSE filings · \* = a later filing's comparison column/);
+    assert.ok(fin.csv && fin.scrolled && fin.panelOk, JSON.stringify(fin));
+    assert.deepStrictEqual(finY, ['', 'Mar 2025*', 'Mar 2026']);
+    assert.strictEqual(kept, '"y"', 'the choice is kept');
+    assert.match(none, /No table for .* yet - your laptop reads/);
+
     assert.deepStrictEqual(errors, [], 'console/page errors');
     ['PE', 'Own median PE', 'PE / own median', 'PE / Ind PE', 'PE check'].forEach((h) => assert.ok(heads.some((x) => x.indexOf(h) === 0), h + ': ' + heads.join(' | ')));
     assert.ok(!heads.some((x) => /^Median PE|^Peak PE/.test(x)), 'hidden at first: ' + heads.join(' | '));
