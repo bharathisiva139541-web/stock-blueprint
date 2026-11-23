@@ -259,6 +259,9 @@ Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit,
        consolidated results (marked sc);
      * XbrlHistoryCheck.bat reads both screener.in pages of the stock at once and sends its table to the sheet.
  - The website's yearly table ends with a TTM column (the sum of the last 4 quarters, like screener.in).
+ - Historical PE (Median PE 1Y / 3Y / 5Y, Peak PE 5Y, the website's Own median PE / PE check) now also uses the same
+   results table (NSE filings + screener.in, up to 12 years) when the screener.in page record gives fewer medians.
+   XbrlHistoryCheck.bat makes Historical PE of every stock again at its end, sends it, and prints the checked stocks'.
  - bridge.log: "NSE XBRL history: N of M stock(s) looked at ..." and "... table(s) sent to the sheet".
  - To switch it off: in config.json add  "xbrl_history": false   (only its screener.in pages: "xbrl_history_screener": false)
 

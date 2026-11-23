@@ -326,10 +326,18 @@ sb.LOG_PATH = os.path.join(TMP, 'bridge.log')
 sb.log = LOGS.append
 sb.PEH = H
 seen = []
-H.step = lambda cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None, xbrl=None: \
-    seen.append((lab is K.backtest_lab or lab.__name__, fetch is sb.fetch_page, blocked is sb.Blocked, pages, force,
-                 xbrl is sb.XH.hist_quarters)) or 7
-assert sb.histpe_step({'pe_history': True}) == 7 and seen[-1][1:] == (True, True, None, False, True), seen
+H.step = lambda cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None, xbrl=None, \
+    tables=None: seen.append((lab is K.backtest_lab or lab.__name__, fetch is sb.fetch_page, blocked is sb.Blocked, pages, force,
+                               xbrl is sb.XH.hist_quarters, tables is sb.XH.hist_tables)) or 7
+assert sb.histpe_step({'pe_history': True}) == 7 and seen[-1][1:] == (True, True, None, False, True, True), seen
+# XbrlHistoryCheck: every stock made again (no page), the checked stocks printed
+H.LAST.clear()
+H.LAST['RVX'] = [30.5, 31.0, 33.0, 48.7, '2021-11-22', 45.5, 4.07, 45, 'the results table (NSE filings + screener.in, 33 quarter(s), 12 year(s))', '']
+said = []
+sb.histpe_check({}, ['rvx', 'NOPE'], out=said.append)
+assert seen[-1][3:5] == (0, True), 'no screener.in page, sent at once'
+assert any('RVX: median PE 1Y 30.5 / 3Y 31 / 5Y 33, peak 48.7 on 2021-11-22, PE now 45.5 - EPS from the results table' in x for x in said), said
+assert any('NOPE: no figures' in x for x in said), said
 assert sb.histpe_step({'pe_history': False}) is None
 H.step = lambda *a, **k: 1 / 0
 assert sb.histpe_step({'pe_history': True}) is None, 'never raises'

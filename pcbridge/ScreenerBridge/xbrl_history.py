@@ -1267,6 +1267,44 @@ def hist_quarters():
     return changed_at(), {s: eps_quarters(t) for s, t in tables().items()}
 
 
+def table_eps(table):
+    """A stock's whole results table - the one the website shows: NSE's filings + screener.in's figures, up to 12 years
+    (owner, 23-Nov-2026, RVNL: "Why own median PE, Median PE 1y/3y/5y, PEAK PE, PE CHECK is not updated even though we
+    have price data for 20 years, PL data for 12 years") -> pe_history's EPS record {'src': 'table', 'basis', 'q': [[month
+    index, EPS, net profit], ...], 'y': [...], 'at': seconds} or None. EPS as the table has them (a bonus / split already
+    put on today's share count)."""
+    if not isinstance(table, dict):
+        return None
+    rec = {'src': 'table', 'basis': table.get('b', ''), 'q': [], 'y': [], 'at': 0}
+    for key in ('q', 'y'):
+        seen = {}
+        for r in table.get(key) or []:
+            if not isinstance(r, list) or len(r) < len(COLS) + 1:
+                continue
+            mi = _mi_label(r[0])
+            eps, np_ = r[1 + COLS.index('eps')], r[1 + COLS.index('np')]
+            if mi and isinstance(eps, (int, float)):
+                seen[mi] = [mi, eps, np_ if isinstance(np_, (int, float)) else None]
+        rec[key] = [seen[m] for m in sorted(seen)]
+    if not rec['q'] and not rec['y']:
+        return None
+    try:
+        rec['at'] = time.mktime(date.fromisoformat(str(table.get('at') or '')[:10]).timetuple())
+    except ValueError:
+        rec['at'] = 0
+    return rec
+
+
+def hist_tables():
+    """For pe_history: (when the tables last changed, {SYM: table_eps record})."""
+    out = {}
+    for s, t in tables().items():
+        r = table_eps(t)
+        if r:
+            out[s] = r
+    return changed_at(), out
+
+
 # ------------------------------------------------------------------ one program at a time
 def _lock_path():
     return os.path.join(DIR, 'xbrl_history.lock')
