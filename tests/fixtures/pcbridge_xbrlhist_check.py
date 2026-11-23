@@ -176,6 +176,7 @@ class Opener:
 
 
 STATUS = {}
+OLDEST_FIRST = set()          # stocks whose plain integrated list gives the OLDEST 20 (not the newest)
 
 
 def fake_get(opener, url, referer='', timeout=30):
@@ -195,7 +196,8 @@ def fake_get(opener, url, referer='', timeout=30):
                 f, t = (url.split(k + '=')[1].split('&')[0] for k in ('from_date', 'to_date'))
                 iso = lambda d: d[6:10] + d[3:5] + d[0:2]
                 data = [r for r in data if iso(f) <= stamp(r)[:8] <= iso(t)]
-            obj = dict(obj, data=sorted(data, key=lambda r: (stamp(r), r['xbrl']), reverse=True)[:20], total=len(data))
+            page = sorted(data, key=lambda r: (stamp(r), r['xbrl']), reverse=sym not in OLDEST_FIRST)
+            obj = dict(obj, data=page[:20], totalCount=len(data))
         return 200, json.dumps(obj).encode()
     if url in NSE:
         return 200, NSE[url]
@@ -721,9 +723,45 @@ asked = [u for u in REQ[before:] if 'from_date=' in u and 'integrated' in u]
 assert [u.split('from_date=')[1] for u in asked] == ['01-10-2024&to_date=31-03-2025', '01-04-2025&to_date=30-09-2025'], asked
 assert {r[0]: r[-1] for r in sc['table']['q']}['Mar 2025'] == '', 'the consolidated Mar 2025 filing found by the dated ask'
 text = '\n'.join(out)
-assert 'integrated filing: 20 record(s)' in text and 'the answer also has: total=21' in text, text
+assert 'integrated filing: 20 record(s)' in text and 'the answer also has: totalCount=21' in text, text
 assert 'integrated filing (dated) 01-04-25..30-09-25: 6 record(s)' in text, text
 assert X.due('CAP', dict(X.load_stock('CAP'), lv=2), TODAY, time.time()), 'every stock read once more (LIST_VERSION 3)'
+
+# owner's MTARTECH check (23-Nov-2026: totalCount 23, its Sep 2026 standalone-only filing never read): the windows go on
+# up to today until NSE's own count is reached - here NSE's page holds the OLDEST 20, the newest two come from later windows
+MTXR = []
+for k in range(16, 24):
+    for kind in (('C', 'S') if k < 23 else ('S',)):
+        u = url_of(k, kind, sym='MTX')
+        NSE[u] = filing(k, 'Consolidated' if kind == 'C' else 'Standalone')
+        MTXR.append({'xbrl': u, 'qe_Date': QS[k][1].strftime('%d-%b-%Y'), 'consolidated': 'Consolidated' if kind == 'C' else 'Standalone'})
+    if k < 23:
+        MTXR.append({'xbrl': 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_GOVERNANCE_MTX_%s_WEB.xml'
+                     % (QS[k][1] + timedelta(days=60)).strftime('%d%m%Y183000'), 'qe_Date': QS[k][1].strftime('%d-%b-%Y')})
+LIST['MTX'] = ({'data': MTXR}, [])                     # 22 filings
+OLDEST_FIRST.add('MTX')
+before = len(REQ)
+out = []
+sm = X.process_stock(nse, 'MTX', TODAY, say=out.append)[0]
+asked = [u.split('from_date=')[1][:10] for u in REQ[before:] if 'from_date=' in u and 'integrated' in u]
+assert asked == ['01-10-2024', '01-04-2025', '01-10-2025', '01-04-2026', '01-10-2026'], asked
+tm_ = sm['table']
+assert tm_['b'] == 'S' and tm_['q'][-1][0] == 'Sep 2026' and tm_['bw'].startswith('Consolidated results end with Jun 2026'), tm_
+OLDEST_FIRST.discard('MTX')
+before = len(REQ)
+X.process_stock(nse, 'MTX', TODAY)
+assert len([u for u in REQ[before:] if 'from_date=' in u and 'integrated' in u]) == 1, 'the newest 20 + one window = all 22'
+out = []
+X.check({}, ['MTX'], out=out.append, today=TODAY)
+text = '\n'.join(out)
+assert "newest in NSE's lists - 2026-09-30: standalone results read (filed 09-11-2026)" in text, text
+assert "newest in NSE's lists - 2026-06-30: " in text and 'governance report (no results) (filed 29-08-2026)' in text, text
+# a quarter in the lists that the table does not have is counted missing (the table used to end the count at its own last)
+st_m = X.load_stock('MTX')
+st_m['newest'] = [['2026-12-31', 'S', 'F', '20270210', 'X.xml']] + st_m['newest']
+cov = []
+X.coverage(st_m, st_m['table'], cov.append)
+assert cov[0].startswith('   quarters: 20 of 20 in the table (Mar 2022 .. Dec 2026)') is False and 'Dec 2026 missing' in '\n'.join(cov), cov
 
 # g) the background job reads every stock's lists again once (LIST_VERSION) and the kept files with the new rules
 st_ = X.load_stock('ABC')
@@ -1053,6 +1091,24 @@ finally:
     QH[:] = old_qh
 assert r13['done'] == 1 and FETCH == [('MTN', True), ('MTN', False)], (r13, FETCH)
 X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page([('Jun 2026', 122, 18.75, 1.88, 20), ('Sep 2026', 130, 18.75, 1.88, 19)])))
+
+# LIST_VERSION 4: every stock's lists read once more - the stocks never read go first
+assert X.LIST_VERSION == 4
+X.save_stock({'sym': 'OLDREAD', 'files': {}, 'listed': time.time(), 'lv': 3})
+for s_ in ('NEVER1', 'NEVER2'):
+    if os.path.exists(X._stock_path(s_)):
+        os.remove(X._stock_path(s_))
+order_ = []
+real_ps = X.process_stock
+X.process_stock = lambda nse, sym, today=None, say=None: (order_.append(sym), ({'sym': sym, 'files': {}, 'table': None}, 0))[1]
+try:
+    X.save_state({})
+    X.run_all({'url': 'x', 'xbrl_history_screener': False}, lambda cfg, action, payload=None, tries=3, timeout=120: (
+        {'ok': True, 'syms': ['OLDREAD', 'NEVER1', 'NEVER2']} if payload['op'] == 'syms' else {'ok': True, 'stored': 0}),
+        gap=0, sleep=nap, today=T23)
+finally:
+    X.process_stock = real_ps
+assert order_ == ['NEVER1', 'NEVER2', 'OLDREAD'], order_
 
 # e) the round's NSE steps only: nse_busy.json while they run
 sb.NSE_BUSY_PATH = os.path.join(TMP, 'nse_busy.json')
