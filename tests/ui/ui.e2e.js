@@ -99,6 +99,27 @@ const FIN_NOTE = "EPS adjusted for a bonus / split (today's share count): up to 
 const FIN_BW = 'Dec 2026: only the standalone results are on NSE so far - the consolidated ones have not come yet.';
 const FIN_O = { b: 'S', q: [['Jun 2026', 50, 40, 10, 20, 1, null, 1, 1, 9, 25, 6.75, 0.6, ''], ['Sep 2026', 55, 44, 11, 20, 1, null, 1, 1, 10, 25, 7.5, 0.7, 'd']], y: [] };
 const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18', note: FIN_NOTE, bw: FIN_BW, o: FIN_O };
+// the EPS Growth Target Lab (owner, 23-Nov-2026, LAURUSLABS): api/epstarget = the quarters' figures + one quarter's rows
+const EPST = require('../../web/lib/epstarget.js');
+const EPST_SYMS = LIVE_MAIN.main.rows.map((r) => r[LIVE_MAIN.main.cols.indexOf('sym')]).filter((x) => x && x !== FLAG_SYM).slice(0, 5);
+function epstRow(sym, o) {
+  const r = Object.assign({ sym, st: 'ok', why: '', b: 'C', fl: 'r-------', eps: [0.37, 1.71, 4.34, 3.02, 3.61, 4.67, 5.17, 6.81], ttm: 20.26, prev: 9.44,
+    g: 114.62, tgt: 2322.17, ann: '2026-07-24 16:05', src: 'nse', ed: '2026-07-27', ep: 1624.1, pre: 1600, o0: 1610, n: 95, hit: 75, hitd: '2026-11-11',
+    mx: [70, 85, 101, 101, 101], dd: [-3, -4, -4, -4, -4], cl: [8, 20, 40, null, null], ix: [1, 2, 3, null, null], now: 46,
+    ph: [2, 4, 6, 9, 12, 15, 18, 20, 22, 25, 28, 31, 34, 37, 40, 44, 47], pc: [1, 3, 5, 8, 11, 14, 17, 19, 21, 24, 27, 30, 33, 36, 39, 43, 46] }, o || {});
+  return EPST.COLS.map((k) => r[k]);
+}
+const EPST_SUM = (ready, win) => ({ stocks: 7, ok: 6, target: 5, above: 1, why: { fell: 1 }, win, medG: 60, medUp: 40, medN: 85, ready, ann: { nse: 6 } });
+const EPST_QS = [{ q: 'Sep 2026', end: '2026-09-30', fy: 'Q2 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20', sum: EPST_SUM(false, { 30: [1, 0, 0, 4] }) },
+  { q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20', sum: EPST_SUM(true, { 30: [5, 1, 0, 0], 60: [5, 1, 1, 0], 90: [3, 2, 0, 2] }) }];
+const EPST_JUN = [epstRow(FLAG_SYM),
+  epstRow(EPST_SYMS[0], { g: 30, tgt: 600, ep: 500, ttm: 20, prev: 15.38, hit: 12, hitd: '2026-08-12', mx: [101, 101, 101, 101, 101] }),
+  epstRow(EPST_SYMS[1], { g: 45, tgt: 900, ep: 800, hit: null, hitd: '', mx: [80, 98.5, 99, 99, 99], cl: [2, 5, 6, null, null] }),
+  epstRow(EPST_SYMS[2], { g: 170, tgt: 5000, ep: 1000, hit: null, hitd: '', mx: [30, 32, 33, 33, 33], cl: [-6, -9, -12, null, null] }),
+  epstRow(EPST_SYMS[3], { g: 80, tgt: 300, ep: 200, n: 40, hit: null, hitd: '', mx: [70, 75, 75, 75, 75], cl: [4, null, null, null, null] }),
+  epstRow(EPST_SYMS[4], { g: 10, tgt: 50, ep: 80, hit: null, hitd: '' }),
+  epstRow('NOTINMAIN', { st: 'x', why: 'fell', g: -12, tgt: null, ed: '', ep: null, n: null, hit: null, hitd: '', mx: [], dd: [], cl: [], ix: [], ph: [], pc: [] })];
+const EPST_SEP = [epstRow(FLAG_SYM, { ann: '2026-10-28 17:15', ed: '2026-10-29', n: 17, hit: null, hitd: '', mx: [90, 90, 90, 90, 90], cl: [null, null, null, null, null] })];
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -168,6 +189,10 @@ function liveApi(o) {
     if (u.pathname === '/api/financials') {
       const sym = u.searchParams.get('sym');
       return { json: { ok: true, sym, fin: sym === FLAG_SYM ? FIN_SAMPLE : null, fetchedAt: istAgo(1) } };
+    }
+    if (u.pathname === '/api/epstarget') {
+      const q = u.searchParams.get('q') || 'Jun 2026';
+      return { json: { ok: true, quarters: EPST_QS, q, cols: EPST.COLS, rows: q === 'Sep 2026' ? EPST_SEP : EPST_JUN, fetchedAt: istAgo(1) } };
     }
     if (u.pathname === '/api/quotes') {
       return { json: { state: 'UNAVAILABLE', source: 'sheet', asOf: null, items: [], errors: [{ symbol: '*', reason: 'mock provider: sheet feed timed out' }], message: 'mock provider: sheet feed timed out' } };
@@ -249,7 +274,7 @@ async function pageState(page) {
 
 const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
-  'strategy', 'signals', 'results', 'today', 'edge', 'markets'];
+  'strategy', 'signals', 'results', 'today', 'edge', 'epst', 'markets'];
 let failures = 0;
 // tools/lab-guide/build.js (the Backtest Lab guide, 12-Nov-2026) runs only the Lab check (E2E_ONLY) and keeps its screenshots (GUIDE_SHOTS)
 const GUIDE = process.env.GUIDE_SHOTS || '';
@@ -1473,6 +1498,70 @@ function check(name, fn) {
       });
     }
   }
+  await check('EPS Target Lab: the owner\'s Q1 first, windows, groups, every quarter, one stock\'s formula + chart, CSV', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#epst', { waitUntil: 'load' });
+    await p.waitForSelector('#et-sum .tiles', { timeout: 15000 });
+    const tiles = async () => p.$$eval('#et-sum .tile', (t) => t.map((x) => x.querySelector('.label').innerText.trim() + ' = ' + x.querySelector('.value').innerText.trim()));
+    let tl = await tiles();
+    assert.ok(/What Jun 2026 · Q1 FY27 says/.test(await p.$eval('#et-sum h2', (h) => h.innerText)), 'the newest ready quarter (the owner\'s Q1)');
+    // 60 sessions: FLAG (75) not yet, [0] reached on 12, [1] near (98.5 %), [2] not, [3] running (40), [4] above the target at the entry
+    assert.ok(tl.indexOf('Targets above the entry = 5') >= 0, tl.join(' | '));
+    assert.ok(tl.indexOf('Reached within 60 sessions = 25%') >= 0, tl.join(' | '));
+    assert.ok(tl.indexOf('Near miss = 1') >= 0 && tl.indexOf('Still running = 1') >= 0, tl.join(' | '));
+    assert.deepStrictEqual(await p.$$eval('#et-pick [data-epq]', (b) => b.map((x) => x.textContent.trim() + ':' + x.getAttribute('aria-pressed'))),
+      ['Sep 2026 · Q2 FY27 running:false', 'Jun 2026 · Q1 FY27:true']);
+    const winRows = await p.$$eval('#et-win tbody tr', (t) => t.map((r) => r.innerText.replace(/\s+/g, ' ').trim()));
+    assert.strictEqual(winRows.length, 5);
+    assert.ok(/^90 sessions .* 4 2 50%/.test(winRows[2]), winRows[2]);
+    // 90 sessions: FLAG reached on 75 -> 2 of 4 (the one with 40 sessions still running)
+    await p.selectOption('#et-w', '90');
+    await p.waitForFunction(() => /90 sessions/.test((document.querySelector('#et-sum .tiles') || {}).innerText || ''));
+    tl = await tiles();
+    assert.ok(tl.indexOf('Reached within 90 sessions = 50%') >= 0, tl.join(' | '));
+    // groups: upside at the entry
+    await p.click('#et-groups [data-epg="upside"]');
+    const groups = await p.$$eval('#et-groups tbody tr td:first-child', (t) => t.map((x) => x.innerText.trim()));
+    assert.deepStrictEqual(groups, ['0–25%', '25–50%', '50–100%', '100–200%', 'Over 200%']);
+    // one stock: the formula and the chart
+    await p.fill('#et-q', FLAG_SYM);
+    await p.waitForSelector('#et-one .et-one svg');
+    const one = await p.$eval('#et-one', (x) => x.innerText);
+    assert.ok(one.indexOf('3.61 + 4.67 + 5.17 + 6.81 = 20.26') >= 0 && one.indexOf('(20.26 − 9.44) ÷ 9.44 × 100 = 114.6%') >= 0 &&
+      one.indexOf('20.26 × 114.6 = 2322.17') >= 0, one);
+    assert.ok(/after 75 sessions/.test(one) && /NSE's result filing/.test(one), one);
+    assert.deepStrictEqual(await p.$$eval('#et-one .et-eps th', (t) => t.map((x) => x.textContent)),
+      ['Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026']);
+    assert.strictEqual(await p.$eval('#et-one .et-eps td sup', (x) => x.textContent), 'r', 'screener.in\'s figure marked');
+    assert.strictEqual(await p.$$eval('#et-one .et-hit', (x) => x.length), 1, 'the day it was reached on the chart');
+    assert.ok(await p.$eval('#et-one a[href*="tradingview"]', (a) => a.href.indexOf('NSE%3A' + 'x') < 0), 'TradingView');
+    // CSV
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#et-csv')]);
+    assert.ok(/eps-target-Jun-2026-90\.csv/.test(dl.suggestedFilename()), dl.suggestedFilename());
+    // the status chips
+    await p.fill('#et-q', '');
+    await p.click('#et-all [data-eps="none"]');
+    await p.waitForTimeout(200);
+    assert.deepStrictEqual(await p.$$eval('#et-all-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym'))), ['NOTINMAIN']);
+    // every quarter -> another quarter
+    assert.strictEqual(await p.$$eval('#et-qs tbody tr', (t) => t.length), 2);
+    await p.click('#et-qs button[data-epq="Sep 2026"]');
+    await p.waitForFunction(() => /Sep 2026/.test((document.querySelector('#et-sum h2') || {}).innerText || ''));
+    assert.ok(calls.some((u) => /\/api\/epstarget\?q=Sep%202026$/.test(u)), calls.filter((u) => /epstarget/.test(u)).join(' '));
+    assert.ok(/No result of Sep 2026 has had 90 sessions yet/.test(await p.$eval('#et-sum', (x) => x.innerText)));
+    // a phone: no page overflow
+    await p.setViewportSize({ width: 360, height: 780 });
+    await p.waitForTimeout(300);
+    assert.ok(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'no horizontal overflow at 360 px');
+    await guideShot(p, 'epst', '#et-sum');
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+  });
+
   await check('every theme has its own accent colour', async () => {
     const vals = Object.values(accents);
     assert.strictEqual(vals.length, 6);
