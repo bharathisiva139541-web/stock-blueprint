@@ -4,15 +4,21 @@
    and api/financials?sym= hands it to the stock window.
 
    fin = { b: 'C' | 'S', q: [[label, rev, exp, op, opm, oi, exc, int, dep, pbt, taxp, np, eps, flag], ...] oldest first,
-           y: [...same, years], files, at, note?, k? }   flag '' = the filing's own period, 'c' = a later filing's
-                                                comparison column, 's' = the other basis's filing, 'q' = a year with no
+           y: [...same, years], files, at, note?, k?, bw?, o? }   flag '' = the filing's own period, 'c' = a later
+                                                filing's comparison column, 'd' = worked out from the year-to-date figures
+                                                of the other filings (no filing of its own), 's' = standalone figures
+                                                before the company's first consolidated period, 'q' = a year with no
                                                 yearly figures read = the sum of its 4 quarters, 'r' = screener.in's
                                                 figures (no NSE filing: before the listing / a gap); note = EPS adjusted for
                                                 a bonus / split; k 'bank' = screener.in's bank rows (Revenue, Financing
-                                                Profit, Financing Margin %)
+                                                Profit, Financing Margin %); bw = words about the basis (owner, 23-Nov-2026:
+                                                MTARTECH - consolidated results ended, its subsidiaries merged into it);
+                                                o = the other basis's table { b, q, y, note?, k? } (never mixed in)
 
    SB.fin = {
      ROWS                  -> [{k, label, kind 'cr' | 'pct' | 'eps'}] in screener.in's order
+     bases(fin)            -> ['C'] / ['S'] / ['S', 'C'] ... the tables it has, the one shown first first
+     pick(fin, basis)      -> the table of that basis (fin itself, or fin.o with the shared files / at / bw)
      view(fin, kind)       -> null | { kind, basis, bank, note, labels, flags, rows: [{k, label, kind, vals}] } (rows with
                               no figure left out; kind 'q' quarters / 'y' years)
      growth(view, k, lag)  -> [% change vs lag periods before, ...] (lag 4 = a year for quarters, 1 for years)
@@ -37,6 +43,19 @@
   var LABEL_RE = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}$/;
 
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  var FLAGS = { c: 1, d: 1, s: 1, q: 1, r: 1 };
+
+  function other(fin) { return fin && fin.o && typeof fin.o === 'object' && (fin.o.b === 'C' || fin.o.b === 'S') && fin.o.b !== fin.b ? fin.o : null; }
+  function bases(fin) {
+    if (!fin || typeof fin !== 'object') return [];
+    var o = other(fin);
+    return [fin.b === 'S' ? 'S' : 'C'].concat(o ? [o.b] : []);
+  }
+  function pick(fin, basis) {
+    var o = other(fin);
+    if (!o || !basis || basis === fin.b || basis !== o.b) return fin;
+    return { b: o.b, q: o.q, y: o.y, note: o.note, k: o.k, files: fin.files, at: fin.at, bw: fin.bw };
+  }
 
   function view(fin, kind) {
     if (!fin || typeof fin !== 'object') return null;
@@ -52,7 +71,8 @@
       kind: k, basis: fin.b === 'S' ? 'S' : 'C', at: fin.at || '', files: fin.files || 0, bank: bank,
       note: typeof fin.note === 'string' ? fin.note : '',
       labels: src.map(function (r) { return String(r[0]); }),
-      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return f === 'c' || f === 's' || f === 'q' || f === 'r' ? f : ''; }),
+      bw: typeof fin.bw === 'string' ? fin.bw : '',
+      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return FLAGS[f] ? f : ''; }),
       rows: rows
     };
   }
@@ -81,12 +101,14 @@
     var out = [[(sym || '') + (v.kind === 'y' ? ' - yearly (Rs crore)' : ' - quarterly (Rs crore)')].concat(v.labels)];
     v.rows.forEach(function (r) { out.push([r.label].concat(r.vals.map(function (x) { return isNum(x) ? x : ''; }))); });
     out.push(['From'].concat(v.flags.map(function (f) {
-      return f === 'c' ? 'a later filing (comparison column)' : f === 's' ? (v.basis === 'C' ? 'standalone filing' : 'consolidated filing')
+      return f === 'c' ? 'a later filing (comparison column)' : f === 's' ? 'standalone filing (before the first consolidated one)'
+        : f === 'd' ? 'worked out from the year-to-date figures of other filings'
         : f === 'q' ? 'the sum of its 4 quarters' : f === 'r' ? 'screener.in (no NSE filing figures)' : 'its own filing';
     })));
+    if (v.bw) out.push([v.bw]);
     if (v.note) out.push([v.note]);
     return out;
   }
 
-  return { ROWS: ROWS, view: view, growth: growth, cell: cell, csv: csv };
+  return { ROWS: ROWS, bases: bases, pick: pick, view: view, growth: growth, cell: cell, csv: csv };
 });

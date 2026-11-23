@@ -52,6 +52,11 @@
     'and the latest close is still above. Daily closes from the session that could first react (after-market results: the next session).';
 
   /** #results/<kind>: the stocks behind one tile / bar. */
+  /** The Main stocks whose results of the season are not in Main yet (owner, 23-Nov-2026: "what about remaining"). */
+  function notUpdatedOf(ctx, tRows, seasonName) {
+    var live = !!(ctx.site && ctx.site.live);
+    return R.notUpdated(ctx.stocks, tRows, seasonName, ui.iso(live ? new Date() : ctx.refDate));
+  }
   function renderList(el, ctx, kind, perf, pRows, tRows, seasonName) {
     var K = R.KINDS.filter(function (k) { return k.id === kind; })[0];
     var rc = ctx.history ? R.reclaimRows(pRows, ctx.history) : null;
@@ -61,8 +66,17 @@
       withCandles(el, ctx, function () { renderList(el, ctx, kind, perf, pRows, tRows, seasonName); });
       return;
     }
-    var n = R.counts(pRows, tRows, rc);
-    var src = K.src === 'tracker' ? 'Results Tracker' : 'Results Performance';
+    var nu = notUpdatedOf(ctx, tRows, seasonName);
+    var n = R.counts(pRows, tRows, rc, nu);
+    var src = K.src === 'tracker' ? 'Results Tracker' : K.src === 'main' ? 'Main + Results Tracker' : 'Results Performance';
+    var nuHelp = '';
+    if (K.src === 'main') {
+      var by = {};
+      nu.forEach(function (r) { by[r.why] = (by[r.why] || 0) + 1; });
+      nuHelp = '<p class="sub">Main stocks whose ' + esc(seasonName || '') + ' results are not in Main yet (not ticked), and why: ' +
+        R.NOT_UPDATED.filter(function (k) { return by[k.id]; }).map(function (k) { return esc(k.label) + ' <b>' + F.int(by[k.id]) + '</b>'; }).join(' · ') +
+        '. A stock gets its figures and the tick by itself when they come.</p>';
+    }
     el.innerHTML = '<div class="page-head"><div><p class="sub"><a href="#results">← Results &amp; corporate events</a></p><h1>' + esc(K.label) + '</h1><p>' +
       (seasonName ? esc(seasonName) + ' season · ' : '') + 'from your sheet\'s ' + src + ' tab ' + ui.stateBadge('CACHED', perf.asOf || ctx.D.asOf, src + ' tab') + '</p></div>' +
       '<div class="actions"><button class="btn" type="button" id="rl-csv">Export CSV</button></div></div>' +
@@ -70,12 +84,21 @@
         return '<a class="chip" href="#results/' + k.id + '" aria-pressed="' + (k.id === kind) + '"' + (k.id === kind ? ' aria-current="page"' : '') + '>' +
           esc(k.label) + ' <b>' + F.int(n[k.id]) + '</b></a>';
       }).join('') + '</nav>' +
-      (K.src === 'reclaim' ? '<p class="sub">' + esc(RC_HELP) + ' "Back above after 2+ weeks" = it closed back above on the ' + R.RECLAIM.slowDays +
+      nuHelp + (K.src === 'reclaim' ? '<p class="sub">' + esc(RC_HELP) + ' "Back above after 2+ weeks" = it closed back above on the ' + R.RECLAIM.slowDays +
         'th session after the results or later; "close to" = still below, within ' + R.RECLAIM.nearPct + '% of it and ' + R.RECLAIM.bouncePct +
         '% or more up from its lowest close. Closes up to ' + F.date(rc.length ? rc[0].reclaim.nowDate : null) + '.</p>' : '') +
       '<div class="controls"><input class="search" id="rl-q" type="search" placeholder="Search symbol, company or industry" aria-label="Search this list" value="' + esc(RL.q) + '">' +
       '<span class="count" id="rl-count"></span></div><div id="rl-t"></div></section>';
-    var cols = K.src === 'reclaim' ? [
+    var cols = K.src === 'main' ? [
+      { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
+      { key: 'Basic Industry', label: 'Industry', wrap: true },
+      { key: 'Result Date', label: 'Result date', type: 'date' },
+      { key: 'Why', label: 'Why not in Main yet', type: 'badge' },
+      { key: 'Announced', label: 'Announced', title: 'When NSE got the results (IST) and the market session' },
+      { key: 'Screener Latest Quarter', label: 'Screener shows' },
+      { key: 'Last Checked', label: 'Last checked', type: 'datetime' },
+      { key: 'Note', label: 'Details', wrap: true }
+    ] : K.src === 'reclaim' ? [
       { key: 'Symbol', label: 'Stock', type: 'sym', name: 'Company' },
       { key: 'Result Date', label: 'Result date', type: 'date' },
       { key: 'Pre-Result Close', label: 'Pre-result close', type: 'price' },
@@ -125,8 +148,8 @@
       { key: 'Note', label: 'Note', wrap: true }
     ];
     var t = new ui.Table({ id: 'results-list-' + K.src, rows: [], pageSize: 50, sort: K.sort, empty: 'No stocks in this list', columns: cols }).mount($('#rl-t', el));
-    var list = R.pick(kind, pRows, tRows, rc);
-    if (K.src !== 'tracker') withFlags(list, ctx.D);
+    var list = R.pick(kind, pRows, tRows, rc, nu);
+    if (K.src !== 'tracker' && K.src !== 'main') withFlags(list, ctx.D);
     function apply() {
       var rows = list.filter(function (r) { return ui.textMatch(RL.q, [r.Symbol, r.Company, r['Basic Industry']]); });
       $('#rl-count', el).textContent = F.int(rows.length) + ' of ' + F.int(list.length) + ' stock' + (list.length === 1 ? '' : 's');
@@ -177,6 +200,7 @@
           linkTile('above', 'Above pre-result price', esc((sl ? sl.above : season.above) || '–')) +
           linkTile('soldoff', 'Strong results, sold off', F.int(season.soldOff), 'good numbers, price fell') +
           linkTile('waiting', 'Waiting on screener.in', F.int(tc.Pending), tc['Gave up'] + ' gave up') +
+          linkTile('notupdated', 'Not in Main yet', F.int(notUpdatedOf(ctx, tRows, seasonName).length), 'every reason - click for the list') +
           '</div>';
       }
       var verdicts = (perf.verdicts || []).filter(function (v) { return v.verdict; });

@@ -97,7 +97,8 @@ test('list -> xbrl: filed rows needing figures; once a day: no filing seen, Upda
   // PARAS' filing (29-Oct) is not near its result date (12-Oct): no filing seen -> once a day; MCROW: moneycontrol has it
   const want = e.call('ab_xbrlWant_', tr, '2026-10-30', basis, daily);
   assert.deepStrictEqual(Object.keys(want), ['STAND', 'MCROW']);
-  assert.deepStrictEqual(Object.keys(daily), ['PARAS', 'NEWUPD']);
+  // GONE gave up, but its season goes on: still looked for once a day (owner, 23-Nov-2026)
+  assert.deepStrictEqual(Object.keys(daily), ['PARAS', 'GONE', 'NEWUPD']);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(basis)), { PARAS: 'C', STAND: 'S' }, 'no stored screener.in figures: both files');
   assert.deepStrictEqual(Object.keys(e.call('ab_xbrlWant_', tr, '2026-10-30', null, null)), ['STAND', 'MCROW'], 'the quick check: no daily ones');
   // a Pending row without a filing on its result day: not asked at all (the 30-minute check sees the filing)

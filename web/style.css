@@ -1283,6 +1283,8 @@ a.sg-step:hover { text-decoration: none; border-color: rgba(var(--accent-rgb), 0
 .fin-head h3 { font-size: 15px; margin: 0; flex: 1 1 auto; }
 .fin-kind { margin: 0; }
 .fin-note { margin: 6px 0; font-size: 12px; }
+.fin-basis { display: inline-flex; gap: 4px; margin: 0 6px 4px 0; vertical-align: middle; }
+.fin-basis .chip { font-size: 12px; padding: 2px 10px; }
 .fin-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; max-width: 100%; }
 .fin-t { border-collapse: separate; border-spacing: 0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fin-t th, .fin-t td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border); }

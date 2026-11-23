@@ -125,7 +125,8 @@ def filing(k, nature='Consolidated', bump=0.0):
             per.append((qstart(QS[k - 4][1], 12), QS[k - 4][1], year_figs(range(k - 7, k - 3))))
     else:
         months = {6: 3, 9: 6, 12: 9}[e.month]
-        per.append((qstart(e, months), e, figs(k)))                      # a 3/6/9-month year-to-date column
+        if months > 3:                                                   # the 6 / 9-month year-to-date column
+            per.append((qstart(e, months), e, year_figs(range(k - months // 3 + 1, k + 1))))
     return xml(nature, per)
 
 
@@ -246,8 +247,8 @@ assert X.pick([X.rec_meta({'xbrl': 'https://a/U_01012026120000_.xml'})], '2021-0
 # ------------------------------------------------------------------ 2. reading a file
 p = X.parse_periods(NSE[url_of(23)])
 assert p['nature'] == 'C' and sorted((q['end'], q['m']) for q in p['periods']) == [
-    ('2025-09-30', 3), ('2026-06-30', 3), ('2026-09-30', 3)], p['periods']                 # the 6-month column left out
-own = [q for q in p['periods'] if q['end'] == '2026-09-30'][0]['f']
+    ('2025-09-30', 3), ('2026-06-30', 3), ('2026-09-30', 3), ('2026-09-30', 6)], p['periods']   # + the half year (VERSION 7)
+own = [q for q in p['periods'] if q['end'] == '2026-09-30' and q['m'] == 3][0]['f']
 assert own['revenue'] == 123.0 and own['expenses'] == 103.0 and own['finance_costs'] == 2.0 and own['eps'] == 1.88, own
 assert X.parse_periods(b'not xml') is None
 p = X.parse_periods(NSE[url_of(21)])                       # March 2026: the year and the year before too
@@ -321,20 +322,21 @@ def api(cfg, action, payload=None, tries=3, timeout=120):
 for s in ('ABC', 'XYZ'):
     os.remove(X._stock_path(s))                       # a fresh start (the kept files stay)
 X.POST_MAX = 1
+NOSC = {'url': 'x', 'xbrl_history_screener': False}        # screener.in's pages: section 13
 busy = [True, True, False]
-res = X.run_all({'url': 'x'}, api, round_busy=lambda: busy.pop(0) if busy else False, gap=0, sleep=nap, today=TODAY)
+res = X.run_all(NOSC, api, round_busy=lambda: busy.pop(0) if busy else False, gap=0, sleep=nap, today=TODAY)
 assert res['done'] == 3 and res['blocked'] == '' and res['left'] == 0, res
 assert SLEEPS.count(20) == 2, 'waited while a round ran'
 assert [c[1]['op'] for c in CALLS] == ['syms', 'put', 'put'], [c[1]['op'] for c in CALLS]
 assert [c[1]['items'][0]['sym'] for c in CALLS[1:]] == ['ABC', 'XYZ'] and CALLS[1][1]['items'][0]['fin']['q'][-1][0] == 'Sep 2026'
 assert res['files'] == 0, 'every file was kept from before - nothing downloaded again'
 assert any('3 of 3 stock(s) to read' in x for x in LOGS) and any('2 table(s) sent to the sheet' in x for x in LOGS), LOGS[-3:]
-assert any('waiting - the laptop\'s regular round is running (just started)' in x for x in LOGS), 'a line when it waits'
-assert any('the round finished - reading again' in x for x in LOGS)
+assert any('waiting - the laptop\'s round is asking NSE right now (just started)' in x for x in LOGS), 'a line when it waits'
+assert any('the round is done with NSE - reading again' in x for x in LOGS)
 assert X._left_words(30) == '' and X._left_words(150) == ', about 2 min left' and X._left_words(15 * 3600 + 600) == ', about 15 h 10 min left'
 assert X.CMD_SAY_EVERY == 5 and 'every=XH.CMD_SAY_EVERY' in open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()
 del CALLS[:]
-res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY)
+res = X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY)
 assert res['done'] == 0 and [c[1]['op'] for c in CALLS] == [], 'nothing due, nothing new to send (the stocks asked a day ago)'
 # NSE refusing: stops, the stock is not marked as read
 os.remove(X._stock_path('ABC'))
@@ -343,13 +345,13 @@ st_['symsAt'] = 0
 X.save_state(st_)
 STATUS['all'] = 403
 del CALLS[:]
-res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY)
+res = X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY)
 assert res['blocked'] and res['done'] == 0 and not os.path.exists(X._stock_path('ABC')), res
 STATUS['all'] = None
 STATUS.pop('all')
 # no internet: the same
 X.bind(get=lambda *a, **k: (_ for _ in ()).throw(OSError('offline')))
-res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY)
+res = X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY)
 assert res['blocked'] == 'NSE did not answer' and not os.path.exists(X._stock_path('ABC')), res
 X.bind(get=fake_get)
 # another program at it: this one does nothing
@@ -357,20 +359,20 @@ alive = {'p': True}
 X.bind(pid_alive=lambda pid: alive['p'])
 with open(X._lock_path(), 'w') as f:
     json.dump({'pid': 1, 'what': 'XbrlHistoryNow', 'at': time.time()}, f)
-assert X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY) is None
+assert X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY) is None
 alive['p'] = False
-assert X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY) is not None, 'its program has gone'
+assert X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY) is not None, 'its program has gone'
 assert not os.path.exists(X._lock_path()), 'released'
 # an older web app: no stocks, a hint once
 X.save_state({})
-r = X.run_all({'url': 'x'}, lambda *a, **k: {'ok': False, 'error': 'unknown action'}, gap=0, sleep=nap, today=TODAY)
+r = X.run_all(NOSC, lambda *a, **k: {'ok': False, 'error': 'unknown action'}, gap=0, sleep=nap, today=TODAY)
 assert r['done'] == 0 and any('older version' in x for x in LOGS)
 
 # ------------------------------------------------------------------ 6. the background worker
 X.save_state({})
 w = X.Worker()
 assert w.maybe_start({'url': 'x', 'xbrl_history': False}, api, lambda: False) is False
-assert w.maybe_start({'url': 'x', 'xbrl_history_gap_s': 0.001}, api, lambda: False) is True
+assert w.maybe_start({'url': 'x', 'xbrl_history_gap_s': 0.001, 'xbrl_history_screener': False}, api, lambda: False) is True
 w.thread.join(30)
 assert not w.busy() and w.next_at > time.time() + 3600, 'rests after a finished job'
 assert w.maybe_start({'url': 'x'}, api, lambda: False) is False, 'not again before its time'
@@ -408,7 +410,7 @@ assert rows['ABC'][2] is None and 'EPS history shorter than 5Y' in rows['ABC'][9
 
 # ------------------------------------------------------------------ 9. screener_bridge
 src = open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()
-assert "xhist.maybe_start(cfg, api, round_running)" in src and "cmd == 'xbrlhistory'" in src and "cmd == 'xbrlhistcheck'" in src
+assert "xhist.maybe_start(cfg, api, nse_busy, screener_busy=round_running)" in src and "cmd == 'xbrlhistory'" in src and "cmd == 'xbrlhistcheck'" in src
 assert sb.DEFAULTS['xbrl_history'] is True and 'xbrl_data' in sb.DP.BIG and "xbrl=XH.hist_quarters" in src
 sb.LOCK_PATH = os.path.join(TMP, 'bridge.lock')
 assert sb.round_running() is False
@@ -529,7 +531,7 @@ NSE[FDIM] = filing(22).replace(b'<xbrli:identifier scheme="x">X</xbrli:identifie
                                b'dimension="in-bse-fin:NatureAxis">in-bse-fin:ConsolidatedMember</xbrldi:explicitMember>'
                                b'</xbrli:segment></xbrli:entity>')
 F6M = url_of(19, sym='FAIL')
-NSE[F6M] = xml('Consolidated', [(qstart(QS[19][1], 6), QS[19][1], figs(19))])
+NSE[F6M] = xml('Consolidated', [(qstart(QS[19][1], 2), QS[19][1], figs(19))])   # 2 months: no period we read
 FNOP = url_of(18, sym='FAIL')
 NSE[FNOP] = xml('Consolidated', [])                      # an instant context only - no period at all
 NSE[url_of(23, sym='FAIL')] = filing(23)
@@ -543,7 +545,7 @@ assert not os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FHTML
 assert 'fail' not in fl[FDIM] and fl[FDIM]['older'] == 'in-bse-fin:ConsolidatedMember', fl[FDIM]
 assert fl[FNOP]['fail'] == 'no context with a period (1 context(s))' and fl[FNOP]['retry'] is False, fl[FNOP]
 assert os.path.exists(os.path.join(X.DIR, 'files', 'FAIL', X.file_name(FNOP))), 'the filing itself is kept (a later rule may read it)'
-assert fl[F6M]['fail'] == 'no 3- or 12-month period in it (periods: 2025-04-01..2025-09-30)' and fl[F6M]['retry'] is False, fl[F6M]
+assert fl[F6M]['fail'] == 'no 3- or 12-month period in it (periods: 2025-08-01..2025-09-30)' and fl[F6M]['retry'] is False, fl[F6M]
 bq = {r[0]: r for r in sf['table']['q']}
 assert bq['Jun 2026'][-1] == '' and bq['Jun 2026'][1] == 122.0, 'read from the older-format file (the segment value 999 not taken)'
 assert [bq.get(l, [''])[-1] for l in ('Mar 2026', 'Sep 2025', 'Jun 2025')] == ['c', 'c', 'c'] and 'Dec 2025' not in bq, bq.keys()
@@ -691,7 +693,8 @@ odoc = (head + octx('OneOperatingExpenses01D', '2023-07-01', '2023-09-30', 'OneO
         '<a:OtherExpenses contextRef="OneOperatingExpenses01D">10000000</a:OtherExpenses>'
         '<a:BasicEarningsLossPerShare contextRef=" OneD ">1.5</a:BasicEarningsLossPerShare></xbrli:xbrl>').encode()
 pk = X.parse_periods(odoc)
-assert [(q['start'], q['end'], q['f']) for q in pk['periods']] == [('2023-07-01', '2023-09-30', {'revenue': 123.0, 'eps': 1.5})], pk
+assert [(q['start'], q['end'], q['f']) for q in pk['periods']] == [('2023-04-01', '2023-09-30', {'revenue': 240.0}),
+                                                                   ('2023-07-01', '2023-09-30', {'revenue': 123.0, 'eps': 1.5})], pk
 assert pk['older'] == "contexts FourD, OneD not in the file - their period from the file's other contexts", pk['older']
 assert ('RevenueFromOperations', 1230000000.0) in X.facts_dump(odoc, '2023-09-30')
 w = []
@@ -780,19 +783,22 @@ X.save_stock({'sym': 'ARS', 'files': {'f%d' % k: qfile(e, r, n, ep, y) for k, (e
     ('2025-09-30', 227.4, 28.1, 4.46, None), ('2025-12-31', 248.2, 37.0, 5.9, None), ('2026-03-31', 256.0, 42.2, 6.63, 932.4),
     ('2026-06-30', 246.1, 23.0, 3.7, None), ('2026-09-30', 273.3, 42.4, 6.65, None)])}})
 t0 = X.build(X.load_stock('ARS'), TODAY)
-assert [r[0] for r in t0['q']] == QH[5:] and [r[0] for r in t0['y']] == ['Mar 2026'], 'NSE alone: the 5 quarters since listing'
+assert [r[0] for r in t0['q']] == QH[4:] and [r[0] for r in t0['y']] == ['Mar 2026'], 'NSE alone: the 5 quarters since listing'
+# + Jun 2025 (VERSION 7): the year Mar 2026 minus its other 3 quarters (no filing of its own - screener.in's way)
+j25 = {r[0]: r for r in t0['q']}['Jun 2025']
+assert j25[-1] == 'd' and j25[1] == 200.8 and j25[1 + X.COLS.index('np')] == 22.1, j25
 X.keep_screener('ARS', sc_page(), 1000.0)
 state_ = {}
 assert X.refresh_screener(['ARS', 'NOPE'], state_, TODAY) == 1 and X.refresh_screener(['ARS'], state_, TODAY) == 0
 t = X.load_stock('ARS')['table']
 fl = {r[0]: r[-1] for r in t['q']}
-assert [r[0] for r in t['q']] == QH and [fl[q] for q in QH] == ['r'] * 5 + [''] * 5, fl
+assert [r[0] for r in t['q']] == QH and [fl[q] for q in QH] == ['r'] * 4 + ['d'] + [''] * 5, fl
 assert {r[0]: r[1] for r in t['q']}['Sep 2025'] == 227.4, 'NSE\'s own figure where there is one'
 fy = {r[0]: r for r in t['y']}
 assert list(fy) == ['Mar 2020', 'Mar 2021', 'Mar 2022', 'Mar 2023', 'Mar 2024', 'Mar 2025', 'Mar 2026'], list(fy)
 assert fy['Mar 2026'][-1] == '' and fy['Mar 2026'][1] == 932.4 and fy['Mar 2020'][-1] == 'r' and fy['Mar 2020'][1] == 246
 assert fy['Mar 2020'][1 + X.COLS.index('eps')] == 1.08 and fy['Mar 2020'][1 + X.COLS.index('taxp')] == 31
-assert len(X.eps_quarters(t)[1]) == 5, 'pe_history keeps its own screener.in EPS - only the filings\' quarters go to it'
+assert len(X.eps_quarters(t)[1]) == 6, 'pe_history keeps its own screener.in EPS - only the filings\' quarters (+ worked out) go to it'
 # a standalone page read later does not push the consolidated one out; a stock with no filing read yet: screener.in alone
 X.keep_screener('ARS', sc_page('Standalone'), 2000.0)
 assert sorted(X.load_sc('ARS')) == ['C', 'S']
@@ -860,17 +866,206 @@ n_req = len(REQ)
 st_ = X.load_state()
 st_['day'] = {'d': '2026-11-16', 'stocks': 100, 'files': 3}
 X.save_state(st_)
-res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY, clock=lambda: mon10)
+res = X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY, clock=lambda: mon10)
 assert res['paused'] == 'cap' and res['done'] == 0 and len(REQ) == n_req, res
 assert any("today's 100 stocks are done - the rest tomorrow (2 stock(s) left, about 1 more day(s) at 100 a day)" in x
            for x in LOGS), LOGS
 assert any('one request every 0 s, at most 100 stocks a day' in x for x in LOGS)
 st_['day'] = {'d': '2026-11-16', 'stocks': 99, 'files': 3}
 X.save_state(st_)
-res = X.run_all({'url': 'x'}, api, gap=0, sleep=nap, today=TODAY, clock=lambda: mon10)
+res = X.run_all(NOSC, api, gap=0, sleep=nap, today=TODAY, clock=lambda: mon10)
 assert res['done'] == 1 and res['paused'] == 'cap' and len(REQ) > n_req, 'one more stock in market hours, then the limit'
 assert X.load_state()['day']['stocks'] == 100
 st_ = {'day': {'d': '2026-11-16', 'stocks': 100, 'files': 9}}
 assert X._day_count(st_, mon10 + 86400) == {'d': '2026-11-17', 'stocks': 0, 'files': 0}, 'a new day starts at 0'
 assert X._day_count({'day': {'d': '2026-11-16', 'files': 7}}, mon10)['stocks'] == 0, 'the earlier counter (files only)'
+# ------------------------------------------------------------------ 13. VERSION 7 (owner, 23-Nov-2026): the quarters NSE has
+# no filing for worked out from the year-to-date figures; consolidated and standalone kept apart (MTARTECH: its subsidiaries
+# merged into it - the newest quarter is standalone only; TFCILTD / 3MINDIA: consolidated figures end years ago)
+T23 = date(2026, 11, 23)
+
+
+def vfile(end, basis, quarters, stamp, ytd=None, year=None, prev=None):
+    """A kept filing: its quarter (+ the quarter before as a comparison column), a year-to-date period, a year."""
+    def f(rev, np_=10.0, eps=1.0):
+        return {'revenue': rev, 'expenses': rev * 0.8, 'finance_costs': 1.0, 'depreciation': 1.0, 'other_income': 1.0,
+                'pbt': np_ * 1.3, 'tax': np_ * 0.3, 'pat': np_, 'eps': eps}
+    e = date.fromisoformat(end)
+    per = [{'start': qstart(e, 3).isoformat(), 'end': end, 'm': 3, 'f': f(quarters)}]
+    if prev is not None:
+        pe_ = qend(e.year - (e.month == 3), 12 if e.month == 3 else e.month - 3)
+        per.append({'start': qstart(pe_, 3).isoformat(), 'end': pe_.isoformat(), 'm': 3, 'f': f(prev)})
+    if ytd:
+        months, rev = ytd
+        per.append({'start': qstart(e, months).isoformat(), 'end': end, 'm': months, 'f': f(rev, 10.0 * months / 3, months / 3.0)})
+    if year:
+        per.append({'start': qstart(e, 12).isoformat(), 'end': end, 'm': 12, 'f': f(year, 40.0, 4.0)})
+    return {'url': 'u', 'end': end, 'basis': basis, 'rev': False, 'stamp': stamp, 'v': X.VERSION, 'periods': per}
+
+
+# a) a quarter with no filing at all (Sep 2025): the 9 months of the Dec filing minus Jun - Sep comes out; Mar = the year minus 9M
+drv = {'sym': 'DRV', 'files': {
+    'a': vfile('2025-06-30', 'C', 100.0, '20250810180000'),
+    'c': vfile('2025-12-31', 'C', 120.0, '20260210180000', ytd=(9, 330.0)),
+    'd': vfile('2026-03-31', 'C', 130.0, '20260510180000', year=460.0)}}
+td = X.build(drv, T23, sc={})
+dq = {r[0]: r for r in td['q']}
+assert dq['Sep 2025'][-1] == 'd' and dq['Sep 2025'][1] == 110.0 and dq['Sep 2025'][1 + X.COLS.index('np')] == 10.0, dq['Sep 2025']
+assert dq['Jun 2025'][-1] == '' and dq['Dec 2025'][-1] == '' and td['y'][-1][0] == 'Mar 2026' and td['y'][-1][-1] == '', td
+d2 = X.build({'sym': 'DRV', 'files': {k: v for k, v in drv['files'].items() if k != 'd'}}, T23, sc={})
+assert 'Mar 2026' not in {r[0] for r in d2['q']}, 'nothing to work it out from: left out'
+# a bonus between the filings: the 9 months' EPS restated on the new share count, the earlier quarters' not -> no EPS
+bon = {'sym': 'BON', 'files': {'a': vfile('2025-06-30', 'C', 100.0, '20250810180000'),
+                                'b': vfile('2025-09-30', 'C', 110.0, '20251110180000'),
+                                'c': vfile('2025-12-31', 'C', 120.0, '20260210180000')}}
+bon['files']['c']['periods'][0]['f']['eps'] = 0.5
+bon['files']['c']['periods'].append({'start': '2025-04-01', 'end': '2025-12-31', 'm': 9, 'f': dict(
+    bon['files']['c']['periods'][0]['f'], revenue=330.0, pat=30.0, eps=1.5)})
+del bon['files']['c']['periods'][0]
+tb = {r[0]: r for r in X.build(bon, T23, sc={})['q']}
+assert tb['Dec 2025'][-1] == 'd' and tb['Dec 2025'][1] == 120.0 and tb['Dec 2025'][1 + X.COLS.index('eps')] is None, tb['Dec 2025']
+neg = X.build({'sym': 'NEG', 'files': {'a': vfile('2025-06-30', 'C', 100.0, '20250810180000'),
+                                         'c': vfile('2025-12-31', 'C', 120.0, '20260210180000', ytd=(9, 150.0))}}, T23, sc={})
+assert 'Sep 2025' not in {r[0] for r in neg['q']}, 'a worked-out revenue below 0 does not fit - left out'
+
+# b) MTARTECH: consolidated up to Jun 2026, Sep 2026 filed standalone only (17 days ago) -> the standalone table first,
+# the consolidated one kept as it was (no standalone figures copied into it), words that it ended - not "missing"
+mtr = {'sym': 'MTR', 'files': {
+    'c1': vfile('2025-12-31', 'C', 90.0, '20260210180000'), 'c2': vfile('2026-03-31', 'C', 95.0, '20260510180000', year=360.0),
+    'c3': vfile('2026-06-30', 'C', 100.0, '20260810180000'),
+    's4': vfile('2026-09-30', 'S', 104.0, '20261106180000', prev=97.0, ytd=(6, 201.0))}}
+tm7 = X.build(mtr, T23, sc={})
+assert tm7['b'] == 'S' and tm7['q'][-1][0] == 'Sep 2026' and tm7['bw'].startswith('Consolidated results end with Jun 2026: the company '
+                                                                                 'files only standalone results since Sep 2026'), tm7
+sq = {r[0]: r for r in tm7['q']}
+assert sq['Jun 2026'][1] == 97.0 and sq['Jun 2026'][-1] == 'c', 'the standalone table: the filing\'s own comparison column'
+assert tm7['o']['b'] == 'C' and tm7['o']['q'][-1][0] == 'Jun 2026' and tm7['o']['q'][-1][1] == 100.0, tm7['o']
+assert 'Sep 2026' not in {r[0] for r in tm7['o']['q']}, 'no standalone figures in the consolidated table after it ended'
+assert all(r[-1] != 's' for r in tm7['o']['q'] + tm7['q']), tm7
+# filed yesterday: perhaps the consolidated file just has not come - the consolidated table stays first
+mtr['files']['s4']['stamp'] = '20261122180000'
+tf7 = X.build(mtr, T23, sc={})
+assert tf7['b'] == 'C' and tf7['q'][-1][0] == 'Jun 2026' and tf7['bw'] == ('Sep 2026: only the standalone results are on NSE so '
+                                                                           'far - the consolidated ones have not come yet.'), tf7
+assert tf7['o']['b'] == 'S' and tf7['o']['q'][-1][0] == 'Sep 2026'
+
+# c) TFCILTD: screener.in's consolidated page ends with Dec 2022, its standalone page goes on to Sep 2026; NSE's files
+# could not be read -> the standalone table (screener.in's standalone figures only), the consolidated one apart
+def sc_rows_(labels, base, mark=''):
+    return [[l, base + k] + [None] * 10 + [1.0, mark] for k, l in enumerate(labels)]
+
+
+qc = ['Mar 2022', 'Jun 2022', 'Sep 2022', 'Dec 2022']
+qs = [X.label_of(m) for m in range(2023 * 12 + 3, 2026 * 12 + 10, 3)]
+sc_t = {'C': {'b': 'C', 'k': '', 'q': sc_rows_(qc, 50.0) + sc_rows_(['Mar 2023'], 70.0, 's'), 'y': sc_rows_(['Mar 2022'], 200.0)},
+        'S': {'b': 'S', 'k': '', 'q': sc_rows_(qc + qs, 40.0), 'y': sc_rows_(['Mar 2022', 'Mar 2023', 'Mar 2024'], 160.0)}}
+tt = X.build({'sym': 'TFC', 'files': {}}, T23, sc=sc_t)
+assert tt['b'] == 'S' and tt['q'][-1][0] == 'Sep 2026' and tt['files'] == 0 and {r[-1] for r in tt['q']} == {'r'}, tt
+assert tt['bw'].startswith('Consolidated results end with Dec 2022: the company files only standalone results since Mar 2023'), tt
+assert {r[0]: r[1] for r in tt['q']}['Dec 2022'] == 43.0, 'standalone figures in the standalone table'
+assert tt['o']['b'] == 'C' and [r[0] for r in tt['o']['q']] == qc, 'its "(S)" column after the consolidated ones is not taken'
+# a '(S)' column BEFORE the first consolidated period is screener.in's own way: kept
+sc_p = {'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Sep 2021'], 30.0, 's') + sc_rows_(qc, 50.0), 'y': []}}
+assert [r[0] for r in X.build({'sym': 'PRE', 'files': {}}, T23, sc=sc_p)['q']] == ['Sep 2021'] + qc
+# both bases up to the same quarter: consolidated first, standalone to switch to
+both = X.build(mtr, T23, sc={'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Jun 2026'], 9.0), 'y': []},
+                             'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Sep 2026'], 9.0), 'y': []}})
+assert both['b'] == 'C' and 'bw' not in both and both['o']['b'] == 'S', both
+assert 'o' not in tm, 'standalone only before the first consolidated period: no second table'
+
+# d) screener.in's pages read by this job: the consolidated page behind -> the standalone page too; kept, the table made
+assert X.due_quarter(T23) == 2026 * 12 + 6 and X.due_quarter(date(2026, 11, 30)) == 2026 * 12 + 9
+FETCH = []
+
+
+def sc_fetch(cfg, sym, cons=True):
+    FETCH.append((sym, cons))
+    if sym == 'GONE':
+        return '404', None
+    if cons:
+        return 'ok', sc_page('Consolidated').replace('Sep 2026', 'Sep 2026').replace('Jun 2026', 'Jun 2026')
+    return 'ok', sc_page('Standalone')
+
+
+QH_OLD = ['Mar 2022', 'Jun 2022', 'Sep 2022', 'Dec 2022', 'Mar 2023', 'Jun 2023', 'Sep 2023', 'Dec 2023', 'Mar 2024', 'Jun 2024']
+
+
+def sc_page_old():
+    return sc_page('Consolidated').replace('<th>%s</th>' % QH[0], '<th>__0</th>')
+
+
+X.bind(screener=sc_fetch)
+assert X.fetch_screener({}, 'NRM', T23) == 1 and FETCH == [('NRM', True)], 'up to date: the consolidated page alone'
+del FETCH[:]
+old_qh = list(QH)
+QH[:] = QH_OLD
+try:
+    assert X.fetch_screener({}, 'BEH', T23) == 2 and FETCH == [('BEH', True), ('BEH', False)], FETCH
+finally:
+    QH[:] = old_qh
+assert sorted(X.load_sc('BEH')) == ['C', 'S']
+del FETCH[:]
+assert X.fetch_screener({}, 'GONE', T23) == 2 and FETCH == [('GONE', True), ('GONE', False)]
+now_ = time.time()
+assert X.screener_wants('NEWSTOCK', {}, T23, now_) and not X.screener_wants('NRM', {}, T23, now_)
+assert not X.screener_wants('BEH', {}, T23, now_, {'BEH': now_ - 3600}), 'not again within 2 days'
+# the whole job: a stock NSE has nothing for gets screener.in's tables; none while a round runs
+CALLS2 = []
+
+
+def api2(cfg, action, payload=None, tries=3, timeout=120):
+    CALLS2.append(payload)
+    if payload['op'] == 'syms':
+        return {'ok': True, 'syms': ['SCO']}
+    return {'ok': True, 'stored': len(payload['items'])}
+
+
+X.save_state({})
+del FETCH[:]
+r13 = X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23, screener_busy=lambda: True)
+assert r13['pages'] == 0 and FETCH == [], 'no screener.in page while the round runs'
+X.save_state({})
+r13 = X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23)
+assert r13['pages'] == 1 and FETCH == [('SCO', True)] and X.load_stock('SCO')['table']['files'] == 0, r13
+assert [p_['items'][0]['sym'] for p_ in CALLS2 if p_['op'] == 'put'] == ['SCO'], CALLS2
+assert X.load_state()['scTry'].get('SCO'), 'remembered'
+del FETCH[:]
+assert X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23)['pages'] == 0 and FETCH == [], 'not again'
+X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page([('Jun 2026', 122, 18.75, 1.88, 20), ('Sep 2026', 130, 18.75, 1.88, 19)])))
+
+# e) the round's NSE steps only: nse_busy.json while they run
+sb.NSE_BUSY_PATH = os.path.join(TMP, 'nse_busy.json')
+assert sb.nse_busy() is False
+with sb.nse_part('round: NSE files'):
+    assert sb.nse_busy() is True
+assert sb.nse_busy() is False and not os.path.exists(sb.NSE_BUSY_PATH)
+with open(sb.NSE_BUSY_PATH, 'w') as f:
+    json.dump({'pid': os.getpid(), 'at': time.time() - 3600}, f)
+assert sb.nse_busy() is False, 'an old mark (a program that died in the middle)'
+os.remove(sb.NSE_BUSY_PATH)
+src = open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()
+assert "with nse_part('round: NSE files'):" in src and "with nse_part('results check: XBRL filings'):" in src
+assert "XH.run_all(dict(cfg, xbrl_history=True), api, nse_busy," in src and 'screener_busy=round_running)' in src
+
+# f) a file Windows holds a moment (owner's QUESS, WinError 32): put in place once it lets go
+real = os.replace
+tries = []
+
+
+def flaky(a, b):
+    tries.append(a)
+    if len(tries) < 3:
+        raise PermissionError(32, 'The process cannot access the file because it is being used by another process')
+    return real(a, b)
+
+
+X.ltf_data.REPLACE_WAITS, saved_w = (0, 0, 0), X.ltf_data.REPLACE_WAITS
+os.replace = flaky
+try:
+    X._put_file(os.path.join(TMP, 'held', 'a.xml'), b'<x/>')
+finally:
+    os.replace = real
+    X.ltf_data.REPLACE_WAITS = saved_w
+assert len(tries) == 3 and tries[0].endswith('.%d.tmp' % os.getpid()), tries
+assert open(os.path.join(TMP, 'held', 'a.xml'), 'rb').read() == b'<x/>' and os.listdir(os.path.join(TMP, 'held')) == ['a.xml']
 print('OK')

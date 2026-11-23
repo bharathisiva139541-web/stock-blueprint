@@ -215,6 +215,12 @@ assert not any('1749103' in h for h in HITS), HITS
 del HITS[:], SENT[:]
 assert sb.xbrl_step({}, {'PARAS': 'Sep 2026'}, basis={'PARAS': 'S'}) == 1
 assert SENT[0]['items'][0]['cons'] is None and SENT[0]['items'][0]['stand']['revenue'] == 140.0
+# the sheet wants consolidated, the quarter has only a standalone file (owner, 23-Nov-2026, MTARTECH Sep 2026: its
+# subsidiaries merged into it): that one is sent (the sheet combines it with the stored standalone quarters)
+ROUTES['/api/ifr2?symbol=MTARX'] = (200, json.dumps({'data': [{'symbol': 'MTARX', 'xbrl': STAND}]}).encode())
+del HITS[:], SENT[:]
+assert sb.xbrl_step({}, {'MTARX': 'Sep 2026'}, basis={'MTARX': 'C'}) == 1
+assert SENT[0]['items'][0]['cons'] is None and SENT[0]['items'][0]['stand']['revenue'] == 140.0, SENT
 # the full round's once-a-day look-ups (no filing seen / the exceptional-gain flag): after the wanted ones, each at most
 # once a day (xbrl_state.json 'tried'); the symbols sent are handed back (the results check leaves them out of moneycontrol)
 from datetime import datetime as _dt, timedelta as _td

@@ -159,6 +159,36 @@ test('screener.in\'s figures for the periods NSE has no filing for (flag r) pass
   assert.deepStrictEqual(FIN.csv(v, 'ARSSBL').filter((r) => r[0] === 'From')[0], ['From', 'screener.in (no NSE filing figures)', 'its own filing']);
 });
 
+test('version 7: worked-out quarters (flag d), the other basis\'s table apart (o) + its words (bw) - sheet, api, page', () => {
+  // owner, 23-Nov-2026, MTARTECH: Sep 2026 standalone only (its subsidiaries merged into it) - the standalone table first,
+  // the consolidated one up to Jun 2026 kept apart, never mixed
+  const BW = 'Consolidated results end with Jun 2026: the company files only standalone results since Sep 2026 (no consolidated statements now).';
+  const T7 = { b: 'S', q: [Q('Jun 2026', 97, 'c'), Q('Sep 2026', 104)], y: [Q('Mar 2026', 380)], files: 4, at: '2026-11-23', bw: BW,
+    o: { b: 'C', q: [Q('Mar 2026', 95, 'd'), Q('Jun 2026', 100)], y: [Q('Mar 2026', 360)], note: 'EPS adjusted', o: { b: 'S', q: [] } } };
+  const e = env();
+  e.post({ token: TOKEN, action: 'xbrlhist', op: 'put', items: [{ sym: 'MTARTECH', fin: T7 },
+    { sym: 'SAME', fin: Object.assign({}, TABLE, { o: { b: 'C', q: [Q('Sep 2026', 1)], y: [] } }) }] });
+  const tab = e.sheet('Financials').rows.find((r) => r[0] === 'MTARTECH');
+  assert.strictEqual(tab[1], 'S (+ C to Jun 2026)', 'the Financials tab says both');
+  const s = e.post({ token: FEED, action: 'site', part: 'fin', sym: 'MTARTECH' }).fin;
+  assert.deepStrictEqual([s.b, s.bw, s.o.b, s.o.q.map((r) => r[13]), s.o.note, s.o.o], ['S', BW, 'C', ['d', ''], 'EPS adjusted', undefined]);
+  assert.strictEqual(e.post({ token: FEED, action: 'site', part: 'fin', sym: 'SAME' }).fin.o, undefined, 'the same basis twice: none');
+  const a = api.cleanFin(s);
+  assert.deepStrictEqual([a.bw, a.o.b, a.o.q[0][13], a.o.q.length], [BW, 'C', 'd', 2]);
+  assert.strictEqual(api.cleanFin(Object.assign({}, s, { bw: '<img onerror=x>' })).bw, 'img onerrorx');
+  assert.deepStrictEqual(FIN.bases(s), ['S', 'C']);
+  assert.deepStrictEqual(FIN.bases(TABLE), ['C']);
+  const c = FIN.pick(s, 'C');
+  assert.deepStrictEqual([c.b, c.q[1][1], c.files, c.bw], ['C', 100, 4, BW], 'the other table, with the shared fields');
+  assert.strictEqual(FIN.pick(s, 'S'), s);
+  assert.strictEqual(FIN.pick(TABLE, 'S'), TABLE, 'no other table: the one there is');
+  const v = FIN.view(c, 'q');
+  assert.deepStrictEqual([v.basis, v.flags, v.bw], ['C', ['d', ''], BW]);
+  const csv = FIN.csv(v, 'MTARTECH');
+  assert.deepStrictEqual(csv.filter((r) => r[0] === 'From')[0], ['From', 'worked out from the year-to-date figures of other filings', 'its own filing']);
+  assert.ok(csv.some((r) => r[0] === BW));
+});
+
 test('the laptop, the sheet, the api and the page agree on the 12 figures in one order', () => {
   const py = fs.readFileSync(path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'xbrl_history.py'), 'utf8');
   const m = /^COLS = \(([^)]*)\)/m.exec(py);

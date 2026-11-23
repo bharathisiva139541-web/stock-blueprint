@@ -211,9 +211,9 @@ standalone one - and makes a table like screener.in's: Sales, Expenses, Operatin
 Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit, EPS - 20 quarters and the years.
  - The files are KEPT (not deleted): <data folder>\xbrl_data\files\<SYMBOL>\ (on D: when MoveDataToD.bat moved the data).
  - It runs by itself in the background, slowly: one NSE request every 6 seconds (config.json "xbrl_history_gap_s",
-   never under 5), at most 100 stocks a day ("xbrl_history_stocks_per_day"), at any hour, never while a round or a
-   results check runs. At 100 stocks a day all stocks take about 2 to 3 weeks; files already kept are never asked
-   again, and after that only new results.
+   never under 5), at most 100 stocks a day ("xbrl_history_stocks_per_day"), at any hour. It waits only while the
+   laptop's own round asks NSE (a few minutes - since 23-Nov-2026 not the whole round any more). At 100 stocks a day
+   all stocks take about 2 to 3 weeks; files already kept are never asked again, and after that only new results.
  - The tables go to the sheet (hidden tab Financials) and the website shows them in each stock's window
    (Quarterly / Yearly, CSV). Historical PE then uses these quarterly EPS too (exact 3- and 5-year medians).
  - Check a few stocks first: XbrlHistoryCheck.bat, type e.g.  TCS HDFCBANK BSE  - it prints each stock's table and
@@ -234,8 +234,32 @@ Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit,
    every figure compared with screener.in (quarters AND years), for a quarter that differs the figures of every kept
    file + every number of its own filing. Type  facts  after the symbols (e.g.  HDFCBANK facts) to see every number of
    the newest quarter's filing too.
- - bridge.log: "NSE XBRL history: N of M stock(s) read ..." and "... table(s) sent to the sheet".
- - To switch it off: in config.json add  "xbrl_history": false
+ - Version 7 (23-Nov-2026, after your notes on the missing quarters, MTARTECH, TFCILTD, 3MINDIA):
+     * a quarter NSE has no filing for is worked out from the other filings' year-to-date figures (the half year
+       minus its first quarter, the year minus 9 months - screener.in's own way); marked ~ in the check, d on the
+       website;
+     * consolidated and standalone are two separate tables - never mixed after the company's first consolidated
+       results. The table shown first is the basis of the newest quarter. When the newer quarters are standalone
+       only (MTARTECH: its subsidiaries merged into it), the website says the consolidated results ENDED - it is not
+       treated as missing, and nothing standalone is copied into the consolidated table. The website has a
+       Consolidated / Standalone switch above the tables;
+     * screener.in's tables (the years before the listing, the quarters NSE has no filing for) are read by this job
+       too, one page every 20 seconds, never while the round runs; when a stock's consolidated page stopped years
+       ago (TFCILTD Dec 2022, 3MINDIA Jun 2024) its standalone page is read as well;
+     * a file Windows holds a moment (WinError 32, e.g. the virus scanner) is tried again for about 20 seconds.
+     * The kept files are read again by themselves (no NSE). Nothing to do.
+ - bridge.log: "NSE XBRL history: N of M stock(s) looked at ..." and "... table(s) sent to the sheet".
+ - To switch it off: in config.json add  "xbrl_history": false   (only its screener.in pages: "xbrl_history_screener": false)
+
+GAVE UP / WAITING ROWS (since 23-Nov-2026)
+ - A company whose consolidated figures stopped (3MINDIA after Jun 2024, TFCILTD after Dec 2022) or that files
+   standalone only for the newest quarter (MTARTECH Sep 2026): when screener.in's consolidated page is behind, the
+   round reads its standalone page too and the sheet uses the page that goes further; an NSE XBRL filing of only the
+   standalone figures is combined with the standalone quarters.
+ - A row that gave up after 21 days is still checked once a day until the season ends; when its figures come it gets
+   them in Main and the tick, like any other row.
+ - The website's Results page has a tile "Not in Main yet" = every Main stock whose results are not in Main this
+   season, with the reason (waiting, gave up, due later, no result date yet, only last season's date ...).
 
 RESULTS: NSE XBRL FIRST, SCREENER.IN AFTER (since 02-Nov-2026)
 A round used to take 40 minutes in the results season: screener.in lets about 12 pages through every 3 minutes, and

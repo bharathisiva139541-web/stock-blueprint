@@ -35,9 +35,11 @@ import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 
+import ltf_data
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 6                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 7                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 3                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -73,6 +75,10 @@ SAY_EVERY = 25
 CMD_SAY_EVERY = 5          # XbrlHistoryNow.bat's window: a line every 5 stocks (owner, 18-Nov-2026)
 WAIT_SAY_S = 300           # ... and, while it waits for the laptop's round, a line every 5 minutes
 LOCK_STALE_S = 10 * 60
+SC_GAP_S = 20.0            # between two screener.in pages of this job (screener.in lets ~12 through every 3 minutes)
+SC_REFRESH_DAYS = 45       # a stock's screener.in tables read again after this many days
+SC_RETRY_DAYS = 2          # ... a stock whose pages were just read is not asked again sooner (a page still behind)
+SC_DUE_LAG_DAYS = 60       # a quarter's results are out by its end + this many days (a page without it = behind)
 COLS = ('rev', 'exp', 'op', 'opm', 'oi', 'exc', 'int', 'dep', 'pbt', 'taxp', 'np', 'eps')
 COL_NAMES = ('Sales', 'Expenses', 'Operating Profit', 'OPM %', 'Other Income', 'Exceptional items', 'Interest',
              'Depreciation', 'Profit before tax', 'Tax %', 'Net Profit', 'EPS in Rs')
@@ -94,6 +100,7 @@ NICE = (1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 20, 25, 40, 50, 100)
 SNAP_TOL = 0.08        # ... when within 8 % of one of these ratios (a merger's odd ratio is left alone)
 QUARTER_READS = 3      # at most this many files downloaded for one quarter (the year file of a March quarter included)
 YEARS_SHOWN = 12       # the yearly table keeps up to this many years (screener.in's own table has up to 12)
+ENDED_DAYS = 3         # a newer quarter filed standalone only this many days ago = the consolidated results ended
 SC_ROWS = (('rev', ('sales', 'revenue')), ('exp', ('expenses',)), ('op', ('operating profit', 'financing profit')),
            ('opm', ('opm %', 'opm', 'financing margin %')), ('oi', ('other income',)), ('int', ('interest',)),
            ('dep', ('depreciation',)), ('pbt', ('profit before tax',)), ('taxp', ('tax %',)), ('np', ('net profit',)),
@@ -349,7 +356,9 @@ def _months(s, e):
         days = (date.fromisoformat(e) - date.fromisoformat(s)).days
     except ValueError:
         return 0
-    return 3 if 80 <= days <= 100 else 12 if 350 <= days <= 380 else 0
+    # a quarter, a year, and the year-to-date periods of a half year / 9 months (the quarters no filing gives are worked
+    # out from them - VERSION 7)
+    return 3 if 80 <= days <= 100 else 6 if 170 <= days <= 195 else 9 if 260 <= days <= 285 else 12 if 350 <= days <= 380 else 0
 
 
 def _pick(vals, ids, ctx):
@@ -584,41 +593,127 @@ def year_end_month(mis):
     return max(cnt, key=lambda m: (cnt[m], m == 3)) if cnt else 3
 
 
-def build(store, today=None, sc=None):
-    """The stock's kept files (+ screener.in's tables `sc`, see keep_screener) -> {'b': C|S, 'q': [[label, *COLS values,
-    flag], ...] oldest first (the last YEARS years), 'y': [...] (up to YEARS_SHOWN years), 'files': n, 'at', 'note' (EPS
-    adjusted), 'k' ('bank')} or None. flag '' = the filing's own period, 'c' = shown as a comparison column of a later
-    filing, 's' = the other basis's filing (the stock's own basis has nothing for it), 'q' = a year with no filing read =
-    the sum of its 4 quarters (consolidated and standalone quarters together when it has both), 'r' = no NSE filing figures
-    for it - screener.in's (owner, 18-Nov-2026, ARSSBL: NSE has filings only since the listing, screener.in shows the years
-    before it from the IPO papers)."""
-    if sc is None:
-        sc = load_sc(store.get('sym') or '')
-    files = [f for f in (store.get('files') or {}).values() if f.get('periods')]
-    page = (sc or {}).get('C') or (sc or {}).get('S')
-    if not files and not page:
-        return None
-    if files:
-        newest = max(main_end(f) for f in files)
-        primary = 'C' if any(main_end(f) == newest and f.get('basis') == 'C' for f in files) else 'S'
-        page = (sc or {}).get(primary) or page
-    else:
-        primary = page.get('b') or 'C'
-    best = {3: {}, 12: {}}
+def _basis_of(f):
+    """A filing's basis: 'C' consolidated, else 'S' (a file that does not say counts as standalone, like pick())."""
+    return 'C' if f.get('basis') == 'C' else 'S'
+
+
+def _collect(files, b):
+    """One basis's filings -> {months: {month index: (rank, figures, flag)}} for 3 / 6 / 9 / 12-month periods; flag '' =
+    the filing's own period, 'c' = a later filing's comparison column (rank: own period, newest stamp, revised)."""
+    best = {3: {}, 6: {}, 9: {}, 12: {}}
     for f in files:
+        if _basis_of(f) != b:
+            continue
         own = main_end(f)              # a 12-month period is the filing's own only when it ends with its quarter (March)
         for p in f['periods']:
             mi = mi_of(p['end'])
-            if mi is None:
+            if mi is None or p['m'] not in best:
                 continue
             mine = p['end'] == own
-            rank = (f.get('basis') == primary, mine, f.get('stamp') or '', bool(f.get('rev')))
+            rank = (mine, f.get('stamp') or '', bool(f.get('rev')))
             cur = best[p['m']].get(mi)
             if cur is None or rank > cur[0]:
-                flag = '' if rank[0] and mine else 'c' if rank[0] else 's'
-                best[p['m']][mi] = (rank, p['f'], flag)
-    last_q = max(best[3]) if best[3] else mi_of(newest) if files else None
-    factors, note = eps_factors([('q', mi, v[1]) for mi, v in best[3].items()] + [('y', mi, v[1]) for mi, v in best[12].items()])
+                best[p['m']][mi] = (rank, p['f'], '' if mine else 'c')
+    return best
+
+
+def _op(a, b, sign):
+    """Two periods' figures added (sign 1) / the 2nd taken from the 1st (sign -1) - only the figures both have. The EPS
+    only when both stand on the same share count (net profit / EPS within 5 %): a filing made after a bonus / split
+    restates its year-to-date EPS, an earlier quarter's own filing does not."""
+    out = {k: round(v + sign * b[k], 4) for k, v in a.items() if v is not None and b.get(k) is not None}
+    sa, sb_ = _shares(a), _shares(b)
+    if sa is not None and sb_ is not None and abs(sa / sb_ - 1) > 0.05:
+        out.pop('eps', None)
+        out.pop('eps_x', None)
+    return out
+
+
+def _derive(best, ye):
+    """The quarters no filing gives (owner, 23-Nov-2026: NSE has no filing for some quarters), worked out from the same
+    basis's year-to-date figures the other filings carry - a half year minus its first quarter, 9 months minus the half
+    year, the year minus 9 months (screener.in's own way for the March quarter), and so on -> {month index: figures}
+    added to best[3] with flag 'd'. A quarter whose revenue comes out below 0 is left out (figures that do not fit)."""
+    q, got = best[3], {}
+    val = {}
+    for m in (3, 6, 9, 12):
+        for mi, v in best[m].items():
+            val[(m, mi)] = v[1]
+    ends = {mi + (12 - ((mi - ye - 1) % 12 + 1)) for m in (6, 9, 12) for mi in best[m] if ((mi - ye - 1) % 12 + 1) == m}
+    for e in sorted(ends):
+        rel = ((('Y', 6, e - 6), ('Q', e - 9), ('Q', e - 6)), (('Y', 9, e - 3), ('Y', 6, e - 6), ('Q', e - 3)),
+               (('Y', 12, e), ('Y', 9, e - 3), ('Q', e)))
+
+        def key(t):
+            return (3, t[1]) if t[0] == 'Q' else (t[1], t[2])
+        for _ in range(4):
+            grew = False
+            for a, b, c in rel:
+                ka, kb, kc = key(a), key(b), key(c)
+                have = [k in val for k in (ka, kb, kc)]
+                if have == [True, True, False]:
+                    val[kc], new = _op(val[ka], val[kb], -1), kc
+                elif have == [True, False, True]:
+                    val[kb], new = _op(val[ka], val[kc], -1), kb
+                elif have == [False, True, True]:
+                    val[ka], new = _op(val[kb], val[kc], 1), ka
+                else:
+                    continue
+                grew = True
+                if new[0] == 3 and new[1] not in q:
+                    got[new[1]] = val[new]
+            if not grew:
+                break
+    out = {}
+    for mi, f in got.items():
+        if f and (f.get('revenue') is None or f['revenue'] >= 0) and (f.get('revenue') is not None or f.get('pat') is not None):
+            out[mi] = f
+            q[mi] = ((False, '', False), f, 'd')
+    return out
+
+
+def _sc_rows(page, kind, marks=('',)):
+    """screener.in's rows of one kind ('q' / 'y') of a page -> {month index: [COLS values]} whose mark is in `marks`
+    ('' = the page's own basis, 's' = its '(S)' standalone column)."""
+    out = {}
+    for r in (page or {}).get(kind) or []:
+        if not isinstance(r, list) or len(r) < len(COLS) + 1:
+            continue
+        mi = _mi_label(r[0])
+        mark = r[len(COLS) + 1] if len(r) > len(COLS) + 1 else ''
+        if mi is not None and (mark or '') in marks:
+            out[mi] = list(r[1:len(COLS) + 1])
+    return out
+
+
+def _stamp_date(s):
+    try:
+        return date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _side_table(b, sides, pages, ye, first_c):
+    """One basis's table -> {'b', 'q', 'y', 'note'?, 'k'?} or None. The company's own filings of that basis (own period /
+    a later filing's comparison column / worked out from year-to-date figures 'd'), the year = the sum of its 4 quarters
+    when no yearly figures were read ('q'), then screener.in's page of the SAME basis ('r'). The consolidated table takes
+    standalone figures ('s', like screener.in's '(S)' columns) only for the periods BEFORE the company's first
+    consolidated one - never after its last (owner, 23-Nov-2026, MTARTECH: its subsidiaries merged into it - the
+    standalone results must not be copied into the consolidated ones)."""
+    best = sides[b]
+    q3 = {mi: (v[1], v[2]) for mi, v in best[3].items()}
+    y12 = {mi: (v[1], v[2]) for mi, v in best[12].items()}
+    if b == 'C' and first_c is not None:
+        for mi, v in sides['S'][3].items():
+            if mi < first_c and mi not in q3:
+                q3[mi] = (v[1], 's')
+        for mi, v in sides['S'][12].items():
+            if mi < first_c and mi not in y12:
+                y12[mi] = (v[1], 's')
+    no_eps = lambda f: {k: v for k, v in f.items() if k not in ('eps', 'eps_x')}     # a worked-out quarter: its
+    factors, note = eps_factors([('q', mi, no_eps(v[0]) if v[1] == 'd' else v[0]) for mi, v in q3.items()] +   # neighbours'
+                                [('y', mi, v[0]) for mi, v in y12.items()])                                   # factor
 
     def row(kind, mi, f):
         r = row_of(f)
@@ -626,46 +721,125 @@ def build(store, today=None, sc=None):
         if r[11] is not None and k != 1.0:
             r[11] = round(r[11] / k, 2)
         return r
-    qrows = {mi: row('q', mi, v[1]) + [v[2]] for mi, v in best[3].items()}
-    years = {mi: row('y', mi, v[1]) + [v[2]] for mi, v in best[12].items()}
-    ye = year_end_month(best[12]) if best[12] else 3
-    first = min(best[3]) if best[3] else last_q
-    for mi in (range(first + 9, last_q + 1) if best[3] else ()):
-        if (mi - 1) % 12 + 1 != ye:
-            continue
-        qs = [mi - 9, mi - 6, mi - 3, mi]
-        cur = years.get(mi)
-        if (cur is not None and cur[-1] != 's') or not all(q in qrows for q in qs):
-            continue
-        other = {qrows[q][-1] == 's' for q in qs}
-        if cur is not None and True in other:
-            continue                    # the other basis's own year beats a sum with the other basis's quarters
-        r = row_of(_sum_figs([best[3][q][1] for q in qs]))
-        eps = [qrows[q][11] for q in qs]
-        r[11] = round(sum(eps), 2) if all(e is not None for e in eps) else None
-        years[mi] = r + ['q']
-    nse_last = last_q
+    qrows = {mi: row('q', mi, v[0]) + [v[1]] for mi, v in q3.items()}
+    years = {mi: row('y', mi, v[0]) + [v[1]] for mi, v in y12.items()}
+    if q3:
+        for mi in range(min(q3) + 9, max(q3) + 1):
+            if (mi - 1) % 12 + 1 != ye:
+                continue
+            qs = [mi - 9, mi - 6, mi - 3, mi]
+            cur = years.get(mi)
+            if (cur is not None and cur[-1] != 's') or not all(x in qrows for x in qs):
+                continue
+            if cur is not None and any(qrows[x][-1] == 's' for x in qs):
+                continue                # the other basis's own year beats a sum with the other basis's quarters
+            r = row_of(_sum_figs([q3[x][0] for x in qs]))
+            eps = [qrows[x][11] for x in qs]
+            r[11] = round(sum(eps), 2) if all(e is not None for e in eps) else None
+            years[mi] = r + ['q']
+    own_q = [mi for mi, v in best[3].items() if v[2] != 'd']
+    nse_last = max(own_q) if own_q else None
+    page = pages.get(b)
     for kind, have in (('q', qrows), ('y', years)):     # what NSE's filings do not give: screener.in's figures
-        for r in (page or {}).get(kind) or []:
-            mi = _mi_label(r[0])
-            if mi is not None and mi not in have and len(r) >= len(COLS) + 1:
-                have[mi] = list(r[1:len(COLS) + 1]) + ['r']
+        for mi, vals in _sc_rows(page, kind).items():
+            if mi not in have:
+                have[mi] = vals + ['r']
+        if b == 'C' and first_c is not None:            # its '(S)' columns: only before the first consolidated period
+            for mi, vals in _sc_rows(page, kind, ('s',)).items():
+                if mi < first_c and mi not in have:
+                    have[mi] = vals + ['r']
     if not qrows and not years:
         return None
-    last_q = max(qrows) if qrows else last_q
-    out = {'b': primary, 'q': [], 'y': [], 'files': len(files), 'at': (today or date.today()).isoformat()}
+    out = {'b': b, 'q': [], 'y': []}
+    last_q = max(qrows) if qrows else None
     for mi in sorted(qrows):
-        if last_q is None or mi > last_q - 12 * YEARS:
+        if mi > last_q - 12 * YEARS:
             out['q'].append([label_of(mi)] + qrows[mi])
     for mi in sorted(years)[-YEARS_SHOWN:]:
         out['y'].append([label_of(mi)] + years[mi])
     if note:
         out['note'] = note
-    if nse_last in best[3] and is_bank(best[3][nse_last][1]):
+    if nse_last is not None and is_bank(best[3][nse_last][1]):
         out['k'] = 'bank'
-    elif not files and page.get('k') == 'bank':
+    elif nse_last is None and (page or {}).get('k') == 'bank':
         out['k'] = 'bank'
     return out if out['q'] or out['y'] else None
+
+
+def build(store, today=None, sc=None):
+    """The stock's kept files (+ screener.in's tables `sc`, see keep_screener) -> {'b': C|S, 'q': [[label, *COLS values,
+    flag], ...] oldest first (the last YEARS years), 'y': [...] (up to YEARS_SHOWN years), 'files': n, 'at', 'note' (EPS
+    adjusted), 'k' ('bank'), 'bw' (words about the basis), 'o' (the other basis's table {'b', 'q', 'y', 'note'?, 'k'?})}
+    or None. flag '' = the filing's own period, 'c' = a later filing's comparison column, 'd' = worked out from the
+    year-to-date figures of the other filings (no filing of its own), 's' = standalone figures in the consolidated table
+    before the company's first consolidated period, 'q' = a year with no yearly figures read = the sum of its 4 quarters,
+    'r' = screener.in's figures (no NSE filing figures - before the listing, a gap).
+    VERSION 7 (owner, 23-Nov-2026): consolidated and standalone are two tables, never mixed after the first consolidated
+    period. The table shown first ('b') is the basis of the newest quarter (consolidated on a tie); a consolidated table
+    that stops while the newer quarters are standalone only is not 'missing' - the words in 'bw' say so (MTARTECH:
+    subsidiaries merged into it; TFCILTD / 3MINDIA: no consolidated results after Dec 2022 / Jun 2024)."""
+    today = today or date.today()
+    if sc is None:
+        sc = load_sc(store.get('sym') or '')
+    sc = sc if isinstance(sc, dict) else {}
+    pages = {b: sc.get(b) if isinstance(sc.get(b), dict) else None for b in ('C', 'S')}
+    files = [f for f in (store.get('files') or {}).values() if f.get('periods')]
+    if not files and not pages['C'] and not pages['S']:
+        return None
+    ye_mis = [mi_of(p['end']) for f in files for p in f['periods'] if p['m'] == 12]
+    ye_mis = [m for m in ye_mis if m] or [m for b in ('C', 'S') for m in _sc_rows(pages[b], 'y', ('', 's'))]
+    ye = year_end_month(ye_mis)
+    sides = {b: _collect(files, b) for b in ('C', 'S')}
+    for b in ('C', 'S'):
+        _derive(sides[b], ye)
+    newest, quarters = {}, {}
+    for b in ('C', 'S'):
+        quarters[b] = set(sides[b][3]) | set(_sc_rows(pages[b], 'q'))
+        newest[b] = max(quarters[b]) if quarters[b] else None
+    c_own = set(sides['C'][3]) | set(_sc_rows(pages['C'], 'q')) | set(sides['C'][12]) | set(_sc_rows(pages['C'], 'y'))
+    first_c = min(c_own) if c_own else None
+    nc, ns = newest['C'], newest['S']
+    words = ''
+    if nc is None and ns is None:
+        primary = 'C' if pages['C'] or any(sides['C'][12]) else 'S'
+    elif ns is None or (nc is not None and nc >= ns):
+        primary = 'C'
+    elif nc is None:
+        primary = 'S'
+    else:                               # the newer quarters are standalone only
+        since = min(mi for mi in quarters['S'] if mi > nc)
+        v = sides['S'][3].get(ns)
+        filed = _stamp_date(v[0][1]) if v and v[0][1] else None
+        fresh = ns - nc == 3 and ((today - filed).days < ENDED_DAYS if filed else (today - date.fromisoformat(end_of(ns))).days < 75)
+        if fresh:
+            primary = 'C'
+            words = ('%s: only the standalone results are on NSE so far - the consolidated ones have not come yet.'
+                     % label_of(ns))
+        else:
+            primary = 'S'
+            words = ('Consolidated results end with %s: the company files only standalone results since %s (no '
+                     'consolidated statements now - e.g. its subsidiaries were merged into it or sold). Not missing - '
+                     'there is nothing more to fetch.' % (label_of(nc), label_of(since)))
+    tabs = {b: _side_table(b, sides, pages, ye, first_c) for b in ('C', 'S')}
+    other = 'S' if primary == 'C' else 'C'
+    if not tabs[primary]:
+        primary, other = other, primary
+        words = ''
+    main = tabs[primary]
+    if not main:
+        return None
+    out = {'b': primary, 'q': main['q'], 'y': main['y'], 'files': len(files), 'at': today.isoformat()}
+    for k in ('note', 'k'):
+        if main.get(k):
+            out[k] = main[k]
+    if words:
+        out['bw'] = words[:200]
+    o = tabs[other]
+    # the other basis's table too (a Consolidated / Standalone switch on the website) - not when it holds only the
+    # standalone periods before the first consolidated one (the consolidated table shows those already, marked 's')
+    if o and not (other == 'S' and first_c is not None and ns is not None and ns < first_c):
+        out['o'] = o
+    return out
 
 
 # ------------------------------------------------------------------ screener.in's tables (the periods NSE has no filing for)
@@ -747,6 +921,67 @@ def keep_screener(sym, html, now=None):
         log('NSE XBRL history: could not keep screener.in\'s tables of %s (%s)' % (sym, e))
 
 
+def due_quarter(today):
+    """The newest quarter (month index) whose results every company has filed by now (its end + SC_DUE_LAG_DAYS)."""
+    mi = today.year * 12 + today.month
+    while True:
+        if mi % 3 == 0 and date.fromisoformat(end_of(mi)) + timedelta(days=SC_DUE_LAG_DAYS) <= today:
+            return mi
+        mi -= 1
+
+
+def page_newest(rec):
+    """A screener.in page's newest quarter of its own basis (month index), or None."""
+    ms = list(_sc_rows(rec, 'q'))
+    return max(ms) if ms else None
+
+
+def screener_wants(sym, st, today, now, tried=None):
+    """Does the stock's table want screener.in's pages read now? No tables kept yet; kept more than SC_REFRESH_DAYS
+    ago; or the consolidated page is behind (older than the newest quarter NSE gave / every company has filed by now)
+    with no standalone page that is newer - not again within SC_RETRY_DAYS of the last try (`tried` = {SYM: time})."""
+    sc = load_sc(sym)
+    if not sc:
+        return True
+    if tried and now - float(tried.get(sym) or 0) < SC_RETRY_DAYS * 86400:
+        return False
+    at = max(float((sc.get(b) or {}).get('at') or 0) for b in ('C', 'S'))
+    if now - at > SC_REFRESH_DAYS * 86400:
+        return True
+    c, s_ = page_newest(sc.get('C')), page_newest(sc.get('S'))
+    if c is None or (s_ is not None and s_ > c):
+        return False
+    q = [_mi_label(r[0]) for r in ((st or {}).get('table') or {}).get('q') or [] if r[-1] != 'r']
+    want = max([due_quarter(today)] + [m for m in q if m])
+    return c < want
+
+
+def fetch_screener(cfg, sym, today, newest=None):
+    """Reads the stock's screener.in page(s) and keeps their tables (keep_screener): the consolidated page; the
+    standalone page too when that one is missing (404), has fewer than 4 quarters, or is behind - its newest quarter
+    older than `newest` (the filings' newest) or than every company's filed quarter (owner, 23-Nov-2026: TFCILTD's /
+    3MINDIA's consolidated figures end with Dec 2022 / Jun 2024, their standalone ones go on). -> pages read. Raises
+    what the fetch raises (screener.in refused)."""
+    fetch = D.get('screener')
+    if not fetch:
+        return 0
+    kind, html = fetch(cfg, sym, True)
+    n, rec = 1, None
+    if kind == 'ok':
+        keep_screener(sym, html)
+        rec = screener_parse(html)
+    if rec and rec.get('b') == 'S':
+        return n                     # the company has no consolidated page: that was its standalone one
+    c = page_newest(rec)
+    want = max([due_quarter(today)] + ([newest] if newest else []))
+    if kind != 'ok' or not rec or len(rec.get('q') or []) < 4 or c is None or c < want:
+        kind2, html2 = fetch(cfg, sym, False)
+        n += 1
+        if kind2 == 'ok':
+            keep_screener(sym, html2)
+    return n
+
+
 def wants_screener(sym):
     """pe_history's backfill reads a page read before this version once more for its tables (none kept yet)."""
     return not os.path.exists(_sc_path(str(sym).upper()))
@@ -793,12 +1028,26 @@ def _files_dir(sym):
     return os.path.join(DIR, 'files', re.sub(r'[^A-Za-z0-9&_.-]', '_', sym))
 
 
-def _write_json(path, obj):
+def _put_file(path, data):
+    """Writes a file whole (a temporary file of this program, then put in place). Windows may hold a just-written file a
+    moment (the virus scanner, the search indexer - the owner's QUESS file, 23-Nov-2026: 'WinError 32 ... being used by
+    another process'): the move is tried again for about 20 seconds (ltf_data.replace)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(obj, f, separators=(',', ':'))
-    os.replace(tmp, path)
+    tmp = '%s.%d.tmp' % (path, os.getpid())
+    with open(tmp, 'wb') as f:
+        f.write(data)
+    try:
+        ltf_data.replace(tmp, path)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _write_json(path, obj):
+    _put_file(path, json.dumps(obj, separators=(',', ':')).encode('utf-8'))
 
 
 def _read_json(path, default=None):
@@ -1030,11 +1279,10 @@ def read_file(nse, sym, f):
         return None, True, 'NSE sent an empty file', True
     if _is_page(raw) or b'<' not in raw[:200]:
         return None, True, 'a web page came back, not the XML file', True
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + '.tmp'
-    with open(tmp, 'wb') as fh:
-        fh.write(raw)
-    os.replace(tmp, path)
+    try:
+        _put_file(path, raw)
+    except OSError as e:               # still busy after ~20 s: its figures are used now, the file is fetched next time
+        log('NSE XBRL history: %s of %s not kept (%s)' % (f['name'], sym, e))
     return raw, True, '', False
 
 
@@ -1245,17 +1493,21 @@ def _left_words(sec):
 
 
 def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, today=None, clock=time.time,
-            sleep=time.sleep, every=SAY_EVERY, what='background'):
-    """Every Main stock that is due: lists + files of the last YEARS years -> tables -> the sheet. Never while a round
-    runs (round_busy). -> {'done', 'files', 'left', 'blocked', 'sent'} or None (another program is at it)."""
+            sleep=time.sleep, every=SAY_EVERY, what='background', screener_busy=None):
+    """Every Main stock that is due: lists + files of the last YEARS years -> tables -> the sheet; and the screener.in
+    pages a table still wants (screener_wants - before the listing, the quarters NSE has no filing for, a consolidated
+    page that stopped). It waits only while the laptop's round asks NSE (`round_busy`, a few minutes - owner, 23-Nov-2026:
+    "it takes 25 minutes ... it is annoying"); no screener.in page while a round runs (`screener_busy` - the round reads
+    screener.in itself). -> {'done', 'files', 'pages', 'left', 'blocked', 'sent'} or None (another program is at it)."""
     out = out or log
     today = today or date.today()
+    screener_busy = screener_busy or (lambda: False)
     if not lock_take(what):
         h = lock_holder() or {}
         out('NSE XBRL history: another program is reading NSE\'s XBRL files right now (%s) - not this one.' % h.get('what', '?'))
         return None
     state = load_state()
-    res = {'done': 0, 'files': 0, 'left': 0, 'blocked': '', 'sent': 0}
+    res = {'done': 0, 'files': 0, 'pages': 0, 'left': 0, 'blocked': '', 'sent': 0}
     try:
         now = clock()
         syms = get_syms(cfg, api, state, now)
@@ -1275,85 +1527,139 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             state['changed'] = clock()
             out('NSE XBRL history: %d table(s) made again with screener.in\'s figures for the periods NSE has none.' % n)
         save_state(state)
-        todo = [s for s in syms if due(s, load_stock(s) if os.path.exists(_stock_path(s)) else {}, today, now)]
+        tried = state.setdefault('scTry', {})
+        sc_on = bool(D.get('screener')) and cfg.get('xbrl_history_screener', True) is not False
+        todo, sc_todo = [], set()
+        for s_ in syms:                                   # one stock file in memory at a time
+            st_ = load_stock(s_) if os.path.exists(_stock_path(s_)) else {}
+            if due(s_, st_, today, now):
+                todo.append(s_)
+            if sc_on and screener_wants(s_, st_, today, now, tried):
+                sc_todo.add(s_)
         res['left'] = len(todo)
-        if not todo:
+        if not todo and not sc_todo:
             sent = post(cfg, api, state, syms)
             res['sent'] = sent or 0
             save_state(state)
             return res
         cap = stocks_per_day(cfg)
-        out('NSE XBRL history: %d of %d stock(s) to read (5 years of quarterly results, one file a quarter) - one request '
-            'every %g s, at most %d stocks a day%s.'
-            % (len(todo), len(syms), gap, cap, '' if what != 'background' else ', never while a round runs'))
+        if todo:
+            out('NSE XBRL history: %d of %d stock(s) to read (5 years of quarterly results, one file a quarter) - one '
+                'request every %g s, at most %d stocks a day; it waits only while the laptop\'s round asks NSE.'
+                % (len(todo), len(syms), gap, cap))
+        if sc_todo:
+            out('NSE XBRL history: %d stock(s) want screener.in\'s tables (the years before the listing, the quarters NSE '
+                'has no filing for) - one page every %g s, none while the laptop\'s round runs.' % (len(sc_todo), SC_GAP_S))
         nse = Nse(gap, sleep)
         last_post, pend = clock(), 0
-        t0, paused = clock(), 0.0
-        for k, sym in enumerate(todo):
-            waited = 0
-            while round_busy():
-                if stop is not None and stop.is_set():
-                    break
-                if waited % WAIT_SAY_S == 0:
-                    out('NSE XBRL history: waiting - the laptop\'s regular round is running (%s); it goes on by itself '
-                        'when that round finishes.' % ('just started' if not waited else '%d min so far' % (waited // 60)))
-                sleep(20)
-                waited += 20
-            if waited:
-                paused += waited
-                out('NSE XBRL history: the round finished - reading again.')
+        t0, paused, last_page = clock(), 0.0, 0.0
+        nse_on, done_n = True, 0
+        todo_set = set(todo)
+        order = todo + [s_ for s_ in syms if s_ in sc_todo and s_ not in todo_set]
+        for k, sym in enumerate(order):
             if stop is not None and stop.is_set():
                 break
-            day = _day_count(state, clock())
-            if market_open(clock()):
-                res['paused'] = 'market'
-                out('NSE XBRL history: market hours - it goes on after the close.')
+            work_nse = nse_on and sym in todo_set
+            if work_nse:
+                waited = 0
+                while round_busy():
+                    if stop is not None and stop.is_set():
+                        break
+                    if waited % WAIT_SAY_S == 0:
+                        out('NSE XBRL history: waiting - the laptop\'s round is asking NSE right now (%s); it goes on by '
+                            'itself in a few minutes.' % ('just started' if not waited else '%d min so far' % (waited // 60)))
+                    sleep(20)
+                    waited += 20
+                if waited:
+                    paused += waited
+                    out('NSE XBRL history: the round is done with NSE - reading again.')
+                if stop is not None and stop.is_set():
+                    break
+                day = _day_count(state, clock())
+                if market_open(clock()):
+                    res['paused'] = 'market'
+                    out('NSE XBRL history: market hours - it goes on after the close.')
+                    nse_on = work_nse = False
+                elif day['stocks'] >= cap:
+                    res['paused'] = 'cap'
+                    left = len(todo) - done_n
+                    out('NSE XBRL history: today\'s %d stocks are done - the rest tomorrow (%d stock(s) left, about %d '
+                        'more day(s) at %d a day).' % (day['stocks'], left, int(math.ceil(left / float(cap))), cap))
+                    nse_on = work_nse = False
+            st = None
+            if work_nse:
+                try:
+                    st, got = process_stock(nse, sym, today)
+                except Blocked as e:
+                    res['blocked'] = str(e)
+                    out('NSE XBRL history: NSE stopped answering (%s) - the rest later.' % e)
+                    nse_on = False
+                except Exception as e:                    # one strange stock never stops the job
+                    out('NSE XBRL history: %s skipped (%s)' % (sym, e))
+                else:
+                    done_n += 1
+                    res['done'] += 1
+                    res['files'] += got
+                    day['stocks'] += 1
+                    day['files'] += got
+                    res['left'] = len(todo) - done_n
+                    if st.get('table'):
+                        pend += 1
+                    state['changed'] = clock()
+            if sc_on and sym in sc_todo and not screener_busy():
+                st = st or load_stock(sym)
+                if screener_wants(sym, st, today, clock(), tried):
+                    wait_s = SC_GAP_S - (clock() - last_page)
+                    if wait_s > 0:
+                        sleep(wait_s)
+                    newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r']
+                    try:
+                        res['pages'] += fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None)
+                    except Exception as e:                # screener.in refused / no internet: its pages next time
+                        sc_on = False
+                        out('NSE XBRL history: screener.in did not answer (%s) - its pages next time.' % e)
+                    else:
+                        tried[sym] = clock()
+                        t = build(st, today)
+                        if t != st.get('table'):
+                            st['table'] = t
+                            if 'files' not in st:
+                                st['sym'], st['files'] = sym, {}
+                            save_stock(st)
+                            pend += 1
+                            state['changed'] = clock()
+                        try:
+                            state.setdefault('scSeen', {})[sym] = os.path.getmtime(_sc_path(sym))
+                        except OSError:
+                            pass
+                    last_page = clock()
+            if not nse_on and not sc_on:
                 break
-            if day['stocks'] >= cap:
-                res['paused'] = 'cap'
-                left = len(todo) - k
-                out('NSE XBRL history: today\'s %d stocks are done - the rest tomorrow (%d stock(s) left, about %d more '
-                    'day(s) at %d a day).' % (day['stocks'], left, int(math.ceil(left / float(cap))), cap))
-                break
-            try:
-                st, got = process_stock(nse, sym, today)
-            except Blocked as e:
-                res['blocked'] = str(e)
-                out('NSE XBRL history: NSE stopped answering (%s) - the rest later.' % e)
-                break
-            except Exception as e:                        # one strange stock never stops the job
-                out('NSE XBRL history: %s skipped (%s)' % (sym, e))
-                continue
-            res['done'] += 1
-            res['files'] += got
-            day['stocks'] += 1
-            day['files'] += got
-            res['left'] = len(todo) - k - 1
-            if st.get('table'):
-                pend += 1
-            state['changed'] = clock()
             lock_beat(what)
             if (k + 1) % every == 0:
                 save_state(state)
-                per = max(0.0, clock() - t0 - paused) / (k + 1)
-                out('NSE XBRL history: %d of %d stock(s) read (today %d of %d stocks, %d file(s) downloaded%s).'
-                    % (k + 1, len(todo), day['stocks'], cap, day['files'],
-                       _left_words(per * min(len(todo) - k - 1, max(0, cap - day['stocks'])))))
+                day = _day_count(state, clock())
+                per = max(0.0, clock() - t0 - paused) / max(1, done_n)
+                out('NSE XBRL history: %d of %d stock(s) looked at (today %d of %d stocks from NSE, %d file(s) downloaded, '
+                    '%d screener.in page(s)%s).' % (k + 1, len(order), day['stocks'], cap, day['files'], res['pages'],
+                                                    _left_words(per * min(len(todo) - done_n, max(0, cap - day['stocks'])))
+                                                    if done_n and nse_on else ''))
             if pend >= POST_N or (pend and clock() - last_post >= POST_EVERY_S):
                 res['sent'] += post(cfg, api, state) or 0
                 last_post, pend = clock(), 0
                 save_state(state)
         res['sent'] += post(cfg, api, state) or 0
         save_state(state)
-        out('NSE XBRL history: %d stock(s) read now, %d file(s) downloaded, %d table(s) sent to the sheet%s.'
-            % (res['done'], res['files'], res['sent'], (', %d still to read' % res['left']) if res['left'] else ''))
+        out('NSE XBRL history: %d stock(s) read now, %d file(s) downloaded, %d screener.in page(s), %d table(s) sent to the '
+            'sheet%s.' % (res['done'], res['files'], res['pages'], res['sent'],
+                          (', %d still to read' % res['left']) if res['left'] else ''))
         return res
     finally:
         lock_drop()
 
 
 class Worker:
-    """The background program's part: started at a tick when work may be due; paced, pauses while a round runs."""
+    """The background program's part: started at a tick when work may be due; paced, waits while the round asks NSE."""
 
     def __init__(self):
         self.thread, self.next_at, self.stop = None, 0.0, threading.Event()
@@ -1374,7 +1680,7 @@ class Worker:
             return 30 * 60.0
         return REST_S if res and not res.get('blocked') else BLOCK_PAUSE_S
 
-    def maybe_start(self, cfg, api, round_busy, now=None):
+    def maybe_start(self, cfg, api, round_busy, now=None, screener_busy=None):
         if not cfg.get('xbrl_history', True) or not cfg.get('url') or not D:
             return False
         now = time.time() if now is None else now
@@ -1383,7 +1689,7 @@ class Worker:
 
         def go():
             try:
-                res = run_all(cfg, api, round_busy, gap_of(cfg), stop=self.stop)
+                res = run_all(cfg, api, round_busy, gap_of(cfg), stop=self.stop, screener_busy=screener_busy)
             except Exception as e:
                 log('NSE XBRL history: stopped - %s' % e)
                 res = {'blocked': 'error'}
@@ -1397,7 +1703,7 @@ class Worker:
 PCT = ('opm', 'taxp')
 CMP = (('rev', 'sales'), ('exp', 'expenses'), ('op', 'op'), ('opm', 'opm'), ('oi', 'other_income'), ('int', 'interest'),
        ('dep', 'depreciation'), ('pbt', 'pbt'), ('np', 'pat'), ('eps', 'eps'))
-FLAG_MARK = {'c': '*', 's': '^', 'q': '+'}
+FLAG_MARK = {'c': '*', 's': '^', 'q': '+', 'd': '~', 'r': '#'}
 
 
 def _fmt(v, pct=False):
@@ -1438,8 +1744,11 @@ def print_table(t, out, quarters=8):
                 continue
             out('   %-18s' % name[:18] + ''.join('%12s' % _fmt(v, COLS[i] in PCT) for v in vals))
     marks = {r[-1] for k in ('q', 'y') for r in t.get(k) or []}
-    legend = [w for f, w in (('c', '* = a later filing\'s comparison column'), ('s', '^ = the other basis\'s filing'),
-                             ('q', '+ = the sum of its 4 quarters (no yearly figures read)')) if f in marks]
+    legend = [w for f, w in (('c', '* = a later filing\'s comparison column'),
+                             ('s', '^ = standalone figures before the first consolidated period'),
+                             ('d', '~ = worked out from the other filings\' year-to-date figures (no filing of its own)'),
+                             ('q', '+ = the sum of its 4 quarters (no yearly figures read)'),
+                             ('r', '# = screener.in\'s figures (no NSE filing figures)')) if f in marks]
     if legend:
         out('   ' + '; '.join(legend))
     if t.get('note'):
@@ -1464,8 +1773,8 @@ def coverage(st, t, out):
         out('      %s missing - %s' % (label_of(mi), why or 'no XBRL file for it in NSE\'s lists'))
     ys = t.get('y') or []
     if ys:
-        out('   years: ' + ', '.join(r[0] + {'c': ' (comparison column)', 's': ' (other basis)', 'q': ' (sum of its 4 quarters)'}
-                                     .get(r[-1], '') for r in ys))
+        out('   years: ' + ', '.join(r[0] + {'c': ' (comparison column)', 's': ' (other basis)', 'q': ' (sum of its 4 quarters)',
+                                             'r': ' (screener.in)'}.get(r[-1], '') for r in ys))
 
 
 def screener_tables(html):
@@ -1619,10 +1928,17 @@ def check(cfg, syms, out=print, today=None):
             out('   no table: NSE gave no readable XBRL file of these years')
             continue
         coverage(st, t, out)
+        if t.get('bw'):
+            out('   ' + t['bw'])
         print_table(t, out)
+        o = t.get('o')
+        if o:
+            out('   the %s table too (the website switches to it): %d quarter(s)%s, %d year(s)' % (
+                'consolidated' if o['b'] == 'C' else 'standalone', len(o.get('q') or []),
+                (' up to ' + o['q'][-1][0]) if o.get('q') else '', len(o.get('y') or [])))
         html = None
         try:
-            kind, html = D['screener'](cfg, sym, True)
+            kind, html = D['screener'](cfg, sym, t.get('b') != 'S')
             html = html if kind == 'ok' else None
         except Exception as e:
             out('   screener.in: not read (%s)' % e)

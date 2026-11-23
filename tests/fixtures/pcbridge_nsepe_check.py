@@ -86,6 +86,6 @@ assert 'web app does not know this yet' in open(sb.LOG_PATH, encoding='utf-8').r
 assert sb.pe_step({'nse_pe': False}, today=TODAY, opener=opener) is False
 # 3. run_once runs it right after the end-of-day files
 src = open(os.path.join(ROOT, 'pcbridge', 'ScreenerBridge', 'screener_bridge.py'), encoding='utf-8').read()
-assert 'eod_step(cfg)\n        pe_step(cfg)' in src
+assert 'eod_step(cfg)\n            pe_step(cfg)' in src
 srv.shutdown()
 print('OK')

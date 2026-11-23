@@ -93,7 +93,11 @@ FIN_Q.unshift(['Sep 2025', 90, 75, 15, 16.7, 5, null, 2, 3, 15, 25, 11.25, 1.13,
 const FIN_Y = [['Mar 2023', 250, 210, 40, 16, 15, null, 7, 11, 37, 26, 27, 2.7, 'r'], ['Mar 2024', 300, 250, 50, 16.7, 20, null, 8, 12, 50, 25, 37.5, 3.75, 'q'],
   ['Mar 2025', 350, 290, 60, 17.1, 20, null, 8, 12, 60, 25, 45, 4.5, 'c'], ['Mar 2026', 410, 330, 80, 19.5, 20, -3.5, 8, 12, 76.5, 25, 57.4, 5.74, '']];
 const FIN_NOTE = "EPS adjusted for a bonus / split (today's share count): up to Mar 2025 divided by 3";
-const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18', note: FIN_NOTE };
+// VERSION 7 (owner, 23-Nov-2026, MTARTECH): the other basis's table apart (a switch), its words; 'd' = worked out from
+// the year-to-date figures of the other filings
+const FIN_BW = 'Dec 2026: only the standalone results are on NSE so far - the consolidated ones have not come yet.';
+const FIN_O = { b: 'S', q: [['Jun 2026', 50, 40, 10, 20, 1, null, 1, 1, 9, 25, 6.75, 0.6, ''], ['Sep 2026', 55, 44, 11, 20, 1, null, 1, 1, 10, 25, 7.5, 0.7, 'd']], y: [] };
+const FIN_SAMPLE = { b: 'C', q: FIN_Q, y: FIN_Y, files: 6, at: '2026-11-18', note: FIN_NOTE, bw: FIN_BW, o: FIN_O };
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -601,7 +605,20 @@ function check(name, fn) {
           await page.goto(base + '#results', { waitUntil: 'load' });
           await page.waitForSelector('a.tile-link[href="#results/above"]', { timeout: 15000 });
           const tiles = await page.evaluate(() => [...document.querySelector('.tiles').querySelectorAll('a.tile-link')].map((x) => x.getAttribute('href')));
-          assert.deepStrictEqual(tiles, ['#results/tracked', '#results/tracked', '#results/tracked', '#results/above', '#results/soldoff', '#results/waiting']);
+          assert.deepStrictEqual(tiles, ['#results/tracked', '#results/tracked', '#results/tracked', '#results/above', '#results/soldoff', '#results/waiting', '#results/notupdated']);
+          // owner, 23-Nov-2026: "1703 stocks results were updated in Main. what about remaining" - the rest, each with its reason
+          const nuTile = await page.$eval('a.tile-link[href="#results/notupdated"] .value', (x) => x.textContent.trim());
+          await page.click('a.tile-link[href="#results/notupdated"]');
+          await page.waitForFunction(() => location.hash === '#results/notupdated' && document.querySelector('#rl-count'), null, { timeout: 15000 });
+          const nu = await page.evaluate(() => ({ count: document.querySelector('#rl-count').textContent, help: document.querySelector('.rl-kinds + p.sub') && document.querySelector('.rl-kinds + p.sub').textContent,
+            heads: [...document.querySelectorAll('#rl-t thead th')].map((th) => th.textContent.replace(/[▲▼↕\d]/g, '').trim()),
+            why: [...document.querySelectorAll('#rl-t tbody tr')].map((tr) => tr.children[3].textContent.trim()) }));
+          assert.ok(nu.count.indexOf(nuTile + ' of ') === 0 && +nuTile.replace(/,/g, '') > 0, nu.count + ' vs tile ' + nuTile);
+          assert.ok(nu.heads.indexOf('Why not in Main yet') >= 0 && nu.heads.indexOf('Details') >= 0, nu.heads.join(' | '));
+          assert.ok(nu.why.length && nu.why.every((w) => w.length > 3), JSON.stringify(nu.why.slice(0, 5)));
+          assert.match(nu.help || '', /results are not in Main yet \(not ticked\), and why: /);
+          await page.click('a[href="#results"]');
+          await page.waitForSelector('a.tile-link[href="#results/above"]', { timeout: 15000 });
           const above = await page.$eval('a.tile-link[href="#results/above"] .value', (x) => x.textContent.trim());
           await page.click('a.tile-link[href="#results/above"]');
           await page.waitForFunction(() => location.hash === '#results/above' && document.querySelector('#rl-count'), null, { timeout: 15000 });
@@ -1329,6 +1346,15 @@ function check(name, fn) {
         scrolled: sc.scrollLeft + sc.clientWidth >= sc.scrollWidth - 2, door: [door.left, door.right], panel: [panel.left, panel.right],
         doorFits: document.querySelector('#fin-door').scrollWidth <= document.querySelector('#fin-door').clientWidth + 1 };
     });
+    const chips = await p.$$eval('#door-note [data-fin-basis]', (b) => b.map((x) => x.textContent + (x.classList.contains('on') ? '*' : '')));
+    await p.click('#door-note [data-fin-basis="S"]');
+    await p.waitForTimeout(200);
+    const stand = await p.evaluate(() => ({ heads: [...document.querySelectorAll('#door-fin-q .fin-t thead th')].map((x) => x.textContent),
+      tip: document.querySelector('#door-fin-q .fin-t thead th:last-child').getAttribute('data-tip'), note: document.querySelector('#door-note').textContent,
+      y: document.querySelector('#door-fin-y .fin-body').textContent, on: document.querySelector('#door-note [data-fin-basis].on').textContent }));
+    await p.click('#door-note [data-fin-basis="C"]');
+    await p.waitForTimeout(200);
+    const backC = await p.$$eval('#door-fin-q .fin-t thead th', (t) => t.length);
     const none = await p.evaluate((sym) => new Promise((ok) => {
       window.SB.openStock(sym);
       const t0 = Date.now();
@@ -1365,7 +1391,13 @@ function check(name, fn) {
     assert.deepStrictEqual(fin.rows['Exceptional items'], ['–', '–', '-3.50', '–', '–', '–'], 'a row with a figure somewhere is shown');
     assert.deepStrictEqual(fin.rows['EPS in Rs'], ['1.13', '1.50', '1.90', '2.30', '2.70', '3.10']);
     assert.ok(fin.rows['Sales growth YoY (same quarter)'] && /\+44%/.test(fin.rows['Sales growth YoY (same quarter)'][4]), JSON.stringify(fin.rows));
-    assert.match(fin.note, /^Consolidated figures, Rs crore, from the company's NSE filings and screener.in · \* = a later filing's comparison column · Σ = the sum of its 4 quarters · sc = screener.in's figures/);
+    assert.match(fin.note, /^ConsolidatedStandalone Dec 2026: only the standalone results are on NSE so far - the consolidated ones have not come yet\. Consolidated figures, Rs crore, from the company's NSE filings and screener.in · \* = a later filing's comparison column · Σ = the sum of its 4 quarters · sc = screener.in's figures/);
+    assert.deepStrictEqual(chips, ['Consolidated*', 'Standalone'], 'a switch between the two tables, the first one on');
+    assert.deepStrictEqual(stand.heads, ['', 'Jun 2026', 'Sep 2026d'], 'the standalone table alone - nothing mixed in: ' + stand.heads.join(' | '));
+    assert.match(stand.tip, /^Worked out from the year-to-date figures/);
+    assert.ok(/Standalone figures, Rs crore/.test(stand.note) && /d = worked out from the other filings' year-to-date figures/.test(stand.note) && stand.on === 'Standalone', JSON.stringify(stand));
+    assert.match(stand.y, /No yearly figures/, 'its yearly table: none');
+    assert.strictEqual(backC, 7, 'back to the consolidated table');
     assert.ok(fin.note.indexOf(' · ' + FIN_NOTE) > 0, 'the EPS note above the tables: ' + fin.note);
     assert.deepStrictEqual(fin.yHeads, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'both tables on the left door at once');
     assert.ok(fin.csv === 2 && fin.scrolled && fin.doorFits && fin.notesInTables === 0 && !fin.inPanel, JSON.stringify(fin));

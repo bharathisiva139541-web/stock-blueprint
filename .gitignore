@@ -2,6 +2,7 @@
 pcbridge/ScreenerBridge/config.json
 pcbridge/ScreenerBridge/bridge.log
 pcbridge/ScreenerBridge/bridge.lock
+pcbridge/ScreenerBridge/nse_busy.json
 pcbridge/ScreenerBridge/pricebands_state.json
 pcbridge/ScreenerBridge/moneycontrol_check/
 pcbridge/ScreenerBridge/xbrl_check/
