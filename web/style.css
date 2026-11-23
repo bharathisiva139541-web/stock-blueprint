@@ -1276,6 +1276,36 @@ a.sg-step:hover { text-decoration: none; border-color: rgba(var(--accent-rgb), 0
 .kv div { padding: 8px 0; border-bottom: 1px solid var(--border); min-width: 0; }
 .kv dt { color: var(--muted); font-size: 12px; }
 .kv dd { margin: 2px 0 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+/* the PE picture (owner, 23-Nov-2026): speedometer + cheaper / costlier bars, PE now vs its medians, peak, industry */
+.kv .kv-wide { grid-column: 1 / -1; padding: 12px 0; }
+.pe-pic-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+.pe-pic-head .sub { font-size: 12px; }
+.pe-pic-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.pe-pic-row > div { min-width: 0; background: var(--surface-2); border-radius: 10px; padding: 10px 8px; }
+.pe-pic svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pe-pic svg text { font-family: inherit; font-variant-numeric: tabular-nums; }
+.pe-pic .pl { fill: var(--muted); font-size: 12px; }
+.pe-pic .pl-row { fill: var(--ink-2, var(--muted)); }
+.pe-pic .pl-i { fill: var(--accent); font-weight: 600; }
+.pe-pic .pz { fill: none; stroke-width: 18; }
+.pe-pic .pz-track { stroke: var(--border); }
+.pe-pic .pz-good { stroke: rgba(var(--up-rgb), 0.38); }
+.pe-pic .pz-warn { stroke: var(--warn); stroke-opacity: 0.38; }
+.pe-pic .pz-bad { stroke: rgba(var(--down-rgb), 0.38); }
+.pe-pic .pm { fill: var(--ink); }
+.pe-pic .pi { fill: var(--accent); }
+.pe-pic .pn { stroke-width: 5; stroke-linecap: round; }
+.pe-pic .pn-good, .pe-pic .ph-good { stroke: var(--up); fill: var(--up); }
+.pe-pic .pn-warn, .pe-pic .ph-warn { stroke: var(--warn); fill: var(--warn); }
+.pe-pic .pn-bad, .pe-pic .ph-bad { stroke: var(--down); fill: var(--down); }
+.pe-pic .pn-none, .pe-pic .ph-none { stroke: var(--muted); fill: var(--muted); }
+.pe-pic .pv { font-size: 13px; font-weight: 700; fill: var(--ink); }
+.pe-pic .pe-gauge .pv { font-size: 18px; }
+.pe-pic .pv-good { fill: var(--up); } .pe-pic .pv-warn { fill: var(--warn); } .pe-pic .pv-bad { fill: var(--down); }
+.pe-pic .pbt { fill: var(--border); opacity: 0.55; }
+.pe-pic .pb-good { fill: var(--up); } .pe-pic .pb-bad { fill: var(--down); }
+.pe-pic .pax { stroke: var(--muted); stroke-width: 1; }
+.pe-pic .pdiv { stroke: var(--border); stroke-dasharray: 3 3; }
 .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 /* the stock window's 5-year results table (NSE XBRL filings, 18-Nov-2026) */
 .fin { margin-top: 16px; }

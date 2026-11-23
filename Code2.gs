@@ -14613,9 +14613,18 @@ function ab_hpeText_(v, max) {
   return String(v === null || v === undefined ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/^[=+\-@]+/, '').slice(0, max || 300);
 }
 
+const AB_HPE_ENGINE = 2;   // the laptop's Historical PE engine kept (2 = the results table too, 23-Nov-2026)
+
 function ab_histPePut_(req) {
   const rows = req.rows && typeof req.rows === 'object' ? req.rows : null;
   if (!rows) return { ok: false, error: 'no rows' };
+  // owner, 23-Nov-2026 (RVNL / SCI: Median PE 5Y + Peak PE blank again after XbrlHistoryCheck had sent them): the laptop's
+  // background program still ran its older version and sent its own, poorer figures after the new ones - an older engine's
+  // figures are not kept (the background program restarts itself with the new version)
+  if (!(Number(req.engine) >= AB_HPE_ENGINE)) {
+    return { ok: false, error: 'an older laptop program sent Historical PE - not kept (it restarts itself with the new version; ' +
+      'or sign out of Windows and sign in again)' };
+  }
   const upto = /^\d{4}-\d{2}-\d{2}/.test(String(req.upto || '')) ? String(req.upto).slice(0, 10) : '';
   const out = [];
   Object.keys(rows).slice(0, AB_HPE_MAX).forEach(function (k) {

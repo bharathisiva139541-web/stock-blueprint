@@ -270,7 +270,7 @@ assert FETCHED == [('AAA', True), ('BBB', True), ('BBB', False), ('NEW', True), 
 assert any('screener.in stopped the extra pages (HTTP 429)' in x for x in LOGS), LOGS
 assert any('read 5 more screener.in page(s)' in x and '1 stock(s) still to read' in x for x in LOGS), LOGS
 op, put = CALLS[-1]
-assert put['op'] == 'put' and put['upto'] == UPTO.isoformat() and n == 3, (n, put)
+assert put['op'] == 'put' and put['upto'] == UPTO.isoformat() and n == 3 and put['engine'] == H.ENGINE == 2, (n, put)
 rows = put['rows']
 assert rows['AAA'][:4] == [20.0, 20.0, 20.0, 20.0] and rows['AAA'][5] == 20.0 and rows['AAA'][6] == 5.0, rows['AAA']
 assert rows['BBB'][:3] == [25.0, 25.0, 25.0] and rows['BBB'][8].startswith('screener.in page'), rows['BBB']
@@ -296,6 +296,16 @@ del REPLY['put']
 del CALLS[:]
 H.step(CFG, api, L, None, now=NOW + 240)
 assert [c[1]['op'] for c in CALLS] == [], 'force does not undo the last good post: nothing changed since'
+# a state posted by another engine (the background program's older version sent its own figures after the new ones -
+# owner, 23-Nov-2026, RVNL / SCI): posted again at once
+st_ = H._load_state()
+st_.pop('engine', None)
+H._save_state(st_)
+H.step(CFG, api, L, None, now=NOW + 250)
+assert [c[1]['op'] for c in CALLS] == ['put'] and H._load_state()['engine'] == H.ENGINE, CALLS
+H.step(CFG, api, L, None, now=NOW + 260)
+assert len(CALLS) == 1, 'once'
+del CALLS[:]
 # a stock read again with new figures -> the EPS changed -> posted
 H.keep_page('AAA', page([(q, 50, 2.5) for q in qlabels(2026, 9, 12)], []), NOW + 3 * 86400)
 H.step(CFG, api, L, None, now=NOW + 3 * 86400)

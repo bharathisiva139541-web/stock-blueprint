@@ -81,6 +81,7 @@ LIVE_MAIN.main.rows.forEach((r) => {
   if (sym === FLAG_SYM) {
     r[LIVE_MAIN.main.cols.indexOf('pe')] = 20;
     r[LIVE_MAIN.main.cols.indexOf('pevs')] = 0.8;
+    r[LIVE_MAIN.main.cols.indexOf('ipe')] = 25;
   }
   if (sym === SENT_SYM) r[LIVE_MAIN.main.cols.indexOf('pe')] = 30;
   r.push.apply(r, sym === FLAG_SYM ? [22, 24, 25, 61.5] : sym === SENT_SYM ? [5, null, null, null] : [null, null, null, null]);
@@ -1326,6 +1327,15 @@ function check(name, fn) {
       window.SB.openStock(sym);
       const kv = {};
       document.querySelectorAll('#drawer-body dt').forEach((dt) => { kv[dt.textContent] = dt.nextElementSibling.textContent; });
+      // the PE picture (owner, 23-Nov-2026: options C + D + the industry PE) in place of the separate lines
+      const pic = document.querySelector('#drawer-body .kv .kv-wide .pe-pic');
+      kv.pic = pic && {
+        chips: [...pic.querySelectorAll('.pe-pic-head .badge')].map((b) => b.textContent + '|' + b.className),
+        sub: pic.querySelector('.pe-pic-head .sub').textContent,
+        gauge: [...pic.querySelectorAll('.pe-gauge text')].map((t) => t.textContent),
+        bars: [...pic.querySelectorAll('.pe-bars .pv')].map((t) => t.textContent),
+        fits: pic.getBoundingClientRect().right <= document.querySelector('.drawer-panel').getBoundingClientRect().right + 1
+      };
       return kv;
     }, FLAG_SYM);
     const other = await p.evaluate((sym) => { const s = window.SB.ctx.bySym[sym]; return [s.peOwn, s.peOwnYears, s.peCheck]; }, SENT_SYM);
@@ -1417,10 +1427,13 @@ function check(name, fn) {
     assert.deepStrictEqual(both, [FLAG_SYM], 'PE below own + industry median');
     assert.ok(/^25\s*5Y$/.test(row.med) && row.ratio === '0.8' && row.check === 'Below own + industry median', JSON.stringify(row));
     assert.ok(heads2.some((x) => x.indexOf('Median PE 5Y') === 0), 'ticked: ' + heads2.join(' | '));
-    assert.match(drawer['Own median PE'], /^25 \(5Y median · PE now 0\.8× it\)$/);
-    assert.strictEqual(drawer['PE check'], 'Below own + industry median');
-    assert.strictEqual(drawer['Median PE 1Y / 3Y / 5Y'], '22 / 24 / 25');
-    assert.strictEqual(drawer['Peak PE 5Y'], '61.5');
+    ['Own median PE', 'PE check', 'Median PE 1Y / 3Y / 5Y', 'Peak PE 5Y'].forEach((k) => assert.ok(!(k in drawer), k + ': now in the picture'));
+    assert.ok(drawer.pic, 'the PE picture in the stock window');
+    assert.deepStrictEqual(drawer.pic.chips, ['Cheaper than its usual PE|badge s-good', '20% below industry PE|badge s-good']);
+    assert.strictEqual(drawer.pic.sub, 'PE now 20.0 · 33% of its 5-year peak · industry PE 25.0');
+    ['1Y 22.0', '3Y 24.0', '5Y 25.0', 'Industry 25.0', 'Peak 61.5', 'PE now 20.0'].forEach((t) => assert.ok(drawer.pic.gauge.includes(t), t + ': ' + drawer.pic.gauge.join(' | ')));
+    assert.deepStrictEqual(drawer.pic.bars, ['-9%', '-17%', '-20%', '-67%', '-20%']);
+    assert.ok(drawer.pic.fits, 'inside the stock window');
     assert.deepStrictEqual(other.slice(0, 2), [6, 1], 'only a 1-year median: PE 30 / 5');
     assert.match(String(other[2]), /^(Above own median|Above both|Below industry median)$/);
   });

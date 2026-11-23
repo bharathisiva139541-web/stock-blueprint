@@ -46,6 +46,8 @@ PAGES_PER_ROUND = 40       # backfill pages a full round (config pe_history_page
 BACKFILL_MAX_S = 480       # ... and at most this long
 SEED_EVERY_S = 20 * 3600   # the sheet's stored figures asked at most this often
 MAX_ROWS = 4000
+ENGINE = 2                 # what the sheet keeps (Code2.gs AB_HPE_ENGINE): 2 = the results table too (23-Nov-2026); a state
+                           # posted by another engine is posted again at once
 BASIS_VERSION = 2          # records read by the fixed _basis (23-Nov-2026); an older record's 'S' may be a consolidated page
 AGREE_TOL = 0.02           # an old record and NSE's filings agree on a quarter's EPS within 2 %
 
@@ -685,7 +687,8 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
             xch = max(xch, tch)
         except Exception as e:
             log('Historical PE: the results tables could not be read (%s)' % e)
-    if not force and st.get('build') == build and float(st.get('posted') or 0) >= max(S.changed, xch):
+    if not force and st.get('build') == build and float(st.get('posted') or 0) >= max(S.changed, xch) and \
+            st.get('engine') == ENGINE:
         _save_state(st)
         return None
     if prices is None:
@@ -696,7 +699,7 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
     LAST.clear()
     LAST.update(rows)
     try:
-        ans = api(cfg, 'histpe', {'op': 'put', 'upto': upto, 'rows': rows,
+        ans = api(cfg, 'histpe', {'op': 'put', 'upto': upto, 'rows': rows, 'engine': ENGINE,
                                   'made': datetime.now().isoformat(timespec='seconds')}, tries=2, timeout=240)
     except RuntimeError as e:
         log('Historical PE: could not send (%s) - next round.' % e)
@@ -708,7 +711,7 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
                                                          if 'unknown action' in err else ''))
         _save_state(st)
         return None
-    st['build'], st['upto'], st['posted'] = build, upto, max(now, S.changed, xch)
+    st['build'], st['upto'], st['posted'], st['engine'] = build, upto, max(now, S.changed, xch), ENGINE
     _save_state(st)
     log('Historical PE (prices up to %s): %d stock(s) -> the sheet - 1Y median for %d, 3Y %d, 5Y %d (%.1f s); Main got %s.'
         % (upto, len(rows), sum(1 for r in rows.values() if r[0] is not None),
