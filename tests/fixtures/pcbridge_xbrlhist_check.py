@@ -386,7 +386,7 @@ text = '\n'.join(out)
 assert 'integrated filing:' in text and 'financial results:' in text and 'Quarterly results (consolidated, Rs crore)' in text, text
 assert 'Profit & Loss (years)' in text and 'OPM %' in text and 'Sep 2026' in text, text
 assert '   Jun 2026  4 agree\n' in text, text            # OPM 25 / 122 = 20.5 % vs screener.in's 20 %: agrees
-assert 'compared with screener.in:' in text and 'nothing was sent to the sheet' in text, text
+assert 'compared with screener.in:' in text and 'only the tables above were sent to the sheet' in text, text
 assert 'Sep 2026  0 agree | Sales 125.00 (screener.in 130.00)' in text, 'a difference is shown'
 assert 'quarters: 20 of 20 in the table (Dec 2021 .. Sep 2026) - none missing' in text, text
 assert 'years: Mar 2021 (comparison column), Mar 2022,' in text, text
@@ -580,6 +580,7 @@ X.coverage({'tried': {'2025-12-31': [['A_WEB.xml', 'NSE answered HTTP 404']], '2
            {'q': [[l] + [None] * 12 + [''] for l in labels if l not in ('Sep 2025', 'Dec 2025')], 'y': []}, o3.append)
 assert o3 == ['   quarters: 18 of 20 in the table (Jun 2021 .. Mar 2026)',
               '      Sep 2025 missing - B_WEB.xml: read, but no 3-month figures of this quarter in it',
+              '         the file is not kept on this laptop',
               '      Dec 2025 missing - A_WEB.xml: NSE answered HTTP 404'], o3
 
 # e) a bank (the banking format): Interest = interest expended, Expenses = operating expenses + provisions, Financing Profit
@@ -1109,6 +1110,75 @@ try:
 finally:
     X.process_stock = real_ps
 assert order_ == ['NEVER1', 'NEVER2', 'OLDREAD'], order_
+
+# MTARTECH as it really is (owner's check + NSE page, 23-Nov-2026): Sep 2026 filed STANDALONE only on 29-Oct, its own
+# quarter's figures only on a dimension context (the half year plain) - 'read, but no 3-month figures of this quarter'
+def mixed_file(k):
+    e = QS[k][1]
+    base = filing(k, 'Standalone').decode()
+    qs_ = qstart(e, 3).isoformat()
+    # the quarter's plain context loses its figures; a dimension context of the same period carries them
+    quarter = ('<xbrli:context id="Q1"><xbrli:entity><xbrli:identifier scheme="x">X</xbrli:identifier></xbrli:entity>'
+               '<xbrli:period><xbrli:startDate>%s</xbrli:startDate><xbrli:endDate>%s</xbrli:endDate></xbrli:period>'
+               '<xbrli:scenario><xbrldi:explicitMember dimension="in-bse-fin:ReportingAxis">in-bse-fin:AmalgamatedMember'
+               '</xbrldi:explicitMember></xbrli:scenario></xbrli:context>' % (qs_, e.isoformat()))
+    base = base.replace('contextRef="D0" ', 'contextRef="Q1" ').replace('</xbrli:xbrl>', quarter + '</xbrli:xbrl>')
+    return base.encode()
+
+
+MTRR = []
+for k in (20, 21, 22, 23):
+    for kind in (('C', 'S') if k < 23 else ('S',)):
+        u = url_of(k, kind, sym='MTR2')
+        NSE[u] = mixed_file(k) if k == 23 else filing(k, 'Consolidated' if kind == 'C' else 'Standalone')
+        MTRR.append({'xbrl': u, 'qe_Date': QS[k][1].strftime('%d-%b-%Y'), 'consolidated': 'Consolidated' if kind == 'C' else 'Standalone'})
+LIST['MTR2'] = ({'data': MTRR}, [])
+pm = X.parse_periods(NSE[url_of(23, 'S', sym='MTR2')])
+assert sorted((q['end'], q['m']) for q in pm['periods'] if q['end'] == '2026-09-30') == [('2026-09-30', 3), ('2026-09-30', 6)], pm['periods']
+assert [q['f']['revenue'] for q in pm['periods'] if (q['end'], q['m']) == ('2026-09-30', 3)] == [123.0], 'the quarter\'s own figures'
+assert pm['older'].startswith('period(s) 2026-07-01..2026-09-30 only on dimension contexts'), pm['older']
+X.bind(screener=None)
+before = len(REQ)
+s2 = X.process_stock(nse, 'MTR2', TODAY)[0]
+t2_ = s2['table']
+assert t2_['b'] == 'S' and t2_['q'][-1][0] == 'Sep 2026' and t2_['q'][-1][-1] == '' and t2_['q'][-1][1] == 123.0, t2_['q'][-1]
+assert t2_['bw'].startswith('Consolidated results end with Jun 2026: the company files only standalone results since Sep 2026'), t2_
+sq2 = {r[0]: r[-1] for r in t2_['q']}
+assert sq2['Jun 2026'] == '' and sq2['Mar 2026'] == '', 'the standalone files before it read too (the table goes on): %s' % sq2
+assert X.standalone_more([X.rec_meta(r) for r in MTRR], '2021-01-01') == ['2026-06-30', '2026-03-31', '2025-12-31']
+assert X.standalone_more([X.rec_meta(r) for r in MTRR if '_S_' not in r['xbrl'] or '2023' in r['xbrl']], '2021-01-01') == []
+assert t2_['o']['b'] == 'C' and t2_['o']['q'][-1][0] == 'Jun 2026'
+# the shape of a file read without its quarter (printed by the check)
+shape = X.file_shape('MTR2', X.file_name(url_of(23, 'S', sym='MTR2')))
+assert shape[0].startswith('10 context(s)') and '2026-07-01..2026-09-30 (3 months): 0 on plain contexts, 18 on dimension contexts (e.g. D0S)' in shape, shape
+# a business segment's figures are never taken for the quarter; one that does not fit the half year minus June is not either
+segonly = mixed_file(23).replace(b'<xbrli:scenario><xbrldi:explicitMember dimension="in-bse-fin:ReportingAxis">in-bse-fin:AmalgamatedMember'
+                                 b'</xbrldi:explicitMember></xbrli:scenario>',
+                                 b'<xbrli:segment><xbrldi:explicitMember dimension="in-bse-fin:SegmentsAxis">B</xbrldi:explicitMember></xbrli:segment>')
+assert ('2026-09-30', 3) not in {(q['end'], q['m']) for q in X.parse_periods(segonly)['periods']}, 'segments only: no quarter'
+odd = mixed_file(23).replace(b'contextRef="Q1" unitRef="INR" decimals="-5">1230000000.0', b'contextRef="Q1" unitRef="INR" decimals="-5">1900000000.0')
+assert b'1900000000.0' in odd and ('2026-09-30', 3) not in {(q['end'], q['m']) for q in X.parse_periods(odd)['periods']}, 'does not fit the half year'
+assert X._ytd_quarter({('2026-04-01', '2026-09-30'): {'revenue': 245.0}, ('2026-04-01', '2026-06-30'): {'revenue': 122.0}},
+                      '2026-07-01', '2026-09-30') == 123.0
+# screener.in's pages read again when NSE lists a newer results quarter than they show; its filing day decides the table
+now_ = time.time()
+sc_jun = {'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Jun 2026'], 9.0), 'y': [], 'at': now_ - 3600},
+          'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Jun 2026'], 8.0), 'y': [], 'at': now_ - 3600}}
+st_l = {'newest': [['2026-09-30', 'S', 'F', '20261029', 'x.xml'], ['2026-09-30', '?', 'G', '20261016', 'g.xml']]}
+assert X.listed_newest(st_l) == 2026 * 12 + 9 and X.listed_behind(sc_jun, st_l) and not X.listed_behind(sc_jun, {})
+os.makedirs(os.path.dirname(X._sc_path('LSTD')), exist_ok=True)
+X._write_json(X._sc_path('LSTD'), sc_jun)
+assert not X.screener_wants('LSTD', st_l, T23, now_), 'read an hour ago: not yet'
+sc_jun['C']['at'] = sc_jun['S']['at'] = now_ - 13 * 3600
+X._write_json(X._sc_path('LSTD'), sc_jun)
+assert X.screener_wants('LSTD', st_l, T23, now_, {'LSTD': now_ - 60}), 'a listed quarter the pages lack: again after 12 h'
+sc_sep = {'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Mar 2026', 'Jun 2026'], 9.0), 'y': []},
+          'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Mar 2026', 'Jun 2026', 'Sep 2026'], 8.0), 'y': []}}
+tl = X.build({'sym': 'LSTD', 'files': {}, 'newest': st_l['newest']}, T23, sc=sc_sep)
+assert tl['b'] == 'S' and tl['bw'].startswith('Consolidated results end with Jun 2026'), tl
+tl2 = X.build({'sym': 'LSTD', 'files': {}}, T23, sc=sc_sep)
+assert tl2['b'] == 'C', 'without NSE\'s filing day: 54 days after the quarter end - perhaps not filed yet'
+X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page([('Jun 2026', 122, 18.75, 1.88, 20), ('Sep 2026', 130, 18.75, 1.88, 19)])))
 
 # e) the round's NSE steps only: nse_busy.json while they run
 sb.NSE_BUSY_PATH = os.path.join(TMP, 'nse_busy.json')
