@@ -760,12 +760,6 @@
   }
 
   // ---------- stock drawer ----------
-  /** 'median (5Y) · PE x times it' - the stock's own median PE the comparison uses */
-  function peOwnHtml(s) {
-    var m = SB.pe.ownMedian(s);
-    if (!m) return '–';
-    return F.num(m.value) + ' <span class="sub">(' + m.years + 'Y median' + (isNum(s.peOwn) ? ' · PE now ' + F.num(s.peOwn, 2) + '× it' : '') + ')</span>';
-  }
   function openStock(sym, opener) {
     var s = ctx.bySym[sym];
     var body = $('#drawer-body');
@@ -783,9 +777,10 @@
       var kv = [
         ['Category', esc(s.catName)], ['Sector', esc(s.sector || '–')], ['Basic industry', esc(s.ind || '–')], ['Index', esc(s.idx || '–')],
         ['Market cap', F.cr(s.mcap)], ['10-day', ui.deltaHtml(s.d10)], ['30-day', ui.deltaHtml(s.d30)], ['52W high', F.price(s.hi52)],
-        ['From 52W high', ui.deltaHtml(s.down52)], ['PE', F.num(s.pe)], ['Own median PE', peOwnHtml(s)], ['Industry PE', F.num(s.ipe)], ['PE / Industry PE', F.num(s.pevs)],
-        ['PE check', s.peCheck ? ui.badge(s.peCheck) : '–'], ['Median PE 1Y / 3Y / 5Y', [s.pem1, s.pem3, s.pem5].map(function (v) { return isNum(v) ? F.num(v) : '–'; }).join(' / ')],
-        ['Peak PE 5Y', F.num(s.pepk)],
+        ['From 52W high', ui.deltaHtml(s.down52)], ['PE', F.num(s.pe)], ['Industry PE', F.num(s.ipe)], ['PE / Industry PE', F.num(s.pevs)],
+        // owner, 23-Nov-2026: one picture of PE now vs its 1Y / 3Y / 5Y medians, the 5-year peak and the industry PE
+        // (options C + D) in place of the lines Own median PE, Median PE 1Y / 3Y / 5Y, Peak PE 5Y and PE check
+        [null, SB.pe.html(SB.pe.picture(s))],
         ['TTM PEG', F.num(s.peg)], ['TTM EPS growth', F.num(s.epsg)], ['Target price', F.price(s.tgt)], ['Upside', ui.deltaHtml(s.up, 0)],
         ['Result date', F.date(s.rdate) + (s.done ? ' ✓' : '')], ['Revenue QoQ', ui.deltaHtml(s.qrev, 0)], ['Profit QoQ', ui.deltaHtml(s.qnp, 0)],
         ['Revenue YoY', ui.deltaHtml(s.yrev, 0)], ['Profit YoY', ui.deltaHtml(s.ynp, 0)], ['Promoter holding', esc(s.promo || '–')],
@@ -802,7 +797,10 @@
         kv.push(['NSE 52W high', F.price(s.nse52.high) + ' <span class="sub">on ' + F.date(s.nse52.date) + '</span>' +
           (s.nse52.isNew ? ' ' + ui.badge('New 52W high', 'new52') : isNum(s.nse52.below) ? ' <span class="sub">· ' + F.num(s.nse52.below, 1) + '% below</span>' : '')]);
       }
-      h += '<dl class="kv">' + kv.map(function (p) { return '<div><dt>' + p[0] + '</dt><dd>' + p[1] + '</dd></div>'; }).join('') + '</dl>' +
+      h += '<dl class="kv">' + kv.map(function (p) {
+        if (p[0] === null) return p[1] ? '<div class="kv-wide">' + p[1] + '</div>' : '';
+        return '<div><dt>' + p[0] + '</dt><dd>' + p[1] + '</dd></div>';
+      }).join('') + '</dl>' +
         (doorWide() ? '' : finSection(s.sym)) +
         '<div id="drawer-chart" style="margin-top:14px"></div>';
     }

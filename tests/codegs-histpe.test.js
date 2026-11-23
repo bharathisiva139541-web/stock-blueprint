@@ -48,7 +48,7 @@ test('op put: PE_History rebuilt, Main gets the four values + the two formulas a
     CCC: [41, null, null, null, '', 40, 10, null, 'the sheet (quarterly figures only)', '=HYPERLINK("x") 3Y: EPS history shorter than 3Y'],
     'BAD SYM': [1, 2, 3, 4], ZZZ: [9, 9, 9, 9, '', 9, 1, 100, '', '']
   };
-  const r = e.post({ token: TOKEN, action: 'histpe', op: 'put', upto: '2026-11-14', rows });
+  const r = e.post({ token: TOKEN, action: 'histpe', op: 'put', engine: 2, upto: '2026-11-14', rows });
   assert.strictEqual(r.ok, true, JSON.stringify(r));
   assert.strictEqual(r.stocks, 3, 'the bad symbol left out');
   assert.strictEqual(r.main, 2, 'AAA + CCC are Main stocks');
@@ -80,19 +80,22 @@ test('op put: PE_History rebuilt, Main gets the four values + the two formulas a
   PE.WORDS.forEach((w) => assert.ok(want.check.indexOf('"' + w + '"') !== -1, w));
   assert.ok(want.check.indexOf('IF(AND(RC17<1,IFERROR(N(RC8),0)<1),"Below own + industry median"') !== -1, want.check);
   // a second post with fewer stocks clears the others; nothing to change in the formulas
-  const r2 = e.post({ token: TOKEN, action: 'histpe', op: 'put', upto: '2026-11-17', rows: { CCC: [42, 43, 44, 50, '', 40, 10, 60, '', ''] } });
+  const r2 = e.post({ token: TOKEN, action: 'histpe', op: 'put', engine: 2, upto: '2026-11-17', rows: { CCC: [42, 43, 44, 50, '', 40, 10, 60, '', ''] } });
   assert.deepStrictEqual([r2.main, r2.added, r2.formulas.rows], [1, [], 0]);
   assert.deepStrictEqual(e.sheet('Main').rows[2].slice(12, 16), ['', '', '', '']);
   assert.deepStrictEqual(e.sheet('Main').rows[4].slice(12, 16), [42, 43, 44, 50]);
   assert.strictEqual(e.sheet('PE_History').rows.filter((x) => x[0] === 'AAA').length, 0, 'rebuilt');
   assert.strictEqual(JSON.parse(e.props.getProperty('AB_HPE_AT')).upto, '2026-11-17');
   assert.strictEqual(e.post({ token: TOKEN, action: 'histpe', op: 'put' }).ok, false, 'no rows');
+  // an older laptop program (no engine 2) is not kept (owner, 23-Nov-2026: it overwrote the new figures)
+  const old = e.post({ token: TOKEN, action: 'histpe', op: 'put', upto: '2026-11-18', rows: { CCC: [1, 1, null, null, '', 1, 1, 1, '', ''] } });
+  assert.ok(old.ok === false && /older laptop program/.test(old.error), JSON.stringify(old));
 });
 
 test('Phase 4 puts the two formulas back; without the columns nothing happens', () => {
   const e = env();
   assert.match(e.call('ab_hpeEnsureFormulas_').skipped, /no historical PE columns/);
-  e.post({ token: TOKEN, action: 'histpe', op: 'put', upto: '2026-11-14', rows: { AAA: [1, 2, 3, 4, '', 1, 1, 1, '', ''] } });
+  e.post({ token: TOKEN, action: 'histpe', op: 'put', engine: 2, upto: '2026-11-14', rows: { AAA: [1, 2, 3, 4, '', 1, 1, 1, '', ''] } });
   const f = e.sheet('Main').formulas;
   f['3,16'] = '=1';
   delete f['4,17'];
