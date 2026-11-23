@@ -1,0 +1,292 @@
+# -*- coding: utf-8 -*-
+"""Offline checks of the EPS Growth Target Lab (pcbridge/ScreenerBridge/eps_target.py; owner, 23-Nov-2026: LAURUSLABS -
+TTM EPS x EPS growth % = his target, reached after the Q1 results). Prints OK at the end."""
+import importlib.util
+import json
+import os
+import random
+import sys
+import tempfile
+from datetime import date, timedelta
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+HERE = os.path.join(ROOT, 'pcbridge', 'ScreenerBridge')
+sys.path.insert(0, HERE)
+TMP = tempfile.mkdtemp()
+spec = importlib.util.spec_from_file_location('kite_intraday', os.path.join(HERE, 'kite_intraday.py'))
+K = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(K)
+L = K.backtest_lab
+L.LAB_DIR = os.path.join(TMP, 'lab_cache')
+spec = importlib.util.spec_from_file_location('eps_target', os.path.join(HERE, 'eps_target.py'))
+E = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(E)
+E.STATE_PATH = os.path.join(TMP, 'eps_target_state.json')
+E.ANN_PATH = os.path.join(TMP, 'eps_target_ann.json')
+LOGS = []
+E.log = LOGS.append
+spec = importlib.util.spec_from_file_location('xbrl_history', os.path.join(HERE, 'xbrl_history.py'))
+X = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(X)
+X.DIR = os.path.join(TMP, 'xbrl_data')
+TODAY = date(2026, 11, 23)
+
+
+def near(a, b, tol=0.01):
+    return a is not None and abs(a - b) <= tol
+
+
+# ------------------------------------------------------------------ 1. quarters
+q = E.quarter_ends(TODAY, 8)
+assert [E.label_of(m) for m in q] == ['Sep 2026', 'Jun 2026', 'Mar 2026', 'Dec 2025', 'Sep 2025', 'Jun 2025', 'Mar 2025',
+                                      'Dec 2024'], q
+assert E.label_of(E.quarter_ends(date(2026, 9, 30), 1)[0]) == 'Jun 2026', 'a quarter is over only after its last day'
+assert E.label_of(E.quarter_ends(date(2026, 10, 1), 1)[0]) == 'Sep 2026'
+assert [E.fy_words(E.mi_label(x)) for x in ('Jun 2026', 'Sep 2026', 'Dec 2025', 'Mar 2026')] == ['Q1 FY27', 'Q2 FY27', 'Q3 FY26',
+                                                                                                   'Q4 FY26']
+assert E.end_of(E.mi_label('Jun 2026')) == date(2026, 6, 30) and E.end_of(E.mi_label('Dec 2025')) == date(2025, 12, 31)
+
+# ------------------------------------------------------------------ 2. the formula (the owner's LAURUSLABS numbers)
+LAURUS = ['Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026']
+EPS = [0.37, 1.71, 4.34, 3.02, 3.61, 4.67, 5.17, 6.81]
+eps = {E.mi_label(l): v for l, v in zip(LAURUS, EPS)}
+t = E.target_of(eps, E.mi_label('Jun 2026'))
+assert t['eps'] == EPS and t['ttm'] == 20.26 and t['prev'] == 9.44, t
+assert near(t['g'], 114.62) and near(t['tgt'], 2322.17, 0.02) and t['why'] == '', t
+eps2 = dict(eps)
+eps2[E.mi_label('Mar 2026')] = 5.71            # the owner's own reading: TTM 20.80 -> growth 120.3 % -> 2,503 (his 2,502)
+t2 = E.target_of(eps2, E.mi_label('Jun 2026'))
+assert t2['ttm'] == 20.8 and near(t2['g'], 120.34) and abs(t2['tgt'] - 2503.0) < 1, t2
+assert E.target_of(eps, E.mi_label('Sep 2026')) is None, 'Sep 2026 not known yet'
+mk = lambda vals: {E.mi_label(l): v for l, v in zip(LAURUS, vals)}
+assert E.target_of(mk([1, 1, 1, 1, -2, -1, 0.5, 0.4]), E.mi_label('Jun 2026'))['why'] == 'loss'
+assert E.target_of(mk([-1, -1, 0.5, 0.2, 1, 1, 1, 1]), E.mi_label('Jun 2026'))['why'] == 'prevloss'
+r = E.target_of(mk([2, 2, 2, 2, 1, 1, 1, 1]), E.mi_label('Jun 2026'))
+assert r['why'] == 'fell' and r['g'] == -50 and r['tgt'] is None
+assert E.target_of(mk([1, 1, 1, 1, 1, 1, 1, 1]), E.mi_label('Jun 2026'))['why'] == 'fell', 'no growth = no target'
+
+# ------------------------------------------------------------------ 3. the entry session
+ords = [date(2026, 7, d).toordinal() for d in (22, 23, 24, 27, 28)]       # Wed .. Fri, Mon, Tue
+assert E.entry_index(ords, '2026-07-24 16:05:00') == 3, 'after the close -> the next session (Monday)'
+assert E.entry_index(ords, '2026-07-24 15:30:00') == 3, '15:30 = after the close'
+assert E.entry_index(ords, '2026-07-24 13:15:00') == 2, 'market hours -> the same day'
+assert E.entry_index(ords, '2026-07-24 08:30:00') == 2, 'before the open -> the same day'
+assert E.entry_index(ords, '2026-07-25 11:00:00') == 3, 'a Saturday -> Monday'
+assert E.entry_index(ords, '2026-07-28 17:00:00') is None, 'no session after it yet'
+
+
+# ------------------------------------------------------------------ 4. the prices after the entry
+class CS:
+    def __init__(self, days, o, h, lo, c):
+        import array
+        self.day = days
+        self.o, self.h, self.l, self.c = (array.array('f', x) for x in (o, h, lo, c))
+
+
+def sessions(start, n):
+    out, d = [], start
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d.toordinal())
+        d += timedelta(days=1)
+    return out
+
+
+days = sessions(date(2026, 7, 20), 100)          # 20-Jul .. ; entry 27-Jul = index 5
+k0 = days.index(date(2026, 7, 27).toordinal())
+c = [1600.0] * k0 + [1624.1] + [1624.1 + (2322.15 - 1624.1) * k / 75 for k in range(1, 100 - k0)]
+h = [x + 0.0 for x in c]
+lo = [x - 10 for x in c]
+lo[k0 + 10] = 1500.0
+cs = CS(days, c, h, lo, c)
+NIFTY = {'d': days, 'c': [25000.0 + k * 10 for k in range(len(days))]}
+a = E.after(cs, k0, 2322.15, NIFTY)
+assert a['ed'] == '2026-07-27' and a['ep'] == 1624.1 and a['pre'] == 1600.0 and a['o0'] == 1624.1, a
+assert a['n'] == 100 - 1 - k0 == 94
+assert a['hit'] == 75 and a['hitd'] == date.fromordinal(days[k0 + 75]).isoformat(), (a['hit'], a['hitd'])
+assert len(a['mx']) == len(a['dd']) == len(a['cl']) == len(a['ix']) == 5
+assert near(a['mx'][0], round((1624.1 + 698.05 * 30 / 75) / 2322.15 * 100, 1), 0.11), a['mx']
+assert a['mx'][2] >= 100 and a['cl'][2] is not None and a['cl'][3] is None, '94 sessions: the 90-session window is over, 120 not'
+assert a['dd'][0] == round((1500 / 1624.1 - 1) * 100, 1), a['dd']
+assert near(a['cl'][0], (c[k0 + 30] / 1624.1 - 1) * 100, 0.06) and near(a['ix'][0], (NIFTY['c'][k0 + 30] / NIFTY['c'][k0] - 1) * 100, 0.06)
+assert a['cl'][3] is None and a['ix'][3] is None and a['mx'][4] is not None, 'longer windows: so far only'
+assert len(a['ph']) == len(a['pc']) == 19 and near(a['pc'][-1], a['now'], 0.06), (len(a['ph']), a['pc'][-1], a['now'])
+a90 = E.after(cs, k0, 99999.0, NIFTY)
+assert a90['hit'] is None and a90['cl'][2] is not None and a90['cl'][3] is None and a90['mx'][2] < 5
+a0 = E.after(cs, len(days) - 1, 2322.15, NIFTY)
+assert a0['n'] == 0 and a0['mx'] == [None] * 5 and a0['now'] is None and a0['ph'] == []
+# float32: a high of exactly the target counts
+c2 = [100.0] * 5 + [2322.15] * 3
+cs2 = CS(sessions(date(2026, 1, 5), 8), c2, c2, c2, c2)
+assert E.after(cs2, 4, 2322.15)['hit'] == 1
+
+# ------------------------------------------------------------------ 5. when the results came out
+JUN = E.mi_label('Jun 2026')
+fil = ['2026-05-20 16:00:00', '2026-07-03 17:00:00', '2026-07-24 16:05:00', '2026-07-25 10:00:00', '2026-10-20 15:00:00']
+assert E.announced(JUN, fil, {}) == ('2026-07-03 17:00:00', 'nse'), 'no XBRL file: the season\'s first result filing'
+assert E.announced(JUN, fil, {'2026-06-30': '20260724180800'}) == ('2026-07-24 16:05:00', 'nse'), \
+    'the filing just before the XBRL file (an earlier one was something else)'
+assert E.announced(JUN, ['2026-07-03 17:00:00'], {'2026-06-30': '20260724180800'}) == ('2026-07-24 18:08:00', 'xbrl')
+assert E.announced(JUN, [], {'2026-06-30': '20261201100000'}) == (None, ''), 'a file 5 months later = a revision'
+assert E.announced(JUN, [], {}) == (None, '')
+assert E.stamp_dt('20260724180800') == '2026-07-24 18:08:00' and E.stamp_dt('2026') is None
+
+# ------------------------------------------------------------------ 6. which days of NSE's announcements are read
+todo = E.ann_todo(q, TODAY, [], 3)
+assert todo == [(date(2026, 7, 1), date(2026, 7, 4)), (date(2026, 7, 5), date(2026, 7, 8)), (date(2026, 7, 9), date(2026, 7, 12))], \
+    'the finished season first (the owner\'s Q1)'
+have = [(date(2026, 7, 1) + timedelta(days=k)).isoformat() for k in range(75)]
+todo = E.ann_todo(q, TODAY, have + ['2026-10-03'], 2)
+assert todo == [(date(2026, 10, 1), date(2026, 10, 2)), (date(2026, 10, 4), date(2026, 10, 7))], todo
+allq = E.ann_todo(q, TODAY, [], 9999)
+last = [b for a, b in allq if a.year == 2026 and a.month >= 10]
+assert max(last) == date(2026, 11, 22), 'the season going on: up to yesterday'
+assert sum((b - a).days + 1 for a, b in allq) == 75 * 7 + (date(2026, 11, 22) - date(2026, 10, 1)).days + 1
+
+FETCH = []
+
+
+def fake_fetch(opener, a, b):
+    FETCH.append((a, b))
+    if a == date(2026, 7, 9):
+        return None, 'HTTP 403 from NSE'
+    recs = [{'symbol': 'LAURUSLABS', 'an_dt': '24-Jul-2026 16:05:10', 'desc': 'Financial Results'}] if a <= date(2026, 7, 24) <= b else []
+    return recs + [{'symbol': 'ABC', 'an_dt': '%s 18:00:00' % a.strftime('%d-%b-%Y'), 'desc': 'Outcome of Board Meeting',
+                    'attchmntText': 'approved the financial results'}], None
+
+
+def fake_rows(recs):
+    return [[r['symbol'], _iso(r['an_dt'][:11]) + ' ' + r['an_dt'][12:], r['desc']] for r in recs], len(recs)
+
+
+def _iso(t):
+    from datetime import datetime
+    return datetime.strptime(t, '%d-%b-%Y').date().isoformat()
+
+
+E.bind(session=lambda: 'opener', fetch=fake_fetch, rows=fake_rows)
+SLEEPS = []
+done, left, why = E.ann_backfill(TODAY, q, 3, 5.0, LOGS.append, SLEEPS.append)
+assert done == 2 and why == 'HTTP 403 from NSE' and SLEEPS == [5.0, 5.0], (done, why, SLEEPS)
+arch = E._ann_load()
+assert arch['rows']['ABC'] == ['2026-07-01 18:00:00', '2026-07-05 18:00:00'] and '2026-07-08' in arch['days'] and '2026-07-09' not in arch['days']
+FETCH.clear()
+E.bind(fetch=lambda o, a, b: (FETCH.append((a, b)) or fake_fetch(o, a, b)) if a != date(2026, 7, 9) else
+       ([{'symbol': 'LAURUSLABS', 'an_dt': '24-Jul-2026 16:05:10', 'desc': 'Financial Results'}], None))
+done, left, why = E.ann_backfill(TODAY, q, 9999, 0, LOGS.append, lambda s: None)
+assert left == 0 and why == '' and E._ann_load()['rows']['LAURUSLABS'] == ['2026-07-24 16:05:10'], E._ann_load()['rows'].get('LAURUSLABS')
+assert E.ann_backfill(TODAY, q, 3)[0:2] == (0, 0), 'nothing left'
+# the round's own announcement step: today's day is not marked read
+d0 = E.remember([['XYZ', '2026-11-23 10:00:00', 'Financial Results']], date(2026, 11, 20), TODAY, TODAY)
+assert '2026-11-22' in d0['days'] and '2026-11-23' not in d0['days'] and d0['rows']['XYZ'] == ['2026-11-23 10:00:00']
+
+# ------------------------------------------------------------------ 7. the XBRL files' times (xbrl_history.eps_inputs)
+os.makedirs(os.path.join(X.DIR, 'stocks'))
+ROW = lambda l, e, f='': [l, 100, 80, 20, 20, 5, None, 2, 3, 20, 25, 15, e, f]
+TABLE = {'b': 'C', 'q': [ROW(l, v, 'r' if l == 'Sep 2024' else '') for l, v in zip(LAURUS, EPS)], 'y': [], 'files': 6, 'at': '2026-11-20'}
+X._write_json(os.path.join(X.DIR, 'stocks', 'LAURUSLABS.json'), {
+    'sym': 'LAURUSLABS', 'table': TABLE,
+    'files': {'INTEGRATED_FILING_INDAS_1_24072026180800_X.xml': {'end': '2026-06-30', 'stamp': '20260724180800'},
+              'INTEGRATED_FILING_INDAS_2_25072026090000_X.xml': {'end': '2026-06-30', 'stamp': '20260725090000'},
+              'GOVERNANCE_3_01072026100000_X.xml': {'end': '2026-06-30', 'stamp': '20260701100000'}},
+    'newest': [['2026-09-30', 'C', 'F', '20261028', 'INTEGRATED_FILING_INDAS_9_28102026171500_X.xml'],
+               ['2026-09-30', '?', 'G', '20261001', 'GOVERNANCE_9_01102026100000_X.xml']]})
+inp = X.eps_inputs()
+assert inp['LAURUSLABS'][1] == {'2026-06-30': '20260724180800', '2026-09-30': '20261028171500'}, inp['LAURUSLABS'][1]
+eps_t, flags, basis = E.eps_of_table(TABLE)
+assert eps_t == eps and basis == 'C' and flags[E.mi_label('Sep 2024')] == 'r'
+
+
+# ------------------------------------------------------------------ 8. every stock: a made candle cache
+def candles(days, closes, highs=None):
+    return [{'t': date.fromordinal(d).isoformat(), 'day': date.fromordinal(d).isoformat(), 'o': cl, 'h': (highs or closes)[k],
+             'l': cl * 0.98, 'c': cl, 'v': 1} for k, (d, cl) in enumerate(zip(days, closes))]
+
+
+ALL = sessions(date(2024, 1, 1), 0)
+d = date(2024, 1, 1)
+while d <= date(2026, 11, 20):
+    if d.weekday() < 5:
+        ALL.append(d.toordinal())
+    d += timedelta(days=1)
+ik = ALL.index(date(2026, 7, 27).toordinal())
+lau = [1500.0] * ik + [1624.1 + (2400 - 1624.1) * k / (len(ALL) - 1 - ik) for k in range(len(ALL) - ik)]
+lau_h = list(lau)
+lau_h[ik + 75] = 2488.0
+w = L.CacheWriter(TODAY - timedelta(days=3))
+w.add('LAURUSLABS', 'D', candles(ALL, lau, lau_h), [])
+w.add('FLAT', 'D', candles(ALL, [100.0] * len(ALL)), [])
+w.add('NOEPS', 'D', candles(ALL, [50.0] * len(ALL)), [])
+w.indices = {'NIFTY_50': [[x, 25000.0 + k] for k, x in enumerate(ALL)]}
+w.close()
+E._ann_save({'v': 1, 'days': [], 'rows': {'LAURUSLABS': ['2026-07-24 16:05:10'], 'FLAT': ['2026-07-30 12:00:00']}})
+SCREENER = {'FLAT': ('S', mk([1, 1, 1, 1, 1, 1, 1, 2]))}       # TTM 5 vs 4 = 25 % -> target 125 (a screener.in record)
+upto, per_q, counts = E.compute(L, inp, SCREENER, TODAY, 8)
+assert upto == (TODAY - timedelta(days=3)).isoformat() and counts['stocks'] == 2 and counts['noEps'] == 1, (upto, counts)
+rows = {r['sym']: r for r in per_q[JUN]}
+r = rows['LAURUSLABS']
+assert r['st'] == 'ok' and r['ann'] == '2026-07-24 16:05' and r['src'] == 'nse' and r['ed'] == '2026-07-27' and r['ep'] == 1624.1, r
+assert r['fl'] == 'r-------' and r['b'] == 'C' and near(r['tgt'], 2322.17, 0.02) and r['hit'] == 75, r['hit']
+assert r['hitd'] == date.fromordinal(ALL[ik + 75]).isoformat()
+assert r['ix'][0] == round(((25000.0 + ik + 30) / (25000.0 + ik) - 1) * 100, 1) and r['ix'][4] is None, r['ix']
+f = rows['FLAT']
+assert f['src'] == 'nse' and f['b'] == 'S' and f['fl'] == 'pppppppp' and f['tgt'] == 125.0 and f['ep'] == 100.0 and f['hit'] is None
+assert f['ed'] == '2026-07-30', 'filed at 12:00 = the same day'
+assert per_q[E.mi_label('Sep 2026')] == [], 'Sep 2026: no 8th quarter yet'
+s = E.summary(per_q[JUN])
+assert s['target'] == 2 and s['above'] == 0 and s['win']['30'][:2] == [2, 0] and s['ready'] is True, s
+assert s['win']['180'][3] == 2 - s['win']['180'][0] and s['ann'] == {'nse': 2}
+# LAURUSLABS reached it on session 75 with ~84 sessions: counted at 30 / 60 (not reached) and 90? no - 84 < 90: still running, reached early
+assert s['win']['90'] == [0, 0, 0, 2, 1] and s['win']['60'][:2] == [2, 0], s['win']
+assert E.unpack(E.pack(per_q[JUN])) == per_q[JUN], 'the packed rows come back the same'
+words = E.stock_words(per_q, 'LAURUSLABS')
+assert any('Jun 2026 (Q1 FY27): EPS Sep 2025 3.61, Dec 2025 4.67, Mar 2026 5.17, Jun 2026 6.81 = TTM 20.26' in x and 'target 2322.1' in x
+           and 'entry 2026-07-27 close 1624.10' in x and 'target reached after' in x for x in words), words
+# no XBRL table, no screener record: no rows; a results date older than the candles' end, no filing -> 'date'
+E._ann_save({'v': 1, 'days': [], 'rows': {}})
+_u, pq2, _c = E.compute(L, {'LAURUSLABS': (TABLE, {})}, {}, TODAY, 8)
+assert pq2[JUN][0]['why'] == 'date' and pq2[JUN][0]['st'] == 'x' and pq2[JUN][0]['tgt'] is not None
+
+# ------------------------------------------------------------------ 9. the round's step: posts per quarter, once
+E._ann_save({'v': 1, 'days': [], 'rows': {'LAURUSLABS': ['2026-07-24 16:05:10'], 'FLAT': ['2026-07-30 12:00:00']}})
+CALLS = []
+REPLY = {'ok': True}
+
+
+def api(cfg, action, payload=None, tries=3, timeout=120):
+    CALLS.append((action, json.loads(json.dumps(payload))))
+    return dict(REPLY)
+
+
+E.bind(fetch=lambda o, a, b: ([], None))
+cfg = {'url': 'x', 'token': 'y'}
+n = E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None)
+posted = [p for a, p in CALLS if a == 'epst']
+assert n == len(posted) and {p['q'] for p in posted} >= {'Jun 2026'}, (n, [p['q'] for p in posted])
+p = [x for x in posted if x['q'] == 'Jun 2026'][0]
+assert p['op'] == 'put' and p['end'] == '2026-06-30' and p['fy'] == 'Q1 FY27' and p['engine'] == E.ENGINE and p['sum']['target'] == 2
+assert E.unpack(p['blob'])[0]['sym'] == 'FLAT'
+CALLS.clear()
+assert E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None) == 0 and not CALLS, 'nothing changed: no post'
+assert E.step(cfg, api, L, inp, SCREENER, today=TODAY, force=True, gap=0, sleep=lambda s: None) == n and len(CALLS) == n
+os.remove(E.STATE_PATH)
+CALLS.clear()
+REPLY = {'ok': False, 'error': 'unknown action'}
+LOGS.clear()
+assert E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None) is None
+assert any('updater' in x for x in LOGS) and not json.load(open(E.STATE_PATH)).get('sent'), LOGS
+REPLY = {'ok': True}
+assert E.step(dict(cfg, eps_target=False), api, L, inp, SCREENER, today=TODAY) is None, 'config eps_target false = off'
+
+# ------------------------------------------------------------------ 10. size: 1,800 stocks fit the sheet comfortably
+random.seed(4)
+big = []
+for k in range(1800):
+    rr = E.after(cs, k0, 1624.1 * random.uniform(1.05, 3), NIFTY)
+    rr.update({'sym': 'S%04d' % k, 'st': 'ok', 'why': '', 'b': 'C', 'fl': '--------', 'eps': [round(random.uniform(-5, 50), 2) for _ in range(8)],
+               'ttm': 20.26, 'prev': 9.44, 'g': 114.62, 'tgt': 2322.17, 'ann': '2026-07-24 16:05', 'src': 'nse'})
+    big.append(rr)
+blob = E.pack(big)
+assert len(blob) < 900000, len(blob)
+print('blob for 1,800 stocks: %d characters' % len(blob))
+print('OK')

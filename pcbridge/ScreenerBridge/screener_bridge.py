@@ -56,6 +56,7 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
   python screener_bridge.py xbrlhistcheck SYMBOL ...  5 years of a stock's NSE XBRL result filings: the table + screener.in side by side (nothing sent)
   python screener_bridge.py xbrlhistory  the NSE XBRL result filings of every Main stock (5 years) now, then the tables -> the sheet
+  python screener_bridge.py epstarget [SYMBOL ...]  EPS Growth Target Lab now: every results season's dates from NSE, the target (TTM EPS x EPS growth %) of every quarter and whether the price reached it -> the sheet; SYMBOL = that stock's quarters printed
   python screener_bridge.py histpe [PAGES]  Historical PE now: up to PAGES (200) more screener.in pages for the EPS history, then the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
@@ -177,6 +178,8 @@ XH.log = lambda m: log(m)
 PEH.log = lambda m: log(m)   # (the module's log at call time - a test's replacement too)
 PEH.ON_PAGE.append(XH.keep_screener)   # screener.in's tables fill the periods NSE has no filing for (18-Nov-2026)
 PEH.WANT_PAGE = XH.wants_screener       # ... so a page read before them is read once more
+import eps_target as ET       # noqa: E402  (owner, 23-Nov-2026: the EPS Growth Target Lab - did the TTM EPS x growth % target come?)
+ET.log = lambda m: log(m)
 
 
 def nse_holidays():
@@ -2016,6 +2019,10 @@ def ann_step(cfg, today=None, back_chunks=ANN_BACK_PER_ROUND):
             log('Result announcements: NSE\'s dates were not recognised - its fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
             return
         start = today - timedelta(days=ANN_DAYS)
+        try:
+            ET.remember(rows, start, today, today)       # the EPS Target Lab's results dates (no extra request)
+        except Exception as e:
+            log('EPS target: the results dates could not be kept (%s)' % e)
         res = ann_post(cfg, rows, start, today)
         if res is None:
             return
@@ -2038,6 +2045,10 @@ def ann_step(cfg, today=None, back_chunks=ANN_BACK_PER_ROUND):
                     % (a.strftime('%d-%m'), b.strftime('%d-%m'), err))
                 break
             rows, _timed = ann_rows(recs)
+            try:
+                ET.remember(rows, a, b, today)
+            except Exception as e:
+                log('EPS target: the results dates could not be kept (%s)' % e)
             res = ann_post(cfg, rows, a, b, backfill=True)
             if res is None:
                 break
@@ -3893,6 +3904,7 @@ def run_once(cfg):
             state['stage'] = 'done'
             run_state_save(state)
             histpe_step(cfg)
+            epst_step(cfg)
             return 0
 
         pending_items, posted, fails_in_row, aborted = [], 0, 0, False
@@ -3976,6 +3988,7 @@ def run_once(cfg):
             state['stage'] = 'done'
             run_state_save(state)
         histpe_step(cfg)
+        epst_step(cfg)
         log('Run finished.')
         return 0
     finally:
@@ -4039,6 +4052,32 @@ def histpe_step(cfg, pages=None, max_s=None, force=False):
     except Exception as e:                      # never stops a round
         log('Historical PE: %s' % e)
         return None
+
+
+def epst_screener():
+    """pe_history's EPS records -> {SYM: (basis, {month index: EPS})} (a split / bonus on today's share count)."""
+    out = {}
+    for sym, rec in PEH.store().syms.items():
+        if rec and not rec.get('none'):
+            try:
+                out[sym] = (rec.get('basis', ''), PEH.adjusted(rec)[0])
+            except Exception:
+                continue
+    return out
+
+
+def epst_step(cfg, force=False, backfill=None, gap=None):
+    """The EPS Growth Target Lab (eps_target.py): a few more days of NSE's result filings (the results dates), then every
+    quarter's targets and what the prices did after them -> the sheet when something changed. Never raises."""
+    if not cfg.get('eps_target', True):
+        return None
+    try:
+        xch = XH.changed_at()
+    except Exception:
+        xch = 0.0
+    return ET.step(cfg, api, itd.backtest_lab, XH.eps_inputs, epst_screener, xbrl_changed=xch,
+                   peh_changed=PEH.store().changed, force=force, backfill=backfill,
+                   gap=ET.ANN_GAP_S if gap is None else gap)
 
 
 def histpe_check(cfg, syms, out=print):
@@ -4305,7 +4344,7 @@ def data_start(cfg):
     return use_data_place(cfg)[0]
 
 
-DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck')    # the commands that read / write the big data
+DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck', 'epstarget')    # the commands that read / write the big data
 
 
 def cmd_datafolder(cfg, args=(), ask=input, out=print):
@@ -4615,6 +4654,29 @@ def main(argv):
             PEH.save()
             release_lock()
         return 0 if n is not None else 1
+    if cmd == 'epstarget':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        syms = [a.strip().upper() for a in argv[2:] if a.strip()]
+        print('EPS Growth Target Lab: target = TTM EPS x EPS growth %% - did the price reach it after the results?')
+        print('Reading NSE\'s result filings of the last %d results seasons (the results dates) - the first time takes a while ...'
+              % int(cfg.get('eps_target_quarters') or ET.QUARTERS))
+        n = epst_step(dict(cfg, eps_target=True), force=True, backfill=9999)
+        if syms:
+            try:
+                _u, per_q, _c = ET.compute(itd.backtest_lab, XH.eps_inputs(), epst_screener(),
+                                           n=int(cfg.get('eps_target_quarters') or ET.QUARTERS), only=syms)
+                for sym in syms:
+                    lines = ET.stock_words(per_q, sym)
+                    print('')
+                    for line in lines or ['%s: no 8 quarters of EPS for it yet' % sym]:
+                        print(line)
+            except Exception as e:
+                print('Could not work out %s: %s' % (', '.join(syms), e))
+        print('')
+        print('The website: EPS Target Lab page (within about 30 minutes).')
+        return 0 if n is not None else 1
     if cmd == 'xbrlhistcheck':
         syms = [a for a in argv[2:] if a.strip()] or ['TCS']
         print('NSE XBRL history check - 5 years of result filings, the table and screener.in side by side (the table is sent to the sheet)')
@@ -4757,6 +4819,7 @@ def main(argv):
     return 2
 
 
+ET.bind(session=ann_session, fetch=lambda opener, a, b: ann_fetch(opener, b, a), rows=ann_rows, nse_part=nse_part)
 XH.bind(session=nse_session, get=nse_get, records=ipo_records, facts=XBRL_FACTS, texts=XBRL_TEXTS, page=XBRL_PAGE,
         pid_alive=_pid_alive, screener=lambda cfg, sym, cons=True: fetch_page(cfg, sym, cons), screener_q=screener_quarters)
 

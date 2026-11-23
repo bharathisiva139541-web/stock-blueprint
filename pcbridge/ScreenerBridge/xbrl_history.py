@@ -1295,6 +1295,40 @@ def table_eps(table):
     return rec
 
 
+def eps_inputs():
+    """For eps_target (the EPS Growth Target Lab, 23-Nov-2026): {SYM: (its results table, {quarter end iso: the earliest
+    time NSE put in the name of a result file of that quarter, 'yyyymmddHHMMSS'})} - the time says when the results came
+    out when NSE's announcement of them was not read."""
+    out = {}
+    d = os.path.join(DIR, 'stocks')
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return out
+    for n in names:
+        if not n.endswith('.json'):
+            continue
+        st = _read_json(os.path.join(d, n))
+        if not isinstance(st, dict):
+            continue
+        stamps = {}
+        for name, f in (st.get('files') or {}).items():
+            if not isinstance(f, dict) or 'GOVERNANCE' in str(name).upper():
+                continue
+            e, s = str(f.get('end') or ''), str(f.get('stamp') or stamp_of(str(name)))
+            if e and len(s) == 14 and (e not in stamps or s < stamps[e]):
+                stamps[e] = s
+        for m in st.get('newest') or []:        # files listed but not read (another basis / not needed)
+            if not isinstance(m, list) or len(m) < 5:
+                continue
+            e, s = str(m[0] or ''), stamp_of(str(m[4] or ''))
+            if m[2] == 'F' and e and len(s) == 14 and (e not in stamps or s < stamps[e]):
+                stamps[e] = s
+        if st.get('table') or stamps:
+            out[st.get('sym') or n[:-5]] = (st.get('table'), stamps)
+    return out
+
+
 def hist_tables():
     """For pe_history: (when the tables last changed, {SYM: table_eps record})."""
     out = {}

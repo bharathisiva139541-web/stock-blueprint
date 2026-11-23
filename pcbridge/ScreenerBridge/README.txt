@@ -687,3 +687,21 @@ THE FALL INTO THE ZONE + A FASTER BACKTEST LAB (16-Nov-2026)
    first run after the program starts no longer works out the market structure (done once at the start). Every result is also
    kept whole on the laptop: lab_results (next to lab_charts, e.g. D:\StockBlueprintData\lab_results, the newest 300).
  - These need the New version deploy of the sheet's web app (Code2.gs). Until then the laptop uses the older way by itself.
+
+EPS TARGET LAB (since 23-Nov-2026)
+ - Your sheet's target (TargetPrice) = TTM EPS x EPS growth %: TTM EPS = the newest 4 quarters' EPS added up, growth =
+   vs the 4 quarters before. For every stock and each of the last 8 quarters the laptop works out that target, WHEN
+   the results came out, the price you could buy at (the close of the first session that could react: the results
+   day itself before 15:30, else the next session) and whether a daily HIGH reached the target within 30 / 60 / 90 /
+   120 / 180 sessions - then sends it to the sheet (hidden tab EPS_Target). The website shows it on the page
+   "EPS Target Lab".
+ - The results dates come from NSE's result filings: each full round reads 4 more parts (4 days each) of the past
+   results seasons, the finished one first (Jun 2026 = Q1 FY27), and keeps them in eps_target_ann.json. Without a
+   filing the time NSE put in the XBRL file is used (it can be a few hours after the results PDF).
+ - The EPS: the results table the website shows (NSE XBRL filings + screener.in), else the EPS history read for the
+   Historical PE. The prices: the Kite daily candles. Both on today's share count (splits / bonuses adjusted).
+ - EpsTargetNow.bat = everything at once now (the first time reads all the results seasons' dates from NSE - a few
+   minutes, one request every 5 seconds). EpsTargetNow.bat LAURUSLABS also prints that stock's quarters:
+   its 8 EPS, the growth, the target, the results time, the entry and when (or whether) the price reached it.
+ - bridge.log: "EPS target (prices up to ...): N stock(s) with 8 quarters of EPS, Q quarter(s) sent to the sheet".
+ - To switch it off: in config.json add  "eps_target": false   (quarters worked out: "eps_target_quarters": 8)

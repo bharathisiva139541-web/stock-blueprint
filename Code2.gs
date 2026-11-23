@@ -14887,3 +14887,130 @@ function ab_finForSite_(sym) {
   }
   return { ok: true, sym: sym, fin: null };
 }
+
+/*****************************************************************
+ * EPS GROWTH TARGET LAB (owner, 23-Nov-2026, LAURUSLABS: "Q1 result came in July 24 2026 ... at July 27th stock price was
+ * 1624 ... nearly touched its target price on 11 November 2026 at 2488 ... i don't know how many stocks like this reached
+ * atmost its target price after Q1 result update"). The laptop (pcbridge/ScreenerBridge/eps_target.py) works out, for every
+ * stock and each of the newest quarters, the sheet's own target (TTM EPS x EPS growth %), when the results came out (NSE's
+ * result filing / the XBRL file's time), the entry (the close of the first session that could react) and what the Kite
+ * daily candles did after it - and posts ONE QUARTER at a time: doPost action 'epst' op 'put' {q 'Jun 2026', end, fy, made,
+ * upto, sum (the quarter's figures), blob (base64 of the gzip of {cols, rows}), engine}. Kept as it came in the hidden tab
+ * EPS_Target (one row a quarter, the blob in 45,000-character cells); the website asks for one quarter (doPost action 'site'
+ * part 'epst' + q, the read-only feed token) through Vercel api/epstarget, which unpacks and checks the rows.
+ *****************************************************************/
+const AB_EPST_SHEET = 'EPS_Target';
+const AB_EPST_HEADERS = ['Quarter', 'Quarter End', 'FY Quarter', 'Made', 'Prices Up To', 'Summary (JSON)', 'Parts', 'Data'];
+const AB_EPST_PART = 45000;
+const AB_EPST_MAX_PARTS = 60;
+const AB_EPST_KEEP = 16;
+const AB_EPST_Q_RE = /^(Mar|Jun|Sep|Dec) \d{4}$/;
+const AB_EPST_BLOB_RE = /^[A-Za-z0-9+\/]+={0,2}$/;
+
+function ab_epstFromBridge_(req) {
+  const op = String(req.op || '');
+  if (op === 'put') return ab_epstPut_(req);
+  if (op === 'list') return { ok: true, quarters: ab_epstList_().map(function (x) { return { q: x.q, made: x.made, upto: x.upto }; }) };
+  return { ok: false, error: 'unknown op' };
+}
+
+/** The laptop's figures of a quarter, numbers only (nothing else passes to the website). */
+function ab_epstSumClean_(s) {
+  s = s && typeof s === 'object' ? s : {};
+  const num = function (v) { const n = Number(v); return v === null || v === undefined || v === '' || typeof v === 'boolean' || !isFinite(n) ? null : Math.round(n * 10) / 10; };
+  const int = function (v) { const n = Math.round(Number(v)); return isFinite(n) && n >= 0 ? n : 0; };
+  const out = { stocks: int(s.stocks), ok: int(s.ok), target: int(s.target), above: int(s.above), medG: num(s.medG), medUp: num(s.medUp),
+    medN: num(s.medN), ready: s.ready === true, why: {}, win: {}, ann: {} };
+  ['loss', 'prevloss', 'fell', 'date', 'wait', 'price'].forEach(function (k) { if (s.why && s.why[k]) out.why[k] = int(s.why[k]); });
+  ['nse', 'xbrl'].forEach(function (k) { if (s.ann && s.ann[k]) out.ann[k] = int(s.ann[k]); });
+  ['30', '60', '90', '120', '180'].forEach(function (k) {
+    const w = s.win && s.win[k];
+    if (Array.isArray(w)) out.win[k] = [int(w[0]), int(w[1]), int(w[2]), int(w[3]), int(w[4])];
+  });
+  return out;
+}
+
+function ab_epstSheet_(make) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_EPST_SHEET);
+  if (!sh && make) {
+    sh = ss.insertSheet(AB_EPST_SHEET);
+    sh.getRange(1, 1, 1, AB_EPST_HEADERS.length).setValues([AB_EPST_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** One quarter from the laptop -> its row (replaced; the newest AB_EPST_KEEP quarters by quarter end kept). */
+function ab_epstPut_(req) {
+  const q = String(req.q || '');
+  if (!AB_EPST_Q_RE.test(q)) return { ok: false, error: 'bad quarter' };
+  if (!(Number(req.engine) >= 1)) return { ok: false, error: 'an older laptop program - not kept' };
+  const blob = String(req.blob || '');
+  if (!blob || !AB_EPST_BLOB_RE.test(blob)) return { ok: false, error: 'no data' };
+  const parts = [];
+  for (let i = 0; i < blob.length; i += AB_EPST_PART) parts.push(blob.slice(i, i + AB_EPST_PART));
+  if (parts.length > AB_EPST_MAX_PARTS) return { ok: false, error: 'too big (' + blob.length + ' characters)' };
+  const iso = function (v) { const t = String(v || ''); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 19) : ''; };
+  const sum = ab_epstSumClean_(req.sum);
+  const fy = /^Q[1-4] FY\d{2}$/.test(String(req.fy || '')) ? String(req.fy) : '';
+  const row = [q, iso(req.end).slice(0, 10), fy, iso(req.made), iso(req.upto).slice(0, 10), JSON.stringify(sum), parts.length].concat(parts);
+  // (doPost holds the script lock for every bridge action)
+  const sh = ab_epstSheet_(true);
+  const last = sh.getLastRow();
+  let at = 0;
+  if (last > 1) {
+    const qs = sh.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < qs.length; i++) if (String(qs[i][0]) === q) { at = i + 2; break; }
+  }
+  if (!at) at = last + 1;
+  const width = Math.max(sh.getLastColumn(), row.length);
+  const full = row.concat(new Array(width - row.length).fill(''));     // a smaller quarter leaves no old parts behind
+  sh.getRange(at, 1, 1, width).setNumberFormat('@').setValues([full.map(function (v) { return String(v); })]);
+  // the newest quarters by quarter end only
+  const n = sh.getLastRow() - 1;
+  if (n > AB_EPST_KEEP) {
+    const ends = sh.getRange(2, 2, n, 1).getValues().map(function (r, i) { return { end: String(r[0]), row: i + 2 }; });
+    ends.sort(function (a, b) { return a.end < b.end ? 1 : a.end > b.end ? -1 : 0; });
+    ends.slice(AB_EPST_KEEP).map(function (x) { return x.row; }).sort(function (a, b) { return b - a; })
+      .forEach(function (r) { sh.deleteRow(r); });
+  }
+  return { ok: true, stored: q, parts: parts.length };
+}
+
+/** The stored quarters, newest quarter end first: [{q, end, fy, made, upto, sum, parts, row}]. */
+function ab_epstList_() {
+  const sh = ab_epstSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues().map(function (r, i) {
+    let sum = {};
+    try { sum = ab_epstSumClean_(JSON.parse(String(r[5] || '{}'))); } catch (e) { sum = ab_epstSumClean_({}); }
+    return { q: String(r[0]), end: String(r[1]), fy: String(r[2]), made: String(r[3]), upto: String(r[4]), sum: sum,
+      parts: Math.max(0, Math.round(Number(r[6]) || 0)), row: i + 2 };
+  }).filter(function (x) { return AB_EPST_Q_RE.test(x.q); })
+    .sort(function (a, b) { return a.end < b.end ? 1 : a.end > b.end ? -1 : 0; });
+}
+
+/** doPost action 'site' part 'epst': the quarters' figures + ONE quarter's packed rows (asked `q`; none = the newest
+ *  quarter whose targets mostly had 30 sessions - the owner's Q1 on 23-Nov-2026 - else the newest). */
+function ab_epstForSite_(q) {
+  const list = ab_epstList_();
+  const head = function (x) { return { q: x.q, end: x.end, fy: x.fy, made: x.made, upto: x.upto, sum: x.sum }; };
+  const out = { ok: true, quarters: list.map(head), q: '', blob: '' };
+  if (!list.length) return out;
+  q = String(q || '');
+  let pick = null;
+  if (q) {
+    if (!AB_EPST_Q_RE.test(q)) return { ok: false, error: 'bad quarter' };
+    pick = list.filter(function (x) { return x.q === q; })[0] || null;
+    if (!pick) { out.q = q; return out; }
+  } else {
+    pick = list.filter(function (x) { return x.sum.ready; })[0] || list[0];
+  }
+  const sh = ab_epstSheet_(false);
+  const cells = pick.parts ? sh.getRange(pick.row, 8, 1, pick.parts).getValues()[0] : [];
+  out.q = pick.q;
+  out.blob = cells.map(function (v) { return String(v || ''); }).join('');
+  return out;
+}
