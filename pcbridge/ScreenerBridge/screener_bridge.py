@@ -4596,8 +4596,8 @@ def main(argv):
         return 0 if n is not None else 1
     if cmd == 'xbrlhistcheck':
         syms = [a for a in argv[2:] if a.strip()] or ['TCS']
-        print('NSE XBRL history check - 5 years of result filings, the table and screener.in side by side (nothing is sent)')
-        return XH.check(cfg, syms, out=print)
+        print('NSE XBRL history check - 5 years of result filings, the table and screener.in side by side (the table is sent to the sheet)')
+        return XH.check(cfg, syms, out=print, api=api)
     if cmd == 'xbrlhistory':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

@@ -39,7 +39,7 @@ import ltf_data
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 7                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 8                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 4                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -222,6 +222,26 @@ def rec_meta(rec):
             'gov': 'GOVERNANCE' in name.upper()}
 
 
+ENDED_MORE = 4          # the consolidated results ended: the standalone files of this many quarters before it read too
+
+
+def standalone_more(filings, since):
+    """Quarter ends whose standalone file is read besides the consolidated one: the newest quarter has only a standalone
+    results file while an older quarter has a consolidated one (the consolidated results ended) -> the ENDED_MORE
+    quarters before it that have a standalone file (newest first)."""
+    by = {}
+    for f in filings:
+        if f['gov'] or not f['end'] or f['end'] < since:
+            continue
+        by.setdefault(f['end'], set()).add('C' if f['basis'] == 'C' else 'S')
+    if not by:
+        return []
+    newest = max(by)
+    if by[newest] != {'S'} or not any('C' in b for e, b in by.items() if e < newest):
+        return []
+    return [e for e in sorted(by, reverse=True) if e < newest and 'S' in by[e]][:ENDED_MORE]
+
+
 def pick(filings, since):
     """The files to read: per quarter end >= since (iso) the consolidated filing when there is one, else the standalone one
     - Revised before Original, a non-cumulative before a cumulative one, the newest first (the next one only if that one
@@ -374,6 +394,22 @@ def _pick(vals, ids, ctx):
     return None if best is None else best[1]
 
 
+def _ytd_quarter(plain, s, e):
+    """A quarter's revenue as the file's plain year-to-date periods give it: the YTD ending `e` minus the YTD (or the
+    quarter) ending 3 months before, both starting the same day. None when the file does not have them."""
+    mi = mi_of(e)
+    if mi is None:
+        return None
+    prev_end = end_of(mi - 3)
+    for (s1, e1), f1 in plain.items():
+        if e1 != e or s1 >= s or f1.get('revenue') is None:
+            continue
+        f0 = plain.get((s1, prev_end))
+        if f0 and f0.get('revenue') is not None:
+            return f1['revenue'] - f0['revenue']
+    return None
+
+
 def parse_periods(raw, why=None):
     """An XBRL file (bytes) -> {'nature': 'C' | 'S' | '', 'periods': [{'start', 'end', 'm' (3 | 12), 'f': {our name: value}}],
     'older': read through dimension contexts} (amounts in crore, EPS in rupees) or None. Only the company's own figures
@@ -407,24 +443,57 @@ def parse_periods(raw, why=None):
     for cid, (s, e, _) in ctx.items():
         groups.setdefault((s, e), set()).add(cid)
     prefixed = {name: sorted((k for k in facts if any(k.startswith(x) for x in pre)), key=len) for name, pre in PREFIX_FACTS}
-    periods, spans = [], []
+
+    def figs_of(ids, cx):
+        fig = {}
+        for name, names in tuple(D.get('facts', ())) + EXTRA_FACTS + tuple((n, tuple(prefixed[n])) for n, _ in PREFIX_FACTS):
+            if name in fig:
+                continue
+            for n in names:
+                v = _pick(facts.get(n.lower(), []), ids, cx)
+                if v is not None:
+                    fig[name] = v if name in ('eps', 'eps_x') else round(v / CRORE, 4)
+                    break
+        return fig
+    periods, spans, got = [], [], set()
     for (s, e), ids in sorted(groups.items()):
         m = _months(s, e)
         if s != e:
             spans.append('%s..%s' % (s, e))
         if not m:
             continue
-        fig = {}
-        for name, names in tuple(D.get('facts', ())) + EXTRA_FACTS + tuple((n, tuple(prefixed[n])) for n, _ in PREFIX_FACTS):
-            if name in fig:
-                continue
-            for n in names:
-                v = _pick(facts.get(n.lower(), []), ids, ctx)
-                if v is not None:
-                    fig[name] = v if name in ('eps', 'eps_x') else round(v / CRORE, 4)
-                    break
+        fig = figs_of(ids, ctx)
         if fig:
             periods.append({'start': s, 'end': e, 'm': m, 'f': fig})
+            got.add((s, e))
+    # a period whose figures sit only on dimension contexts while the file's other periods are plain (owner's MTARTECH
+    # Sep 2026 standalone filing, 23-Nov-2026: 'read, but no 3-month figures of this quarter in it') - read through its
+    # contexts with the fewest members, like the older format
+    mem_used = []
+    if not older:
+        seg = {(c.get('id') or '').strip() for c in root.iter() if _local(c.tag) == 'context'
+               and any(_local(x.tag) == 'segment' for x in c.iter())}
+        allg = {}
+        for cid, (s, e, _) in allc.items():
+            if s and e:
+                allg.setdefault((s, e), set()).add(cid)
+        plain = {(p['start'], p['end']): p['f'] for p in periods}
+        for (s, e), ids in sorted(allg.items()):
+            m = _months(s, e)
+            if not m or (s, e) in got:
+                continue
+            # a business segment's figures are never the company's: those contexts only when nothing else has figures
+            pick_ids = {c for c in ids if c not in seg}
+            fig = figs_of(pick_ids, allc) if pick_ids else {}
+            # the file's own year-to-date figures tell the quarter (the half year minus the quarter before): a figure
+            # that does not fit them (within 2 %) is not taken
+            exp = _ytd_quarter(plain, s, e)
+            if fig and exp is not None and fig.get('revenue') is not None and abs(fig['revenue'] - exp) > max(0.02 * abs(exp), 0.05):
+                fig = {}
+            if fig:
+                periods.append({'start': s, 'end': e, 'm': m, 'f': fig})
+                mem_used.append('%s..%s' % (s, e))
+        periods.sort(key=lambda p: (p['start'], p['end']))
     if not periods:
         if any(_months(*x.split('..')) for x in spans):
             why.append('none of the figures we know is in a 3- or 12-month period (%s)' % (_why_none(facts, allc) or
@@ -436,6 +505,9 @@ def parse_periods(raw, why=None):
         out['older'] = 'contexts %s not in the file - their period from the file\'s other contexts' % ', '.join(guessed[:6])
     elif older and periods:
         out['older'] = member or 'dimension contexts'
+    elif mem_used:
+        out['older'] = 'period(s) %s only on dimension contexts (e.g. %s) - read through them' % (
+            ', '.join(mem_used[:3]), member or 'a member')
     return out
 
 
@@ -810,6 +882,9 @@ def build(store, today=None, sc=None):
         since = min(mi for mi in quarters['S'] if mi > nc)
         v = sides['S'][3].get(ns)
         filed = _stamp_date(v[0][1]) if v and v[0][1] else None
+        if filed is None:               # the quarter from screener.in: the day NSE's lists say its results were filed
+            filed = next((_stamp_date(d) for e, b, k, d, n in store.get('newest') or []
+                          if k == 'F' and b != 'C' and mi_of(e) == ns and d), None)
         fresh = ns - nc == 3 and ((today - filed).days < ENDED_DAYS if filed else (today - date.fromisoformat(end_of(ns))).days < 75)
         if fresh:
             primary = 'C'
@@ -936,6 +1011,24 @@ def page_newest(rec):
     return max(ms) if ms else None
 
 
+SC_LISTED_WAIT_S = 12 * 3600   # a results quarter in NSE's lists that the kept pages lack: the pages read again this often
+
+
+def listed_newest(st):
+    """The newest results quarter (month index) in NSE's lists of the stock (st['newest'], process_stock), or None."""
+    ms = [mi_of(e) for e, b, k, d, n in (st or {}).get('newest') or [] if k == 'F' and mi_of(e)]
+    return max(ms) if ms else None
+
+
+def listed_behind(sc, st):
+    """NSE lists a results quarter newer than every kept screener.in page shows."""
+    lq = listed_newest(st)
+    if lq is None:
+        return False
+    shown = [m for m in (page_newest((sc or {}).get('C')), page_newest((sc or {}).get('S'))) if m]
+    return not shown or max(shown) < lq
+
+
 def screener_wants(sym, st, today, now, tried=None):
     """Does the stock's table want screener.in's pages read now? No tables kept yet; kept more than SC_REFRESH_DAYS
     ago; or the consolidated page is behind (older than the newest quarter NSE gave / every company has filed by now)
@@ -943,9 +1036,11 @@ def screener_wants(sym, st, today, now, tried=None):
     sc = load_sc(sym)
     if not sc:
         return True
+    at = max(float((sc.get(b) or {}).get('at') or 0) for b in ('C', 'S'))
+    if listed_behind(sc, st):           # NSE lists a newer results quarter than any kept page shows (MTARTECH Sep 2026)
+        return now - at > SC_LISTED_WAIT_S
     if tried and now - float(tried.get(sym) or 0) < SC_RETRY_DAYS * 86400:
         return False
-    at = max(float((sc.get(b) or {}).get('at') or 0) for b in ('C', 'S'))
     if now - at > SC_REFRESH_DAYS * 86400:
         return True
     c, s_ = page_newest(sc.get('C')), page_newest(sc.get('S'))
@@ -1353,6 +1448,25 @@ def process_stock(nse, sym, today=None, say=None):
             have_y = have_y or (end, 12) in spans
             if have_q and (have_y or not end or int(end[5:7]) != ye):
                 break
+    # the consolidated results ended (the newest quarter filed standalone only, older ones consolidated - owner's
+    # MTARTECH, 23-Nov-2026): the standalone files of the quarters before it too, so the standalone table goes on with
+    # NSE's own figures (and a quarter can be worked out from its year-to-date figures)
+    for end in standalone_more(filings, since):
+        cands = [f for f in filings if f['end'] == end and f['basis'] != 'C' and not f['gov']]
+        cands.sort(key=lambda f: (not f['cum'], f['rev'], f['stamp']), reverse=True)
+        for c in cands[:1]:
+            info = files.get(c['name'])
+            if not info or info.get('v') != VERSION or (info.get('fail') and info.get('retry')):
+                raw, fresh, why, retry = read_file(nse, sym, c)
+                got += fresh
+                p = None
+                if raw is not None:
+                    reasons = []
+                    p = parse_periods(raw, reasons)
+                    if not p or not p['periods']:
+                        why, retry = (reasons[0] if reasons else 'nothing usable in it'), False
+                files[c['name']] = _info(c, p, why, retry)
+            tried.setdefault(end, []).append([c['name'], (files[c['name']].get('fail') or 'ok')])
     st['listed'] = time.time()
     st['n'] = len(filings)
     # the newest filings NSE's lists gave (XbrlHistoryCheck shows them: a quarter in the lists but not in the table)
@@ -1634,6 +1748,7 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                     if wait_s > 0:
                         sleep(wait_s)
                     newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r']
+                    newest.append(listed_newest(st))
                     try:
                         res['pages'] += fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None)
                     except Exception as e:                # screener.in refused / no internet: its pages next time
@@ -1792,13 +1907,53 @@ def newest_words(st, out):
         out('   newest in NSE\'s lists - %s: %s' % (e, '; '.join(by[e])))
 
 
+def file_shape(sym, name, limit=10):
+    """A kept file's periods and where its known figures sit: ['2026-07-01..2026-09-30 (3 months): 14 figure(s) on
+    plain contexts, 0 on dimension contexts (e.g. member X)', ...] - printed for a quarter read but not found."""
+    try:
+        with open(os.path.join(_files_dir(sym), name), 'rb') as fh:
+            raw = fh.read()
+    except OSError:
+        return ['the file is not kept on this laptop']
+    root = _xml(raw, [])
+    if root is None:
+        return ['not readable as XML']
+    allc, total, member = _contexts(root)
+    facts = {}
+    for e in root.iter():
+        if e.get('contextRef') is not None and len(e) == 0:
+            facts.setdefault(_local(e.tag).lower(), []).append((e.get('contextRef').strip(), (e.text or '').strip()))
+    _fill_periods(allc, facts)
+    known = {n.lower() for _, names in tuple(D.get('facts', ())) + EXTRA_FACTS for n in names}
+    per = {}
+    for k, vals in facts.items():
+        if k not in known:
+            continue
+        for r, t in vals:
+            if _num(t) is None:
+                continue
+            s0, e0, dims = allc.get(r, (None, None, -1))
+            row = per.setdefault((s0 or ('instant' if e0 else '?'), e0 or '?'), [0, 0, 0, set()])
+            row[0 if dims == 0 else 1 if dims > 0 else 2] += 1
+            if dims > 0:
+                row[3].add(r)
+    out = ['%d context(s), %d known figure(s) in it%s:' % (total, sum(v[0] + v[1] + v[2] for v in per.values()),
+                                                           (' (a member: %s)' % member) if member else '')]
+    for (s0, e0), (pl, mem, miss, ids) in sorted(per.items(), key=lambda x: (x[0][1], x[0][0]), reverse=True)[:limit]:
+        m = _months(s0, e0) if s0 not in ('instant', '?') else 0
+        out.append('%s..%s%s: %d on plain contexts, %d on dimension contexts%s%s' % (
+            s0, e0, (' (%d months)' % m) if m else '', pl, mem, (' (e.g. %s)' % sorted(ids)[0]) if ids else '',
+            (', %d on contexts not in the file' % miss) if miss else ''))
+    return out
+
+
 def coverage(st, t, out):
     """Which quarters of the 5 years the table has (up to the newest results quarter in NSE's lists); a missing one with
     the reason its files could not be used."""
     q = t.get('q') or []
     if not q:
         return
-    have = {r[0] for r in q}
+    have = {r[0] for r in q} | {r[0] for r in (t.get('o') or {}).get('q') or []}
     last = _mi_label(q[-1][0])
     fin = [mi_of(e) for e, b, k, d, n in st.get('newest') or [] if k == 'F' and mi_of(e)]
     if fin and max(fin) > last:
@@ -1812,6 +1967,10 @@ def coverage(st, t, out):
         tr = tried.get(end_of(mi)) or []
         why = '; '.join('%s: %s' % (n[-60:], 'read, but no 3-month figures of this quarter in it' if r == 'ok' else r) for n, r in tr)
         out('      %s missing - %s' % (label_of(mi), why or 'no XBRL file for it in NSE\'s lists'))
+        for n, r in tr:
+            if r == 'ok':                   # read, yet no quarter: how the file holds its figures (for the next fix)
+                for line in file_shape(st.get('sym') or '', n):
+                    out('         ' + line)
     ys = t.get('y') or []
     if ys:
         out('   years: ' + ', '.join(r[0] + {'c': ' (comparison column)', 's': ' (other basis)', 'q': ' (sum of its 4 quarters)',
@@ -1935,11 +2094,11 @@ def dump(sym, st, label, out, limit=80):
     return True
 
 
-def check(cfg, syms, out=print, today=None):
+def check(cfg, syms, out=print, today=None, api=None):
     """XbrlHistoryCheck.bat SYMBOL ... [facts]: each stock's lists, files (kept - not downloaded again later), what could
     not be used and why, the quarters covered, its table and the comparison with screener.in (a differing quarter: every
     kept file's figures of it + the filing's own elements; 'facts' = the newest quarter's elements of every stock).
-    Nothing is sent to the sheet."""
+    The stock's table is sent to the sheet (`api`), nothing else."""
     today = today or date.today()
     toks = [s.strip().upper() for s in syms if s.strip()]
     facts = any(x in ('FACTS', '-FACTS', '--FACTS') for x in toks)
@@ -1952,6 +2111,18 @@ def check(cfg, syms, out=print, today=None):
         except Blocked as e:
             out('   PROBLEM - %s' % e)
             return 1
+        # screener.in's pages too when NSE lists a newer results quarter than they show (MTARTECH Sep 2026) or the
+        # table wants them - read now, the table made again
+        if D.get('screener') and (listed_behind(load_sc(sym), st) or screener_wants(sym, st, today, time.time())):
+            newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r'] + [listed_newest(st)]
+            try:
+                n_pages = fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None)
+                st['table'] = build(st, today)
+                save_stock(st)
+                out('   screener.in: %d page(s) read again (the consolidated%s), the table made again'
+                    % (n_pages, ' and the standalone one' if n_pages > 1 else ' one'))
+            except Exception as e:
+                out('   screener.in: not read (%s)' % e)
         t = st.get('table')
         files = st.get('files') or {}
         good = [f for f in files.values() if f.get('periods')]
@@ -1987,6 +2158,13 @@ def check(cfg, syms, out=print, today=None):
         _, _, diff = compare(t, html, out)
         for label in diff[-3:]:
             restated(st, t, label, out)
+        if api is not None:
+            try:
+                ans = api(cfg, 'xbrlhist', {'op': 'put', 'items': [{'sym': sym, 'fin': t}]}, tries=2, timeout=120)
+                out('   the table was sent to the sheet - the website shows it within about 30 minutes' if ans.get('ok')
+                    else '   the sheet did not take the table (%s)' % ans.get('error'))
+            except Exception as e:
+                out('   the table could not be sent (%s) - the background job sends it' % e)
         done = set()
         newest = (t.get('q') or [[None]])[-1]
         missing = newest[0] and any(newest[1 + COLS.index(k)] is None for k in ('exp', 'pbt', 'eps'))
@@ -1994,5 +2172,5 @@ def check(cfg, syms, out=print, today=None):
             if label and label not in done and dump(sym, st, label, out):
                 done.add(label)
     out('')
-    out('(nothing was sent to the sheet; the files stay in %s)' % os.path.join(DIR, 'files'))
+    out('(only the tables above were sent to the sheet; the files stay in %s)' % os.path.join(DIR, 'files'))
     return 0
