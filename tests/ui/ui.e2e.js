@@ -1399,12 +1399,12 @@ function check(name, fn) {
     assert.match(stand.y, /No yearly figures/, 'its yearly table: none');
     assert.strictEqual(backC, 7, 'back to the consolidated table');
     assert.ok(fin.note.indexOf(' · ' + FIN_NOTE) > 0, 'the EPS note above the tables: ' + fin.note);
-    assert.deepStrictEqual(fin.yHeads, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'both tables on the left door at once');
+    assert.deepStrictEqual(fin.yHeads, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026', 'TTM'], 'both tables on the left door at once (+ TTM)');
     assert.ok(fin.csv === 2 && fin.scrolled && fin.doorFits && fin.notesInTables === 0 && !fin.inPanel, JSON.stringify(fin));
     assert.ok(fin.door[0] === 0 && fin.panel[1] === 1366 && fin.panel[0] - fin.door[1] >= 40 && fin.panel[0] - fin.door[1] <= 70, 'two doors with a gap: ' + JSON.stringify(fin));
     assert.strictEqual(closed, true, 'a click between the doors closes both');
     assert.ok(phone.door && !phone.doors && phone.panelOk && /from the company's NSE filings · /.test(phone.note), JSON.stringify(phone));
-    assert.deepStrictEqual(finY, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026'], 'Σ = a year summed from its 4 quarters, sc = screener.in');
+    assert.deepStrictEqual(finY, ['', 'Mar 2023sc', 'Mar 2024Σ', 'Mar 2025*', 'Mar 2026', 'TTM'], 'Σ = a year summed from its 4 quarters, sc = screener.in, TTM = the last 4 quarters');
     assert.match(finYNote, /\* = a later filing's comparison column · Σ = the sum of its 4 quarters · sc = screener.in's figures .* EPS adjusted/);
     assert.strictEqual(kept, '"y"', 'the choice is kept');
     assert.strictEqual(flipped, true, 'wider window: two doors');

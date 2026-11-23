@@ -39,7 +39,7 @@ import ltf_data
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
-VERSION = 8                                    # the reading rules: a change reads the kept files again (no NSE)
+VERSION = 9                                    # the reading rules: a change reads the kept files again (no NSE)
 LIST_VERSION = 4                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
@@ -79,6 +79,9 @@ SC_GAP_S = 20.0            # between two screener.in pages of this job (screener
 SC_REFRESH_DAYS = 45       # a stock's screener.in tables read again after this many days
 SC_RETRY_DAYS = 2          # ... a stock whose pages were just read is not asked again sooner (a page still behind)
 SC_DUE_LAG_DAYS = 60       # a quarter's results are out by its end + this many days (a page without it = behind)
+SC_VERSION = 2             # the kept screener.in files: 1 took every consolidated page for a standalone one (RVNL)
+CHECK_PAGE_GAP_S = 5.0     # XbrlHistoryCheck: between a stock's two screener.in pages
+SC_MATCH_TOL = 0.015       # a kept page's figure = a filing's within 1.5 % (min 0.6 crore) - which basis an old page is
 COLS = ('rev', 'exp', 'op', 'opm', 'oi', 'exc', 'int', 'dep', 'pbt', 'taxp', 'np', 'eps')
 COL_NAMES = ('Sales', 'Expenses', 'Operating Profit', 'OPM %', 'Other Income', 'Exceptional items', 'Interest',
              'Depreciation', 'Profit before tax', 'Tax %', 'Net Profit', 'EPS in Rs')
@@ -820,6 +823,11 @@ def _side_table(b, sides, pages, ye, first_c):
             for mi, vals in _sc_rows(page, kind, ('s',)).items():
                 if mi < first_c and mi not in have:
                     have[mi] = vals + ['r']
+            # ... and the standalone page's own columns before it (owner, 23-Nov-2026, SAATVIKGL: screener.in shows the
+            # years before the listing - "pull the remaining tables from screener")
+            for mi, vals in _sc_rows(pages.get('S'), kind).items():
+                if mi < first_c and mi not in have:
+                    have[mi] = vals + ['r']
     if not qrows and not years:
         return None
     out = {'b': b, 'q': [], 'y': []}
@@ -851,7 +859,8 @@ def build(store, today=None, sc=None):
     that stops while the newer quarters are standalone only is not 'missing' - the words in 'bw' say so (MTARTECH:
     subsidiaries merged into it; TFCILTD / 3MINDIA: no consolidated results after Dec 2022 / Jun 2024)."""
     today = today or date.today()
-    if sc is None:
+    kept = sc is None
+    if kept:
         sc = load_sc(store.get('sym') or '')
     sc = sc if isinstance(sc, dict) else {}
     pages = {b: sc.get(b) if isinstance(sc.get(b), dict) else None for b in ('C', 'S')}
@@ -864,6 +873,8 @@ def build(store, today=None, sc=None):
     sides = {b: _collect(files, b) for b in ('C', 'S')}
     for b in ('C', 'S'):
         _derive(sides[b], ye)
+    if kept and sc and sc.get('v') != SC_VERSION:       # a file kept by the old reader: each page by its figures
+        pages = relabel(pages, sides)
     newest, quarters = {}, {}
     for b in ('C', 'S'):
         quarters[b] = set(sides[b][3]) | set(_sc_rows(pages[b], 'q'))
@@ -979,6 +990,47 @@ def load_sc(sym):
     return sc if isinstance(sc, dict) else {}
 
 
+def _same(a, b):
+    return a is not None and b is not None and abs(a - b) <= max(0.6, SC_MATCH_TOL * max(abs(a), abs(b)))
+
+
+def page_basis(rec, sides):
+    """Which basis a kept page's figures are - 'C' / 'S' by the company's own filings of the same quarters / years (Sales
+    and Net Profit agree), None when they cannot tell (no period in common, or neither agrees)."""
+    score = {}
+    for b in ('C', 'S'):
+        hit = n = 0
+        for kind, m in (('q', 3), ('y', 12)):
+            for mi, vals in _sc_rows(rec, kind).items():
+                v = sides[b][m].get(mi)
+                if not v or v[2] == 'd':
+                    continue
+                r = row_of(v[1])
+                pairs = [(vals[0], r[0]), (vals[10], r[10])]
+                pairs = [(x, y) for x, y in pairs if x is not None and y is not None]
+                if not pairs:
+                    continue
+                n += 1
+                hit += all(_same(x, y) for x, y in pairs)
+        if n and hit >= max(1, 0.6 * n):
+            score[b] = hit
+    if not score:
+        return None
+    return max(score, key=lambda b: (score[b], b == 'C'))
+
+
+def relabel(pages, sides):
+    """The pages of a screener.in file kept by SC_VERSION 1 (owner, 23-Nov-2026, RVNL: the standalone table showed the
+    consolidated figures - every consolidated page was kept as a standalone one): each page put under the basis its
+    figures agree with (page_basis); a page that cannot tell is left out until its pages are read again (screener_wants)."""
+    out = {'C': None, 'S': None}
+    for rec in sorted([r for r in pages.values() if r], key=lambda r: float(r.get('at') or 0)):
+        b = page_basis(rec, sides)
+        if b:
+            out[b] = dict(rec, b=b)
+    return out
+
+
 def keep_screener(sym, html, now=None):
     """A screener.in page the program read (pe_history.keep_page hands every one over) -> xbrl_data/screener/<SYM>.json
     {C: tables, S: tables} (never raises). The stock's table takes them at the next run_all (refresh_screener)."""
@@ -990,7 +1042,12 @@ def keep_screener(sym, html, now=None):
         path = _sc_path(str(sym).upper())
         cur = _read_json(path) or {}
         cur = cur if isinstance(cur, dict) else {}
+        if cur.get('v') != SC_VERSION:
+            cur = {}                   # an old file's pages may sit under the wrong basis: read them afresh
         cur[rec['b'] or 'C'] = rec
+        cur['v'] = SC_VERSION
+        if rec['b'] == 'S':
+            cur.pop('noS', None)
         _write_json(path, cur)
     except Exception as e:                     # a strange page never stops a round
         log('NSE XBRL history: could not keep screener.in\'s tables of %s (%s)' % (sym, e))
@@ -1036,14 +1093,19 @@ def screener_wants(sym, st, today, now, tried=None):
     sc = load_sc(sym)
     if not sc:
         return True
+    recent = tried and now - float(tried.get(sym) or 0) < SC_RETRY_DAYS * 86400
+    if sc.get('v') != SC_VERSION:       # kept by the old reader (consolidated pages under 'S'): both pages again
+        return not recent
     at = max(float((sc.get(b) or {}).get('at') or 0) for b in ('C', 'S'))
     if listed_behind(sc, st):           # NSE lists a newer results quarter than any kept page shows (MTARTECH Sep 2026)
         return now - at > SC_LISTED_WAIT_S
-    if tried and now - float(tried.get(sym) or 0) < SC_RETRY_DAYS * 86400:
+    if recent:
         return False
     if now - at > SC_REFRESH_DAYS * 86400:
         return True
     c, s_ = page_newest(sc.get('C')), page_newest(sc.get('S'))
+    if sc.get('C') and not sc.get('S') and not sc.get('noS'):
+        return True                     # the standalone table wants the standalone page too (RVNL)
     if c is None or (s_ is not None and s_ > c):
         return False
     q = [_mi_label(r[0]) for r in ((st or {}).get('table') or {}).get('q') or [] if r[-1] != 'r']
@@ -1051,12 +1113,12 @@ def screener_wants(sym, st, today, now, tried=None):
     return c < want
 
 
-def fetch_screener(cfg, sym, today, newest=None):
-    """Reads the stock's screener.in page(s) and keeps their tables (keep_screener): the consolidated page; the
-    standalone page too when that one is missing (404), has fewer than 4 quarters, or is behind - its newest quarter
-    older than `newest` (the filings' newest) or than every company's filed quarter (owner, 23-Nov-2026: TFCILTD's /
-    3MINDIA's consolidated figures end with Dec 2022 / Jun 2024, their standalone ones go on). -> pages read. Raises
-    what the fetch raises (screener.in refused)."""
+def fetch_screener(cfg, sym, today, newest=None, pause=None):
+    """Reads the stock's screener.in pages and keeps their tables (keep_screener): the consolidated page, then the
+    standalone one (owner, 23-Nov-2026, RVNL: the standalone table must hold the standalone figures; TFCILTD's /
+    3MINDIA's consolidated figures end with Dec 2022 / Jun 2024, their standalone ones go on) - `pause` () between the
+    two. A company with one set only (its consolidated address gives the standalone page / 404) -> that one page; no
+    standalone page -> the file says so ('noS'). -> pages read. Raises what the fetch raises (screener.in refused)."""
     fetch = D.get('screener')
     if not fetch:
         return 0
@@ -1067,13 +1129,22 @@ def fetch_screener(cfg, sym, today, newest=None):
         rec = screener_parse(html)
     if rec and rec.get('b') == 'S':
         return n                     # the company has no consolidated page: that was its standalone one
-    c = page_newest(rec)
-    want = max([due_quarter(today)] + ([newest] if newest else []))
-    if kind != 'ok' or not rec or len(rec.get('q') or []) < 4 or c is None or c < want:
-        kind2, html2 = fetch(cfg, sym, False)
-        n += 1
-        if kind2 == 'ok':
-            keep_screener(sym, html2)
+    if pause:
+        pause()
+    kind2, html2 = fetch(cfg, sym, False)
+    n += 1
+    rec2 = screener_parse(html2) if kind2 == 'ok' else None
+    if rec2:
+        keep_screener(sym, html2)
+    if not rec2 or rec2.get('b') != 'S':
+        try:
+            path = _sc_path(str(sym).upper())
+            cur = _read_json(path) or {}
+            if isinstance(cur, dict) and cur.get('v') == SC_VERSION:
+                cur['noS'] = time.time()
+                _write_json(path, cur)
+        except Exception:
+            pass
     return n
 
 
@@ -1750,7 +1821,8 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                     newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r']
                     newest.append(listed_newest(st))
                     try:
-                        res['pages'] += fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None)
+                        res['pages'] += fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None,
+                                                       pause=lambda: sleep(SC_GAP_S))
                     except Exception as e:                # screener.in refused / no internet: its pages next time
                         sc_on = False
                         out('NSE XBRL history: screener.in did not answer (%s) - its pages next time.' % e)
@@ -2111,16 +2183,23 @@ def check(cfg, syms, out=print, today=None, api=None):
         except Blocked as e:
             out('   PROBLEM - %s' % e)
             return 1
-        # screener.in's pages too when NSE lists a newer results quarter than they show (MTARTECH Sep 2026) or the
-        # table wants them - read now, the table made again
-        if D.get('screener') and (listed_behind(load_sc(sym), st) or screener_wants(sym, st, today, time.time())):
+        # screener.in's pages read now (the consolidated and the standalone one), the table made again
+        if D.get('screener'):
             newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r'] + [listed_newest(st)]
             try:
-                n_pages = fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None)
+                n_pages = fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None,
+                                         pause=lambda: time.sleep(CHECK_PAGE_GAP_S))
                 st['table'] = build(st, today)
                 save_stock(st)
-                out('   screener.in: %d page(s) read again (the consolidated%s), the table made again'
-                    % (n_pages, ' and the standalone one' if n_pages > 1 else ' one'))
+                sc = load_sc(sym)
+                words = []
+                for b, name in (('C', 'consolidated'), ('S', 'standalone')):
+                    r = sc.get(b)
+                    if r:
+                        words.append('%s %d quarter(s) up to %s, %d year(s)' % (name, len(r.get('q') or []),
+                                     (r.get('q') or [['-']])[-1][0], len(r.get('y') or [])))
+                out('   screener.in: %d page(s) read now - %s; the table made again'
+                    % (n_pages, '; '.join(words) or 'no table on them'))
             except Exception as e:
                 out('   screener.in: not read (%s)' % e)
         t = st.get('table')

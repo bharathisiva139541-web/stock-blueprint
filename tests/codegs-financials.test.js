@@ -189,6 +189,41 @@ test('version 7: worked-out quarters (flag d), the other basis\'s table apart (o
   assert.ok(csv.some((r) => r[0] === BW));
 });
 
+test('TTM: the yearly table ends with the sum of the newest 4 quarters (owner, 23-Nov-2026: "include TTM to PL to all stocks")', () => {
+  // [label, rev, exp, op, opm, oi, exc, int, dep, pbt, taxp, np, eps, flag]
+  const R = (l, rev, oi, exc, pbt, taxp, np, eps, f) => [l, rev, rev - 20, 20, 20, oi, exc, 2, 1, pbt, taxp, np, eps, f || ''];
+  const q = [R('Jun 2025', 90, 1, null, 18, 25, 13.5, 1.0), R('Sep 2025', 100, 2, null, 20, 25, 15, 1.1), R('Dec 2025', 110, 3, -2, 22, 20, 17.6, 1.2, 'c'),
+    R('Mar 2026', 120, 4, null, 24, 25, 18, 1.3), R('Jun 2026', 130, 5, null, 26, 30, 18.2, 1.4, 'r'), R('Sep 2026', 140, 6, null, 28, 25, 21, 1.5)];
+  const T = { b: 'C', q: q.slice(), y: [R('Mar 2025', 350, 8, null, 70, 25, 52, 4.0), R('Mar 2026', 420, 10, -2, 84, 24, 64, 4.6)] };
+  const t = FIN.ttm(T);
+  assert.deepStrictEqual([t.from, t.to], ['Dec 2025', 'Sep 2026']);
+  const v = FIN.view(T, 'y');
+  assert.deepStrictEqual(v.labels, ['Mar 2025', 'Mar 2026', 'TTM']);
+  assert.deepStrictEqual(v.flags, ['', '', 't']);
+  const col = (k) => v.rows.filter((r) => r.k === k)[0].vals[2];
+  assert.deepStrictEqual([col('rev'), col('exp'), col('op'), col('oi'), col('exc'), col('pbt'), col('np'), col('eps')],
+    [500, 420, 80, 18, -2, 100, 74.8, 5.4], 'amounts and EPS added; exceptional items where filed');
+  assert.strictEqual(col('opm'), 16, 'OPM % from the sums (80 / 500)');
+  assert.strictEqual(col('taxp'), 25, 'Tax % = the 4 quarters\' tax / their PBT ((4.4 + 6 + 7.8 + 7) / 100 = 25.2 %)');
+  const g = FIN.growth(v, 'rev', 1);
+  assert.ok(Math.abs(g[1] - 20) < 1e-9, 'Mar 2026 vs Mar 2025');
+  assert.strictEqual(g[2], null, 'TTM: no 4 quarters before it to compare with');
+  assert.deepStrictEqual(FIN.csv(v, 'X')[0], ['X - yearly (Rs crore)', 'Mar 2025', 'Mar 2026', 'TTM']);
+  assert.deepStrictEqual(FIN.csv(v, 'X').filter((r) => r[0] === 'From')[0][3], 'the sum of the last 4 quarters (Dec 2025 - Sep 2026)');
+  // 8 quarters in a row: the TTM's growth against the 4 quarters before
+  const T8 = { b: 'C', q: [R('Sep 2024', 70, 1, null, 10, 25, 9, 0.6), R('Dec 2024', 80, 1, null, 12, 25, 9, 0.7), R('Mar 2025', 85, 1, null, 14, 25, 9, 0.8)].concat(q.slice(0, 1).map((r) => r)).concat(q.slice(1)), y: [] };
+  const v8 = FIN.view(T8, 'y');
+  assert.deepStrictEqual(v8.labels, ['TTM'], 'no yearly figures: the TTM alone');
+  assert.ok(Math.abs(FIN.growth(v8, 'rev', 1)[0] - (500 - 355) / 355 * 100) < 1e-9, 'vs Dec 2024 - Sep 2025');
+  // a gap in the newest 4 quarters / too few / years newer than the quarters: no TTM
+  assert.strictEqual(FIN.ttm({ q: q.filter((r) => r[0] !== 'Mar 2026'), y: [] }), null, 'a missing quarter');
+  assert.strictEqual(FIN.ttm({ q: q.slice(0, 3), y: [] }), null, 'three quarters');
+  assert.strictEqual(FIN.ttm({ q: q.slice(0, 4), y: [R('Mar 2027', 1, 1, null, 1, 1, 1, 1)] }), null);
+  assert.strictEqual(FIN.view(T, 'q').labels.indexOf('TTM'), -1, 'the quarterly table: no TTM column');
+  const missEps = { q: q.map((r, i) => i === 5 ? r.slice(0, 12).concat([null, '']) : r), y: [] };
+  assert.strictEqual(FIN.ttm(missEps).vals[11], null, 'an EPS missing: no TTM EPS');
+});
+
 test('the laptop, the sheet, the api and the page agree on the 12 figures in one order', () => {
   const py = fs.readFileSync(path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge', 'xbrl_history.py'), 'utf8');
   const m = /^COLS = \(([^)]*)\)/m.exec(py);

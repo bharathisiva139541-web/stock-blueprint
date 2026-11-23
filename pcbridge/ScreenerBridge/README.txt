@@ -248,6 +248,17 @@ Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit,
        ago (TFCILTD Dec 2022, 3MINDIA Jun 2024) its standalone page is read as well;
      * a file Windows holds a moment (WinError 32, e.g. the virus scanner) is tried again for about 20 seconds.
      * The kept files are read again by themselves (no NSE). Nothing to do.
+ - Version 9 (23-Nov-2026, after your RVNL / SAATVIKGL notes):
+     * screener.in's page has a line break between "Consolidated" and "Figures" - the program took every consolidated
+       page for a standalone one, so the website's Standalone table showed the consolidated figures (RVNL) and the
+       consolidated table missed screener.in's older quarters and years (SAATVIKGL). Fixed;
+     * the pages kept before are sorted out by their figures (they are compared with the company's own NSE filings)
+       and then read again: the consolidated AND the standalone page of every stock, one page every 20 seconds (about
+       a day for all stocks);
+     * the consolidated table also takes the standalone page's years / quarters from before the company's first
+       consolidated results (marked sc);
+     * XbrlHistoryCheck.bat reads both screener.in pages of the stock at once and sends its table to the sheet.
+ - The website's yearly table ends with a TTM column (the sum of the last 4 quarters, like screener.in).
  - bridge.log: "NSE XBRL history: N of M stock(s) looked at ..." and "... table(s) sent to the sheet".
  - To switch it off: in config.json add  "xbrl_history": false   (only its screener.in pages: "xbrl_history_screener": false)
 
