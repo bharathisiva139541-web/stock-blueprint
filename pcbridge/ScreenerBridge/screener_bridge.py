@@ -4035,10 +4035,31 @@ def histpe_step(cfg, pages=None, max_s=None, force=False):
         return None
     try:
         return PEH.step(cfg, api, itd.backtest_lab, fetch_page, polite_sleep, Blocked, pages=pages, max_s=max_s, force=force,
-                        xbrl=XH.hist_quarters)
+                        xbrl=XH.hist_quarters, tables=XH.hist_tables)
     except Exception as e:                      # never stops a round
         log('Historical PE: %s' % e)
         return None
+
+
+def histpe_check(cfg, syms, out=print):
+    """XbrlHistoryCheck: Historical PE of every stock made again now (no screener.in page) and sent to the sheet; the
+    checked stocks' medians printed (owner, 23-Nov-2026, RVNL's blank Median PE 1Y / 3Y / 5Y)."""
+    out('')
+    out('Historical PE (Median PE 1Y / 3Y / 5Y, Peak PE 5Y) - every stock made again and sent to the sheet ...')
+    n = histpe_step(dict(cfg, pe_history=True), pages=0, force=True)
+    if not n:
+        out('   not sent - see the lines above (the Kite daily candles are needed: the daily Kite scan makes them)')
+        return
+    out('   %d stock(s) sent - Main\'s columns and the website follow within about 30 minutes' % n)
+    for s in syms:
+        r = PEH.LAST.get(str(s).strip().upper())
+        if not r:
+            out('   %s: no figures (no EPS history and no results table for it yet)' % str(s).strip().upper())
+            continue
+        f = lambda v: '-' if v is None else '%g' % v
+        out('   %s: median PE 1Y %s / 3Y %s / 5Y %s, peak %s%s, PE now %s - EPS from %s%s'
+            % (str(s).strip().upper(), f(r[0]), f(r[1]), f(r[2]), f(r[3]), (' on %s' % r[4]) if r[4] else '', f(r[5]), r[8],
+               ('; ' + r[9]) if r[9] else ''))
 
 
 # ----------------------------------------------------------------- commands
@@ -4597,7 +4618,9 @@ def main(argv):
     if cmd == 'xbrlhistcheck':
         syms = [a for a in argv[2:] if a.strip()] or ['TCS']
         print('NSE XBRL history check - 5 years of result filings, the table and screener.in side by side (the table is sent to the sheet)')
-        return XH.check(cfg, syms, out=print, api=api)
+        rc = XH.check(cfg, syms, out=print, api=api)
+        histpe_check(cfg, syms)
+        return rc
     if cmd == 'xbrlhistory':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

@@ -46,6 +46,8 @@ PAGES_PER_ROUND = 40       # backfill pages a full round (config pe_history_page
 BACKFILL_MAX_S = 480       # ... and at most this long
 SEED_EVERY_S = 20 * 3600   # the sheet's stored figures asked at most this often
 MAX_ROWS = 4000
+BASIS_VERSION = 2          # records read by the fixed _basis (23-Nov-2026); an older record's 'S' may be a consolidated page
+AGREE_TOL = 0.02           # an old record and NSE's filings agree on a quarter's EPS within 2 %
 
 log = print
 
@@ -164,7 +166,7 @@ def _basis(sec):
 def parse_eps(html):
     """A screener.in company page -> {'basis': 'C' | 'S' | '', 'q': [[month index, EPS, net profit], ...] (Quarterly
     Results, oldest first), 'y': [...] (Profit & Loss, the yearly columns - not TTM)} or None (no EPS row)."""
-    out = {'basis': '', 'q': [], 'y': []}
+    out = {'basis': '', 'q': [], 'y': [], 'bv': BASIS_VERSION}
     for key, sid in (('q', 'quarters'), ('y', 'profit-loss')):
         sec = _section(html, sid)
         if not sec:
@@ -440,7 +442,7 @@ def merge_xbrl(rec, xq):
     if not xq or not xq[1]:
         return rec
     basis, qs = xq
-    if rec and rec.get('basis') and basis and rec['basis'] != basis:
+    if rec and rec.get('basis') and basis and rec['basis'] != basis and (rec.get('bv') == BASIS_VERSION or not _agree(rec, qs)):
         return rec
     out = dict(rec or {'src': 'xbrl', 'basis': basis, 'q': [], 'y': [], 'at': 0})
     have = {r[0] for r in out.get('q') or []}
@@ -452,9 +454,24 @@ def merge_xbrl(rec, xq):
     return out
 
 
-def compute(prices, recs, upto_iso='', xq=None):
+def _agree(rec, qs):
+    """A record kept before BASIS_VERSION (its basis may be wrong - every screener.in page was taken for a standalone one)
+    and NSE's quarters: the same basis when their EPS agree on at least 2 common quarters (all within AGREE_TOL)."""
+    mine = {r[0]: r[1] for r in rec.get('q') or [] if r[1] is not None}
+    both = [(mine[r[0]], r[1]) for r in qs if r[0] in mine and r[1] is not None]
+    return len(both) >= 2 and all(abs(a - b) <= max(0.011, AGREE_TOL * max(abs(a), abs(b))) for a, b in both)
+
+
+def _score(st):
+    return (len(st['m']), st['peak'] is not None)
+
+
+def compute(prices, recs, upto_iso='', xq=None, xt=None):
     """-> {SYM: [Median PE 1Y, 3Y, 5Y, Peak PE 5Y, peak day, PE now, TTM EPS, quarterly share %, EPS from, note]}.
-    xq = {SYM: (basis, [[month index, EPS, net profit], ...])} of NSE's XBRL filings (merge_xbrl)."""
+    xq = {SYM: (basis, [[month index, EPS, net profit], ...])} of NSE's XBRL filings (merge_xbrl); xt = {SYM: the whole
+    results table's EPS record} (xbrl_history.table_eps - NSE's filings + screener.in's figures, up to 12 years): of the
+    screener.in record (+ the filings' quarters) and the table, the one that gives more medians is used (the screener.in
+    one on a tie)."""
     upto = None
     try:
         upto = date.fromisoformat(upto_iso[:10]).toordinal() if upto_iso else None
@@ -465,16 +482,21 @@ def compute(prices, recs, upto_iso='', xq=None):
         rec = recs.get(sym)
         if xq:
             rec = merge_xbrl(rec, xq.get(sym))
-        if not rec:
-            continue
         first, days, closes = prices[sym]
-        st = stats(days, closes, rec, upto, first)
-        if not st:
+        best = None
+        for r in (rec, (xt or {}).get(sym)):
+            st = stats(days, closes, r, upto, first) if r else None
+            if st and (best is None or _score(st) > _score(best[1])):
+                best = (r, st)
+        if not best:
             continue
+        rec, st = best
         why = '; '.join('%s: %s' % (k, v) for k, v in st['why'].items())
         note = '; '.join(x for x in (st['note'], why) if x)
         src = ('screener.in page %s' % datetime.fromtimestamp(float(rec.get('at') or 0)).strftime('%d-%m-%Y')
                if rec.get('src') == 'page' else 'NSE XBRL filings' if rec.get('src') == 'xbrl'
+               else 'the results table (NSE filings + screener.in, %d quarter(s), %d year(s))'
+               % (len(rec.get('q') or []), len(rec.get('y') or [])) if rec.get('src') == 'table'
                else 'the sheet (quarterly figures only)')
         if rec.get('xbrl') and rec.get('src') != 'xbrl':
             src += ' + %d quarter(s) from NSE XBRL filings' % rec['xbrl']
@@ -590,6 +612,13 @@ def backfill(cfg, fetch, sleep, blocked, syms, pages=None, max_s=None, clock=tim
         except blocked as e:
             log('Historical PE: screener.in stopped the extra pages (%s) - the rest next round.' % e)
             break
+        except Exception as e:                 # one strange page never stops the step (the medians of every stock)
+            log('Historical PE: %s skipped (%s)' % (sym, e))
+            r = S.syms.get(sym)
+            if r is not None:
+                r['tried'] = round(clock())
+                S.dirty = True
+            continue
         r = S.syms.get(sym)
         if r is None:                          # not on screener.in / no EPS row: a marker, so it is not asked every round
             r = S.syms[sym] = {'src': 'page', 'at': round(clock()), 'basis': '', 'q': [], 'y': [], 'none': 1}
@@ -605,7 +634,11 @@ def backfill(cfg, fetch, sleep, blocked, syms, pages=None, max_s=None, clock=tim
     return read, max(0, len(todo) - done)
 
 
-def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None, xbrl=None):
+LAST = {}          # the last post's rows {SYM: row} (XbrlHistoryCheck prints the checked stocks')
+
+
+def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, max_s=None, force=False, now=None, xbrl=None,
+         tables=None):
     """The full round's step: the sheet's stored EPS for stocks not read yet, a few more screener.in pages, then - when the
     Kite cache was rebuilt (the daily scan) or the EPS changed since the last post - every stock's figures to the sheet.
     -> rows sent or None."""
@@ -640,12 +673,18 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
                 log('Historical PE: read %d more screener.in page(s) for the EPS history - %s'
                     % (read, ('%d stock(s) still to read' % left) if left else 'every stock read'))
     save()
-    xch, xq = 0.0, None
+    xch, xq, xt = 0.0, None, None
     if xbrl is not None:                       # NSE's XBRL quarters (xbrl_history.hist_quarters)
         try:
             xch, xq = xbrl()
         except Exception as e:
             log('Historical PE: the NSE XBRL quarters could not be read (%s)' % e)
+    if tables is not None:                     # the whole results tables (xbrl_history.hist_tables)
+        try:
+            tch, xt = tables()
+            xch = max(xch, tch)
+        except Exception as e:
+            log('Historical PE: the results tables could not be read (%s)' % e)
     if not force and st.get('build') == build and float(st.get('posted') or 0) >= max(S.changed, xch):
         _save_state(st)
         return None
@@ -653,7 +692,9 @@ def step(cfg, api, lab, fetch=None, sleep=None, blocked=Exception, pages=None, m
         prices, upto = closes_from_cache(lab)
     recs = {s: r for s, r in S.syms.items() if not r.get('none')}
     t0 = time.time()
-    rows = compute(prices, recs, upto, xq)
+    rows = compute(prices, recs, upto, xq, xt)
+    LAST.clear()
+    LAST.update(rows)
     try:
         ans = api(cfg, 'histpe', {'op': 'put', 'upto': upto, 'rows': rows,
                                   'made': datetime.now().isoformat(timespec='seconds')}, tries=2, timeout=240)

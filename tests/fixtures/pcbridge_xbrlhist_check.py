@@ -401,7 +401,16 @@ rec = {'src': 'page', 'basis': 'C', 'at': 0, 'q': [[2026 * 12 + m, 2.0, 20.0] fo
 xq = X.eps_quarters(t)
 m = PEH.merge_xbrl(rec, xq)
 assert len(m['q']) == 20 and m['xbrl'] == 17 and [r for r in m['q'] if r[0] == 2026 * 12 + 9][0][1] == 2.0, 'screener.in stays'
-assert PEH.merge_xbrl(dict(rec, basis='S'), xq) is not m and PEH.merge_xbrl(dict(rec, basis='S'), xq)['q'] == rec['q'], 'another basis'
+S2 = dict(rec, basis='S', bv=PEH.BASIS_VERSION)
+assert PEH.merge_xbrl(S2, xq) is not m and PEH.merge_xbrl(S2, xq)['q'] == rec['q'], 'another basis'
+# a record kept before the basis fix (no 'bv' - its 'S' may be a consolidated page): merged when the EPS agree
+xe = {r[0]: r[1] for r in xq[1]}
+old_ok = {'src': 'page', 'basis': 'S', 'at': 0, 'q': [[mi, xe[mi], 20.0] for mi in sorted(xe)[-3:]], 'y': []}
+assert len(PEH.merge_xbrl(old_ok, xq)['q']) == 20, 'agrees with the consolidated filings: the same basis after all'
+old_no = dict(old_ok, q=[[r[0], r[1] * 1.3, r[2]] for r in old_ok['q']])
+assert PEH.merge_xbrl(old_no, xq)['q'] == old_no['q'], 'differs: kept apart'
+assert PEH.parse_eps('<section id="quarters"><p>Consolidated\n Figures in Rs. Crores</p><table><tr><th></th><th>Sep 2026</th></tr>'
+                     '<tr><td>EPS in Rs</td><td>2.5</td></tr></table></section>')['bv'] == PEH.BASIS_VERSION
 assert PEH.merge_xbrl(None, xq)['src'] == 'xbrl'
 days = [d.toordinal() for d in (TODAY - timedelta(days=i) for i in range(2000, -1, -1)) if d.weekday() < 5]
 rows = PEH.compute({'ABC': (days[0], days, [100.0] * len(days))}, {}, TODAY.isoformat(), {'ABC': xq})
@@ -409,11 +418,23 @@ assert rows['ABC'][0] is not None and rows['ABC'][1] is not None and rows['ABC']
 rows = PEH.compute({'ABC': (days[0], days, [100.0] * len(days))}, {'ABC': rec}, TODAY.isoformat(), {'ABC': xq})
 assert rows['ABC'][8].endswith('+ 17 quarter(s) from NSE XBRL filings') and rows['ABC'][1] is not None, rows['ABC']
 assert rows['ABC'][2] is None and 'EPS history shorter than 5Y' in rows['ABC'][9], '5 years need the quarter before Dec 2021'
+# the whole results table (NSE filings + screener.in's years - owner, 23-Nov-2026, RVNL): used when it gives more medians
+tq = X.table_eps(dict(t, y=[['Mar %d' % y] + [None] * 10 + [50.0, 5.0 + y - 2015, ''] for y in range(2015, 2027)] + list(t.get('y') or []),
+                       at='2026-11-20'))
+assert tq['src'] == 'table' and tq['y'][0][0] == 2015 * 12 + 3 and len(tq['q']) == len([r for r in t['q'] if r[1 + X.COLS.index('eps')] is not None])
+rows = PEH.compute({'ABC': (days[0], days, [100.0] * len(days))}, {'ABC': rec}, TODAY.isoformat(), {'ABC': xq}, {'ABC': tq})
+assert rows['ABC'][2] is not None and rows['ABC'][8].startswith('the results table (NSE filings + screener.in'), rows['ABC']
+rows = PEH.compute({'ABC': (days[0], days, [100.0] * len(days))}, {}, TODAY.isoformat(), None, {'ABC': tq})
+assert rows['ABC'][2] is not None, 'no screener.in record at all: the table alone'
+assert X.table_eps({'q': [], 'y': []}) is None and X.table_eps(None) is None
+X.save_stock({'sym': 'TBX', 'files': {}, 'table': dict(t, at='2026-11-20')})
+assert X.hist_tables()[1]['TBX']['src'] == 'table'
 
 # ------------------------------------------------------------------ 9. screener_bridge
 src = open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()
 assert "xhist.maybe_start(cfg, api, nse_busy, screener_busy=round_running)" in src and "cmd == 'xbrlhistory'" in src and "cmd == 'xbrlhistcheck'" in src
-assert sb.DEFAULTS['xbrl_history'] is True and 'xbrl_data' in sb.DP.BIG and "xbrl=XH.hist_quarters" in src
+assert sb.DEFAULTS['xbrl_history'] is True and 'xbrl_data' in sb.DP.BIG and "xbrl=XH.hist_quarters, tables=XH.hist_tables" in src
+assert 'histpe_check(cfg, syms)' in src, 'XbrlHistoryCheck makes Historical PE again and prints the stocks'
 sb.LOCK_PATH = os.path.join(TMP, 'bridge.lock')
 assert sb.round_running() is False
 with open(sb.LOCK_PATH, 'w') as f:
