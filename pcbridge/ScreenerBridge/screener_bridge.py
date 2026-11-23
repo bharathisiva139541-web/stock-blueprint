@@ -2620,7 +2620,7 @@ def xbrl_quarter(opener, sym, quarter, basis=''):
     basis 'C' / 'S' = only the consolidated / standalone file is needed (the basis of screener.in's figures in the sheet)."""
     need = {'C': ('cons',), 'S': ('stand',)}.get(str(basis or '').upper(), ('cons', 'stand'))
     links = xbrl_links(opener, sym, lambda *a: None, lists=XBRL_STEP_LISTS, first_only=True)
-    got, files, read = {}, [], 0
+    got, files, read, spare = {}, [], 0, {}
     for url in links:
         name = url.rsplit('/', 1)[-1]
         if 'GOVERNANCE' in name.upper():
@@ -2643,6 +2643,14 @@ def xbrl_quarter(opener, sym, quarter, basis=''):
         key = 'cons' if 'consol' in (x['nature'] or '').lower() else 'stand'
         if key in need and key not in got:         # the newest of each kind (a Revised file comes after the Original)
             got[key] = xbrl_figures(x)
+            files.append(name)
+        elif key not in need and key not in spare:
+            spare[key] = (xbrl_figures(x), name)
+    if not got and spare:
+        # only the other basis's file for the quarter (owner, 23-Nov-2026, MTARTECH Sep 2026: standalone only - its
+        # subsidiaries merged into it): sent anyway, the sheet combines it with the stored quarters of that basis
+        for key, (fig, name) in spare.items():
+            got[key] = fig
             files.append(name)
     if not got:
         return None
@@ -3787,7 +3795,8 @@ def quick_check(cfg, daily=None, lock=True):
         log('Results check: a round is running - this check is skipped (the round does it too).')
         return 0
     try:
-        ann_step(cfg)
+        with nse_part('results check: announcements'):
+            ann_step(cfg)
         try:
             ans = api(cfg, 'list', {'quick': True}, tries=2, timeout=120)
         except RuntimeError as e:
@@ -3800,7 +3809,8 @@ def quick_check(cfg, daily=None, lock=True):
             log('Results check: the sheet\'s web app is an older version - after pasting the new Code.gs + Code2.gs do the '
                 'New version deploy (see README).')
         want, mc_want, xbrl_got = ans.get('xbrl') or {}, ans.get('mc') or {}, []
-        sent = xbrl_step(cfg, want, basis=ans.get('xbrlBasis') or {}, daily=daily, sent_syms=xbrl_got)
+        with nse_part('results check: XBRL filings'):
+            sent = xbrl_step(cfg, want, basis=ans.get('xbrlBasis') or {}, daily=daily, sent_syms=xbrl_got)
         try:
             sent_mc = mc_step(cfg, mc_want, set(mc_want) - set(xbrl_got))
         except Exception as e:   # never let moneycontrol stop the check
@@ -3840,12 +3850,13 @@ def run_once(cfg):
         # first the results check, the same as every 30 minutes: NSE's result filings (the evening's Results Update email
         # and the morning email use the times), their XBRL figures, moneycontrol - before any screener.in page
         quick_check(cfg, daily=ans.get('xbrlDaily'), lock=False)
-        cal_step(cfg)              # once a day: result meetings missing from the Results tab (Main's Result Date)
-        price_bands_step(cfg)
-        ipo_step(cfg)
-        eod_step(cfg)
-        pe_step(cfg)               # NSE's daily PE file (Main's PE where there is no TTM EPS + Industry PE)
-        hist_step(cfg, ans.get('h60'))
+        with nse_part('round: NSE files'):
+            cal_step(cfg)          # once a day: result meetings missing from the Results tab (Main's Result Date)
+            price_bands_step(cfg)
+            ipo_step(cfg)
+            eod_step(cfg)
+            pe_step(cfg)           # NSE's daily PE file (Main's PE where there is no TTM EPS + Industry PE)
+            hist_step(cfg, ans.get('h60'))
 
         state = run_state_resume(cfg)
         resumed = state is not None
@@ -3975,6 +3986,45 @@ def run_once(cfg):
 def round_running():
     """A full round or a results check holds bridge.lock (this program or another one)."""
     return os.path.exists(LOCK_PATH) and not lock_is_stale()
+
+
+NSE_BUSY_PATH = os.path.join(HERE, 'nse_busy.json')
+NSE_BUSY_STALE_S = 30 * 60
+
+
+class nse_part:
+    """The round's own NSE steps run inside this: nse_busy.json {pid, what, at} while they ask NSE, so NSE XBRL history
+    (XbrlHistoryNow.bat / the background job) waits only for these few minutes - not for the whole round's screener.in
+    pages and the sheet's processing (owner, 23-Nov-2026: "it takes 25 minutes ... it is annoying"). One NSE request
+    at a time from this laptop either way."""
+
+    def __init__(self, what):
+        self.what = what
+
+    def __enter__(self):
+        try:
+            with open(NSE_BUSY_PATH, 'w', encoding='utf-8') as f:
+                json.dump({'pid': os.getpid(), 'what': self.what, 'at': time.time()}, f)
+        except OSError:
+            pass
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            os.remove(NSE_BUSY_PATH)
+        except OSError:
+            pass
+        return False
+
+
+def nse_busy():
+    """The laptop's round is asking NSE right now (its program alive, the mark younger than NSE_BUSY_STALE_S)."""
+    try:
+        with open(NSE_BUSY_PATH, encoding='utf-8') as f:
+            d = json.load(f)
+        return _pid_alive(int(d.get('pid') or 0)) and time.time() - float(d.get('at') or 0) < NSE_BUSY_STALE_S
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
 
 
 def histpe_step(cfg, pages=None, max_s=None, force=False):
@@ -4356,7 +4406,7 @@ def run_after_login(cfg):
             log('Backtest Lab: could not start - %s' % e)
         # NSE's XBRL result filings of the last 5 years (owner, 18-Nov-2026) - paced, never while a round / results check runs
         try:
-            xhist.maybe_start(cfg, api, round_running)
+            xhist.maybe_start(cfg, api, nse_busy, screener_busy=round_running)
         except Exception as e:
             log('NSE XBRL history: could not start - %s' % e)
         # Kite live prices on trading days 09:10-15:35 (owner, 08-Nov-2026: start it every day by itself) -> the "Kite Live" tab
@@ -4554,8 +4604,8 @@ def main(argv):
             return 1
         print('NSE XBRL history: 5 years of quarterly results of every Main stock (files kept in %s).' % XH.DIR)
         print('Stop any time with Ctrl+C or by closing this window - the next run carries on where it stopped.')
-        res = XH.run_all(dict(cfg, xbrl_history=True), api, round_running, XH.gap_of(cfg), out=log, what='XbrlHistoryNow',
-                         every=XH.CMD_SAY_EVERY)
+        res = XH.run_all(dict(cfg, xbrl_history=True), api, nse_busy, XH.gap_of(cfg), out=log, what='XbrlHistoryNow',
+                         every=XH.CMD_SAY_EVERY, screener_busy=round_running)
         return 0 if res is not None else 1
     if cmd == 'eod':
         if not cfg.get('url') or not cfg.get('token'):

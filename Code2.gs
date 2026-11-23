@@ -499,7 +499,7 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
   const isXbrlWait = function (t) { return t.status === 'Updated' && t.source === AB_XBRL_SOURCE; };
   const cands = tr.list.filter(function (t) {
     const prov = isProvisional(t) || isXbrlWait(t);
-    if (t.status !== 'Pending' && !prov) return false;
+    if (t.status !== 'Pending' && !prov && !ab_rsGaveUpAgain_(t, todayKey)) return false;
     if (prov && (!t.rdKey || ab_rsAge_(t.symbol, t.rdKey, todayKey) > AB_RS_MAX_WAIT_DAYS)) return false;
     if (!rowsBySym[t.symbol]) { if (!prov) t.note = 'Symbol not found in Main'; return false; }
     // PC hasn't delivered it yet (screener.in page, or moneycontrol figures for a Pending row)
@@ -668,6 +668,10 @@ function ab_rsRunCore_(slotLabel, isContinuation, opts) {
       } else if (mcRes && mcRes.growth.latestQuarter) {
         t.note += ' (moneycontrol shows ' + mcRes.growth.latestQuarter + ')';
       }
+    }
+    if (t.status === 'Gave up' && why) {
+      t.note = 'Not shown within ' + AB_RS_MAX_WAIT_DAYS + ' days of the result date - still checked once a day this season: ' +
+               why.replace(/ - will retry$/, '');
     }
     if (AB_QR_VERBOSE) Logger.log('Results Day ' + label + ' ' + t.symbol + ' expected ' + t.quarter + ' -> ' +
                                   t.status + (t.note ? ' (' + t.note + ')' : ''));
@@ -12016,7 +12020,11 @@ function ab_xbrlWant_(tr, todayKey, basis, daily, ann) {
   if (ann === undefined) ann = ab_rsAnnStore_();
   const first = [], unseen = [], flag = [];
   tr.list.forEach(function (t) {
-    if (t.status === 'Gave up' || !t.rdKey || !t.quarter) return;
+    if (!t.rdKey || !t.quarter) return;
+    if (t.status === 'Gave up') {                // still looked for once a day this season (ab_rsGaveUpSeason_)
+      if (ab_rsGaveUpSeason_(t, todayKey) && !ab_xbrlHas_(t.symbol, t.quarter)) unseen.push(t);
+      return;
+    }
     const age = ab_rsAge_(t.symbol, t.rdKey, todayKey);
     if (age < 0 || age > AB_RS_MAX_WAIT_DAYS || ab_xbrlHas_(t.symbol, t.quarter)) return;
     const needs = t.status === 'Pending' || t.source === AB_MC_SOURCE;
@@ -12149,7 +12157,15 @@ function ab_xbrlExceptional_(f) {
  * Only when the stored quarters end exactly one quarter before and XBRL has the same basis (consolidated / standalone).
  */
 function ab_xbrlCombined_(stored, xd, byPosition) {
-  const s = stored && stored.series;
+  const first = ab_xbrlCombinedOne_(stored && stored.series, xd, byPosition);
+  if (!first.error || !stored || !stored.altSeries) return first;
+  // the other screener.in page's quarters (Code.gs ab_bridgePick_ keeps them beside): an XBRL filing of only that basis
+  // (owner, 23-Nov-2026, MTARTECH Sep 2026: standalone only - its subsidiaries merged into it) is combined with them
+  const second = ab_xbrlCombinedOne_(stored.altSeries, xd, byPosition);
+  return second.error ? first : second;
+}
+
+function ab_xbrlCombinedOne_(s, xd, byPosition) {
   if (!s || !Array.isArray(s.quarters) || !s.quarters.length) return { error: 'no screener.in quarters stored yet for this stock' };
   const basis = String(s.basis || '');
   const cons = !/standalone/i.test(basis);
@@ -12328,6 +12344,70 @@ function ab_rsScreenerDue_(kind, filed, b, rdAge, todayKey, now) {
 /** The NSE result filings store (Results_Announcements), or null when it cannot be read. */
 function ab_rsAnnStore_() {
   try { return ab_annLoad_(); } catch (e) { return null; }
+}
+
+/*****************************************************************
+ * GAVE-UP ROWS + CONSOLIDATED PAGES THAT STOPPED (owner, 23-Nov-2026)
+ * -----------------------------------------------------------------
+ * "in the results page, Gaveup has 27 stocks, but its results were updated but no tick mark near result date" and
+ * "Waiting on Screener.in has 13 stocks ... 3MINDIA (Screener still shows Jun 2024 (NSE XBRL: NSE XBRL has no
+ * consolidated figures (screener.in's are Consolidated)) - will retry" - their consolidated figures stopped (Jun 2024),
+ * the standalone ones go on, so screener.in's consolidated page never showed the quarter and the row gave up after
+ * AB_RS_MAX_WAIT_DAYS. Now:
+ *  - a Gave-up row of this results season is still checked once a day (its page in the PC's list, its XBRL filing in
+ *    the daily list) - found -> Updated + the tick, like any other row;
+ *  - a consolidated page that is BEHIND (ab_rsPageBehind_) makes the PC read the standalone page too (Code.gs 'put'
+ *    reply `thin`), and Code.gs ab_bridgePick_ takes the page that goes further (the other one's quarters kept beside
+ *    as `altSeries`, so an XBRL filing of only that basis - MTARTECH Sep 2026 - is combined with them).
+ *****************************************************************/
+const AB_RS_PAGE_DUE_DAYS = 60;   // every company has filed a quarter's results by its end + this many days
+
+/** A tracker row that gave up, of the results season of `todayKey` (its quarter is the season's or newer). */
+function ab_rsGaveUpSeason_(t, todayKey) {
+  if (!t || t.status !== 'Gave up' || !t.quarter) return false;
+  const p = String(todayKey).split('-').map(Number);
+  const season = ab_rsQuarterIndex_(ab_rsExpectedQuarter_(ab_rsMakeDate_(p[0], p[1] - 1, p[2])));
+  const qi = ab_rsQuarterIndex_(t.quarter);
+  return !isNaN(qi) && !isNaN(season) && qi >= season;
+}
+
+/** Results Day looks at such a row again: once a day, or when new figures were stored for it since its last check. */
+function ab_rsGaveUpAgain_(t, todayKey) {
+  if (!ab_rsGaveUpSeason_(t, todayKey)) return false;
+  return ab_rsParseTs_(t.last) < ab_rsDayStartMs_(todayKey) || ab_rsQuickCand_(t);
+}
+
+/** The newest quarter (ab_rsQuarterIndex_) every company has filed by `todayKey` (its end + AB_RS_PAGE_DUE_DAYS). */
+function ab_rsDueQuarterIdx_(todayKey) {
+  const p = String(todayKey).split('-').map(Number);
+  for (let idx = p[0] * 12 + p[1]; idx > p[0] * 12 - 24; idx--) {
+    if (idx % 3) continue;
+    const y = Math.floor((idx - 1) / 12), m = idx - y * 12;
+    const endKey = y + '-' + ('0' + m).slice(-2) + '-' + ('0' + new Date(Date.UTC(y, m, 0)).getUTCDate()).slice(-2);
+    if (ab_rsDaysBetween_(endKey, todayKey) >= AB_RS_PAGE_DUE_DAYS) return idx;
+  }
+  return NaN;
+}
+
+/**
+ * A screener.in page (ab_qt_parseBoth_) that is a consolidated one BEHIND: its newest quarter is older than the quarter
+ * every company has filed by now, or older than the quarter a tracker row of the stock waits for (Pending / Gave up /
+ * moneycontrol figures) whose results NSE has had for a day or more. ctx = { todayKey, tr, ann }.
+ */
+function ab_rsPageBehind_(combined, sym, ctx) {
+  if (!combined || !combined.quarterOk || !combined.growth) return false;
+  if (/standalone/i.test(String(combined.growth.basis || (combined.series && combined.series.basis) || ''))) return false;
+  const li = ab_rsQuarterIndex_(combined.growth.latestQuarter);
+  if (isNaN(li)) return false;
+  const due = ab_rsDueQuarterIdx_(ctx.todayKey);
+  if (!isNaN(due) && li < due) return true;
+  return (ctx.tr && ctx.tr.list || []).some(function (t) {
+    if (t.symbol !== sym || !(t.status === 'Pending' || t.status === 'Gave up' || t.source === AB_MC_SOURCE)) return false;
+    const ei = ab_rsQuarterIndex_(t.quarter);
+    if (isNaN(ei) || li >= ei) return false;
+    const filed = ctx.ann ? ab_annFor_(ctx.ann, sym, t.rdKey) : null;
+    return !!filed && ab_rsDaysBetween_(String(filed.at).slice(0, 10), ctx.todayKey) >= 1;
+  });
 }
 
 /*****************************************************************
@@ -14710,7 +14790,7 @@ function ab_finClean_(fin) {
         vals.push(r[i] === null || r[i] === undefined || r[i] === '' || typeof r[i] === 'boolean' || !isFinite(n) ? null : Math.round(n * 100) / 100);
       }
       const flag = String(r[AB_FIN_COLS.length + 1] || '');
-      out.push([String(r[0])].concat(vals, [/^[csqr]$/.test(flag) ? flag : '']));   // r = screener.in's (no NSE filing)
+      out.push([String(r[0])].concat(vals, [/^[cdsqr]$/.test(flag) ? flag : '']));   // r = screener.in's, d = worked out
     });
     return out;
   };
@@ -14719,9 +14799,20 @@ function ab_finClean_(fin) {
   const out = { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: Math.max(0, Math.round(Number(fin.files) || 0)),
     at: /^\d{4}-\d{2}-\d{2}$/.test(String(fin.at || '')) ? String(fin.at) : '' };
   // the laptop's note (EPS adjusted for a bonus / split) - plain words only; 'k' bank = screener.in's bank row names
-  const note = String(fin.note || '').replace(/[^A-Za-z0-9 .,;:()'\/%-]/g, '').replace(/^[=+\-@\s]+/, '').slice(0, 200);
+  const words = function (t) { return String(t || '').replace(/[^A-Za-z0-9 .,;:()'\/%-]/g, '').replace(/^[=+\-@\s]+/, '').slice(0, 200); };
+  const note = words(fin.note);
   if (note) out.note = note;
   if (fin.k === 'bank') out.k = 'bank';
+  // VERSION 7 (owner, 23-Nov-2026): the words about the basis (MTARTECH - consolidated results ended) and the other
+  // basis's table, kept apart (the website switches between them; never mixed into this one)
+  const bw = words(fin.bw);
+  if (bw) out.bw = bw;
+  const o = fin.o && typeof fin.o === 'object' ? ab_finClean_(Object.assign({}, fin.o, { o: null })) : null;
+  if (o && o.b !== out.b) {
+    out.o = { b: o.b, q: o.q, y: o.y };
+    if (o.note) out.o.note = o.note;
+    if (o.k) out.o.k = o.k;
+  }
   return out;
 }
 
@@ -14758,7 +14849,8 @@ function ab_finPut_(items) {
     const fin = ab_finClean_(it && it.fin);
     const text = fin ? JSON.stringify(fin) : '';
     if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym) || !fin || text.length > AB_FIN_MAX_CHARS) { bad++; return; }
-    const row = [sym, fin.b, fin.q.length, fin.y.length, fin.q.length ? fin.q[fin.q.length - 1][0] : '', fin.at, when, text];
+    const basis = fin.b + (fin.o ? ' (+ ' + fin.o.b + ' to ' + (fin.o.q.length ? fin.o.q[fin.o.q.length - 1][0] : 'its years') + ')' : '');
+    const row = [sym, basis, fin.q.length, fin.y.length, fin.q.length ? fin.q[fin.q.length - 1][0] : '', fin.at, when, text];
     if (at[sym]) sh.getRange(at[sym], 1, 1, row.length).setValues([row]);
     else { adds.push(row); at[sym] = next++; }
     stored++;

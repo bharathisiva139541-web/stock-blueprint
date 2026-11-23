@@ -849,10 +849,22 @@
   function doorStart(sym, door) {
     if (!SB.fin) return;
     var q = $('#door-fin-q', door), y = $('#door-fin-y', door), note = $('#door-note', door);
+    var res = null;
+    var draw = function () {
+      finRender(q, sym, res, 'q', { note: note });
+      finRender(y, sym, res, 'y', { note: note.innerHTML ? null : note });
+    };
+    door.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-fin-basis]');
+      if (!b || !res) return;
+      FIN_BASIS[sym] = b.getAttribute('data-fin-basis');
+      note.innerHTML = '';
+      draw();
+    });
     finLoad(sym).then(function (r) {
       if (!door.isConnected || !q.isConnected || q.getAttribute('data-fin-sym') !== sym) return;
-      finRender(q, sym, r, 'q', { note: note });
-      finRender(y, sym, r, 'y', { note: note.innerHTML ? null : note });
+      res = r;
+      draw();
     });
   }
   if (window.matchMedia) {
@@ -889,6 +901,18 @@
   // The laptop reads the filings (xbrl_history.py), the sheet keeps one table a stock (tab Financials); the stock window
   // asks api/financials for its own table only. Kept on this device too (SB.keep 'fin:SYM'), so it shows offline.
   var FIN_MEMO = {}, FIN_KIND_KEY = 'fin:kind';
+  // the table shown per stock: its first basis, or the other one the viewer switched to (owner, 23-Nov-2026, MTARTECH:
+  // consolidated and standalone kept apart - "do not duplicate standalone data into the consolidated dataset")
+  var FIN_BASIS = {};
+  function finBasisHtml(sym, fin) {
+    var bs = SB.fin.bases(fin);
+    if (bs.length < 2) return '';
+    var cur = SB.fin.pick(fin, FIN_BASIS[sym]).b;
+    return '<span class="chips fin-basis" role="group" aria-label="Consolidated or standalone">' + bs.slice().sort().map(function (b) {
+      return '<button type="button" class="chip' + (b === cur ? ' on' : '') + '" data-fin-basis="' + b + '" aria-pressed="' + (b === cur) + '">' +
+        (b === 'C' ? 'Consolidated' : 'Standalone') + '</button>';
+    }).join('') + '</span> ';
+  }
   function finSection(sym) {
     var kind = ui.store.get(FIN_KIND_KEY, 'q') === 'y' ? 'y' : 'q';
     return '<section class="fin" id="drawer-fin" data-fin-sym="' + esc(sym) + '"><div class="fin-head"><h3>Results (NSE filings)</h3>' +
@@ -931,10 +955,12 @@
         : 'Could not load the results table: ' + esc(res.error) + '.') + '</p>';
       return;
     }
-    var v = SB.fin.view(res.fin, kind);
+    var fin = SB.fin.pick(res.fin, FIN_BASIS[sym]);
+    var v = SB.fin.view(fin, kind);
     if (!v) {
       csvBtn.hidden = true;
-      bodyEl.innerHTML = '<p class="sub">' + (res.fin ? 'No ' + (kind === 'y' ? 'yearly' : 'quarterly') + ' figures in its NSE filings yet.'
+      bodyEl.innerHTML = '<p class="sub">' + (opt.note === undefined && res.fin ? finBasisHtml(sym, res.fin) : '') +
+        (res.fin ? 'No ' + (kind === 'y' ? 'yearly' : 'quarterly') + ' figures in its NSE filings yet.'
         : 'No table for ' + esc(sym) + ' yet - your laptop reads every stock\'s NSE result filings of 5 years a little at a time.') + '</p>';
       return;
     }
@@ -945,9 +971,10 @@
       var f = v.flags[i];
       return '<th scope="col"' + (f ? ' data-tip="' + (f === 'c' ? 'From a later filing\'s comparison column (this period has no filing of its own in the 5 years read)'
         : f === 'q' ? 'The sum of its 4 quarters (no yearly figures were read for this year)'
+        : f === 'd' ? 'Worked out from the year-to-date figures of the company\'s other filings (for example the year minus 9 months) - this quarter has no filing of its own'
         : f === 'r' ? 'From screener.in - NSE has no filing figures for this period (for example before the company listed)'
-        : (v.basis === 'C' ? 'Standalone' : 'Consolidated') + ' filing - the stock\'s own basis has none for this period') + '"' : '') + '>' +
-        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 'q' ? '<sup>Σ</sup>' : f === 'r' ? '<sup>sc</sup>' : f === 's' ? '<sup>' + (v.basis === 'C' ? 'S' : 'C') + '</sup>' : '') + '</th>';
+        : 'Standalone figures - before the company\'s first consolidated results') + '"' : '') + '>' +
+        esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 'q' ? '<sup>Σ</sup>' : f === 'd' ? '<sup>d</sup>' : f === 'r' ? '<sup>sc</sup>' : f === 's' ? '<sup>S</sup>' : '') + '</th>';
     }).join('') + '</tr>';
     var rows = v.rows.map(function (r) {
       return '<tr class="fin-' + r.k + '"><th scope="row">' + esc(r.label) + '</th>' + r.vals.map(function (x) { return finCellHtml(x, r.kind); }).join('') + '</tr>';
@@ -959,11 +986,14 @@
     };
     rows.push(gRow('Sales growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gSales));
     rows.push(gRow('Profit growth ' + (kind === 'y' ? 'YoY' : 'YoY (same quarter)'), gNp));
-    var flags = opt.note ? (SB.fin.view(res.fin, 'q') || { flags: [] }).flags.concat((SB.fin.view(res.fin, 'y') || { flags: [] }).flags) : v.flags;
-    var noteHtml = (v.basis === 'C' ? 'Consolidated' : 'Standalone') + ' figures, Rs crore, from the company\'s NSE filings' +
+    var flags = opt.note ? (SB.fin.view(fin, 'q') || { flags: [] }).flags.concat((SB.fin.view(fin, 'y') || { flags: [] }).flags) : v.flags;
+    var noteHtml = finBasisHtml(sym, res.fin) + (v.bw ? '<b>' + esc(v.bw) + '</b> ' : '') +
+      (v.basis === 'C' ? 'Consolidated' : 'Standalone') + ' figures, Rs crore, from the company\'s NSE filings' +
       (flags.indexOf('r') >= 0 ? ' and screener.in' : '') +
       (res.kept ? ' (the copy kept on this device - could not refresh just now)' : '') +
       (flags.indexOf('c') >= 0 ? ' · <sup>*</sup> = a later filing\'s comparison column' : '') +
+      (flags.indexOf('d') >= 0 ? ' · <sup>d</sup> = worked out from the other filings\' year-to-date figures (no filing of its own)' : '') +
+      (flags.indexOf('s') >= 0 ? ' · <sup>S</sup> = standalone figures, before its first consolidated results' : '') +
       (flags.indexOf('q') >= 0 ? ' · <sup>Σ</sup> = the sum of its 4 quarters' : '') +
       (flags.indexOf('r') >= 0 ? ' · <sup>sc</sup> = screener.in\'s figures (no NSE filing for it, e.g. before the listing)' : '') +
       (v.note ? ' · ' + esc(v.note) : '');
@@ -981,6 +1011,12 @@
     var res = null;
     var kind = function () { return ui.store.get(FIN_KIND_KEY, 'q') === 'y' ? 'y' : 'q'; };
     box.addEventListener('click', function (e) {
+      var bb = e.target.closest('[data-fin-basis]');
+      if (bb && res) {
+        FIN_BASIS[sym] = bb.getAttribute('data-fin-basis');
+        finRender(box, sym, res, kind());
+        return;
+      }
       var b = e.target.closest('[data-fin-kind]');
       if (!b) return;
       ui.store.set(FIN_KIND_KEY, b.getAttribute('data-fin-kind'));

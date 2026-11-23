@@ -36,7 +36,7 @@
         const out = [String(r[0])];
         for (let i = 1; i <= COLS.length; i++) out.push(typeof r[i] === 'number' && isFinite(r[i]) ? r[i] : null);
         const f = r[COLS.length + 1];
-        out.push(f === 'c' || f === 's' || f === 'q' || f === 'r' ? f : '');
+        out.push(f === 'c' || f === 'd' || f === 's' || f === 'q' || f === 'r' ? f : '');
         return out;
       });
     };
@@ -44,9 +44,18 @@
     if (!q.length && !y.length) return null;
     const out = { b: fin.b === 'S' ? 'S' : 'C', q: q, y: y, files: typeof fin.files === 'number' ? fin.files : 0,
       at: /^\d{4}-\d{2}-\d{2}$/.test(String(fin.at || '')) ? fin.at : '' };
-    const note = String(fin.note || '').replace(/[^A-Za-z0-9 .,;:()'\/%-]/g, '').slice(0, 200).trim();
+    const words = function (t) { return String(t || '').replace(/[^A-Za-z0-9 .,;:()'\/%-]/g, '').slice(0, 200).trim(); };
+    const note = words(fin.note);
     if (note) out.note = note;
     if (fin.k === 'bank') out.k = 'bank';
+    const bw = words(fin.bw);              // the words about the basis (a consolidated table that ended, 23-Nov-2026)
+    if (bw) out.bw = bw;
+    const o = fin.o && typeof fin.o === 'object' ? cleanFin(Object.assign({}, fin.o, { o: null })) : null;   // the other basis's table
+    if (o && o.b !== out.b) {
+      out.o = { b: o.b, q: o.q, y: o.y };
+      if (o.note) out.o.note = o.note;
+      if (o.k) out.o.k = o.k;
+    }
     return out;
   }
 

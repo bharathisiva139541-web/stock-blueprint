@@ -3,7 +3,9 @@
    Pure functions, browser + Node (tests/results-lists.test.js).
 
    SB.results = {
-     KINDS: [{ id, label, src: 'perf' | 'tracker', sort: { key, dir } }],
+     KINDS: [{ id, label, src: 'perf' | 'tracker' | 'reclaim' | 'main', sort: { key, dir } }],
+     notUpdated(stocks, trackerRows, season, todayKey) -> the Main stocks whose results of the season are not in Main yet,
+                                       each with the reason `why` (NOT_UPDATED ids) - the list 'notupdated' (pick's 5th arg)
      seasonOf(perf)                 -> 'Sep 2026' | null (the newest season the sheet summarises)
      perfRows(perf, season)         -> Results Performance rows (objects) of that season
      trackerRows(tracker, season)   -> Results Tracker rows (objects) of that season
@@ -53,7 +55,8 @@
     { id: 'reclaimslow', label: 'Back above after 2+ weeks', src: 'reclaim', sort: { key: 'reclaimDay', dir: -1 } },
     { id: 'nearreclaim', label: 'Still below, close to the pre-result price', src: 'reclaim', sort: { key: 'nowPct', dir: -1 } },
     { id: 'waiting', label: 'Waiting on screener.in', src: 'tracker', sort: { key: 'Result Date', dir: 1 } },
-    { id: 'gaveup', label: 'Gave up', src: 'tracker', sort: { key: 'Result Date', dir: -1 } }
+    { id: 'gaveup', label: 'Gave up', src: 'tracker', sort: { key: 'Result Date', dir: -1 } },
+    { id: 'notupdated', label: 'Not in Main yet (every reason)', src: 'main', sort: { key: 'Result Date', dir: 1 } }
   ];
   var SESSIONS = [['after', 'After market'], ['market', 'Market hours'], ['before', 'Before market'], ['unknown', 'Time not known']];
 
@@ -79,9 +82,10 @@
   function verdict(r) { return String(r['Results Verdict'] || ''); }
   function since(r) { return r[SINCE]; }
 
-  function pick(kind, perf, tracker, rc) {
+  function pick(kind, perf, tracker, rc, nu) {
     var rec = function (r) { return r.reclaim || {}; };
     switch (kind) {
+      case 'notupdated': return (nu || []).slice();
       case 'reclaimed': return (rc || []).filter(function (r) { return rec(r).status === 'reclaimed'; });
       case 'reclaimslow': return (rc || []).filter(function (r) { return rec(r).status === 'reclaimed' && rec(r).reclaimDay >= RECLAIM.slowDays; });
       case 'nearreclaim': return (rc || []).filter(function (r) { return rec(r).status === 'near'; });
@@ -99,10 +103,54 @@
       default: return [];
     }
   }
-  function counts(perf, tracker, rc) {
+  function counts(perf, tracker, rc, nu) {
     var o = {};
-    KINDS.forEach(function (k) { o[k.id] = pick(k.id, perf, tracker, rc).length; });
+    KINDS.forEach(function (k) { o[k.id] = pick(k.id, perf, tracker, rc, nu).length; });
     return o;
+  }
+
+  // ---- the Main stocks whose results of the season are not in Main yet, each with the reason (owner, 23-Nov-2026: "out
+  // of 1813 stocks, 1703 stocks results were updated in Main. what about remaining") - from Main (Result Date, the tick)
+  // and the season's Results Tracker rows; a ticked stock is in Main.
+  var NOT_UPDATED = [
+    { id: 'waiting', label: 'Results filed / due - waiting for the figures', tone: 'info' },
+    { id: 'gaveup', label: 'Gave up after 21 days - still checked once a day', tone: 'warn' },
+    { id: 'upcoming', label: 'Results due later', tone: '' },
+    { id: 'nodate', label: 'No result date yet', tone: 'warn' },
+    { id: 'olddate', label: 'Only last season\'s result date', tone: 'warn' },
+    { id: 'other', label: 'Result date passed - not in the tracker', tone: 'bad' }
+  ];
+  function seasonEnd(season) {
+    var i = /^(Mar|Jun|Sep|Dec) (\d{4})$/.exec(String(season || ''));
+    return i ? i[2] + ({ Mar: '-03-31', Jun: '-06-30', Sep: '-09-30', Dec: '-12-31' })[i[1]] : '';
+  }
+  function notUpdated(stocks, tracker, season, todayKey) {
+    var qe = seasonEnd(season);
+    if (!qe) return [];
+    var tr = {};
+    (tracker || []).forEach(function (r) {
+      if (!r.Symbol || String(r['Quarter Expected']) !== season) return;
+      if (!tr[r.Symbol] || r.Status === 'Updated') tr[r.Symbol] = r;
+    });
+    var seen = {}, out = [], label = {};
+    NOT_UPDATED.forEach(function (k) { label[k.id] = k.label; });
+    (stocks || []).forEach(function (st) {
+      if (!st || !st.sym || seen[st.sym]) return;
+      seen[st.sym] = true;
+      var t = tr[st.sym] || null;
+      if ((t && t.Status === 'Updated') || st.done) return;
+      var rd = dayOf(st.rdate), why, note;
+      if (t && t.Status === 'Pending') { why = 'waiting'; note = t.Note || ''; }
+      else if (t && t.Status === 'Gave up') { why = 'gaveup'; note = t.Note || ''; }
+      else if (!rd) { why = 'nodate'; note = 'No result date in the Results tab yet - NSE has not listed a results board meeting for it (your laptop adds it when NSE does, or from the results filing).'; }
+      else if (rd > todayKey) { why = 'upcoming'; note = 'Results due on ' + rd + '.'; }
+      else if (rd <= qe) { why = 'olddate'; note = 'Its result date (' + rd + ') is before the ' + season + ' quarter ended - no ' + season + ' result date yet.'; }
+      else { why = 'other'; note = 'The result date (' + rd + ') has passed, but the Results Tracker has no row for ' + season + ' - it adds dates up to 21 days old.'; }
+      out.push({ Symbol: st.sym, Company: st.name || '', 'Basic Industry': st.ind || '', 'Result Date': rd, why: why, Why: label[why],
+                 Status: t ? t.Status : '', Announced: t && t.Announced || '', 'Screener Latest Quarter': t && t['Screener Latest Quarter'] || '',
+                 'Last Checked': t && t['Last Checked'] || '', Note: note });
+    });
+    return out;
   }
 
   // ---- "fell after results, then reclaimed" (owner's friend, 03-Nov-2026: some stocks fall below the pre-results
@@ -315,7 +363,7 @@
     });
   }
 
-  return { KINDS: KINDS, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session, TODAY: TODAY, todayRows: todayRows, dailyPct: dailyPct,
+  return { KINDS: KINDS, NOT_UPDATED: NOT_UPDATED, notUpdated: notUpdated, seasonOf: seasonOf, perfRows: perfRows, trackerRows: trackerRows, session: session, TODAY: TODAY, todayRows: todayRows, dailyPct: dailyPct,
            livePerf: livePerf, seasonLive: seasonLive,
            pick: pick, counts: counts, bySession: bySession, movers: movers, reclaim: reclaim, reclaimRows: reclaimRows, RECLAIM: RECLAIM,
            flagList: flagList, flagIndex: flagIndex };

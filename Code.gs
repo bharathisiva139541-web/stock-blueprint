@@ -8641,9 +8641,25 @@ function ab_bridgePutMany_(entries) {
 
 /** Same choice ab_qt_fetchOne_ makes between consolidated and standalone. */
 function ab_bridgePick_(cons, plain) {
-  const thin = !cons.quarterOk || cons.quarterOpmCount < 2;
-  if (!thin || !plain) return cons;
-  return plain.score >= cons.score ? plain : cons;
+  if (!plain) return cons;
+  if (!cons) return plain;
+  const latest = function (c) { return c && c.quarterOk && c.growth ? ab_rsQuarterIndex_(c.growth.latestQuarter) : NaN; };
+  const a = latest(cons), b = latest(plain);
+  // the standalone page goes further (owner, 23-Nov-2026: 3MINDIA / TFCILTD - their consolidated figures stopped at
+  // Jun 2024 / Dec 2022, the standalone ones go on): the standalone figures
+  let pick;
+  if (!isNaN(b) && (isNaN(a) || b > a)) pick = plain;
+  else {
+    const thin = !cons.quarterOk || cons.quarterOpmCount < 2;
+    pick = thin && plain.score >= cons.score ? plain : cons;
+  }
+  // the other page's quarters kept beside it: an NSE XBRL filing of only that basis can still be combined with them
+  // (MTARTECH, Sep 2026: standalone only - its subsidiaries merged into it; Code2.gs ab_xbrlCombined_)
+  const other = pick === cons ? plain : cons;
+  if (other && other.series && pick.series && String(other.series.basis) !== String(pick.series.basis)) {
+    pick.altSeries = other.series;
+  }
+  return pick;
 }
 
 /** Pause between requests - skipped when the last answer came from the bridge. */
@@ -8741,6 +8757,16 @@ function ab_bridgeWanted_(opts) {
     if ((unfillable[sym] || 0) >= AB_QT_SKIP_AFTER) continue;
     if (ab_qt_isParkedTooNew_(tooNew, sym)) continue;
     missing.push(sym); seen[sym] = true;
+  }
+  // Gave-up rows of this season (owner, 23-Nov-2026: "Gave up has 27 stocks, but its results were updated but no tick
+  // mark"): their page once a day until the season ends (Code2.gs ab_rsGaveUpAgain_)
+  if (!quick) {
+    tr.list.forEach(function (t) {
+      if (seen[t.symbol] || !ab_rsGaveUpSeason_(t, todayKey)) return;
+      if (!ab_rsScreenerDue_('xbrl', null, ab_bridgeGet_(t.symbol), 0, todayKey, now)) return;   // 'xbrl' = once a day
+      seen[t.symbol] = true;
+      priority.push(t.symbol);
+    });
   }
   return { priority: priority, missing: missing, mc: mc, xbrl: xbrl, xbrlBasis: xbrlBasis, xbrlDaily: xbrlDaily };
 }
@@ -8977,6 +9003,14 @@ function doPost(e) {
     }
     if (req.action === 'put') {
       const entries = [], details = [];
+      // a consolidated page that is behind -> the PC reads the standalone page too (Code2.gs ab_rsPageBehind_)
+      let pctx = null;
+      const behind = function (c, sym) {
+        try {
+          if (!pctx) pctx = { todayKey: ab_rsDayKey_(new Date()), tr: ab_rsReadTracker_(), ann: ab_rsAnnStore_() };
+          return ab_rsPageBehind_(c, sym, pctx);
+        } catch (bErr) { return false; }
+      };
       (req.items || []).forEach(function (it) {
         const sym = String(it.sym || '').trim().toUpperCase();
         if (!sym) return;
@@ -8994,7 +9028,7 @@ function doPost(e) {
         }
         entries.push({ sym: sym, combined: combined });
         details.push({ sym: sym, quarterOk: !!combined.quarterOk, tagsOk: !!combined.tagsOk,
-                       thin: !combined.quarterOk || combined.quarterOpmCount < 2,
+                       thin: !combined.quarterOk || combined.quarterOpmCount < 2 || (!it.html2 && behind(combined, sym)),
                        latest: combined.growth ? combined.growth.latestQuarter : '',
                        error: combined.quarterError || combined.tagsError || '' });
       });
