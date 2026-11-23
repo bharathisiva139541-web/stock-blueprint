@@ -40,7 +40,7 @@ import ltf_data
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
 VERSION = 7                                    # the reading rules: a change reads the kept files again (no NSE)
-LIST_VERSION = 3                               # which files a stock reads: a change reads every stock's lists again
+LIST_VERSION = 4                               # which files a stock reads: a change reads every stock's lists again
 YEARS = 5
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
     ('integrated filing', 'https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol={s}&period=Quarterly'),
@@ -1174,19 +1174,28 @@ class Nse:
         return None, b''
 
 
-def _list(nse, name, url, say):
-    """One list -> (records' metas, answered, number of records)."""
+def _total(obj):
+    """The number of records NSE says the whole list has (its answer's totalCount / total), or None."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if _norm(k) in ('totalcount', 'total', 'totalrecords') and isinstance(v, (int, float)) and v >= 0:
+                return int(v)
+    return None
+
+
+def _list(nse, name, url, say, with_total=False):
+    """One list -> (records' metas, answered, number of records[, the whole list's total from NSE or None])."""
     status, raw = nse.get(url)
     if status != 200:
         if say:
             say('   %-18s %s' % (name + ':', 'HTTP %s' % status if status else 'no answer'))
-        return [], status is not None, 0
+        return ([], status is not None, 0) + ((None,) if with_total else ())
     try:
         obj = json.loads(raw.decode('utf-8', errors='replace'))
     except ValueError:
         if say:
             say('   %-18s a web page came back, not data' % (name + ':'))
-        return [], True, 0
+        return ([], True, 0) + ((None,) if with_total else ())
     recs = D['records'](obj) or []
     metas = [m for m in (rec_meta(r) for r in recs if isinstance(r, dict)) if m]
     if say:
@@ -1199,7 +1208,7 @@ def _list(nse, name, url, say):
         say('   %-18s %d record(s), %d XBRL file(s)%s%s%s' % (
             name + ':', len(recs), len(metas), (', quarters %s .. %s' % (ends[0], ends[-1])) if ends else '',
             ('; fields: ' + ', '.join(keys)) if keys and (not metas or not ends) else '', extra))
-    return metas, True, len(recs)
+    return (metas, True, len(recs)) + ((_total(obj),) if with_total else ())
 
 
 def half_years(start, end):
@@ -1233,14 +1242,20 @@ def list_filings(nse, sym, say=None, since=''):
                 seen.add(m['name'])
                 out.append(m)
     for name, url in LISTS:
-        metas, ok, n = _list(nse, name, url.format(s=q), say)
+        metas, ok, n, total = _list(nse, name, url.format(s=q), say, with_total=True)
         answered = answered or ok
         add(metas)
         if url == LISTS[0][1] and n >= PAGE_FULL:
-            days = [d for d in (_stamp_day(m) for m in metas) if d] or [date.today()]
-            for f, t in half_years(INT_FROM, min(days)):
+            # a full page: the rest asked half a year at a time, oldest first, up to TODAY - not only up to the oldest
+            # filing it gave (owner's MTARTECH check, 23-Nov-2026: totalCount 23, the 20 given + the older windows, and
+            # its Sep 2026 filing was never read), until the filings found reach NSE's own count
+            got = {m['name'] for m in metas}
+            for f, t in half_years(INT_FROM, date.today()):
+                if total is not None and len(got) >= total:
+                    break
                 more, _, _ = _list(nse, '%s %s..%s' % (INT_DATED[0], f.strftime('%d-%m-%y'), t.strftime('%d-%m-%y')),
                                    INT_DATED[1].format(s=q, f=f.strftime('%d-%m-%Y'), t=t.strftime('%d-%m-%Y')), say)
+                got.update(m['name'] for m in more)
                 add(more)
     if not answered:
         raise Blocked('NSE did not answer')
@@ -1340,6 +1355,9 @@ def process_stock(nse, sym, today=None, say=None):
                 break
     st['listed'] = time.time()
     st['n'] = len(filings)
+    # the newest filings NSE's lists gave (XbrlHistoryCheck shows them: a quarter in the lists but not in the table)
+    st['newest'] = [[m['end'], m['basis'] or '?', 'G' if m['gov'] else 'F', m['stamp'][:8], m['name']]
+                    for m in sorted(filings, key=lambda m: (m['end'], m['stamp']), reverse=True)[:8] if m['end']]
     st['tried'] = tried
     st['lv'] = LIST_VERSION
     st['table'] = build(st, today)
@@ -1533,9 +1551,10 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
         for s_ in syms:                                   # one stock file in memory at a time
             st_ = load_stock(s_) if os.path.exists(_stock_path(s_)) else {}
             if due(s_, st_, today, now):
-                todo.append(s_)
+                todo.append((1 if st_.get('listed') else 0, len(todo), s_))
             if sc_on and screener_wants(s_, st_, today, now, tried):
                 sc_todo.add(s_)
+        todo = [s_ for _, _, s_ in sorted(todo)]          # stocks never read first, then the ones read again
         res['left'] = len(todo)
         if not todo and not sc_todo:
             sent = post(cfg, api, state, syms)
@@ -1757,13 +1776,33 @@ def print_table(t, out, quarters=8):
         out('   ' + t['note'])
 
 
+def newest_words(st, out):
+    """XbrlHistoryCheck: the newest quarters in NSE's lists, each filing (governance / consolidated / standalone, the
+    day filed) and what became of it - so a quarter in the lists but not in the table shows why."""
+    by, tried = {}, st.get('tried') or {}
+    for e, b, k, d, n in st.get('newest') or []:
+        if k == 'G':
+            what = 'governance report (no results)'
+        else:
+            r = next((x[1] for x in tried.get(e, []) if x[0] == n), None)
+            what = ({'C': 'consolidated', 'S': 'standalone'}.get(b, 'basis not said') + ' results ' +
+                    ('read' if r == 'ok' else ('NOT usable: ' + r) if r else 'not read (another file of the quarter used)'))
+        by.setdefault(e, []).append('%s (filed %s-%s-%s)' % (what, d[6:8], d[4:6], d[:4]) if len(d) == 8 else what)
+    for e in sorted(by, reverse=True)[:3]:
+        out('   newest in NSE\'s lists - %s: %s' % (e, '; '.join(by[e])))
+
+
 def coverage(st, t, out):
-    """Which quarters of the 5 years the table has; a missing one with the reason its files could not be used."""
+    """Which quarters of the 5 years the table has (up to the newest results quarter in NSE's lists); a missing one with
+    the reason its files could not be used."""
     q = t.get('q') or []
     if not q:
         return
     have = {r[0] for r in q}
     last = _mi_label(q[-1][0])
+    fin = [mi_of(e) for e, b, k, d, n in st.get('newest') or [] if k == 'F' and mi_of(e)]
+    if fin and max(fin) > last:
+        last = max(fin)                 # a newer results filing in the lists that is not in the table: counted missing
     want = [last - 3 * k for k in range(4 * YEARS)][::-1]
     miss = [mi for mi in want if label_of(mi) not in have]
     out('   quarters: %d of %d in the table (%s .. %s)%s' % (len(want) - len(miss), len(want), label_of(want[0]),
@@ -1921,6 +1960,7 @@ def check(cfg, syms, out=print, today=None):
         if old:
             out('   %d file(s) of NSE\'s older format read through their dimension contexts (%s .. %s) - check those quarters'
                 ' against screener.in below' % (len(old), old[0], old[-1]))
+        newest_words(st, out)
         bad = sorted([(f.get('end') or '', n, f) for n, f in files.items() if f.get('fail')], reverse=True)
         if bad:
             out('   %d file(s) could not be used:' % len(bad))
