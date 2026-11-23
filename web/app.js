@@ -973,6 +973,7 @@
         : f === 'q' ? 'The sum of its 4 quarters (no yearly figures were read for this year)'
         : f === 'd' ? 'Worked out from the year-to-date figures of the company\'s other filings (for example the year minus 9 months) - this quarter has no filing of its own'
         : f === 'r' ? 'From screener.in - NSE has no filing figures for this period (for example before the company listed)'
+        : f === 't' ? 'Trailing twelve months = the sum of the last 4 quarters (' + v.ttmFrom + '), like screener.in. Growth: against the 4 quarters before'
         : 'Standalone figures - before the company\'s first consolidated results') + '"' : '') + '>' +
         esc(l) + (f === 'c' ? '<sup>*</sup>' : f === 'q' ? '<sup>Σ</sup>' : f === 'd' ? '<sup>d</sup>' : f === 'r' ? '<sup>sc</sup>' : f === 's' ? '<sup>S</sup>' : '') + '</th>';
     }).join('') + '</tr>';
@@ -996,6 +997,7 @@
       (flags.indexOf('s') >= 0 ? ' · <sup>S</sup> = standalone figures, before its first consolidated results' : '') +
       (flags.indexOf('q') >= 0 ? ' · <sup>Σ</sup> = the sum of its 4 quarters' : '') +
       (flags.indexOf('r') >= 0 ? ' · <sup>sc</sup> = screener.in\'s figures (no NSE filing for it, e.g. before the listing)' : '') +
+      (flags.indexOf('t') >= 0 ? ' · TTM = the sum of the last 4 quarters' : '') +
       (v.note ? ' · ' + esc(v.note) : '');
     if (opt.note) opt.note.innerHTML = noteHtml;
     bodyEl.innerHTML = (opt.note === undefined ? '<p class="sub fin-note">' + noteHtml + '</p>' : '') +

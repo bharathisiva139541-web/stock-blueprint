@@ -840,15 +840,15 @@ assert fy['Mar 2020'][1 + X.COLS.index('eps')] == 1.08 and fy['Mar 2020'][1 + X.
 assert len(X.eps_quarters(t)[1]) == 6, 'pe_history keeps its own screener.in EPS - only the filings\' quarters (+ worked out) go to it'
 # a standalone page read later does not push the consolidated one out; a stock with no filing read yet: screener.in alone
 X.keep_screener('ARS', sc_page('Standalone'), 2000.0)
-assert sorted(X.load_sc('ARS')) == ['C', 'S']
+assert sorted(k for k in X.load_sc('ARS') if k in ('C', 'S')) == ['C', 'S']
 t2 = X.build({'sym': 'ARS', 'files': {}}, TODAY)
 assert t2['b'] == 'C' and t2['files'] == 0 and {r[-1] for r in t2['q'] + t2['y']} == {'r'} and len(t2['y']) == 7
 assert X.build({'sym': 'NONE', 'files': {}}, TODAY) is None
 X.keep_screener('ARS', '<html>nothing</html>')                # a page without the tables changes nothing
-assert sorted(X.load_sc('ARS')) == ['C', 'S']
+assert sorted(k for k in X.load_sc('ARS') if k in ('C', 'S')) == ['C', 'S']
 # years: 12 at most (screener.in's own table has up to 12)
 many = {'b': 'C', 'q': [], 'y': [['Mar %d' % y, 100.0 + y] + [None] * 11 + [''] for y in range(2005, 2027)]}
-assert [r[0] for r in X.build({'sym': 'ARS', 'files': {}}, TODAY, sc={'C': many})['y']] == ['Mar %d' % y for y in range(2015, 2027)]
+assert [r[0] for r in X.build({'sym': 'ARS', 'files': {}}, TODAY, sc={'C': many, 'v': X.SC_VERSION})['y']] == ['Mar %d' % y for y in range(2015, 2027)]
 
 # pages Historical PE read before this version: read once more (their tables were not kept), never a stock not on screener.in
 P_ = sb.PEH
@@ -1007,7 +1007,7 @@ assert tt['o']['b'] == 'C' and [r[0] for r in tt['o']['q']] == qc, 'its "(S)" co
 sc_p = {'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Sep 2021'], 30.0, 's') + sc_rows_(qc, 50.0), 'y': []}}
 assert [r[0] for r in X.build({'sym': 'PRE', 'files': {}}, T23, sc=sc_p)['q']] == ['Sep 2021'] + qc
 # both bases up to the same quarter: consolidated first, standalone to switch to
-both = X.build(mtr, T23, sc={'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Jun 2026'], 9.0), 'y': []},
+both = X.build(mtr, T23, sc={'v': X.SC_VERSION, 'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Jun 2026'], 9.0), 'y': []},
                              'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Sep 2026'], 9.0), 'y': []}})
 assert both['b'] == 'C' and 'bw' not in both and both['o']['b'] == 'S', both
 assert 'o' not in tm, 'standalone only before the first consolidated period: no second table'
@@ -1034,7 +1034,7 @@ def sc_page_old():
 
 
 X.bind(screener=sc_fetch)
-assert X.fetch_screener({}, 'NRM', T23) == 1 and FETCH == [('NRM', True)], 'up to date: the consolidated page alone'
+assert X.fetch_screener({}, 'NRM', T23) == 2 and FETCH == [('NRM', True), ('NRM', False)], 'the consolidated page, then the standalone one (RVNL)'
 del FETCH[:]
 old_qh = list(QH)
 QH[:] = QH_OLD
@@ -1042,7 +1042,7 @@ try:
     assert X.fetch_screener({}, 'BEH', T23) == 2 and FETCH == [('BEH', True), ('BEH', False)], FETCH
 finally:
     QH[:] = old_qh
-assert sorted(X.load_sc('BEH')) == ['C', 'S']
+assert sorted(k for k in X.load_sc('BEH') if k in ('C', 'S')) == ['C', 'S']
 del FETCH[:]
 assert X.fetch_screener({}, 'GONE', T23) == 2 and FETCH == [('GONE', True), ('GONE', False)]
 now_ = time.time()
@@ -1065,7 +1065,8 @@ r13 = X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23, screener_busy=l
 assert r13['pages'] == 0 and FETCH == [], 'no screener.in page while the round runs'
 X.save_state({})
 r13 = X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23)
-assert r13['pages'] == 1 and FETCH == [('SCO', True)] and X.load_stock('SCO')['table']['files'] == 0, r13
+assert r13['pages'] == 2 and FETCH == [('SCO', True), ('SCO', False)] and X.load_stock('SCO')['table']['files'] == 0, r13
+assert SLEEPS.count(X.SC_GAP_S) >= 1, 'a pause between the two pages'
 assert [p_['items'][0]['sym'] for p_ in CALLS2 if p_['op'] == 'put'] == ['SCO'], CALLS2
 assert X.load_state()['scTry'].get('SCO'), 'remembered'
 del FETCH[:]
@@ -1073,6 +1074,7 @@ assert X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23)['pages'] == 0 
 # a stock read from NSE in the same run whose new filing (Sep 2026) is newer than its kept page: both pages read now
 QH[:] = QH_OLD[:-1] + ['Jun 2026']
 X.keep_screener('MTN', sc_page('Consolidated'), time.time())            # a page of today, ending Jun 2026
+X.keep_screener('MTN', sc_page('Standalone'), time.time())              # ... and its standalone page
 QH[:] = old_qh
 X.save_stock({'sym': 'MTN', 'files': {'s4': vfile('2026-09-30', 'S', 104.0, '20261106180000')}, 'listed': time.time()})
 assert not X.screener_wants('MTN', {}, T23, time.time()), 'before the NSE read: the page is up to date'
@@ -1163,7 +1165,7 @@ assert X._ytd_quarter({('2026-04-01', '2026-09-30'): {'revenue': 245.0}, ('2026-
 # screener.in's pages read again when NSE lists a newer results quarter than they show; its filing day decides the table
 now_ = time.time()
 sc_jun = {'C': {'b': 'C', 'k': '', 'q': sc_rows_(['Jun 2026'], 9.0), 'y': [], 'at': now_ - 3600},
-          'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Jun 2026'], 8.0), 'y': [], 'at': now_ - 3600}}
+          'S': {'b': 'S', 'k': '', 'q': sc_rows_(['Jun 2026'], 8.0), 'y': [], 'at': now_ - 3600}, 'v': X.SC_VERSION}
 st_l = {'newest': [['2026-09-30', 'S', 'F', '20261029', 'x.xml'], ['2026-09-30', '?', 'G', '20261016', 'g.xml']]}
 assert X.listed_newest(st_l) == 2026 * 12 + 9 and X.listed_behind(sc_jun, st_l) and not X.listed_behind(sc_jun, {})
 os.makedirs(os.path.dirname(X._sc_path('LSTD')), exist_ok=True)
@@ -1215,4 +1217,70 @@ finally:
     X.ltf_data.REPLACE_WAITS = saved_w
 assert len(tries) == 3 and tries[0].endswith('.%d.tmp' % os.getpid()), tries
 assert open(os.path.join(TMP, 'held', 'a.xml'), 'rb').read() == b'<x/>' and os.listdir(os.path.join(TMP, 'held')) == ['a.xml']
+# ------------------------------------------------------------------ 14. which basis a screener.in page is (owner, 23-Nov-2026)
+# RVNL: the website's standalone table showed the consolidated figures - screener.in's page has a line break between
+# 'Consolidated' and 'Figures', so the old reader took every consolidated page for a standalone one
+PE_ = sb.PEH
+real_c = ('<section id="quarters" class="card card-large"><div class="flex"><div><h2>Quarterly Results</h2>\n'
+          '<p class="sub">\n            Consolidated\n            Figures in Rs. Crores\n            /\n'
+          '            <a href="/company/RVNL/" class="">View Standalone</a>\n</p></div></div><table></table></section>')
+real_s = real_c.replace('Consolidated\n', 'Standalone\n').replace('View Standalone', 'View Consolidated')
+assert PE_._basis(real_c) == 'C' and PE_._basis(real_s) == 'S'
+assert PE_._basis(real_c.replace('Consolidated\n            Figures', 'Consolidated&nbsp;<b>Figures</b>')) == 'C'
+assert PE_._basis('<section id="quarters"><p>Figures in Rs. Crores</p><table></table></section>') == 'S', 'one set only'
+assert PE_._basis('<section id="quarters"><p><a>View Standalone</a></p><table></table></section>') == 'C'
+assert PE_._basis('<section id="quarters"><table></table></section>') == ''
+assert X.screener_parse(sc_page('Consolidated').replace('Consolidated Figures', 'Consolidated\n   Figures'))['b'] == 'C'
+
+
+def rv_rows(labels, revs, nps, mark=''):
+    return [[l, r] + [None] * 9 + [n, 1.0, mark] for l, r, n in zip(labels, revs, nps)]
+
+
+RQ = ['Mar 2026', 'Jun 2026', 'Sep 2026']
+rv_files = {'f%d' % k: qfile(e, r, n, 1.0) for k, (e, r, n) in enumerate([
+    ('2026-03-31', 6696.0, 182.0), ('2026-06-30', 4321.0, 160.0), ('2026-09-30', 4701.0, 254.0)])}
+X.save_stock({'sym': 'RVX', 'files': rv_files})
+os.makedirs(os.path.dirname(X._sc_path('RVX')), exist_ok=True)
+cons_page = {'b': 'S', 'k': '', 'at': 100.0, 'q': rv_rows(['Dec 2025'] + RQ, [4684, 6696, 4321, 4701], [324, 182, 160, 254]),
+             'y': rv_rows(['Mar 2025', 'Mar 2026'], [19923, 20412], [1100, 1050])}
+# an old file (no 'v'): the consolidated page kept as 'S'
+X._write_json(X._sc_path('RVX'), {'S': cons_page})
+tr = X.build(X.load_stock('RVX'), T23)
+assert tr['b'] == 'C' and 'o' not in tr, tr
+assert [(r[0], r[1], r[-1]) for r in tr['q']] == [('Dec 2025', 4684, 'r'), ('Mar 2026', 6696.0, ''), ('Jun 2026', 4321.0, ''),
+                                                    ('Sep 2026', 4701.0, '')], tr['q']
+assert [r[0] for r in tr['y']] == ['Mar 2025', 'Mar 2026'] and tr['y'][0][-1] == 'r', 'the page went to the consolidated table'
+assert X.screener_wants('RVX', {}, T23, time.time()), 'an old file: both pages read again'
+assert not X.screener_wants('RVX', {}, T23, time.time(), {'RVX': time.time() - 60}), '... not twice within 2 days'
+# an old page whose figures agree with no filing: left out until read again
+stand_old = {'b': 'S', 'k': '', 'at': 50.0, 'q': rv_rows(RQ, [6648, 4303, 4663], [212, 156, 215]), 'y': []}
+X._write_json(X._sc_path('RVX'), {'S': stand_old})
+assert X.page_basis(stand_old, {b: X._collect(list(rv_files.values()), b) for b in ('C', 'S')}) is None
+assert {r[-1] for r in X.build(X.load_stock('RVX'), T23)['q']} == {''}, 'standalone figures never in the consolidated table'
+# the pages read afresh: the consolidated one under C, the standalone one under S - two tables, each its own figures
+RV_C = sc_page('Consolidated').replace('Consolidated Figures', 'Consolidated\n  Figures')
+RV_S = sc_page('Standalone').replace('Standalone Figures', 'Standalone\n  Figures').replace('View Standalone', 'View Consolidated')
+X.keep_screener('RVX', RV_C, time.time())
+kept = X.load_sc('RVX')
+assert kept.get('v') == X.SC_VERSION and sorted(k for k in kept if k in ('C', 'S')) == ['C'], 'the old file started afresh'
+assert X.screener_wants('RVX', {}, T23, time.time()), 'a consolidated page without its standalone one: the standalone page wanted'
+X.keep_screener('RVX', RV_S, time.time())
+assert sorted(k for k in X.load_sc('RVX') if k in ('C', 'S')) == ['C', 'S'] and not X.screener_wants('RVX', {}, T23, time.time())
+FETCH2 = []
+X.bind(screener=lambda cfg, sym, cons=True: (FETCH2.append(cons), ('ok', RV_C) if cons else ('404', None))[1])
+P2 = []
+assert X.fetch_screener({}, 'NOS', T23, pause=lambda: P2.append(1)) == 2 and FETCH2 == [True, False] and P2 == [1]
+assert X.load_sc('NOS').get('noS') and not X.screener_wants('NOS', {}, T23, time.time()), 'no standalone page: not asked again'
+X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page([('Jun 2026', 122, 18.75, 1.88, 20), ('Sep 2026', 130, 18.75, 1.88, 19)])))
+# SAATVIKGL: listed in 2025; screener.in's standalone page shows the years before - the consolidated table takes them
+# before its first consolidated period ('r'), never after
+sv_c = {'b': 'C', 'k': '', 'q': rv_rows(['Jun 2025', 'Sep 2025'], [500, 520], [40, 42]), 'y': rv_rows(['Mar 2026'], [2100], [170])}
+sv_s = {'b': 'S', 'k': '', 'q': rv_rows(['Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025'], [400, 410, 420, 430, 440], [30, 31, 32, 33, 34]),
+        'y': rv_rows(['Mar 2021', 'Mar 2022', 'Mar 2023', 'Mar 2024', 'Mar 2025', 'Mar 2026'], [900, 1000, 1200, 1400, 1650, 1800], [50, 60, 70, 80, 90, 100])}
+tv = X.build({'sym': 'SVX', 'files': {}}, T23, sc={'C': sv_c, 'S': sv_s, 'v': X.SC_VERSION})
+assert tv['b'] == 'C' and [(r[0], r[1]) for r in tv['q']] == [('Sep 2024', 400), ('Dec 2024', 410), ('Mar 2025', 420), ('Jun 2025', 500), ('Sep 2025', 520)], tv['q']
+assert [(r[0], r[1]) for r in tv['y']] == [('Mar 2021', 900), ('Mar 2022', 1000), ('Mar 2023', 1200), ('Mar 2024', 1400), ('Mar 2025', 1650), ('Mar 2026', 2100)], tv['y']
+assert tv['o']['b'] == 'S' and tv['o']['q'][-1][1] == 440, 'the standalone table on its own'
+print('OK 14')
 print('OK')

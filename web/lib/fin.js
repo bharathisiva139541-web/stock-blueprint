@@ -20,7 +20,11 @@
      bases(fin)            -> ['C'] / ['S'] / ['S', 'C'] ... the tables it has, the one shown first first
      pick(fin, basis)      -> the table of that basis (fin itself, or fin.o with the shared files / at / bw)
      view(fin, kind)       -> null | { kind, basis, bank, note, labels, flags, rows: [{k, label, kind, vals}] } (rows with
-                              no figure left out; kind 'q' quarters / 'y' years)
+                              no figure left out; kind 'q' quarters / 'y' years); the years end with a 'TTM' column
+                              (flag 't', ttmFrom 'Dec 2025 - Sep 2026', ttmPrev = the 4 quarters before) = the sum of the
+                              newest 4 quarters when they follow each other (owner, 23-Nov-2026: "include TTM to PL to all
+                              stocks" - screener.in's own way)
+     ttm(fin)              -> null | { vals: [12 figures], from, to, prev: [12 figures] | null }
      growth(view, k, lag)  -> [% change vs lag periods before, ...] (lag 4 = a year for quarters, 1 for years)
      cell(v, kind)         -> the text of one figure
      csv(view, sym)        -> [[...], ...] rows for a CSV file
@@ -44,6 +48,45 @@
 
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
   var FLAGS = { c: 1, d: 1, s: 1, q: 1, r: 1 };
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function monthOf(label) {
+    var m = /^([A-Za-z]{3}) (\d{4})$/.exec(String(label));
+    return m && MON.indexOf(m[1]) >= 0 ? +m[2] * 12 + MON.indexOf(m[1]) : null;
+  }
+  var SUMS = { rev: 1, exp: 1, op: 1, oi: 1, int: 1, dep: 1, pbt: 1, np: 1, eps: 1 };
+
+  /** Four quarters (rows, oldest first) -> the 12 figures of their sum, screener.in's way: amounts and EPS added
+      (all 4 needed), exceptional items added where filed, OPM % from the sums, Tax % = the 4 quarters' tax / their PBT. */
+  function sum4(rows) {
+    var col = function (k) { var i = ROWS.map(function (r) { return r.k; }).indexOf(k) + 1; return rows.map(function (r) { return r[i]; }); };
+    var all = function (xs) { return xs.every(isNum); };
+    var add = function (xs) { return Math.round(xs.reduce(function (a, b) { return a + b; }, 0) * 100) / 100; };
+    var out = {};
+    Object.keys(SUMS).forEach(function (k) { var xs = col(k); out[k] = all(xs) ? add(xs) : null; });
+    var exc = col('exc');
+    out.exc = exc.some(isNum) ? add(exc.map(function (x) { return isNum(x) ? x : 0; })) : null;
+    out.opm = isNum(out.op) && isNum(out.rev) && out.rev !== 0 ? Math.round(out.op / out.rev * 100) : null;
+    var pbt = col('pbt'), tx = col('taxp');
+    out.taxp = all(pbt) && all(tx) && out.pbt ? Math.round(pbt.reduce(function (a, b, i) { return a + b * tx[i] / 100; }, 0) / out.pbt * 100) : null;
+    return ROWS.map(function (r) { return out[r.k]; });
+  }
+
+  function ttm(fin) {
+    if (!fin || typeof fin !== 'object') return null;
+    var q = (Array.isArray(fin.q) ? fin.q : []).filter(function (r) { return Array.isArray(r) && LABEL_RE.test(String(r[0])); });
+    var run = function (end) {               // 4 quarters ending at q[end], each 3 months after the one before
+      if (end < 3) return null;
+      var part = q.slice(end - 3, end + 1);
+      for (var i = 1; i < 4; i++) if (monthOf(part[i][0]) - monthOf(part[i - 1][0]) !== 3) return null;
+      return part;
+    };
+    var cur = run(q.length - 1);
+    if (!cur) return null;
+    var ys = (Array.isArray(fin.y) ? fin.y : []).map(function (r) { return Array.isArray(r) ? monthOf(r[0]) : null; }).filter(isNum);
+    if (ys.length && Math.max.apply(null, ys) > monthOf(cur[3][0])) return null;   // years newer than the quarters: none
+    var prev = q.length >= 8 && monthOf(q[q.length - 4][0]) - monthOf(q[q.length - 5][0]) === 3 ? run(q.length - 5) : null;
+    return { vals: sum4(cur), from: String(cur[0][0]), to: String(cur[3][0]), prev: prev ? sum4(prev) : null };
+  }
 
   function other(fin) { return fin && fin.o && typeof fin.o === 'object' && (fin.o.b === 'C' || fin.o.b === 'S') && fin.o.b !== fin.b ? fin.o : null; }
   function bases(fin) {
@@ -61,18 +104,25 @@
     if (!fin || typeof fin !== 'object') return null;
     var k = kind === 'y' ? 'y' : 'q';
     var src = (Array.isArray(fin[k]) ? fin[k] : []).filter(function (r) { return Array.isArray(r) && LABEL_RE.test(String(r[0])); });
-    if (!src.length) return null;
-    var rows = [], bank = fin.k === 'bank';
+    var t = k === 'y' ? ttm(fin) : null;
+    if (!src.length && !t) return null;
+    var rows = [], bank = fin.k === 'bank', prev = {};
     ROWS.forEach(function (row, i) {
       var vals = src.map(function (r) { return isNum(r[i + 1]) ? r[i + 1] : null; });
+      if (t) vals.push(isNum(t.vals[i]) ? t.vals[i] : null);
+      if (t && t.prev) prev[row.k] = t.prev[i];
       if (vals.some(isNum)) rows.push({ k: row.k, label: (bank && BANK[row.k]) || row.label, kind: row.kind, vals: vals });
     });
+    var labels = src.map(function (r) { return String(r[0]); }), flags = src.map(function (r) { var f = r[ROWS.length + 1]; return FLAGS[f] ? f : ''; });
+    if (t) { labels.push('TTM'); flags.push('t'); }
     return {
       kind: k, basis: fin.b === 'S' ? 'S' : 'C', at: fin.at || '', files: fin.files || 0, bank: bank,
       note: typeof fin.note === 'string' ? fin.note : '',
-      labels: src.map(function (r) { return String(r[0]); }),
+      labels: labels,
       bw: typeof fin.bw === 'string' ? fin.bw : '',
-      flags: src.map(function (r) { var f = r[ROWS.length + 1]; return FLAGS[f] ? f : ''; }),
+      flags: flags,
+      ttmFrom: t ? t.from + ' - ' + t.to : '',
+      ttmPrev: t && t.prev ? prev : null,
       rows: rows
     };
   }
@@ -82,7 +132,7 @@
     var row = v && v.rows.filter(function (r) { return r.k === key; })[0];
     if (!row) return [];
     return row.vals.map(function (x, i) {
-      var b = i >= lag ? row.vals[i - lag] : null;
+      var b = v.flags[i] === 't' ? (v.ttmPrev ? v.ttmPrev[key] : null) : i >= lag ? row.vals[i - lag] : null;
       return isNum(x) && isNum(b) && b !== 0 ? (x - b) / Math.abs(b) * 100 : null;
     });
   }
@@ -103,12 +153,13 @@
     out.push(['From'].concat(v.flags.map(function (f) {
       return f === 'c' ? 'a later filing (comparison column)' : f === 's' ? 'standalone filing (before the first consolidated one)'
         : f === 'd' ? 'worked out from the year-to-date figures of other filings'
-        : f === 'q' ? 'the sum of its 4 quarters' : f === 'r' ? 'screener.in (no NSE filing figures)' : 'its own filing';
+        : f === 'q' ? 'the sum of its 4 quarters' : f === 'r' ? 'screener.in (no NSE filing figures)'
+        : f === 't' ? 'the sum of the last 4 quarters (' + v.ttmFrom + ')' : 'its own filing';
     })));
     if (v.bw) out.push([v.bw]);
     if (v.note) out.push([v.note]);
     return out;
   }
 
-  return { ROWS: ROWS, bases: bases, pick: pick, view: view, growth: growth, cell: cell, csv: csv };
+  return { ROWS: ROWS, bases: bases, pick: pick, view: view, ttm: ttm, growth: growth, cell: cell, csv: csv };
 });

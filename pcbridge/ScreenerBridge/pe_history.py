@@ -142,10 +142,21 @@ def _table_rows(sec):
 
 
 def _basis(sec):
-    txt = re.sub(r'<[^>]+>', ' ', sec[:1500])
+    """The page's basis from the words above its table: 'Consolidated Figures in Rs. Crores / View Standalone' = 'C',
+    'Standalone Figures ... / View Consolidated' or a plain 'Figures in Rs. Crores' (one set only) = 'S'. Spaces /
+    line breaks / tags between the words count as one space (owner, 23-Nov-2026: RVNL's standalone table showed the
+    consolidated figures - screener.in's page puts a line break between 'Consolidated' and 'Figures', so every
+    consolidated page was taken for a standalone one; the sheet's own reader squeezes the spaces already)."""
+    cut = sec.find('<table')
+    head = sec[:cut] if 0 < cut < 6000 else sec[:3000]
+    txt = re.sub(r'\s+', ' ', re.sub(r'&nbsp;', ' ', re.sub(r'<[^>]+>', ' ', head), flags=re.I))
     if re.search(r'Consolidated Figures', txt, re.I):
         return 'C'
-    if re.search(r'Standalone Figures', txt, re.I) or re.search(r'Figures in', txt, re.I):
+    if re.search(r'Standalone Figures', txt, re.I):
+        return 'S'
+    if re.search(r'View Standalone', txt, re.I):
+        return 'C'
+    if re.search(r'View Consolidated', txt, re.I) or re.search(r'Figures in', txt, re.I):
         return 'S'
     return ''
 
