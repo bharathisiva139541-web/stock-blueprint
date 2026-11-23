@@ -4659,7 +4659,7 @@ def main(argv):
             log('Not set up yet - run Setup.bat first.')
             return 1
         syms = [a.strip().upper() for a in argv[2:] if a.strip()]
-        print('EPS Growth Target Lab: target = TTM EPS x EPS growth %% - did the price reach it after the results?')
+        print('EPS Growth Target Lab: target = TTM EPS x EPS growth % - did the price reach it after the results?')
         print('Reading NSE\'s result filings of the last %d results seasons (the results dates) - the first time takes a while ...'
               % int(cfg.get('eps_target_quarters') or ET.QUARTERS))
         n = epst_step(dict(cfg, eps_target=True), force=True, backfill=9999)
