@@ -1031,6 +1031,27 @@ assert [p_['items'][0]['sym'] for p_ in CALLS2 if p_['op'] == 'put'] == ['SCO'],
 assert X.load_state()['scTry'].get('SCO'), 'remembered'
 del FETCH[:]
 assert X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23)['pages'] == 0 and FETCH == [], 'not again'
+# a stock read from NSE in the same run whose new filing (Sep 2026) is newer than its kept page: both pages read now
+QH[:] = QH_OLD[:-1] + ['Jun 2026']
+X.keep_screener('MTN', sc_page('Consolidated'), time.time())            # a page of today, ending Jun 2026
+QH[:] = old_qh
+X.save_stock({'sym': 'MTN', 'files': {'s4': vfile('2026-09-30', 'S', 104.0, '20261106180000')}, 'listed': time.time()})
+assert not X.screener_wants('MTN', {}, T23, time.time()), 'before the NSE read: the page is up to date'
+real_ps, real_due = X.process_stock, X.due
+X.process_stock = lambda nse, sym, today=None, say=None: (dict(X.load_stock(sym), table=X.build(X.load_stock(sym), today)), 0)
+X.due = lambda sym, st, today, now: sym == 'MTN'
+try:
+    CALLS2[:] = []
+    del FETCH[:]
+    X.save_state({})
+    api_mtn = lambda cfg, action, payload=None, tries=3, timeout=120: (
+        {'ok': True, 'syms': ['MTN']} if payload['op'] == 'syms' else {'ok': True, 'stored': len(payload['items'])})
+    QH[:] = QH_OLD[:-1] + ['Jun 2026']                                  # screener.in still shows Jun 2026
+    r13 = X.run_all({'url': 'x'}, api_mtn, gap=0, sleep=nap, today=T23)
+finally:
+    X.process_stock, X.due = real_ps, real_due
+    QH[:] = old_qh
+assert r13['done'] == 1 and FETCH == [('MTN', True), ('MTN', False)], (r13, FETCH)
 X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page([('Jun 2026', 122, 18.75, 1.88, 20), ('Sep 2026', 130, 18.75, 1.88, 19)])))
 
 # e) the round's NSE steps only: nse_busy.json while they run

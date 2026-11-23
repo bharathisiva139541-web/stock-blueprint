@@ -1606,7 +1606,9 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
                     if st.get('table'):
                         pend += 1
                     state['changed'] = clock()
-            if sc_on and sym in sc_todo and not screener_busy():
+            # a stock just read from NSE is looked at again: its newest filing may be newer than its screener.in page
+            # (owner, 23-Nov-2026, MTARTECH: Sep 2026 standalone only - the standalone page the same run, not a day later)
+            if sc_on and (sym in sc_todo or st is not None) and not screener_busy():
                 st = st or load_stock(sym)
                 if screener_wants(sym, st, today, clock(), tried):
                     wait_s = SC_GAP_S - (clock() - last_page)
