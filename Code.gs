@@ -9065,6 +9065,9 @@ function doPost(e) {
     if (req.action === 'epst') {
       return ab_bridgeJson_(ab_epstFromBridge_(req));      // the EPS Growth Target Lab, a quarter at a time -> EPS_Target (Code2.gs)
     }
+    if (req.action === 'recos') {
+      return ab_bridgeJson_(ab_recosFromBridge_(req));     // the Analyst Targets: Main's names / the brokers' recommendations (Code2.gs)
+    }
     if (req.action === 'hist') {
       return ab_bridgeJson_(ab_h60FromBridge_(req));
     }
@@ -9273,6 +9276,8 @@ function ab_feedSite_(req) {
   if (part === 'fin') return ab_bridgeJson_(ab_finForSite_(req.sym));
   // the EPS Growth Target Lab (23-Nov-2026): the quarters' figures + one quarter's rows, packed (api/epstarget unpacks them)
   if (part === 'epst') return ab_bridgeJson_(ab_epstForSite_(req.q));
+  // the Analyst Targets (24-Nov-2026): every broker recommendation since 1-Oct-2026, packed (api/recos unpacks them)
+  if (part === 'recos') return ab_bridgeJson_(ab_recosForSite_());
   if (AB_SITE_FEED_PARTS.indexOf(part) === -1) return ab_bridgeJson_({ ok: false, error: 'unknown part' });
   try { ab_siteFeedTriggerCheck_(); } catch (e) { /* never break the answer over the trigger */ }
   try {

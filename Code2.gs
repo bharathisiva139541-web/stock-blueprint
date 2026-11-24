@@ -15021,3 +15021,85 @@ function ab_epstForSite_(q) {
   out.blob = cells.map(function (v) { return String(v || ''); }).join('');
   return out;
 }
+
+/*****************************************************************
+ * ANALYST TARGETS (owner, 24-Nov-2026, JLHL: Prabhudas Lilladher's "Buy Jupiter Life Line Hospitals; target of Rs 330"
+ * reached on 24-Nov - "If i know for which stocks which analyst give recommendations to buy with target price from october
+ * 2026, it will be helpful ... it can be our daily check ... cover maximum Analysts recommendations"; the websites he named:
+ * Moneycontrol brokerage research, Business Standard research reports, DSIJ broker reports - "30-day, 60-day and 90-day
+ * returns, maximum favourable excursion and maximum adverse excursion ... which brokerage has historically been better").
+ * The laptop (pcbridge/ScreenerBridge/analyst_recos.py) reads the websites each round, matches the companies to Main's
+ * stocks (op 'names' = Main's SYMBOL -> StockName) and works out what the Kite daily candles did after every recommendation;
+ * op 'put' {made, upto, sum, blob (base64 of the gzip of {cols, rows}), engine} -> the hidden tab Analyst_Recos (one row, the
+ * blob in 45,000-character cells). The website asks doPost action 'site' part 'recos' (the read-only feed token) through
+ * Vercel api/recos, which unpacks and checks the rows.
+ *****************************************************************/
+const AB_RECOS_SHEET = 'Analyst_Recos';
+const AB_RECOS_HEADERS = ['Made', 'Prices Up To', 'Summary (JSON)', 'Parts', 'Data'];
+const AB_RECOS_ENGINE = 1;
+const AB_RECOS_MAX_PARTS = 80;
+
+function ab_recosFromBridge_(req) {
+  const op = String(req.op || '');
+  if (op === 'names') return { ok: true, names: ab_itdNames_() };
+  if (op === 'put') return ab_recosPut_(req);
+  return { ok: false, error: 'unknown op' };
+}
+
+/** The laptop's figures (numbers / short codes only - nothing else passes to the website). */
+function ab_recosSumClean_(s) {
+  s = s && typeof s === 'object' ? s : {};
+  const int = function (v) { const n = Math.round(Number(v)); return isFinite(n) && n >= 0 ? n : 0; };
+  const day = function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : ''; };
+  const out = { recos: int(s.recos), ok: int(s.ok), brokers: int(s.brokers), stocks: int(s.stocks), buy: int(s.buy), why: {}, src: {},
+    from: day(s.from), to: day(s.to) };
+  ['nosym', 'price', 'wait', 'old'].forEach(function (k) { if (s.why && s.why[k]) out.why[k] = int(s.why[k]); });
+  ['mc', 'bs', 'dsij'].forEach(function (k) { if (s.src && s.src[k]) out.src[k] = int(s.src[k]); });
+  return out;
+}
+
+function ab_recosSheet_(make) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_RECOS_SHEET);
+  if (!sh && make) {
+    sh = ss.insertSheet(AB_RECOS_SHEET);
+    sh.getRange(1, 1, 1, AB_RECOS_HEADERS.length).setValues([AB_RECOS_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+/** Every recommendation since 1-Oct-2026 from the laptop -> row 2 (replaced). */
+function ab_recosPut_(req) {
+  if (!(Number(req.engine) >= AB_RECOS_ENGINE)) return { ok: false, error: 'an older laptop program sent the analyst targets - not kept' };
+  const blob = String(req.blob || '');
+  if (!blob || !AB_EPST_BLOB_RE.test(blob)) return { ok: false, error: 'no data' };
+  const parts = [];
+  for (let i = 0; i < blob.length; i += AB_EPST_PART) parts.push(blob.slice(i, i + AB_EPST_PART));
+  if (parts.length > AB_RECOS_MAX_PARTS) return { ok: false, error: 'too big (' + blob.length + ' characters)' };
+  const iso = function (v) { const t = String(v || ''); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 19) : ''; };
+  const row = [iso(req.made), iso(req.upto).slice(0, 10), JSON.stringify(ab_recosSumClean_(req.sum)), parts.length].concat(parts);
+  // (doPost holds the script lock for every bridge action)
+  const sh = ab_recosSheet_(true);
+  const width = Math.max(sh.getLastColumn(), row.length);
+  const full = row.concat(new Array(width - row.length).fill(''));     // fewer parts leave no old ones behind
+  sh.getRange(2, 1, 1, width).setNumberFormat('@').setValues([full.map(function (v) { return String(v); })]);
+  return { ok: true, parts: parts.length };
+}
+
+/** doPost action 'site' part 'recos': {made, upto, sum, blob}. */
+function ab_recosForSite_() {
+  const out = { ok: true, made: '', upto: '', sum: ab_recosSumClean_({}), blob: '' };
+  const sh = ab_recosSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const head = sh.getRange(2, 1, 1, 4).getValues()[0];
+  const n = Math.max(0, Math.min(AB_RECOS_MAX_PARTS, Math.round(Number(head[3]) || 0)));
+  let sum = {};
+  try { sum = JSON.parse(String(head[2] || '{}')); } catch (e) { sum = {}; }
+  out.made = String(head[0] || '');
+  out.upto = String(head[1] || '');
+  out.sum = ab_recosSumClean_(sum);
+  out.blob = n ? sh.getRange(2, 5, 1, n).getValues()[0].map(function (v) { return String(v || ''); }).join('') : '';
+  return out;
+}

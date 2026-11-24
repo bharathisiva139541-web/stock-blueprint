@@ -760,6 +760,7 @@ details.card > summary { cursor: pointer; }
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
 }
 .tile .note2 { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.tile .value.rc-small { font-size: 17px; letter-spacing: -0.01em; }     /* several numbers in one tile (Analyst Targets) */
 .tile.hero {
   grid-column: span 2; border-color: transparent; display: flex; flex-direction: column; justify-content: center;
   background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad) border-box;

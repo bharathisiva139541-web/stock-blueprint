@@ -57,6 +57,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py xbrlhistcheck SYMBOL ...  5 years of a stock's NSE XBRL result filings: the table + screener.in side by side (nothing sent)
   python screener_bridge.py xbrlhistory  the NSE XBRL result filings of every Main stock (5 years) now, then the tables -> the sheet
   python screener_bridge.py epstarget [SYMBOL ...]  EPS Growth Target Lab now: every results season's dates from NSE, the target (TTM EPS x EPS growth %) of every quarter and whether the price reached it -> the sheet; SYMBOL = that stock's quarters printed
+  python screener_bridge.py analysts [SYMBOL ...]   Analyst targets now: the brokers' recommendations of Moneycontrol / Business Standard / DSIJ back to 1-Oct-2026, what the price did after each -> the sheet; SYMBOL = that stock's recommendations printed
+  python screener_bridge.py analystcheck            Analyst targets check: page 1 of every list, what came back and the recommendations found (nothing sent)
   python screener_bridge.py histpe [PAGES]  Historical PE now: up to PAGES (200) more screener.in pages for the EPS history, then the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
@@ -180,6 +182,8 @@ PEH.ON_PAGE.append(XH.keep_screener)   # screener.in's tables fill the periods N
 PEH.WANT_PAGE = XH.wants_screener       # ... so a page read before them is read once more
 import eps_target as ET       # noqa: E402  (owner, 23-Nov-2026: the EPS Growth Target Lab - did the TTM EPS x growth % target come?)
 ET.log = lambda m: log(m)
+import analyst_recos as AR    # noqa: E402  (owner, 24-Nov-2026: the brokers' Buy calls + targets and what the price did after them)
+AR.log = lambda m: log(m)
 
 
 def nse_holidays():
@@ -3905,6 +3909,7 @@ def run_once(cfg):
             run_state_save(state)
             histpe_step(cfg)
             epst_step(cfg)
+            recos_step(cfg)
             return 0
 
         pending_items, posted, fails_in_row, aborted = [], 0, 0, False
@@ -3989,6 +3994,7 @@ def run_once(cfg):
             run_state_save(state)
         histpe_step(cfg)
         epst_step(cfg)
+        recos_step(cfg)
         log('Run finished.')
         return 0
     finally:
@@ -4078,6 +4084,18 @@ def epst_step(cfg, force=False, backfill=None, gap=None, xbrl_limit=None):
     return ET.step(cfg, api, itd.backtest_lab, XH.eps_inputs, epst_screener, xbrl_changed=xch,
                    peh_changed=PEH.store().changed, force=force, backfill=backfill,
                    gap=ET.ANN_GAP_S if gap is None else gap, xbrl_limit=xbrl_limit, xbrl_gap=XH.gap_of(cfg))
+
+
+def recos_step(cfg, back=False, force=False):
+    """Analyst targets (analyst_recos.py): the newest brokers' recommendations of Moneycontrol / Business Standard / DSIJ,
+    matched to Main's stocks, what the price did after each -> the sheet. Never raises."""
+    if not cfg.get('analyst_targets', True):
+        return None
+    try:
+        return AR.step(cfg, api, itd.backtest_lab, back=back, force=force)
+    except Exception as e:
+        log('Analyst targets: %s' % e)
+        return None
 
 
 def histpe_check(cfg, syms, out=print):
@@ -4344,7 +4362,7 @@ def data_start(cfg):
     return use_data_place(cfg)[0]
 
 
-DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck', 'epstarget')    # the commands that read / write the big data
+DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck', 'epstarget', 'analysts')    # the commands that read / write the big data
 
 
 def cmd_datafolder(cfg, args=(), ask=input, out=print):
@@ -4654,6 +4672,42 @@ def main(argv):
             PEH.save()
             release_lock()
         return 0 if n is not None else 1
+    if cmd == 'analysts':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        syms = [a.strip().upper() for a in argv[2:] if a.strip()]
+        print('Analyst targets: the brokers\' recommendations of Moneycontrol, Business Standard and DSIJ since %s - '
+              'every page back to that day the first time (one page every %d seconds) ...' % (AR.FROM_DAY, int(AR.GAP_S)))
+        n = recos_step(dict(cfg, analyst_targets=True), back=True, force=True)
+        if syms:
+            try:
+                st = AR._load(AR.STATE_PATH, {})
+                _u, rows = AR.outcomes(AR.load_store(), AR.Names(st.get('names') or {}), itd.backtest_lab, date.today())
+                for sym in syms:
+                    print('')
+                    for line in AR.words(rows, sym) or ['%s: no broker recommendation of it since %s' % (sym, AR.FROM_DAY)]:
+                        print(line)
+            except Exception as e:
+                print('Could not work out %s: %s' % (', '.join(syms), e))
+        print('')
+        print('The website: Analyst Targets page (within about 30 minutes).')
+        return 0 if n is not None else 1
+    if cmd == 'analystcheck':
+        print('Analyst targets check: page 1 of every list of Moneycontrol, Business Standard and DSIJ - what came back and '
+              'the recommendations found in it (nothing is sent) ...')
+        names = {}
+        if cfg.get('url') and cfg.get('token'):
+            try:
+                ans = api(cfg, 'recos', {'op': 'names'}, tries=1, timeout=90)
+                names = ans.get('names') if ans.get('ok') and isinstance(ans.get('names'), dict) else {}
+            except RuntimeError:
+                names = {}
+        if not names:
+            print('(your Main stocks\' names were not read from the sheet - the matching to symbols is not shown)')
+        AR.check(names=names)
+        print('Send me everything above (copy the window).')
+        return 0
     if cmd == 'epstarget':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')

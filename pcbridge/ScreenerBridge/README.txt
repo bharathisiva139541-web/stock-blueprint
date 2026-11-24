@@ -714,3 +714,16 @@ EPS TARGET LAB (since 23-Nov-2026)
    sessions after the entry before the first one that could react to the next quarter's results (no date found for
    them: the last day SEBI allows - 45 days after the quarter, 60 for March). EpsTargetNow.bat SYMBOL says it too:
    "next results 2026-10-28 17:15: 64 session(s) after the entry before them - 80% of the way reached before them".
+
+ANALYST TARGETS (since 24-Nov-2026)
+ - Each full round reads the newest pages of three websites' broker-research lists - Moneycontrol, Business Standard,
+   DSIJ - finds the brokers' calls in them ("Buy Jupiter Life Line Hospitals; target of Rs 330: Prabhudas Lilladher"),
+   matches each company to your Main stocks and works out what the price did after it (Kite daily candles): did it
+   reach the target, how fast, the best move / worst dip, the close after 30 / 60 / 90 sessions. -> the sheet (hidden
+   tab Analyst_Recos) -> the website's page "Analyst Targets" (broker scorecard, new calls, every call).
+ - AnalystNow.bat = everything now, back to 1-Oct-2026 the first time (one page every 5 seconds, a few minutes).
+   AnalystNow.bat JLHL also prints that stock's calls.
+ - AnalystCheck.bat = what page 1 of every list gave (nothing is sent). The program was written without seeing these
+   websites (they could not be reached from where it was written): if the website page stays empty, run
+   AnalystCheck.bat and send what it prints - the pages it read are kept in the folder analyst_check.
+ - To switch it off: in config.json add  "analyst_targets": false
