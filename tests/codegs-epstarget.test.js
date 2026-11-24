@@ -27,40 +27,41 @@ function env() {
 // a row as eps_target.py packs it (COLS order)
 function row(sym, o) {
   const r = Object.assign({ sym: sym, st: 'ok', why: '', b: 'C', fl: '--------', eps: [0.37, 1.71, 4.34, 3.02, 3.61, 4.67, 5.17, 6.81], ttm: 20.26,
-    prev: 9.44, g: 114.62, tgt: 2322.17, ann: '2026-07-24 16:05', src: 'nse', ed: '2026-07-27', ep: 1624.1, pre: 1600, o0: 1610, n: 85, hit: 75,
-    hitd: '2026-11-11', mx: [70, 85, 101, 101, 101], dd: [-3, -3, -3, -3, -3], cl: [10, 20, null, null, null], ix: [1, 2, null, null, null], now: 46,
-    ph: [1, 2, 3], pc: [1, 2, 3] }, o || {});
+    prev: 9.44, g: 114.62, tgt: 2322.17, ann: '2026-07-24 16:05', src: 'nse', ed: '2026-07-27', ep: 1624.1, pre: 1600, o0: 1610, n: 85,
+    kp: [60, 68, 75], kd: ['2026-10-21', '2026-10-31', '2026-11-11'], pg: [40, 80, 120, 120, 120], hh: [17, 34, 50, 50, 50], dd: [-3, -3, -3, -3, -3],
+    cl: [10, 20, null, null, null], ix: [1, 2, null, null, null], now: 46, ph: [1, 2, 3], pc: [1, 2, 3] }, o || {});
   return T.COLS.map((k) => r[k]);
 }
 function pack(rows) {
   return zlib.gzipSync(Buffer.from(JSON.stringify({ cols: T.COLS, rows: rows }))).toString('base64');
 }
-const SUM = { stocks: 3, ok: 2, target: 2, above: 0, why: { fell: 1, bogus: 4 }, win: { 30: [2, 0, 0, 0, 0], 60: [2, 0, 1, 0, 0], 90: [1, 1, 0, 1, 1], x: [1] },
+const SUM = { stocks: 3, ok: 2, target: 2, down: 1, why: { fell: 1, nofiling: 2, bogus: 4 },
+  win: { 30: [2, 0, 0, 0, 0, 0], 60: [2, 1, 0, 0, 0, 0], 90: [1, 1, 1, 1, 1, 1], x: [1] }, dwin: { 30: [1, 1, 1, 0, 0, 0] },
   medG: 114.62, medUp: 43.0, medN: 85, ready: true, ann: { nse: 2, evil: 1 } };
 
 test('op put: a quarter a row (replaced, newest 16 by quarter end), checked; op list; refusals', () => {
   const e = env();
   const blob = pack([row('LAURUSLABS'), row('FLAT', { st: 'x', why: 'fell', tgt: null, g: -5 })]);
   const r = e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00',
-    upto: '2026-11-20', sum: SUM, blob: blob, engine: 1 });
+    upto: '2026-11-20', sum: SUM, blob: blob, engine: 2 });
   assert.deepStrictEqual(r, { ok: true, stored: 'Jun 2026', parts: 1 });
   assert.strictEqual(e.post({ token: 'wrong', action: 'epst', op: 'list' }).ok, false, 'the bridge token');
   assert.deepStrictEqual(e.post({ token: TOKEN, action: 'epst', op: 'list' }).quarters, [{ q: 'Jun 2026', made: '2026-11-23T10:00:00', upto: '2026-11-20' }]);
-  for (const bad of [{ q: 'Jul 2026' }, { engine: 0 }, { blob: 'not base64!' }, { blob: '' }]) {
-    const x = e.post(Object.assign({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', blob: blob, engine: 1 }, bad));
+  for (const bad of [{ q: 'Jul 2026' }, { engine: 1 }, { blob: 'not base64!' }, { blob: '' }]) {      // engine 1 = the first laptop program
+    const x = e.post(Object.assign({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', blob: blob, engine: 2 }, bad));
     assert.strictEqual(x.ok, false, JSON.stringify(bad));
   }
   // a big quarter in parts, then a smaller one in the same row: no old part left behind
   const big = 'A'.repeat(100000);
-  assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', blob: big, engine: 1 }).parts, 3);
-  assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', blob: 'QUJD', engine: 1 }).parts, 1);
+  assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', blob: big, engine: 2 }).parts, 3);
+  assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', blob: 'QUJD', engine: 2 }).parts, 1);
   const s = e.post({ token: FEED, action: 'site', part: 'epst', q: 'Sep 2026' });
   assert.strictEqual(s.blob, 'QUJD', 'only the new part');
   // 18 quarters -> the newest 16 by quarter end
   for (let y = 2021; y <= 2025; y++) {
     for (const m of ['Mar', 'Jun', 'Sep', 'Dec']) {
       const end = { Mar: '03-31', Jun: '06-30', Sep: '09-30', Dec: '12-31' }[m];
-      e.post({ token: TOKEN, action: 'epst', op: 'put', q: m + ' ' + y, end: y + '-' + end, blob: 'QUJD', engine: 1 });
+      e.post({ token: TOKEN, action: 'epst', op: 'put', q: m + ' ' + y, end: y + '-' + end, blob: 'QUJD', engine: 2 });
     }
   }
   const qs = e.post({ token: TOKEN, action: 'epst', op: 'list' }).quarters.map((x) => x.q);
@@ -73,16 +74,18 @@ test('site part epst: the quarters + one quarter\'s blob (asked, else the newest
   const e = env();
   assert.deepStrictEqual(e.post({ token: FEED, action: 'site', part: 'epst' }), { ok: true, quarters: [], q: '', blob: '' }, 'nothing yet');
   const b1 = pack([row('LAURUSLABS')]);
-  e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', upto: '2026-11-20', sum: SUM, blob: b1, engine: 1 });
-  e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', fy: 'Q2 FY27', sum: Object.assign({}, SUM, { ready: false }), blob: 'QUJD', engine: 1 });
+  e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', upto: '2026-11-20', sum: SUM, blob: b1, engine: 2 });
+  e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', fy: 'Q2 FY27', sum: Object.assign({}, SUM, { ready: false }), blob: 'QUJD', engine: 2 });
   const s = e.post({ token: FEED, action: 'site', part: 'epst' });
   assert.strictEqual(s.q, 'Jun 2026', 'the newest quarter whose results mostly had 30 sessions (the owner\'s Q1), not the running one');
   assert.strictEqual(s.blob, b1);
   assert.deepStrictEqual(s.quarters.map((x) => [x.q, x.fy, x.sum.ready]), [['Sep 2026', 'Q2 FY27', false], ['Jun 2026', 'Q1 FY27', true]]);
   const sum = s.quarters[1].sum;
-  assert.deepStrictEqual(sum.why, { fell: 1 }, 'unknown reasons dropped');
+  assert.deepStrictEqual(sum.why, { fell: 1, nofiling: 2 }, 'unknown reasons dropped');
   assert.deepStrictEqual(sum.ann, { nse: 2 });
   assert.deepStrictEqual(Object.keys(sum.win), ['30', '60', '90']);
+  assert.deepStrictEqual(sum.dwin, { 30: [1, 1, 1, 0, 0, 0] });
+  assert.strictEqual(sum.down, 1);
   assert.strictEqual(e.post({ token: FEED, action: 'site', part: 'epst', q: 'Sep 2026' }).blob, 'QUJD');
   const miss = e.post({ token: FEED, action: 'site', part: 'epst', q: 'Mar 2020' });
   assert.ok(miss.ok && miss.q === 'Mar 2020' && miss.blob === '' && miss.quarters.length === 2, 'a quarter not kept: no rows');
@@ -93,9 +96,9 @@ test('site part epst: the quarters + one quarter\'s blob (asked, else the newest
 test('api/epstarget: unpacks + checks the rows, caches on the CDN; bad quarter 400; no secret leaks', async () => {
   const e = env();
   const evil = row('EVIL', { sym: 'a b <script>', ann: 'x@y.com' });
-  const odd = row('ODD', { why: 'nonsense', fl: 'XYZ', src: 'moneycontrol', eps: ['=1', 2], ann: 'mail me@x.com', hitd: 'soon', mx: 'x' });
+  const odd = row('ODD', { why: 'nonsense', fl: 'XYZ', src: 'moneycontrol', eps: ['=1', 2], ann: 'mail me@x.com', kd: ['soon', 'x@y.com'], pg: 'x' });
   e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20',
-    sum: SUM, blob: pack([row('LAURUSLABS'), evil, odd, 'junk']), engine: 1 });
+    sum: SUM, blob: pack([row('LAURUSLABS'), evil, odd, 'junk']), engine: 2 });
   const calls = [];
   const fetch = async (url, init) => {
     calls.push(JSON.parse(init.body));
@@ -119,9 +122,12 @@ test('api/epstarget: unpacks + checks the rows, caches on the CDN; bad quarter 4
   assert.deepStrictEqual(r.body.cols, T.COLS);
   assert.deepStrictEqual(r.body.rows.map((x) => x[0]), ['LAURUSLABS', 'ODD'], 'a bad symbol / a broken row left out');
   const o = r.body.rows[1];
-  assert.deepStrictEqual([o[2], o[4], o[11], o[10], o[18]], ['', '', '', '', ''], 'unknown codes and texts blanked');
-  assert.deepStrictEqual(o[5], [null, 2], 'numbers only');
-  assert.deepStrictEqual(o[19], []);
+  const ci = (k) => T.COLS.indexOf(k);
+  assert.deepStrictEqual([o[ci('why')], o[ci('fl')], o[ci('src')], o[ci('ann')]], ['', '', '', ''], 'unknown codes and texts blanked');
+  assert.deepStrictEqual(o[ci('kd')], ['', ''], 'dates only');
+  assert.deepStrictEqual(o[ci('eps')], [null, 2], 'numbers only');
+  assert.deepStrictEqual(o[ci('pg')], []);
+  assert.deepStrictEqual(r.body.rows[0][ci('kp')], [60, 68, 75]);
   assert.match(r.headers['cache-control'], /s-maxage=1800/);
   assert.deepStrictEqual(calls[0], { action: 'site', part: 'epst', token: FEED });
   const text = JSON.stringify(r.body) + JSON.stringify(r.headers);
@@ -133,6 +139,11 @@ test('api/epstarget: unpacks + checks the rows, caches on the CDN; bad quarter 4
   r = res();
   await h({ method: 'GET', query: { q: 'Jun 2026' } }, r);
   assert.deepStrictEqual(calls[1], { action: 'site', part: 'epst', q: 'Jun 2026', token: FEED });
+  assert.ok(r.body.rows[0][ci('pc')].length === 3);
+  r = res();
+  await h({ method: 'GET', query: { q: 'Jun 2026', lite: '1' } }, r);
+  assert.deepStrictEqual([r.body.rows[0][ci('ph')], r.body.rows[0][ci('pc')]], [[], []], 'lite: without the chart\'s path');
+  assert.deepStrictEqual(r.body.rows[0][ci('kp')], [60, 68, 75]);
   r = res();
   await h({ method: 'GET', query: { q: 'June' } }, r);
   assert.strictEqual(r.statusCode, 400);
@@ -140,44 +151,63 @@ test('api/epstarget: unpacks + checks the rows, caches on the CDN; bad quarter 4
   await api.createHandler({ env: {}, fetch })({ method: 'GET', query: {} }, r);
   assert.strictEqual(r.body.ok, false, 'not configured');
   assert.throws(() => api.unpack('$$$'), /not readable/);
-  assert.throws(() => api.unpack(zlib.gzipSync(Buffer.from(JSON.stringify({ cols: ['sym'], rows: [] }))).toString('base64')), /other columns/);
+  assert.throws(() => api.unpack(zlib.gzipSync(Buffer.from(JSON.stringify({ cols: ['sym'], rows: [] }))).toString('base64')), /UpdateNow\.bat/,
+    'the first version\'s columns: the laptop must send the new ones');
 });
 
-test('web/lib/epstarget.js: status per window, hit rate + likely range, outcome, groups, quarters, formula', () => {
+test('web/lib/epstarget.js: 80 % of the way, downside targets apart, the full-window rule, groups, quarters, thesis, formula', () => {
   const rows = T.objects({ cols: T.COLS, rows: [
-    row('HIT'),                                                                      // reached on session 75
-    row('EARLY', { hit: 20, hitd: '2026-08-25', n: 35, mx: [101, 101, 101, 101, 101], cl: [30, null, null, null, null] }),
-    row('NEAR', { hit: null, hitd: '', mx: [90, 98.5, 99, 99, 99], cl: [5, 8, null, null, null] }),
-    row('MISS', { hit: null, hitd: '', mx: [60, 70, 75, 75, 75], cl: [-5, -10, null, null, null], dd: [-12, -20, -20, -20, -20] }),
-    row('RUN', { hit: null, hitd: '', n: 40, mx: [80, 85, 85, 85, 85], cl: [3, null, null, null, null] }),
-    row('ABOVE', { tgt: 1500, hit: null }),
-    row('NONE', { st: 'x', why: 'fell', tgt: null, g: -3 })
+    row('HIT'),                                                                      // 80 % on 60, 90 % on 68, the target on 75 (85 sessions)
+    row('EARLY', { kp: [20, 25, 30], n: 35, pg: [101, 101, 101, 101, 101], cl: [30, null, null, null, null] }),
+    row('MISS', { kp: [null, null, null], pg: [30, 40, 45, 45, 45], cl: [-5, -10, null, null, null], dd: [-12, -20, -20, -20, -20] }),
+    row('RUN', { kp: [null, null, null], n: 40, pg: [50, 55, 55, 55, 55], cl: [3, null, null, null, null] }),
+    row('DOWN', { tgt: 1500, kp: [10, 12, 15], pg: [100, 100, 100, 100, 100] }),
+    row('NONE', { st: 'x', why: 'fell', tgt: null, g: -3, kp: [], pg: [] })
   ] });
-  const by = (W) => Object.fromEntries(rows.map((r) => [r.sym, T.status(r, W)]));
-  assert.deepStrictEqual(by(30), { HIT: 'not', EARLY: 'hit', NEAR: 'not', MISS: 'not', RUN: 'not', ABOVE: 'above', NONE: 'none' });
-  assert.deepStrictEqual(by(60), { HIT: 'not', EARLY: 'hit', NEAR: 'near', MISS: 'not', RUN: 'pending', ABOVE: 'above', NONE: 'none' });
-  assert.deepStrictEqual(by(90), { HIT: 'hit', EARLY: 'hit', NEAR: 'pending', MISS: 'pending', RUN: 'pending', ABOVE: 'above', NONE: 'none' });
-  const s30 = T.stats(rows, 30);
-  assert.deepStrictEqual([s30.done, s30.hit, s30.near, s30.not, s30.pending, s30.early], [5, 1, 0, 4, 0, 0]);
-  assert.strictEqual(s30.rate, 0.2);
-  assert.ok(s30.lo > 0 && s30.lo < 0.2 && s30.hi > 0.2 && s30.hi < 1, s30.lo + ' ' + s30.hi);
-  // 60 sessions: EARLY reached it on session 20 but has only 35 sessions - counted once its 60 are over (no flattering early hits)
-  const s = T.stats(rows, 60);
-  assert.deepStrictEqual([s.done, s.hit, s.near, s.not, s.pending, s.early, s.above, s.none], [3, 0, 1, 2, 2, 1, 1, 1]);
-  assert.strictEqual(s.rate, 0);
+  assert.deepStrictEqual(rows.map((r) => r.dir), ['up', 'up', 'up', 'up', 'down', '']);
+  const by = (W, Tt) => Object.fromEntries(rows.map((r) => [r.sym, T.kind(r, W, Tt)]));
+  assert.deepStrictEqual(by(60, 80), { HIT: 'hit', EARLY: 'hit', MISS: 'not', RUN: 'pending', DOWN: 'down', NONE: 'none' });
+  assert.deepStrictEqual(by(60, 100), { HIT: 'not', EARLY: 'hit', MISS: 'not', RUN: 'pending', DOWN: 'down', NONE: 'none' });
+  assert.strictEqual(T.status(rows[4], 30, 80), 'hit', 'the downside target fell to its 80 % level on session 10');
+  // 30 sessions, 80 %: EARLY reached on 20 with 35 sessions - counted; HIT not by 30; MISS not; RUN (40 sessions) not
+  const s30 = T.stats(rows, 30, 80);
+  assert.deepStrictEqual([s30.done, s30.hit, s30.not, s30.pending, s30.early, s30.other, s30.none], [4, 1, 3, 0, 0, 1, 1]);
+  assert.strictEqual(s30.rate, 0.25);
+  assert.ok(s30.lo > 0 && s30.lo < 0.25 && s30.hi > 0.25 && s30.hi < 1, s30.lo + ' ' + s30.hi);
+  // 60 sessions: HIT reached 80 % on 60 (counted, 85 sessions); EARLY reached it but has only 35 sessions - early, not counted
+  const s = T.stats(rows, 60, 80);
+  assert.deepStrictEqual([s.done, s.hit, s.not, s.pending, s.early], [2, 1, 1, 2, 1]);
+  assert.strictEqual(T.stats(rows, 60, 100).hit, 0, 'the target itself: HIT reached it on 75');
   const up = (2322.17 / 1624.1 - 1) * 100;
-  assert.ok(Math.abs(T.outcome(rows[1], 30) - up) < 1e-9, 'reached: sold at the target');
-  assert.strictEqual(T.outcome(rows[1], 60), null, 'reached, but its 60 sessions are not over');
-  assert.strictEqual(T.outcome(rows[3], 60), -10, 'missed: the close of the 60th session');
-  assert.strictEqual(T.outcome(rows[4], 60), null, 'still running');
-  assert.ok(Math.abs(s.avgOut - (20 + 8 - 10) / 3) < 1e-9, s.avgOut);
-  assert.strictEqual(s.avgRet, (20 + 8 - 10) / 3, 'the 60-session close of the ones with 60 sessions');
+  assert.ok(Math.abs(T.outcome(rows[0], 60, 80) - up * 0.8) < 1e-9, 'reached: sold at the 80 % level');
+  assert.strictEqual(T.outcome(rows[1], 60, 80), null, 'reached, but its 60 sessions are not over');
+  assert.strictEqual(T.outcome(rows[2], 60, 80), -10, 'missed: the close of the 60th session');
+  assert.ok(Math.abs(s.avgOut - (up * 0.8 - 10) / 2) < 1e-9, s.avgOut);
+  assert.ok(Math.abs(T.level(rows[0], 80) - (1624.1 + 0.8 * (2322.17 - 1624.1))) < 1e-9);
+  assert.ok(Math.abs(T.level(rows[4], 80) - (1624.1 - 0.8 * 124.1)) < 1e-9, 'a downside level is under the entry');
+  const d = T.stats(rows, 30, 80, 'down');
+  assert.deepStrictEqual([d.n, d.done, d.hit, d.other], [1, 1, 1, 4]);
   assert.ok(Math.abs(rows[0].pe - 1624.1 / 20.26) < 1e-9 && Math.abs(rows[0].up - up) < 1e-9);
-  const g = T.bucket(rows, 60, (r) => r.g, T.GROWTH);
+  const g = T.bucket(rows, 30, 80, (r) => r.g, T.GROWTH);
   assert.deepStrictEqual(g.map((x) => x.label), ['0–20%', '20–40%', '40–60%', '60–100%', '100–150%', 'Over 150%']);
-  assert.strictEqual(g[4].done, 3, 'every result here grew 114.6 % (above / no target / still running left out)');
-  assert.deepStrictEqual(T.groupBy(rows, 30, (r) => r.sym === 'MISS' ? 'Banks' : 'Pharma', 1).map((x) => [x.label, x.done, x.hit]), [['Pharma', 4, 1], ['Banks', 1, 0]]);
-  assert.deepStrictEqual(T.sumRate({ win: { 60: [10, 4, 1, 3, 2] } }, 60), { done: 10, hit: 4, near: 1, pending: 3, early: 2, rate: 0.4 });
+  assert.strictEqual(g[4].done, 4, 'the long targets only (114.6 % growth)');
+  assert.deepStrictEqual(T.groupBy(rows, 30, 80, (r) => r.sym === 'MISS' ? 'Banks' : 'Pharma', 1).map((x) => [x.label, x.done, x.hit]), [['Pharma', 3, 1], ['Banks', 1, 0]]);
+  assert.deepStrictEqual(T.sumRate({ win: { 60: [10, 4, 3, 2, 5, 1] } }, 60, 90), { done: 10, hit: 3, pending: 5, early: null, rate: 0.3 });
+  assert.deepStrictEqual(T.sumRate({ win: { 60: [10, 4, 3, 2, 5, 1] } }, 60, 80), { done: 10, hit: 4, pending: 5, early: 1, rate: 0.4 });
+  assert.strictEqual(T.sumRate({ win: { 60: [10, 4, 1, 3, 2] } }, 60, 80), null, 'the first version\'s summary: no figures');
+  assert.deepStrictEqual(T.sumRate({ dwin: { 60: [2, 1, 1, 0, 0, 0] } }, 60, 80, 'down').rate, 0.5);
+  // the thesis list: every quarter of every stock
+  const q2 = T.objects({ cols: T.COLS, rows: [row('HIT'), row('MISS', { kp: [null, null, null] }), row('DOWN')] });
+  const th = T.thesis({ 'Jun 2026': rows, 'Mar 2026': q2 }, ['Mar 2026', 'Jun 2026'], 60, 80);
+  const of = (sym) => th.filter((e) => e.sym === sym)[0];
+  assert.deepStrictEqual(of('HIT').marks, ['hit', 'hit']);
+  assert.ok(of('HIT').every && of('HIT').done === 2 && of('HIT').hit === 2);
+  assert.deepStrictEqual(of('MISS').marks, ['not', 'not']);
+  assert.ok(!of('MISS').most && of('MISS').rate === 0);
+  assert.deepStrictEqual(of('EARLY').marks, ['', 'early'], 'a target reached counts while its window still runs');
+  assert.ok(of('EARLY').hit === 1 && !of('EARLY').every, 'one finished quarter is not enough for "every"');
+  assert.deepStrictEqual(of('DOWN').marks, ['hit', 'down'], 'Mar 2026: a long target reached; Jun 2026: a downside target, not counted');
+  assert.deepStrictEqual(of('RUN').marks, ['', 'pending']);
   assert.strictEqual(T.fy('Jun 2026'), 'Q1 FY27');
   assert.strictEqual(T.fy('Mar 2026'), 'Q4 FY26');
   assert.strictEqual(T.fy('Dec 2025'), 'Q3 FY26');
@@ -192,15 +222,16 @@ test('a quarter packed by the laptop\'s own code reads the same through the shee
   const code = 'import sys, json; sys.path.insert(0, sys.argv[1]); import eps_target as E\n' +
     'r = {k: None for k in E.COLS}; r.update(sym="LAURUSLABS", st="ok", why="", b="C", fl="r-------", eps=[0.37,1.71,4.34,3.02,3.61,4.67,5.17,6.81])\n' +
     't = E.target_of({E.mi_label(l): v for l, v in zip(["Sep 2024","Dec 2024","Mar 2025","Jun 2025","Sep 2025","Dec 2025","Mar 2026","Jun 2026"], r["eps"])}, E.mi_label("Jun 2026"))\n' +
-    'r.update(ttm=t["ttm"], prev=t["prev"], g=t["g"], tgt=t["tgt"], ann="2026-07-24 16:05", src="nse", ed="2026-07-27", ep=1624.1, pre=1600.0, o0=1610.0, n=85, hit=75, hitd="2026-11-11",\n' +
-    '  mx=[70.1,85.2,101.0,101.0,101.0], dd=[-3.0]*5, cl=[10.0,20.0,None,None,None], ix=[1.0,2.0,None,None,None], now=46.0, ph=[1.0], pc=[1.0])\n' +
+    'r.update(ttm=t["ttm"], prev=t["prev"], g=t["g"], tgt=t["tgt"], ann="2026-07-24 16:05", src="nse", ed="2026-07-27", ep=1624.1, pre=1600.0, o0=1610.0, n=95,\n' +
+    '  kp=[60, 68, 75], kd=["2026-10-21", "2026-10-31", "2026-11-11"], pg=[40.0, 80.0, 120.0, 120.0, 120.0], hh=[17.0]*5, dd=[-3.0]*5,\n' +
+    '  cl=[10.0,20.0,30.0,None,None], ix=[1.0,2.0,3.0,None,None], now=46.0, ph=[1.0], pc=[1.0])\n' +
     'print(json.dumps({"blob": E.pack([r]), "sum": E.summary([r])}))\n';
   const p = spawnSync(py, ['-c', code, path.join(__dirname, '..', 'pcbridge', 'ScreenerBridge')], { encoding: 'utf8' });
   assert.strictEqual(p.status, 0, p.stderr);
   const got = JSON.parse(p.stdout);
   const e = env();
   assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00',
-    upto: '2026-11-20', sum: got.sum, blob: got.blob, engine: 1 }).ok, true);
+    upto: '2026-11-20', sum: got.sum, blob: got.blob, engine: 2 }).ok, true);
   const fetch = async (url, init) => new Response(JSON.stringify(e.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } });
   const h = api.createHandler({ env: { SHEET_FEED_URL: 'https://script.google.com/macros/s/X/exec', SHEET_FEED_TOKEN: FEED }, fetch, now: () => NOW,
     cache: require('../api/_lib/cache').createCache() });
@@ -210,6 +241,10 @@ test('a quarter packed by the laptop\'s own code reads the same through the shee
   assert.strictEqual(rows.length, 1);
   assert.strictEqual(rows[0].tgt, 2322.17);
   assert.strictEqual(rows[0].fl, 'r-------');
-  assert.strictEqual(T.status(rows[0], 90), 'hit');
+  assert.strictEqual(T.status(rows[0], 90, 80), 'hit');
+  assert.strictEqual(T.status(rows[0], 60, 100), 'not');
   assert.deepStrictEqual(r.body.quarters[0].sum.win['60'], got.sum.win['60']);
+  assert.deepStrictEqual(got.sum.win['60'], [1, 1, 0, 0, 0, 0], 'Python\'s summary = the page\'s own count');
+  const S = T.stats(rows, 60, 80);
+  assert.deepStrictEqual([S.done, S.hit, S.pending], [got.sum.win['60'][0], got.sum.win['60'][1], got.sum.win['60'][4]]);
 });

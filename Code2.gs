@@ -14906,6 +14906,7 @@ const AB_EPST_MAX_PARTS = 60;
 const AB_EPST_KEEP = 16;
 const AB_EPST_Q_RE = /^(Mar|Jun|Sep|Dec) \d{4}$/;
 const AB_EPST_BLOB_RE = /^[A-Za-z0-9+\/]+={0,2}$/;
+const AB_EPST_ENGINE = 2;      // 2 (24-Nov-2026): 80 / 90 / 100 % of the way, downside targets apart - the website reads these columns
 
 function ab_epstFromBridge_(req) {
   const op = String(req.op || '');
@@ -14919,13 +14920,17 @@ function ab_epstSumClean_(s) {
   s = s && typeof s === 'object' ? s : {};
   const num = function (v) { const n = Number(v); return v === null || v === undefined || v === '' || typeof v === 'boolean' || !isFinite(n) ? null : Math.round(n * 10) / 10; };
   const int = function (v) { const n = Math.round(Number(v)); return isFinite(n) && n >= 0 ? n : 0; };
-  const out = { stocks: int(s.stocks), ok: int(s.ok), target: int(s.target), above: int(s.above), medG: num(s.medG), medUp: num(s.medUp),
-    medN: num(s.medN), ready: s.ready === true, why: {}, win: {}, ann: {} };
-  ['loss', 'prevloss', 'fell', 'date', 'wait', 'price'].forEach(function (k) { if (s.why && s.why[k]) out.why[k] = int(s.why[k]); });
+  // target = targets above the entry (long), down = targets under it (owner, 24-Nov-2026: counted apart); win / dwin {W: [finished,
+  // reached 80 / 90 / 100 % of the way among them, still running, reached 80 % while still running]}
+  const out = { stocks: int(s.stocks), ok: int(s.ok), target: int(s.target), down: int(s.down), medG: num(s.medG), medUp: num(s.medUp),
+    medN: num(s.medN), ready: s.ready === true, why: {}, win: {}, dwin: {}, ann: {} };
+  ['loss', 'prevloss', 'fell', 'date', 'wait', 'price', 'nofiling'].forEach(function (k) { if (s.why && s.why[k]) out.why[k] = int(s.why[k]); });
   ['nse', 'xbrl'].forEach(function (k) { if (s.ann && s.ann[k]) out.ann[k] = int(s.ann[k]); });
-  ['30', '60', '90', '120', '180'].forEach(function (k) {
-    const w = s.win && s.win[k];
-    if (Array.isArray(w)) out.win[k] = [int(w[0]), int(w[1]), int(w[2]), int(w[3]), int(w[4])];
+  ['win', 'dwin'].forEach(function (g) {
+    ['30', '60', '90', '120', '180'].forEach(function (k) {
+      const w = s[g] && s[g][k];
+      if (Array.isArray(w)) out[g][k] = w.slice(0, 6).map(int);
+    });
   });
   return out;
 }
@@ -14946,7 +14951,7 @@ function ab_epstSheet_(make) {
 function ab_epstPut_(req) {
   const q = String(req.q || '');
   if (!AB_EPST_Q_RE.test(q)) return { ok: false, error: 'bad quarter' };
-  if (!(Number(req.engine) >= 1)) return { ok: false, error: 'an older laptop program - not kept' };
+  if (!(Number(req.engine) >= AB_EPST_ENGINE)) return { ok: false, error: 'an older laptop program sent the EPS targets - not kept (it restarts itself with the new version)' };
   const blob = String(req.blob || '');
   if (!blob || !AB_EPST_BLOB_RE.test(blob)) return { ok: false, error: 'no data' };
   const parts = [];

@@ -4066,7 +4066,7 @@ def epst_screener():
     return out
 
 
-def epst_step(cfg, force=False, backfill=None, gap=None):
+def epst_step(cfg, force=False, backfill=None, gap=None, xbrl_limit=None):
     """The EPS Growth Target Lab (eps_target.py): a few more days of NSE's result filings (the results dates), then every
     quarter's targets and what the prices did after them -> the sheet when something changed. Never raises."""
     if not cfg.get('eps_target', True):
@@ -4077,7 +4077,7 @@ def epst_step(cfg, force=False, backfill=None, gap=None):
         xch = 0.0
     return ET.step(cfg, api, itd.backtest_lab, XH.eps_inputs, epst_screener, xbrl_changed=xch,
                    peh_changed=PEH.store().changed, force=force, backfill=backfill,
-                   gap=ET.ANN_GAP_S if gap is None else gap)
+                   gap=ET.ANN_GAP_S if gap is None else gap, xbrl_limit=xbrl_limit, xbrl_gap=XH.gap_of(cfg))
 
 
 def histpe_check(cfg, syms, out=print):
@@ -4662,7 +4662,8 @@ def main(argv):
         print('EPS Growth Target Lab: target = TTM EPS x EPS growth % - did the price reach it after the results?')
         print('Reading NSE\'s result filings of the last %d results seasons (the results dates) - the first time takes a while ...'
               % int(cfg.get('eps_target_quarters') or ET.QUARTERS))
-        n = epst_step(dict(cfg, eps_target=True), force=True, backfill=9999)
+        print('Then NSE\'s XBRL list of every stock that still has no results date (one stock every few seconds) ...')
+        n = epst_step(dict(cfg, eps_target=True), force=True, backfill=9999, xbrl_limit=9999)
         if syms:
             try:
                 _u, per_q, _c = ET.compute(itd.backtest_lab, XH.eps_inputs(), epst_screener(),
@@ -4819,7 +4820,7 @@ def main(argv):
     return 2
 
 
-ET.bind(session=ann_session, fetch=lambda opener, a, b: ann_fetch(opener, b, a), rows=ann_rows, nse_part=nse_part)
+ET.bind(session=ann_session, fetch=lambda opener, a, b: ann_fetch(opener, b, a), rows=ann_rows, nse_part=nse_part, xh=XH)
 XH.bind(session=nse_session, get=nse_get, records=ipo_records, facts=XBRL_FACTS, texts=XBRL_TEXTS, page=XBRL_PAGE,
         pid_alive=_pid_alive, screener=lambda cfg, sym, cons=True: fetch_page(cfg, sym, cons), screener_q=screener_quarters)
 

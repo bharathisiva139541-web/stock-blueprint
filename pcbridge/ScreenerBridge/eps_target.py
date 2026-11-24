@@ -35,10 +35,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HERE, 'eps_target_state.json')
 ANN_PATH = os.path.join(HERE, 'eps_target_ann.json')
 
-ENGINE = 1                  # the rules' version (sent with every post; a change sends every quarter again)
+ENGINE = 2                  # the rules' version (sent with every post; a change sends every quarter again) - 2: 80 / 90 / 100 %
+                            # of the way to the target, downside targets, per-stock NSE list dates (24-Nov-2026)
 QUARTERS = 8                # quarter ends worked out (config.json eps_target_quarters, 2..16)
 WINDOWS = (30, 60, 90, 120, 180)    # sessions after the entry (about 1.5 / 3 / 4.5 / 6 / 9 months)
-NEAR_PCT = 2.0              # a best high within this % under the target = a near miss
+THRESH = (80, 90, 100)      # reached = a daily high (a target under the entry: a daily low) covered this % of the way from the
+                            # entry to the target (owner, 24-Nov-2026: "if a stock hit atleast 80% of the target price,
+                            # consider as it is target hit" - his answer: 80 % of the way, entry 100 / target 200 -> 180)
 PATH_STEP = 5               # the chart's path: one point every this many sessions
 CLOSE_HHMM = '15:30'        # results filed before this react the same day
 ANN_WINDOW_DAYS = 75        # a quarter's results filing is looked for from the day after its end to this many days later
@@ -50,14 +53,20 @@ XBRL_MAX_DAYS = 120         # an XBRL file's time later than the quarter end + t
 READY_SESSIONS = 30         # a quarter is 'ready' when this many sessions passed for READY_SHARE of its targets
 READY_SHARE = 0.6
 KEEP_ROWS = 5000
-COLS = ('sym', 'st', 'why', 'b', 'fl', 'eps', 'ttm', 'prev', 'g', 'tgt', 'ann', 'src', 'ed', 'ep', 'pre', 'o0', 'n', 'hit',
-        'hitd', 'mx', 'dd', 'cl', 'ix', 'now', 'ph', 'pc')
+COLS = ('sym', 'st', 'why', 'b', 'fl', 'eps', 'ttm', 'prev', 'g', 'tgt', 'ann', 'src', 'ed', 'ep', 'pre', 'o0', 'n', 'kp',
+        'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc')
+XB_PATH = os.path.join(HERE, 'eps_target_xbrl.json')   # the results times read from NSE's per-stock XBRL lists
+XB_PER_ROUND = 20           # stocks still without a results date asked a full round (EpsTargetNow.bat: every one)
+XB_GAP_S = 6.0              # between two NSE requests (the XBRL history job's pace)
+XB_REASK_DAYS = 7           # a stock asked before is asked again after this many days while a date is still missing
+XB_NONE_DAYS = 30           # ... and after this many when NSE's lists had no result filing of it at all
 WHY = {'loss': 'a loss over the last 4 quarters (TTM EPS 0 or less)',
        'prevloss': 'a loss in the 4 quarters before (no growth % to work out)',
        'fell': 'EPS fell (growth 0 or less - no target)',
        'date': 'no results date found yet',
        'wait': 'no session since the results yet',
-       'price': 'no daily candles for it'}
+       'price': 'no daily candles for it',
+       'nofiling': 'NSE has no result filings of it (e.g. listed on BSE only)'}
 _MON = ('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
 BENCH = 'NIFTY_50'
 
@@ -317,41 +326,45 @@ def _index_at(ix, day):
 
 
 def after(cs, k0, tgt, ix=None):
-    """The sessions after the entry candle k0 (Candles: o h l c day) -> the record's price fields."""
+    """The sessions after the entry candle k0 (Candles: o h l c day) -> the record's price fields. Progress = how much of the
+    way from the entry to the target a session covered: a target above the entry by its HIGH, one under it (a downside
+    target - the owner, 24-Nov-2026: "if target price was below the entry price, the market price should hit this downside
+    target ... it should not mingle with long trades") by its LOW. kp / kd = the first session (and its day) reaching
+    80 / 90 / 100 % of the way; per window pg = the best progress, hh / dd = the highest high / lowest low vs the entry
+    (so far while it runs), cl / ix = the close / NIFTY 50 at its end (only once it is over)."""
     o, h, lo, c, days = cs.o, cs.h, cs.l, cs.c, cs.day
     n = len(c) - 1 - k0
     ep = round(c[k0], 2)
     out = {'ed': date.fromordinal(days[k0]).isoformat(), 'ep': ep, 'pre': round(c[k0 - 1], 2) if k0 > 0 else None,
-           'o0': round(o[k0], 2), 'n': n, 'hit': None, 'hitd': '', 'mx': [], 'dd': [], 'cl': [], 'ix': [], 'now': None,
-           'ph': [], 'pc': []}
-    if ep <= 0:
-        return out
-    span = min(n, WINDOWS[-1])
-    for k in range(1, span + 1):
-        if tgt and round(h[k0 + k], 2) >= tgt:      # float32 candles: 2322.15 is 2322.1499...
-            out['hit'], out['hitd'] = k, date.fromordinal(days[k0 + k]).isoformat()
-            break
-    best, low = None, None
+           'o0': round(o[k0], 2), 'n': n, 'kp': [None] * len(THRESH), 'kd': [''] * len(THRESH), 'pg': [], 'hh': [], 'dd': [],
+           'cl': [], 'ix': [], 'now': None, 'ph': [], 'pc': []}
+    span = min(n, WINDOWS[-1]) if ep > 0 and tgt is not None else 0
+    up = tgt is not None and tgt > ep
+    dist = abs(tgt - ep) if tgt is not None else 0
+    best, hi, low = None, None, None
     e0 = _index_at(ix, days[k0])
     w = 0
     for k in range(1, span + 1):
-        hk, lk = h[k0 + k], lo[k0 + k]
-        best = hk if best is None or hk > best else best
+        hk, lk = round(h[k0 + k], 2), round(lo[k0 + k], 2)      # float32 candles: 2322.15 is 2322.1499...
+        p = 100.0 if not dist else ((hk - ep) if up else (ep - lk)) / dist * 100
+        for t, T in enumerate(THRESH):
+            if out['kp'][t] is None and p >= T - 1e-6:
+                out['kp'][t], out['kd'][t] = k, date.fromordinal(days[k0 + k]).isoformat()
+        best = p if best is None or p > best else best
+        hi = hk if hi is None or hk > hi else hi
         low = lk if low is None or lk < low else low
         while w < len(WINDOWS) and (k == WINDOWS[w] or k == span < WINDOWS[w]):
-            out['mx'].append(_r(best / tgt * 100) if tgt else None)
+            out['pg'].append(_r(best))
+            out['hh'].append(_r((hi / ep - 1) * 100))
             out['dd'].append(_r((low / ep - 1) * 100))
             full = k == WINDOWS[w]
             out['cl'].append(_r((c[k0 + k] / ep - 1) * 100) if full else None)
             e1 = _index_at(ix, days[k0 + k]) if full else None
             out['ix'].append(_r((e1 / e0 - 1) * 100) if e0 and e1 else None)
             w += 1
-    while len(out['mx']) < len(WINDOWS):         # nothing after the entry yet
-        out['mx'].append(None)
-        out['dd'].append(None)
-        out['cl'].append(None)
-        out['ix'].append(None)
-    if n > 0:
+    for k in ('pg', 'hh', 'dd', 'cl', 'ix'):         # nothing after the entry yet
+        out[k] += [None] * (len(WINDOWS) - len(out[k]))
+    if n > 0 and ep > 0:
         out['now'] = _r((c[-1] / ep - 1) * 100)
     for j in range(0, span, PATH_STEP):
         a, b = k0 + 1 + j, k0 + min(j + PATH_STEP, span)
@@ -361,8 +374,9 @@ def after(cs, k0, tgt, ix=None):
 
 
 # ------------------------------------------------------------------ one stock, every quarter
-def stock_rows(sym, eps, flags, basis, src, filings, stamps, cs, ix, qends):
-    """-> {quarter month index: row dict} for the quarters with their 8 EPS."""
+def stock_rows(sym, eps, flags, basis, src, filings, stamps, cs, ix, qends, nofiling=False):
+    """-> {quarter month index: row dict} for the quarters with their 8 EPS (`nofiling` = NSE's lists of the stock had no
+    result filing at all)."""
     out = {}
     days = list(cs.day) if cs is not None else []
     for mi in qends:
@@ -378,7 +392,7 @@ def stock_rows(sym, eps, flags, basis, src, filings, stamps, cs, ix, qends):
             row['ann'], row['src'] = at[:16], how
         if not t['why']:
             if not at:
-                row['why'] = 'date'
+                row['why'] = 'nofiling' if nofiling else 'date'
             elif not days:
                 row['why'] = 'price'
             else:
@@ -400,32 +414,36 @@ def _med(vals):
     return round(v[m] if len(v) % 2 else (v[m - 1] + v[m]) / 2, 1)
 
 
+def _wins(group):
+    """{W: [finished (W sessions over), reached 80 %, 90 %, 100 % of the way among them, still running, reached 80 % while
+    still running]} - a result counts in a window only once the whole window is over (an early hit alone would flatter the
+    rate)."""
+    out = {}
+    for W in WINDOWS:
+        full = [r for r in group if r['n'] >= W]
+        hits = [sum(1 for r in full if r['kp'][t] is not None and r['kp'][t] <= W) for t in range(len(THRESH))]
+        early = sum(1 for r in group if r['n'] < W and r['kp'][0] is not None and r['kp'][0] <= W)
+        out[str(W)] = [len(full)] + hits + [len(group) - len(full), early]
+    return out
+
+
 def summary(rows):
-    """A quarter's figures for the page's list (the targets above the entry price - one already reached is counted apart):
-    win {W: [finished, reached, near miss, still running, reached while still running]}."""
+    """A quarter's figures for the page's list: the targets above the entry (long) and the ones under it (downside, apart)."""
     ok = [r for r in rows if r['st'] == 'ok']
-    tg = [r for r in ok if r['tgt'] and r['tgt'] > r['ep']]
+    ups = [r for r in ok if r['tgt'] > r['ep']]
+    downs = [r for r in ok if r['tgt'] <= r['ep']]
     why = {}
     for r in rows:
         if r['st'] != 'ok' and r['why']:
             why[r['why']] = why.get(r['why'], 0) + 1
-    win = {}
-    for i, W in enumerate(WINDOWS):
-        # counted only once the whole window is over (an early hit of a result still running would flatter the rate)
-        reached = lambda r: r['hit'] is not None and r['hit'] <= W
-        full = [r for r in tg if r['n'] >= W]
-        hit = sum(1 for r in full if reached(r))
-        near = sum(1 for r in full if not reached(r) and (r['mx'][i] or 0) >= 100 - NEAR_PCT)
-        early = sum(1 for r in tg if r['n'] < W and reached(r))
-        win[str(W)] = [len(full), hit, near, len(tg) - len(full), early]
     srcs = {}
     for r in rows:
         if r['src']:
             srcs[r['src']] = srcs.get(r['src'], 0) + 1
-    ready = bool(tg) and sum(1 for r in tg if r['n'] >= READY_SESSIONS) >= READY_SHARE * len(tg)
-    return {'stocks': len(rows), 'ok': len(ok), 'target': len(tg), 'above': len(ok) - len(tg), 'why': why, 'win': win,
-            'medG': _med(r['g'] for r in tg), 'medUp': _med((r['tgt'] / r['ep'] - 1) * 100 for r in tg),
-            'medN': _med(r['n'] for r in tg), 'ready': ready, 'ann': srcs}
+    ready = bool(ups) and sum(1 for r in ups if r['n'] >= READY_SESSIONS) >= READY_SHARE * len(ups)
+    return {'stocks': len(rows), 'ok': len(ok), 'target': len(ups), 'down': len(downs), 'why': why, 'win': _wins(ups),
+            'dwin': _wins(downs), 'medG': _med(r['g'] for r in ups), 'medUp': _med((r['tgt'] / r['ep'] - 1) * 100 for r in ups),
+            'medN': _med(r['n'] for r in ups), 'ready': ready, 'ann': srcs}
 
 
 def pack(rows):
@@ -440,6 +458,29 @@ def unpack(blob):
 
 
 # ------------------------------------------------------------------ every stock
+def eps_for(sym, inputs, screener, qends):
+    """A stock's quarterly EPS -> (eps {month index: EPS}, flags, basis, src 'nse' | 'screener', XBRL stamps): the results
+    table when it has the 8 quarters of one of the quarters, else pe_history's screener.in record."""
+    table, stamps = inputs.get(sym) or (None, {})
+    eps, flags, basis = eps_of_table(table)
+    src = 'nse'
+    if not any(all((mi - 3 * k) in eps for k in range(8)) for mi in qends):
+        rec = screener.get(sym)
+        if rec:
+            basis, eps = rec[0] or '', dict(rec[1] or {})
+            flags, src = {}, 'screener'
+    return eps, flags, basis, src, dict(stamps or {})
+
+
+def _stamps_of(sym, stamps, xb):
+    """The XBRL history job's stamps + the ones read from NSE's lists for the results dates (the earliest per quarter end)."""
+    out = dict(stamps or {})
+    for e, st in ((xb.get(sym) or {}).get('stamps') or {}).items():
+        if e not in out or st < out[e]:
+            out[e] = st
+    return out
+
+
 def compute(lab, inputs, screener, today=None, n=QUARTERS, only=None):
     """lab = backtest_lab (its daily candle cache), inputs = {SYM: (results table, {quarter end iso: XBRL stamp})},
     screener = {SYM: (basis, {month index: EPS})} (pe_history's records, a split / bonus already on today's share count)
@@ -451,6 +492,7 @@ def compute(lab, inputs, screener, today=None, n=QUARTERS, only=None):
     ix = ((meta or {}).get('indices') or {}).get(BENCH)
     upto = str((meta or {}).get('upto') or '')
     filings = _ann_load()['rows']
+    xb = _xb_load()['syms']
     syms = set(idx) | set(inputs) | set(screener)
     if only:
         syms &= set(only)
@@ -459,18 +501,13 @@ def compute(lab, inputs, screener, today=None, n=QUARTERS, only=None):
     f = open(os.path.join(d, 'D.bin'), 'rb') if d and idx else None
     try:
         for sym in sorted(syms):
-            table, stamps = inputs.get(sym) or (None, {})
-            eps, flags, basis = eps_of_table(table)
-            src = 'nse'
-            if not any(all((mi - 3 * k) in eps for k in range(8)) for mi in qends):
-                rec = screener.get(sym)
-                if rec:
-                    basis, eps = rec[0] or '', dict(rec[1] or {})
-                    flags, src = {}, 'screener'
+            eps, flags, basis, src, stamps = eps_for(sym, inputs, screener, qends)
             cs = None
             if f is not None and sym in idx and idx[sym][1] > 0:
                 cs = lab.Candles(f, idx[sym][0], idx[sym][1])
-            rows = stock_rows(sym, eps, flags, basis, src, filings.get(sym), stamps, cs, ix, qends)
+            x = xb.get(sym) or {}
+            rows = stock_rows(sym, eps, flags, basis, src, filings.get(sym), _stamps_of(sym, stamps, xb), cs, ix, qends,
+                              nofiling=bool(x) and not x.get('n'))
             if not rows:
                 counts['noEps'] += 1
                 continue
@@ -483,6 +520,144 @@ def compute(lab, inputs, screener, today=None, n=QUARTERS, only=None):
         if f:
             f.close()
     return upto, out, counts
+
+
+# ------------------------------------------------------------------ the results dates from NSE's per-stock XBRL lists
+# Owner, 24-Nov-2026: "in no target section, i have found some stocks without resultout date, but in NSE integrated filing
+# page, their results date with XBRL is available. example SYRMA ... First try to get maximum result date". A stock whose
+# quarter still has no results time after the announcements archive and the XBRL history job's files: NSE's integrated
+# filing list of the stock (the page the owner showed - each result file's broadcast date / time), the same list half a
+# year at a time when the plain answer (the newest 20) does not reach the quarter, then the older financial results list.
+def _xb_load():
+    try:
+        with open(XB_PATH, encoding='utf-8') as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    if not isinstance(d, dict) or d.get('v') != 1:
+        d = {'v': 1, 'syms': {}}
+    d['syms'] = {k: v for k, v in (d.get('syms') or {}).items() if isinstance(v, dict)}
+    return d
+
+
+def _xb_save(d):
+    tmp = XB_PATH + '.%d.tmp' % os.getpid()
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(d, f, separators=(',', ':'))
+    os.replace(tmp, XB_PATH)
+
+
+def missing_dates(inputs, screener, qends, now=None):
+    """[(SYM, [quarter month indexes with 8 EPS but no results time])] still to ask NSE's lists for: stocks with a missing
+    quarter that has a target first, the newest missing quarter first; a stock asked within XB_REASK_DAYS (XB_NONE_DAYS
+    when its lists had nothing) left alone."""
+    now = time.time() if now is None else now
+    filings = _ann_load()['rows']
+    xb = _xb_load()['syms']
+    out = []
+    for sym in sorted(set(inputs) | set(screener)):
+        eps, _f, _b, _s, stamps = eps_for(sym, inputs, screener, qends)
+        st = _stamps_of(sym, stamps, xb)
+        miss, tgt = [], False
+        for mi in qends:
+            t = target_of(eps, mi)
+            if t and announced(mi, filings.get(sym), st)[0] is None:
+                miss.append(mi)
+                tgt = tgt or bool(t['tgt'])
+        if not miss:
+            continue
+        x = xb.get(sym)
+        if x and now - float(x.get('at') or 0) < (XB_REASK_DAYS if x.get('n') else XB_NONE_DAYS) * 86400:
+            continue
+        out.append((not tgt, -max(miss), sym, miss))
+    out.sort()
+    return [(sym, miss) for _t, _m, sym, miss in out]
+
+
+def _windows(miss, today):
+    """The half-open filing windows of the missing quarters (quarter end + 1 .. + XBRL_MAX_DAYS, to today), merged."""
+    spans = sorted((end_of(mi) + timedelta(days=1), min(end_of(mi) + timedelta(days=XBRL_MAX_DAYS), today)) for mi in miss)
+    out = []
+    for a, b in spans:
+        if out and a <= out[-1][1] + timedelta(days=1):
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def stock_dates(nse, sym, miss, today):
+    """NSE's result files of one stock -> ({quarter end iso: the earliest broadcast stamp}, records NSE listed). Raises the
+    XBRL history module's Blocked when NSE answered none of the lists."""
+    XH = D['xh']
+    q = sym.replace('&', '%26')
+    got, total, answered = {}, 0, False
+
+    def take(metas):
+        for m in metas:
+            e, stp = m.get('end') or '', m.get('stamp') or ''
+            if m.get('gov') or not e or len(stp) != 14:
+                continue
+            if e not in got or stp < got[e]:
+                got[e] = stp
+
+    def left():
+        return [mi for mi in miss if end_of(mi).isoformat() not in got]
+    for k, (name, url) in enumerate(XH.LISTS):
+        if k and not left():
+            break
+        metas, ok, nrec = XH._list(nse, name, url.format(s=q), None)
+        answered = answered or ok
+        total += nrec
+        take(metas)
+        if left() and nrec >= XH.PAGE_FULL:          # a full page: the rest of the missing quarters' windows asked by date
+            dated = XH.INT_DATED if k == 0 else XH.DATED
+            for a, b in _windows(left(), today):
+                more, ok2, n2 = XH._list(nse, dated[0], dated[1].format(s=q, f=a.strftime('%d-%m-%Y'), t=b.strftime('%d-%m-%Y')), None)
+                total += n2
+                take(more)
+    if not answered:
+        raise XH.Blocked('NSE did not answer')
+    return got, total
+
+
+def xbrl_dates(today, todo, limit=XB_PER_ROUND, gap=XB_GAP_S, out=None, sleep=time.sleep, now=None):
+    """Asks NSE's per-stock lists for the stocks in `todo` ([(SYM, missing quarters)]) -> (stocks asked, dates found,
+    stocks left, stopped reason)."""
+    out = out or log
+    if not todo or limit <= 0:
+        return 0, 0, len(todo or []), ''
+    if not D.get('xh'):
+        return 0, 0, len(todo), 'not bound'
+    XH = D['xh']
+    nse = XH.Nse(max(gap, getattr(XH, 'MIN_GAP_S', 5.0)), sleep)
+    d = _xb_load()
+    asked, found, why, t0 = 0, 0, '', time.time()
+    part = todo[:limit]
+    for k, (sym, miss) in enumerate(part):
+        if k and k % 10 == 0 and len(part) > 20:
+            left_s = (time.time() - t0) / k * (len(part) - k)
+            out('EPS target: results dates from NSE\'s XBRL lists - %d of %d stock(s) asked (%d date(s) found so far), about %d min '
+                'left ...' % (k, len(part), found, max(1, round(left_s / 60))))
+        try:
+            got, total = stock_dates(nse, sym, miss, today)
+        except XH.Blocked as e:
+            why = str(e)
+            out('EPS target: NSE\'s XBRL lists - %s (the next round goes on).' % why)
+            break
+        old = (d['syms'].get(sym) or {}).get('stamps') or {}
+        new = dict(old)
+        new.update(got)
+        found += sum(1 for mi in miss if end_of(mi).isoformat() in got)
+        d['syms'][sym] = {'at': round(time.time() if now is None else now), 'stamps': new, 'n': total}
+        if new != old:
+            d['changed'] = time.time()
+        asked += 1
+        if asked % 10 == 0:
+            _xb_save(d)
+    if asked:
+        _xb_save(d)
+    return asked, found, len(todo) - asked, why
 
 
 # ------------------------------------------------------------------ the round's step
@@ -508,12 +683,13 @@ def _save_state(st):
 def _signature(lab, xbrl_changed, peh_changed):
     d = lab.current_dir() or ''
     am = float(_ann_load().get('changed') or 0)
-    return '%s|%s|%s|%s|%d|%d' % (os.path.basename(d.rstrip('/\\')), round(xbrl_changed or 0), round(peh_changed or 0),
-                                  round(am), ENGINE, date.today().toordinal())
+    xm = float(_xb_load().get('changed') or 0)
+    return '%s|%s|%s|%s|%s|%d|%d' % (os.path.basename(d.rstrip('/\\')), round(xbrl_changed or 0), round(peh_changed or 0),
+                                     round(am), round(xm), ENGINE, date.today().toordinal())
 
 
 def step(cfg, api, lab, inputs, screener, xbrl_changed=0.0, peh_changed=0.0, force=False, backfill=None, today=None,
-         out=None, gap=ANN_GAP_S, sleep=time.sleep):
+         out=None, gap=ANN_GAP_S, sleep=time.sleep, xbrl_limit=None, xbrl_gap=XB_GAP_S):
     """The round's step (never raises): the results dates of a few more days from NSE, then - when anything changed -
     every quarter's rows worked out and the quarters that changed sent to the sheet. -> quarters sent or None."""
     out = out or log
@@ -531,6 +707,18 @@ def step(cfg, api, lab, inputs, screener, xbrl_changed=0.0, peh_changed=0.0, for
                 out('EPS target: read %d more part(s) of NSE\'s result filings (the results dates)%s.'
                     % (done, (' - %d part(s) left, the next rounds read them (EpsTargetNow.bat: all at once)' % left) if left else
                        ' - every results season read'))
+        inputs = inputs() if callable(inputs) else inputs
+        screener = screener() if callable(screener) else screener
+        xl = XB_PER_ROUND if xbrl_limit is None else xbrl_limit
+        if xl > 0 and D.get('xh'):
+            todo = missing_dates(inputs, screener, qends)
+            if todo:
+                with (D['nse_part']('EPS target results dates (XBRL lists)') if D.get('nse_part') else _Null()):
+                    asked, found, left, why = xbrl_dates(today, todo, xl, xbrl_gap, out, sleep)
+                if asked:
+                    out('EPS target: NSE\'s XBRL lists of %d stock(s) without a results date read - %d date(s) found%s.'
+                        % (asked, found, (' - %d stock(s) left for the next rounds (EpsTargetNow.bat: all at once)' % left) if left
+                                         else ''))
         if not lab.current_dir():
             out('EPS target: no Kite daily candles on this computer yet (they come with the daily Kite scan).')
             return None
@@ -539,8 +727,7 @@ def step(cfg, api, lab, inputs, screener, xbrl_changed=0.0, peh_changed=0.0, for
         if not force and st.get('sig') == sig:
             return 0
         t0 = time.time()
-        upto, per_q, counts = compute(lab, inputs() if callable(inputs) else inputs, screener() if callable(screener) else screener,
-                                      today, n)
+        upto, per_q, counts = compute(lab, inputs, screener, today, n)
         sent_md5 = st.get('sent') or {}
         sent, refused = 0, ''
         made = datetime.now().isoformat(timespec='seconds')
@@ -594,8 +781,8 @@ class _Null:
 
 
 def quarter_words(per_q, q):
-    """'Jun 2026 (Q1 FY27): target for 812 stocks above the entry price - reached within 30 sessions 96 of 790 finished
-    (12%), 60: ...'."""
+    """'Jun 2026 (Q1 FY27): 812 targets above the entry, 400 under it - 80 % of the way reached within 30 sessions 96 of 790
+    finished (12%), ...'."""
     mi = mi_label(q)
     rows = per_q.get(mi) or []
     s = summary(rows)
@@ -604,8 +791,9 @@ def quarter_words(per_q, q):
         done, hit = s['win'][str(W)][:2]
         if done:
             parts.append('%d sessions: %d of %d finished (%d%%)' % (W, hit, done, round(hit * 100.0 / done)))
-    return '%s (%s): a target above the entry price for %d stock(s)%s' % (
-        q, fy_words(mi), s['target'], (' - reached within ' + ', '.join(parts)) if parts else ' - none finished yet')
+    return '%s (%s): %d target(s) above the entry price, %d under it%s' % (
+        q, fy_words(mi), s['target'], s['down'], (' - %d%% of the way reached within ' % THRESH[0] + ', '.join(parts))
+        if parts else ' - none finished yet')
 
 
 def stock_words(per_q, sym):
@@ -626,14 +814,18 @@ def stock_words(per_q, sym):
             if r['ann']:
                 s += '; results %s (%s)' % (r['ann'], 'NSE result filing' if r['src'] == 'nse' else 'XBRL file time')
             if r['st'] == 'ok':
-                s += ' -> entry %s close %.2f (upside %.1f%%)' % (r['ed'], r['ep'], (r['tgt'] / r['ep'] - 1) * 100)
-                if r['tgt'] <= r['ep']:
-                    s += ' - already above the target'
-                elif r['hit']:
-                    s += ' - target reached after %d session(s) on %s' % (r['hit'], r['hitd'])
+                up = r['tgt'] > r['ep']
+                s += ' -> entry %s close %.2f (target %+.1f%%%s)' % (r['ed'], r['ep'], (r['tgt'] / r['ep'] - 1) * 100,
+                                                                    '' if up else ', a DOWNSIDE target')
+                way = 'up' if up else 'down'
+                got = ['%d%% of the way %s after %d session(s) (%s)' % (T, way, r['kp'][t], r['kd'][t])
+                       for t, T in enumerate(THRESH) if r['kp'][t] is not None]
+                if got:
+                    s += ' - ' + '; '.join(got)
                 else:
-                    best = next((m for m in reversed(r['mx']) if m is not None), None)
-                    s += ' - not reached in %d session(s) so far%s' % (r['n'], (' (best high %.1f%% of it)' % best) if best else '')
+                    best = next((m for m in reversed(r['pg']) if m is not None), None)
+                    s += ' - not %d%% of the way in %d session(s) so far%s' % (
+                        THRESH[0], r['n'], (' (best %.0f%% of the way)' % best) if best is not None else '')
             elif r['why']:
                 s += ' - %s' % WHY.get(r['why'], r['why'])
             lines.append(s)
