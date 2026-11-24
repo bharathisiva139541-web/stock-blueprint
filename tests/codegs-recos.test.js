@@ -166,3 +166,39 @@ test('a list packed by the laptop\'s own code reads the same through the sheet, 
   assert.deepStrictEqual(py2.stdout.trim().split(','), api.COLS, 'the same columns in Python, the api and the page');
   assert.deepStrictEqual(api.COLS, R.COLS);
 });
+
+test('within 2 % of the target (owner, 24-Nov-2026, JLHL 330 / high 329.70: "it can be within 2% range")', () => {
+  assert.deepStrictEqual([E.rule('near'), E.rule('70'), E.rule(100), E.rule('x')], ['near', 70, 100, null]);
+  const rows = R.objects({ cols: R.COLS, rows: [
+    // the laptop's own day: 329.70 on session 22 (within 2 % of 330 = 323.40), the target itself never
+    row('JLHL', { kp: [10, 15, 20, null, null, null], kn: 22, kdn: '2026-11-26' }),
+    row('JLHL', { br: 'Choice', tgt: 340, kn: null, kdn: '' }),                                    // the laptop: not within 2 %
+    row('A', { tgt: 330, ep: 300, kp: [5, 9, 14, 25, 31, 40] }),                                   // a list made before kn: 80 % of the way
+    row('E', { br: 'Kotak Securities', call: 'SELL', tgt: 280, ep: 300, kp: [3, 4, 6, 8, 12, 15] }),   // downside: 285.60 = 72 % -> 80 %
+    row('', { co: 'Some Unknown Co', br: 'Ventura', st: 'x', why: 'nosym', kp: [], pg: [] })
+  ] });
+  const [jl, ch, old, dn, nos] = rows;
+  assert.deepStrictEqual([E.reachK(jl, E.NEAR), E.reachD(jl, E.NEAR), jl.nearGuess], [22, '2026-11-26', false]);
+  assert.deepStrictEqual([E.status(jl, 30, E.NEAR), E.status(jl, 30, 100), E.status(jl, 30, 90)], ['hit', 'not', 'not']);
+  assert.ok(Math.abs(E.level(jl, E.NEAR) - 323.4) < 1e-9 && Math.abs(E.outcome(jl, 30, E.NEAR) - 7.8) < 1e-9, 'sold at 323.40 = +7.8 %');
+  assert.deepStrictEqual([E.reachK(ch, E.NEAR), E.status(ch, 60, E.NEAR)], [null, 'not'], 'the laptop said: not within 2 % - its 70 % day does not count');
+  assert.deepStrictEqual([E.reachK(old, E.NEAR), E.reachD(old, E.NEAR), old.nearGuess], [25, '2026-12-01', true],
+    'no kn from the laptop yet: 323.40 is 78 % of the way - the 80 % day, never earlier than the real one');
+  assert.ok(Math.abs(E.level(dn, E.NEAR) - 285.6) < 1e-9 && E.reachK(dn, E.NEAR) === 8, 'a downside target: 285.60 = 72 % of the way -> 80 %');
+  assert.deepStrictEqual([E.reachK(nos, E.NEAR), E.status(nos, 60, E.NEAR)], [null, 'none']);
+  const S = E.stats(R.pick(rows, 'buy'), 30, E.NEAR);
+  assert.deepStrictEqual([S.T, S.done, S.hit], ['near', 3, 2]);
+  assert.strictEqual(E.sumRate({ win: { 30: new Array(14).fill(1) } }, 30, E.NEAR), null, 'a quarter summary has no 2 % count');
+});
+
+test('api/recos: the laptop\'s first lists (no kn / kdn) still read; kn / kdn cleaned', () => {
+  const OLD = R.COLS.slice(0, 27);
+  const oldRow = row('JLHL').slice(0, 27);
+  const rows1 = api.unpack(zlib.gzipSync(Buffer.from(JSON.stringify({ cols: OLD, rows: [oldRow] }))).toString('base64'));
+  const ci = (k) => api.COLS.indexOf(k);
+  assert.deepStrictEqual([rows1.length, rows1[0][ci('kn')], rows1[0][ci('kdn')]], [1, null, null], 'an older list: kdn null = not known');
+  const rows2 = api.unpack(pack([row('JLHL', { kn: 22, kdn: '2026-11-26' }), row('JLHL', { kn: 0, kdn: 'soon' }), row('JLHL', { kn: 'x', kdn: '' })]));
+  assert.deepStrictEqual(rows2.map((r) => [r[ci('kn')], r[ci('kdn')]]), [[22, '2026-11-26'], [null, ''], [null, '']]);
+  const o = R.objects({ cols: api.COLS, rows: rows1.concat(rows2) });
+  assert.deepStrictEqual(o.map((r) => r.nearGuess), [true, false, false, false]);
+});
