@@ -1,6 +1,9 @@
 /* Stock Blueprint - premium research terminal look (owner, 03-Nov-2026: "a stunning, next-generation FinTech and
    AI-powered stock research platform" with more themes than light / dark).
-   THEMES: every colour is a token. Light (default, white page) lives on :root; each other theme only redefines the
+   THEMES: every colour is a token. Light (default) lives on :root - since 24-Nov-2026 (owner: "our light mode ... looks like
+   basic. looks like everything written on white wall. Borders are not visible enough. Improve the light to premium look
+   with adding colours") a soft blue-grey page with colour washes, white cards with visible borders and a coloured edge on
+   every tile / card title (the "light polish" block after the tokens); each other theme only redefines the
    tokens under [data-theme="<id>"] - on <html> for the page, and on the swatches of the theme picker (so each
    swatch previews its own theme with the real tokens). Ids: dark, midnight (Midnight Blue), neon (Cyber Neon),
    emerald (Emerald Finance), aurora, graphite, gold (Premium Gold). The viewer picks one with the header's theme
@@ -8,18 +11,20 @@
    --*-rgb tokens are the same colours as "r, g, b" so glows and washes can use rgba(var(--accent-rgb), .3). */
 :root, .theme-sw[data-theme="light"] {
   color-scheme: light;
-  --page: #ffffff;
-  --page-art: radial-gradient(1100px 520px at 6% -12%, rgba(37, 99, 235, 0.07), transparent 62%),
-              radial-gradient(900px 460px at 100% -6%, rgba(124, 58, 237, 0.05), transparent 60%);
+  --page: #eef2f9;
+  --page-art: radial-gradient(1100px 560px at 4% -14%, rgba(37, 99, 235, 0.16), transparent 62%),
+              radial-gradient(900px 500px at 100% -8%, rgba(124, 58, 237, 0.13), transparent 60%),
+              radial-gradient(900px 600px at 70% 110%, rgba(13, 148, 136, 0.10), transparent 60%),
+              radial-gradient(700px 520px at -6% 80%, rgba(236, 72, 153, 0.06), transparent 60%);
   --surface: #ffffff;
-  --surface-2: #f5f7fb;      /* table headers, secondary surfaces */
-  --surface-3: #edf1f8;      /* hover */
-  --card-bg: #ffffff;
-  --border: #e3e8f0;
-  --border-strong: #cdd5e2;
-  --ink: #0d1321;
-  --ink-2: #465066;
-  --muted: #687389;
+  --surface-2: #f1f4fc;      /* table headers, secondary surfaces */
+  --surface-3: #e6ecfa;      /* hover */
+  --card-bg: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+  --border: #d3dbea;
+  --border-strong: #b4c0d6;
+  --ink: #0b1220;
+  --ink-2: #3a4660;
+  --muted: #5a667e;
   --accent: #2563eb;         /* navigation, selected controls, links */
   --accent-2: #7c3aed;       /* second colour of the brand gradient */
   --accent-rgb: 37, 99, 235;
@@ -44,15 +49,15 @@
   --bar-neg: #d64545;
   --bar-neg-2: #f08a8a;
   --grad: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 6px rgba(15, 23, 42, 0.05);
-  --shadow-hover: 0 10px 28px -12px rgba(37, 99, 235, 0.28), 0 2px 6px rgba(15, 23, 42, 0.06);
-  --shadow-pop: 0 16px 40px -12px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.08);
-  --card-hi: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 6px 18px -8px rgba(30, 58, 138, 0.16);
+  --shadow-hover: 0 14px 32px -12px rgba(37, 99, 235, 0.34), 0 2px 6px rgba(15, 23, 42, 0.08);
+  --shadow-pop: 0 18px 44px -12px rgba(15, 23, 42, 0.32), 0 2px 8px rgba(15, 23, 42, 0.10);
+  --card-hi: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --glow: 0 6px 20px -6px rgba(37, 99, 235, 0.55);
-  --header-bg: rgba(255, 255, 255, 0.78);
-  --glass: rgba(255, 255, 255, 0.86);
+  --header-bg: rgba(255, 255, 255, 0.86);
+  --glass: rgba(255, 255, 255, 0.92);
   --backdrop: rgba(15, 23, 42, 0.32);
-  --row-hover: #f6f9ff;
+  --row-hover: #edf3ff;
   --img-bg: #ffffff;
   --good-text: #0b4d22; --good-border: #c6e8d1;
   --warn-text: #6b4300; --warn-border: #f3dcae;
@@ -63,6 +68,75 @@
   --radius-sm: 10px;
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Tamil", sans-serif;
   --font-display: "Space Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Tamil", sans-serif;
+}
+
+/* ---------- light polish (the light theme only: no data-theme on <html>) ----------
+   Owner, 24-Nov-2026: "looks like everything written on white wall. Borders are not visible enough ... premium look with
+   adding colours". Each tile / card title gets a colour of its own from a fixed set (blue, violet, teal, amber, rose,
+   green), table headers a tinted band, chips / buttons / inputs visible edges; the numbers stay ink-coloured. */
+:root:not([data-theme]) {
+  --lp-1: #2563eb; --lp-1-rgb: 37, 99, 235;
+  --lp-2: #7c3aed; --lp-2-rgb: 124, 58, 237;
+  --lp-3: #0d9488; --lp-3-rgb: 13, 148, 136;
+  --lp-4: #d97706; --lp-4-rgb: 217, 119, 6;
+  --lp-5: #db2777; --lp-5-rgb: 219, 39, 119;
+  --lp-6: #16a34a; --lp-6-rgb: 22, 163, 74;
+}
+:root:not([data-theme]) .tile { --lp: var(--lp-1); --lp-rgb: var(--lp-1-rgb); }
+:root:not([data-theme]) .tile:nth-child(6n + 2) { --lp: var(--lp-2); --lp-rgb: var(--lp-2-rgb); }
+:root:not([data-theme]) .tile:nth-child(6n + 3) { --lp: var(--lp-3); --lp-rgb: var(--lp-3-rgb); }
+:root:not([data-theme]) .tile:nth-child(6n + 4) { --lp: var(--lp-4); --lp-rgb: var(--lp-4-rgb); }
+:root:not([data-theme]) .tile:nth-child(6n + 5) { --lp: var(--lp-5); --lp-rgb: var(--lp-5-rgb); }
+:root:not([data-theme]) .tile:nth-child(6n + 6) { --lp: var(--lp-6); --lp-rgb: var(--lp-6-rgb); }
+:root:not([data-theme]) .tile:not(.hero) {
+  background: linear-gradient(180deg, rgba(var(--lp-rgb), 0.07) 0%, rgba(var(--lp-rgb), 0.015) 55%, #ffffff 100%);
+  border-color: rgba(var(--lp-rgb), 0.28); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 20px -12px rgba(var(--lp-rgb), 0.45);
+}
+:root:not([data-theme]) .tile:not(.hero)::after { opacity: 1; height: 3px; background: linear-gradient(90deg, var(--lp), rgba(var(--lp-rgb), 0.35)); }
+:root:not([data-theme]) .tile:not(.hero) .label { color: var(--lp); font-weight: 600; }
+:root:not([data-theme]) a.tile-link:hover { border-color: var(--lp); box-shadow: 0 14px 30px -14px rgba(var(--lp-rgb), 0.6); }
+:root:not([data-theme]) a.tile-link:hover .tile-go { background: var(--lp); }
+:root:not([data-theme]) .tile .label { color: var(--ink-2); }
+:root:not([data-theme]) .tile.hero { box-shadow: 0 18px 40px -18px rgba(37, 99, 235, 0.55), 0 2px 6px rgba(15, 23, 42, 0.06); }
+:root:not([data-theme]) .card { border-color: var(--border); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 26px -16px rgba(30, 58, 138, 0.28); }
+:root:not([data-theme]) .card:hover { border-color: #a9b8d6; }
+/* a short coloured bar before every card title, the colour by the card's place on the page */
+:root:not([data-theme]) .card-head h2::before {
+  content: ""; flex: none; width: 4px; height: 16px; border-radius: 4px; background: linear-gradient(180deg, var(--lp-1), var(--lp-2));
+}
+:root:not([data-theme]) .page > .card:nth-of-type(4n + 2) .card-head h2::before,
+:root:not([data-theme]) .grid > .card:nth-child(4n + 2) .card-head h2::before { background: linear-gradient(180deg, var(--lp-3), var(--lp-1)); }
+:root:not([data-theme]) .page > .card:nth-of-type(4n + 3) .card-head h2::before,
+:root:not([data-theme]) .grid > .card:nth-child(4n + 3) .card-head h2::before { background: linear-gradient(180deg, var(--lp-4), var(--lp-5)); }
+:root:not([data-theme]) .page > .card:nth-of-type(4n + 4) .card-head h2::before,
+:root:not([data-theme]) .grid > .card:nth-child(4n + 4) .card-head h2::before { background: linear-gradient(180deg, var(--lp-2), var(--lp-5)); }
+:root:not([data-theme]) .page-head h1 {
+  background: linear-gradient(120deg, #0b1220 0%, #1e3a8a 55%, #6d28d9 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+:where(:root:not([data-theme]) .page-head h1) > * { color: var(--ink); }    /* a star / badge inside a title keeps its colour */
+:root:not([data-theme]) .tbl th { background: linear-gradient(180deg, #eef2fc, #e6ecf9); color: #2b3a5c; border-bottom: 1px solid #c3cee3; }
+:root:not([data-theme]) .tbl th:first-child { border-left-color: #c3cee3; }
+:root:not([data-theme]) .tbl th:last-child { border-right-color: #c3cee3; }
+:root:not([data-theme]) .tbl tbody tr:nth-child(even) { background: #f8faff; }
+:root:not([data-theme]) .tbl tbody tr:hover { background: var(--row-hover); }
+:root:not([data-theme]) .tbl td { border-bottom-color: #e2e8f3; }
+:root:not([data-theme]) .chip { background: #f4f7fe; border-color: #c9d3e6; }
+:root:not([data-theme]) .btn { border-color: #bfcae0; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
+:root:not([data-theme]) .search, :root:not([data-theme]) select.sel, :root:not([data-theme]) input.inp, :root:not([data-theme]) textarea.inp {
+  border-color: #bfcae0; background: #ffffff;
+}
+:root:not([data-theme]) .tabs a:not([aria-current="page"]) .ico { color: var(--accent); opacity: 0.9; }
+:root:not([data-theme]) .ticker-in { border-color: #c9d3e6; }
+:root:not([data-theme]) .ticker-lbl { background: linear-gradient(90deg, #e8eefc, #f1ecfd); color: #2b3a5c; }
+:root:not([data-theme]) .note { background: #f3f6fd; border-color: #d3dcee; border-left-color: var(--accent); }
+:root:not([data-theme]) .note.warn { background: var(--warn-wash); border-color: var(--warn-border); border-left-color: var(--warn-mark); }
+:root:not([data-theme]) .note.bad { background: var(--down-wash); border-color: var(--bad-border); border-left-color: var(--down); }
+:root:not([data-theme]) .note.good { background: var(--up-wash); border-color: var(--good-border); border-left-color: var(--up); }
+:root:not([data-theme]) .top { box-shadow: 0 6px 20px -16px rgba(30, 58, 138, 0.5); }
+:root:not([data-theme]) .top::after { opacity: 0.9; height: 2px; }
+@media (min-width: 1200px) {
+  :root:not([data-theme]) .tabs { background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(240, 244, 253, 0.95)); border-right-color: #c9d3e6; }
+  :root:not([data-theme]) .tabs::before { color: #5b4bd6; }
 }
 
 /* Dark - deep slate with a blue / violet glow */

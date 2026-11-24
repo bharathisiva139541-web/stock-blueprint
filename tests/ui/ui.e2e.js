@@ -338,8 +338,9 @@ function check(name, fn) {
           assert.ok(info.text > 200, 'page has content');
           assert.ok(!info.bad, 'page did not crash');
           assert.ok(info.overflow <= 0, 'horizontal page overflow ' + info.overflow + 'px');
-          if (theme === 'light') assert.strictEqual(info.bg, 'rgb(255, 255, 255)', 'light theme body is white');
-          else { assert.strictEqual(info.theme, 'dark'); assert.notStrictEqual(info.bg, 'rgb(255, 255, 255)', 'dark theme body is not white'); }
+          // owner, 24-Nov-2026: the light theme is no longer "everything written on white wall" - a soft blue-grey page, white cards
+          if (theme === 'light') assert.strictEqual(info.bg, 'rgb(238, 242, 249)', 'light theme body = the soft blue-grey page');
+          else { assert.strictEqual(info.theme, 'dark'); assert.ok(['rgb(255, 255, 255)', 'rgb(238, 242, 249)'].indexOf(info.bg) < 0, 'dark theme body is dark'); }
         });
       }
       if (vp.width > 1000 && theme === 'light') {
