@@ -22,10 +22,13 @@
   const Q_RE = /^(Mar|Jun|Sep|Dec) \d{4}$/;
   const MAX_BLOB = 4000000;
   const MAX_ROWS = 6000;
-  // kp / kd = the first session (+ its day) reaching 80 / 90 / 100 % of the way from the entry to the target (owner, 24-Nov-2026);
-  // pg = the best progress, hh / dd = the highest high / lowest low vs the entry - per window 30 / 60 / 90 / 120 / 180
+  // kp / kd = the first session (+ its day) reaching 50 / 60 / 70 / 80 / 90 / 100 % of the way from the entry to the target
+  // (owner, 24-Nov-2026); pg = the best progress, hh / dd = the highest high / lowest low vs the entry - per window 30 / 60 / 90 /
+  // 120 / 180; nq = the sessions before the next quarter's results (null = not out yet), nqa 1 = no date found for them (SEBI's
+  // last day taken), nx = when they came, wq = [pg, hh, dd, cl, ix] of that window
   const COLS = ['sym', 'st', 'why', 'b', 'fl', 'eps', 'ttm', 'prev', 'g', 'tgt', 'ann', 'src', 'ed', 'ep', 'pre', 'o0', 'n', 'kp',
-    'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc'];
+    'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'nq', 'nqa', 'nx', 'wq', 'now', 'ph', 'pc'];
+  const ANN_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
   const WHY = ['', 'loss', 'prevloss', 'fell', 'date', 'wait', 'price', 'nofiling'];
   const OLDER = 'your laptop has not sent the new EPS targets yet - run UpdateNow.bat, then EpsTargetNow.bat';
   const memo = cacheLib.createCache({ maxEntries: 40 });
@@ -47,11 +50,14 @@
     COLS.forEach(function (k, i) { o[k] = r[i]; });
     const sym = String(o.sym || '');
     if (!/^[A-Z0-9&_.-]{1,30}$/.test(sym)) return null;
+    const nq = num(o.nq);
     return [sym, o.st === 'ok' ? 'ok' : 'x', WHY.indexOf(o.why) >= 0 ? o.why : '', o.b === 'S' ? 'S' : o.b === 'C' ? 'C' : '',
       /^[-a-z]{8}$/.test(String(o.fl || '')) ? o.fl : '', nums(o.eps, 8), num(o.ttm), num(o.prev), num(o.g), num(o.tgt),
-      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(o.ann || '')) ? o.ann : '', o.src === 'nse' || o.src === 'xbrl' ? o.src : '',
-      day(o.ed), num(o.ep), num(o.pre), num(o.o0), num(o.n), nums(o.kp, 3), (Array.isArray(o.kd) ? o.kd : []).slice(0, 3).map(day),
-      nums(o.pg, 5), nums(o.hh, 5), nums(o.dd, 5), nums(o.cl, 5), nums(o.ix, 5), num(o.now), lite ? [] : nums(o.ph, 40), lite ? [] : nums(o.pc, 40)];
+      ANN_RE.test(String(o.ann || '')) ? o.ann : '', o.src === 'nse' || o.src === 'xbrl' ? o.src : '',
+      day(o.ed), num(o.ep), num(o.pre), num(o.o0), num(o.n), nums(o.kp, 6), (Array.isArray(o.kd) ? o.kd : []).slice(0, 6).map(day),
+      nums(o.pg, 5), nums(o.hh, 5), nums(o.dd, 5), nums(o.cl, 5), nums(o.ix, 5), nq != null && nq >= 0 ? Math.round(nq) : null,
+      o.nqa === 1 ? 1 : 0, ANN_RE.test(String(o.nx || '')) ? o.nx : '', nums(o.wq, 5), num(o.now), lite ? [] : nums(o.ph, 40),
+      lite ? [] : nums(o.pc, 40)];
   }
 
   /** The sheet's blob -> clean rows (throws on a broken one). */
@@ -72,9 +78,9 @@
     WHY.slice(1).forEach(function (k) { if (s.why && s.why[k]) out.why[k] = int(s.why[k]); });
     ['nse', 'xbrl'].forEach(function (k) { if (s.ann && s.ann[k]) out.ann[k] = int(s.ann[k]); });
     ['win', 'dwin'].forEach(function (g) {
-      ['30', '60', '90', '120', '180'].forEach(function (k) {
+      ['30', '60', '90', '120', '180', 'next'].forEach(function (k) {
         const w = s[g] && s[g][k];
-        if (Array.isArray(w)) out[g][k] = w.slice(0, 6).map(int);
+        if (Array.isArray(w)) out[g][k] = w.slice(0, 14).map(int);
       });
     });
     return out;

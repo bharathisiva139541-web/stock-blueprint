@@ -7,25 +7,29 @@
    80 % of the way to the target within 30 / 60 / 90 / 120 / 180 sessions. Owner, 24-Nov-2026: "if a stock hit atleast 80%
    of the target price, consider as it is target hit" (80 % of the way - his answer), a target under the entry price is a
    DOWNSIDE target kept apart ("we are long trader. it should not mingle with long trades"), and "list those stocks which
-   hit target at every/maximum quarter as per our thesis". Worked out by the laptop (eps_target.py); counted by
-   web/lib/epstarget.js. */
+   hit target at every/maximum quarter as per our thesis". Then (24-Nov-2026): "add another session, as reached within next
+   quarterly result date" (the window 'next'), 50 / 60 / 70 % of the way too, and "Atleast target vs Entry % as atleast 10% and
+   above, 20% and above, between ... These unimaginable targets reduce our winrate" (the target filter: long targets outside it
+   are left out of every figure). Worked out by the laptop (eps_target.py); counted by web/lib/epstarget.js. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, T = SB.epst;
   var OPT_KEY = 'sb:epst:opts';
   var ST = { opt: load(), q: '', list: 'all', group: 'growth', one: '', th: 'every' };
   var MEMO = {};
-  var MONTHS = { 30: '1.5 months', 60: '3 months', 90: '4.5 months', 120: '6 months', 180: '9 months' };
+  var MONTHS = { 30: '1.5 months', 60: '3 months', 90: '4.5 months', 120: '6 months', 180: '9 months', next: 'about 3 months' };
   var GROUPS = [['growth', 'EPS growth'], ['upside', 'Upside at entry'], ['pe', 'PE at entry'], ['session', 'When the results came'], ['sector', 'Sector']];
   var MARK = { hit: ['✓', 'reached'], early: ['✓', 'reached (its window still running)'], not: ['✗', 'not reached'], pending: ['…', 'still running'],
-    down: ['↓', 'a downside target (below the entry) - not counted'], none: ['–', 'no target (EPS fell / a loss / no results date)'], '': ['·', 'not 8 quarters of EPS yet'] };
+    down: ['↓', 'a downside target (below the entry) - not counted'], none: ['–', 'no target (EPS fell / a loss / no results date)'],
+    out: ['○', 'left out by your target filter'], '': ['·', 'not 8 quarters of EPS yet'] };
 
   function load() {
     var o = null;
     try { o = JSON.parse(localStorage.getItem(OPT_KEY) || 'null'); } catch (e) { o = null; }
     o = o && typeof o === 'object' ? o : {};
-    return { q: typeof o.q === 'string' ? o.q : '', W: T.WINDOWS.indexOf(Number(o.W)) >= 0 ? Number(o.W) : 60,
-      T: T.THRESH.indexOf(Number(o.T)) >= 0 ? Number(o.T) : T.THRESH[0] };
+    var lim = function (v, list) { return v != null && list.indexOf(Number(v)) > 0 ? Number(v) : null; };
+    return { q: typeof o.q === 'string' ? o.q : '', W: T.win(o.W) || 60, T: T.THRESH.indexOf(Number(o.T)) >= 0 ? Number(o.T) : T.MAIN_T,
+      lo: lim(o.lo, T.UP_MIN), hi: lim(o.hi, T.UP_MAX) };
   }
   function save() { try { localStorage.setItem(OPT_KEY, JSON.stringify(ST.opt)); } catch (e) { /* private window */ } }
   function pc(v, d) { return v == null || !isFinite(v) ? '–' : (v * 100).toFixed(d == null ? 0 : d) + '%'; }
@@ -47,6 +51,18 @@
   function qWords(q) { var f = T.fy(q); return esc(q) + (f ? ' · ' + f : ''); }
   function ruleWords(Tt) {
     return Tt === 100 ? 'the target itself' : Tt + '% of the way from the entry to the target';
+  }
+  var NX = T.NEXT;
+  /** the window in words: 'within 60 sessions' / 'before the next results' */
+  function winName(W) { return W === NX ? 'before the next results' : 'within ' + W + ' sessions'; }
+  function winShort(W) { return W === NX ? 'Until next results' : W + ' sessions'; }
+  function overWords(W) { return W === NX ? 'whose next results are out' : 'whose ' + W + ' sessions are over'; }
+  function runWords(W) { return W === NX ? 'the next quarter\'s results not out yet' : 'fewer than ' + W + ' sessions since the entry'; }
+  function endWords(W) { return W === NX ? 'at the next results' : 'after ' + W + ' sessions'; }
+  function filterOn() { return ST.opt.lo != null || ST.opt.hi != null; }
+  function filterWords() {
+    var lo = ST.opt.lo, hi = ST.opt.hi;
+    return lo != null && hi != null ? lo + '% to ' + hi + '% above the entry' : lo != null ? 'at least ' + lo + '% above the entry' : 'at most ' + hi + '% above the entry';
   }
 
   // ---------- data ----------
@@ -74,6 +90,7 @@
   /** the rows of the answer + the site's own stock data (name, sector, the price now) */
   function prepare(res, ctx) {
     var rows = T.objects(res);
+    T.markOut(rows, ST.opt.lo, ST.opt.hi);
     rows.forEach(function (r) {
       var s = ctx.bySym[r.sym];
       r.name = s ? s.name : '';
@@ -94,17 +111,28 @@
       return '<button type="button" class="chip" data-epq="' + esc(x.q) + '" aria-pressed="' + on + '">' + qWords(x.q) +
         (x.sum && !x.sum.ready ? ' <span class="sub">running</span>' : '') + '</button>';
     }).join('');
+    var opt = function (v, on, words) { return '<option value="' + v + '"' + (on ? ' selected' : '') + '>' + esc(words) + '</option>'; };
+    var lo = ST.opt.lo, hi = ST.opt.hi;
     return '<section class="card" id="et-pick"><div class="card-head"><div><h2>Quarter, window and your rule</h2>' +
       '<p>A long target counts as <b>reached</b> when a daily <b>high</b> covered at least <b>' + esc(ruleWords(ST.opt.T)) + '</b> within the window ' +
-      'after the entry (entry ₹100, target ₹200: ₹' + (100 + ST.opt.T) + '). Results whose window is not over yet are shown as <b>still running</b> - never as misses. ' +
+      'after the entry (entry ₹100, target ₹200: ₹' + (100 + ST.opt.T) + '). <b>Until the next results</b> = the sessions after the entry before the first one that could ' +
+      'react to the next quarter\'s results. Results whose window is not over yet are shown as <b>still running</b> - never as misses. ' +
       'A target <b>under</b> the entry price is a <b>downside target</b>, counted apart below.</p></div></div>' +
       '<nav class="chips" aria-label="Quarter">' + (chips || '<span class="sub">No quarter yet</span>') + '</nav>' +
-      '<div class="controls edge-opts"><label class="edge-opt">Reached within <select id="et-w">' + T.WINDOWS.map(function (W) {
-        return '<option value="' + W + '"' + (W === ST.opt.W ? ' selected' : '') + '>' + W + ' sessions (about ' + MONTHS[W] + ')</option>';
+      '<div class="controls edge-opts"><label class="edge-opt">Reached within <select id="et-w">' + T.WINS.map(function (W) {
+        return opt(W, W === ST.opt.W, W === NX ? 'Until the next results (' + MONTHS[W] + ')' : W + ' sessions (about ' + MONTHS[W] + ')');
       }).join('') + '</select></label><label class="edge-opt">Counts as reached at <select id="et-t">' + T.THRESH.map(function (Tt) {
-        return '<option value="' + Tt + '"' + (Tt === ST.opt.T ? ' selected' : '') + '>' + (Tt === 100 ? 'the target itself' : Tt + '% of the way' +
-          (Tt === 80 ? ' (your rule)' : '')) + '</option>';
-      }).join('') + '</select></label></div></section>';
+        return opt(Tt, Tt === ST.opt.T, Tt === 100 ? 'the target itself' : Tt + '% of the way' + (Tt === T.MAIN_T ? ' (your rule)' : ''));
+      }).join('') + '</select></label>' +
+      '<label class="edge-opt">Target vs entry: at least <select id="et-lo">' + T.UP_MIN.map(function (v) {
+        return opt(v == null ? '' : v, v === lo, v == null ? 'any' : v + '%');
+      }).join('') + '</select></label><label class="edge-opt">at most <select id="et-hi">' + T.UP_MAX.map(function (v) {
+        return opt(v == null ? '' : v, v === hi, v == null ? 'no limit' : v + '%');
+      }).join('') + '</select></label></div>' +
+      '<p class="sub" id="et-filter-note">' + (filterOn()
+        ? 'Only long targets <b>' + esc(filterWords()) + '</b> are counted on this page; the others are left out of every figure (the chip <b>Left out by your target filter</b> below lists them).' +
+          (lo != null && hi != null && lo >= hi ? ' <b>At least is not below at most - nothing is left.</b>' : '')
+        : 'Target vs entry: every long target counts. A huge target (1,000%+) comes from EPS growing from almost nothing - use <b>at most</b> to leave those out.') + '</p></section>';
   }
 
   function summaryHtml(res, rows) {
@@ -120,32 +148,40 @@
       F.int(rows.length) + ' stocks with 8 quarters of EPS · prices up to ' + (sum.upto ? esc(F.date(sum.upto)) : '–') +
       (sum.made ? ' · worked out by your laptop ' + esc(F.dateTime(sum.made.replace('T', ' '))) : '') + '.</p></div></div>';
     h += '<div class="tiles">' +
-      tile('Long targets (above the entry)', F.int(S.n), F.int(S.other) + ' downside targets apart · ' + F.int(S.none) + ' without a target', '',
+      tile('Long targets (above the entry)', F.int(S.n), F.int(S.other) + ' downside targets apart · ' + F.int(S.none) + ' without a target' +
+        (S.out ? ' · ' + F.int(S.out) + ' left out by your target filter' : ''), '',
         'A target under the entry price is a downside target - counted apart, never mixed with the long ones') +
-      tile('Reached within ' + W + ' sessions', S.rate == null ? '–' : pc(S.rate), S.done ? F.int(S.hit) + ' of ' + F.int(S.done) + ' finished · likely ' +
+      tile('Reached ' + winName(W), S.rate == null ? '–' : pc(S.rate), S.done ? F.int(S.hit) + ' of ' + F.int(S.done) + ' finished · likely ' +
         pc(S.lo) + '–' + pc(S.hi) : 'none finished yet', S.rate != null ? 'up' : '',
-        'Reached = ' + ruleWords(Tt) + '. Only results whose ' + W + ' sessions are over count. Likely range = where the rate of results like these would fall 9 times out of 10') +
-      tile('Still running', F.int(S.pending), 'fewer than ' + W + ' sessions since the entry' + (S.early ? ' · ' + F.int(S.early) + ' reached it already' : ''), '',
-        'They count once their ' + W + ' sessions are over - an early hit alone would make the rate look better than it is') +
+        'Reached = ' + ruleWords(Tt) + '. Only results ' + overWords(W) + ' count. Likely range = where the rate of results like these would fall 9 times out of 10') +
+      tile('Still running', F.int(S.pending), runWords(W) + (S.early ? ' · ' + F.int(S.early) + ' reached it already' : ''), '',
+        'They count once their window is over - an early hit alone would make the rate look better than it is') +
       tile('Typical time to reach', S.medDays == null ? '–' : F.int(S.medDays) + ' sessions', S.medDays == null ? '' : 'about ' + monthsOf(S.medDays) + ' (median)') +
-      tile('Buy at entry, sell at ' + (Tt === 100 ? 'the target' : 'the ' + Tt + '% level') + ' or after ' + W, S.avgOut == null ? '–' : sgn(S.avgOut),
-        S.avgIx == null ? 'average per result' : 'average per result · NIFTY 50 over ' + W + ' sessions ' + sgn(S.avgIx), S.avgOut > 0 ? 'up' : S.avgOut < 0 ? 'down' : '',
-        'Sold the day the price reached ' + ruleWords(Tt) + ', else at the close of the ' + W + 'th session') +
+      tile('Buy at entry, sell at ' + (Tt === 100 ? 'the target' : 'the ' + Tt + '% level') + ' or ' + (W === NX ? 'at the next results' : 'after ' + W),
+        S.avgOut == null ? '–' : sgn(S.avgOut), S.avgIx == null ? 'average per result' : 'average per result · NIFTY 50 over the same sessions ' + sgn(S.avgIx),
+        S.avgOut > 0 ? 'up' : S.avgOut < 0 ? 'down' : '',
+        'Sold the day the price reached ' + ruleWords(Tt) + ', else at the close of the last session of the window') +
       tile('Downside targets', F.int(D.n), D.done ? 'fell ' + (Tt === 100 ? 'to the target' : Tt + '% of the way down') + ': ' + F.int(D.hit) + ' of ' + F.int(D.done) +
         ' finished (' + pc(D.rate) + ') - see below' : 'see below', '', 'The formula\'s price was under the price at the entry') +
       '</div>';
     var li = [];
     if (S.done) {
-      li.push('Of the <b>' + F.int(S.done) + '</b> long targets whose ' + W + ' sessions are over, <b>' + F.int(S.hit) + ' (' + pc(S.rate) +
-        ')</b> reached ' + esc(ruleWords(Tt)) + '. For results like these the rate is likely between ' + pc(S.lo) + ' and ' + pc(S.hi) + '.' +
-        (S.early ? ' ' + F.int(S.early) + ' of the results still running reached it already - they count once their ' + W +
-          ' sessions are over (counting only the early hits would make the rate look better than it is).' : ''));
+      li.push('Of the <b>' + F.int(S.done) + '</b> long targets ' + overWords(W) + ', <b>' + F.int(S.hit) + ' (' + pc(S.rate) +
+        ')</b> reached ' + esc(ruleWords(Tt)) + (W === NX ? ' before the next results' : '') + '. For results like these the rate is likely between ' + pc(S.lo) +
+        ' and ' + pc(S.hi) + '.' + (S.early ? ' ' + F.int(S.early) + ' of the results still running reached it already - they count once their window is over ' +
+          '(counting only the early hits would make the rate look better than it is).' : ''));
+      if (W === NX) {
+        li.push('The next results came <b>' + F.int(S.medLen) + ' sessions</b> after the entry for the median result' + (S.approx ? ' (for ' + F.int(S.approx) +
+          ' of them no date was found - the window ends on the last day SEBI allows for those results: 45 days after the quarter, 60 for March)' : '') + '.');
+      }
     } else {
-      li.push('No long target of ' + esc(q) + ' has had ' + W + ' sessions yet' + (maxN ? ' (the longest so far: ' + F.int(maxN) + ')' : '') + ' - pick a shorter window above.');
+      li.push(W === NX ? 'The next results of ' + esc(q) + '\'s long targets are not out yet - pick a window in sessions above, or come back after the next results season.'
+        : 'No long target of ' + esc(q) + ' has had ' + W + ' sessions yet' + (maxN ? ' (the longest so far: ' + F.int(maxN) + ')' : '') + ' - pick a shorter window above.');
     }
+    if (S.out) li.push(F.int(S.out) + ' long target' + (S.out === 1 ? '' : 's') + ' left out: not ' + esc(filterWords()) + ' (your target filter above).');
     if (S.medUp != null) li.push('The median target was <b>' + sgn(S.medUp, 0) + '</b> above the entry price - see <b>Upside at entry</b> below: the bigger the upside, the rarer the hit.');
     if (S.avgRet != null) {
-      li.push('After ' + W + ' sessions the average long target\'s stock had moved <b>' + sgn(S.avgRet) + '</b>' + (S.avgIx != null ? ', NIFTY 50 ' + sgn(S.avgIx) + ' over the same sessions' +
+      li.push((W === NX ? 'At the next results' : 'After ' + W + ' sessions') + ' the average long target\'s stock had moved <b>' + sgn(S.avgRet) + '</b>' + (S.avgIx != null ? ', NIFTY 50 ' + sgn(S.avgIx) + ' over the same sessions' +
         (S.beat != null ? ' - ' + pc(S.beat) + ' of them did better than NIFTY 50' : '') : '') + '.');
     }
     if (eds.length) {
@@ -168,8 +204,9 @@
   // ---------- stocks that respect the thesis (every quarter the laptop worked out) ----------
   function thesisHtml() {
     return '<section class="card" id="et-thesis"><div class="card-head"><div><h2>Stocks that respect the thesis</h2>' +
-      '<p>Every quarter your laptop worked out, stock by stock: did the price reach its long target (' + esc(ruleWords(ST.opt.T)) + ', within ' + ST.opt.W +
-      ' sessions) after the results, quarter after quarter? ✓ reached · ✗ not reached · … still running · ↓ a downside target (not counted) · – no target. ' +
+      '<p>Every quarter your laptop worked out, stock by stock: did the price reach its long target (' + esc(ruleWords(ST.opt.T)) + ', ' + winName(ST.opt.W) +
+      ') after the results, quarter after quarter? ✓ reached · ✗ not reached · … still running · ↓ a downside target (not counted) · – no target' +
+      (filterOn() ? ' · ○ left out by your target filter' : '') + '. ' +
       'A target reached counts even while its window still runs; a quarter still running without it waits until its window is over.</p></div>' +
       '<div class="actions"><button class="btn" type="button" id="et-th-csv" hidden>Export CSV</button></div></div>' +
       '<nav class="chips" aria-label="Which stocks">' + [['every', 'Reached every finished quarter'], ['most', 'Reached most quarters'], ['all', 'Every stock']].map(function (k) {
@@ -200,6 +237,7 @@
     chain.then(function () {
       if (!el.isConnected) return;
       var W = ST.opt.W, Tt = ST.opt.T;
+      drawQuarters(el, res, byQ);
       var list = T.thesis(byQ, qs, W, Tt);
       var nameOf = function (sym) { var s = ctx.bySym[sym]; return s ? s.name : ''; };
       list.forEach(function (e) { e.name = nameOf(e.sym); });
@@ -245,7 +283,10 @@
   function windowCols(dir) {
     var word = dir === 'down' ? 'Fell to it' : 'Reached';
     return [
-      { key: 'W', label: 'Window', html: function (s) { return '<b>' + s.W + ' sessions</b> <span class="sub">≈ ' + MONTHS[s.W] + '</span>'; } },
+      { key: 'W', label: 'Window', get: function (s) { return s.W === NX ? 999 : s.W; }, html: function (s) {
+        return s.W === NX ? '<b>Until the next results</b> <span class="sub">' + (s.medLen != null ? 'median ' + F.int(s.medLen) + ' sessions' : '≈ ' + MONTHS[s.W]) + '</span>'
+          : '<b>' + s.W + ' sessions</b> <span class="sub">≈ ' + MONTHS[s.W] + '</span>';
+      } },
       { key: 'done', label: 'Finished', type: 'num', digits: 0 },
       { key: 'hit', label: word, type: 'num', digits: 0 },
       { key: 'rate', label: 'Hit rate', type: 'num', get: function (s) { return s.rate == null ? null : s.rate * 100; },
@@ -261,7 +302,7 @@
   }
   function windowsHtml() {
     return '<section class="card" id="et-win"><div class="card-head"><div><h2>Every window</h2>' +
-      '<p>The long targets of this quarter, 30 to 180 sessions after the entry. Each window counts only the results whose sessions are all over - so a longer window has fewer of them until time passes.</p></div></div>' +
+      '<p>The long targets of this quarter, 30 to 180 sessions after the entry and until the next quarter\'s results. Each window counts only the results whose window is over - so a longer window has fewer of them until time passes.</p></div></div>' +
       '<div id="et-win-t"></div></section>';
   }
   function drawWindows(el, rows) {
@@ -313,10 +354,10 @@
       'Did the price <b>fall</b> to it (a daily <b>low</b> covering ' + esc(ruleWords(Tt)) + ' down) within the window?</p></div></div>' +
       '<div class="tiles">' +
       tile('Downside targets', F.int(D.n), D.n ? 'median target ' + sgn(D.medUp, 0) + ' from the entry' : '') +
-      tile('Fell to it within ' + W + ' sessions', D.rate == null ? '–' : pc(D.rate), D.done ? F.int(D.hit) + ' of ' + F.int(D.done) + ' finished · likely ' + pc(D.lo) + '–' + pc(D.hi)
+      tile('Fell to it ' + winName(W), D.rate == null ? '–' : pc(D.rate), D.done ? F.int(D.hit) + ' of ' + F.int(D.done) + ' finished · likely ' + pc(D.lo) + '–' + pc(D.hi)
         : 'none finished yet') +
       tile('Still running', F.int(D.pending), D.early ? F.int(D.early) + ' fell to it already' : '') +
-      tile('Their move after ' + W, D.avgRet == null ? '–' : sgn(D.avgRet), D.avgIx == null ? '' : 'NIFTY 50 ' + sgn(D.avgIx), D.avgRet > 0 ? 'up' : D.avgRet < 0 ? 'down' : '') +
+      tile('Their move ' + endWords(W), D.avgRet == null ? '–' : sgn(D.avgRet), D.avgIx == null ? '' : 'NIFTY 50 ' + sgn(D.avgIx), D.avgRet > 0 ? 'up' : D.avgRet < 0 ? 'down' : '') +
       '</div><div id="et-down-t"></div><p class="sub">They are in <b>Every result</b> below under the chip <b>Downside target</b>.</p></section>';
   }
   function drawDown(el, rows) {
@@ -327,21 +368,32 @@
 
   function quartersHtml() {
     return '<section class="card" id="et-qs"><div class="card-head"><div><h2>Every quarter</h2><p>The same window and rule for each quarter your laptop worked out ' +
-      '(long targets). Tap a quarter to open it.</p></div></div><div id="et-qs-t"></div></section>';
+      '(long targets). Tap a quarter to open it.</p></div></div><p class="sub" id="et-qs-note"></p><div id="et-qs-t"></div></section>';
   }
-  function drawQuarters(el, res) {
+  /** byQ = every quarter's rows once the thesis list has read them (then the target filter applies here too); before that the
+   *  laptop's own summary of each quarter */
+  function drawQuarters(el, res, byQ) {
     var host = $('#et-qs-t', el);
     if (!host) return;
     var W = ST.opt.W, Tt = ST.opt.T;
     var rows = (res.quarters || []).map(function (x) {
+      var got = byQ && byQ[x.q];
+      if (got) {
+        var S = T.stats(got, W, Tt), D = T.stats(got, W, Tt, 'down');
+        return { q: x.q, target: S.n, down: D.n, done: S.done, hit: S.hit, pending: S.pending, rate: S.rate, drate: D.rate, ddone: D.done, medUp: S.medUp,
+          medG: T.median(got.filter(function (r) { return r.dir === 'up' && !r.out; }).map(function (r) { return r.g; })) };
+      }
       var s = T.sumRate(x.sum, W, Tt) || {}, d = T.sumRate(x.sum, W, Tt, 'down') || {};
       return { q: x.q, target: x.sum.target, down: x.sum.down, done: s.done, hit: s.hit, pending: s.pending, rate: s.rate, drate: d.rate, ddone: d.done,
         medUp: x.sum.medUp, medG: x.sum.medG };
     });
+    var note = $('#et-qs-note', el);
+    if (note) note.textContent = byQ ? '' : filterOn() ? 'Reading every quarter - your target filter applies here once they are read.' : '';
+    host.innerHTML = '';
     new ui.Table({ rows: rows, pageSize: 20, id: 'epst-quarters', tools: false, columns: [
       { key: 'q', label: 'Quarter', html: function (r) { return '<button type="button" class="linkish" data-epq="' + esc(r.q) + '">' + qWords(r.q) + '</button>'; } },
       { key: 'target', label: 'Long targets', type: 'num', digits: 0 },
-      { key: 'done', label: 'Finished (' + W + ')', type: 'num', digits: 0 },
+      { key: 'done', label: 'Finished (' + winShort(W).toLowerCase() + ')', type: 'num', digits: 0 },
       { key: 'rate', label: 'Hit rate', type: 'num', get: function (r) { return r.rate == null ? null : r.rate * 100; },
         html: function (r) { return r.done ? '<b>' + pc(r.rate) + '</b> <span class="sub">' + F.int(r.hit) + ' of ' + F.int(r.done) + '</span>' : '–'; } },
       { key: 'pending', label: 'Still running', type: 'num', digits: 0 },
@@ -367,10 +419,11 @@
   function drawAll(el, rows, res) {
     var host = $('#et-all-t', el);
     if (!host) return;
-    var W = ST.opt.W, Tt = ST.opt.T, k = T.WINDOWS.indexOf(W);
+    var W = ST.opt.W, Tt = ST.opt.T;
     var t = new ui.Table({ rows: [], pageSize: 50, id: 'epst-all-v2', empty: 'No result with this status', columns: [
       { key: 'sym', label: 'Stock', type: 'sym', name: 'name' },
-      { key: 'status', label: 'In ' + W + ' sessions', get: function (r) { return statusText(r, W, Tt); }, html: function (r) { return statusBadge(r, W, Tt); } },
+      { key: 'status', label: W === NX ? 'Before the next results' : 'In ' + W + ' sessions', get: function (r) { return statusText(r, W, Tt); },
+        html: function (r) { return statusBadge(r, W, Tt); } },
       { key: 'ann', label: 'Results out', title: 'When NSE got the results (IST): its result filing, else the time in the XBRL file\'s name',
         html: function (r) { return r.ann ? esc(F.date(r.ann.slice(0, 10))) + ' <span class="sub">' + esc(r.ann.slice(11)) + (r.src === 'xbrl' ? ' (XBRL)' : '') + '</span>' : '<span class="sub">–</span>'; } },
       { key: 'ed', label: 'Entry', type: 'date', title: 'The first session that could react: the results day itself before 15:30, else the next session' },
@@ -386,18 +439,26 @@
       { key: 'reach', label: 'Reached in', title: 'Sessions after the entry until the price covered ' + ruleWords(Tt),
         get: function (r) { return T.reachK(r, Tt); }, html: function (r) { var x = T.reachK(r, Tt); return x != null ? F.int(x) + ' <span class="sub">' + esc(F.date(T.reachD(r, Tt))) + '</span>' : '<span class="sub">–</span>'; } },
       { key: 'pg', label: 'Best progress', type: 'num', title: 'How much of the way to the target the price covered within the window (so far, while it runs)',
-        get: function (r) { return r.pg[k]; }, html: function (r) { return r.pg[k] == null ? '–' : Math.round(r.pg[k]) + '% of the way'; } },
-      { key: 'hh', label: 'Highest', type: 'pct', digits: 1, title: 'The highest high within the window vs the entry', get: function (r) { return r.hh[k]; } },
-      { key: 'dd', label: 'Lowest', type: 'pct', digits: 1, title: 'The lowest low within the window vs the entry', get: function (r) { return r.dd[k]; } },
-      { key: 'cl', label: 'After ' + W, type: 'pct', digits: 1, title: 'The close of the ' + W + 'th session vs the entry', get: function (r) { return r.cl[k]; } },
-      { key: 'ix', label: 'NIFTY 50', type: 'pct', digits: 1, title: 'NIFTY 50 over the same sessions', get: function (r) { return r.ix[k]; } },
+        get: function (r) { return T.wv(r, 'pg', W); }, html: function (r) { var v = T.wv(r, 'pg', W); return v == null ? '–' : Math.round(v) + '% of the way'; } },
+      { key: 'hh', label: 'Highest', type: 'pct', digits: 1, title: 'The highest high within the window vs the entry', get: function (r) { return T.wv(r, 'hh', W); } },
+      { key: 'dd', label: 'Lowest', type: 'pct', digits: 1, title: 'The lowest low within the window vs the entry', get: function (r) { return T.wv(r, 'dd', W); } },
+      { key: 'cl', label: W === NX ? 'At the next results' : 'After ' + W, type: 'pct', digits: 1,
+        title: W === NX ? 'The close of the last session before the next results vs the entry' : 'The close of the ' + W + 'th session vs the entry',
+        get: function (r) { return T.wv(r, 'cl', W); } },
+      { key: 'ix', label: 'NIFTY 50', type: 'pct', digits: 1, title: 'NIFTY 50 over the same sessions', get: function (r) { return T.wv(r, 'ix', W); } },
+      { key: 'nx', label: 'Next results', title: 'When the next quarter\'s results came out and how many sessions after the entry were before them (≈ = no date found: SEBI\'s last day)',
+        get: function (r) { return r.nq; }, html: function (r) {
+          if (r.st !== 'ok') return '<span class="sub">–</span>';
+          if (r.nq == null) return '<span class="sub">not out yet</span>';
+          return (r.nx ? esc(F.date(r.nx.slice(0, 10))) : '≈ SEBI\'s last day') + ' <span class="sub">' + F.int(r.nq) + ' sessions</span>';
+        } },
       { key: 'now', label: 'Now vs entry', type: 'pct', digits: 1, title: 'The last daily close the laptop had vs the entry' },
       { key: 'toTgt', label: 'Price → target', type: 'pct', digits: 1, title: 'How far the price shown on this site is from the target' },
       { key: 'n', label: 'Sessions so far', type: 'num', digits: 0 },
       { key: 'why', label: 'No target because', get: function (r) { return r.st === 'ok' ? '' : T.WHY[r.why] || ''; } },
       { key: 'b', label: 'Basis', title: 'C = consolidated, S = standalone EPS' },
       { key: 'go', label: 'Details', get: function () { return ''; }, html: function (r) { return '<button type="button" class="btn sm" data-epone="' + esc(r.sym) + '">Details</button>'; } }
-    ], hide: ['pe', 'lvl', 'hh', 'ix', 'b', 'why'] }).mount(host);
+    ], hide: ['pe', 'lvl', 'hh', 'ix', 'b', 'why', 'nx'] }).mount(host);
     function apply() {
       var w = ST.one.trim();
       var list = rows.filter(function (r) { return (ST.list === 'all' || T.kind(r, W, Tt) === ST.list) && (!w || ui.textMatch(w, [r.sym, r.name])); });
@@ -456,23 +517,37 @@
         ', the close before ' + F.price(r.pre) + ')</span>' : '') +
       (r.up != null ? ' → target ' + F.price(r.tgt) + ' = <b>' + sgn(r.up, 0) + '</b> from the entry' + (r.dir === 'down' ? ' - a <b>downside</b> target' : '') : '') + '.</p>';
     if (r.st === 'ok') {
-      var k = T.WINDOWS.indexOf(W), lvl = T.level(r, Tt), kk = T.reachK(r, Tt), way = r.dir === 'down' ? 'down' : 'up';
+      var lvl = T.level(r, Tt), kk = T.reachK(r, Tt), way = r.dir === 'down' ? 'down' : 'up', pgW = T.wv(r, 'pg', W);
+      var len = W === NX ? (r.nq != null ? r.nq : r.n) : Math.min(W, r.n);
       var all = T.THRESH.map(function (x) {
         var kx = T.reachK(r, x);
         return kx == null ? null : (x === 100 ? 'the target itself' : x + '%') + ' after ' + F.int(kx) + ' sessions (' + esc(F.date(T.reachD(r, x))) + ')';
       }).filter(Boolean);
       var moved = Tt === 100 ? 'The price reached the target' : 'The price ' + (way === 'down' ? 'fell' : 'rose') + ' ' + Tt + '% of the way to the target (' + F.price(lvl) + ')';
       h += '<p>' + (kk != null
-        ? moved + ' after <b>' + F.int(kk) + ' sessions</b>, on ' + esc(F.date(T.reachD(r, Tt))) + (kk > W ? ' (after your ' + W + '-session window)' : '') + '.' +
+        ? moved + ' after <b>' + F.int(kk) + ' sessions</b>, on ' + esc(F.date(T.reachD(r, Tt))) +
+          (W === NX ? (r.nq != null && kk > r.nq ? ' (after the next results)' : '') : kk > W ? ' (after your ' + W + '-session window)' : '') + '.' +
           (all.length > 1 ? ' <span class="sub">Reached ' + all.join(' · ') + '.</span>' : '')
         : 'Not reached yet (' + esc(ruleWords(Tt)) + ') in ' + F.int(r.n) + ' session' + (r.n === 1 ? '' : 's') +
-          (r.pg[k] != null ? ' - within ' + Math.min(W, r.n) + ' sessions the price covered ' + Math.round(r.pg[k]) + '% of the way' : '') + '.') +
+          (pgW != null ? ' - within ' + F.int(len) + ' sessions' + (W === NX ? (r.nq != null ? ' (until the next results)' : ' (the next results not out yet)') : '') +
+            ' the price covered ' + Math.round(pgW) + '% of the way' : '') + '.') +
         (r.now != null ? ' The last close the laptop had: ' + sgn(r.now) + ' from the entry' + (r.price ? ', the price on this site ' + F.price(r.price) + ' (' + sgn(r.toTgt) + ' to the target)' : '') + '.' : '') + '</p>' +
+        '<p>' + nextLine(r, Tt) + '</p>' +
         '<div class="et-chart">' + chartSvg(r, W, Tt) + '</div>';
     }
     h += '<div class="actions"><a class="btn sm" target="_blank" rel="noopener" href="https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + r.sym) + '">Open on TradingView</a>' +
       '<button type="button" class="btn sm" data-sym="' + esc(r.sym) + '">Stock window</button></div></div>';
     box.innerHTML = h;
+  }
+
+  /** the next quarter's results of one result, in words */
+  function nextLine(r, Tt) {
+    var kk = T.reachK(r, Tt);
+    if (r.nq == null) return 'The next quarter\'s results are not out yet' + (kk != null ? ' - the level was reached already' : '') + '.';
+    var when = r.nx ? 'The next quarter\'s results came out on <b>' + esc(F.date(r.nx.slice(0, 10))) + '</b> ' + esc(r.nx.slice(11)) :
+      'No date was found for the next quarter\'s results - the window ends on the last day SEBI allows for them';
+    return when + ': <b>' + F.int(r.nq) + ' sessions</b> after the entry were before them - ' + esc(ruleWords(Tt)) + ' ' +
+      (kk != null && kk <= r.nq ? '<b>reached before them</b>' : '<b>not reached before them</b>') + '.';
   }
 
   /** the price after the entry: closes (line) and highs (faint) every 5 sessions as % from the entry; the target, the rule's
@@ -482,7 +557,8 @@
     if (!pcs.length) return '<p class="sub">No session after the entry yet.</p>';
     var Wd = 640, Hd = 220, P = { l: 46, r: 92, t: 12, b: 26 };
     var xs = [0].concat(pcs.map(function (_, j) { return Math.min((j + 1) * 5, r.n); }));
-    var xmax = Math.max(xs[xs.length - 1], Math.min(W, 180));
+    var wl = W === NX ? r.nq : W;
+    var xmax = Math.max(xs[xs.length - 1], wl == null ? 0 : Math.min(wl, 200));
     var lv = r.up == null ? null : r.up * Tt / 100;
     var ys = [0, r.up || 0].concat(pcs, phs, [r.dd[T.WINDOWS.length - 1] || 0]).filter(function (v) { return v != null && isFinite(v); });
     var lo = Math.min.apply(null, ys), hi = Math.max.apply(null, ys);
@@ -509,9 +585,9 @@
           '<text class="et-lab" x="' + (Wd - P.r + 4) + '" y="' + (Y(lv) + (r.up > 0 ? 13 : -5)).toFixed(1) + '">' + Tt + '% ' + esc(F.price(T.level(r, Tt))) + '</text>';
       }
     }
-    if (W <= xmax) {
-      h += '<line class="et-win" x1="' + X(W).toFixed(1) + '" x2="' + X(W).toFixed(1) + '" y1="' + P.t + '" y2="' + (Hd - P.b) + '"/>' +
-        '<text class="et-ax" x="' + (X(W) - 4).toFixed(1) + '" y="' + (Hd - P.b - 5) + '" text-anchor="end">' + W + '-session window</text>';
+    if (wl != null && wl > 0 && wl <= xmax) {
+      h += '<line class="et-win" x1="' + X(wl).toFixed(1) + '" x2="' + X(wl).toFixed(1) + '" y1="' + P.t + '" y2="' + (Hd - P.b) + '"/>' +
+        '<text class="et-ax" x="' + (X(wl) - 4).toFixed(1) + '" y="' + (Hd - P.b - 5) + '" text-anchor="end">' + (W === NX ? 'next results' : W + '-session window') + '</text>';
     }
     h += '<polyline class="et-hi" points="' + line(r.dir === 'down' ? pcs : phs) + '"/><polyline class="et-cl" points="' + line(pcs) + '"/>';
     var kk = T.reachK(r, Tt);
@@ -580,9 +656,16 @@
           if (g) { ST.group = g.getAttribute('data-epg'); drawGroups(body, rows); }
         });
         $('#et-w', body).addEventListener('change', function (e) {
-          ST.opt.W = Number(e.target.value);
+          ST.opt.W = T.win(e.target.value) || 60;
           save();
           SB.route(true);
+        });
+        ['lo', 'hi'].forEach(function (k) {
+          $('#et-' + k, body).addEventListener('change', function (e) {
+            ST.opt[k] = e.target.value === '' ? null : Number(e.target.value);
+            save();
+            SB.route(true);
+          });
         });
         $('#et-t', body).addEventListener('change', function (e) {
           ST.opt.T = Number(e.target.value);

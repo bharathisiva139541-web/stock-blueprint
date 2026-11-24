@@ -710,3 +710,7 @@ EPS TARGET LAB (since 23-Nov-2026)
    apart from the long ones. A stock still without a results date after the announcements: its own NSE XBRL filing
    lists are read (the integrated filing page's broadcast times) - 20 stocks a round, every one in EpsTargetNow.bat
    (one NSE request every 6 seconds). A stock with no result filing on NSE at all shows "NSE has no result filing".
+ - Since 24-Nov-2026 (later): also 50% / 60% / 70% of the way, and the window "until the next results" = the
+   sessions after the entry before the first one that could react to the next quarter's results (no date found for
+   them: the last day SEBI allows - 45 days after the quarter, 60 for March). EpsTargetNow.bat SYMBOL says it too:
+   "next results 2026-10-28 17:15: 64 session(s) after the entry before them - 80% of the way reached before them".

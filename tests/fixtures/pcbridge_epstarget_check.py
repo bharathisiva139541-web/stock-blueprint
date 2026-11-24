@@ -104,9 +104,11 @@ NIFTY = {'d': days, 'c': [25000.0 + k * 10 for k in range(len(days))]}
 a = E.after(cs, k0, 2322.15, NIFTY)
 assert a['ed'] == '2026-07-27' and a['ep'] == 1624.1 and a['pre'] == 1600.0 and a['o0'] == 1624.1, a
 assert a['n'] == 100 - 1 - k0 == 94
-# the owner's rule (24-Nov-2026): reached = 80 % of the way from the entry to the target (entry 100, target 200 -> 180)
-assert a['kp'] == [60, 68, 75], a['kp']
-assert a['kd'] == [date.fromordinal(days[k0 + k]).isoformat() for k in (60, 68, 75)], a['kd']
+# the owner's rule (24-Nov-2026): reached = 80 % of the way from the entry to the target (entry 100, target 200 -> 180); then
+# 50 / 60 / 70 % too ("give more option like 80% of the way, 70% of the way, 60% of the way, 50% of the way")
+assert E.THRESH == (50, 60, 70, 80, 90, 100) and E.MAIN_T == 3
+assert a['kp'] == [38, 45, 53, 60, 68, 75], a['kp']
+assert a['kd'] == [date.fromordinal(days[k0 + k]).isoformat() for k in (38, 45, 53, 60, 68, 75)], a['kd']
 assert all(len(a[k]) == 5 for k in ('pg', 'hh', 'dd', 'cl', 'ix'))
 assert near(a['pg'][0], 40.0, 0.11) and near(a['pg'][1], 80.0, 0.11) and near(a['pg'][2], 120.0, 0.11), a['pg']
 assert near(a['hh'][0], ((1624.1 + 698.05 * 30 / 75) / 1624.1 - 1) * 100, 0.06), a['hh']
@@ -116,13 +118,14 @@ assert near(a['cl'][0], (c[k0 + 30] / 1624.1 - 1) * 100, 0.06) and near(a['ix'][
 assert a['cl'][3] is None and a['ix'][3] is None and a['pg'][4] is not None and a['hh'][4] is not None, 'longer windows: so far only'
 assert len(a['ph']) == len(a['pc']) == 19 and near(a['pc'][-1], a['now'], 0.06), (len(a['ph']), a['pc'][-1], a['now'])
 a90 = E.after(cs, k0, 99999.0, NIFTY)
-assert a90['kp'] == [None] * 3 and a90['cl'][2] is not None and a90['cl'][3] is None and a90['pg'][2] < 5
+assert a90['kp'] == [None] * 6 and a90['cl'][2] is not None and a90['cl'][3] is None and a90['pg'][2] < 5
 a0 = E.after(cs, len(days) - 1, 2322.15, NIFTY)
-assert a0['n'] == 0 and a0['pg'] == [None] * 5 and a0['now'] is None and a0['ph'] == [] and a0['kp'] == [None] * 3
+assert a0['n'] == 0 and a0['pg'] == [None] * 5 and a0['now'] is None and a0['ph'] == [] and a0['kp'] == [None] * 6
+assert a0['wq'] == [None] * 5
 # float32: a high of exactly the target counts
 c2 = [100.0] * 5 + [2322.15] * 3
 cs2 = CS(sessions(date(2026, 1, 5), 8), c2, c2, c2, c2)
-assert E.after(cs2, 4, 2322.15)['kp'] == [1, 1, 1]
+assert E.after(cs2, 4, 2322.15)['kp'] == [1] * 6
 # a DOWNSIDE target (under the entry - owner: "the market price should hit this downside target"): by the LOWS, 3 a session
 dd_days = sessions(date(2026, 7, 20), 70)
 lo3 = [1624.1] * 6 + [1624.1 - 3 * k for k in range(1, 65)]
@@ -130,8 +133,42 @@ c3 = [x + 1 for x in lo3]
 c3[5] = 1624.1
 cs3 = CS(dd_days, c3, [x + 1 for x in c3], lo3, c3)
 a3 = E.after(cs3, 5, 1500.0)
-assert a3['kp'] == [34, 38, 42], a3['kp']        # 80 % of 124.10 = 99.28 -> 3 x 34; 90 % = 111.69 -> 38; 100 % -> 42
+assert a3['kp'] == [21, 25, 29, 34, 38, 42], a3['kp']   # 80 % of 124.10 = 99.28 -> 3 x 34; 90 % = 111.69 -> 38; 100 % -> 42
 assert near(a3['pg'][0], 90 / 124.1 * 100, 0.06) and a3['hh'][0] <= 0.1, (a3['pg'], a3['hh'])
+# the window up to the next results (owner, 24-Nov-2026: "reached within next quarterly result date"): nq sessions
+aq = E.after(cs, k0, 2322.15, NIFTY, 40)
+assert near(aq['wq'][0], 40 / 75 * 100, 0.11) and aq['wq'][3] == round((c[k0 + 40] / 1624.1 - 1) * 100, 1), aq['wq']
+assert aq['wq'][4] == round((NIFTY['c'][k0 + 40] / NIFTY['c'][k0] - 1) * 100, 1) and aq['wq'][2] == a['dd'][0], aq['wq']
+assert aq['kp'] == a['kp'] and aq['pg'] == a['pg'], 'the other windows unchanged'
+assert a['wq'][:3] == [a['pg'][4], a['hh'][4], a['dd'][4]] and a['wq'][3] is None and a['wq'][4] is None, \
+    'next results not out yet: so far only'
+assert E.after(cs, k0, 2322.15, NIFTY, 0)['wq'] == [None] * 5, 'the next results came with these: no session in between'
+far = CS(sessions(date(2026, 1, 5), 260), [100.0] * 260, [100.0 + k for k in range(260)], [99.0] * 260, [100.0] * 260)
+af = E.after(far, 0, 400.0, None, 230)
+assert af['kp'] == [150, 180, 210, None, None, None] and af['wq'][0] == round(230 / 300 * 100, 1) and len(af['ph']) == 40, \
+    ('a next-results window over 180 sessions: read to its end', af['kp'], af['wq'], len(af['ph']))
+# next_window: when the next quarter's results came -> the sessions before the first one that could react to them
+nd = sessions(date(2026, 7, 20), 90)          # .. 20-Nov-2026
+JUN = E.mi_label('Jun 2026')
+k7 = nd.index(date(2026, 7, 27).toordinal())
+ix_ = lambda y, m, d_: nd.index(date(y, m, d_).toordinal())
+assert E.next_window(JUN, ['2026-07-24 16:05:00', '2026-10-29 16:30:00'], {}, nd, k7) == \
+    (ix_(2026, 10, 29) - k7, 0, '2026-10-29 16:30'), 'after the close: the 29th is still before them'
+assert E.next_window(JUN, ['2026-10-29 10:00:00'], {}, nd, k7) == (ix_(2026, 10, 28) - k7, 0, '2026-10-29 10:00'), \
+    'during the market: the 29th reacts to them'
+assert E.next_window(JUN, [], {'2026-09-30': '20261030211117'}, nd, k7) == (ix_(2026, 10, 30) - k7, 0, '2026-10-30 21:11'), 'XBRL time'
+assert E.next_window(JUN, [], {}, nd, k7) == (None, 0, ''), '20-Nov is not past 14-Nov + 15 days yet: still running'
+nd2 = sessions(date(2026, 7, 20), 140)
+assert E.next_window(JUN, [], {}, nd2, k7) == (nd2.index(date(2026, 11, 13).toordinal()) - k7, 1, ''), \
+    'no date found, well past SEBI\'s 45 days: the window ends on 14-Nov (the Friday before)'
+DEC = E.mi_label('Dec 2025')
+md = sessions(date(2026, 4, 1), 60)           # .. 23-Jun-2026
+assert E.next_window(DEC, [], {}, md, 2) == (md.index(date(2026, 5, 29).toordinal()) - 2, 1, ''), \
+    'the March quarter (the year\'s results) gets 60 days: 30-May'
+assert E.next_window(DEC, [], {}, md[:50], 2) == (None, 0, ''), '9-Jun: 30-May + 15 days not passed yet'
+last_open = nd[-1]
+assert E.next_window(JUN, ['%s 17:00:00' % date.fromordinal(last_open).isoformat()], {}, nd, k7)[0] == len(nd) - 1 - k7, \
+    'filed after the last candle: every session so far is before them'
 
 # ------------------------------------------------------------------ 5. when the results came out
 JUN = E.mi_label('Jun 2026')
@@ -246,28 +283,38 @@ def first_k(highs, ep, tgt, T):
     return None
 
 
-assert r['fl'] == 'r-------' and r['b'] == 'C' and near(r['tgt'], 2322.17, 0.02) and r['kp'][2] == 75, r['kp']
-assert r['kp'] == [first_k(lau_h, r['ep'], r['tgt'], T) for T in (80, 90, 100)] and r['kp'][0] < 75, r['kp']
-assert r['kd'][2] == date.fromordinal(ALL[ik + 75]).isoformat()
+assert r['fl'] == 'r-------' and r['b'] == 'C' and near(r['tgt'], 2322.17, 0.02) and r['kp'][5] == 75, r['kp']
+assert r['kp'] == [first_k(lau_h, r['ep'], r['tgt'], T) for T in E.THRESH] and r['kp'][3] < 75, r['kp']
+assert r['kd'][5] == date.fromordinal(ALL[ik + 75]).isoformat()
+# the next results (Sep 2026) = the XBRL file in NSE's lists, 28-Oct 17:15 -> the sessions up to 28-Oct are before them
+assert r['nx'] == '2026-10-28 17:15' and r['nqa'] == 0 and r['nq'] == ALL.index(date(2026, 10, 29).toordinal()) - 1 - ik, r['nq']
 assert r['ix'][0] == round(((25000.0 + ik + 30) / (25000.0 + ik) - 1) * 100, 1) and r['ix'][4] is None, r['ix']
 f = rows['FLAT']
-assert f['src'] == 'nse' and f['b'] == 'S' and f['fl'] == 'pppppppp' and f['tgt'] == 125.0 and f['ep'] == 100.0 and f['kp'] == [None] * 3
+assert f['src'] == 'nse' and f['b'] == 'S' and f['fl'] == 'pppppppp' and f['tgt'] == 125.0 and f['ep'] == 100.0 and f['kp'] == [None] * 6
 assert f['ed'] == '2026-07-30', 'filed at 12:00 = the same day'
+assert f['nq'] is None and f['nx'] == '' and f['wq'][3] is None, 'FLAT: no next results yet (14-Nov + 15 days not passed)'
 assert per_q[E.mi_label('Sep 2026')] == [], 'Sep 2026: no 8th quarter yet'
 s = E.summary(per_q[JUN])
 nL = r['n']
 assert s['target'] == 2 and s['down'] == 0 and s['win']['30'][:2] == [2, 0] and s['ready'] is True, s
-assert s['win']['180'][4] == 2 - s['win']['180'][0] and s['ann'] == {'nse': 2}
-# win[W] = [finished, reached 80 / 90 / 100 % among them, still running, reached 80 % while still running]: LAURUSLABS has
-# ~83 sessions - finished at 30 / 60, still running at 90 (reached 80 % early)
-k80 = r['kp'][0]
-assert s['win']['60'] == [2, 1 if k80 <= 60 else 0, 0, 0, 0, 0], (s['win']['60'], k80)
-assert nL < 90 and s['win']['90'] == [0, 0, 0, 0, 2, 1], s['win']
-assert len(s['dwin']['30']) == 6 and s['dwin']['30'][0] == 0
+assert s['win']['180'][1] == 2 - s['win']['180'][0] and s['ann'] == {'nse': 2}
+# win[W] = [finished, still running, reached 50 .. 100 % among the finished, reached 50 .. 100 % among the ones running]:
+# LAURUSLABS has ~83 sessions - finished at 30 / 60, still running at 90 (reached early)
+by_k = lambda W: [int(k is not None and k <= W) for k in r['kp']]
+assert s['win']['60'] == [2, 0] + by_k(60) + [0] * 6, (s['win']['60'], r['kp'])
+assert nL < 90 and s['win']['90'] == [0, 2] + [0] * 6 + by_k(90), s['win']
+# 'next': LAURUSLABS finished (its next results came), FLAT still running
+assert s['win']['next'] == [1, 1] + by_k(r['nq']) + [0] * 6, (s['win']['next'], r['nq'], r['kp'])
+assert len(s['dwin']['30']) == 14 and s['dwin']['30'][0] == 0 and len(s['dwin']['next']) == 14
 assert E.unpack(E.pack(per_q[JUN])) == per_q[JUN], 'the packed rows come back the same'
 words = E.stock_words(per_q, 'LAURUSLABS')
 assert any('Jun 2026 (Q1 FY27): EPS Sep 2025 3.61, Dec 2025 4.67, Mar 2026 5.17, Jun 2026 6.81 = TTM 20.26' in x and 'target 2322.1' in x
-           and 'entry 2026-07-27 close 1624.10' in x and '100% of the way up after 75 session(s)' in x for x in words), words
+           and 'entry 2026-07-27 close 1624.10' in x and '100% of the way up after 75 session(s)' in x and
+           'next results 2026-10-28 17:15: %d session(s) after the entry before them - 80%% of the way %s' % (
+               r['nq'], 'reached before them' if r['kp'][3] <= r['nq'] else 'not reached before them') in x for x in words), words
+qw = E.quarter_words(per_q, 'Jun 2026')
+assert qw.startswith('Jun 2026 (Q1 FY27): 2 target(s) above the entry price, 0 under it - 80% of the way reached within 30 sessions') \
+    and 'before the next results: %d of 1 finished' % by_k(r['nq'])[3] in qw, qw
 # no XBRL table, no screener record: no rows; a results date older than the candles' end, no filing -> 'date'
 E._ann_save({'v': 1, 'days': [], 'rows': {}})
 _u, pq2, _c = E.compute(L, {'LAURUSLABS': (TABLE, {})}, {}, TODAY, 8)
@@ -363,7 +410,7 @@ n = E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None)
 posted = [p for a, p in CALLS if a == 'epst']
 assert n == len(posted) and {p['q'] for p in posted} >= {'Jun 2026'}, (n, [p['q'] for p in posted])
 p = [x for x in posted if x['q'] == 'Jun 2026'][0]
-assert p['op'] == 'put' and p['end'] == '2026-06-30' and p['fy'] == 'Q1 FY27' and p['engine'] == E.ENGINE == 2 and p['sum']['target'] == 2
+assert p['op'] == 'put' and p['end'] == '2026-06-30' and p['fy'] == 'Q1 FY27' and p['engine'] == E.ENGINE == 3 and p['sum']['target'] == 2
 assert E.unpack(p['blob'])[0]['sym'] == 'FLAT'
 CALLS.clear()
 assert E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None) == 0 and not CALLS, 'nothing changed: no post'

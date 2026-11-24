@@ -14906,7 +14906,8 @@ const AB_EPST_MAX_PARTS = 60;
 const AB_EPST_KEEP = 16;
 const AB_EPST_Q_RE = /^(Mar|Jun|Sep|Dec) \d{4}$/;
 const AB_EPST_BLOB_RE = /^[A-Za-z0-9+\/]+={0,2}$/;
-const AB_EPST_ENGINE = 2;      // 2 (24-Nov-2026): 80 / 90 / 100 % of the way, downside targets apart - the website reads these columns
+const AB_EPST_ENGINE = 3;      // 2 (24-Nov-2026): 80 / 90 / 100 % of the way, downside targets apart; 3: 50 / 60 / 70 % too + the
+                               // window up to the next results - the website reads these columns
 
 function ab_epstFromBridge_(req) {
   const op = String(req.op || '');
@@ -14921,15 +14922,16 @@ function ab_epstSumClean_(s) {
   const num = function (v) { const n = Number(v); return v === null || v === undefined || v === '' || typeof v === 'boolean' || !isFinite(n) ? null : Math.round(n * 10) / 10; };
   const int = function (v) { const n = Math.round(Number(v)); return isFinite(n) && n >= 0 ? n : 0; };
   // target = targets above the entry (long), down = targets under it (owner, 24-Nov-2026: counted apart); win / dwin {W: [finished,
-  // reached 80 / 90 / 100 % of the way among them, still running, reached 80 % while still running]}
+  // still running, reached 50 / 60 / 70 / 80 / 90 / 100 % of the way among the finished, the same among the ones running]} for
+  // W = 30 .. 180 sessions and 'next' (up to the next quarter's results)
   const out = { stocks: int(s.stocks), ok: int(s.ok), target: int(s.target), down: int(s.down), medG: num(s.medG), medUp: num(s.medUp),
     medN: num(s.medN), ready: s.ready === true, why: {}, win: {}, dwin: {}, ann: {} };
   ['loss', 'prevloss', 'fell', 'date', 'wait', 'price', 'nofiling'].forEach(function (k) { if (s.why && s.why[k]) out.why[k] = int(s.why[k]); });
   ['nse', 'xbrl'].forEach(function (k) { if (s.ann && s.ann[k]) out.ann[k] = int(s.ann[k]); });
   ['win', 'dwin'].forEach(function (g) {
-    ['30', '60', '90', '120', '180'].forEach(function (k) {
+    ['30', '60', '90', '120', '180', 'next'].forEach(function (k) {
       const w = s[g] && s[g][k];
-      if (Array.isArray(w)) out[g][k] = w.slice(0, 6).map(int);
+      if (Array.isArray(w)) out[g][k] = w.slice(0, 14).map(int);
     });
   });
   return out;
