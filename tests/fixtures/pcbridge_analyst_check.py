@@ -105,6 +105,45 @@ assert [(x['call'], x['co'], x['tgt'], x['br'], x['rp'], x['at'], x['how']) for 
     ('ADD', 'Bharat Electronics Ltd', 450.0, 'Emkay Global', 410.0, '2026-11-05', 'table')], g
 assert g[0]['url'] == 'https://insights.dsij.in/markets/reports/report-details/jupiter-life-line-hospitals-ltd/44952'
 
+# the page's own data with the fields named (Moneycontrol's stock ideas kind of page: no headline, a record per call)
+IDEAS = ('<html><script id="__NEXT_DATA__" type="application/json">' + json.dumps({'props': {'pageProps': {'data': {'list': [
+    {'stockName': 'Jupiter Life Line Hospitals', 'nseSymbol': 'JLHL', 'brokerName': 'Prabhudas Lilladher', 'recoType': 'BUY',
+     'targetPrice': '330.00', 'recoPrice': 290.5, 'recoDate': '2026-10-27 09:15:00', 'reportUrl': '/research/jlhl-123.pdf'},
+    {'stock': {'name': 'Bharat Electronics Ltd'}, 'organization': {'name': 'Emkay Global Financial Services'}, 'rating': 'Accumulate',
+     'target': 450, 'cmp': 410, 'publishedAt': '2026-11-05T10:00:00+05:30'},
+    {'companyName': 'Tata Motors', 'broker': 'Nomura', 'targetPrice': 800, 'price': 700},          # no call word: target above = Buy
+    {'companyName': 'Coal India', 'broker': 'CLSA', 'targetPrice': 300, 'price': 400},             # no call, target below: not a call
+    {'companyName': 'No Target Ltd', 'broker': 'CLSA', 'recommendation': 'Buy', 'targetPrice': None},
+    {'companyName': 'No Broker Ltd', 'recommendation': 'Buy', 'targetPrice': 100},
+    {'name': 'Some page', 'type': 'WebPage', 'target': 5}]}}}}) + '</script><body><p>Stock ideas</p></body></html>')
+g = A.page_recos(IDEAS, 'https://www.moneycontrol.com/markets/stock-ideas/')
+assert [(x['call'], x['co'], x['tgt'], x['br'], x['rp'], x['at'], x['how'], x.get('nse', '')) for x in g] == [
+    ('BUY', 'Jupiter Life Line Hospitals', 330.0, 'Prabhudas Lilladher', 290.5, '2026-10-27 09:15', 'data', 'JLHL'),
+    ('ACCUMULATE', 'Bharat Electronics Ltd', 450.0, 'Emkay Global', 410.0, '2026-11-05 10:00', 'data', ''),
+    ('BUY', 'Tata Motors', 800.0, 'Nomura', 700.0, '', 'data', '')], g
+assert g[0]['url'] == 'https://www.moneycontrol.com/research/jlhl-123.pdf'
+# rows without a <table> (the owner's DSIJ check: 'Stock Broker / Analyst Action (Reco Date) CMP (Returns) Reco Price Target Price
+# Potential % Original PDF Research Insights' then 'Anthem Biosciences Ltd. Prabhudas Lillad...')
+DIVS = ('<div class="hdr"><span>Stock</span><span>Broker / Analyst</span><span>Action (Reco Date)</span><span>CMP (Returns)</span>'
+        '<span>Reco Price</span><span>Target Price</span><span>Potential %</span><span>Original PDF</span><span>Research Insights</span></div>'
+        '<div class="row"><a href="/s/anthem">Anthem Biosciences Ltd.</a><span>Prabhudas Lilladher</span><span>Buy (24 Nov 2026)</span>'
+        '<span>980.15 (0.5%)</span><span>975.50</span><span>1,050.00</span><span>7.6%</span><a>PDF</a><a>Insights</a></div>'
+        '<div class="row"><a>Hindalco Industries Ltd.</a><span>Motilal Oswal Financial Services</span><span>Accumulate (20 Nov 2026)</span>'
+        '<span>702.00 (-1.2%)</span><span>710.00</span><span>800.00</span><span>12.7%</span><a>PDF</a><a>Insights</a></div>'
+        '<div class="row"><a>Coal India Ltd.</a><span>Axis Direct</span><span>Sell (18 Nov 2026)</span>'
+        '<span>390 (2%)</span><span>382</span><span>350</span><span>-10.3%</span><a>PDF</a><a>Insights</a></div>'
+        '<div class="row"><a>State Bank of India</a><span>ICICI Securities</span><span>Buy (17 Nov 2026)</span>'
+        '<span>810 (1%)</span><span>800</span><span>950</span><span>17.3%</span><a>PDF</a><a>Insights</a></div>')
+g = A.page_recos(DIVS, 'https://insights.dsij.in/markets/reports/broker-reports/stock-tips')
+assert [(x['call'], x['co'], x['tgt'], x['br'], x['rp'], x['at'], x['how']) for x in g] == [
+    ('BUY', 'Anthem Biosciences Ltd.', 1050.0, 'Prabhudas Lilladher', 975.5, '2026-11-24', 'text'),
+    ('ACCUMULATE', 'Hindalco Industries Ltd.', 800.0, 'Motilal Oswal', 710.0, '2026-11-20', 'text'),
+    ('SELL', 'Coal India Ltd.', 350.0, 'Axis Securities', 382.0, '2026-11-18', 'text'),
+    ('BUY', 'State Bank of India', 950.0, 'ICICI Securities', 800.0, '2026-11-17', 'text')], g
+# a broker the list does not know, after 'Ltd.'
+g = A.text_rows('Anthem Biosciences Ltd. Some New Broking Buy (24 Nov 2026) 980 (0.5%) 975 1,050 7.6%')
+assert [(x['co'], x['br'], x['known']) for x in g] == [('Anthem Biosciences Ltd.', 'Some New', False)], g
+
 # ------------------------------------------------------------------ 3. names -> Main's symbols
 N = A.Names({'JLHL': 'Jupiter Life Line Hospitals Ltd.', 'HINDALCO': 'Hindalco Industries Limited', 'BEL': 'Bharat Electronics Ltd',
              'LT': 'Larsen & Toubro Limited', 'ASIANPAINT': 'Asian Paints Limited', 'TATAMOTORS': 'Tata Motors Limited',
@@ -133,7 +172,7 @@ assert [x for x in store['recos'].values() if x['co'] == 'Bharat Electronics'][0
 PAGES = {}
 for n in range(1, 8):
     day = TODAY - timedelta(days=12 * (n - 1))
-    PAGES['https://www.moneycontrol.com/news/tags/broker-research.html' + ('' if n == 1 else '/page-%d/' % n)] = (
+    PAGES['https://www.moneycontrol.com/news/tags/recommendations.html' + ('' if n == 1 else '/page-%d/' % n)] = (
         '<li><span>%s</span><h2><a href="/news/business/stocks/buy-x%d">Buy Hindalco Industries; target of Rs %d: Motilal Oswal</a></h2></li>'
         % (day.strftime('%B %d, %Y'), n, 900 + n))
 ASKED = []
@@ -150,16 +189,27 @@ def fake_fetch(url):
     return 200, '<html>nothing here</html>', url
 
 
-items, read, why = A.read_list(None, 'https://www.moneycontrol.com/news/tags/broker-research.html',
-                               'https://www.moneycontrol.com/news/tags/broker-research.html/page-{n}/', 2, A.FROM_DAY, fake_fetch,
+items, read, why = A.read_list(None, 'https://www.moneycontrol.com/news/tags/recommendations.html',
+                               'https://www.moneycontrol.com/news/tags/recommendations.html/page-{n}/', 2, A.FROM_DAY, fake_fetch,
                                lambda s: None, 0)
 assert read == 2 and [i['tgt'] for i in items] == [901.0, 902.0] and why == '', (read, items, why)
 ASKED.clear()
-items, read, why = A.read_list(None, 'https://www.moneycontrol.com/news/tags/broker-research.html',
-                               'https://www.moneycontrol.com/news/tags/broker-research.html/page-{n}/', 300, A.FROM_DAY, fake_fetch,
+items, read, why = A.read_list(None, 'https://www.moneycontrol.com/news/tags/recommendations.html',
+                               'https://www.moneycontrol.com/news/tags/recommendations.html/page-{n}/', 300, A.FROM_DAY, fake_fetch,
                                lambda s: None, 0, until_old=True)
 assert read == 6 and len(items) == 6, (read, len(items))     # page 6 = 25-Sep-2026, before 1-Oct: the last one read
 assert not any(u.endswith('/page-7/') for u in ASKED), 'page 7 never asked'
+# a website without page n answers with page 1 again: read twice, then it stops (AnalystNow asks up to 300 pages)
+ASKED.clear()
+items, read, why = A.read_list(None, 'https://insights.dsij.in/a', 'https://insights.dsij.in/a?page={n}', 300, A.FROM_DAY,
+                               lambda u: (ASKED.append(u), (200, DIVS, u))[1], lambda s: None, 0, until_old=True)
+assert read == 2 and len(items) == 4 and len(ASKED) == 2, (read, len(items), ASKED)
+# one page reaching from November back to September: nothing older asked
+OLD = DIVS.replace('Buy (17 Nov 2026)', 'Buy (17 Sep 2026)')
+ASKED.clear()
+items, read, why = A.read_list(None, 'https://insights.dsij.in/a', 'https://insights.dsij.in/a?page={n}', 300, A.FROM_DAY,
+                               lambda u: (ASKED.append(u), (200, OLD, u))[1], lambda s: None, 0, until_old=True)
+assert read == 1 and ASKED == ['https://insights.dsij.in/a'], ASKED
 items, read, why = A.read_list(None, 'https://www.business-standard.com/markets/research-report', 'x{n}', 2, A.FROM_DAY, fake_fetch,
                                lambda s: None, 0)
 assert items == [] and why == 'HTTP 403', why
@@ -229,7 +279,7 @@ def api(cfg, action, payload=None, tries=3, timeout=120):
 
 
 cfg = {'url': 'x', 'token': 'y'}
-PAGES['https://www.moneycontrol.com/news/tags/broker-research.html'] = MC
+PAGES['https://www.moneycontrol.com/news/tags/recommendations.html'] = MC
 n = A.step(cfg, api, L, TODAY, fetch=fake_fetch, sleep=lambda s: None, gap=0)
 puts = [p for a, p in CALLS if p.get('op') == 'put']
 assert n and len(puts) == 1 and puts[0]['engine'] == A.ENGINE == 1, (n, CALLS, LOGS[-3:])
@@ -271,10 +321,22 @@ L.LAB_DIR = keep_dir
 OUT = []
 total = A.check(OUT.append, fetch=fake_fetch, names={'JLHL': 'Jupiter Life Line Hospitals Ltd'}, save=True)
 text = '\n'.join(OUT)
-assert total >= 3 and 'Moneycontrol - broker research' in text and 'HTTP 403' in text, text
+assert total >= 3 and 'Moneycontrol - recommendations' in text and 'HTTP 403' in text, text
+assert '6 of them from 2026-10-01 on' not in text and 'of them from 2026-10-01 on' in text, text
 assert '| BUY Jupiter Life Line Hospitals | target 330 | Prabhudas Lilladher | -> JLHL' in text, text
 assert 'lines with "target": none' in text, 'an empty page says what it had'
-assert os.path.exists(os.path.join(A.CHECK_DIR, 'mc_broker_research.html'))
+assert os.path.exists(os.path.join(A.CHECK_DIR, 'mc_recommendations.html'))
+assert not any('broker-research' in u for _, _, ls in A.SOURCES for _, u, _ in ls), 'the tag moved to the news home page (owner, 24-Nov)'
+# a page with nothing found: what its data looks like, the data addresses in it, the rows after 'Target Price'
+SHAPE = ('<html><script id="__NEXT_DATA__" type="application/json">' + json.dumps({'props': {'pageProps': {'ideaData': {'rows': [
+    {'scId': 'JLH', 'tgtPrice': 330, 'entryPx': 290, 'house': 'PL'}]}, 'api': 'https://api.moneycontrol.com/mcapi/v1/stock-idea/list?page=1'}}})
+    + '</script><body><div class="t"><span>Target Price</span><span style="x">330</span></div></body></html>')
+OUT = []
+A.check(OUT.append, fetch=lambda u: (200, SHAPE, u), names=None, save=False)
+text = '\n'.join(OUT)
+assert "page data with target-like names: .props.pageProps.ideaData.rows[0] = {\"scId\": \"JLH\", \"tgtPrice\": \"330\"" in text, text
+assert 'data addresses in the page: https://api.moneycontrol.com/mcapi/v1/stock-idea/list?page=1' in text, text
+assert 'the page after "Target Price" (tags kept, shortened): Target Price</span><span>330</span>' in text, text
 
 # ------------------------------------------------------------------ 9. screener_bridge: the round calls it, the commands exist
 src = open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()
