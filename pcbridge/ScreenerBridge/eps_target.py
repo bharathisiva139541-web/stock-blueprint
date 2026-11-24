@@ -35,13 +35,23 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HERE, 'eps_target_state.json')
 ANN_PATH = os.path.join(HERE, 'eps_target_ann.json')
 
-ENGINE = 2                  # the rules' version (sent with every post; a change sends every quarter again) - 2: 80 / 90 / 100 %
-                            # of the way to the target, downside targets, per-stock NSE list dates (24-Nov-2026)
+ENGINE = 3                  # the rules' version (sent with every post; a change sends every quarter again) - 2: 80 / 90 / 100 %
+                            # of the way to the target, downside targets, per-stock NSE list dates (24-Nov-2026); 3: 50 / 60 / 70 %
+                            # too + the window up to the next quarter's results (24-Nov-2026)
 QUARTERS = 8                # quarter ends worked out (config.json eps_target_quarters, 2..16)
 WINDOWS = (30, 60, 90, 120, 180)    # sessions after the entry (about 1.5 / 3 / 4.5 / 6 / 9 months)
-THRESH = (80, 90, 100)      # reached = a daily high (a target under the entry: a daily low) covered this % of the way from the
-                            # entry to the target (owner, 24-Nov-2026: "if a stock hit atleast 80% of the target price,
-                            # consider as it is target hit" - his answer: 80 % of the way, entry 100 / target 200 -> 180)
+THRESH = (50, 60, 70, 80, 90, 100)  # reached = a daily high (a target under the entry: a daily low) covered this % of the way
+                            # from the entry to the target (owner, 24-Nov-2026: "if a stock hit atleast 80% of the target price,
+                            # consider as it is target hit" - his answer: 80 % of the way, entry 100 / target 200 -> 180; then
+                            # "give more option like ... 70% of the way, 60% of the way, 50% of the way")
+MAIN_T = THRESH.index(80)   # his rule (the words of EpsTargetNow.bat)
+NEXT = 'next'               # the window up to the next quarter's results (owner, 24-Nov-2026: "add another session, as reached
+                            # within next quarterly result date"): the sessions after the entry before the first one that could
+                            # react to the next results
+NEXT_DUE_DAYS = 45          # no date found for the next results: SEBI's last day (45 days after the quarter end, 60 for the
+NEXT_DUE_DAYS_MAR = 60      # March quarter / the year's results) is taken once NEXT_GRACE_DAYS more passed (marked nqa 1)
+NEXT_GRACE_DAYS = 15
+PATH_MAX = 40               # the chart's path points at most (200 sessions)
 PATH_STEP = 5               # the chart's path: one point every this many sessions
 CLOSE_HHMM = '15:30'        # results filed before this react the same day
 ANN_WINDOW_DAYS = 75        # a quarter's results filing is looked for from the day after its end to this many days later
@@ -54,7 +64,7 @@ READY_SESSIONS = 30         # a quarter is 'ready' when this many sessions passe
 READY_SHARE = 0.6
 KEEP_ROWS = 5000
 COLS = ('sym', 'st', 'why', 'b', 'fl', 'eps', 'ttm', 'prev', 'g', 'tgt', 'ann', 'src', 'ed', 'ep', 'pre', 'o0', 'n', 'kp',
-        'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc')
+        'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'nq', 'nqa', 'nx', 'wq', 'now', 'ph', 'pc')
 XB_PATH = os.path.join(HERE, 'eps_target_xbrl.json')   # the results times read from NSE's per-stock XBRL lists
 XB_PER_ROUND = 20           # stocks still without a results date asked a full round (EpsTargetNow.bat: every one)
 XB_GAP_S = 6.0              # between two NSE requests (the XBRL history job's pace)
@@ -325,20 +335,22 @@ def _index_at(ix, day):
     return ix['c'][k] if k >= 0 else None
 
 
-def after(cs, k0, tgt, ix=None):
+def after(cs, k0, tgt, ix=None, nq=None):
     """The sessions after the entry candle k0 (Candles: o h l c day) -> the record's price fields. Progress = how much of the
     way from the entry to the target a session covered: a target above the entry by its HIGH, one under it (a downside
     target - the owner, 24-Nov-2026: "if target price was below the entry price, the market price should hit this downside
     target ... it should not mingle with long trades") by its LOW. kp / kd = the first session (and its day) reaching
-    80 / 90 / 100 % of the way; per window pg = the best progress, hh / dd = the highest high / lowest low vs the entry
-    (so far while it runs), cl / ix = the close / NIFTY 50 at its end (only once it is over)."""
+    50 / 60 / 70 / 80 / 90 / 100 % of the way; per window pg = the best progress, hh / dd = the highest high / lowest low vs
+    the entry (so far while it runs), cl / ix = the close / NIFTY 50 at its end (only once it is over). `nq` = the sessions
+    before the next results (None = not out yet): wq = [pg, hh, dd, cl, ix] of that window (so far while it runs)."""
     o, h, lo, c, days = cs.o, cs.h, cs.l, cs.c, cs.day
     n = len(c) - 1 - k0
     ep = round(c[k0], 2)
     out = {'ed': date.fromordinal(days[k0]).isoformat(), 'ep': ep, 'pre': round(c[k0 - 1], 2) if k0 > 0 else None,
            'o0': round(o[k0], 2), 'n': n, 'kp': [None] * len(THRESH), 'kd': [''] * len(THRESH), 'pg': [], 'hh': [], 'dd': [],
-           'cl': [], 'ix': [], 'now': None, 'ph': [], 'pc': []}
-    span = min(n, WINDOWS[-1]) if ep > 0 and tgt is not None else 0
+           'cl': [], 'ix': [], 'wq': [None] * 5, 'now': None, 'ph': [], 'pc': []}
+    span = min(n, max(WINDOWS[-1], nq or 0)) if ep > 0 and tgt is not None else 0
+    qk = nq if nq is not None else span            # where the next-results window is read (so far while it runs)
     up = tgt is not None and tgt > ep
     dist = abs(tgt - ep) if tgt is not None else 0
     best, hi, low = None, None, None
@@ -353,6 +365,11 @@ def after(cs, k0, tgt, ix=None):
         best = p if best is None or p > best else best
         hi = hk if hi is None or hk > hi else hi
         low = lk if low is None or lk < low else low
+        if k == qk:
+            full = nq is not None
+            e1 = _index_at(ix, days[k0 + k]) if full else None
+            out['wq'] = [_r(best), _r((hi / ep - 1) * 100), _r((low / ep - 1) * 100),
+                         _r((c[k0 + k] / ep - 1) * 100) if full else None, _r((e1 / e0 - 1) * 100) if e0 and e1 else None]
         while w < len(WINDOWS) and (k == WINDOWS[w] or k == span < WINDOWS[w]):
             out['pg'].append(_r(best))
             out['hh'].append(_r((hi / ep - 1) * 100))
@@ -366,7 +383,7 @@ def after(cs, k0, tgt, ix=None):
         out[k] += [None] * (len(WINDOWS) - len(out[k]))
     if n > 0 and ep > 0:
         out['now'] = _r((c[-1] / ep - 1) * 100)
-    for j in range(0, span, PATH_STEP):
+    for j in range(0, min(span, PATH_MAX * PATH_STEP), PATH_STEP):
         a, b = k0 + 1 + j, k0 + min(j + PATH_STEP, span)
         out['ph'].append(_r((max(h[a:b + 1]) / ep - 1) * 100))
         out['pc'].append(_r((c[b] / ep - 1) * 100))
@@ -400,10 +417,27 @@ def stock_rows(sym, eps, flags, basis, src, filings, stamps, cs, ix, qends, nofi
                 if k0 is None:
                     row['why'] = 'wait'
                 else:
-                    row.update(after(cs, k0, t['tgt'], ix))
-                    row['st'] = 'ok'
+                    nq, nqa, nx = next_window(mi, filings, stamps, days, k0)
+                    row.update(after(cs, k0, t['tgt'], ix, nq))
+                    row.update({'nq': nq, 'nqa': nqa, 'nx': nx, 'st': 'ok'})
         out[mi] = row
     return out
+
+
+def next_window(mi, filings, stamps, days, k0):
+    """The window up to the next quarter's results -> (nq, nqa, nx): nq = the sessions after the entry k0 before the first
+    session that could react to them (all of them when that session has not come yet; None = the next results are not out
+    yet), nqa 1 = no date was found for them - the window ends on SEBI's last day for them instead, nx = when they came
+    ('yyyy-mm-dd HH:MM', '' none)."""
+    n = len(days) - 1 - k0
+    at, _how = announced(mi + 3, filings, stamps)
+    if at:
+        kn = entry_index(days, at)
+        return (n if kn is None else max(0, kn - 1 - k0)), 0, at[:16]
+    due = end_of(mi + 3) + timedelta(days=NEXT_DUE_DAYS_MAR if (mi + 3) % 12 == 3 else NEXT_DUE_DAYS)
+    if days and date.fromordinal(days[-1]) > due + timedelta(days=NEXT_GRACE_DAYS):
+        return max(0, bisect.bisect_right(days, due.toordinal()) - 1 - k0), 1, ''
+    return None, 0, ''
 
 
 def _med(vals):
@@ -415,15 +449,28 @@ def _med(vals):
 
 
 def _wins(group):
-    """{W: [finished (W sessions over), reached 80 %, 90 %, 100 % of the way among them, still running, reached 80 % while
-    still running]} - a result counts in a window only once the whole window is over (an early hit alone would flatter the
-    rate)."""
+    """{W: [finished (the window over), still running, reached 50 / 60 / 70 / 80 / 90 / 100 % of the way among the finished,
+    the same among the ones still running]} for W = 30 .. 180 sessions and 'next' (up to the next results) - a result counts
+    in a window only once the whole window is over (an early hit alone would flatter the rate)."""
     out = {}
-    for W in WINDOWS:
-        full = [r for r in group if r['n'] >= W]
-        hits = [sum(1 for r in full if r['kp'][t] is not None and r['kp'][t] <= W) for t in range(len(THRESH))]
-        early = sum(1 for r in group if r['n'] < W and r['kp'][0] is not None and r['kp'][0] <= W)
-        out[str(W)] = [len(full)] + hits + [len(group) - len(full), early]
+    nt = len(THRESH)
+    for W in WINDOWS + (NEXT,):
+        done, hits, early = 0, [0] * nt, [0] * nt
+        for r in group:
+            if W == NEXT:
+                fin = r.get('nq') is not None
+                lim = r['nq'] if fin else r['n']
+            else:
+                fin, lim = r['n'] >= W, W
+            done += fin
+            for t in range(nt):
+                k = r['kp'][t]
+                if k is not None and k <= lim:
+                    if fin:
+                        hits[t] += 1
+                    else:
+                        early[t] += 1
+        out[str(W)] = [done, len(group) - done] + hits + early
     return out
 
 
@@ -787,13 +834,26 @@ def quarter_words(per_q, q):
     rows = per_q.get(mi) or []
     s = summary(rows)
     parts = []
-    for W in WINDOWS:
-        done, hit = s['win'][str(W)][:2]
+    for W in WINDOWS + (NEXT,):
+        w = s['win'][str(W)]
+        done, hit = w[0], w[2 + MAIN_T]
         if done:
-            parts.append('%d sessions: %d of %d finished (%d%%)' % (W, hit, done, round(hit * 100.0 / done)))
+            parts.append('%s: %d of %d finished (%d%%)' % ('before the next results' if W == NEXT else '%d sessions' % W, hit, done,
+                                                           round(hit * 100.0 / done)))
     return '%s (%s): %d target(s) above the entry price, %d under it%s' % (
-        q, fy_words(mi), s['target'], s['down'], (' - %d%% of the way reached within ' % THRESH[0] + ', '.join(parts))
+        q, fy_words(mi), s['target'], s['down'], (' - %d%% of the way reached within ' % THRESH[MAIN_T] + ', '.join(parts))
         if parts else ' - none finished yet')
+
+
+def next_words(r):
+    """The window up to the next results of one row, in words."""
+    nq, k = r.get('nq'), r['kp'][MAIN_T]
+    if nq is None:
+        return 'the next results are not out yet (%d session(s) so far%s)' % (
+            r['n'], ', %d%% of the way already' % THRESH[MAIN_T] if k is not None else '')
+    when = ('next results %s' % r['nx']) if r.get('nx') else 'no date found for the next results - taken as their last day allowed'
+    return '%s: %d session(s) after the entry before them - %d%% of the way %s' % (
+        when, nq, THRESH[MAIN_T], 'reached before them' if k is not None and k <= nq else 'not reached before them')
 
 
 def stock_words(per_q, sym):
@@ -826,6 +886,7 @@ def stock_words(per_q, sym):
                     best = next((m for m in reversed(r['pg']) if m is not None), None)
                     s += ' - not %d%% of the way in %d session(s) so far%s' % (
                         THRESH[0], r['n'], (' (best %.0f%% of the way)' % best) if best is not None else '')
+                s += '; ' + next_words(r)
             elif r['why']:
                 s += ' - %s' % WHY.get(r['why'], r['why'])
             lines.append(s)

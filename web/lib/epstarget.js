@@ -6,17 +6,27 @@
 (function (root) {
   'use strict';
   var WINDOWS = [30, 60, 90, 120, 180];
+  // the window up to the next quarter's results (owner, 24-Nov-2026: "add another session, as reached within next quarterly
+  // result date"): the sessions after the entry before the first one that could react to them - r.nq (null = not out yet)
+  var NEXT = 'next';
+  /** @type {Array<number|string>} */
+  var WINS = [30, 60, 90, 120, 180, NEXT];
   // reached = a daily high (a target under the entry: a daily low) covered this % of the way from the entry to the target
   // (owner, 24-Nov-2026: "if a stock hit atleast 80% of the target price, consider as it is target hit" - his answer:
-  // 80 % of the way, entry 100 / target 200 -> 180)
-  var THRESH = [80, 90, 100];
+  // 80 % of the way, entry 100 / target 200 -> 180; then "give more option like ... 70% ... 60% ... 50% of the way")
+  var THRESH = [50, 60, 70, 80, 90, 100];
+  var MAIN_T = 80;
+  // the target vs the entry price a long target may have (owner, 24-Nov-2026: "some stocks target vs entry % is greater 1000,
+  // 100000%. These unimaginable targets reduce our winrate") - at least / at most, null = no limit
+  var UP_MIN = [null, 10, 20, 30, 50, 100];
+  var UP_MAX = [null, 50, 100, 150, 200, 300, 500, 1000];
   var COLS = ['sym', 'st', 'why', 'b', 'fl', 'eps', 'ttm', 'prev', 'g', 'tgt', 'ann', 'src', 'ed', 'ep', 'pre', 'o0', 'n', 'kp',
-    'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc'];
+    'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'nq', 'nqa', 'nx', 'wq', 'now', 'ph', 'pc'];
   // the list's statuses: a target under the entry price is a DOWNSIDE target, kept apart from the long ones (owner,
   // 24-Nov-2026: "we are long trader. it should not mingle with long trades")
   var STATUS = {
     hit: ['Reached', 's-good'], not: ['Not reached', 's-bad'], pending: ['Still running', 's-info'],
-    down: ['Downside target', 's-warn'], none: ['No target', '']
+    down: ['Downside target', 's-warn'], none: ['No target', ''], out: ['Left out by your target filter', '']
   };
   var DSTATUS = { hit: ['Fell to it', 's-good'], not: ['Did not fall to it', 's-bad'], pending: ['Still running', 's-info'] };
   var WHY = {
@@ -59,7 +69,8 @@
       var r = {};
       cols.forEach(function (k, i) { r[k] = a[i]; });
       r.eps = r.eps || [];
-      ['kp', 'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'ph', 'pc'].forEach(function (k) { r[k] = Array.isArray(r[k]) ? r[k] : []; });
+      ['kp', 'kd', 'pg', 'hh', 'dd', 'cl', 'ix', 'wq', 'ph', 'pc'].forEach(function (k) { r[k] = Array.isArray(r[k]) ? r[k] : []; });
+      r.nq = isNum(r.nq) ? r.nq : null;
       var ok = r.st === 'ok' && isNum(r.tgt) && r.ep > 0;
       r.dir = ok ? (r.tgt > r.ep ? 'up' : 'down') : '';
       r.up = ok ? (r.tgt / r.ep - 1) * 100 : null;
@@ -69,7 +80,16 @@
   }
 
   function wi(W) { var k = WINDOWS.indexOf(W); return k < 0 ? WINDOWS.length - 1 : k; }
-  function ti(T) { var k = THRESH.indexOf(Number(T)); return k < 0 ? 0 : k; }
+  function ti(T) { var k = THRESH.indexOf(Number(T)); return k < 0 ? THRESH.indexOf(MAIN_T) : k; }
+  /** a window from the page / storage: 30 .. 180 or 'next' (anything else -> null) */
+  function win(v) { return v === NEXT ? NEXT : WINDOWS.indexOf(Number(v)) >= 0 ? Number(v) : null; }
+  var WQ = { pg: 0, hh: 1, dd: 2, cl: 3, ix: 4 };
+  /** a result's figure of a window: pg / hh / dd / cl / ix */
+  function wv(r, key, W) { var v = W === NEXT ? r.wq[WQ[key]] : r[key][wi(W)]; return isNum(v) ? v : null; }
+  /** is the window over for this result (the next results out / W sessions passed) */
+  function over(r, W) { return W === NEXT ? r.nq != null : isNum(r.n) && r.n >= W; }
+  /** the sessions of the window (the next results: known only once they are out) */
+  function wlen(r, W) { return W === NEXT ? r.nq : W; }
   /** the session (and its day) a result first covered T % of the way to its target */
   function reachK(r, T) { var v = r.kp[ti(T)]; return isNum(v) ? v : null; }
   function reachD(r, T) { return r.kd[ti(T)] || ''; }
@@ -78,24 +98,34 @@
   /** a result's status in a window of W sessions after the entry, in its own direction */
   function status(r, W, T) {
     if (r.st !== 'ok' || !r.dir) return 'none';
-    var k = reachK(r, T);
-    if (k != null && k <= W) return 'hit';
-    if (isNum(r.n) && r.n >= W) return 'not';
+    var k = reachK(r, T), lim = W === NEXT ? (r.nq != null ? r.nq : Infinity) : W;
+    if (k != null && k <= lim) return 'hit';
+    if (over(r, W)) return 'not';
     return 'pending';
   }
-  /** the list's status: a downside target is shown apart */
-  function kind(r, W, T) { return r.dir === 'down' ? 'down' : status(r, W, T); }
+  /** the list's status: a downside target is shown apart, a long one outside the viewer's target filter too */
+  function kind(r, W, T) { return r.out ? 'out' : r.dir === 'down' ? 'down' : status(r, W, T); }
+  /** the viewer's filter on the long targets: the target at least `lo` / at most `hi` % above the entry (null = no limit)
+   *  -> marks r.out, returns how many were left out (downside targets and rows without a target are never left out) */
+  function markOut(rows, lo, hi) {
+    var n = 0;
+    rows.forEach(function (r) {
+      r.out = r.dir === 'up' && isNum(r.up) && ((isNum(lo) && r.up < lo - 1e-9) || (isNum(hi) && r.up > hi + 1e-9));   // +20.0 is 19.999...
+      if (r.out) n++;
+    });
+    return n;
+  }
   /** a result is counted in a window only once the whole window is over (an early hit of a result still running would
    *  make the rate look better than it is - the slow ones have not failed yet; the same rule as Results Edge) */
   function counted(r, W, T) {
     var s = status(r, W, T);
-    return (s === 'hit' || s === 'not') && isNum(r.n) && r.n >= W;
+    return (s === 'hit' || s === 'not') && over(r, W);
   }
   /** what you would have got on a long target: bought at the entry, sold at the T % level when it came within W sessions,
    *  else at the close of the W-th session (null while the window is not over) */
   function outcome(r, W, T) {
     if (!counted(r, W, T)) return null;
-    return status(r, W, T) === 'hit' ? r.up * THRESH[ti(T)] / 100 : r.cl[wi(W)];
+    return status(r, W, T) === 'hit' ? r.up * THRESH[ti(T)] / 100 : wv(r, 'cl', W);
   }
 
   function wilson(k, n, z) {
@@ -118,31 +148,35 @@
   /** the figures of the results of one direction (up = long targets, down = downside targets) in a window of W sessions */
   function stats(rows, W, T, dir) {
     dir = dir || 'up';
-    var c = { hit: 0, not: 0, pending: 0, early: 0, none: 0, other: 0 };
-    var days = [], ups = [], ret = [], idx = [], dd = [], hh = [], out = [], beat = 0, both = 0, k = wi(W);
+    var c = { hit: 0, not: 0, pending: 0, early: 0, none: 0, other: 0, out: 0, approx: 0 };
+    var days = [], ups = [], ret = [], idx = [], dd = [], hh = [], out = [], lens = [], beat = 0, both = 0;
     rows.forEach(function (r) {
       if (r.st !== 'ok' || !r.dir) { c.none++; return; }
       if (r.dir !== dir) { c.other++; return; }
+      if (r.out) { c.out++; return; }
       var s = status(r, W, T);
       if (s === 'hit' && !counted(r, W, T)) { c.pending++; c.early++; return; }
       c[s]++;
       if (s === 'pending') return;
       if (s === 'hit') days.push(reachK(r, T));
+      if (W === NEXT) { lens.push(r.nq); if (r.nqa === 1) c.approx++; }
       ups.push(r.up);
       out.push(outcome(r, W, T));
-      dd.push(r.dd[k]);
-      hh.push(r.hh[k]);
-      if (isNum(r.cl[k])) {
-        ret.push(r.cl[k]);
-        if (isNum(r.ix[k])) { idx.push(r.ix[k]); both++; if (r.cl[k] > r.ix[k]) beat++; }
+      dd.push(wv(r, 'dd', W));
+      hh.push(wv(r, 'hh', W));
+      var cl = wv(r, 'cl', W), ix = wv(r, 'ix', W);
+      if (cl != null) {
+        ret.push(cl);
+        if (ix != null) { idx.push(ix); both++; if (cl > ix) beat++; }
       }
     });
     var done = c.hit + c.not, ci = wilson(c.hit, done);
     return { W: W, T: THRESH[ti(T)], dir: dir, n: done + c.pending, done: done, hit: c.hit, not: c.not, pending: c.pending, early: c.early,
-      none: c.none, other: c.other, rate: done ? c.hit / done : null, lo: ci[0], hi: ci[1], medDays: median(days), medUp: median(ups),
-      avgOut: mean(out), medOut: median(out), avgRet: mean(ret), avgIx: mean(idx), beat: both ? beat / both : null, avgDd: mean(dd), avgHh: mean(hh) };
+      none: c.none, other: c.other, out: c.out, approx: c.approx, rate: done ? c.hit / done : null, lo: ci[0], hi: ci[1], medDays: median(days),
+      medUp: median(ups), medLen: median(lens), avgOut: mean(out), medOut: median(out), avgRet: mean(ret), avgIx: mean(idx),
+      beat: both ? beat / both : null, avgDd: mean(dd), avgHh: mean(hh) };
   }
-  function byWindow(rows, T, dir) { return WINDOWS.map(function (W) { return stats(rows, W, T, dir); }); }
+  function byWindow(rows, T, dir) { return WINS.map(function (W) { return stats(rows, W, T, dir); }); }
   function bandLabel(b, unit) {
     unit = unit || '%';
     return b[1] === Infinity ? 'Over ' + b[0] + unit : b[0] + '–' + b[1] + unit;
@@ -168,12 +202,13 @@
       .filter(function (s) { return s.done >= (min || 1); })
       .sort(function (a, b) { return (b.rate - a.rate) || (b.done - a.done); });
   }
-  /** a quarter's figures from the laptop's summary (the quarters list, without its rows); null for an older summary */
+  /** a quarter's figures from the laptop's summary (the quarters list, without its rows): [finished, still running, reached
+   *  50 .. 100 % among the finished, the same among the ones running]; null for an older summary */
   function sumRate(sum, W, T, dir) {
-    var w = sum && (dir === 'down' ? sum.dwin : sum.win) && (dir === 'down' ? sum.dwin : sum.win)[String(W)];
-    if (!w || w.length < 6) return null;
+    var g = sum && (dir === 'down' ? sum.dwin : sum.win), w = g && g[String(W)];
+    if (!w || w.length < 2 + 2 * THRESH.length) return null;
     var k = ti(T);
-    return { done: w[0], hit: w[1 + k], pending: w[4], early: k === 0 ? w[5] : null, rate: w[0] ? w[1 + k] / w[0] : null };
+    return { done: w[0], hit: w[2 + k], pending: w[1], early: w[2 + THRESH.length + k], rate: w[0] ? w[2 + k] / w[0] : null };
   }
   /** every stock across the quarters (byQ {quarter: rows}, qs oldest first): did its long target come each time? A target
    *  reached counts even while its window still runs (it came); a quarter still running without it is left out until its
@@ -185,7 +220,7 @@
         var e = m[r.sym] || (m[r.sym] = { sym: r.sym, marks: qs.map(function () { return ''; }), done: 0, hit: 0, pending: 0, down: 0, none: 0,
           days: [], ups: [], last: null });
         var mark;
-        if (r.st !== 'ok' || !r.dir) { mark = 'none'; e.none++; } else if (r.dir === 'down') { mark = 'down'; e.down++; } else {
+        if (r.st !== 'ok' || !r.dir) { mark = 'none'; e.none++; } else if (r.dir === 'down') { mark = 'down'; e.down++; } else if (r.out) { mark = 'out'; } else {
           var s = status(r, W, T);
           mark = s === 'hit' && !counted(r, W, T) ? 'early' : s;
           if (mark === 'pending') e.pending++;
@@ -223,10 +258,11 @@
   var FLAG = { '-': '', c: 'a later filing\'s comparison column', d: 'worked out from year-to-date figures', s: 'the other basis (before consolidated results began)',
     r: 'screener.in (no NSE filing figure)', p: 'screener.in' };
 
-  var api = { WINDOWS: WINDOWS, THRESH: THRESH, COLS: COLS, STATUS: STATUS, DSTATUS: DSTATUS, WHY: WHY, GROWTH: GROWTH, UPSIDE: UPSIDE, PE: PE,
-    FLAG: FLAG, mi: mi, label: label, fy: fy, quarters: quarters, objects: objects, status: status, kind: kind, counted: counted,
-    outcome: outcome, reachK: reachK, reachD: reachD, level: level, wilson: wilson, median: median, stats: stats, byWindow: byWindow,
-    bucket: bucket, groupBy: groupBy, bandLabel: bandLabel, sumRate: sumRate, thesis: thesis, formula: formula };
+  var api = { WINDOWS: WINDOWS, NEXT: NEXT, WINS: WINS, THRESH: THRESH, MAIN_T: MAIN_T, UP_MIN: UP_MIN, UP_MAX: UP_MAX, COLS: COLS, STATUS: STATUS,
+    DSTATUS: DSTATUS, WHY: WHY, GROWTH: GROWTH, UPSIDE: UPSIDE, PE: PE, FLAG: FLAG, mi: mi, label: label, fy: fy, quarters: quarters,
+    objects: objects, win: win, wv: wv, over: over, wlen: wlen, status: status, kind: kind, markOut: markOut, counted: counted, outcome: outcome,
+    reachK: reachK, reachD: reachD, level: level, wilson: wilson, median: median, stats: stats, byWindow: byWindow, bucket: bucket, groupBy: groupBy,
+    bandLabel: bandLabel, sumRate: sumRate, thesis: thesis, formula: formula };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) { root.SB = root.SB || {}; root.SB.epst = api; }
 })(typeof window !== 'undefined' ? window : null);

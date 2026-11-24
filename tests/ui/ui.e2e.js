@@ -105,27 +105,36 @@ const EPST_SYMS = LIVE_MAIN.main.rows.map((r) => r[LIVE_MAIN.main.cols.indexOf('
 function epstRow(sym, o) {
   const r = Object.assign({ sym, st: 'ok', why: '', b: 'C', fl: 'r-------', eps: [0.37, 1.71, 4.34, 3.02, 3.61, 4.67, 5.17, 6.81], ttm: 20.26, prev: 9.44,
     g: 114.62, tgt: 2322.17, ann: '2026-07-24 16:05', src: 'nse', ed: '2026-07-27', ep: 1624.1, pre: 1600, o0: 1610, n: 95,
-    kp: [60, 68, 75], kd: ['2026-10-21', '2026-10-31', '2026-11-11'], pg: [40, 80, 120, 120, 120], hh: [17, 34, 50, 50, 50], dd: [-3, -4, -4, -4, -4],
-    cl: [8, 20, 40, null, null], ix: [1, 2, 3, null, null], now: 46,
+    kp: [38, 45, 53, 60, 68, 75], kd: ['2026-09-17', '2026-09-28', '2026-10-08', '2026-10-21', '2026-10-31', '2026-11-11'], pg: [40, 80, 120, 120, 120],
+    hh: [17, 34, 50, 50, 50], dd: [-3, -4, -4, -4, -4], cl: [8, 20, 40, null, null], ix: [1, 2, 3, null, null], nq: 70, nqa: 0, nx: '2026-10-29 16:30',
+    wq: [95, 45, -4, 25, 2], now: 46,
     ph: [2, 4, 6, 9, 12, 15, 18, 20, 22, 25, 28, 31, 34, 37, 40, 44, 47], pc: [1, 3, 5, 8, 11, 14, 17, 19, 21, 24, 27, 30, 33, 36, 39, 43, 46] }, o || {});
   return EPST.COLS.map((k) => r[k]);
 }
-const NOK = { kp: [null, null, null], kd: ['', '', ''] };
+const NOK = { kp: [null, null, null, null, null, null], kd: ['', '', '', '', '', ''] };
+const W14 = (a) => a.concat(Array(14 - a.length).fill(0));
 const EPST_SUM = (ready, win, dwin) => ({ stocks: 7, ok: 6, target: 5, down: 1, why: { fell: 1 }, win, dwin: dwin || {}, medG: 60, medUp: 40, medN: 85, ready, ann: { nse: 6 } });
-const EPST_QS = [{ q: 'Sep 2026', end: '2026-09-30', fy: 'Q2 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20', sum: EPST_SUM(false, { 30: [0, 0, 0, 0, 1, 1] }) },
-  { q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20',
-    sum: EPST_SUM(true, { 30: [5, 1, 1, 1, 0, 0], 60: [4, 2, 2, 1, 1, 0], 90: [4, 2, 2, 2, 1, 0] }, { 60: [1, 1, 1, 1, 0, 0] }) }];
-// 60 sessions, 80 % of the way: FLAG reached on 60, [0] on 8, [1] / [2] not, [3] still running (40 sessions), [4] a DOWNSIDE target
+const EPST_QS = [{ q: 'Sep 2026', end: '2026-09-30', fy: 'Q2 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20',
+  sum: EPST_SUM(false, { 30: W14([0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]) }) },
+{ q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00', upto: '2026-11-20',
+  sum: EPST_SUM(true, { 30: W14([5, 0, 2, 2, 1, 1, 1, 1]), 60: W14([4, 1, 3, 3, 3, 2, 2, 1]), 90: W14([4, 1, 3, 3, 3, 2, 2, 2]) }, { 60: W14([1, 0, 1, 1, 1, 1, 1, 1]) }) }];
+// 60 sessions, 80 % of the way: FLAG reached on 60, [0] on 8, [1] / [2] not ([1] 70 % on 40), [3] still running (40 sessions),
+// [4] a DOWNSIDE target; until the next results: FLAG's came 70 sessions after the entry, [0]'s after 6, [3]'s not yet
 const EPST_JUN = [epstRow(FLAG_SYM),
-  epstRow(EPST_SYMS[0], { g: 30, tgt: 600, ep: 500, ttm: 20, prev: 15.38, kp: [8, 10, 12], kd: ['2026-08-06', '2026-08-10', '2026-08-12'] }),
-  epstRow(EPST_SYMS[1], Object.assign({ g: 45, tgt: 900, ep: 800, pg: [60, 78, 79, 79, 79], cl: [2, 5, 6, null, null] }, NOK)),
+  epstRow(EPST_SYMS[0], { g: 30, tgt: 600, ep: 500, ttm: 20, prev: 15.38, kp: [4, 5, 7, 8, 10, 12], kd: ['2026-07-31', '2026-08-03', '2026-08-05', '2026-08-06', '2026-08-10', '2026-08-12'],
+    nq: 6, nx: '2026-08-04 18:00', wq: [70, 15, -1, 12, 1] }),
+  epstRow(EPST_SYMS[1], Object.assign({ g: 45, tgt: 900, ep: 800, pg: [60, 78, 79, 79, 79], cl: [2, 5, 6, null, null] }, NOK,
+    { kp: [20, 28, 40, null, null, null], kd: ['2026-08-24', '2026-09-03', '2026-09-21', '', '', ''] })),
   epstRow(EPST_SYMS[2], Object.assign({ g: 170, tgt: 5000, ep: 1000, pg: [3, 4, 5, 5, 5], cl: [-6, -9, -12, null, null] }, NOK)),
-  epstRow(EPST_SYMS[3], Object.assign({ g: 80, tgt: 300, ep: 200, n: 40, pg: [40, 45, 45, 45, 45], cl: [4, null, null, null, null] }, NOK)),
-  epstRow(EPST_SYMS[4], { g: 10, tgt: 50, ep: 80, kp: [5, 6, 8], kd: ['2026-08-03', '2026-08-04', '2026-08-06'] }),
-  epstRow('NOTINMAIN', { st: 'x', why: 'fell', g: -12, tgt: null, ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [], dd: [], cl: [], ix: [], ph: [], pc: [] })];
+  epstRow(EPST_SYMS[3], Object.assign({ g: 80, tgt: 300, ep: 200, n: 40, pg: [40, 45, 45, 45, 45], cl: [4, null, null, null, null], nq: null, nx: '',
+    wq: [45, 20, -2, null, null] }, NOK)),
+  epstRow(EPST_SYMS[4], { g: 10, tgt: 50, ep: 80, kp: [2, 3, 4, 5, 6, 8], kd: ['2026-07-29', '2026-07-30', '2026-07-31', '2026-08-03', '2026-08-04', '2026-08-06'] }),
+  epstRow('NOTINMAIN', { st: 'x', why: 'fell', g: -12, tgt: null, ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [], dd: [], cl: [], ix: [], nq: null, nx: '',
+    wq: [], ph: [], pc: [] })];
 // Sep 2026: FLAG reached the target on session 12 with 17 sessions (its window still running)
-const EPST_SEP = [epstRow(FLAG_SYM, { ann: '2026-10-28 17:15', ed: '2026-10-29', n: 17, kp: [5, 8, 12], kd: ['2026-11-05', '2026-11-10', '2026-11-12'],
-  cl: [null, null, null, null, null] })];
+const EPST_SEP = [epstRow(FLAG_SYM, { ann: '2026-10-28 17:15', ed: '2026-10-29', n: 17, kp: [2, 3, 4, 5, 8, 12],
+  kd: ['2026-10-30', '2026-11-02', '2026-11-03', '2026-11-05', '2026-11-10', '2026-11-12'], cl: [null, null, null, null, null], nq: null, nx: '',
+  wq: [130, 50, -1, null, null] })];
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -1506,7 +1515,7 @@ function check(name, fn) {
       });
     }
   }
-  await check('EPS Target Lab: the owner\'s Q1, 80 % of the way, downside apart, the thesis list, windows, groups, one stock, CSV', async () => {
+  await check('EPS Target Lab: the owner\'s Q1, 80 % of the way, downside apart, the thesis list, windows, groups, one stock, CSV, next results, target filter', async () => {
     const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
     await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
     const calls = [];
@@ -1525,7 +1534,8 @@ function check(name, fn) {
     assert.deepStrictEqual(await p.$$eval('#et-pick [data-epq]', (b) => b.map((x) => x.textContent.trim() + ':' + x.getAttribute('aria-pressed'))),
       ['Sep 2026 · Q2 FY27 running:false', 'Jun 2026 · Q1 FY27:true']);
     const winRows = await p.$$eval('#et-win tbody tr', (t) => t.map((r) => r.innerText.replace(/\s+/g, ' ').trim()));
-    assert.strictEqual(winRows.length, 5);
+    assert.strictEqual(winRows.length, 6);
+    assert.ok(/^Until the next results median 70 sessions 4 1 25%/.test(winRows[5]), winRows[5]);
     assert.ok(/^90 sessions .* 4 2 50%/.test(winRows[2]), winRows[2]);
     // the target itself: 60 sessions -> 1 of 4 (FLAG reached it on 75)
     await p.selectOption('#et-t', '100');
@@ -1559,6 +1569,7 @@ function check(name, fn) {
     assert.ok(one.indexOf('3.61 + 4.67 + 5.17 + 6.81 = 20.26') >= 0 && one.indexOf('(20.26 − 9.44) ÷ 9.44 × 100 = 114.6%') >= 0 &&
       one.indexOf('20.26 × 114.6 = 2322.17') >= 0, one);
     assert.ok(/The price reached the target after 75 sessions/.test(one) && /80% after 60 sessions/.test(one) && /NSE's result filing/.test(one), one);
+    assert.ok(/The next quarter's results came out on .* 16:30: 70 sessions after the entry were before them - the target itself not reached before them/.test(one), one);
     assert.deepStrictEqual(await p.$$eval('#et-one .et-eps th', (t) => t.map((x) => x.textContent)),
       ['Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026']);
     assert.strictEqual(await p.$eval('#et-one .et-eps td sup', (x) => x.textContent), 'r', 'screener.in\'s figure marked');
@@ -1575,6 +1586,47 @@ function check(name, fn) {
     await p.click('#et-all [data-eps="none"]');
     await p.waitForTimeout(200);
     assert.deepStrictEqual(await p.$$eval('#et-all-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym'))), ['NOTINMAIN']);
+    // 50 / 60 / 70 % of the way too (owner, 24-Nov-2026): 60 sessions at 70 % -> [1] reached it on 40 -> 3 of 4
+    assert.deepStrictEqual(await p.$$eval('#et-t option', (o) => o.map((x) => x.value)), ['50', '60', '70', '80', '90', '100']);
+    await p.selectOption('#et-w', '60');
+    await p.waitForFunction(() => /within 60 sessions/.test((document.querySelector('#et-sum .tiles') || {}).innerText || ''));
+    await p.selectOption('#et-t', '70');
+    await p.waitForFunction(() => /= 75%|\n75%/.test((document.querySelector('#et-sum .tiles') || {}).innerText || ''));
+    assert.ok((await tiles()).indexOf('Reached within 60 sessions = 75%') >= 0, (await tiles()).join(' | '));
+    // until the next results ("reached within next quarterly result date"): FLAG's 80 % on 60 < 70 yes, [0]'s came after 6 sessions
+    // (its 80 % on 8: no), [1] / [2] no, [3]'s next results not out yet
+    await p.selectOption('#et-t', '80');
+    await p.waitForFunction(() => document.querySelector('#et-t') && document.querySelector('#et-t').value === '80');
+    await p.selectOption('#et-w', 'next');
+    await p.waitForFunction(() => /before the next results/.test((document.querySelector('#et-sum .tiles') || {}).innerText || ''));
+    tl = await tiles();
+    assert.ok(tl.indexOf('Reached before the next results = 25%') >= 0 && tl.indexOf('Still running = 1') >= 0, tl.join(' | '));
+    assert.ok(/The next results came 70 sessions after the entry for the median result/.test(await p.$eval('#et-sum', (x) => x.innerText)));
+    assert.strictEqual(await p.$eval('#et-all-t thead', (x) => /Before the next results/.test(x.innerText)), true);
+    // the target filter (owner: "Atleast target vs Entry % ... between"): 30 % to 100 % -> [0] +20 %, [1] +12.5 %, [2] +400 % left out
+    await p.selectOption('#et-w', '60');
+    await p.waitForFunction(() => /within 60 sessions/.test((document.querySelector('#et-sum .tiles') || {}).innerText || ''));
+    await p.selectOption('#et-lo', '30');
+    await p.waitForFunction(() => /left out/.test((document.querySelector('#et-filter-note') || {}).innerText || ''));
+    await p.selectOption('#et-hi', '100');
+    await p.waitForFunction(() => /30% to 100% above the entry/.test((document.querySelector('#et-filter-note') || {}).innerText || ''));
+    tl = await tiles();
+    assert.ok(tl.indexOf('Reached within 60 sessions = 100%') >= 0 && tl.indexOf('Long targets (above the entry) = 2') >= 0, tl.join(' | '));
+    assert.ok(/3 left out by your target filter/.test(await p.$eval('#et-sum .tiles', (x) => x.innerText)));
+    assert.strictEqual(await p.$eval('#et-all [data-eps="out"] b', (x) => x.textContent), '3');
+    await p.waitForSelector('#et-th-t table', { timeout: 15000 });
+    const thSyms = await p.$$eval('#et-th-t tbody button[data-sym]', (b) => b.map((x) => x.getAttribute('data-sym')));
+    assert.ok(thSyms.indexOf(FLAG_SYM) >= 0 && thSyms.indexOf(EPST_SYMS[2]) < 0, 'the thesis list follows the filter: ' + thSyms.join(','));
+    let st = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:epst:opts')));
+    assert.deepStrictEqual([st.lo, st.hi, st.T, st.W], [30, 100, 80, 60], 'kept on this device');
+    await p.selectOption('#et-lo', '');
+    await p.waitForFunction(() => /at most 100% above the entry/.test((document.querySelector('#et-filter-note') || {}).innerText || ''));
+    await p.selectOption('#et-hi', '');
+    await p.waitForFunction(() => /every long target counts/.test((document.querySelector('#et-filter-note') || {}).innerText || ''));
+    st = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:epst:opts')));
+    assert.deepStrictEqual([st.lo, st.hi], [null, null]);
+    await p.selectOption('#et-w', '90');
+    await p.waitForFunction(() => /within 90 sessions/.test((document.querySelector('#et-sum .tiles') || {}).innerText || ''));
     // every quarter -> another quarter
     assert.strictEqual(await p.$$eval('#et-qs tbody tr', (t) => t.length), 2);
     await p.click('#et-qs button[data-epq="Sep 2026"]');
