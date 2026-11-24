@@ -178,6 +178,21 @@ assert [(x['co'], x['rp'], x['tgt'], x['br']) for x in g] == [('Tata Steel', 182
 # the same rows as plain text without brackets around the date (no table markup at all)
 g = A.text_rows('Chalet Hotels Ltd. Prabhudas Lilladher BUY 23 Nov 2026 868.75 (5.05%) 827.00 1,055.00 21.4% PDF Insights')
 assert [(x['call'], x['co'], x['tgt'], x['rp'], x['at']) for x in g] == [('BUY', 'Chalet Hotels Ltd.', 1055.0, 827.0, '2026-11-23')], g
+# Moneycontrol's stock ideas page (owner's AnalystCheck 24-Nov-2026: __NEXT_DATA__ pageProps.data {loader, page, stocks, tags,
+# researchers, ...}) - the field names of its records are not seen yet: the usual ones and other spellings both read
+MCI = ('<script id="__NEXT_DATA__" type="application/json">' + json.dumps({'props': {'pageProps': {'isApp': False, 'data': {
+    'loader': False, 'page': 1, 'researchers': [{'name': 'A C Choksi'}], 'stocks': [
+        {'stkname': 'Anthem Biosciences', 'organization': 'Prabhudas Lilladher', 'recommend_flag': 'Buy', 'recommend_price': '975.50',
+         'target_price': '1050', 'recommend_date': '2026-11-24 13:52:00', 'cmp': 980.1, 'potential_returns': '7.6'},
+        {'scId': 'TS', 'stockShortName': 'Tata Steel', 'brokerHouse': 'Emkay Global', 'recoTypeName': 'BUY', 'tgtPx': 210,
+         'recoDate': '22 Nov 2026', 'entryPx': 182}]}}}}) + '</script>')
+g = A.page_recos(MCI, 'https://www.moneycontrol.com/markets/stock-ideas/')
+assert [(x['call'], x['co'], x['tgt'], x['br'], x['rp'], x['at'][:10]) for x in g] == [
+    ('BUY', 'Anthem Biosciences', 1050.0, 'Prabhudas Lilladher', 975.5, '2026-11-24'),
+    ('BUY', 'Tata Steel', 210.0, 'Emkay Global', 182.0, '2026-11-22')], g
+OUT = []
+A.check(OUT.append, fetch=lambda u: (200, MCI.replace('target_price', 'aim').replace('tgtPx', 'aim2'), u), names=None, save=False)
+assert 'data {loader, page, researchers (list of 1, first: {"name": "A C Choksi"}), stocks (list of 2, first: {"stkname": "Anthem' in '\n'.join(OUT), OUT[:8]
 # a broker the list does not know, after 'Ltd.'
 g = A.text_rows('Anthem Biosciences Ltd. Some New Broking Buy (24 Nov 2026) 980 (0.5%) 975 1,050 7.6%')
 assert [(x['co'], x['br'], x['known']) for x in g] == [('Anthem Biosciences Ltd.', 'Some New', False)], g
@@ -373,7 +388,7 @@ OUT = []
 A.check(OUT.append, fetch=lambda u: (200, SHAPE, u), names=None, save=False)
 text = '\n'.join(OUT)
 assert "page data with target-like names: .props.pageProps.ideaData.rows[0] = {\"scId\": \"JLH\", \"tgtPrice\": \"330\"" in text, text
-assert '__NEXT_DATA__ pageProps: ideaData {rows}; api' in text, text
+assert '__NEXT_DATA__ pageProps: ideaData {rows (list of 1, first: {"scId": "JLH", "tgtPrice": "330"' in text, text
 assert 'data addresses in the page: https://api.moneycontrol.com/mcapi/v1/stock-idea/list?page=1' in text, text
 assert 'the page after "Target Price" (tags kept, shortened): Target Price</span><span>330</span>' in text, text
 # a page whose Next.js data cannot be read, a table of something else, streamed data, an address written with \/
