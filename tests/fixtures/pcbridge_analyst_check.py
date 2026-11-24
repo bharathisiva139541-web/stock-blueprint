@@ -316,28 +316,6 @@ assert s['recos'] == 5 and s['ok'] == 3 and s['brokers'] == 5 and s['stocks'] ==
 assert A.unpack(A.pack(rows)) == [{k: r.get(k) for k in A.COLS} for r in rows], 'the packed rows come back the same'
 lines = A.words(rows, 'JLHL')
 assert any('Prabhudas Lilladher BUY, target 330' in x and 'entry 2026-10-27 close 300.00' in x and 'reached after' in x for x in lines), lines
-# within 2 % of the target (owner, 24-Nov-2026, JLHL: target 330, high 329.70 - "it can be within 2% range"): kn / kdn
-first = next(k for k in range(1, len(ALL) - k27) if round(jl[k27 + k] + 0.5, 2) >= 323.40)
-assert (pl['kn'], pl['kdn']) == (first, date.fromordinal(ALL[k27 + first]).isoformat()), (pl['kn'], pl['kdn'], first)
-assert pl['kn'] < pl['kp'][-1], 'within 2 % comes before the target itself'
-assert by[('Choice', 340.0)]['kn'] is None, 'high 331.5: not within 2 % of 340 (333.20)'
-assert by[('Emkay Global', 450.0)]['kn'] is None and by[('Ventura', 100.0)]['kn'] is None and by[('Ventura', 100.0)]['kdn'] == ''
-
-
-class Cs:
-    def __init__(self, c, h, l):
-        self.c, self.h, self.l = c, h, l
-        self.day = [date(2026, 11, 2).toordinal() + k for k in range(len(c))]
-
-
-cs = Cs([300.0, 310, 318, 325], [301.0, 312, 320, 329.70], [299.0, 305, 312, 318])
-assert A.near_reach(cs, 0, 330.0) == (3, '2026-11-05'), 'JLHL: 329.70 is within 2 % of 330 (323.40)'
-assert A.near_reach(cs, 0, 336.5) == (None, ''), '329.70 is not within 2 % of 336.50 (329.77)'
-assert A.near_reach(cs, 0, 336.4) == (3, '2026-11-05'), '329.67'
-assert A.near_reach(Cs([300.0, 296, 290], [301.0, 298, 292], [299.0, 291, 285.6]), 0, 280.0) == (2, '2026-11-04'), \
-    'a downside target 280: a low of 285.60 is within 2 %'
-lines = A.words([dict(pl, kp=[pl['kp'][0]] + [None] * 5)], 'JLHL')
-assert ('within 2%% of the target after %d session(s)' % pl['kn']) in lines[0], lines
 
 # ------------------------------------------------------------------ 7. the round's step: names from the sheet, posts once
 os.path.exists(A.STORE_PATH) and os.remove(A.STORE_PATH)

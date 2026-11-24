@@ -119,10 +119,7 @@ ALIASES = {'l and t': 'LT', 'larsen and toubro': 'LT', 'm and m': 'M&M', 'mahind
 WHY = {'nosym': 'not one of your Main stocks (or the name did not match)', 'price': 'no daily candles for it',
        'wait': 'no session since the recommendation yet', 'old': 'before 1-Oct-2026'}
 COLS = ('sym', 'co', 'br', 'call', 'tgt', 'rp', 'at', 'src', 'url', 'seen', 'st', 'why', 'ed', 'ep', 'pre', 'o0', 'n', 'kp', 'kd',
-        'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc', 'kn', 'kdn')
-# kn / kdn = the first session (and its day) whose high came within NEAR_PCT % of the target (a target under the price: a low
-# within it) - the owner's rule (24-Nov-2026, JLHL: target 330, high 329.70 - "it can be within 2% range")
-NEAR_PCT = 2.0
+        'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc')
 
 log = print
 
@@ -800,23 +797,6 @@ def collect(store, today, back=False, fetch=None, sleep=time.sleep, gap=GAP_S, o
 
 
 # ------------------------------------------------------------------ what the price did
-def near_reach(cs, k0, tgt, pct=None):
-    """The first session after the entry candle k0 (within eps_target's longest window, like kp) whose high is within pct %
-    of the target - a target under the entry price: whose low is - and its day -> (k, 'yyyy-mm-dd') or (None, '')."""
-    pct = NEAR_PCT if pct is None else pct
-    h, lo, days = cs.h, cs.l, cs.day
-    ep = round(cs.c[k0], 2)
-    if tgt is None or not ep > 0:
-        return None, ''
-    span = min(len(cs.c) - 1 - k0, ET.WINDOWS[-1])
-    up = tgt >= ep
-    lvl = round(tgt * (1 - pct / 100.0), 2) if up else round(tgt * (1 + pct / 100.0), 2)
-    for k in range(1, span + 1):
-        if (round(h[k0 + k], 2) >= lvl) if up else (round(lo[k0 + k], 2) <= lvl):
-            return k, date.fromordinal(days[k0 + k]).isoformat()
-    return None, ''
-
-
 def outcomes(store, names, lab, today):
     """Every stored recommendation -> a row (COLS): matched to a Main stock, then the Kite daily candles after it."""
     meta, d = lab.load_meta()
@@ -832,8 +812,7 @@ def outcomes(store, names, lab, today):
             if sym:
                 r['sym'] = sym
             row = {'sym': sym or '', 'co': r['co'], 'br': r['br'], 'call': r['call'], 'tgt': r['tgt'], 'rp': r.get('rp'),
-                   'at': r['at'][:16], 'src': r['src'], 'url': r.get('url') or '', 'seen': r.get('seen') or '', 'st': 'x', 'why': '',
-                   'kn': None, 'kdn': ''}
+                   'at': r['at'][:16], 'src': r['src'], 'url': r.get('url') or '', 'seen': r.get('seen') or '', 'st': 'x', 'why': ''}
             if r['at'][:10] < FROM_DAY:
                 row['why'] = 'old'
             elif not sym:
@@ -853,7 +832,6 @@ def outcomes(store, names, lab, today):
                 else:
                     row.update(ET.after(cs, k0, r['tgt'], ix))
                     row.pop('wq', None)
-                    row['kn'], row['kdn'] = near_reach(cs, k0, r['tgt'])
                     row['st'] = 'ok'
             rows.append(row)
     finally:
@@ -1099,12 +1077,7 @@ def words(rows, sym):
         if r['st'] == 'ok':
             s += ' -> entry %s close %.2f (%+.1f%% to the target)' % (r['ed'], r['ep'], (r['tgt'] / r['ep'] - 1) * 100)
             k = r['kp'][-1]
-            if k is not None:
-                s += ' - reached after %d session(s) (%s)' % (k, r['kd'][-1])
-            elif r.get('kn') is not None:
-                s += ' - within %g%% of the target after %d session(s) (%s)' % (NEAR_PCT, r['kn'], r['kdn'])
-            else:
-                s += ' - not reached in %d session(s)' % r['n']
+            s += ' - reached after %d session(s) (%s)' % (k, r['kd'][-1]) if k is not None else ' - not reached in %d session(s)' % r['n']
         elif r['why']:
             s += ' - %s' % WHY.get(r['why'], r['why'])
         lines.append(s)
