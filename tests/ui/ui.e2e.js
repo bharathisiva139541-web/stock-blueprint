@@ -135,6 +135,29 @@ const EPST_JUN = [epstRow(FLAG_SYM),
 const EPST_SEP = [epstRow(FLAG_SYM, { ann: '2026-10-28 17:15', ed: '2026-10-29', n: 17, kp: [2, 3, 4, 5, 8, 12],
   kd: ['2026-10-30', '2026-11-02', '2026-11-03', '2026-11-05', '2026-11-10', '2026-11-12'], cl: [null, null, null, null, null], nq: null, nx: '',
   wq: [130, 50, -1, null, null] })];
+// the Analyst Targets (owner, 24-Nov-2026, JLHL: Prabhudas Lilladher's Buy, target Rs 330, reached): api/recos = every broker call
+const RECOS = require('../../web/lib/recos.js');
+function recoRow(sym, o) {
+  const r = Object.assign({ sym, co: 'Jupiter Life Line Hospitals', br: 'Prabhudas Lilladher', call: 'BUY', tgt: 330, rp: null, at: '2026-10-27 09:15', src: 'mc',
+    url: 'https://www.moneycontrol.com/news/business/stocks/buy-jupiter-life-line-hospitals-target-of-rs-330-prabhudas-lilladher-13654321.html',
+    seen: '2026-10-27', st: 'ok', why: '', ed: '2026-10-27', ep: 300, pre: 296, o0: 298, n: 95, kp: [10, 15, 20, 25, 30, 40],
+    kd: ['2026-11-10', '2026-11-17', '2026-11-24', '2026-12-01', '2026-12-08', '2026-12-22'], pg: [60, 110, 120, 120, 120], hh: [12, 15, 20, 25, 25],
+    dd: [-3, -3, -3, -3, -3], cl: [5, 8, 12, null, null], ix: [1, 2, 3, null, null], now: 11, ph: [], pc: [] }, o || {});
+  return RECOS.COLS.map((k) => r[k]);
+}
+const RNOT = { kp: [12, 20, 30, null, null, null], kd: ['2026-11-12', '2026-11-24', '2026-12-08', '', '', ''] };
+const RECOS_ROWS = [
+  recoRow(FLAG_SYM),
+  recoRow(FLAG_SYM, Object.assign({ br: 'Choice', tgt: 340, at: '2026-10-27 09:05', cl: [4, 6, 9, null, null] }, RNOT)),
+  recoRow(EPST_SYMS[0], { co: 'Stock A', br: 'Motilal Oswal', tgt: 600, ep: 500, kp: [2, 3, 4, 5, 6, 8], at: '2026-10-10', cl: [10, 12, 14, null, null] }),
+  recoRow(EPST_SYMS[1], Object.assign({ co: 'Stock B', br: 'Motilal Oswal', tgt: 900, ep: 800, at: '2026-10-12', cl: [-2, -4, -6, null, null] }, RNOT)),
+  recoRow(EPST_SYMS[2], { co: 'Stock C', br: 'Motilal Oswal', tgt: 1200, ep: 1000, kp: [10, 15, 20, 30, 40, 50], at: '2026-10-14' }),
+  recoRow(EPST_SYMS[3], Object.assign({ co: 'Stock D', br: 'ICICI Securities', tgt: 300, ep: 200, n: 40, at: '2026-11-01', cl: [3, null, null, null, null] },
+    { kp: [null, null, null, null, null, null], kd: ['', '', '', '', '', ''] })),
+  recoRow(EPST_SYMS[4], { co: 'Stock E', br: 'Kotak Securities', call: 'SELL', tgt: 50, ep: 80, at: '2026-10-20', kp: [2, 3, 4, 5, 6, 8] }),
+  recoRow('', { co: 'Some Unknown Co', br: 'Ventura', tgt: 100, at: '2026-11-05', st: 'x', why: 'nosym', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [], dd: [], cl: [], ix: [] }),
+  recoRow(EPST_SYMS[0], { co: 'Stock A', br: 'HDFC Securities', tgt: 650, at: '2026-11-21 18:00', st: 'x', why: 'wait', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [], dd: [], cl: [], ix: [] })];
+const RECOS_SUM = { recos: 9, ok: 7, brokers: 7, stocks: 6, buy: 8, why: { nosym: 1, wait: 1 }, src: { mc: 9 }, from: '2026-10-10', to: '2026-11-21' };
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -210,6 +233,9 @@ function liveApi(o) {
       const rows = (q === 'Sep 2026' ? EPST_SEP : EPST_JUN).map((r) => u.searchParams.get('lite') === '1'
         ? r.map((v, i) => (EPST.COLS[i] === 'ph' || EPST.COLS[i] === 'pc' ? [] : v)) : r);
       return { json: { ok: true, quarters: EPST_QS, q, cols: EPST.COLS, rows, fetchedAt: istAgo(1) } };
+    }
+    if (u.pathname === '/api/recos') {
+      return { json: { ok: true, made: '2026-11-23T10:00:00', upto: '2026-11-20', sum: RECOS_SUM, cols: RECOS.COLS, rows: RECOS_ROWS, fetchedAt: istAgo(1) } };
     }
     if (u.pathname === '/api/quotes') {
       return { json: { state: 'UNAVAILABLE', source: 'sheet', asOf: null, items: [], errors: [{ symbol: '*', reason: 'mock provider: sheet feed timed out' }], message: 'mock provider: sheet feed timed out' } };
@@ -291,7 +317,7 @@ async function pageState(page) {
 
 const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
-  'strategy', 'signals', 'results', 'today', 'edge', 'epst', 'markets'];
+  'strategy', 'signals', 'results', 'today', 'edge', 'epst', 'recos', 'markets'];
 let failures = 0;
 // tools/lab-guide/build.js (the Backtest Lab guide, 12-Nov-2026) runs only the Lab check (E2E_ONLY) and keeps its screenshots (GUIDE_SHOTS)
 const GUIDE = process.env.GUIDE_SHOTS || '';
@@ -338,8 +364,9 @@ function check(name, fn) {
           assert.ok(info.text > 200, 'page has content');
           assert.ok(!info.bad, 'page did not crash');
           assert.ok(info.overflow <= 0, 'horizontal page overflow ' + info.overflow + 'px');
-          if (theme === 'light') assert.strictEqual(info.bg, 'rgb(255, 255, 255)', 'light theme body is white');
-          else { assert.strictEqual(info.theme, 'dark'); assert.notStrictEqual(info.bg, 'rgb(255, 255, 255)', 'dark theme body is not white'); }
+          // owner, 24-Nov-2026: the light theme is no longer "everything written on white wall" - a soft blue-grey page, white cards
+          if (theme === 'light') assert.strictEqual(info.bg, 'rgb(238, 242, 249)', 'light theme body = the soft blue-grey page');
+          else { assert.strictEqual(info.theme, 'dark'); assert.ok(['rgb(255, 255, 255)', 'rgb(238, 242, 249)'].indexOf(info.bg) < 0, 'dark theme body is dark'); }
         });
       }
       if (vp.width > 1000 && theme === 'light') {
@@ -1638,6 +1665,59 @@ function check(name, fn) {
     await p.waitForTimeout(300);
     assert.ok(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'no horizontal overflow at 360 px');
     await guideShot(p, 'epst', '#et-sum');
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+  });
+
+  await check('Analyst Targets: the brokers\' calls, reached or not, the scorecard, new calls, one stock, every call', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#recos', { waitUntil: 'load' });
+    await p.waitForSelector('#rc-sum .tiles', { timeout: 15000 });
+    const tiles = async () => p.$$eval('#rc-sum .tile', (t) => t.map((x) => x.querySelector('.label').innerText.trim() + ' = ' + x.querySelector('.value').innerText.trim()));
+    let tl = await tiles();
+    // Buy calls, 60 sessions, the target itself: FLAG / PL on 40 yes, Choice no, A on 8 yes, B no, C on 50 yes, D still running (40 sessions)
+    assert.ok(tl.indexOf('Calls with a target above the price = 6') >= 0 && tl.indexOf('Reached within 60 sessions = 60%') >= 0, tl.join(' | '));
+    assert.ok(tl.indexOf('Still running = 1') >= 0, tl.join(' | '));
+    assert.ok(tl.some((x) => /^After 30 \/ 60 \/ 90 sessions = \+/.test(x)) && tl.some((x) => /^Best move within 60 \(MFE\) = \+15\.0%$/.test(x)), tl.join(' | '));
+    assert.ok(calls.some((u) => /\/api\/recos$/.test(u)), calls.join(' '));
+    // the scorecard: Motilal Oswal ranked first (3 finished, 2 reached)
+    const first = await p.$eval('#rc-brokers tbody tr:first-child', (r) => r.innerText.replace(/\s+/g, ' '));
+    assert.ok(/^Motilal Oswal 3 3 3 67% 2 of 3/.test(first), first);
+    // new calls of the newest 3 days
+    assert.ok(/HDFC Securities/.test(await p.$eval('#rc-new', (x) => x.innerText)));
+    // a broker -> its calls
+    await p.click('#rc-brokers button[data-rcbr="Motilal Oswal"]');
+    await p.waitForFunction(() => document.querySelector('#rc-b').value === 'Motilal Oswal');
+    assert.strictEqual(await p.$$eval('#rc-all-t tbody tr', (t) => t.length), 3);
+    await p.selectOption('#rc-b', '');
+    // one stock: every broker's call on it
+    await p.fill('#rc-q', FLAG_SYM);
+    await p.waitForSelector('#rc-one .et-one');
+    const one = await p.$eval('#rc-one', (x) => x.innerText);
+    assert.ok(/2 calls from 2 brokers · average target 335\.00 \(from 330\.00 to 340\.00\)/.test(one) && /Prabhudas Lilladher\s+Buy target 330\.00/.test(one) &&
+      /reached after 40 sessions/.test(one), one);
+    assert.ok(/Choice\s+Buy target 340\.00 when the price was 300\.00 \(\+13\.3%\) - not reached yet in 95 sessions/.test(one), one);
+    assert.strictEqual(await p.$eval('#rc-one a[href*="moneycontrol.com"]', (a) => a.getAttribute('target')), '_blank');
+    await p.fill('#rc-q', '');
+    // the companies not in Main
+    assert.ok(/Some Unknown Co/.test(await p.$eval('#rc-nosym', (x) => x.textContent)) && /\(1 company\)/.test(await p.$eval('#rc-nosym summary', (x) => x.textContent)));
+    // every call (Sell too): the Sell call's target under the price
+    await p.selectOption('#rc-c', 'all');
+    await p.waitForFunction(() => /Every call/.test((document.querySelector('#rc-c') || {}).selectedOptions[0].textContent));
+    await p.waitForSelector('#rc-all [data-rcs="down"]');
+    assert.strictEqual(await p.$eval('#rc-all [data-rcs="down"] b', (x) => x.textContent), '1');
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#rc-csv')]);
+    assert.ok(/analyst-targets-60-100\.csv/.test(dl.suggestedFilename()), dl.suggestedFilename());
+    const st = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:recos:opts')));
+    assert.deepStrictEqual([st.W, st.T, st.calls], [60, 100, 'all']);
+    await p.evaluate(() => localStorage.removeItem('sb:recos:opts'));
+    await p.setViewportSize({ width: 360, height: 780 });
+    await p.waitForTimeout(300);
+    assert.ok(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'no horizontal overflow at 360 px');
     await c.close();
     assert.deepStrictEqual(errors, [], 'console/page errors');
   });
