@@ -16,6 +16,11 @@
   // 80 % of the way, entry 100 / target 200 -> 180; then "give more option like ... 70% ... 60% ... 50% of the way")
   var THRESH = [50, 60, 70, 80, 90, 100];
   var MAIN_T = 80;
+  // reached = a daily high within NEAR_PCT % of the target itself (a downside target: a low within it) - the Analyst Targets'
+  // rule (owner, 24-Nov-2026, JLHL: target 330, high 329.70 "still running" - "it can be within 2% range"). Its first session /
+  // day sit after the 6 THRESH entries of kp / kd (index THRESH.length; the laptop sends them as kn / kdn).
+  var NEAR = 'near';
+  var NEAR_PCT = 2;
   // the target vs the entry price a long target may have (owner, 24-Nov-2026: "some stocks target vs entry % is greater 1000,
   // 100000%. These unimaginable targets reduce our winrate") - at least / at most, null = no limit
   var UP_MIN = [null, 10, 20, 30, 50, 100];
@@ -80,7 +85,9 @@
   }
 
   function wi(W) { var k = WINDOWS.indexOf(W); return k < 0 ? WINDOWS.length - 1 : k; }
-  function ti(T) { var k = THRESH.indexOf(Number(T)); return k < 0 ? THRESH.indexOf(MAIN_T) : k; }
+  function ti(T) { if (T === NEAR) return THRESH.length; var k = THRESH.indexOf(Number(T)); return k < 0 ? THRESH.indexOf(MAIN_T) : k; }
+  /** a rule the page offers: one of THRESH, or NEAR */
+  function rule(T) { return T === NEAR ? NEAR : THRESH.indexOf(Number(T)) >= 0 ? Number(T) : null; }
   /** a window from the page / storage: 30 .. 180 or 'next' (anything else -> null) */
   function win(v) { return v === NEXT ? NEXT : WINDOWS.indexOf(Number(v)) >= 0 ? Number(v) : null; }
   var WQ = { pg: 0, hh: 1, dd: 2, cl: 3, ix: 4 };
@@ -93,8 +100,12 @@
   /** the session (and its day) a result first covered T % of the way to its target */
   function reachK(r, T) { var v = r.kp[ti(T)]; return isNum(v) ? v : null; }
   function reachD(r, T) { return r.kd[ti(T)] || ''; }
-  /** the price T % of the way from the entry to the target */
-  function level(r, T) { return isNum(r.tgt) && r.ep > 0 ? r.ep + (r.tgt - r.ep) * (THRESH[ti(T)] / 100) : null; }
+  /** the price T % of the way from the entry to the target (NEAR: NEAR_PCT % short of the target) */
+  function level(r, T) {
+    if (!isNum(r.tgt) || !(r.ep > 0)) return null;
+    if (T === NEAR) return r.tgt * (r.tgt >= r.ep ? 1 - NEAR_PCT / 100 : 1 + NEAR_PCT / 100);
+    return r.ep + (r.tgt - r.ep) * (THRESH[ti(T)] / 100);
+  }
   /** a result's status in a window of W sessions after the entry, in its own direction */
   function status(r, W, T) {
     if (r.st !== 'ok' || !r.dir) return 'none';
@@ -125,7 +136,8 @@
    *  else at the close of the W-th session (null while the window is not over) */
   function outcome(r, W, T) {
     if (!counted(r, W, T)) return null;
-    return status(r, W, T) === 'hit' ? r.up * THRESH[ti(T)] / 100 : wv(r, 'cl', W);
+    if (status(r, W, T) !== 'hit') return wv(r, 'cl', W);
+    return T === NEAR ? (level(r, T) / r.ep - 1) * 100 : r.up * THRESH[ti(T)] / 100;
   }
 
   function wilson(k, n, z) {
@@ -171,7 +183,7 @@
       }
     });
     var done = c.hit + c.not, ci = wilson(c.hit, done);
-    return { W: W, T: THRESH[ti(T)], dir: dir, n: done + c.pending, done: done, hit: c.hit, not: c.not, pending: c.pending, early: c.early,
+    return { W: W, T: T === NEAR ? NEAR : THRESH[ti(T)], dir: dir, n: done + c.pending, done: done, hit: c.hit, not: c.not, pending: c.pending, early: c.early,
       none: c.none, other: c.other, out: c.out, approx: c.approx, rate: done ? c.hit / done : null, lo: ci[0], hi: ci[1], medDays: median(days),
       medUp: median(ups), medLen: median(lens), avgOut: mean(out), medOut: median(out), avgRet: mean(ret), avgIx: mean(idx),
       beat: both ? beat / both : null, avgDd: mean(dd), avgHh: mean(hh) };
@@ -206,7 +218,7 @@
    *  50 .. 100 % among the finished, the same among the ones running]; null for an older summary */
   function sumRate(sum, W, T, dir) {
     var g = sum && (dir === 'down' ? sum.dwin : sum.win), w = g && g[String(W)];
-    if (!w || w.length < 2 + 2 * THRESH.length) return null;
+    if (!w || w.length < 2 + 2 * THRESH.length || T === NEAR) return null;
     var k = ti(T);
     return { done: w[0], hit: w[2 + k], pending: w[1], early: w[2 + THRESH.length + k], rate: w[0] ? w[2 + k] / w[0] : null };
   }
@@ -258,7 +270,7 @@
   var FLAG = { '-': '', c: 'a later filing\'s comparison column', d: 'worked out from year-to-date figures', s: 'the other basis (before consolidated results began)',
     r: 'screener.in (no NSE filing figure)', p: 'screener.in' };
 
-  var api = { WINDOWS: WINDOWS, NEXT: NEXT, WINS: WINS, THRESH: THRESH, MAIN_T: MAIN_T, UP_MIN: UP_MIN, UP_MAX: UP_MAX, COLS: COLS, STATUS: STATUS,
+  var api = { WINDOWS: WINDOWS, NEXT: NEXT, WINS: WINS, THRESH: THRESH, MAIN_T: MAIN_T, NEAR: NEAR, NEAR_PCT: NEAR_PCT, rule: rule, UP_MIN: UP_MIN, UP_MAX: UP_MAX, COLS: COLS, STATUS: STATUS,
     DSTATUS: DSTATUS, WHY: WHY, GROWTH: GROWTH, UPSIDE: UPSIDE, PE: PE, FLAG: FLAG, mi: mi, label: label, fy: fy, quarters: quarters,
     objects: objects, win: win, wv: wv, over: over, wlen: wlen, status: status, kind: kind, markOut: markOut, counted: counted, outcome: outcome,
     reachK: reachK, reachD: reachD, level: level, wilson: wilson, median: median, stats: stats, byWindow: byWindow, bucket: bucket, groupBy: groupBy,

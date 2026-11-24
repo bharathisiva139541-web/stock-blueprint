@@ -20,8 +20,11 @@
   const MAX_BLOB = 4000000;
   const MAX_ROWS = 20000;
   // = analyst_recos.py COLS; kp / kd / pg / hh / dd / cl / ix / now = eps_target.after (50 .. 100 % of the way; windows 30 .. 180)
+  // kn / kdn = the first session / day within 2 % of the target (owner, 24-Nov-2026: "it can be within 2% range"); a blob of
+  // the laptop's first version (OLD_COLS) is still read - its kdn = null = not known (the page then works it out from kp)
   const COLS = ['sym', 'co', 'br', 'call', 'tgt', 'rp', 'at', 'src', 'url', 'seen', 'st', 'why', 'ed', 'ep', 'pre', 'o0', 'n', 'kp', 'kd',
-    'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc'];
+    'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc', 'kn', 'kdn'];
+  const OLD_COLS = COLS.slice(0, 27);
   const CALLS = ['BUY', 'ACCUMULATE', 'ADD', 'OUTPERFORM', 'HOLD', 'NEUTRAL', 'REDUCE', 'SELL'];
   const WHY = ['', 'nosym', 'price', 'wait', 'old'];
   const SRC = ['mc', 'bs', 'dsij'];
@@ -49,7 +52,8 @@
     const url = typeof o.url === 'string' && o.url.length <= 300 && HOSTS.test(o.url) ? o.url : '';
     return [sym, co, br, o.call, num(o.tgt), num(o.rp), at, src, url, day(o.seen), o.st === 'ok' ? 'ok' : 'x', WHY.indexOf(o.why) >= 0 ? o.why : '',
       day(o.ed), num(o.ep), num(o.pre), num(o.o0), num(o.n), nums(o.kp, 6), (Array.isArray(o.kd) ? o.kd : []).slice(0, 6).map(day),
-      nums(o.pg, 5), nums(o.hh, 5), nums(o.dd, 5), nums(o.cl, 5), nums(o.ix, 5), num(o.now), [], []];      // no chart paths on this page
+      nums(o.pg, 5), nums(o.hh, 5), nums(o.dd, 5), nums(o.cl, 5), nums(o.ix, 5), num(o.now), [], [],      // no chart paths on this page
+      Number.isInteger(o.kn) && o.kn > 0 ? o.kn : null, o.kdn === null ? null : day(o.kdn)];
   }
 
   function unpack(blob) {
@@ -57,8 +61,9 @@
     if (typeof blob !== 'string' || blob.length > MAX_BLOB || !/^[A-Za-z0-9+/]+={0,2}$/.test(blob)) throw new Error('the stored data is not readable');
     const d = JSON.parse(zlib.gunzipSync(Buffer.from(blob, 'base64')).toString('utf8'));
     if (!d || !Array.isArray(d.cols) || !Array.isArray(d.rows)) throw new Error('the stored data is not readable');
-    if (d.cols.join(',') !== COLS.join(',')) throw new Error('your laptop has not sent the new analyst targets yet - run UpdateNow.bat, then AnalystNow.bat');
-    return d.rows.slice(0, MAX_ROWS).map(cleanRow).filter(Boolean);
+    const old = d.cols.join(',') === OLD_COLS.join(',');
+    if (!old && d.cols.join(',') !== COLS.join(',')) throw new Error('your laptop has not sent the new analyst targets yet - run UpdateNow.bat, then AnalystNow.bat');
+    return d.rows.slice(0, MAX_ROWS).map(function (r) { return old && Array.isArray(r) ? r.concat([null, null]) : r; }).map(cleanRow).filter(Boolean);
   }
 
   function cleanSum(s) {

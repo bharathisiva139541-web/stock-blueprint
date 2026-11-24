@@ -18,8 +18,9 @@
     var o = null;
     try { o = JSON.parse(localStorage.getItem(OPT_KEY) || 'null'); } catch (e) { o = null; }
     o = o && typeof o === 'object' ? o : {};
-    return { W: E.WINDOWS.indexOf(Number(o.W)) >= 0 ? Number(o.W) : 60, T: E.THRESH.indexOf(Number(o.T)) >= 0 ? Number(o.T) : 100,
-      calls: o.calls === 'all' ? 'all' : 'buy' };
+    // the owner's rule is 'within 2 % of the target' (24-Nov-2026) - a choice saved before it came (no v 2) starts on it once
+    var T = o.v === 2 ? E.rule(o.T) : null;
+    return { v: 2, W: E.WINDOWS.indexOf(Number(o.W)) >= 0 ? Number(o.W) : 60, T: T == null ? E.NEAR : T, calls: o.calls === 'all' ? 'all' : 'buy' };
   }
   function save() { try { localStorage.setItem(OPT_KEY, JSON.stringify(ST.opt)); } catch (e) { /* private window */ } }
   function pc(v, d) { return v == null || !isFinite(v) ? '–' : (v * 100).toFixed(d == null ? 0 : d) + '%'; }
@@ -28,7 +29,11 @@
     return '<div class="tile"' + (tip ? ' data-tip="' + esc(tip) + '"' : '') + '><div class="label">' + esc(label) + '</div><div class="value' +
       (tone ? ' ' + tone : '') + '">' + value + '</div>' + (note ? '<div class="note2">' + note + '</div>' : '') + '</div>';
   }
-  function ruleWords(T) { return T === 100 ? 'the target itself' : T + '% of the way from the price at the call to the target'; }
+  function ruleWords(T) {
+    return T === E.NEAR ? 'within ' + E.NEAR_PCT + '% of the target (a Rs 330 target: Rs ' + (330 * (1 - E.NEAR_PCT / 100)).toFixed(2) + ' or more)'
+      : T === 100 ? 'the target itself' : T + '% of the way from the price at the call to the target';
+  }
+  function ruleShort(T) { return T === E.NEAR ? 'within ' + E.NEAR_PCT + '% of the target (your rule)' : T === 100 ? 'the target itself' : T + '% of the way'; }
   function callBadge(r) { var c = R.CALL[r.call] || [r.call, '']; return ui.badge(c[0], c[1]); }
   function statusBadge(r) {
     var k = R.kind(r, ST.opt.W, ST.opt.T);
@@ -83,8 +88,8 @@
       '<b>still running</b> - never a miss. Best move / worst dip = the highest high / lowest low within the window vs the price at the call.</p></div></div>' +
       '<div class="controls edge-opts"><label class="edge-opt">Within <select id="rc-w">' + E.WINDOWS.map(function (W) {
         return opt(W, W === ST.opt.W, W + ' sessions (about ' + MONTHS[W] + ')');
-      }).join('') + '</select></label><label class="edge-opt">Counts as reached at <select id="rc-t">' + E.THRESH.map(function (T) {
-        return opt(T, T === ST.opt.T, T === 100 ? 'the target itself' : T + '% of the way');
+      }).join('') + '</select></label><label class="edge-opt">Counts as reached at <select id="rc-t">' + [E.NEAR].concat(E.THRESH.slice().reverse()).map(function (T) {
+        return opt(T, T === ST.opt.T, ruleShort(T));
       }).join('') + '</select></label><label class="edge-opt">Calls <select id="rc-c">' + opt('buy', ST.opt.calls === 'buy', 'Buy calls (Buy / Accumulate / Add / Outperform)') +
       opt('all', ST.opt.calls === 'all', 'Every call (Hold / Neutral / Sell too)') + '</select></label></div>' +
       '<p class="sub">From ' + esc(res.sum && res.sum.from ? F.date(res.sum.from) : '1 Oct 2026') + ' · prices up to ' + (res.upto ? esc(F.date(res.upto)) : '–') +
@@ -268,10 +273,12 @@
       (c.hi !== c.lo ? ' (from ' + F.price(c.lo) + ' to ' + F.price(c.hi) + ')' : '') +
       (price ? ' · the price now ' + F.price(price) + ' (' + sgn((c.avg / price - 1) * 100) + ' to the average target)' : '') + '.</p><ul class="edge-says">' +
       mine.slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; }).map(function (r) {
-        var k = E.reachK(r, 100), k80 = E.reachK(r, 80);
+        var k = E.reachK(r, 100), kn = E.reachK(r, E.NEAR), k80 = E.reachK(r, 80);
         return '<li><b>' + esc(F.date(r.day)) + '</b> · ' + esc(r.br) + ' ' + callBadge(r) + ' target <b>' + F.price(r.tgt) + '</b>' +
           (r.ep ? ' when the price was ' + F.price(r.ep) + ' (' + sgn(r.up) + ')' : '') + ' - ' +
           (r.st !== 'ok' ? esc(R.WHY[r.why] || 'not checked') : k != null ? '<b>reached</b> after ' + F.int(k) + ' sessions (' + esc(F.date(E.reachD(r, 100))) + ')'
+            : kn != null ? '<b>within ' + E.NEAR_PCT + '% of the target</b> (' + F.price(E.level(r, E.NEAR)) + ') after ' + F.int(kn) + ' sessions (' +
+              esc(F.date(E.reachD(r, E.NEAR))) + ')' + (r.nearGuess ? ' <span class="sub">(about - the exact day comes with your laptop\'s next list)</span>' : '')
             : 'not reached yet in ' + F.int(r.n) + ' sessions' + (k80 != null ? ' (80% of the way after ' + F.int(k80) + ')' : '')) +
           ' · ' + srcLink(r) + '</li>';
       }).join('') + '</ul><div class="actions"><a class="btn sm" target="_blank" rel="noopener" href="https://www.tradingview.com/chart/?symbol=' +
@@ -332,7 +339,7 @@
           var all = $('#rc-all', body);
           if (all && all.scrollIntoView) all.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
-        [['#rc-w', 'W', Number], ['#rc-t', 'T', Number], ['#rc-c', 'calls', String]].forEach(function (x) {
+        [['#rc-w', 'W', Number], ['#rc-t', 'T', E.rule], ['#rc-c', 'calls', String]].forEach(function (x) {
           $(x[0], body).addEventListener('change', function (e) { ST.opt[x[1]] = x[2](e.target.value); save(); SB.route(true); });
         });
       });
