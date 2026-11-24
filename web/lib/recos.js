@@ -9,7 +9,7 @@
   'use strict';
   var E = typeof module !== 'undefined' && module.exports ? require('./epstarget.js') : root.SB.epst;
   var COLS = ['sym', 'co', 'br', 'call', 'tgt', 'rp', 'at', 'src', 'url', 'seen', 'st', 'why', 'ed', 'ep', 'pre', 'o0', 'n', 'kp', 'kd',
-    'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc', 'kn', 'kdn'];
+    'pg', 'hh', 'dd', 'cl', 'ix', 'now', 'ph', 'pc'];
   var BUYS = ['BUY', 'ACCUMULATE', 'ADD', 'OUTPERFORM'];
   var CALL = { BUY: ['Buy', 's-good'], ACCUMULATE: ['Accumulate', 's-good'], ADD: ['Add', 's-good'], OUTPERFORM: ['Outperform', 's-good'],
     HOLD: ['Hold', 's-info'], NEUTRAL: ['Neutral', 's-info'], REDUCE: ['Reduce', 's-bad'], SELL: ['Sell', 's-bad'] };
@@ -35,26 +35,11 @@
       var ok = r.st === 'ok' && isNum(r.tgt) && r.ep > 0;
       r.dir = ok ? (r.tgt > r.ep ? 'up' : 'down') : '';
       r.up = ok ? (r.tgt / r.ep - 1) * 100 : null;
-      near(r, ok);
       r.buy = BUYS.indexOf(r.call) >= 0;
       r.day = String(r.at || '').slice(0, 10);
       r.srcs = String(r.src || '').split(',').filter(Boolean);
       return r;
     });
-  }
-  /** the 'within 2 % of the target' rule (E.NEAR) in kp / kd after the 6 '% of the way' entries: the laptop's own kn / kdn,
-   *  else (a list made before it sent them - kdn null) the first '% of the way' at or past that level - never earlier than
-   *  the real day, so a call is never counted as reached too soon */
-  function near(r, ok) {
-    var i = E.THRESH.length;
-    r.nearGuess = false;
-    if (!ok) { r.kp[i] = null; r.kd[i] = ''; return; }
-    if (r.kdn !== null && r.kdn !== undefined) { r.kp[i] = isNum(r.kn) ? r.kn : null; r.kd[i] = r.kn ? r.kdn || '' : ''; return; }
-    var d = r.tgt - r.ep, p = d ? (E.level(r, E.NEAR) - r.ep) / d * 100 : 0, t = 0;
-    while (t < i - 1 && E.THRESH[t] < p - 1e-9) t++;
-    r.kp[i] = isNum(r.kp[t]) ? r.kp[t] : null;
-    r.kd[i] = r.kd[t] || '';
-    r.nearGuess = true;
   }
   /** the calls the page counts: Buy-type ('buy', default) or every call ('all') */
   function pick(rows, calls) { return calls === 'all' ? rows : rows.filter(function (r) { return r.buy; }); }

@@ -147,7 +147,7 @@ function recoRow(sym, o) {
 }
 const RNOT = { kp: [12, 20, 30, null, null, null], kd: ['2026-11-12', '2026-11-24', '2026-12-08', '', '', ''] };
 const RECOS_ROWS = [
-  recoRow(FLAG_SYM, { kn: 22, kdn: '2026-11-26' }),                // within 2 % of 330 (323.40) on session 22 - the laptop's own day
+  recoRow(FLAG_SYM),
   recoRow(FLAG_SYM, Object.assign({ br: 'Choice', tgt: 340, at: '2026-10-27 09:05', cl: [4, 6, 9, null, null] }, RNOT)),
   recoRow(EPST_SYMS[0], { co: 'Stock A', br: 'Motilal Oswal', tgt: 600, ep: 500, kp: [2, 3, 4, 5, 6, 8], at: '2026-10-10', cl: [10, 12, 14, null, null] }),
   recoRow(EPST_SYMS[1], Object.assign({ co: 'Stock B', br: 'Motilal Oswal', tgt: 900, ep: 800, at: '2026-10-12', cl: [-2, -4, -6, null, null] }, RNOT)),
@@ -1671,24 +1671,15 @@ function check(name, fn) {
 
   await check('Analyst Targets: the brokers\' calls, reached or not, the scorecard, new calls, one stock, every call', async () => {
     const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
-    await c.addInitScript(() => {
-      try {
-        localStorage.setItem('sb:api', 'true');
-        // a choice saved before the 2 % rule (owner, 24-Nov-2026): the page starts on the owner's rule once
-        if (!window.sessionStorage.getItem('rc-seeded')) { localStorage.setItem('sb:recos:opts', '{"W":60,"T":100,"calls":"buy"}'); window.sessionStorage.setItem('rc-seeded', '1'); }
-      } catch (e) { /* ignore */ }
-    });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
     const calls = [];
     await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), calls);
     const p = await c.newPage(), errors = watchErrors(p);
     await p.goto(base + '#recos', { waitUntil: 'load' });
     await p.waitForSelector('#rc-sum .tiles', { timeout: 15000 });
-    assert.strictEqual(await p.$eval('#rc-t', (x) => x.value), 'near', 'the owner\'s rule: within 2 % of the target');
-    assert.ok(/within 2% of the target \(a Rs 330 target: Rs 323\.40 or more\)/.test(await p.$eval('#rc-pick', (x) => x.innerText)));
     const tiles = async () => p.$$eval('#rc-sum .tile', (t) => t.map((x) => x.querySelector('.label').innerText.trim() + ' = ' + x.querySelector('.value').innerText.trim()));
     let tl = await tiles();
-    // Buy calls, 60 sessions, within 2 %: FLAG / PL on 22 (the laptop's day) yes, Choice (333.20 = 83 % -> its 90 % day: none) no,
-    // A (588 = 88 % -> 90 % on 6) yes, B no, C (1176 -> 90 % on 40) yes, D still running (40 sessions)
+    // Buy calls, 60 sessions, the target itself: FLAG / PL on 40 yes, Choice no, A on 8 yes, B no, C on 50 yes, D still running (40 sessions)
     assert.ok(tl.indexOf('Calls with a target above the price = 6') >= 0 && tl.indexOf('Reached within 60 sessions = 60%') >= 0, tl.join(' | '));
     assert.ok(tl.indexOf('Still running = 1') >= 0, tl.join(' | '));
     assert.ok(tl.some((x) => /^After 30 \/ 60 \/ 90 sessions = \+/.test(x)) && tl.some((x) => /^Best move within 60 \(MFE\) = \+15\.0%$/.test(x)), tl.join(' | '));
@@ -1709,9 +1700,6 @@ function check(name, fn) {
     const one = await p.$eval('#rc-one', (x) => x.innerText);
     assert.ok(/2 calls from 2 brokers · average target 335\.00 \(from 330\.00 to 340\.00\)/.test(one) && /Prabhudas Lilladher\s+Buy target 330\.00/.test(one) &&
       /reached after 40 sessions/.test(one), one);
-    // the 'Reached in' column: the laptop's day within 2 % (22), the target itself after switching (40)
-    const reachOf = () => p.$$eval('#rc-all-t tbody tr', (t) => t.map((r) => r.innerText.replace(/\s+/g, ' ')).filter((x) => /Prabhudas Lilladher/.test(x)).join(' | '));
-    assert.ok(/ 22 26 Nov 2026 /.test(await reachOf()), await reachOf());
     assert.ok(/Choice\s+Buy target 340\.00 when the price was 300\.00 \(\+13\.3%\) - not reached yet in 95 sessions/.test(one), one);
     assert.strictEqual(await p.$eval('#rc-one a[href*="moneycontrol.com"]', (a) => a.getAttribute('target')), '_blank');
     await p.fill('#rc-q', '');
@@ -1723,12 +1711,9 @@ function check(name, fn) {
     await p.waitForSelector('#rc-all [data-rcs="down"]');
     assert.strictEqual(await p.$eval('#rc-all [data-rcs="down"] b', (x) => x.textContent), '1');
     const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#rc-csv')]);
-    assert.ok(/analyst-targets-60-near\.csv/.test(dl.suggestedFilename()), dl.suggestedFilename());
-    await p.selectOption('#rc-t', '100');
-    await p.waitForFunction(() => /the target itself/.test(document.querySelector('#rc-pick').innerText));
-    assert.ok(/ 40 22 Dec 2026 /.test(await reachOf()), await reachOf());
+    assert.ok(/analyst-targets-60-100\.csv/.test(dl.suggestedFilename()), dl.suggestedFilename());
     const st = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:recos:opts')));
-    assert.deepStrictEqual([st.v, st.W, st.T, st.calls], [2, 60, 100, 'all'], 'kept as chosen (v 2: no switch back to the 2 % rule)');
+    assert.deepStrictEqual([st.W, st.T, st.calls], [60, 100, 'all']);
     await p.evaluate(() => localStorage.removeItem('sb:recos:opts'));
     await p.setViewportSize({ width: 360, height: 780 });
     await p.waitForTimeout(300);
