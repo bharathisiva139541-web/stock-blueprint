@@ -54,10 +54,11 @@ UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
 
 # (code, website, [(list name, first page, page n with {n})]) - several lists a website: every one that gives
 # recommendations is read (the same one found twice is kept once)
+# Owner's AnalystCheck (24-Nov-2026): Moneycontrol's recommendations list 25 dated calls, Business Standard's research reports
+# a table of 2,430 (Dec 2024 .. 23-Nov-2026) on page 1; Moneycontrol's broker-research tag moved to its news home (dropped);
+# Moneycontrol's stock ideas (page data only) and DSIJ (rows without a <table>) gave none - `json_recos` / `text_rows` for them.
 SOURCES = (
     ('mc', 'Moneycontrol', (
-        ('broker research', 'https://www.moneycontrol.com/news/tags/broker-research.html',
-         'https://www.moneycontrol.com/news/tags/broker-research.html/page-{n}/'),
         ('recommendations', 'https://www.moneycontrol.com/news/tags/recommendations.html',
          'https://www.moneycontrol.com/news/tags/recommendations.html/page-{n}/'),
         ('stock ideas', 'https://www.moneycontrol.com/markets/stock-ideas/', ''),
@@ -338,11 +339,11 @@ def page_recos(html_text, base):
     def add(it, pos, url):
         if not it:
             return
-        key = (it['call'], it['co'].lower(), it['tgt'], it['br'].lower())
+        key = (it['call'], norm_name(it['co']), it['tgt'], it['br'].lower())     # a table row and the page's data of it = one
         if key in seen:
             return
         seen.add(key)
-        if not it.get('at'):
+        if not it.get('at') and pos is not None:
             it['at'] = when(pos)
         it.setdefault('url', url)
         it.setdefault('rp', None)
@@ -375,7 +376,144 @@ def page_recos(html_text, base):
         if '<a' in m.group(1).lower():
             continue
         add(parse_reco(m.group(1)), m.start(), '')
+    for it in json_recos(html_text, base):
+        add(it, None, it.get('url', ''))          # its own date or none (never a date found elsewhere on the page)
+    for it in text_rows(_text(html_text)):
+        add(it, None, '')
     return found
+
+
+# ------------------------------------------------------------------ the page's own data (JSON in its scripts)
+JKEYS = (('tgt', ('targetprice', 'target', 'tp', 'tgtprice', 'pricetarget', 'targetvalue')),
+         ('co', ('stockname', 'companyname', 'company', 'scname', 'scripname', 'securityname', 'shortname', 'stock', 'name')),
+         ('br', ('brokername', 'brokeragename', 'broker', 'brokerage', 'organization', 'organisation', 'orgname', 'researchhouse',
+                 'analystname', 'analyst', 'source', 'author')),
+         ('call', ('recommendation', 'recotype', 'recommendationtype', 'reco', 'call', 'rating', 'action', 'advice', 'recommend', 'type')),
+         ('at', ('recodate', 'recommendationdate', 'reportdate', 'publishdate', 'publisheddate', 'publishedat', 'createdat', 'entrydate',
+                 'date', 'created', 'time', 'updatedat')),
+         ('rp', ('recoprice', 'priceatreco', 'pricerecommended', 'pricewhenrecommended', 'entryprice', 'cmp', 'ltp', 'price')),
+         ('url', ('reporturl', 'pdfurl', 'pdf', 'url', 'link', 'href', 'permalink')),
+         ('nse', ('nsesymbol', 'nsecode', 'nseid', 'symbol')))
+
+
+def _jkey(k):
+    return re.sub(r'[^a-z0-9]', '', str(k).lower())
+
+
+def _jtext(v):
+    if isinstance(v, dict):
+        v = v.get('name') or v.get('title') or v.get('label') or ''
+    return str(v).strip() if isinstance(v, (str, int, float)) and not isinstance(v, bool) else ''
+
+
+def _jrec(o, base):
+    """One object of the page's data -> a recommendation (a target number, a company, a call or a broker) or None."""
+    by = {}
+    for k, v in o.items():
+        by.setdefault(_jkey(k), v)
+    got = {}
+    for field, names in JKEYS:
+        for n in names:
+            if n in by and by[n] not in (None, '', []):
+                got[field] = by[n]
+                break
+    tgt = _num(re.sub(r'[^\d.]', '', _jtext(got.get('tgt')))) if 'tgt' in got else None
+    co = _text(_jtext(got.get('co')))
+    if not tgt or not co or not re.search(r'[A-Za-z]', co) or len(co) > 80:
+        return None
+    rp = _num(re.sub(r'[^\d.]', '', _jtext(got.get('rp')))) if 'rp' in got else None
+    ct = _jtext(got.get('call')).lower()
+    call = next((CALL_CODE[c] for c in CALLS if re.match(r'^' + c.replace(' ', r'\s+') + r'\b', ct)), '')
+    if not call:
+        if rp and not ct and tgt > rp:
+            call = 'BUY'
+        else:
+            return None
+    brt = _text(_jtext(got.get('br')))
+    br, known = broker_name(brt) if brt else ('', False)
+    if not br:
+        return None
+    url = _jtext(got.get('url'))
+    nse = _jtext(got.get('nse')).upper()
+    return {'call': call, 'co': co, 'tgt': round(tgt, 2), 'br': br, 'known': known, 'how': 'data', 'rp': rp,
+            'at': find_date(_jtext(got.get('at'))), 'url': _abs(base, url) if url.startswith(('http', '/')) else '',
+            'nse': nse if re.match(r'^[A-Z0-9&_.-]{1,20}$', nse) else ''}
+
+
+def json_blobs(html_text):
+    """The JSON the page carries in its scripts (Next.js __NEXT_DATA__, ld+json, any application/json)."""
+    out = []
+    for m in re.finditer(r'<script\b([^>]*)>(.*?)</script>', html_text or '', re.S | re.I):
+        if re.search(r'__NEXT_DATA__|application/(?:ld\+)?json', m.group(1), re.I):
+            try:
+                out.append(json.loads(m.group(2)))
+            except ValueError:
+                continue
+    return out
+
+
+def _walk(o, fn, depth=0, seen=None):
+    seen = seen if seen is not None else [0]
+    if depth > 14 or seen[0] > 300000:
+        return
+    seen[0] += 1
+    if isinstance(o, dict):
+        fn(o)
+        for v in o.values():
+            if isinstance(v, (dict, list)):
+                _walk(v, fn, depth + 1, seen)
+    elif isinstance(o, list):
+        for v in o:
+            if isinstance(v, (dict, list)):
+                _walk(v, fn, depth + 1, seen)
+
+
+def json_recos(html_text, base):
+    out = []
+    for blob in json_blobs(html_text):
+        _walk(blob, lambda o: out.append(_jrec(o, base)))
+    return [x for x in out if x]
+
+
+# ------------------------------------------------------------------ rows without a <table> (DSIJ: Stock / Broker / Action (Reco Date) /
+# CMP (Returns) / Reco Price / Target Price / Potential %) - read from the page's text
+NUM = r'[\d,]+(?:\.\d+)?'
+ROW_RE = re.compile(r'(?<![A-Za-z])' + CALL_RE + r'\s*\(\s*(?P<d>[^()]{5,30}?)\s*\)\s+(?:Rs\.?\s*)?(?P<cmp>' + NUM +
+                    r')\s*(?:\(\s*[-+]?[\d.,]+\s*%?\s*\))?\s+(?:Rs\.?\s*)?(?P<rp>' + NUM + r')\s+(?:Rs\.?\s*)?(?P<tgt>' + NUM + r')', re.I)
+ROW_JUNK = re.compile(r'.*(?:[-+]?\d[\d,.]*\s*%|\bPDF\b|\bInsights?\b|\bView\b|\bDownload\b|\bReport\b|\bPotential\b|\bPrice\b|\bDate\)?)\s*', re.I)
+
+
+def text_rows(text):
+    """'Anthem Biosciences Ltd. Prabhudas Lilladher Buy (24 Nov 2026) 980.15 (0.5%) 975.50 1,050.00 7.6% ...' -> items: the call,
+    its date in brackets, then CMP (returns), the reco price and the target; the company and the broker = the words before it
+    (the broker by its known names, else what follows 'Ltd.' / 'Limited')."""
+    out, last = [], 0
+    for m in ROW_RE.finditer(text or ''):
+        before = text[max(last, m.start() - 160): m.start()]
+        last = m.end()
+        before = ROW_JUNK.sub('', before).strip(' |,;:-')
+        if not before:
+            continue
+        co, br, known = '', '', False
+        mm = re.match(r'^(.*?\b(?:Ltd\.?|Limited\.?))\s+(.+)$', before)
+        if mm:
+            co = mm.group(1)
+            br, known = broker_name(mm.group(2))
+        else:
+            low, best = ' ' + before.lower(), None
+            for name, keys in BROKERS:
+                for k in keys:
+                    at = low.find(k if k.endswith(' ') or not k.isalpha() or len(k) > 4 else ' ' + k)
+                    if at > 1 and (best is None or at < best[0]):
+                        best = (at, name)
+            if best:
+                co, br, known = before[:best[0] - 1].strip(' ,-|'), best[1], True
+        tgt, rp = _num(m.group('tgt')), _num(m.group('rp'))
+        if not co or not br or not tgt or not re.search(r'[A-Za-z]', co) or len(co) > 80:
+            continue
+        out.append({'call': CALL_CODE[re.sub(r'\s+', ' ', m.group('call').lower())], 'co': co, 'tgt': round(tgt, 2), 'br': br,
+                    'known': known, 'how': 'text', 'rp': rp, 'at': find_date(m.group('d')), 'url': ''})
+    return out
 
 
 # ------------------------------------------------------------------ matching to Main's stocks
@@ -492,11 +630,13 @@ def merge(store, items, src, today):
                 r['url'] = it['url']
             if r.get('rp') is None and it.get('rp'):
                 r['rp'] = it['rp']
+            if not r.get('nse') and it.get('nse'):
+                r['nse'] = it['nse']
             continue
         k = rec_key(it)
         recos[k] = {'co': it['co'], 'br': it['br'], 'known': bool(it.get('known')), 'call': it['call'], 'tgt': it['tgt'],
                     'rp': it.get('rp'), 'at': at, 'src': src, 'url': it.get('url') or '', 'seen': today.isoformat(),
-                    'dated': bool(it.get('at'))}
+                    'dated': bool(it.get('at')), 'nse': it.get('nse') or ''}
         by.setdefault((it['br'].lower(), norm_name(it['co']), it['call'], it['tgt']), []).append(k)
         added += 1
     return added
@@ -505,9 +645,10 @@ def merge(store, items, src, today):
 # ------------------------------------------------------------------ reading the websites
 def read_list(opener, first, page_n, pages, stop_day, fetch=None, sleep=time.sleep, gap=GAP_S, until_old=False):
     """Pages 1 .. pages of one list -> (items, pages read, why stopped). A page without any recommendation ends the list;
-    `until_old` (AnalystNow) goes on until a page's newest item is older than stop_day."""
+    `until_old` (AnalystNow) goes on until a page reaches back before stop_day; a page the same as one before ends it."""
     fetch = fetch or (lambda u: http_get(opener, u))
     items, read, why = [], 0, ''
+    keys = set()
     for n in range(1, max(1, pages) + 1):
         url = first if n == 1 else (page_n.format(n=n) if page_n else '')
         if not url:
@@ -523,10 +664,14 @@ def read_list(opener, first, page_n, pages, stop_day, fetch=None, sleep=time.sle
         if not got:
             why = '' if items else 'no recommendation found on the page'
             break
+        page_keys = {(i['call'], i['co'].lower(), i['tgt'], i['br'].lower()) for i in got}
+        if n > 1 and page_keys <= keys:
+            break                                   # the website gave the same page again (it has no page n)
+        keys |= page_keys
         items.extend(got)
         days = sorted(i['at'][:10] for i in got if i.get('at'))
-        if days and days[-1] < stop_day:
-            break
+        if days and days[0] < stop_day:
+            break                                   # this page already reaches back before stop_day
         if until_old is False and n >= pages:
             break
     return items, read, why
@@ -569,7 +714,7 @@ def outcomes(store, names, lab, today):
     cache = {}
     try:
         for k, r in sorted(store['recos'].items(), key=lambda kv: kv[1]['at'], reverse=True)[:KEEP]:
-            sym = r.get('sym') or names.match(r['co'])
+            sym = r.get('sym') or (r['nse'] if r.get('nse') and r['nse'] in names.names else '') or names.match(r['co'])
             if sym:
                 r['sym'] = sym
             row = {'sym': sym or '', 'co': r['co'], 'br': r['br'], 'call': r['call'], 'tgt': r['tgt'], 'rp': r.get('rp'),
@@ -731,10 +876,13 @@ def check(out=print, fetch=None, names=None, save=True):
                 ', '.join('%s %d' % kv for kv in sorted(kinds.items())) or '-',
                 (' - dates %s .. %s' % (days[0], days[-1])) if days else ' - no dates found next to them'))
             for g in got[:6]:
-                sym = nm.match(g['co']) if names else ''
+                sym = ((g['nse'] if g.get('nse') in nm.names else nm.match(g['co'])) if names else '')
                 out('   %s | %s %s | target %g | %s%s | %s' % (g.get('at') or '(no date)', g['call'], g['co'],
                                                             g['tgt'], g['br'], '' if g.get('known') else ' (?)',
                                                             ('-> ' + sym) if sym else ('not matched' if names else '')))
+            inside = [g for g in got if (g.get('at') or '9')[:10] >= FROM_DAY]
+            if got:
+                out('   %d of them from %s on' % (len(inside), FROM_DAY))
             if not got:
                 t = _text(text)
                 bits = [m.group(0) for m in re.finditer(r'.{0,90}\btarget\b.{0,90}', t, re.I)][:6]
@@ -743,9 +891,52 @@ def check(out=print, fetch=None, names=None, save=True):
                     ', '.join(k for k, rx in (('__NEXT_DATA__', '__NEXT_DATA__'), ('ld+json', 'application/ld\\+json'),
                                               ('tables', '<table')) if re.search(rx, text)) or 'none',
                     ' || '.join(bits) if bits else 'none'))
+                for line in shape_words(text, t):
+                    out('   ' + line)
     out('')
     out('%d recommendation(s) found on the first pages%s' % (total, (' - the pages are kept in %s' % CHECK_DIR) if save else ''))
     return total
+
+
+def shape_words(html_text, text):
+    """AnalystCheck on a page where nothing was found: what its data and its rows look like (for the next fix)."""
+    lines = []
+    for blob in json_blobs(html_text)[:3]:
+        paths = []
+
+        def look(o, path, depth=0):
+            if depth > 10 or len(paths) >= 8:
+                return
+            if isinstance(o, dict):
+                ks = [_jkey(k) for k in o]
+                if any('target' in k or 'tgt' in k or k in ('tp', 'reco', 'recommendation', 'brokername') for k in ks):
+                    sample = {k: (str(v)[:40] if not isinstance(v, (dict, list)) else type(v).__name__) for k, v in list(o.items())[:16]}
+                    paths.append('%s = %s' % (path or '(top)', json.dumps(sample, ensure_ascii=True)[:420]))
+                    return
+                for k, v in o.items():
+                    if isinstance(v, (dict, list)):
+                        look(v, path + '.' + str(k), depth + 1)
+            elif isinstance(o, list):
+                for i, v in enumerate(o[:3]):
+                    look(v, path + '[%d]' % i, depth + 1)
+        look(blob, '')
+        if paths:
+            lines.append('page data with target-like names: ' + ' || '.join(paths))
+        elif isinstance(blob, dict):
+            pp = (blob.get('props') or {}).get('pageProps') if isinstance(blob.get('props'), dict) else None
+            keys = list((pp if isinstance(pp, dict) else blob).keys())[:30]
+            lines.append('page data keys (no target-like names): ' + ', '.join(str(k) for k in keys))
+    apis = sorted(set(re.findall(r'https?://[a-z0-9.-]*(?:api|apps)[a-z0-9.-]*\.[a-z]+/[^"\'\s<>]{3,120}', html_text or '', re.I)))
+    apis = [a for a in apis if re.search(r'idea|broker|research|reco|target|stock', a, re.I)][:8]
+    if apis:
+        lines.append('data addresses in the page: ' + ' || '.join(apis))
+    m = re.search(r'Target\s*Price', html_text or '', re.I)
+    if m:
+        raw = re.sub(r'<(script|style|svg)\b.*?</\1>', ' ', html_text[m.start(): m.start() + 12000], flags=re.S | re.I)
+        raw = re.sub(r'\s+', ' ', raw)
+        raw = re.sub(r'\s(?:style|data-[a-z-]+|aria-[a-z-]+|onclick)="[^"]*"', '', raw)
+        lines.append('the page after "Target Price" (tags kept, shortened): ' + raw[:1800])
+    return lines
 
 
 def words(rows, sym):
