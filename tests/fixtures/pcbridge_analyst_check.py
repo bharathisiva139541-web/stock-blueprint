@@ -140,6 +140,44 @@ assert [(x['call'], x['co'], x['tgt'], x['br'], x['rp'], x['at'], x['how']) for 
     ('ACCUMULATE', 'Hindalco Industries Ltd.', 800.0, 'Motilal Oswal', 710.0, '2026-11-20', 'text'),
     ('SELL', 'Coal India Ltd.', 350.0, 'Axis Securities', 382.0, '2026-11-18', 'text'),
     ('BUY', 'State Bank of India', 950.0, 'ICICI Securities', 800.0, '2026-11-17', 'text')], g
+# DSIJ as the owner's AnalystCheck printed it (24-Nov-2026): a react-data-table - <div role="row"> / role="columnheader" /
+# role="cell", the call and its date in one cell ('BUY<br/>23 Nov 2026'), CMP (returns) BEFORE the reco price
+def rdt_cell(inner, head=False):
+    return ('<div role="columnheader" tabindex="0" class="sc-jXuTBK rdt_TableCol_Sortable"><div class="sc-cXrvCr">%s</div></div>' % inner
+            if head else '<div id="cell-1-undefined" role="cell" class="sc-glJfXD rdt_TableCell">%s</div>' % inner)
+
+
+RDT = ('<div class="rdt_Table" role="table"><div class="rdt_TableHead" role="rowgroup"><div class="rdt_TableHeadRow" role="row">'
+       + ''.join(rdt_cell(h, True) for h in ('Stock', 'Broker / Analyst', 'Action (Reco Date)', 'CMP (Returns)', 'Reco Price',
+                                            'Target Price', 'Potential %', '<span class="text-end"> Original PDF</span>', 'Research Insights'))
+       + '</div></div><div class="rdt_TableBody" role="rowgroup">'
+       + '<div id="row-0" role="row" class="rdt_TableRow">' + ''.join(rdt_cell(c) for c in (
+           '<a class="text-info" href="/share-price/chalet-hotels-ltd-207959">Chalet Hotels Ltd.</a>',
+           '<a class="text-info" href="/markets/reports/market-reports/stock-tips/broker-detail?brokerid=14">Prabhudas Lilladher</a>',
+           '<div><span class="fw-bold text-success">BUY</span><br/><span class="small">23 Nov 2026</span></div>',
+           '<div class="text-end">868.75<br/><span class="small text-success">(5.05%)</span></div>',
+           '<div class="text-end">827.00</div>', '<div class="text-end">1,055.00</div>', '<div>21.4%</div>',
+           '<a href="https://insights.dsij.in/broker-reports/pdf/chalet-23112026.pdf">PDF</a>', '<a href="/insights/1">Insights</a>'))
+       + '</div><div id="row-1" role="row" class="rdt_TableRow">' + ''.join(rdt_cell(c) for c in (
+           '<a href="/share-price/rail-vikas-nigam-ltd-1">Rail Vikas Nigam Ltd.</a>', '<a href="/b?brokerid=14">Prabhudas Lilladher</a>',
+           '<div><span class="fw-bold text-danger">SELL</span><br/><span class="small">18 Nov 2026</span></div>',
+           '<div class="text-end">301.10<br/><span class="small">(-1.2%)</span></div>', '<div class="text-end">305.00</div>',
+           '<div class="text-end">153.00</div>', '<div>-49.2%</div>', '', ''))
+       + '</div></div></div><nav class="rdt_Pagination">Rows per page 10 1-2 of 2</nav>')
+g = A.page_recos('<html><body><p>Go Stock Broker</p>' + RDT + '</body></html>', 'https://insights.dsij.in/markets/reports/broker-reports/stock-tips')
+assert [(x['call'], x['co'], x['tgt'], x['br'], x['rp'], x['at'], x['how']) for x in g] == [
+    ('BUY', 'Chalet Hotels Ltd.', 1055.0, 'Prabhudas Lilladher', 827.0, '2026-11-23', 'grid'),
+    ('SELL', 'Rail Vikas Nigam Ltd.', 153.0, 'Prabhudas Lilladher', 305.0, '2026-11-18', 'grid')], g
+assert g[0]['url'] == 'https://insights.dsij.in/broker-reports/pdf/chalet-23112026.pdf', g
+assert g[1]['url'] == 'https://insights.dsij.in/share-price/rail-vikas-nigam-ltd-1', g
+# a <table> with CMP before the reco price: the price at the call is the reco price
+CMPT = ('<table><tr><th>Company</th><th>Broker</th><th>Reco</th><th>CMP</th><th>Reco Price</th><th>Target</th></tr>'
+        '<tr><td>Tata Steel</td><td>Emkay</td><td>Buy</td><td>190</td><td>182</td><td>210</td></tr></table>')
+g = A.page_recos(CMPT, 'https://www.business-standard.com/')
+assert [(x['co'], x['rp'], x['tgt'], x['br']) for x in g] == [('Tata Steel', 182.0, 210.0, 'Emkay Global')], g
+# the same rows as plain text without brackets around the date (no table markup at all)
+g = A.text_rows('Chalet Hotels Ltd. Prabhudas Lilladher BUY 23 Nov 2026 868.75 (5.05%) 827.00 1,055.00 21.4% PDF Insights')
+assert [(x['call'], x['co'], x['tgt'], x['rp'], x['at']) for x in g] == [('BUY', 'Chalet Hotels Ltd.', 1055.0, 827.0, '2026-11-23')], g
 # a broker the list does not know, after 'Ltd.'
 g = A.text_rows('Anthem Biosciences Ltd. Some New Broking Buy (24 Nov 2026) 980 (0.5%) 975 1,050 7.6%')
 assert [(x['co'], x['br'], x['known']) for x in g] == [('Anthem Biosciences Ltd.', 'Some New', False)], g
@@ -215,7 +253,7 @@ items, read, why = A.read_list(None, 'https://www.business-standard.com/markets/
 assert items == [] and why == 'HTTP 403', why
 store = A.load_store()
 res = A.collect(store, TODAY, False, fake_fetch, lambda s: None, 0, LOGS.append)
-assert res['mc'][1] == 2 and res['bs'] == [0, 0, 'research reports: HTTP 403; stock recommendations: HTTP 403'], res
+assert res['mc'][1] == 2 and res['bs'] == [0, 0, 'research reports: HTTP 403'], res
 assert res['dsij'][0] == 1, 'the 4-Aug-2026 row is before 1-Oct-2026: not kept; the 5-Nov one kept'
 assert store['lists']['bs|research reports']['why'] == 'HTTP 403'
 
@@ -335,8 +373,21 @@ OUT = []
 A.check(OUT.append, fetch=lambda u: (200, SHAPE, u), names=None, save=False)
 text = '\n'.join(OUT)
 assert "page data with target-like names: .props.pageProps.ideaData.rows[0] = {\"scId\": \"JLH\", \"tgtPrice\": \"330\"" in text, text
+assert '__NEXT_DATA__ pageProps: ideaData {rows}; api' in text, text
 assert 'data addresses in the page: https://api.moneycontrol.com/mcapi/v1/stock-idea/list?page=1' in text, text
 assert 'the page after "Target Price" (tags kept, shortened): Target Price</span><span>330</span>' in text, text
+# a page whose Next.js data cannot be read, a table of something else, streamed data, an address written with \/
+ODD = ('<script id="__NEXT_DATA__" type="application/json">{"props": broken</script>'
+       '<table><tr><th>Index</th><th>Value</th></tr><tr><td>NIFTY</td><td>24000</td></tr></table>'
+       '<script>self.__next_f.push([1,"{\\"targetPrice\\":330,\\"brokerName\\":\\"PL\\"}"])</script>'
+       r'<script>var u="https:\/\/api.moneycontrol.com\/mcapi\/v1\/stock-idea\/list";</script>')
+OUT = []
+A.check(OUT.append, fetch=lambda u: (200, ODD, u), names=None, save=False)
+text = '\n'.join(OUT)
+assert '__NEXT_DATA__ could not be read (Expecting value' in text, text
+assert 'a table: 1 row(s); headings: index | value; first row: NIFTY | 24000' in text, text
+assert 'Next.js streamed data: 1 part(s); near target-like names: ' in text and 'targetPrice' in text, text
+assert 'data addresses in the page: https://api.moneycontrol.com/mcapi/v1/stock-idea/list' in text, text
 
 # ------------------------------------------------------------------ 9. screener_bridge: the round calls it, the commands exist
 src = open(os.path.join(HERE, 'screener_bridge.py'), encoding='utf-8').read()

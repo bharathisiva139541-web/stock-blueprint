@@ -54,22 +54,20 @@ UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
 
 # (code, website, [(list name, first page, page n with {n})]) - several lists a website: every one that gives
 # recommendations is read (the same one found twice is kept once)
-# Owner's AnalystCheck (24-Nov-2026): Moneycontrol's recommendations list 25 dated calls, Business Standard's research reports
-# a table of 2,430 (Dec 2024 .. 23-Nov-2026) on page 1; Moneycontrol's broker-research tag moved to its news home (dropped);
-# Moneycontrol's stock ideas (page data only) and DSIJ (rows without a <table>) gave none - `json_recos` / `text_rows` for them.
+# Owner's AnalystChecks (24-Nov-2026): Moneycontrol's recommendations list = 25 dated calls a page, Business Standard's
+# research reports = a table of ~2,430 (Dec 2024 .. 23-Nov-2026) on page 1, DSIJ = an ARIA table (<div role="row"> /
+# role="cell", react-data-table - `role_tables`). Dropped: Moneycontrol's broker-research tag (moved to its news home), its stocks
+# news (the same calls as the recommendations list, dated by the next item), Business Standard's stock-recommendations topic
+# (no call in its headlines). Moneycontrol's stock ideas: not found yet (AnalystCheck prints its data's shape).
 SOURCES = (
     ('mc', 'Moneycontrol', (
         ('recommendations', 'https://www.moneycontrol.com/news/tags/recommendations.html',
          'https://www.moneycontrol.com/news/tags/recommendations.html/page-{n}/'),
         ('stock ideas', 'https://www.moneycontrol.com/markets/stock-ideas/', ''),
-        ('stocks news', 'https://www.moneycontrol.com/news/business/stocks/',
-         'https://www.moneycontrol.com/news/business/stocks/page-{n}/'),
     )),
     ('bs', 'Business Standard', (
         ('research reports', 'https://www.business-standard.com/markets/research-report',
          'https://www.business-standard.com/markets/research-report/page-{n}'),
-        ('stock recommendations', 'https://www.business-standard.com/topic/stock-recommendations',
-         'https://www.business-standard.com/topic/stock-recommendations/page-{n}'),
     )),
     ('dsij', 'DSIJ', (
         ('broker reports', 'https://insights.dsij.in/markets/reports/broker-reports/stock-tips',
@@ -286,37 +284,109 @@ TABLE_KEYS = (('co', ('stock', 'company', 'scrip', 'name', 'security')), ('br', 
               ('at', ('date', 'reco date', 'time', 'published')))
 
 
-def table_recos(html_text, base):
-    """Tables with Stock / Broker / Recommendation / Target columns -> items."""
+# the price at the call: the 'Reco Price' column beats 'CMP' (today's price) wherever they stand
+WORD_FIRST = ('rp',)
+
+
+def _hmatch(h, w):
+    return h == w or h.startswith(w + ' ') or (' ' + w) in (' ' + h)
+
+
+def table_cols(head):
+    """Header texts (lower case) -> {key: column} or None when it is not a table of calls."""
+    col = {}
+    for key, words in TABLE_KEYS:
+        free = [(i, h) for i, h in enumerate(head) if i not in col.values()]
+        if key in WORD_FIRST:
+            hit = next((i for w in words for i, h in free if _hmatch(h, w)), None)
+        else:
+            hit = next((i for i, h in free if any(_hmatch(h, w) for w in words)), None)
+        if hit is not None:
+            col[key] = hit
+    if 'co' not in col or 'tgt' not in col or ('call' not in col and 'br' not in col):
+        return None
+    return col
+
+
+ROLE_RE = re.compile(r'<[a-z][a-z0-9]*\b[^>]*?\brole\s*=\s*["\'](row|cell|gridcell|columnheader|rowheader)["\'][^>]*>', re.I)
+
+
+def role_tables(html_text):
+    """Tables made of <div role="row"> / role="cell" | "columnheader" (react-data-table - DSIJ) -> [(head, [(cells, row html)])].
+    A cell = the page from its tag to the next row / cell tag; a header row starts a new table."""
+    ms = list(ROLE_RE.finditer(html_text or ''))
+    tables, rows = [], []
+    for n, m in enumerate(ms):
+        kind = m.group(1).lower()
+        end = ms[n + 1].start() if n + 1 < len(ms) else min(len(html_text), m.end() + 3000)
+        if kind == 'row':
+            rows.append({'start': m.start(), 'cells': [], 'head': False})
+            continue
+        if not rows:
+            continue
+        rows[-1]['cells'].append(_text(html_text[m.end():end]))
+        if kind == 'columnheader':
+            rows[-1]['head'] = True
+    for k, r in enumerate(rows):
+        stop = rows[k + 1]['start'] if k + 1 < len(rows) else min(len(html_text), r['start'] + 20000)
+        raw = html_text[r['start']: min(stop, r['start'] + 20000)]
+        if r['head']:
+            tables.append(([c.lower() for c in r['cells']], []))
+        elif tables and r['cells']:
+            tables[-1][1].append((r['cells'], raw))
+    return tables
+
+
+def _row_link(row):
+    links = re.findall(r'<a\b[^>]*href="([^"]+)"', row, re.I)
+    for rx in (r'\.pdf(?:$|[?#])', r'research-report|report-detail|/report/'):     # the report itself, else the first link
+        u = next((u for u in links if re.search(rx, u, re.I)), '')
+        if u:
+            return u
+    return links[0] if links else ''
+
+
+def grid_recos(head, rows, base, how='table'):
+    """One table's header + [(cell texts, row html)] -> items."""
+    col = table_cols(head)
     out = []
-    for tm in re.finditer(r'<table\b.*?</table>', html_text, re.S | re.I):
+    if not col:
+        return out
+    for vals, row in rows:
+        get = lambda k: vals[col[k]] if k in col and col[k] < len(vals) else ''
+        tgt = _num(re.sub(r'[^\d.,]', '', get('tgt')))
+        co = get('co').strip()
+        call_t = get('call').lower().strip()
+        call = next((CALL_CODE[c] for c in CALLS if re.match(r'^' + c.replace(' ', r'\s+') + r'\b', call_t)), 'BUY' if not call_t else '')
+        if not tgt or not co or not call or not re.search(r'[A-Za-z]', co):
+            continue
+        br, known = broker_name(get('br')) if get('br') else ('', False)
+        link = _row_link(row)
+        out.append({'call': call, 'co': co, 'tgt': round(tgt, 2), 'br': br, 'known': known, 'how': how,
+                    'rp': _num(re.sub(r'[^\d.,]', '', get('rp'))), 'at': find_date(get('at')) or find_date(_text(row)),
+                    'url': _abs(base, link) if link else ''})
+    return out
+
+
+def html_tables(html_text):
+    """<table>s -> [(head, [(cells, row html)])]."""
+    out = []
+    for tm in re.finditer(r'<table\b.*?</table>', html_text or '', re.S | re.I):
         rows = re.findall(r'<tr\b.*?</tr>', tm.group(0), re.S | re.I)
         if len(rows) < 2:
             continue
         head = [_text(c).lower() for c in re.findall(r'<t[hd]\b.*?</t[hd]>', rows[0], re.S | re.I)]
-        col = {}
-        for key, words in TABLE_KEYS:
-            for i, h in enumerate(head):
-                if i not in col.values() and any(h == w or h.startswith(w + ' ') or (' ' + w) in (' ' + h) for w in words):
-                    col[key] = i
-                    break
-        if 'co' not in col or 'tgt' not in col or ('call' not in col and 'br' not in col):
-            continue
-        for row in rows[1:]:
-            cells = re.findall(r'<td\b.*?</td>', row, re.S | re.I)
-            vals = [_text(c) for c in cells]
-            get = lambda k: vals[col[k]] if k in col and col[k] < len(vals) else ''
-            tgt = _num(re.sub(r'[^\d.,]', '', get('tgt')))
-            co = get('co').strip()
-            call_t = get('call').lower().strip()
-            call = next((CALL_CODE[c] for c in CALLS if re.match(r'^' + c.replace(' ', r'\s+') + r'\b', call_t)), 'BUY' if not call_t else '')
-            if not tgt or not co or not call:
-                continue
-            br, known = broker_name(get('br')) if get('br') else ('', False)
-            link = re.search(r'<a\b[^>]*href="([^"]+)"', row, re.I)
-            out.append({'call': call, 'co': co, 'tgt': round(tgt, 2), 'br': br, 'known': known, 'how': 'table',
-                        'rp': _num(re.sub(r'[^\d.,]', '', get('rp'))), 'at': find_date(get('at')) or find_date(_text(row)),
-                        'url': _abs(base, link.group(1)) if link else ''})
+        out.append((head, [([_text(c) for c in re.findall(r'<td\b.*?</td>', r, re.S | re.I)], r) for r in rows[1:]]))
+    return out
+
+
+def table_recos(html_text, base):
+    """Tables (<table> or ARIA rows) with Stock / Broker / Recommendation / Target columns -> items."""
+    out = []
+    for head, rows in html_tables(html_text):
+        out.extend(grid_recos(head, rows, base, 'table'))
+    for head, rows in role_tables(html_text):
+        out.extend(grid_recos(head, rows, base, 'grid'))
     return out
 
 
@@ -378,8 +448,9 @@ def page_recos(html_text, base):
         add(parse_reco(m.group(1)), m.start(), '')
     for it in json_recos(html_text, base):
         add(it, None, it.get('url', ''))          # its own date or none (never a date found elsewhere on the page)
-    for it in text_rows(_text(html_text)):
-        add(it, None, '')
+    if not found:                               # rows in plain text only when nothing else on the page gave a call
+        for it in text_rows(_text(html_text)):
+            add(it, None, '')
     return found
 
 
@@ -440,15 +511,20 @@ def _jrec(o, base):
             'nse': nse if re.match(r'^[A-Z0-9&_.-]{1,20}$', nse) else ''}
 
 
-def json_blobs(html_text):
-    """The JSON the page carries in its scripts (Next.js __NEXT_DATA__, ld+json, any application/json)."""
+def json_blobs(html_text, why=None, kinds=None):
+    """The JSON the page carries in its scripts (Next.js __NEXT_DATA__, ld+json, any application/json); `why` collects the
+    ones that could not be read, `kinds` the kind of each one read."""
     out = []
     for m in re.finditer(r'<script\b([^>]*)>(.*?)</script>', html_text or '', re.S | re.I):
+        kind = '__NEXT_DATA__' if '__NEXT_DATA__' in m.group(1) else ('ld+json' if 'ld+json' in m.group(1).lower() else 'json')
         if re.search(r'__NEXT_DATA__|application/(?:ld\+)?json', m.group(1), re.I):
             try:
                 out.append(json.loads(m.group(2)))
-            except ValueError:
-                continue
+                if kinds is not None:
+                    kinds.append(kind)
+            except ValueError as e:
+                if why is not None:
+                    why.append('%s could not be read (%s; %d characters)' % (kind, str(e)[:80], len(m.group(2))))
     return out
 
 
@@ -478,14 +554,16 @@ def json_recos(html_text, base):
 # ------------------------------------------------------------------ rows without a <table> (DSIJ: Stock / Broker / Action (Reco Date) /
 # CMP (Returns) / Reco Price / Target Price / Potential %) - read from the page's text
 NUM = r'[\d,]+(?:\.\d+)?'
-ROW_RE = re.compile(r'(?<![A-Za-z])' + CALL_RE + r'\s*\(\s*(?P<d>[^()]{5,30}?)\s*\)\s+(?:Rs\.?\s*)?(?P<cmp>' + NUM +
+DATE_TXT = (r'(?:\d{1,2}(?:st|nd|rd|th)?[\s-]+[A-Za-z]{3,9}\.?,?[\s-]+\d{4}|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}'
+            r'|\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2})')
+ROW_RE = re.compile(r'(?<![A-Za-z])' + CALL_RE + r'\s*\(?\s*(?P<d>' + DATE_TXT + r')\s*\)?\s+(?:Rs\.?\s*)?(?P<cmp>' + NUM +
                     r')\s*(?:\(\s*[-+]?[\d.,]+\s*%?\s*\))?\s+(?:Rs\.?\s*)?(?P<rp>' + NUM + r')\s+(?:Rs\.?\s*)?(?P<tgt>' + NUM + r')', re.I)
 ROW_JUNK = re.compile(r'.*(?:[-+]?\d[\d,.]*\s*%|\bPDF\b|\bInsights?\b|\bView\b|\bDownload\b|\bReport\b|\bPotential\b|\bPrice\b|\bDate\)?)\s*', re.I)
 
 
 def text_rows(text):
     """'Anthem Biosciences Ltd. Prabhudas Lilladher Buy (24 Nov 2026) 980.15 (0.5%) 975.50 1,050.00 7.6% ...' -> items: the call,
-    its date in brackets, then CMP (returns), the reco price and the target; the company and the broker = the words before it
+    its date (in brackets or not), then CMP (returns), the reco price and the target; the company and the broker = the words before it
     (the broker by its known names, else what follows 'Ltd.' / 'Limited')."""
     out, last = [], 0
     for m in ROW_RE.finditer(text or ''):
@@ -901,7 +979,33 @@ def check(out=print, fetch=None, names=None, save=True):
 def shape_words(html_text, text):
     """AnalystCheck on a page where nothing was found: what its data and its rows look like (for the next fix)."""
     lines = []
-    for blob in json_blobs(html_text)[:3]:
+    bad, kinds = [], []
+    blobs = json_blobs(html_text, bad, kinds)
+    lines.extend(bad)
+    for head, rows in (html_tables(html_text) + role_tables(html_text))[:4]:
+        lines.append('a table: %d row(s); headings: %s; first row: %s' % (
+            len(rows), ' | '.join(head)[:300] or '(none)', ' | '.join(rows[0][0])[:300] if rows else '-'))
+    nf = len(re.findall(r'self\.__next_f\.push', html_text or ''))
+    if nf:
+        bits = [m.group(0)[:160] for m in re.finditer(r'.{0,60}(?:targetPrice|target_price|tgtPrice|recoPrice|brokerName).{0,80}',
+                                                     html_text or '')][:4]
+        lines.append('Next.js streamed data: %d part(s)%s' % (nf, ('; near target-like names: ' + ' || '.join(bits)) if bits else
+                                                               '; no target-like names in it'))
+    for kind, blob in zip(kinds, blobs):
+        if kind == '__NEXT_DATA__' and isinstance(blob, dict):
+            pp = (blob.get('props') or {}).get('pageProps') if isinstance(blob.get('props'), dict) else None
+            if isinstance(pp, dict):
+                desc = []
+                for k, v in list(pp.items())[:25]:
+                    if isinstance(v, list):
+                        first = v[0] if v else None
+                        desc.append('%s (list of %d%s)' % (k, len(v), (', first: ' + ', '.join(list(first)[:12])) if isinstance(first, dict) else ''))
+                    elif isinstance(v, dict):
+                        desc.append('%s {%s}' % (k, ', '.join(list(v)[:10])))
+                    else:
+                        desc.append(k)
+                lines.append('__NEXT_DATA__ pageProps: ' + '; '.join(desc)[:1500])
+    for blob in blobs[:6]:
         paths = []
 
         def look(o, path, depth=0):
@@ -922,12 +1026,11 @@ def shape_words(html_text, text):
         look(blob, '')
         if paths:
             lines.append('page data with target-like names: ' + ' || '.join(paths))
-        elif isinstance(blob, dict):
-            pp = (blob.get('props') or {}).get('pageProps') if isinstance(blob.get('props'), dict) else None
-            keys = list((pp if isinstance(pp, dict) else blob).keys())[:30]
-            lines.append('page data keys (no target-like names): ' + ', '.join(str(k) for k in keys))
-    apis = sorted(set(re.findall(r'https?://[a-z0-9.-]*(?:api|apps)[a-z0-9.-]*\.[a-z]+/[^"\'\s<>]{3,120}', html_text or '', re.I)))
-    apis = [a for a in apis if re.search(r'idea|broker|research|reco|target|stock', a, re.I)][:8]
+        elif isinstance(blob, dict) and 'props' not in blob:
+            lines.append('page data keys (no target-like names): ' + ', '.join(str(k) for k in list(blob.keys())[:30]))
+    apis = sorted(set(re.findall(r'https?:(?://|\\/\\/)[a-z0-9.-]+\.[a-z]{2,}(?:/|\\/)[^"\'\s<>]{3,160}', html_text or '', re.I)))
+    apis = [a.replace('\\/', '/') for a in apis if re.search(r'api|idea|broker|research|reco', a, re.I)
+            and not re.search(r'\.(?:css|png|jpe?g|gif|svg|webp|ico|woff2?)(?:\?|$)', a, re.I)][:10]
     if apis:
         lines.append('data addresses in the page: ' + ' || '.join(apis))
     m = re.search(r'Target\s*Price', html_text or '', re.I)
