@@ -3,22 +3,29 @@
    2026 at 2488 ... It is impressive to see our method is actually working. but i don't know how many stocks like this
    reached atmost its target price after Q1 result update ... I want to analyse with Q1 results first."
    The sheet's own target (TTM EPS x EPS growth %), every stock and quarter: when the results came out (NSE's result filing,
-   else the XBRL file's time), the entry (the close of the first session that could react), and whether a daily HIGH reached
-   the target within 30 / 60 / 90 / 120 / 180 sessions. Worked out by the laptop (eps_target.py); counted by web/lib/epstarget.js. */
+   else the XBRL file's time), the entry (the close of the first session that could react), and whether the price covered
+   80 % of the way to the target within 30 / 60 / 90 / 120 / 180 sessions. Owner, 24-Nov-2026: "if a stock hit atleast 80%
+   of the target price, consider as it is target hit" (80 % of the way - his answer), a target under the entry price is a
+   DOWNSIDE target kept apart ("we are long trader. it should not mingle with long trades"), and "list those stocks which
+   hit target at every/maximum quarter as per our thesis". Worked out by the laptop (eps_target.py); counted by
+   web/lib/epstarget.js. */
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, $ = ui.$, T = SB.epst;
   var OPT_KEY = 'sb:epst:opts';
-  var ST = { opt: load(), q: '', list: 'all', group: 'growth', one: '' };
+  var ST = { opt: load(), q: '', list: 'all', group: 'growth', one: '', th: 'every' };
   var MEMO = {};
   var MONTHS = { 30: '1.5 months', 60: '3 months', 90: '4.5 months', 120: '6 months', 180: '9 months' };
   var GROUPS = [['growth', 'EPS growth'], ['upside', 'Upside at entry'], ['pe', 'PE at entry'], ['session', 'When the results came'], ['sector', 'Sector']];
+  var MARK = { hit: ['✓', 'reached'], early: ['✓', 'reached (its window still running)'], not: ['✗', 'not reached'], pending: ['…', 'still running'],
+    down: ['↓', 'a downside target (below the entry) - not counted'], none: ['–', 'no target (EPS fell / a loss / no results date)'], '': ['·', 'not 8 quarters of EPS yet'] };
 
   function load() {
     var o = null;
     try { o = JSON.parse(localStorage.getItem(OPT_KEY) || 'null'); } catch (e) { o = null; }
     o = o && typeof o === 'object' ? o : {};
-    return { q: typeof o.q === 'string' ? o.q : '', W: T.WINDOWS.indexOf(Number(o.W)) >= 0 ? Number(o.W) : 60 };
+    return { q: typeof o.q === 'string' ? o.q : '', W: T.WINDOWS.indexOf(Number(o.W)) >= 0 ? Number(o.W) : 60,
+      T: T.THRESH.indexOf(Number(o.T)) >= 0 ? Number(o.T) : T.THRESH[0] };
   }
   function save() { try { localStorage.setItem(OPT_KEY, JSON.stringify(ST.opt)); } catch (e) { /* private window */ } }
   function pc(v, d) { return v == null || !isFinite(v) ? '–' : (v * 100).toFixed(d == null ? 0 : d) + '%'; }
@@ -27,15 +34,28 @@
     return '<div class="tile"' + (tip ? ' data-tip="' + esc(tip) + '"' : '') + '><div class="label">' + esc(label) + '</div><div class="value' +
       (tone ? ' ' + tone : '') + '">' + value + '</div>' + (note ? '<div class="note2">' + note + '</div>' : '') + '</div>';
   }
-  function badge(s) { var b = T.STATUS[s]; return ui.badge(b[0], b[1]); }
+  function statusBadge(r, W, Tt) {
+    var k = T.kind(r, W, Tt);
+    if (k !== 'down') return ui.badge(T.STATUS[k][0], T.STATUS[k][1]);
+    var d = T.DSTATUS[T.status(r, W, Tt)];
+    return ui.badge('↓ ' + d[0], d[1]);
+  }
+  function statusText(r, W, Tt) {
+    var k = T.kind(r, W, Tt);
+    return k === 'down' ? 'Downside: ' + T.DSTATUS[T.status(r, W, Tt)][0] : T.STATUS[k][0];
+  }
   function qWords(q) { var f = T.fy(q); return esc(q) + (f ? ' · ' + f : ''); }
+  function ruleWords(Tt) {
+    return Tt === 100 ? 'the target itself' : Tt + '% of the way from the entry to the target';
+  }
 
   // ---------- data ----------
-  function fetchQ(ctx, q) {
-    var key = q || '*';
+  function fetchQ(ctx, q, lite) {
+    var key = (q || '*') + (lite ? ':lite' : '');
     if (MEMO[key]) return MEMO[key];
     var keepKey = 'epst:' + key;
-    var p = (ctx.site.apiBase == null ? Promise.reject(new Error('local')) : SB.api('api/epstarget' + (q ? '?q=' + encodeURIComponent(q) : ''), 35000))
+    var path = 'api/epstarget' + (q ? '?q=' + encodeURIComponent(q) + (lite ? '&lite=1' : '') : '');
+    var p = (ctx.site.apiBase == null ? Promise.reject(new Error('local')) : SB.api(path, 35000))
       .then(function (r) {
         if (!r || !r.ok) throw new Error((r && r.message) || 'the sheet did not answer');
         if (SB.keep && r.rows && r.rows.length) SB.keep.put(keepKey, { ok: true, readAt: r.fetchedAt || '', data: r });
@@ -74,54 +94,58 @@
       return '<button type="button" class="chip" data-epq="' + esc(x.q) + '" aria-pressed="' + on + '">' + qWords(x.q) +
         (x.sum && !x.sum.ready ? ' <span class="sub">running</span>' : '') + '</button>';
     }).join('');
-    return '<section class="card" id="et-pick"><div class="card-head"><div><h2>Quarter and window</h2>' +
-      '<p>A result counts as <b>reached</b> when a daily <b>high</b> touched the target within the window after the entry. ' +
-      'Results whose window is not over yet are shown as <b>still running</b> - never as misses.</p></div></div>' +
+    return '<section class="card" id="et-pick"><div class="card-head"><div><h2>Quarter, window and your rule</h2>' +
+      '<p>A long target counts as <b>reached</b> when a daily <b>high</b> covered at least <b>' + esc(ruleWords(ST.opt.T)) + '</b> within the window ' +
+      'after the entry (entry ₹100, target ₹200: ₹' + (100 + ST.opt.T) + '). Results whose window is not over yet are shown as <b>still running</b> - never as misses. ' +
+      'A target <b>under</b> the entry price is a <b>downside target</b>, counted apart below.</p></div></div>' +
       '<nav class="chips" aria-label="Quarter">' + (chips || '<span class="sub">No quarter yet</span>') + '</nav>' +
-      '<div class="controls"><label class="edge-opt">Reached within <select id="et-w">' + T.WINDOWS.map(function (W) {
+      '<div class="controls edge-opts"><label class="edge-opt">Reached within <select id="et-w">' + T.WINDOWS.map(function (W) {
         return '<option value="' + W + '"' + (W === ST.opt.W ? ' selected' : '') + '>' + W + ' sessions (about ' + MONTHS[W] + ')</option>';
+      }).join('') + '</select></label><label class="edge-opt">Counts as reached at <select id="et-t">' + T.THRESH.map(function (Tt) {
+        return '<option value="' + Tt + '"' + (Tt === ST.opt.T ? ' selected' : '') + '>' + (Tt === 100 ? 'the target itself' : Tt + '% of the way' +
+          (Tt === 80 ? ' (your rule)' : '')) + '</option>';
       }).join('') + '</select></label></div></section>';
   }
 
-  function summaryHtml(res, rows, ctx) {
-    var W = ST.opt.W, S = T.stats(rows, W), q = res.q;
+  function summaryHtml(res, rows) {
+    var W = ST.opt.W, Tt = ST.opt.T, S = T.stats(rows, W, Tt), D = T.stats(rows, W, Tt, 'down'), q = res.q;
     var sum = (res.quarters || []).filter(function (x) { return x.q === q; })[0] || {};
-    var ok = rows.filter(function (r) { return r.st === 'ok'; });
-    var eds = ok.map(function (r) { return r.ed; }).filter(Boolean).sort();
-    var ns = ok.map(function (r) { return r.n; }).filter(function (n) { return n != null; });
+    var ups = rows.filter(function (r) { return r.dir === 'up'; });
+    var eds = ups.map(function (r) { return r.ed; }).filter(Boolean).sort();
+    var ns = ups.map(function (r) { return r.n; }).filter(function (n) { return n != null; });
     var maxN = ns.length ? Math.max.apply(null, ns) : 0, medN = T.median(ns);
-    var none = rows.filter(function (r) { return r.st !== 'ok'; });
     var why = {};
-    none.forEach(function (r) { if (r.why) why[r.why] = (why[r.why] || 0) + 1; });
+    rows.forEach(function (r) { if (r.st !== 'ok' && r.why) why[r.why] = (why[r.why] || 0) + 1; });
     var h = '<section class="card" id="et-sum"><div class="card-head"><div><h2>What ' + qWords(q) + ' says</h2><p>' +
       F.int(rows.length) + ' stocks with 8 quarters of EPS · prices up to ' + (sum.upto ? esc(F.date(sum.upto)) : '–') +
       (sum.made ? ' · worked out by your laptop ' + esc(F.dateTime(sum.made.replace('T', ' '))) : '') + '.</p></div></div>';
     h += '<div class="tiles">' +
-      tile('Targets above the entry', F.int(S.n), F.int(S.above) + ' already above at the entry · ' + F.int(S.none) + ' without a target', '',
-        'A target at or under the entry price was reached before you could buy - counted apart') +
+      tile('Long targets (above the entry)', F.int(S.n), F.int(S.other) + ' downside targets apart · ' + F.int(S.none) + ' without a target', '',
+        'A target under the entry price is a downside target - counted apart, never mixed with the long ones') +
       tile('Reached within ' + W + ' sessions', S.rate == null ? '–' : pc(S.rate), S.done ? F.int(S.hit) + ' of ' + F.int(S.done) + ' finished · likely ' +
         pc(S.lo) + '–' + pc(S.hi) : 'none finished yet', S.rate != null ? 'up' : '',
-        'Only results whose ' + W + ' sessions are over count. Likely range = where the rate of results like these would fall 9 times out of 10') +
-      tile('Near miss', F.int(S.near), 'best high within ' + T.NEAR + '% under the target') +
+        'Reached = ' + ruleWords(Tt) + '. Only results whose ' + W + ' sessions are over count. Likely range = where the rate of results like these would fall 9 times out of 10') +
       tile('Still running', F.int(S.pending), 'fewer than ' + W + ' sessions since the entry' + (S.early ? ' · ' + F.int(S.early) + ' reached it already' : ''), '',
         'They count once their ' + W + ' sessions are over - an early hit alone would make the rate look better than it is') +
       tile('Typical time to reach', S.medDays == null ? '–' : F.int(S.medDays) + ' sessions', S.medDays == null ? '' : 'about ' + monthsOf(S.medDays) + ' (median)') +
-      tile('Buy at entry, sell at the target or after ' + W, S.avgOut == null ? '–' : sgn(S.avgOut), S.avgIx == null ? 'average per result' :
-        'average per result · NIFTY 50 over ' + W + ' sessions ' + sgn(S.avgIx), S.avgOut > 0 ? 'up' : S.avgOut < 0 ? 'down' : '',
-        'Sold at the target the day it was reached, else at the close of the ' + W + 'th session') +
+      tile('Buy at entry, sell at ' + (Tt === 100 ? 'the target' : 'the ' + Tt + '% level') + ' or after ' + W, S.avgOut == null ? '–' : sgn(S.avgOut),
+        S.avgIx == null ? 'average per result' : 'average per result · NIFTY 50 over ' + W + ' sessions ' + sgn(S.avgIx), S.avgOut > 0 ? 'up' : S.avgOut < 0 ? 'down' : '',
+        'Sold the day the price reached ' + ruleWords(Tt) + ', else at the close of the ' + W + 'th session') +
+      tile('Downside targets', F.int(D.n), D.done ? 'fell ' + (Tt === 100 ? 'to the target' : Tt + '% of the way down') + ': ' + F.int(D.hit) + ' of ' + F.int(D.done) +
+        ' finished (' + pc(D.rate) + ') - see below' : 'see below', '', 'The formula\'s price was under the price at the entry') +
       '</div>';
     var li = [];
     if (S.done) {
-      li.push('Of the <b>' + F.int(S.done) + '</b> results whose ' + W + ' sessions are over, <b>' + F.int(S.hit) + ' (' + pc(S.rate) +
-        ')</b> reached the target' + (S.near ? ', ' + F.int(S.near) + ' more came within ' + T.NEAR + '%' : '') + '. For results like these the rate is likely between ' +
-        pc(S.lo) + ' and ' + pc(S.hi) + '.' + (S.early ? ' ' + F.int(S.early) + ' of the results still running reached it already - they count once their ' + W +
-        ' sessions are over (counting only the early hits would make the rate look better than it is).' : ''));
+      li.push('Of the <b>' + F.int(S.done) + '</b> long targets whose ' + W + ' sessions are over, <b>' + F.int(S.hit) + ' (' + pc(S.rate) +
+        ')</b> reached ' + esc(ruleWords(Tt)) + '. For results like these the rate is likely between ' + pc(S.lo) + ' and ' + pc(S.hi) + '.' +
+        (S.early ? ' ' + F.int(S.early) + ' of the results still running reached it already - they count once their ' + W +
+          ' sessions are over (counting only the early hits would make the rate look better than it is).' : ''));
     } else {
-      li.push('No result of ' + esc(q) + ' has had ' + W + ' sessions yet' + (maxN ? ' (the longest so far: ' + F.int(maxN) + ')' : '') + ' - pick a shorter window above.');
+      li.push('No long target of ' + esc(q) + ' has had ' + W + ' sessions yet' + (maxN ? ' (the longest so far: ' + F.int(maxN) + ')' : '') + ' - pick a shorter window above.');
     }
     if (S.medUp != null) li.push('The median target was <b>' + sgn(S.medUp, 0) + '</b> above the entry price - see <b>Upside at entry</b> below: the bigger the upside, the rarer the hit.');
     if (S.avgRet != null) {
-      li.push('After ' + W + ' sessions the average result had moved <b>' + sgn(S.avgRet) + '</b>' + (S.avgIx != null ? ', NIFTY 50 ' + sgn(S.avgIx) + ' over the same sessions' +
+      li.push('After ' + W + ' sessions the average long target\'s stock had moved <b>' + sgn(S.avgRet) + '</b>' + (S.avgIx != null ? ', NIFTY 50 ' + sgn(S.avgIx) + ' over the same sessions' +
         (S.beat != null ? ' - ' + pc(S.beat) + ' of them did better than NIFTY 50' : '') : '') + '.');
     }
     if (eds.length) {
@@ -141,45 +165,125 @@
     return m < 1 ? Math.max(1, Math.round(sessions / 5)) + ' weeks' : (Math.round(m * 2) / 2) + ' month' + (m >= 1.25 ? 's' : '');
   }
 
+  // ---------- stocks that respect the thesis (every quarter the laptop worked out) ----------
+  function thesisHtml() {
+    return '<section class="card" id="et-thesis"><div class="card-head"><div><h2>Stocks that respect the thesis</h2>' +
+      '<p>Every quarter your laptop worked out, stock by stock: did the price reach its long target (' + esc(ruleWords(ST.opt.T)) + ', within ' + ST.opt.W +
+      ' sessions) after the results, quarter after quarter? ✓ reached · ✗ not reached · … still running · ↓ a downside target (not counted) · – no target. ' +
+      'A target reached counts even while its window still runs; a quarter still running without it waits until its window is over.</p></div>' +
+      '<div class="actions"><button class="btn" type="button" id="et-th-csv" hidden>Export CSV</button></div></div>' +
+      '<nav class="chips" aria-label="Which stocks">' + [['every', 'Reached every finished quarter'], ['most', 'Reached most quarters'], ['all', 'Every stock']].map(function (k) {
+        return '<button type="button" class="chip" data-epth="' + k[0] + '" aria-pressed="' + (ST.th === k[0]) + '">' + esc(k[1]) + ' <b data-epthn="' + k[0] + '"></b></button>';
+      }).join('') + '</nav><div id="et-th-body"><p class="sub" id="et-th-load">Reading the other quarters…</p></div></section>';
+  }
+  function drawThesis(el, ctx, res, rows) {
+    var host = $('#et-th-body', el);
+    if (!host) return;
+    var qs = (res.quarters || []).map(function (x) { return x.q; }).slice().reverse();     // oldest first
+    var others = qs.filter(function (q) { return q !== res.q; });
+    var byQ = {};
+    byQ[res.q] = rows;
+    var done = 0;
+    var say = function () { var p = $('#et-th-load', el); if (p) p.textContent = 'Reading the other quarters… ' + done + ' of ' + others.length; };
+    say();
+    // one quarter at a time (lite = without the charts' paths) - kept on the device like the rest
+    var chain = Promise.resolve();
+    others.forEach(function (q) {
+      chain = chain.then(function () {
+        return fetchQ(ctx, q, true).then(function (got) {
+          done++;
+          if (got.res) byQ[q] = prepare(got.res, ctx);
+          say();
+        });
+      });
+    });
+    chain.then(function () {
+      if (!el.isConnected) return;
+      var W = ST.opt.W, Tt = ST.opt.T;
+      var list = T.thesis(byQ, qs, W, Tt);
+      var nameOf = function (sym) { var s = ctx.bySym[sym]; return s ? s.name : ''; };
+      list.forEach(function (e) { e.name = nameOf(e.sym); });
+      var pick = function (k) {
+        return list.filter(function (e) { return k === 'every' ? e.every : k === 'most' ? e.most : e.done + e.pending > 0; })
+          .sort(function (a, b) { return (b.hit - a.hit) || ((b.rate || 0) - (a.rate || 0)) || (b.done - a.done) || (a.sym < b.sym ? -1 : 1); });
+      };
+      ['every', 'most', 'all'].forEach(function (k) { var b = el.querySelector('[data-epthn="' + k + '"]'); if (b) b.textContent = F.int(pick(k).length); });
+      host.innerHTML = '<div id="et-th-t"></div>';
+      var t = new ui.Table({ rows: [], pageSize: 25, id: 'epst-thesis', empty: 'No stock here yet - with more finished quarters this list fills.', columns: [
+        { key: 'sym', label: 'Stock', type: 'sym', name: 'name' },
+        { key: 'hit', label: 'Reached', type: 'num', get: function (e) { return e.hit; },
+          html: function (e) { return '<b>' + F.int(e.hit) + ' of ' + F.int(e.done) + '</b>' + (e.pending ? ' <span class="sub">+' + e.pending + ' running</span>' : ''); } },
+        { key: 'rate', label: 'Hit rate', type: 'num', get: function (e) { return e.rate == null ? null : e.rate * 100; }, html: function (e) { return pc(e.rate); } },
+        { key: 'marks', label: 'Quarters (oldest → newest)', get: function (e) { return e.marks.map(function (m) { return MARK[m][0]; }).join(' '); },
+          html: function (e) {
+            return '<span class="et-marks">' + e.marks.map(function (m, i) {
+              return '<span class="et-mk et-mk-' + (m || 'na') + '" data-tip="' + esc(qs[i] + ': ' + MARK[m][1]) + '">' + MARK[m][0] + '</span>';
+            }).join('') + '</span>';
+          } },
+        { key: 'medDays', label: 'Median sessions to reach', type: 'num', digits: 0 },
+        { key: 'medUp', label: 'Median upside at entry', type: 'pct', digits: 0 },
+        { key: 'down', label: 'Downside quarters', type: 'num', digits: 0 },
+        { key: 'last', label: 'Newest quarter', get: function (e) { return e.last ? e.last.q + ' ' + MARK[e.last.mark][1] : ''; },
+          html: function (e) { return e.last ? esc(e.last.q) + ' <span class="sub">' + esc(MARK[e.last.mark][1]) + (e.last.r.up != null ? ' · target ' + sgn(e.last.r.up, 0) : '') + '</span>' : '–'; } }
+      ] }).mount($('#et-th-t', el));
+      t.setRows(pick(ST.th));
+      el.querySelectorAll('[data-epth]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          ST.th = b.getAttribute('data-epth');
+          el.querySelectorAll('[data-epth]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+          t.setRows(pick(ST.th));
+        });
+      });
+      var csv = $('#et-th-csv', el);
+      if (csv) {
+        csv.hidden = false;
+        csv.addEventListener('click', function () { ui.download('eps-target-thesis-' + W + '-' + Tt + '.csv', ui.toCsv(t.toCsvRows())); });
+      }
+    });
+  }
+
+  function windowCols(dir) {
+    var word = dir === 'down' ? 'Fell to it' : 'Reached';
+    return [
+      { key: 'W', label: 'Window', html: function (s) { return '<b>' + s.W + ' sessions</b> <span class="sub">≈ ' + MONTHS[s.W] + '</span>'; } },
+      { key: 'done', label: 'Finished', type: 'num', digits: 0 },
+      { key: 'hit', label: word, type: 'num', digits: 0 },
+      { key: 'rate', label: 'Hit rate', type: 'num', get: function (s) { return s.rate == null ? null : s.rate * 100; },
+        html: function (s) { return s.rate == null ? '–' : '<b>' + pc(s.rate) + '</b> <span class="sub">' + pc(s.lo) + '–' + pc(s.hi) + '</span>'; } },
+      { key: 'pending', label: 'Still running', type: 'num', digits: 0, title: 'Fewer sessions than the window since the entry (counted once it is over)' },
+      { key: 'early', label: word + ', still running', type: 'num', digits: 0, title: 'Still running, the level already reached' },
+      { key: 'medDays', label: 'Median sessions', type: 'num', digits: 0 },
+      dir === 'down' ? { key: 'avgHh', label: 'Avg highest high', type: 'pct', digits: 1, title: 'The highest high within the window vs the entry' }
+        : { key: 'avgOut', label: 'Avg result', type: 'pct', digits: 1, title: 'Sold at the level the day it was reached, else at the close of the last session of the window' },
+      { key: 'avgRet', label: 'Avg move', type: 'pct', digits: 1, title: 'Close of the last session of the window vs the entry (finished results)' },
+      { key: 'avgIx', label: 'NIFTY 50', type: 'pct', digits: 1, title: 'NIFTY 50 over the same sessions' }
+    ];
+  }
   function windowsHtml() {
     return '<section class="card" id="et-win"><div class="card-head"><div><h2>Every window</h2>' +
-      '<p>The same quarter, 30 to 180 sessions after the entry. Each window counts only the results whose sessions are all over - so a longer window has fewer of them until time passes.</p></div></div>' +
+      '<p>The long targets of this quarter, 30 to 180 sessions after the entry. Each window counts only the results whose sessions are all over - so a longer window has fewer of them until time passes.</p></div></div>' +
       '<div id="et-win-t"></div></section>';
   }
   function drawWindows(el, rows) {
     var host = $('#et-win-t', el);
     if (!host) return;
-    new ui.Table({ rows: T.byWindow(rows), pageSize: 10, id: 'epst-windows', tools: false, columns: [
-      { key: 'W', label: 'Window', html: function (s) { return '<b>' + s.W + ' sessions</b> <span class="sub">≈ ' + MONTHS[s.W] + '</span>'; } },
-      { key: 'done', label: 'Finished', type: 'num', digits: 0 },
-      { key: 'hit', label: 'Reached', type: 'num', digits: 0 },
-      { key: 'rate', label: 'Hit rate', type: 'num', get: function (s) { return s.rate == null ? null : s.rate * 100; },
-        html: function (s) { return s.rate == null ? '–' : '<b>' + pc(s.rate) + '</b> <span class="sub">' + pc(s.lo) + '–' + pc(s.hi) + '</span>'; } },
-      { key: 'near', label: 'Near miss', type: 'num', digits: 0 },
-      { key: 'pending', label: 'Still running', type: 'num', digits: 0, title: 'Fewer sessions than the window since the entry (counted once it is over)' },
-      { key: 'early', label: 'Reached, still running', type: 'num', digits: 0, title: 'Still running, the target already reached' },
-      { key: 'medDays', label: 'Median sessions to reach', type: 'num', digits: 0 },
-      { key: 'avgOut', label: 'Avg result', type: 'pct', digits: 1, title: 'Sold at the target the day it was reached, else at the close of the last session of the window' },
-      { key: 'avgRet', label: 'Avg move', type: 'pct', digits: 1, title: 'Close of the last session of the window vs the entry (finished results)' },
-      { key: 'avgIx', label: 'NIFTY 50', type: 'pct', digits: 1, title: 'NIFTY 50 over the same sessions' },
-      { key: 'beat', label: 'Beat NIFTY', type: 'num', get: function (s) { return s.beat == null ? null : s.beat * 100; }, html: function (s) { return pc(s.beat); } }
-    ] }).mount(host);
+    new ui.Table({ rows: T.byWindow(rows, ST.opt.T), pageSize: 10, id: 'epst-windows', tools: false, columns: windowCols('up') }).mount(host);
   }
 
   function groupsHtml() {
-    return '<section class="card" id="et-groups"><div class="card-head"><div><h2>Which results reached it</h2>' +
+    return '<section class="card" id="et-groups"><div class="card-head"><div><h2>Which long targets were reached</h2>' +
       '<p>The hit rate of each group (in the window chosen above) - a group needs a few finished results before it means much.</p></div></div>' +
       '<nav class="chips" aria-label="Group by">' + GROUPS.map(function (g) {
         return '<button type="button" class="chip" data-epg="' + g[0] + '" aria-pressed="' + (ST.group === g[0]) + '">' + esc(g[1]) + '</button>';
       }).join('') + '</nav><div id="et-groups-b"></div><div id="et-groups-t"></div></section>';
   }
   function groupRows(rows) {
-    var W = ST.opt.W;
-    if (ST.group === 'growth') return T.bucket(rows, W, function (r) { return r.g; }, T.GROWTH);
-    if (ST.group === 'upside') return T.bucket(rows, W, function (r) { return r.up; }, T.UPSIDE);
-    if (ST.group === 'pe') return T.bucket(rows, W, function (r) { return r.pe; }, T.PE, '');
-    if (ST.group === 'session') return T.groupBy(rows, W, function (r) { return r.session; }, 1);
-    return T.groupBy(rows, W, function (r) { return r.sector; }, 5);
+    var W = ST.opt.W, Tt = ST.opt.T;
+    if (ST.group === 'growth') return T.bucket(rows, W, Tt, function (r) { return r.g; }, T.GROWTH);
+    if (ST.group === 'upside') return T.bucket(rows, W, Tt, function (r) { return r.up; }, T.UPSIDE);
+    if (ST.group === 'pe') return T.bucket(rows, W, Tt, function (r) { return r.pe; }, T.PE, '');
+    if (ST.group === 'session') return T.groupBy(rows, W, Tt, function (r) { return r.session; }, 1);
+    return T.groupBy(rows, W, Tt, function (r) { return r.sector; }, 5);
   }
   function drawGroups(el, rows) {
     var b = $('#et-groups-b', el), host = $('#et-groups-t', el);
@@ -195,7 +299,6 @@
       { key: 'rate', label: 'Hit rate', type: 'num', get: function (s) { return s.rate == null ? null : s.rate * 100; },
         html: function (s) { return s.rate == null ? '–' : '<b>' + pc(s.rate) + '</b> <span class="sub">' + pc(s.lo) + '–' + pc(s.hi) + '</span>'; } },
       { key: 'hit', label: 'Reached', type: 'num', digits: 0 },
-      { key: 'near', label: 'Near miss', type: 'num', digits: 0 },
       { key: 'pending', label: 'Still running', type: 'num', digits: 0 },
       { key: 'medUp', label: 'Median upside', type: 'pct', digits: 0 },
       { key: 'medDays', label: 'Median sessions', type: 'num', digits: 0 },
@@ -203,37 +306,57 @@
     ] }).mount(host);
   }
 
+  function downHtml(rows) {
+    var W = ST.opt.W, Tt = ST.opt.T, D = T.stats(rows, W, Tt, 'down');
+    return '<section class="card" id="et-down"><div class="card-head"><div><h2>Downside targets (target below the entry price)</h2>' +
+      '<p>The formula\'s price was <b>under</b> the price you could buy at - the stock already traded above its EPS-growth value. Kept apart from the long targets. ' +
+      'Did the price <b>fall</b> to it (a daily <b>low</b> covering ' + esc(ruleWords(Tt)) + ' down) within the window?</p></div></div>' +
+      '<div class="tiles">' +
+      tile('Downside targets', F.int(D.n), D.n ? 'median target ' + sgn(D.medUp, 0) + ' from the entry' : '') +
+      tile('Fell to it within ' + W + ' sessions', D.rate == null ? '–' : pc(D.rate), D.done ? F.int(D.hit) + ' of ' + F.int(D.done) + ' finished · likely ' + pc(D.lo) + '–' + pc(D.hi)
+        : 'none finished yet') +
+      tile('Still running', F.int(D.pending), D.early ? F.int(D.early) + ' fell to it already' : '') +
+      tile('Their move after ' + W, D.avgRet == null ? '–' : sgn(D.avgRet), D.avgIx == null ? '' : 'NIFTY 50 ' + sgn(D.avgIx), D.avgRet > 0 ? 'up' : D.avgRet < 0 ? 'down' : '') +
+      '</div><div id="et-down-t"></div><p class="sub">They are in <b>Every result</b> below under the chip <b>Downside target</b>.</p></section>';
+  }
+  function drawDown(el, rows) {
+    var host = $('#et-down-t', el);
+    if (!host) return;
+    new ui.Table({ rows: T.byWindow(rows, ST.opt.T, 'down'), pageSize: 10, id: 'epst-down-windows', tools: false, columns: windowCols('down') }).mount(host);
+  }
+
   function quartersHtml() {
-    return '<section class="card" id="et-qs"><div class="card-head"><div><h2>Every quarter</h2><p>The same window for each quarter your laptop worked out ' +
-      '(targets above the entry). Tap a quarter to open it.</p></div></div><div id="et-qs-t"></div></section>';
+    return '<section class="card" id="et-qs"><div class="card-head"><div><h2>Every quarter</h2><p>The same window and rule for each quarter your laptop worked out ' +
+      '(long targets). Tap a quarter to open it.</p></div></div><div id="et-qs-t"></div></section>';
   }
   function drawQuarters(el, res) {
     var host = $('#et-qs-t', el);
     if (!host) return;
-    var W = ST.opt.W;
+    var W = ST.opt.W, Tt = ST.opt.T;
     var rows = (res.quarters || []).map(function (x) {
-      var s = T.sumRate(x.sum, W) || {};
-      return { q: x.q, fy: x.fy || T.fy(x.q), target: x.sum.target, above: x.sum.above, done: s.done, hit: s.hit, near: s.near, pending: s.pending,
-        rate: s.rate, medUp: x.sum.medUp, medG: x.sum.medG, upto: x.upto };
+      var s = T.sumRate(x.sum, W, Tt) || {}, d = T.sumRate(x.sum, W, Tt, 'down') || {};
+      return { q: x.q, target: x.sum.target, down: x.sum.down, done: s.done, hit: s.hit, pending: s.pending, rate: s.rate, drate: d.rate, ddone: d.done,
+        medUp: x.sum.medUp, medG: x.sum.medG };
     });
     new ui.Table({ rows: rows, pageSize: 20, id: 'epst-quarters', tools: false, columns: [
       { key: 'q', label: 'Quarter', html: function (r) { return '<button type="button" class="linkish" data-epq="' + esc(r.q) + '">' + qWords(r.q) + '</button>'; } },
-      { key: 'target', label: 'Targets', type: 'num', digits: 0 },
+      { key: 'target', label: 'Long targets', type: 'num', digits: 0 },
       { key: 'done', label: 'Finished (' + W + ')', type: 'num', digits: 0 },
       { key: 'rate', label: 'Hit rate', type: 'num', get: function (r) { return r.rate == null ? null : r.rate * 100; },
         html: function (r) { return r.done ? '<b>' + pc(r.rate) + '</b> <span class="sub">' + F.int(r.hit) + ' of ' + F.int(r.done) + '</span>' : '–'; } },
-      { key: 'near', label: 'Near miss', type: 'num', digits: 0 },
       { key: 'pending', label: 'Still running', type: 'num', digits: 0 },
-      { key: 'above', label: 'Above at entry', type: 'num', digits: 0 },
+      { key: 'down', label: 'Downside targets', type: 'num', digits: 0 },
+      { key: 'drate', label: 'Fell to it', type: 'num', get: function (r) { return r.drate == null ? null : r.drate * 100; },
+        html: function (r) { return r.ddone ? pc(r.drate) + ' <span class="sub">of ' + F.int(r.ddone) + '</span>' : '–'; } },
       { key: 'medG', label: 'Median growth', type: 'pct', digits: 0 },
       { key: 'medUp', label: 'Median upside', type: 'pct', digits: 0 }
     ] }).mount(host);
   }
 
   function allHtml(rows) {
-    var W = ST.opt.W, n = { all: rows.length };
+    var W = ST.opt.W, Tt = ST.opt.T, n = { all: rows.length };
     Object.keys(T.STATUS).forEach(function (k) { n[k] = 0; });
-    rows.forEach(function (r) { n[T.status(r, W)]++; });
+    rows.forEach(function (r) { n[T.kind(r, W, Tt)]++; });
     return '<section class="card" id="et-all"><div class="card-head"><div><h2>Every result</h2><p>Search a stock to see its numbers, its formula and a chart of what ' +
       'the price did. Tap <b>Details</b> on a row for the same.</p></div><div class="actions"><button class="btn" type="button" id="et-csv">Export CSV</button></div></div>' +
       '<nav class="chips" aria-label="Status">' + [['all', 'All']].concat(Object.keys(T.STATUS).map(function (k) { return [k, T.STATUS[k][0]]; })).map(function (k) {
@@ -244,10 +367,10 @@
   function drawAll(el, rows, res) {
     var host = $('#et-all-t', el);
     if (!host) return;
-    var W = ST.opt.W, k = T.WINDOWS.indexOf(W);
-    var t = new ui.Table({ rows: [], pageSize: 50, id: 'epst-all', empty: 'No result with this status', columns: [
+    var W = ST.opt.W, Tt = ST.opt.T, k = T.WINDOWS.indexOf(W);
+    var t = new ui.Table({ rows: [], pageSize: 50, id: 'epst-all-v2', empty: 'No result with this status', columns: [
       { key: 'sym', label: 'Stock', type: 'sym', name: 'name' },
-      { key: 'status', label: 'In ' + W + ' sessions', get: function (r) { return T.STATUS[T.status(r, W)][0]; }, html: function (r) { return badge(T.status(r, W)); } },
+      { key: 'status', label: 'In ' + W + ' sessions', get: function (r) { return statusText(r, W, Tt); }, html: function (r) { return statusBadge(r, W, Tt); } },
       { key: 'ann', label: 'Results out', title: 'When NSE got the results (IST): its result filing, else the time in the XBRL file\'s name',
         html: function (r) { return r.ann ? esc(F.date(r.ann.slice(0, 10))) + ' <span class="sub">' + esc(r.ann.slice(11)) + (r.src === 'xbrl' ? ' (XBRL)' : '') + '</span>' : '<span class="sub">–</span>'; } },
       { key: 'ed', label: 'Entry', type: 'date', title: 'The first session that could react: the results day itself before 15:30, else the next session' },
@@ -256,12 +379,15 @@
       { key: 'prev', label: 'EPS 4Q before', type: 'num', digits: 2 },
       { key: 'g', label: 'EPS growth', type: 'pct', digits: 1 },
       { key: 'tgt', label: 'Target', type: 'price' },
-      { key: 'up', label: 'Upside at entry', type: 'pct', digits: 0 },
+      { key: 'up', label: 'Target vs entry', type: 'pct', digits: 0, title: 'Above the entry = a long target; under it = a downside target' },
+      { key: 'lvl', label: Tt === 100 ? 'Target level' : Tt + '% level', type: 'price', get: function (r) { return T.level(r, Tt); },
+        title: 'The price ' + ruleWords(Tt) + ' - reaching it counts' },
       { key: 'pe', label: 'PE at entry', type: 'num', digits: 1 },
-      { key: 'hit', label: 'Reached in', title: 'Sessions after the entry until a daily high touched the target',
-        get: function (r) { return r.hit; }, html: function (r) { return r.hit != null ? F.int(r.hit) + ' <span class="sub">' + esc(F.date(r.hitd)) + '</span>' : '<span class="sub">–</span>'; } },
-      { key: 'mx', label: 'Best high', type: 'num', title: 'The highest high within the window as % of the target (so far, while it is still running)',
-        get: function (r) { return r.mx[k]; }, html: function (r) { return r.mx[k] == null ? '–' : r.mx[k].toFixed(0) + '% of target'; } },
+      { key: 'reach', label: 'Reached in', title: 'Sessions after the entry until the price covered ' + ruleWords(Tt),
+        get: function (r) { return T.reachK(r, Tt); }, html: function (r) { var x = T.reachK(r, Tt); return x != null ? F.int(x) + ' <span class="sub">' + esc(F.date(T.reachD(r, Tt))) + '</span>' : '<span class="sub">–</span>'; } },
+      { key: 'pg', label: 'Best progress', type: 'num', title: 'How much of the way to the target the price covered within the window (so far, while it runs)',
+        get: function (r) { return r.pg[k]; }, html: function (r) { return r.pg[k] == null ? '–' : Math.round(r.pg[k]) + '% of the way'; } },
+      { key: 'hh', label: 'Highest', type: 'pct', digits: 1, title: 'The highest high within the window vs the entry', get: function (r) { return r.hh[k]; } },
       { key: 'dd', label: 'Lowest', type: 'pct', digits: 1, title: 'The lowest low within the window vs the entry', get: function (r) { return r.dd[k]; } },
       { key: 'cl', label: 'After ' + W, type: 'pct', digits: 1, title: 'The close of the ' + W + 'th session vs the entry', get: function (r) { return r.cl[k]; } },
       { key: 'ix', label: 'NIFTY 50', type: 'pct', digits: 1, title: 'NIFTY 50 over the same sessions', get: function (r) { return r.ix[k]; } },
@@ -271,10 +397,10 @@
       { key: 'why', label: 'No target because', get: function (r) { return r.st === 'ok' ? '' : T.WHY[r.why] || ''; } },
       { key: 'b', label: 'Basis', title: 'C = consolidated, S = standalone EPS' },
       { key: 'go', label: 'Details', get: function () { return ''; }, html: function (r) { return '<button type="button" class="btn sm" data-epone="' + esc(r.sym) + '">Details</button>'; } }
-    ], hide: ['pe', 'dd', 'ix', 'b', 'why'] }).mount(host);
+    ], hide: ['pe', 'lvl', 'hh', 'ix', 'b', 'why'] }).mount(host);
     function apply() {
       var w = ST.one.trim();
-      var list = rows.filter(function (r) { return (ST.list === 'all' || T.status(r, W) === ST.list) && (!w || ui.textMatch(w, [r.sym, r.name])); });
+      var list = rows.filter(function (r) { return (ST.list === 'all' || T.kind(r, W, Tt) === ST.list) && (!w || ui.textMatch(w, [r.sym, r.name])); });
       $('#et-count', el).textContent = F.int(list.length) + ' of ' + F.int(rows.length);
       t.setRows(list);
       oneCard(el, rows, res);
@@ -297,7 +423,7 @@
       var box = $('#et-one', el);
       if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-    $('#et-csv', el).addEventListener('click', function () { ui.download('eps-target-' + String(res.q).replace(' ', '-') + '-' + W + '.csv', ui.toCsv(t.toCsvRows())); });
+    $('#et-csv', el).addEventListener('click', function () { ui.download('eps-target-' + String(res.q).replace(' ', '-') + '-' + W + '-' + Tt + '.csv', ui.toCsv(t.toCsvRows())); });
     apply();
   }
 
@@ -309,11 +435,11 @@
     var r = rows.filter(function (x) { return x.sym === w; })[0];
     if (!r) {
       var some = rows.filter(function (x) { return ui.textMatch(ST.one, [x.sym, x.name]); });
-      box.innerHTML = some.length === 1 ? '' : some.length ? '' : '<p class="empty">No ' + esc(res.q) + ' result for "' + esc(ST.one) + '" - it needs 8 quarters of EPS.</p>';
+      box.innerHTML = some.length ? '' : '<p class="empty">No ' + esc(res.q) + ' result for "' + esc(ST.one) + '" - it needs 8 quarters of EPS.</p>';
       if (some.length !== 1) return;
       r = some[0];
     }
-    var W = ST.opt.W, st = T.status(r, W), f = T.formula(r), labs = T.quarters(res.q);
+    var W = ST.opt.W, Tt = ST.opt.T, f = T.formula(r), labs = T.quarters(res.q);
     var marks = String(r.fl || '');
     var epsT = '<table class="et-eps"><thead><tr>' + labs.map(function (l, i) { return '<th' + (i >= 4 ? ' class="ttm"' : '') + '>' + esc(l) + '</th>'; }).join('') +
       '</tr></thead><tbody><tr>' + r.eps.map(function (v, i) {
@@ -322,34 +448,42 @@
           (tip && m !== 'p' ? '<sup>' + esc(m) + '</sup>' : '') + '</td>';
       }).join('') + '</tr></tbody></table>';
     var timeTxt = r.ann ? esc(F.date(r.ann.slice(0, 10))) + ' ' + esc(r.ann.slice(11)) + ' <span class="sub">(' + (r.src === 'xbrl' ? 'the time in NSE\'s XBRL file' : 'NSE\'s result filing') + ' · ' + esc(r.session) + ')</span>' : '–';
-    var h = '<div class="et-one"><h3>' + esc(r.sym) + ' <span class="sub">' + esc(r.name || '') + '</span> ' + badge(st) + '</h3>' +
+    var h = '<div class="et-one"><h3>' + esc(r.sym) + ' <span class="sub">' + esc(r.name || '') + '</span> ' + statusBadge(r, W, Tt) + '</h3>' +
       '<div class="et-formula">' + epsT +
       '<p><b>TTM EPS</b> (' + esc(labs[4]) + ' – ' + esc(labs[7]) + ') = ' + esc(f.ttm) + '<br><b>The 4 quarters before</b> = ' + esc(f.prev) +
       '<br><b>EPS growth</b> = ' + esc(f.growth) + '<br><b>Target</b> = ' + esc(f.target) + (r.why && r.st !== 'ok' ? ' <span class="sub">- ' + esc(T.WHY[r.why] || '') + '</span>' : '') + '</p></div>' +
       '<p>Results out: ' + timeTxt + (r.ed ? ' → entry <b>' + esc(F.date(r.ed)) + '</b> at <b>' + F.price(r.ep) + '</b> <span class="sub">(the close; that day opened ' + F.price(r.o0) +
         ', the close before ' + F.price(r.pre) + ')</span>' : '') +
-      (r.up != null ? ' → target ' + F.price(r.tgt) + ' = <b>' + sgn(r.up, 0) + '</b> from the entry' : '') + '.</p>';
+      (r.up != null ? ' → target ' + F.price(r.tgt) + ' = <b>' + sgn(r.up, 0) + '</b> from the entry' + (r.dir === 'down' ? ' - a <b>downside</b> target' : '') : '') + '.</p>';
     if (r.st === 'ok') {
-      var k = T.WINDOWS.indexOf(W);
-      h += '<p>' + (st === 'above' ? 'The price was already above the target at the entry.'
-        : r.hit != null ? 'A daily high reached the target after <b>' + F.int(r.hit) + ' sessions</b>, on ' + esc(F.date(r.hitd)) + (r.hit > W ? ' (after your ' + W + '-session window)' : '') + '.'
-          : 'Not reached in ' + F.int(r.n) + ' session' + (r.n === 1 ? '' : 's') + ' so far' + (r.mx[k] != null ? ' - the best high within ' + Math.min(W, r.n) + ' sessions was ' + r.mx[k].toFixed(0) + '% of the target' : '') + '.') +
+      var k = T.WINDOWS.indexOf(W), lvl = T.level(r, Tt), kk = T.reachK(r, Tt), way = r.dir === 'down' ? 'down' : 'up';
+      var all = T.THRESH.map(function (x) {
+        var kx = T.reachK(r, x);
+        return kx == null ? null : (x === 100 ? 'the target itself' : x + '%') + ' after ' + F.int(kx) + ' sessions (' + esc(F.date(T.reachD(r, x))) + ')';
+      }).filter(Boolean);
+      var moved = Tt === 100 ? 'The price reached the target' : 'The price ' + (way === 'down' ? 'fell' : 'rose') + ' ' + Tt + '% of the way to the target (' + F.price(lvl) + ')';
+      h += '<p>' + (kk != null
+        ? moved + ' after <b>' + F.int(kk) + ' sessions</b>, on ' + esc(F.date(T.reachD(r, Tt))) + (kk > W ? ' (after your ' + W + '-session window)' : '') + '.' +
+          (all.length > 1 ? ' <span class="sub">Reached ' + all.join(' · ') + '.</span>' : '')
+        : 'Not reached yet (' + esc(ruleWords(Tt)) + ') in ' + F.int(r.n) + ' session' + (r.n === 1 ? '' : 's') +
+          (r.pg[k] != null ? ' - within ' + Math.min(W, r.n) + ' sessions the price covered ' + Math.round(r.pg[k]) + '% of the way' : '') + '.') +
         (r.now != null ? ' The last close the laptop had: ' + sgn(r.now) + ' from the entry' + (r.price ? ', the price on this site ' + F.price(r.price) + ' (' + sgn(r.toTgt) + ' to the target)' : '') + '.' : '') + '</p>' +
-        '<div class="et-chart">' + chartSvg(r, W) + '</div>';
+        '<div class="et-chart">' + chartSvg(r, W, Tt) + '</div>';
     }
     h += '<div class="actions"><a class="btn sm" target="_blank" rel="noopener" href="https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('NSE:' + r.sym) + '">Open on TradingView</a>' +
       '<button type="button" class="btn sm" data-sym="' + esc(r.sym) + '">Stock window</button></div></div>';
     box.innerHTML = h;
   }
 
-  /** the price after the entry: closes (line) and highs (faint) every 5 sessions as % from the entry; the target, the entry,
-   *  the window and the day it was reached */
-  function chartSvg(r, W) {
+  /** the price after the entry: closes (line) and highs (faint) every 5 sessions as % from the entry; the target, the rule's
+   *  level, the entry, the window and the day the level was reached */
+  function chartSvg(r, W, Tt) {
     var pcs = r.pc || [], phs = r.ph || [];
     if (!pcs.length) return '<p class="sub">No session after the entry yet.</p>';
     var Wd = 640, Hd = 220, P = { l: 46, r: 92, t: 12, b: 26 };
     var xs = [0].concat(pcs.map(function (_, j) { return Math.min((j + 1) * 5, r.n); }));
     var xmax = Math.max(xs[xs.length - 1], Math.min(W, 180));
+    var lv = r.up == null ? null : r.up * Tt / 100;
     var ys = [0, r.up || 0].concat(pcs, phs, [r.dd[T.WINDOWS.length - 1] || 0]).filter(function (v) { return v != null && isFinite(v); });
     var lo = Math.min.apply(null, ys), hi = Math.max.apply(null, ys);
     var pad = (hi - lo || 10) * 0.08;
@@ -359,7 +493,6 @@
     var line = function (vals) { return [[0, 0]].concat(vals.map(function (v, j) { return [xs[j + 1], v]; })).filter(function (p) { return p[1] != null; })
       .map(function (p) { return X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1); }).join(' '); };
     var h = '<svg viewBox="0 0 ' + Wd + ' ' + Hd + '" role="img" aria-label="' + esc(r.sym + ': the price after the entry vs the target') + '">';
-    // grid: 0 %, the target, a few steps
     var step = Math.pow(10, Math.floor(Math.log(hi - lo) / Math.LN10));
     if ((hi - lo) / step < 4) step /= 2;
     for (var g = Math.ceil(lo / step) * step; g <= hi; g += step) {
@@ -371,19 +504,25 @@
     if (r.up != null) {
       h += '<line class="et-tgt" x1="' + P.l + '" x2="' + (Wd - P.r) + '" y1="' + Y(r.up).toFixed(1) + '" y2="' + Y(r.up).toFixed(1) + '"/>' +
         '<text class="et-lab et-tl" x="' + (Wd - P.r + 4) + '" y="' + (Y(r.up) + 4).toFixed(1) + '">Target ' + esc(F.price(r.tgt)) + '</text>';
+      if (Tt < 100) {
+        h += '<line class="et-lvl" x1="' + P.l + '" x2="' + (Wd - P.r) + '" y1="' + Y(lv).toFixed(1) + '" y2="' + Y(lv).toFixed(1) + '"/>' +
+          '<text class="et-lab" x="' + (Wd - P.r + 4) + '" y="' + (Y(lv) + (r.up > 0 ? 13 : -5)).toFixed(1) + '">' + Tt + '% ' + esc(F.price(T.level(r, Tt))) + '</text>';
+      }
     }
     if (W <= xmax) {
       h += '<line class="et-win" x1="' + X(W).toFixed(1) + '" x2="' + X(W).toFixed(1) + '" y1="' + P.t + '" y2="' + (Hd - P.b) + '"/>' +
         '<text class="et-ax" x="' + (X(W) - 4).toFixed(1) + '" y="' + (Hd - P.b - 5) + '" text-anchor="end">' + W + '-session window</text>';
     }
-    h += '<polyline class="et-hi" points="' + line(phs) + '"/><polyline class="et-cl" points="' + line(pcs) + '"/>';
-    if (r.hit != null && r.hit <= xmax && r.up != null) {
-      h += '<circle class="et-hit" cx="' + X(r.hit).toFixed(1) + '" cy="' + Y(r.up).toFixed(1) + '" r="5"/><text class="et-lab et-tl" x="' + X(r.hit).toFixed(1) + '" y="' +
-        (Y(r.up) - 9).toFixed(1) + '" text-anchor="middle">reached · day ' + r.hit + '</text>';
+    h += '<polyline class="et-hi" points="' + line(r.dir === 'down' ? pcs : phs) + '"/><polyline class="et-cl" points="' + line(pcs) + '"/>';
+    var kk = T.reachK(r, Tt);
+    if (kk != null && kk <= xmax && lv != null) {
+      h += '<circle class="et-hit" cx="' + X(kk).toFixed(1) + '" cy="' + Y(lv).toFixed(1) + '" r="5"/><text class="et-lab et-tl" x="' + X(kk).toFixed(1) + '" y="' +
+        (Y(lv) + (r.dir === 'down' ? 16 : -9)).toFixed(1) + '" text-anchor="middle">reached · day ' + kk + '</text>';
     }
     h += '<text class="et-ax" x="' + P.l + '" y="' + (Hd - 6) + '">entry ' + esc(F.date(r.ed)) + '</text><text class="et-ax" x="' + (Wd - P.r) + '" y="' + (Hd - 6) +
       '" text-anchor="end">' + xmax + ' sessions</text></svg>';
-    return h + '<p class="sub">Line = the close, faint line = the highest high of each 5 sessions, both from the entry price.</p>';
+    return h + '<p class="sub">Line = the close' + (r.dir === 'down' ? '' : ', faint line = the highest high of each 5 sessions') + ', both from the entry price; dashed = the target' +
+      (Tt < 100 ? ' and your ' + Tt + '% level' : '') + '.</p>';
   }
 
   // ---------- the page ----------
@@ -420,11 +559,14 @@
         }
         var rows = prepare(res, ctx);
         body.innerHTML = (got.kept ? '<div class="note">Showing the copy this device kept' + (got.kept !== true ? ' (' + esc(F.dateTime(got.kept)) + ')' : '') +
-          ' - the live copy could not be read just now.</div>' : '') + pickHtml(res) + summaryHtml(res, rows, ctx) + windowsHtml() + groupsHtml() + quartersHtml() + allHtml(rows);
+          ' - the live copy could not be read just now.</div>' : '') + pickHtml(res) + summaryHtml(res, rows) + thesisHtml() + windowsHtml() + groupsHtml() +
+          downHtml(rows) + quartersHtml() + allHtml(rows);
         drawWindows(body, rows);
         drawGroups(body, rows);
+        drawDown(body, rows);
         drawQuarters(body, res);
         drawAll(body, rows, res);
+        drawThesis(body, ctx, res, rows);
         body.addEventListener('click', function (e) {
           var q = e.target.closest && e.target.closest('[data-epq]');
           if (q) {
@@ -439,6 +581,11 @@
         });
         $('#et-w', body).addEventListener('change', function (e) {
           ST.opt.W = Number(e.target.value);
+          save();
+          SB.route(true);
+        });
+        $('#et-t', body).addEventListener('change', function (e) {
+          ST.opt.T = Number(e.target.value);
           save();
           SB.route(true);
         });

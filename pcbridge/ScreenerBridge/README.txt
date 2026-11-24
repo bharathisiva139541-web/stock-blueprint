@@ -705,3 +705,8 @@ EPS TARGET LAB (since 23-Nov-2026)
    its 8 EPS, the growth, the target, the results time, the entry and when (or whether) the price reached it.
  - bridge.log: "EPS target (prices up to ...): N stock(s) with 8 quarters of EPS, Q quarter(s) sent to the sheet".
  - To switch it off: in config.json add  "eps_target": false   (quarters worked out: "eps_target_quarters": 8)
+ - Since 24-Nov-2026: reached = the price covered 80% of the way from the entry to the target (the page can also show
+   90% / the target itself); a target under the entry price is a downside target (did the price FALL to it?), kept
+   apart from the long ones. A stock still without a results date after the announcements: its own NSE XBRL filing
+   lists are read (the integrated filing page's broadcast times) - 20 stocks a round, every one in EpsTargetNow.bat
+   (one NSE request every 6 seconds). A stock with no result filing on NSE at all shows "NSE has no result filing".

@@ -7,6 +7,7 @@ import os
 import random
 import sys
 import tempfile
+import time
 from datetime import date, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -103,22 +104,34 @@ NIFTY = {'d': days, 'c': [25000.0 + k * 10 for k in range(len(days))]}
 a = E.after(cs, k0, 2322.15, NIFTY)
 assert a['ed'] == '2026-07-27' and a['ep'] == 1624.1 and a['pre'] == 1600.0 and a['o0'] == 1624.1, a
 assert a['n'] == 100 - 1 - k0 == 94
-assert a['hit'] == 75 and a['hitd'] == date.fromordinal(days[k0 + 75]).isoformat(), (a['hit'], a['hitd'])
-assert len(a['mx']) == len(a['dd']) == len(a['cl']) == len(a['ix']) == 5
-assert near(a['mx'][0], round((1624.1 + 698.05 * 30 / 75) / 2322.15 * 100, 1), 0.11), a['mx']
-assert a['mx'][2] >= 100 and a['cl'][2] is not None and a['cl'][3] is None, '94 sessions: the 90-session window is over, 120 not'
+# the owner's rule (24-Nov-2026): reached = 80 % of the way from the entry to the target (entry 100, target 200 -> 180)
+assert a['kp'] == [60, 68, 75], a['kp']
+assert a['kd'] == [date.fromordinal(days[k0 + k]).isoformat() for k in (60, 68, 75)], a['kd']
+assert all(len(a[k]) == 5 for k in ('pg', 'hh', 'dd', 'cl', 'ix'))
+assert near(a['pg'][0], 40.0, 0.11) and near(a['pg'][1], 80.0, 0.11) and near(a['pg'][2], 120.0, 0.11), a['pg']
+assert near(a['hh'][0], ((1624.1 + 698.05 * 30 / 75) / 1624.1 - 1) * 100, 0.06), a['hh']
+assert a['cl'][2] is not None and a['cl'][3] is None, '94 sessions: the 90-session window is over, 120 not'
 assert a['dd'][0] == round((1500 / 1624.1 - 1) * 100, 1), a['dd']
 assert near(a['cl'][0], (c[k0 + 30] / 1624.1 - 1) * 100, 0.06) and near(a['ix'][0], (NIFTY['c'][k0 + 30] / NIFTY['c'][k0] - 1) * 100, 0.06)
-assert a['cl'][3] is None and a['ix'][3] is None and a['mx'][4] is not None, 'longer windows: so far only'
+assert a['cl'][3] is None and a['ix'][3] is None and a['pg'][4] is not None and a['hh'][4] is not None, 'longer windows: so far only'
 assert len(a['ph']) == len(a['pc']) == 19 and near(a['pc'][-1], a['now'], 0.06), (len(a['ph']), a['pc'][-1], a['now'])
 a90 = E.after(cs, k0, 99999.0, NIFTY)
-assert a90['hit'] is None and a90['cl'][2] is not None and a90['cl'][3] is None and a90['mx'][2] < 5
+assert a90['kp'] == [None] * 3 and a90['cl'][2] is not None and a90['cl'][3] is None and a90['pg'][2] < 5
 a0 = E.after(cs, len(days) - 1, 2322.15, NIFTY)
-assert a0['n'] == 0 and a0['mx'] == [None] * 5 and a0['now'] is None and a0['ph'] == []
+assert a0['n'] == 0 and a0['pg'] == [None] * 5 and a0['now'] is None and a0['ph'] == [] and a0['kp'] == [None] * 3
 # float32: a high of exactly the target counts
 c2 = [100.0] * 5 + [2322.15] * 3
 cs2 = CS(sessions(date(2026, 1, 5), 8), c2, c2, c2, c2)
-assert E.after(cs2, 4, 2322.15)['hit'] == 1
+assert E.after(cs2, 4, 2322.15)['kp'] == [1, 1, 1]
+# a DOWNSIDE target (under the entry - owner: "the market price should hit this downside target"): by the LOWS, 3 a session
+dd_days = sessions(date(2026, 7, 20), 70)
+lo3 = [1624.1] * 6 + [1624.1 - 3 * k for k in range(1, 65)]
+c3 = [x + 1 for x in lo3]
+c3[5] = 1624.1
+cs3 = CS(dd_days, c3, [x + 1 for x in c3], lo3, c3)
+a3 = E.after(cs3, 5, 1500.0)
+assert a3['kp'] == [34, 38, 42], a3['kp']        # 80 % of 124.10 = 99.28 -> 3 x 34; 90 % = 111.69 -> 38; 100 % -> 42
+assert near(a3['pg'][0], 90 / 124.1 * 100, 0.06) and a3['hh'][0] <= 0.1, (a3['pg'], a3['hh'])
 
 # ------------------------------------------------------------------ 5. when the results came out
 JUN = E.mi_label('Jun 2026')
@@ -226,26 +239,112 @@ assert upto == (TODAY - timedelta(days=3)).isoformat() and counts['stocks'] == 2
 rows = {r['sym']: r for r in per_q[JUN]}
 r = rows['LAURUSLABS']
 assert r['st'] == 'ok' and r['ann'] == '2026-07-24 16:05' and r['src'] == 'nse' and r['ed'] == '2026-07-27' and r['ep'] == 1624.1, r
-assert r['fl'] == 'r-------' and r['b'] == 'C' and near(r['tgt'], 2322.17, 0.02) and r['hit'] == 75, r['hit']
-assert r['hitd'] == date.fromordinal(ALL[ik + 75]).isoformat()
+def first_k(highs, ep, tgt, T):
+    for k in range(1, len(highs) - ik):
+        if round(highs[ik + k], 2) >= ep + T / 100.0 * (tgt - ep) - 1e-6:
+            return k
+    return None
+
+
+assert r['fl'] == 'r-------' and r['b'] == 'C' and near(r['tgt'], 2322.17, 0.02) and r['kp'][2] == 75, r['kp']
+assert r['kp'] == [first_k(lau_h, r['ep'], r['tgt'], T) for T in (80, 90, 100)] and r['kp'][0] < 75, r['kp']
+assert r['kd'][2] == date.fromordinal(ALL[ik + 75]).isoformat()
 assert r['ix'][0] == round(((25000.0 + ik + 30) / (25000.0 + ik) - 1) * 100, 1) and r['ix'][4] is None, r['ix']
 f = rows['FLAT']
-assert f['src'] == 'nse' and f['b'] == 'S' and f['fl'] == 'pppppppp' and f['tgt'] == 125.0 and f['ep'] == 100.0 and f['hit'] is None
+assert f['src'] == 'nse' and f['b'] == 'S' and f['fl'] == 'pppppppp' and f['tgt'] == 125.0 and f['ep'] == 100.0 and f['kp'] == [None] * 3
 assert f['ed'] == '2026-07-30', 'filed at 12:00 = the same day'
 assert per_q[E.mi_label('Sep 2026')] == [], 'Sep 2026: no 8th quarter yet'
 s = E.summary(per_q[JUN])
-assert s['target'] == 2 and s['above'] == 0 and s['win']['30'][:2] == [2, 0] and s['ready'] is True, s
-assert s['win']['180'][3] == 2 - s['win']['180'][0] and s['ann'] == {'nse': 2}
-# LAURUSLABS reached it on session 75 with ~84 sessions: counted at 30 / 60 (not reached) and 90? no - 84 < 90: still running, reached early
-assert s['win']['90'] == [0, 0, 0, 2, 1] and s['win']['60'][:2] == [2, 0], s['win']
+nL = r['n']
+assert s['target'] == 2 and s['down'] == 0 and s['win']['30'][:2] == [2, 0] and s['ready'] is True, s
+assert s['win']['180'][4] == 2 - s['win']['180'][0] and s['ann'] == {'nse': 2}
+# win[W] = [finished, reached 80 / 90 / 100 % among them, still running, reached 80 % while still running]: LAURUSLABS has
+# ~83 sessions - finished at 30 / 60, still running at 90 (reached 80 % early)
+k80 = r['kp'][0]
+assert s['win']['60'] == [2, 1 if k80 <= 60 else 0, 0, 0, 0, 0], (s['win']['60'], k80)
+assert nL < 90 and s['win']['90'] == [0, 0, 0, 0, 2, 1], s['win']
+assert len(s['dwin']['30']) == 6 and s['dwin']['30'][0] == 0
 assert E.unpack(E.pack(per_q[JUN])) == per_q[JUN], 'the packed rows come back the same'
 words = E.stock_words(per_q, 'LAURUSLABS')
 assert any('Jun 2026 (Q1 FY27): EPS Sep 2025 3.61, Dec 2025 4.67, Mar 2026 5.17, Jun 2026 6.81 = TTM 20.26' in x and 'target 2322.1' in x
-           and 'entry 2026-07-27 close 1624.10' in x and 'target reached after' in x for x in words), words
+           and 'entry 2026-07-27 close 1624.10' in x and '100% of the way up after 75 session(s)' in x for x in words), words
 # no XBRL table, no screener record: no rows; a results date older than the candles' end, no filing -> 'date'
 E._ann_save({'v': 1, 'days': [], 'rows': {}})
 _u, pq2, _c = E.compute(L, {'LAURUSLABS': (TABLE, {})}, {}, TODAY, 8)
 assert pq2[JUN][0]['why'] == 'date' and pq2[JUN][0]['st'] == 'x' and pq2[JUN][0]['tgt'] is not None
+
+# ------------------------------------------------------------------ 8b. results dates from NSE's per-stock XBRL lists
+# (owner, 24-Nov-2026: SYRMA's results are on NSE's integrated filing page - 30-Oct-2026 21:10 / 29-Jul-2026 17:35 - but had
+# no results date; RAJAPALAYAM has no filing on NSE at all)
+def rec(sym, end, basis, stamp, gov=False):
+    kind = 'GOVERNANCE' if gov else 'INTEGRATED_FILING_INDAS'
+    return {'symbol': sym, 'qe_Date': end, 'consolidated': basis,
+            'xbrl': 'https://nsearchives.nseindia.com/corporate/xbrl/%s_%s_%s_WEB.xml' % (kind, random.randint(1, 99999), stamp)}
+
+
+LISTS_ANS = {
+    'SYRMA': [rec('SYRMA', '30-SEP-2026', 'Consolidated', '30102026211117'), rec('SYRMA', '30-SEP-2026', 'Standalone', '30102026211026'),
+              rec('SYRMA', '30-JUN-2026', 'Consolidated', '29072026173518'), rec('SYRMA', '30-JUN-2026', 'Standalone', '29072026173516'),
+              rec('SYRMA', '30-JUN-2026', '', '01072026100000', gov=True)],
+    'RAJAPALAYAM': [],
+    # a full page of the newest 20 (5 quarters x 2 bases x 2): the missing Jun 2025 asked again by date
+    'FULL': [rec('FULL', e, bs, day + '14%04d' % (k * 10 + j)) for k, (e, day) in enumerate((
+        ('30-SEP-2026', '01112026'), ('30-JUN-2026', '01082026'), ('31-MAR-2026', '20052026'), ('31-DEC-2025', '01022026'),
+        ('30-SEP-2025', '01112025'))) for j, bs in enumerate(('Consolidated', 'Standalone', 'Consolidated', 'Standalone'))],
+}
+URLS = []
+
+
+def fake_get(opener, url, referer=None, timeout=30):
+    URLS.append(url)
+    sym = url.split('symbol=')[1].split('&')[0]
+    if 'from_date' in url:
+        return 200, json.dumps({'data': [rec(sym, '31-DEC-2024', 'Consolidated', '04022025160000')]}).encode()
+    if 'integrated' in url:
+        return 200, json.dumps({'data': LISTS_ANS.get(sym, [])}).encode()
+    return 200, json.dumps({'data': []}).encode()
+
+
+X.bind(session=lambda: 'opener', get=fake_get, records=lambda obj: obj.get('data') if isinstance(obj, dict) else obj)
+E.bind(xh=X)
+E.XB_PATH = os.path.join(TMP, 'eps_target_xbrl.json')
+E._ann_save({'v': 1, 'days': [], 'rows': {}})
+Q8 = ['Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026', 'Sep 2026']
+TAB2 = {'b': 'C', 'q': [ROW(l, 1.0 + k) for k, l in enumerate(Q8)], 'y': []}
+TAB_OLD = {'b': 'C', 'q': [ROW(l, 1.0 + k) for k, l in enumerate(['Sep 2023', 'Dec 2023', 'Mar 2024', 'Jun 2024'] + Q8)], 'y': []}
+INP = {'SYRMA': (TAB2, {}), 'RAJAPALAYAM': (TAB2, {}), 'FULL': (TAB_OLD, {}), 'DONE': (TAB2, {'2026-06-30': '20260801100000',
+                                                                                                   '2026-09-30': '20261101100000'})}
+todo = E.missing_dates(INP, {}, q)
+assert [t[0] for t in todo] == ['FULL', 'RAJAPALAYAM', 'SYRMA'], todo           # DONE has its dates from its XBRL files
+assert todo[2][1] == [E.mi_label('Sep 2026'), E.mi_label('Jun 2026')], todo
+SL = []
+asked, found, left, why = E.xbrl_dates(TODAY, todo, 99, 6.0, LOGS.append, SL.append)
+assert asked == 3 and left == 0 and why == '' and all(x == 6.0 for x in SL), (asked, left, why, SL)
+xb = E._xb_load()['syms']
+assert xb['SYRMA']['stamps'] == {'2026-09-30': '20261030211026', '2026-06-30': '20260729173516'}, xb['SYRMA']
+assert xb['RAJAPALAYAM']['n'] == 0 and xb['RAJAPALAYAM']['stamps'] == {}
+assert xb['FULL']['stamps'].get('2024-12-31') == '20250204160000', 'a full page: the missing quarter asked by date'
+assert sum(1 for u in URLS if 'symbol=SYRMA' in u) == 1, 'SYRMA: one request (the integrated list had both quarters)'
+assert sum(1 for u in URLS if 'symbol=RAJAPALAYAM' in u) == 2, 'RAJAPALAYAM: both lists asked'
+assert E.missing_dates(INP, {}, q) == [], 'found ones have dates; RAJAPALAYAM / FULL not asked again so soon'
+assert [t[0] for t in E.missing_dates(INP, {}, q, now=time.time() + 8 * 86400)] == ['FULL'], \
+    'after a week: only a stock still missing a date that has filings (FULL: Jun 2025, past its lists) - RAJAPALAYAM waits 30 days'
+_u, pq3, _c = E.compute(L, INP, {}, TODAY, 8)
+by = {(x['sym'], x['why']) for x in pq3[JUN]}
+assert ('RAJAPALAYAM', 'nofiling') in by and ('SYRMA', 'price') in by, by     # SYRMA has its date now (no candles here)
+sy = [x for x in pq3[JUN] if x['sym'] == 'SYRMA'][0]
+assert sy['ann'] == '2026-07-29 17:35' and sy['src'] == 'xbrl', sy
+# NSE refusing twice: the pass stops, the stock stays to do
+def refuse(opener, url, referer=None, timeout=30):
+    return 403, b''
+
+
+X.bind(get=refuse)
+os.remove(E.XB_PATH)
+asked, found, left, why = E.xbrl_dates(TODAY, [('SYRMA', [JUN])], 5, 6.0, LOGS.append, lambda s: None)
+assert asked == 0 and left == 1 and 'twice' in why, (asked, left, why)
+X.bind(get=fake_get)
+os.remove(E.XB_PATH) if os.path.exists(E.XB_PATH) else None
 
 # ------------------------------------------------------------------ 9. the round's step: posts per quarter, once
 E._ann_save({'v': 1, 'days': [], 'rows': {'LAURUSLABS': ['2026-07-24 16:05:10'], 'FLAT': ['2026-07-30 12:00:00']}})
@@ -264,7 +363,7 @@ n = E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None)
 posted = [p for a, p in CALLS if a == 'epst']
 assert n == len(posted) and {p['q'] for p in posted} >= {'Jun 2026'}, (n, [p['q'] for p in posted])
 p = [x for x in posted if x['q'] == 'Jun 2026'][0]
-assert p['op'] == 'put' and p['end'] == '2026-06-30' and p['fy'] == 'Q1 FY27' and p['engine'] == E.ENGINE and p['sum']['target'] == 2
+assert p['op'] == 'put' and p['end'] == '2026-06-30' and p['fy'] == 'Q1 FY27' and p['engine'] == E.ENGINE == 2 and p['sum']['target'] == 2
 assert E.unpack(p['blob'])[0]['sym'] == 'FLAT'
 CALLS.clear()
 assert E.step(cfg, api, L, inp, SCREENER, today=TODAY, gap=0, sleep=lambda s: None) == 0 and not CALLS, 'nothing changed: no post'
