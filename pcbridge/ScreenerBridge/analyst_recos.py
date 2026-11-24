@@ -456,15 +456,25 @@ def page_recos(html_text, base):
 
 # ------------------------------------------------------------------ the page's own data (JSON in its scripts)
 JKEYS = (('tgt', ('targetprice', 'target', 'tp', 'tgtprice', 'pricetarget', 'targetvalue')),
-         ('co', ('stockname', 'companyname', 'company', 'scname', 'scripname', 'securityname', 'shortname', 'stock', 'name')),
+         ('co', ('stkname', 'stockname', 'companyname', 'company', 'scname', 'scripname', 'securityname', 'shortname', 'stock', 'name')),
          ('br', ('brokername', 'brokeragename', 'broker', 'brokerage', 'organization', 'organisation', 'orgname', 'researchhouse',
                  'analystname', 'analyst', 'source', 'author')),
-         ('call', ('recommendation', 'recotype', 'recommendationtype', 'reco', 'call', 'rating', 'action', 'advice', 'recommend', 'type')),
-         ('at', ('recodate', 'recommendationdate', 'reportdate', 'publishdate', 'publisheddate', 'publishedat', 'createdat', 'entrydate',
-                 'date', 'created', 'time', 'updatedat')),
-         ('rp', ('recoprice', 'priceatreco', 'pricerecommended', 'pricewhenrecommended', 'entryprice', 'cmp', 'ltp', 'price')),
+         ('call', ('recommendflag', 'recommendation', 'recotype', 'recommendationtype', 'recommendtype', 'reco', 'call', 'rating',
+                   'action', 'advice', 'recommend', 'type')),
+         ('at', ('recommenddate', 'recodate', 'recommendationdate', 'reportdate', 'publishdate', 'publisheddate', 'publishedat', 'createdat',
+                 'entrydate', 'date', 'created', 'time', 'updatedat')),
+         ('rp', ('recommendprice', 'recoprice', 'priceatreco', 'pricerecommended', 'pricewhenrecommended', 'entryprice', 'cmp', 'ltp',
+                 'price')),
          ('url', ('reporturl', 'pdfurl', 'pdf', 'url', 'link', 'href', 'permalink')),
          ('nse', ('nsesymbol', 'nsecode', 'nseid', 'symbol')))
+
+
+JLOOSE = (('tgt', ('target', 'tgt'), ('upside', 'potential', 'pct', 'percent', 'return')),
+          ('co', ('stkname', 'stockname', 'company', 'scrip', 'stock'), ('id', 'code', 'url', 'link', 'logo', 'price', 'count', 'sector')),
+          ('br', ('broker', 'organi', 'research', 'house'), ('id', 'url', 'link', 'logo', 'pdf')),
+          ('call', ('recommend', 'reco', 'rating', 'call', 'action'), ('price', 'date', 'id', 'url', 'pdf', 'time')),
+          ('at', ('date',), ('update', 'expiry', 'target')),
+          ('rp', ('recommendprice', 'recoprice', 'entry', 'cmp'), ('target', 'tgt')))
 
 
 def _jkey(k):
@@ -488,6 +498,12 @@ def _jrec(o, base):
             if n in by and by[n] not in (None, '', []):
                 got[field] = by[n]
                 break
+    for field, parts, bad in JLOOSE:                # a name not on the list: by a part of it (e.g. 'recoTypeName', 'tgt_px')
+        if field not in got:
+            k = next((k for k in by if any(p in k for p in parts) and not any(b in k for b in bad)
+                      and by[k] not in (None, '', []) and not isinstance(by[k], list)), None)
+            if k:
+                got[field] = by[k]
     tgt = _num(re.sub(r'[^\d.]', '', _jtext(got.get('tgt')))) if 'tgt' in got else None
     co = _text(_jtext(got.get('co')))
     if not tgt or not co or not re.search(r'[A-Za-z]', co) or len(co) > 80:
@@ -1001,7 +1017,16 @@ def shape_words(html_text, text):
                         first = v[0] if v else None
                         desc.append('%s (list of %d%s)' % (k, len(v), (', first: ' + ', '.join(list(first)[:12])) if isinstance(first, dict) else ''))
                     elif isinstance(v, dict):
-                        desc.append('%s {%s}' % (k, ', '.join(list(v)[:10])))
+                        inner = []
+                        for k2, v2 in list(v.items())[:12]:
+                            if isinstance(v2, list):
+                                f2 = v2[0] if v2 else None
+                                inner.append('%s (list of %d%s)' % (k2, len(v2), (', first: ' + json.dumps(
+                                    {a: (str(b)[:30] if not isinstance(b, (dict, list)) else type(b).__name__)
+                                     for a, b in list(f2.items())[:20]}, ensure_ascii=True)[:600]) if isinstance(f2, dict) else ''))
+                            else:
+                                inner.append(str(k2))
+                        desc.append('%s {%s}' % (k, ', '.join(inner)))
                     else:
                         desc.append(k)
                 lines.append('__NEXT_DATA__ pageProps: ' + '; '.join(desc)[:1500])
