@@ -115,7 +115,16 @@ STOP_WORDS = ('ltd', 'limited', 'the', 'pvt', 'private', 'inc', 'plc', 'co', 'co
 ALIASES = {'l and t': 'LT', 'larsen and toubro': 'LT', 'm and m': 'M&M', 'mahindra and mahindra': 'M&M', 'sbi': 'SBIN',
            'state bank of india': 'SBIN', 'ril': 'RELIANCE', 'hul': 'HINDUNILVR', 'hindustan unilever': 'HINDUNILVR',
            'bel': 'BEL', 'hal': 'HAL', 'ongc': 'ONGC', 'ntpc': 'NTPC', 'bpcl': 'BPCL', 'hpcl': 'HINDPETRO', 'ioc': 'IOC',
-           'tcs': 'TCS', 'infy': 'INFY', 'lic': 'LICI', 'm and m financial': 'M&MFIN', 'jsw steel': 'JSWSTEEL', 'itc': 'ITC'}
+           'tcs': 'TCS', 'infy': 'INFY', 'lic': 'LICI', 'm and m financial': 'M&MFIN', 'jsw steel': 'JSWSTEEL', 'itc': 'ITC',
+           # owner's 25-Nov-2026 list of names that did not match (short names the brokers use)
+           'iocl': 'IOC', 'indian oil': 'IOC', 'nalco': 'NATIONALUM', 'narayana health': 'NH', 'hindustan petroleum': 'HINDPETRO',
+           'hindustan petroleum corporation': 'HINDPETRO', 'hind petro': 'HINDPETRO', 'nsdl': 'NSDL',
+           'national securities depository': 'NSDL', 'cdsl': 'CDSL', 'indigo': 'INDIGO', 'dmart': 'DMART', 'sail': 'SAIL',
+           'gail': 'GAIL', 'bhel': 'BHEL', 'irctc': 'IRCTC', 'irfc': 'IRFC', 'rvnl': 'RVNL', 'nmdc': 'NMDC', 'pfc': 'PFC',
+           'rec': 'RECLTD', 'hdfc amc': 'HDFCAMC', 'm and m fin': 'M&MFIN', 'mahindra finance': 'M&MFIN',
+           'mahindra and mahindra financial': 'M&MFIN', 'zee': 'ZEEL', 'ultratech': 'ULTRACEMCO', 'sun pharma': 'SUNPHARMA',
+           'zomato': 'ETERNAL', 'policybazaar': 'POLICYBZR', 'paytm': 'PAYTM', 'nykaa': 'NYKAA', 'hero moto': 'HEROMOTOCO',
+           'hero motocorp': 'HEROMOTOCO', 'maruti': 'MARUTI', 'bajaj finserv': 'BAJAJFINSV', 'kotak bank': 'KOTAKBANK'}
 WHY = {'nosym': 'not one of your Main stocks (or the name did not match)', 'price': 'no daily candles for it',
        'wait': 'no session since the recommendation yet', 'old': 'before 1-Oct-2026'}
 COLS = ('sym', 'co', 'br', 'call', 'tgt', 'rp', 'at', 'src', 'url', 'seen', 'st', 'why', 'ed', 'ep', 'pre', 'o0', 'n', 'kp', 'kd',
@@ -643,6 +652,10 @@ class Names:
         hit = self.by.get(n)
         if hit and len(hit) == 1:
             return next(iter(hit))
+        w = n.split()
+        got, tied = self.loose(w)
+        if got or tied:                                 # two companies fit every word: none of them (no weaker rule below)
+            return got
         flat = n.replace(' ', '')
         cands = set()
         for k in self.keys:
@@ -651,7 +664,6 @@ class Names:
         if len(cands) == 1:
             return next(iter(cands))
         # "hospitals" / "hosp", "industries" / "inds": the first two words + the start of the third
-        w = n.split()
         if len(w) >= 2:
             pre = ' '.join(w[:2])
             c2 = set()
@@ -661,6 +673,81 @@ class Names:
             if len(c2) == 1:
                 return next(iter(c2))
         return ''
+
+    def loose(self, w):
+        """owner, 25-Nov-2026 (30 names not matched, most in Main) - the brokers' short forms: "UltraTech Cem.", "Tilaknagar
+        Inds.", "HDB FINANC SER", "Adani Port and SEZ", "Mahindra Lifespaces", "Meeshos", "ITCHOTEL". Word by word: the
+        broker's first word = the company's first word, every other word in order (company words may be skipped); the best
+        score wins only when no other company scores the same. Before the "company name inside the broker's text" rule
+        below, which took "Reliance Infra" for Reliance Industries and "Siemens Energy" for Siemens."""
+        flat = ''.join(w)
+        if len(w) == 1 and len(flat) >= 5:              # one word: "ITCHOTEL" = ITCHOTELS / "itc hotels"
+            c1 = {s for s in self.names if s.startswith(flat.upper())}
+            for k in self.keys:
+                if k.replace(' ', '').startswith(flat):
+                    c1 |= self.by[k]
+            if len(c1) == 1:
+                return next(iter(c1)), False
+        best, who = 0, set()
+        for k in self.keys:
+            sc = word_match(w, k.split())
+            if sc > best:
+                best, who = sc, set(self.by[k])
+            elif sc and sc == best:
+                who |= self.by[k]
+        return (next(iter(who)), False) if best and len(who) == 1 else ('', len(who) > 1)
+
+
+def word_score(t, c):
+    """one broker word against one company word: 3 the same, 2 a shortened / plural form, 1 an abbreviation
+    ("inds" = industries, "mfg" = manufacturing), 0 no."""
+    if t == c:
+        return 3
+    if len(t) >= 3 and c.startswith(t):
+        return 2
+    for cut in (1, 2):                                  # "lifespaces" / "lifespace", "finance" / "financial"
+        st = t[:-cut]
+        if len(st) >= 4 and t[-cut:] in ('s', 'e', 'es') and c.startswith(st):
+            return 2
+    if len(t) >= 3 and t[0] == c[0] and len(t) < len(c) and t.isalpha():
+        i = 0
+        for ch in c:
+            if i < len(t) and ch == t[i]:
+                i += 1
+        if i == len(t):
+            return 1
+    return 0
+
+
+def word_match(q, cw):
+    """the broker's words q against the company's words cw -> a score (0 = no): q[0] must be cw[0]'s word, the rest in
+    order; a word may also stand for the initials of the company's next words ("sez" = special economic zone)."""
+    if not q or not cw:
+        return 0
+    first = word_score(q[0], cw[0])
+    if not first:
+        return 0
+
+    def go(i, j):
+        if i == len(q):
+            return 0
+        best = -1
+        t = q[i]
+        for jj in range(j, len(cw)):
+            sc = word_score(t, cw[jj])
+            if sc:
+                rest = go(i + 1, jj + 1)
+                if rest >= 0:
+                    best = max(best, sc + rest)
+            m = len(t)
+            if m >= 2 and t.isalpha() and jj + m <= len(cw) and ''.join(x[0] for x in cw[jj:jj + m]) == t:
+                rest = go(i + 1, jj + m)
+                if rest >= 0:
+                    best = max(best, 2 + rest)
+        return best
+
+    rest = go(1, 1)
+    return first + rest if rest >= 0 else 0
 
 
 # ------------------------------------------------------------------ the store

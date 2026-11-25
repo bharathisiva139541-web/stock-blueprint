@@ -40,6 +40,14 @@
     var k = R.kind(r, ST.opt.W, ST.opt.T);
     return k === 'down' && !r.buy ? 'Downside: ' + R.DSTATUS[E.status(r, ST.opt.W, ST.opt.T)][0] : (R.STATUS[k] || [''])[0];
   }
+  var PX_TIP = 'The close of the day it was published (after 15:30: the next session). No close yet: the opening price of that day ("open"), ' +
+    'else the price the broker\'s page quoted';
+  function pxCell(r) {
+    if (!(r.px > 0)) return '<span class="sub">–</span>';
+    return F.price(r.px) + (r.pxHow === 'open' ? ' <span class="sub" data-tip="No closing price from your laptop yet - the opening price of ' +
+      esc(F.date(r.pxDay)) + '">open</span>' : r.pxHow === 'broker' ? ' <span class="sub" data-tip="No candle for the day yet - the price the broker\'s page quoted">' +
+      'broker\'s</span>' : '');
+  }
   function srcLink(r) {
     var name = r.srcs.map(function (s) { return R.SRC[s] || s; }).join(' · ');
     return r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(name) + ' ↗</a>' : esc(name);
@@ -78,9 +86,10 @@
   function pickHtml(res) {
     var opt = function (v, on, words) { return '<option value="' + v + '"' + (on ? ' selected' : '') + '>' + esc(words) + '</option>'; };
     return '<section class="card" id="rc-pick"><div class="card-head"><div><h2>Window and your rule</h2>' +
-      '<p>A Buy call counts as <b>reached</b> when a daily <b>high</b> covered <b>' + esc(ruleWords(ST.opt.T)) + '</b> within the window. ' +
-      'The price at the call = the close of the day it was published (published after 15:30: the next session). A call whose window is not over yet is ' +
-      '<b>still running</b> - never a miss. Best move / worst dip = the highest high / lowest low within the window vs the price at the call.</p></div></div>' +
+      '<p>A Buy call counts as <b>reached</b> the day a daily <b>high</b> covers <b>' + esc(ruleWords(ST.opt.T)) + '</b> within the window - on day 2 or ' +
+      'day 50 alike. Not reached yet while its window runs = <b>still running</b>; <b>missed</b> only once the whole window is over. The price at the call = the ' +
+      'close of the day it was published (published after 15:30: the next session); no close yet = the opening price of that day. Best move / worst dip = the ' +
+      'highest high / lowest low within the window vs the price at the call (so far, for a call still running).</p></div></div>' +
       '<div class="controls edge-opts"><label class="edge-opt">Within <select id="rc-w">' + E.WINDOWS.map(function (W) {
         return opt(W, W === ST.opt.W, W + ' sessions (about ' + MONTHS[W] + ')');
       }).join('') + '</select></label><label class="edge-opt">Counts as reached at <select id="rc-t">' + E.THRESH.map(function (T) {
@@ -92,7 +101,7 @@
   }
 
   function summaryHtml(res, rows) {
-    var W = ST.opt.W, T = ST.opt.T, S = E.stats(rows, W, T), all = R.pick(rows, ST.opt.calls);
+    var W = ST.opt.W, T = ST.opt.T, S = R.stats(rows, W, T), all = R.pick(rows, ST.opt.calls);
     var brokers = Object.keys(all.reduce(function (o, r) { o[r.br] = 1; return o; }, {})).length;
     var stocks = Object.keys(all.reduce(function (o, r) { if (r.sym) o[r.sym] = 1; return o; }, {})).length;
     var rr = R.rets(rows);
@@ -100,26 +109,26 @@
       F.int(all.length) + ' ' + (ST.opt.calls === 'buy' ? 'Buy calls' : 'calls') + ' from ' + F.int(brokers) + ' broker' + (brokers === 1 ? '' : 's') + ' on ' +
       F.int(stocks) + ' of your stocks.</p></div></div><div class="tiles">' +
       tile('Calls with a target above the price', F.int(S.n), F.int(S.other) + ' with the target under the price at the call · ' + F.int(S.none) + ' not checked') +
-      tile('Reached within ' + W + ' sessions', S.rate == null ? '–' : pc(S.rate), S.done ? F.int(S.hit) + ' of ' + F.int(S.done) + ' finished · likely ' +
-        pc(S.lo) + '–' + pc(S.hi) : 'none finished yet', S.rate != null ? 'up' : '',
-        'Reached = ' + ruleWords(T) + '. Only calls whose ' + W + ' sessions are over count. Likely range = where the rate would fall 9 times out of 10') +
-      tile('Still running', F.int(S.pending), S.early ? F.int(S.early) + ' reached it already' : 'fewer than ' + W + ' sessions since the call', '',
-        'They count once their ' + W + ' sessions are over') +
-      tile('Typical time to reach', S.medDays == null ? '–' : F.int(S.medDays) + ' sessions', S.medDays == null ? '' : 'median of the ones that reached it') +
-      tile('Best move within ' + W + ' (MFE)', S.avgHh == null ? '–' : sgn(S.avgHh), 'average highest high vs the price at the call', S.avgHh > 0 ? 'up' : '',
-        'Maximum favourable excursion: how far the price went up at its best within the window') +
-      tile('Worst dip within ' + W + ' (MAE)', S.avgDd == null ? '–' : sgn(S.avgDd), 'average lowest low vs the price at the call', S.avgDd < 0 ? 'down' : '',
-        'Maximum adverse excursion: how far the price fell at its worst within the window') +
+      tile('Reached within ' + W + ' sessions', S.soFar == null ? '–' : pc(S.soFar), S.n ? F.int(S.reached) + ' of ' + F.int(S.n) + (S.running ? ' so far' : '') +
+        (S.soLo != null ? ' · likely ' + pc(S.soLo) + '–' + pc(S.soHi) : '') : 'no call checked yet', S.soFar ? 'up' : '',
+        'Reached = ' + ruleWords(T) + ', counted the day it happens. While calls are still running this can only go up') +
+      tile('Still running', F.int(S.running), 'not reached yet, fewer than ' + W + ' sessions since the call', '',
+        'A call becomes reached the day its high gets there, or missed when its ' + W + ' sessions are over') +
+      tile('Missed', F.int(S.missed), W + ' sessions over without reaching it', S.missed ? 'down' : '') +
+      tile('Typical time to reach', S.medAll == null ? '–' : F.int(S.medAll) + ' sessions', S.medAll == null ? '' : 'median of the ' + F.int(S.reached) + ' that reached it') +
+      tile('Best move within ' + W + ' (MFE)', S.hhNow == null ? '–' : sgn(S.hhNow), 'average highest high vs the price at the call' + (S.running ? ' (so far)' : ''),
+        S.hhNow > 0 ? 'up' : '', 'Maximum favourable excursion: how far the price went up at its best within the window') +
+      tile('Worst dip within ' + W + ' (MAE)', S.ddNow == null ? '–' : sgn(S.ddNow), 'average lowest low vs the price at the call' + (S.running ? ' (so far)' : ''),
+        S.ddNow < 0 ? 'down' : '', 'Maximum adverse excursion: how far the price fell at its worst within the window') +
       tile('After 30 / 60 / 90 sessions', [rr[0], rr[1], rr[2]].map(function (v) { return sgn(v); }).join(' / '), 'average close vs the price at the call (finished calls)',
         'rc-small') +
       '</div>';
     var li = [];
-    if (S.done) {
-      li.push('Of the <b>' + F.int(S.done) + '</b> calls whose ' + W + ' sessions are over, <b>' + F.int(S.hit) + ' (' + pc(S.rate) + ')</b> reached ' +
-        esc(ruleWords(T)) + ' - likely between ' + pc(S.lo) + ' and ' + pc(S.hi) + ' for calls like these.' +
-        (S.early ? ' ' + F.int(S.early) + ' of the calls still running reached it already (they count once their window is over).' : ''));
-    } else {
-      li.push('No call has had ' + W + ' sessions yet - pick a shorter window above, or come back as the calls get older.');
+    if (S.n) {
+      li.push('<b>' + F.int(S.reached) + ' of ' + F.int(S.n) + ' calls (' + pc(S.soFar) + ')</b> reached ' + esc(ruleWords(T)) + ' within ' + W + ' sessions' +
+        (S.running ? ' so far - ' + F.int(S.running) + ' still running (not reached yet)' : '') + (S.missed ? ', ' + F.int(S.missed) + ' missed' : '') + '.' +
+        (S.running ? ' The share can only go up as the running calls reach their targets.' : ''));
+      if (S.done && S.running) li.push('Of the ' + F.int(S.done) + ' calls whose ' + W + ' sessions are all over, ' + F.int(S.hit) + ' (' + pc(S.rate) + ') reached it.');
     }
     if (S.medUp != null) li.push('The median target was <b>' + sgn(S.medUp, 0) + '</b> above the price at the call.');
     var why = res.sum && res.sum.why ? res.sum.why : {};
@@ -144,7 +153,7 @@
       { key: 'br', label: 'Broker' },
       { key: 'call', label: 'Call', html: callBadge },
       { key: 'tgt', label: 'Target', type: 'price' },
-      { key: 'ep', label: 'Price at the call', type: 'price' },
+      { key: 'px', label: 'Price at the call', type: 'price', title: PX_TIP, html: pxCell },
       { key: 'up', label: 'Target vs call price', type: 'pct', digits: 1 },
       { key: 'price', label: 'Price now', type: 'price' },
       { key: 'toTgt', label: 'Now → target', type: 'pct', digits: 1 },
@@ -154,7 +163,8 @@
 
   function brokersHtml() {
     return '<section class="card" id="rc-brokers"><div class="card-head"><div><h2>Broker scorecard</h2><p>Which research house\'s targets came true most often ' +
-      '(the window and rule chosen above). A broker is ranked once 3 of its calls are finished - the likely range shows how sure the rate is. Tap a broker to see its calls.</p></div>' +
+      '(the window and rule chosen above): reached so far of its checked calls - a broker is ranked once 3 of its calls are checked. Newer calls have had less time, ' +
+      'so look at Still running too. Tap a broker to see its calls.</p></div>' +
       '</div><div id="rc-brokers-b"></div><div id="rc-brokers-t"></div></section>';
   }
   function drawBrokers(el, rows) {
@@ -162,20 +172,21 @@
     if (!host) return;
     var W = ST.opt.W, T = ST.opt.T, sc = R.scorecard(rows, W, T, 3);
     var shown = sc.filter(function (s) { return s.ranked; }).slice(0, 15);
-    $('#rc-brokers-b', el).innerHTML = shown.length ? ui.bars(shown.map(function (s) { return { label: s.label + ' (' + F.int(s.done) + ')', value: (s.rate || 0) * 100 }; }),
-      { fmt: function (v) { return v.toFixed(0) + '%'; } }) : '<p class="empty">No broker has 3 finished calls in this window yet - pick a shorter window.</p>';
+    $('#rc-brokers-b', el).innerHTML = shown.length ? ui.bars(shown.map(function (s) { return { label: s.label + ' (' + F.int(s.reached) + ' of ' + F.int(s.n) + ')', value: (s.soFar || 0) * 100 }; }),
+      { fmt: function (v) { return v.toFixed(0) + '%'; } }) : '<p class="empty">No broker has 3 checked calls yet.</p>';
     new ui.Table({ rows: sc, pageSize: 25, id: 'recos-brokers', columns: [
       { key: 'label', label: 'Broker', html: function (s) { return '<button type="button" class="linkish" data-rcbr="' + esc(s.label) + '">' + esc(s.label) + '</button>'; } },
       { key: 'calls', label: 'Calls', type: 'num', digits: 0 },
       { key: 'stocks', label: 'Stocks', type: 'num', digits: 0 },
-      { key: 'done', label: 'Finished (' + W + ')', type: 'num', digits: 0 },
-      { key: 'rate', label: 'Reached', type: 'num', get: function (s) { return s.rate == null ? null : s.rate * 100; },
-        html: function (s) { return s.rate == null ? '–' : '<b>' + pc(s.rate) + '</b> <span class="sub">' + F.int(s.hit) + ' of ' + F.int(s.done) + ' · ' + pc(s.lo) + '–' + pc(s.hi) + '</span>'; } },
-      { key: 'pending', label: 'Still running', type: 'num', digits: 0 },
-      { key: 'medDays', label: 'Median sessions', type: 'num', digits: 0 },
+      { key: 'n', label: 'Checked', type: 'num', digits: 0, title: 'Calls with a target above the price at the call and at least one session after it' },
+      { key: 'soFar', label: 'Reached so far', type: 'num', get: function (s) { return s.soFar == null ? null : s.soFar * 100; },
+        html: function (s) { return s.soFar == null ? '–' : '<b>' + pc(s.soFar) + '</b> <span class="sub">' + F.int(s.reached) + ' of ' + F.int(s.n) + '</span>'; } },
+      { key: 'running', label: 'Still running', type: 'num', digits: 0 },
+      { key: 'missed', label: 'Missed', type: 'num', digits: 0, title: 'Window over without reaching the target' },
+      { key: 'medAll', label: 'Median sessions', type: 'num', digits: 0, title: 'Median sessions to reach it, of the calls that reached it' },
       { key: 'medUp', label: 'Median target vs price', type: 'pct', digits: 0 },
-      { key: 'avgHh', label: 'Best move (MFE)', type: 'pct', digits: 1, title: 'Average highest high within the window vs the price at the call' },
-      { key: 'avgDd', label: 'Worst dip (MAE)', type: 'pct', digits: 1, title: 'Average lowest low within the window vs the price at the call' },
+      { key: 'hhNow', label: 'Best move (MFE)', type: 'pct', digits: 1, title: 'Average highest high within the window vs the price at the call (so far for calls still running)' },
+      { key: 'ddNow', label: 'Worst dip (MAE)', type: 'pct', digits: 1, title: 'Average lowest low within the window vs the price at the call (so far for calls still running)' },
       { key: 'r30', label: 'After 30', type: 'pct', digits: 1, title: 'Average close 30 sessions after the call' },
       { key: 'r60', label: 'After 60', type: 'pct', digits: 1 },
       { key: 'r90', label: 'After 90', type: 'pct', digits: 1 },
@@ -208,7 +219,7 @@
       { key: 'br', label: 'Broker' },
       { key: 'call', label: 'Call', html: callBadge },
       { key: 'tgt', label: 'Target', type: 'price' },
-      { key: 'ep', label: 'Price at the call', type: 'price', title: 'The close of the day it was published (after 15:30: the next session)' },
+      { key: 'px', label: 'Price at the call', type: 'price', title: PX_TIP, html: pxCell },
       { key: 'up', label: 'Target vs call price', type: 'pct', digits: 1 },
       { key: 'status', label: 'In ' + W + ' sessions', get: statusText, html: statusBadge },
       { key: 'reach', label: 'Reached in', title: 'Sessions after the call until the price covered ' + ruleWords(T),
@@ -270,7 +281,8 @@
       mine.slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; }).map(function (r) {
         var k = E.reachK(r, 100), k80 = E.reachK(r, 80);
         return '<li><b>' + esc(F.date(r.day)) + '</b> · ' + esc(r.br) + ' ' + callBadge(r) + ' target <b>' + F.price(r.tgt) + '</b>' +
-          (r.ep ? ' when the price was ' + F.price(r.ep) + ' (' + sgn(r.up) + ')' : '') + ' - ' +
+          (r.px ? ' when the price was ' + F.price(r.px) + (r.pxHow === 'open' ? ' (the open)' : r.pxHow === 'broker' ? ' (the broker\'s price)' : '') +
+            ' (' + sgn(r.up) + ')' : '') + ' - ' +
           (r.st !== 'ok' ? esc(R.WHY[r.why] || 'not checked') : k != null ? '<b>reached</b> after ' + F.int(k) + ' sessions (' + esc(F.date(E.reachD(r, 100))) + ')'
             : 'not reached yet in ' + F.int(r.n) + ' sessions' + (k80 != null ? ' (80% of the way after ' + F.int(k80) + ')' : '')) +
           ' · ' + srcLink(r) + '</li>';
@@ -315,26 +327,33 @@
           return;
         }
         var everything = prepare(res, ctx);
-        var rows = R.pick(everything, ST.opt.calls);
-        body.innerHTML = (got.kept ? '<div class="note">Showing the copy this device kept' + (got.kept !== true ? ' (' + esc(F.dateTime(got.kept)) + ')' : '') +
-          ' - the live copy could not be read just now.</div>' : '') + pickHtml(res) + summaryHtml(res, rows) + freshHtml() + brokersHtml() + allHtml(rows) +
-          unmatchedHtml(everything);
-        drawFresh(body, rows);
-        drawBrokers(body, rows);
-        drawAll(body, rows);
-        body.addEventListener('click', function (e) {
-          var b = e.target.closest && e.target.closest('[data-rcbr]');
-          if (!b) return;
-          ST.broker = b.getAttribute('data-rcbr');
-          var sel = $('#rc-b', body);
-          if (sel) sel.value = ST.broker;
-          if (ST.apply) ST.apply();
-          var all = $('#rc-all', body);
-          if (all && all.scrollIntoView) all.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-        [['#rc-w', 'W', Number], ['#rc-t', 'T', Number], ['#rc-c', 'calls', String]].forEach(function (x) {
-          $(x[0], body).addEventListener('change', function (e) { ST.opt[x[1]] = x[2](e.target.value); save(); SB.route(true); });
-        });
+        function show(H) {
+          if (!el.isConnected) return;
+          R.fillPrice(everything, H);
+          var rows = R.pick(everything, ST.opt.calls);
+          body.innerHTML = (got.kept ? '<div class="note">Showing the copy this device kept' + (got.kept !== true ? ' (' + esc(F.dateTime(got.kept)) + ')' : '') +
+            ' - the live copy could not be read just now.</div>' : '') + pickHtml(res) + summaryHtml(res, rows) + freshHtml() + brokersHtml() + allHtml(rows) +
+            unmatchedHtml(everything);
+          drawFresh(body, rows);
+          drawBrokers(body, rows);
+          drawAll(body, rows);
+          body.addEventListener('click', function (e) {
+            var b = e.target.closest && e.target.closest('[data-rcbr]');
+            if (!b) return;
+            ST.broker = b.getAttribute('data-rcbr');
+            var sel = $('#rc-b', body);
+            if (sel) sel.value = ST.broker;
+            if (ST.apply) ST.apply();
+            var all = $('#rc-all', body);
+            if (all && all.scrollIntoView) all.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+          [['#rc-w', 'W', Number], ['#rc-t', 'T', Number], ['#rc-c', 'calls', String]].forEach(function (x) {
+            $(x[0], body).addEventListener('change', function (e) { ST.opt[x[1]] = x[2](e.target.value); save(); SB.route(true); });
+          });
+        }
+        if (R.needsCandles(everything) && !ctx.history && SB.loadHistory) {
+          SB.loadHistory().then(function (H) { show(H); }, function () { show(null); });
+        } else show(ctx.history || null);
       });
     }
   });
