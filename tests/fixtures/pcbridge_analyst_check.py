@@ -208,6 +208,43 @@ for co, want in (('Jupiter Life Line Hospitals', 'JLHL'), ('Jupiter Life Line Ho
                  ('Coal India', 'COALINDIA'), ('Vodafone Idea', 'IDEA'), ('Some Unknown Co', ''), ('Jupiter Life Line Hosp', 'JLHL')):
     assert N.match(co) == want, (co, N.match(co))
 
+# the owner's 30 names not matched on 25-Nov-2026 ("here most of the stocks are in main. find a way to include") - Main's
+# names as in the saved copy, with the look-alikes that must NOT be taken (Bharat Heavy Electricals, Tech Mahindra, ...)
+MAIN30 = {'ADANIPORTS': 'Adani Ports and Special Economic Zone Ltd.', 'ADANIGREEN': 'Adani Green Energy Ltd.', 'ADANIENT': 'Adani Enterprises Ltd.',
+          'AJANTPHARM': 'Ajanta Pharmaceuticals Ltd.', 'AMBUJACEM': 'Ambuja Cements Ltd.', 'GAEL': 'Gujarat Ambuja Exports Ltd.',
+          'DMART': 'Avenue Supermarts Ltd.', 'CCAVENUE': 'AvenuesAI Ltd.', 'IXIGO': 'Le Travenues Technology Ltd.', 'BEL': 'Bharat Electronics Ltd.',
+          'BHEL': 'Bharat Heavy Electricals Ltd.', 'BDL': 'Bharat Dynamics Ltd.', 'CHOLAFIN': 'Cholamandalam Investment and Finance Company Ltd.',
+          'CHOLAHLDNG': 'Cholamandalam Financial Holdings Ltd.', 'EMBDL': 'Embassy Developments Ltd.', 'EQUITASBNK': 'Equitas Small Finance Bank Ltd.',
+          'HDBFS': 'HDB Financial Services Ltd.', 'HINDPETRO': '-', 'HAL': 'Hindustan Aeronautics Ltd.', 'IOC': 'Indian Oil Corporation Ltd.',
+          'KIOCL': 'KIOCL Limited', 'ITCHOTELS': 'ITC Hotels Ltd.', 'ITC': 'ITC Ltd.', 'INDIGO': 'InterGlobe Aviation Ltd.',
+          'JUBLFOOD': 'Jubilant Foodworks Ltd.', 'JUBLPHARMA': 'Jubilant Pharmova Ltd.', 'M&MFIN': 'Mahindra & Mahindra Financial Services Ltd.',
+          'M&M': 'Mahindra & Mahindra Ltd.', 'TECHM': 'Tech Mahindra Ltd.', 'MAHLIFE': 'Mahindra Lifespace Developers Ltd.',
+          'MAHLOG': 'Mahindra Logistics Limited', 'MHRIL': 'Mahindra Holidays & Resorts India Limited', 'MEESHO': 'Meesho Limited',
+          'BECTORFOOD': "Mrs. Bectors Food Specialities Ltd.", 'NATIONALUM': 'National Aluminium Co. Ltd.', 'NH': 'Narayana Hrudayalaya Ltd.',
+          'AQYLON': 'Aqylon Nexus Limited', 'LUMAXTECH': 'Lumax Auto Technologies Ltd.', 'SUMICHEM': 'Sumitomo Chemical India Ltd.',
+          'TATACOMM': 'Tata Communications Ltd.', 'TCS': 'Tata Consultancy Services Ltd.', 'TI': 'Tilaknagar Industries Ltd.',
+          'TORNTPHARM': 'Torrent Pharmaceuticals Ltd.', 'TORNTPOWER': 'Torrent Power Ltd.', 'ULTRACEMCO': 'UltraTech Cement Ltd.',
+          'ULTRAMAR': 'Ultramarine & Pigments Limited', 'ZEEL': 'Zee Entertainment Enterprises Ltd.', 'ZEEMEDIA': 'Zee Media Corporation Limited',
+          'RELIANCE': 'Reliance Industries Ltd.', 'RELINFRA': 'Reliance Infrastructure Ltd.', 'SIEMENS': 'Siemens Ltd.', 'ENRIN': 'Siemens Energy India Ltd.',
+          'SUNPHARMA': 'Sun Pharmaceutical Industries Ltd.', 'SPARC': 'Sun Pharma Advanced Research Company Ltd.', 'SWARAJ': 'Swaraj Suiting Limited',
+          'SWARAJENG': 'Swaraj Engines Limited'}
+N30 = A.Names(MAIN30)
+for co, want in (('Adani Port and SEZ', 'ADANIPORTS'), ('Ajanta Pharma', 'AJANTPHARM'), ('Ambuja Cement', 'AMBUJACEM'), ('Avenue Super.', 'DMART'),
+                 ('Bharat Electron', 'BEL'), ('Cholamandalam Finance', 'CHOLAFIN'), ('Embassy Office Parks REIT', ''), ('Equitas Sma. Fin', 'EQUITASBNK'),
+                 ('HDB FINANC SER', 'HDBFS'), ('Hindustan Petroleum Corporation', 'HINDPETRO'), ('IOCL', 'IOC'), ('ITCHOTEL', 'ITCHOTELS'),
+                 ('Interglobe Aviat', 'INDIGO'), ('Jubilant Food.', 'JUBLFOOD'), ('Mahindra Finance', 'M&MFIN'), ('Mahindra Lifespaces', 'MAHLIFE'),
+                 ('Mahindra and Mahindra Financial', 'M&MFIN'), ('Meeshos', 'MEESHO'), ('Mrs Bector Food', 'BECTORFOOD'), ('NALCO', 'NATIONALUM'),
+                 ('NSDL', ''), ('Narayana Health', 'NH'), ('Nexus Select Trust', ''), ('SPR Auto Technologies', ''), ('Sumitomo Chemicals', 'SUMICHEM'),
+                 ('Tata Communication', 'TATACOMM'), ('Tilaknagar Inds.', 'TI'), ('Torrent Pharma', 'TORNTPHARM'), ('UltraTech Cem.', 'ULTRACEMCO'),
+                 ('Zee Entertainmen', 'ZEEL'),
+                 # not the wrong look-alike
+                 ('Reliance Infra', 'RELINFRA'), ('Siemens Energy', 'ENRIN'), ('Sun Pharma', 'SUNPHARMA'), ('Swaraj Engines', 'SWARAJENG'),
+                 ('Mahindra and Mahindra', 'M&M'), ('ITC', 'ITC'), ('Adani', ''), ('Torrent Power', 'TORNTPOWER'), ('Bharat Heavy Elec', 'BHEL')):
+    assert N30.match(co) == want, (co, N30.match(co))
+assert A.word_score('inds', 'industries') == 1 and A.word_score('cem', 'cement') == 2 and A.word_score('electron', 'electricals') == 0
+assert A.word_match(['adani', 'port', 'and', 'sez'], 'adani ports and special economic zone'.split()) == 10
+assert A.Names(dict(MAIN30, NSDL='National Securities Depository Ltd.')).match('NSDL') == 'NSDL'
+
 # ------------------------------------------------------------------ 4. the store: one recommendation even when two websites carry it
 store = A.load_store()
 it1 = dict(got[0])

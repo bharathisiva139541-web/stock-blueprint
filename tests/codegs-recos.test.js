@@ -140,6 +140,43 @@ test('web/lib/recos.js: SB.epst\'s counting on the brokers\' calls, the scorecar
   assert.strictEqual(E.status(rows[6], 60, 100), 'hit', 'the Sell call: fell to its target');
 });
 
+test('owner 25-Nov-2026: a target reached on day 10 counts at once, the scorecard ranks on it, no price -> the published day\'s open', () => {
+  const rows = R.objects({ cols: R.COLS, rows: [
+    row('A', { br: 'B1', n: 12, kp: [5, 6, 8, 9, 9, 10], hh: [30, 30, 30, 30, 30], dd: [-2, -2, -2, -2, -2], cl: [null, null, null, null, null] }),   // reached on 10 of 12
+    row('B', { br: 'B1', n: 12, kp: [null, null, null, null, null, null], hh: [4, 4, 4, 4, 4], dd: [-6, -6, -6, -6, -6], cl: [null, null, null, null, null] }),   // running
+    row('C', { br: 'B1', n: 70, kp: [null, null, null, null, null, null], hh: [6, 6, 6, 6, 6], dd: [-9, -9, -9, -9, -9], cl: [1, 2, null, null, null] }),   // missed (60 over)
+    row('D', { br: 'B2', n: 12, kp: [3, 3, 3, 3, 4, 7], hh: [20, 20, 20, 20, 20], dd: [-1, -1, -1, -1, -1], cl: [null, null, null, null, null] }),
+    row('E', { br: 'B2', n: 12, kp: [3, 3, 3, 4, 5, 9], hh: [25, 25, 25, 25, 25], dd: [-1, -1, -1, -1, -1], cl: [null, null, null, null, null] }),
+    row('F', { br: 'B2', n: 12, kp: [null, null, null, null, null, null], hh: [2, 2, 2, 2, 2], dd: [-3, -3, -3, -3, -3], cl: [null, null, null, null, null] })
+  ] });
+  const S = R.stats(rows, 60, 100);
+  assert.deepStrictEqual([S.n, S.reached, S.running, S.missed, S.done, S.hit], [6, 3, 2, 1, 1, 0], 'finished-only counting would show 0 of 1');
+  assert.ok(Math.abs(S.soFar - 0.5) < 1e-9 && S.soLo == null, 'reached so far 3 of 6, no likely range while calls run');
+  assert.strictEqual(S.medAll, 9, 'median sessions of every reached call: 7, 9, 10');
+  assert.ok(Math.abs(S.hhNow - (30 + 4 + 6 + 20 + 25 + 2) / 6) < 1e-9 && Math.abs(S.ddNow - (-2 - 6 - 9 - 1 - 1 - 3) / 6) < 1e-9, 'best move / worst dip so far');
+  assert.strictEqual(E.stats(rows, 60, 100).rate, 0, 'SB.epst (EPS Target Lab) keeps its full-window rule');
+  const sc = R.scorecard(rows, 60, 100, 3);
+  assert.deepStrictEqual(sc.map((s) => [s.label, s.ranked, s.reached, s.n]), [['B2', true, 2, 3], ['B1', true, 1, 3]], 'ranked on reached so far');
+  assert.deepStrictEqual([sc[1].running, sc[1].missed], [1, 1]);
+  // the price at the call: the laptop's close, else the open of the published day from the site's candles, else the broker's price
+  const H = { dates: ['2026-11-21', '2026-11-24', '2026-11-25'], bars: { G: [[0, 98, 101, 97, 100, 1], [1, 102, 106, 101, 105, 1], [2, 107, 108, 103, 104, 1]] } };
+  const more = R.objects({ cols: R.COLS, rows: [
+    row('G', { st: 'x', why: 'wait', ep: null, tgt: 153, at: '2026-11-24 10:05', kp: [] }),
+    row('G', { st: 'x', why: 'wait', ep: null, tgt: 150, at: '2026-11-24 18:20', kp: [] }),   // after 15:30: the next session's open
+    row('G', { st: 'x', why: 'wait', ep: null, tgt: 150, at: '2026-11-22', kp: [] }),         // a Sunday: Monday's open
+    row('H', { st: 'x', why: 'wait', ep: null, tgt: 120, rp: 100, at: '2026-11-25', kp: [] }),  // no candle yet: the broker's price
+    row('H', { st: 'x', why: 'wait', ep: null, tgt: 120, at: '2026-11-25', kp: [] }),
+    row('G')
+  ] });
+  assert.ok(R.needsCandles(more));
+  R.fillPrice(more, H);
+  assert.deepStrictEqual(more.map((r) => [r.px, r.pxHow, r.pxDay]), [[102, 'open', '2026-11-24'], [107, 'open', '2026-11-25'], [102, 'open', '2026-11-24'],
+    [100, 'broker', '2026-11-25'], [null, '', ''], [300, 'close', '2026-10-27']]);
+  assert.ok(Math.abs(more[0].up - 50) < 1e-9 && Math.abs(more[3].up - 20) < 1e-9 && more[4].up == null, 'target vs that price');
+  assert.deepStrictEqual(more.slice(0, 5).map((r) => R.kind(r, 60, 100)), ['none', 'none', 'none', 'none', 'none'], 'still not checked - the laptop works the outcome out');
+  assert.ok(!R.needsCandles(R.objects({ cols: R.COLS, rows: [row('A')] })));
+});
+
 test('a list packed by the laptop\'s own code reads the same through the sheet, the api and the page', { skip: !py && 'python3 not installed' }, async () => {
   const code = 'import sys, json; sys.path.insert(0, sys.argv[1]); import analyst_recos as A\n' +
     'r = {k: None for k in A.COLS}; r.update(sym="JLHL", co="Jupiter Life Line Hospitals", br="Prabhudas Lilladher", call="BUY", tgt=330.0, at="2026-10-27 09:15",\n' +

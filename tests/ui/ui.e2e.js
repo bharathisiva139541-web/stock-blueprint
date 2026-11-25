@@ -156,8 +156,13 @@ const RECOS_ROWS = [
     { kp: [null, null, null, null, null, null], kd: ['', '', '', '', '', ''] })),
   recoRow(EPST_SYMS[4], { co: 'Stock E', br: 'Kotak Securities', call: 'SELL', tgt: 50, ep: 80, at: '2026-10-20', kp: [2, 3, 4, 5, 6, 8] }),
   recoRow('', { co: 'Some Unknown Co', br: 'Ventura', tgt: 100, at: '2026-11-05', st: 'x', why: 'nosym', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [], dd: [], cl: [], ix: [] }),
-  recoRow(EPST_SYMS[0], { co: 'Stock A', br: 'HDFC Securities', tgt: 650, at: '2026-11-21 18:00', st: 'x', why: 'wait', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [], dd: [], cl: [], ix: [] })];
-const RECOS_SUM = { recos: 9, ok: 7, brokers: 7, stocks: 6, buy: 8, why: { nosym: 1, wait: 1 }, src: { mc: 9 }, from: '2026-10-10', to: '2026-11-21' };
+  recoRow(EPST_SYMS[0], { co: 'Stock A', br: 'HDFC Securities', tgt: 650, rp: 610, at: '2026-11-21 18:00', st: 'x', why: 'wait', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [],
+    dd: [], cl: [], ix: [] }),
+  // owner, 25-Nov-2026: no price from the laptop yet -> the open of the published day from the site's candles
+  recoRow(EPST_SYMS[1], { co: 'Stock B', br: 'Emkay', tgt: 9999, at: '2026-10-15 11:00', st: 'x', why: 'wait', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [],
+    dd: [], cl: [], ix: [] })];
+const RECOS_SUM = { recos: 10, ok: 7, brokers: 8, stocks: 6, buy: 9, why: { nosym: 1, wait: 2 }, src: { mc: 10 }, from: '2026-10-10', to: '2026-11-21' };
+const RECO_OPEN = (() => { const i = HIST.dates.indexOf('2026-10-15'), b = (HIST.bars[EPST_SYMS[1]] || []).find((x) => x[0] === i); return b ? b[1] : null; })();
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
 const RP_ROW = RPT.rows.find((r) => r[0] === FLAG_SYM);
@@ -1680,13 +1685,26 @@ function check(name, fn) {
     const tiles = async () => p.$$eval('#rc-sum .tile', (t) => t.map((x) => x.querySelector('.label').innerText.trim() + ' = ' + x.querySelector('.value').innerText.trim()));
     let tl = await tiles();
     // Buy calls, 60 sessions, the target itself: FLAG / PL on 40 yes, Choice no, A on 8 yes, B no, C on 50 yes, D still running (40 sessions)
-    assert.ok(tl.indexOf('Calls with a target above the price = 6') >= 0 && tl.indexOf('Reached within 60 sessions = 60%') >= 0, tl.join(' | '));
-    assert.ok(tl.indexOf('Still running = 1') >= 0, tl.join(' | '));
+    // owner, 25-Nov-2026: a reached target counts the day it happens - 3 of the 6, D still running, Choice / B missed
+    assert.ok(tl.indexOf('Calls with a target above the price = 6') >= 0 && tl.indexOf('Reached within 60 sessions = 50%') >= 0, tl.join(' | '));
+    assert.ok(tl.indexOf('Still running = 1') >= 0 && tl.indexOf('Missed = 2') >= 0 && tl.indexOf('Typical time to reach = 40 sessions') >= 0, tl.join(' | '));
     assert.ok(tl.some((x) => /^After 30 \/ 60 \/ 90 sessions = \+/.test(x)) && tl.some((x) => /^Best move within 60 \(MFE\) = \+15\.0%$/.test(x)), tl.join(' | '));
     assert.ok(calls.some((u) => /\/api\/recos$/.test(u)), calls.join(' '));
-    // the scorecard: Motilal Oswal ranked first (3 finished, 2 reached)
+    // the scorecard: Motilal Oswal ranked first (3 checked, 2 reached, 1 missed)
     const first = await p.$eval('#rc-brokers tbody tr:first-child', (r) => r.innerText.replace(/\s+/g, ' '));
-    assert.ok(/^Motilal Oswal 3 3 3 67% 2 of 3/.test(first), first);
+    assert.ok(/^Motilal Oswal 3 3 3 67% 2 of 3 0 1/.test(first), first);
+    assert.ok(/Motilal Oswal \(2 of 3\)/.test(await p.$eval('#rc-brokers-b', (x) => x.innerText)));
+    // the price at the call: no close from the laptop -> the published day's open (Emkay) / the broker's price (HDFC Securities)
+    assert.ok(RECO_OPEN > 0, 'the saved candles have the open');
+    await p.selectOption('#rc-b', 'Emkay');
+    await p.waitForFunction(() => document.querySelectorAll('#rc-all-t tbody tr').length === 1);
+    let pxt = await p.$eval('#rc-all-t tbody tr', (r) => r.innerText.replace(/\s+/g, ' '));
+    assert.ok(pxt.indexOf(RECO_OPEN.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' open') >= 0, pxt + ' / ' + RECO_OPEN);
+    await p.selectOption('#rc-b', 'HDFC Securities');
+    await p.waitForFunction(() => /HDFC Securities/.test((document.querySelector('#rc-all-t tbody tr') || {}).innerText || ''));
+    pxt = await p.$eval('#rc-all-t tbody tr', (r) => r.innerText.replace(/\s+/g, ' '));
+    assert.ok(/610\.00 broker's \+6\.6%/.test(pxt), pxt);
+    await p.selectOption('#rc-b', '');
     // new calls of the newest 3 days
     assert.ok(/HDFC Securities/.test(await p.$eval('#rc-new', (x) => x.innerText)));
     // a broker -> its calls
