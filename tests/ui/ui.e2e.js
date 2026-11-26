@@ -1255,6 +1255,46 @@ function check(name, fn) {
     assert.match(ds[0][2], /D CHoCH \+ FVG 2026-10-20 \(1 trading day ago\).*; 4H Spring in FVG 2026-10-20 13:15/);
     assert.strictEqual(ds[1][1], true, JSON.stringify(ds));
     assert.match(ds[1][2], /D BOS \+ FVG 2026-10-19 \(1 trading day ago\)/);
+    // owner, 26-Nov-2026 ("no filter to see stocks only on Choch+FVG or anyother type. and no filter here to select n trading ago"):
+    // Daily Suggestions with 'My daily scan' - Ready setups: setup / chart / day chips + Look back
+    const prevStrat = await p.evaluate(() => window.SB.strategies.activeId());
+    await p.evaluate(() => { window.SB.ctx.refDate = new Date('2026-10-21T10:00:00+05:30'); window.SB.strategies.setActive('dailyScan'); location.hash = '#suggestions'; });
+    await p.waitForSelector('#sg-scan [data-scanf="pat"]', { timeout: 15000 });
+    const scanChips = async () => p.$$eval('#sg-scan button[data-scanf]', (b) => b.map((x) => x.getAttribute('data-scanf') + ':' + x.textContent.replace(/\s+/g, ' ').trim()));
+    let sch = await scanChips();
+    // the qualified list: SENT's D BOS + FVG + its 15m confirmation (FLAG's CHoCH + FVG is under Watch - its stop is not under the price shown)
+    ['pat:All 1', 'pat:BOS + FVG 1', 'pat:15m CHoCH in zone 1', 'tf:Daily 1', 'age:1 day ago 1'].forEach((x) => assert.ok(sch.indexOf(x) >= 0, x + ' in ' + sch.join(' | ')));
+    assert.match(await p.$eval('.sugg-item .sg-hits', (x) => x.textContent), /Setups found.*D BOS \+ FVG · 1 day ago/);
+    await p.click('#sg-scan button[data-scanf="pat"][data-v="BOS + FVG"]');
+    await p.waitForFunction(() => document.querySelectorAll('.sugg-item').length === 1 && document.querySelector('#sg-scan-clear'));
+    assert.strictEqual(await p.$eval('.sugg-item button[data-sym]', (b) => b.getAttribute('data-sym')), SENT_SYM);
+    let kept = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:sugg:scan')).dailyScan);
+    assert.deepStrictEqual(kept, { days: null, pat: 'BOS + FVG', tf: '', age: '' });
+    await p.click('#sg-scan-clear');
+    await p.waitForFunction(() => !document.querySelector('#sg-scan-clear'));
+    // the Watch list: FLAG's D CHoCH + FVG and 4H Spring in FVG; 4H chosen -> the CHoCH chip counts 0 and is off
+    await p.click('[data-chip="sgl"][data-v="watch"]');
+    await p.waitForFunction(() => [...document.querySelectorAll('#sg-scan button[data-scanf]')].some((b) => /CHoCH \+ FVG/.test(b.textContent)));
+    sch = await scanChips();
+    ['pat:CHoCH + FVG 1', 'pat:Spring in FVG 1', 'tf:4H 1', 'tf:Daily 1'].forEach((x) => assert.ok(sch.indexOf(x) >= 0, x + ' in ' + sch.join(' | ')));
+    await p.click('#sg-scan button[data-scanf="tf"][data-v="4H"]');
+    await p.waitForFunction(() => document.querySelector('#sg-scan button[data-scanf="pat"][data-v="CHoCH + FVG"]').disabled);
+    assert.strictEqual(await p.$eval('.sugg-item button[data-sym]', (b) => b.getAttribute('data-sym')), FLAG_SYM);
+    assert.match(await p.$eval('.sugg-item .sg-hits .badge.s-good', (x) => x.textContent), /4H Spring in FVG · 1 day ago/);
+    // back to Qualified: 4H kept - SENT has no 4H setup
+    await p.click('[data-chip="sgl"][data-v="qualified"]');
+    await p.waitForFunction(() => /^0 stocks of 1$/.test(document.querySelector('#sg-count').textContent));
+    // Look back today only: a run of its own - nothing found today; the saved strategy keeps 1
+    await p.selectOption('#sg-look', '0');
+    await p.waitForFunction(() => (document.querySelector('#sg-big .sg-big-n') || {}).textContent === '0', null, { timeout: 15000 });
+    assert.match(await p.$eval('#sg-body', (x) => x.textContent), /Looking back today only on this page - your strategy says 1/);
+    kept = await p.evaluate(() => ({ s: JSON.parse(localStorage.getItem('sb:sugg:scan')).dailyScan, own: window.SB.strategies.get('dailyScan').triggers[0].params.days,
+      base: window.SB.strategies.lastRun('dailyScan').lists.qualified.length }));
+    assert.deepStrictEqual(kept, { s: { days: 0, pat: '', tf: '4H', age: '' }, own: 1, base: 1 });
+    await p.selectOption('#sg-look', '1');
+    await p.waitForFunction(() => (document.querySelector('#sg-big .sg-big-n') || {}).textContent === '1', null, { timeout: 15000 });
+    assert.strictEqual(await p.evaluate(() => JSON.parse(localStorage.getItem('sb:sugg:scan')).dailyScan.days), null, 'back to the strategy\'s own look-back');
+    await p.evaluate((id) => { localStorage.removeItem('sb:sugg:scan'); window.SB.strategies.setActive(id); }, prevStrat);
     await p.goto(base + '#strategy');
     await p.waitForFunction(() => /Strategy|strategy/.test((document.querySelector('#app') || {}).textContent || ''), null, { timeout: 15000 });
     const allBtn = await p.$('[data-style="all"]');
