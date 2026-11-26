@@ -1730,6 +1730,28 @@ function check(name, fn) {
     assert.ok(tl.indexOf('Still running = 1') >= 0 && tl.indexOf('Missed = 2') >= 0 && tl.indexOf('Typical time to reach = 40 sessions') >= 0, tl.join(' | '));
     assert.ok(tl.some((x) => /^After 30 \/ 60 \/ 90 sessions = \+/.test(x)) && tl.some((x) => /^Best move within 60 \(MFE\) = \+15\.0%$/.test(x)), tl.join(' | '));
     assert.ok(calls.some((u) => /\/api\/recos$/.test(u)), calls.join(' '));
+    assert.strictEqual(calls.filter((u) => /\/api\/recos$/.test(u)).length, 1, 'one read a visit, shared by the page and the marks');
+    // owner, 26-Nov-2026: the analysts' mark beside every stock name (tables, cards, the stock window) + the stock window's line
+    await p.waitForSelector('#rc-all-t .rc-mark', { timeout: 15000 });
+    const noCall = LIVE_MAIN.main.rows.map((r) => r[LIVE_MAIN.main.cols.indexOf('sym')]).find((x) => x && !RECOS_ROWS.some((r) => r[0] === x));
+    const mk = await p.evaluate((x) => {
+      const d = document.createElement('div');
+      d.innerHTML = window.SB.ui.stockCell(x[0], 'Flag Co') + window.SB.ui.stockCell(x[1], 'No calls');
+      const a = d.querySelector('.rc-mark');
+      return { n: d.querySelectorAll('.rc-mark').length, href: a && a.getAttribute('href'), tip: a && a.getAttribute('data-tip'), cls: a && a.className };
+    }, [FLAG_SYM, noCall]);
+    assert.strictEqual(mk.n, 1, 'no mark for a stock without calls: ' + JSON.stringify(mk));
+    assert.strictEqual(mk.href, '#recos/' + FLAG_SYM);
+    assert.match(mk.tip, /^Analyst calls: 2 brokers \(2 Buy\) · average target 335\.00 \([+-]\d+\.\d% from the price now\) · newest: Prabhudas Lilladher Buy 330\.00 on .* · 1 target already reached - tap for every call$/);
+    await p.evaluate((x) => window.SB.openStock(x), FLAG_SYM);
+    await p.waitForSelector('#drawer-recos');
+    const dline = await p.evaluate(() => ({ t: document.querySelector('#drawer-recos').innerText.replace(/\s+/g, ' '), h2: !!document.querySelector('#drawer-title .rc-mark') }));
+    assert.ok(dline.h2, 'the mark beside the name in the stock window');
+    assert.match(dline.t, /^Analyst target 335\.00 (\+\d+\.\d% upside|- the price is already \d+\.\d% past it) 2 brokers \(2 Buy\) · targets 330\.00 to 340\.00 · newest: Prabhudas Lilladher Buy 330\.00 on .* · 1 target already reached Every call →$/);
+    await p.click('#drawer-recos');
+    await p.waitForFunction((x) => location.hash === '#recos/' + x && document.querySelector('#drawer').hidden && document.querySelector('#rc-one .et-one'), FLAG_SYM, { timeout: 15000 });
+    await p.fill('#rc-q', '');
+    await p.waitForFunction(() => !document.querySelector('#rc-one .et-one'));
     // the scorecard: Motilal Oswal ranked first (3 checked, 2 reached, 1 missed)
     const first = await p.$eval('#rc-brokers tbody tr:first-child', (r) => r.innerText.replace(/\s+/g, ' '));
     assert.ok(/^Motilal Oswal 3 3 3 67% 2 of 3 0 1/.test(first), first);

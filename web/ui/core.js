@@ -186,6 +186,8 @@
     opts = opts || {};
     // the ☆ (add to one of the viewer's watchlists) comes from web/ui/watchlists.js
     var star = !opts.noStar && SB.wlStar ? SB.wlStar(sym) : '';
+    // the analysts' mark (owner, 26-Nov-2026) - web/app.js SB.recosMark, nothing for a stock without calls
+    if (!opts.noStar && SB.recosMark) star += SB.recosMark(sym);
     return '<div class="stock">' + (opts.noLogo ? '' : logoHtml(sym)) + '<div class="txt"><span class="sym-line"><button type="button" class="linkish" data-sym="' +
       esc(sym) + '">' + esc(sym) + '</button>' + star + '</span>' + (name ? '<span class="co" title="' + esc(name) + '">' + esc(name) + '</span>' : '') + '</div></div>';
   }

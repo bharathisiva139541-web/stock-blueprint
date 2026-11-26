@@ -940,6 +940,29 @@ button.linkish:hover { color: var(--accent); text-decoration: underline; text-un
 .wl-star:hover { background: var(--surface-3); color: var(--warn-mark); transform: scale(1.15); }
 .wl-star.on { color: var(--warn-mark); filter: drop-shadow(0 0 5px currentColor); }
 h2 .wl-star { font-size: 20px; margin-left: 4px; }
+/* the analysts' mark beside a stock name + the stock window's line (owner, 26-Nov-2026; web/app.js SB.recosMark / recosLine) */
+.rc-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: -2px 0 -2px 1px;
+  border-radius: 5px; color: var(--up); text-decoration: none; transition: transform 0.15s, background-color 0.15s; }
+.rc-mark svg { width: 14px; height: 14px; }
+.rc-mark:hover, .rc-mark:focus-visible { background: var(--surface-3); transform: scale(1.15); }
+.rc-mark.rc-done, .rc-mark.rc-hold { color: var(--neutral-mark); }
+.rc-mark.rc-sell { color: var(--down); }
+h2 .rc-mark { width: 24px; height: 24px; margin-left: 2px; }
+h2 .rc-mark svg { width: 19px; height: 19px; }
+.rc-line { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; text-decoration: none; color: var(--ink);
+  border: 1px solid var(--good-border); background: var(--up-wash); }
+.rc-line:hover { filter: brightness(1.03); }
+.rc-line.rc-done, .rc-line.rc-hold { border-color: var(--border-strong); background: var(--surface-2); }
+.rc-line.rc-sell { border-color: var(--bad-border); background: var(--down-wash); }
+.rc-line-ic { flex: none; display: inline-flex; color: var(--up); }
+.rc-line.rc-done .rc-line-ic, .rc-line.rc-hold .rc-line-ic { color: var(--neutral-mark); }
+.rc-line.rc-sell .rc-line-ic { color: var(--down); }
+.rc-line-ic svg { width: 26px; height: 26px; }
+.rc-line-t { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.rc-line-h { font-size: 15px; }
+.rc-line-t .sub { font-size: 12px; }
+.rc-line-go { flex: none; font-size: 12.5px; font-weight: 600; color: var(--accent-text); white-space: nowrap; }
+@media (max-width: 480px) { .rc-line { flex-wrap: wrap; } .rc-line-go { margin-left: 36px; } }
 .wl-pop { position: fixed; z-index: 70; width: 290px; max-width: calc(100vw - 16px); max-height: min(70vh, 460px); overflow-y: auto;
   background: var(--glass); color: var(--ink); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-pop); padding: 12px;
   -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }

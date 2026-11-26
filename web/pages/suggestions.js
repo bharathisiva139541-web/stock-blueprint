@@ -123,7 +123,7 @@
     var h = '<article class="sugg-item sg-card' + (rank <= 3 && r.status === 'qualified' ? ' sg-top' : '') + '">';
     // who
     h += '<header class="sg-card-h"><span class="sg-rank" title="Rank in this list">#' + rank + '</span>' +
-      '<div class="stock">' + ui.logoHtml(s.sym, 'lg') + '<div class="txt"><span class="sym-line"><button type="button" class="linkish" data-sym="' + esc(s.sym) + '">' + esc(s.sym) + '</button>' + SB.wlStar(s.sym) + '</span>' +
+      '<div class="stock">' + ui.logoHtml(s.sym, 'lg') + '<div class="txt"><span class="sym-line"><button type="button" class="linkish" data-sym="' + esc(s.sym) + '">' + esc(s.sym) + '</button>' + SB.wlStar(s.sym) + (SB.recosMark ? SB.recosMark(s.sym) : '') + '</span>' +
       '<span class="co">' + esc(s.name || '') + '</span><span class="sub">' + esc(s.exchange) + ' · ' + esc(s.catName) + (s.ind ? ' · ' + esc(s.ind) : '') + '</span></div></div>' +
       '<div class="sg-px"><b>' + F.price(s.price) + '</b>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div></header>';
     if (r.warnings && r.warnings.length) h += '<div class="note warn sg-warn">' + r.warnings.map(esc).join('<br>') + '</div>';
