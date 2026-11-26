@@ -1278,6 +1278,20 @@ a.sg-step:hover { text-decoration: none; border-color: rgba(var(--accent-rgb), 0
 .sg-card.sugg-item { grid-template-columns: none; }
 .sg-card-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
 .sg-card-h .stock { flex: 1 1 260px; }
+/* Daily Suggestions - ready setups of the daily scan (owner, 26-Nov-2026) */
+.sg-scan { margin: 4px 0 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); display: grid; gap: 8px; }
+.sg-scan-h { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.sg-scan-look { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.sg-scan-row { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.sg-scan-l { flex: 0 0 56px; padding-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sg-scan-row .chips { flex: 1 1 auto; min-width: 0; }
+.sg-scan .chip b { margin-left: 2px; }
+.sg-scan .chip[disabled] { opacity: .45; cursor: default; }
+.sg-scan-note { margin: 0; }
+.sg-hits { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.sg-hits .sg-sec-t { margin: 0 4px 0 0; }
+.sg-hits small { opacity: .8; }
+@media (max-width: 560px) { .sg-scan-row { flex-direction: column; gap: 4px; } .sg-scan-l { flex: none; padding-top: 0; } .sg-scan-look { margin-left: 0; } }
 .sg-rank { flex: none; min-width: 38px; height: 28px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; font-weight: 700; font-size: 12.5px;
   background: var(--surface); border: 1px solid var(--border-strong); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .sg-top .sg-rank { background: var(--grad); color: var(--accent-ink); border-color: transparent; box-shadow: var(--glow); }

@@ -375,7 +375,9 @@
       if (!fresh.length) return { pass: false, value: rows[0].tf + ' ' + rows[0].pattern, detail: 'the newest: ' + line(rows[0]) };
       var names = [];
       fresh.forEach(function (r) { if (names.indexOf(r.pattern) < 0) names.push(r.pattern); });
-      return { pass: true, value: fresh[0].tf + ' ' + fresh[0].pattern, types: names, zone: scanZone(fresh[0]), detail: fresh.slice(0, 4).map(line).join('; ') +
+      // every setup found in the window (owner, 26-Nov-2026: Daily Suggestions' setup / chart / day filters read these)
+      var hits = fresh.map(function (r) { return { tf: r.tf, pattern: r.pattern, session: r.session, candle: r.candle, age: ageOf(r) }; });
+      return { pass: true, value: fresh[0].tf + ' ' + fresh[0].pattern, types: names, hits: hits, zone: scanZone(fresh[0]), detail: fresh.slice(0, 4).map(line).join('; ') +
         (fresh.length > 4 ? '; +' + (fresh.length - 4) + ' more' : '') };
     } });
 

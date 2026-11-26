@@ -10,7 +10,52 @@
 (function () {
   'use strict';
   var SB = window.SB, ui = SB.ui, esc = ui.esc, F = ui.F, isNum = ui.isNum, $ = ui.$;
-  var ST = { list: 'qualified', cat: '', q: '', shown: 20 };
+  var ST = { list: 'qualified', cat: '', q: '', shown: 20, scan: null };
+
+  // READY SETUPS (owner, 26-Nov-2026, "My daily scan" with 188 qualified: "There is no filter to see stocks only on Choch+FVG or
+  // anyother type. and no filter here to select n trading ago. I think this can be better organised to select ready setups"):
+  // for a strategy with the daily-scan rule - chips per setup, per chart and per day found (the rule's `hits`), and a "Look back"
+  // choice = the rule's own look-back for this page only (a run of its own; the saved strategy is not changed). Kept per strategy.
+  var SCAN_KEY = 'sb:sugg:scan';
+  var SCAN_LISTS = ['qualified', 'breakout', 'pullback', 'watch'];
+  var LOOK_BACK = [0, 1, 2, 3, 5, 10, 15, 20];
+  var TF_ORDER = ['15m', '1H', '4H', 'D', 'W', 'M'];
+  function scanLoad(id) {
+    var all = null;
+    try { all = JSON.parse(localStorage.getItem(SCAN_KEY) || 'null'); } catch (e) { all = null; }
+    var o = all && typeof all === 'object' && all[id] && typeof all[id] === 'object' ? all[id] : {};
+    var d = Number(o.days);
+    return { id: id, days: o.days != null && isFinite(d) && d >= 0 && d <= 60 ? Math.floor(d) : null, pat: typeof o.pat === 'string' ? o.pat : '',
+      tf: typeof o.tf === 'string' ? o.tf : '', age: o.age === '' || o.age == null || !isFinite(Number(o.age)) ? '' : String(Math.floor(Number(o.age))) };
+  }
+  function scanSave() {
+    var sc = ST.scan;
+    if (!sc) return;
+    try {
+      var all = JSON.parse(localStorage.getItem(SCAN_KEY) || 'null');
+      all = all && typeof all === 'object' ? all : {};
+      all[sc.id] = { days: sc.days, pat: sc.pat, tf: sc.tf, age: sc.age };
+      localStorage.setItem(SCAN_KEY, JSON.stringify(all));
+    } catch (e) { /* private window */ }
+  }
+  /** the strategy's enabled daily-scan rule, or null */
+  function scanRule(cfg) {
+    return ((cfg && cfg.triggers) || []).filter(function (t) { return t.id === 'dailyScan' && t.enabled !== false; })[0] || null;
+  }
+  function ownDays(rule) { var d = Number(rule && rule.params && rule.params.days); return isFinite(d) && d >= 0 ? d : 1; }
+  /** the daily-scan setups a result passed with (rule dailyScan's hits) */
+  function hitsOf(r) {
+    var k = (r.checks || []).filter(function (c) { return c.id === 'dailyScan' && c.res && c.res.pass === true; })[0];
+    return k && Array.isArray(k.res.hits) ? k.res.hits : [];
+  }
+  function ageWords(a) { return a === 0 ? 'today' : a === 1 ? '1 trading day ago' : a + ' trading days ago'; }
+  function ageShort(a) { return a === 0 ? 'Today' : a === 1 ? '1 day ago' : a + ' days ago'; }
+  /** a hit that fits the page's setup / chart / day choices (`skip` = the one dimension left out, for the chips' counts) */
+  function hitFits(h, sc, skip) {
+    return (skip === 'pat' || !sc.pat || h.pattern === sc.pat) && (skip === 'tf' || !sc.tf || h.tf === sc.tf) &&
+      (skip === 'age' || sc.age === '' || String(h.age) === sc.age);
+  }
+  function scanOn(sc) { return !!(sc && (sc.pat || sc.tf || sc.age !== '')); }
 
   var LISTS = [
     ['qualified', 'Qualified'], ['breakout', 'Breakout'], ['pullback', 'Pullback'], ['watch', 'Watchlist candidates'],
@@ -82,6 +127,15 @@
       '<span class="co">' + esc(s.name || '') + '</span><span class="sub">' + esc(s.exchange) + ' · ' + esc(s.catName) + (s.ind ? ' · ' + esc(s.ind) : '') + '</span></div></div>' +
       '<div class="sg-px"><b>' + F.price(s.price) + '</b>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div></header>';
     if (r.warnings && r.warnings.length) h += '<div class="note warn sg-warn">' + r.warnings.map(esc).join('<br>') + '</div>';
+    var hits = hitsOf(r);
+    if (hits.length) {
+      var sc = ST.scan, on = scanOn(sc);
+      h += '<div class="sg-hits"><span class="sg-sec-t">Setups found</span>' + hits.map(function (x) {
+        var fit = on && hitFits(x, sc);
+        return '<span class="badge ' + (fit ? 's-good' : on ? '' : 's-info') + '" title="' + esc(x.tf + ' ' + x.pattern + ', candle ' + x.candle + ', ' + ageWords(x.age)) + '">' +
+          esc(x.tf + ' ' + x.pattern) + ' <small>· ' + esc(ageShort(x.age)) + '</small></span>';
+      }).join('') + '</div>';
+    }
     h += '<div class="sg-card-b">';
     // how well it matches
     h += '<div class="sg-match">' + ringHtml(r.score) + '<div><div class="sg-sec-t">Strategy match</div>' +
@@ -142,8 +196,13 @@
         ST.list = 'qualified'; ST.shown = 20;
         SB.route();
       });
+      var rule = scanRule(cfg);
+      if (!ST.scan || ST.scan.id !== cfg.id) ST.scan = scanLoad(cfg.id);
+      ST.scan.rule = rule;
+      ST.scan.own = ownDays(rule);
+      var look = rule && ST.scan.days != null && ST.scan.days !== ST.scan.own ? ST.scan.days : null;
 
-      SB.strategies.runActive().then(function (run) {
+      SB.strategies.runActive(cfg.id, look != null ? { days: look } : null).then(function (run) {
         var H = ctx.history;
         var latest = run.dataAsOf;
         var stale = SB.candleState(H) !== 'EOD';
@@ -193,13 +252,14 @@
       }).join('') + '</div>' +
       '<p class="sub sg-legend">' + FUNNEL.map(function (f) { return '<b>' + esc(f[1]) + '</b> ' + FUNNEL_HELP[f[0]]; }).join(' · ') + '</p>' +
       '<div class="controls">' + ui.chips('sgl', LISTS.map(function (l) { return [l[0], l[1] + ' (' + counts[l[0]] + ')']; }), ST.list) + '</div>' +
-      '<p class="sg-help" id="sg-help"></p>' +
+      '<p class="sg-help" id="sg-help"></p>' + (ST.scan && ST.scan.rule ? '<div class="sg-scan" id="sg-scan"></div>' : '') +
       '<div class="controls"><input class="search" id="sg-q" type="search" placeholder="Filter by symbol, company or industry" aria-label="Filter suggestions" value="' + esc(ST.q) + '">' +
       '<select class="sel" id="sg-cat" aria-label="Category"><option value="">All categories</option>' + Object.keys(cats).sort(function (a, b) { return cats[a].localeCompare(cats[b]); }).map(function (k) {
         return '<option value="' + k + '"' + (ST.cat === k ? ' selected' : '') + '>' + esc(cats[k]) + '</option>';
       }).join('') + '</select><span class="count" id="sg-count"></span></div><div id="sg-list"></div>';
 
-    function rows() {
+    var sc = ST.scan && ST.scan.rule ? ST.scan : null;
+    function baseRows() {
       return (run.lists[ST.list] || []).filter(function (r) {
         var s = ctx.bySym[r.sym];
         if (!s) return false;
@@ -207,9 +267,62 @@
         return ui.textMatch(ST.q, [s.sym, s.name, s.ind, s.catName]);
       });
     }
+    function scanUsed() { return !!sc && SCAN_LISTS.indexOf(ST.list) >= 0; }
+    function rows() {
+      var list = baseRows();
+      if (!scanUsed() || !scanOn(sc)) return list;
+      return list.filter(function (r) { return hitsOf(r).some(function (h) { return hitFits(h, sc); }); });
+    }
+    /** the setup / chart / day chips with how many stocks each would show (the other two choices kept) */
+    function paintScan(base) {
+      var box = $('#sg-scan', body);
+      if (!box) return;
+      if (!scanUsed()) { box.hidden = true; return; }
+      box.hidden = false;
+      var count = function (dim, v) {
+        return base.filter(function (r) {
+          return hitsOf(r).some(function (h) { return hitFits(h, sc, dim) && (v === '' || String(dim === 'pat' ? h.pattern : dim === 'tf' ? h.tf : h.age) === String(v)); });
+        }).length;
+      };
+      var seen = { pat: {}, tf: {}, age: {} };
+      base.forEach(function (r) { hitsOf(r).forEach(function (h) { seen.pat[h.pattern] = 1; seen.tf[h.tf] = 1; seen.age[h.age] = 1; }); });
+      if (sc.pat) seen.pat[sc.pat] = 1;
+      if (sc.tf) seen.tf[sc.tf] = 1;
+      if (sc.age !== '') seen.age[sc.age] = 1;
+      var order = SB.strategy.SCAN_PATTERNS || [];
+      var at = function (x) { var i = order.indexOf(x); return i < 0 ? 999 : i; };
+      var pats = Object.keys(seen.pat).sort(function (a, b) { return at(a) - at(b) || (a < b ? -1 : 1); });
+      var tfs = Object.keys(seen.tf).sort(function (a, b) { return TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b); });
+      var ages = Object.keys(seen.age).map(Number).sort(function (a, b) { return a - b; });
+      var chip = function (dim, v, label) {
+        var cur = dim === 'age' ? sc.age : sc[dim], n = count(dim, v);
+        return '<button type="button" class="chip" data-scanf="' + dim + '" data-v="' + esc(String(v)) + '" aria-pressed="' + (String(cur) === String(v)) + '"' +
+          (n || String(cur) === String(v) ? '' : ' disabled') + '>' + esc(label) + ' <b>' + F.int(n) + '</b></button>';
+      };
+      var row = function (title, dim, items) {
+        return '<div class="sg-scan-row"><span class="sg-scan-l">' + esc(title) + '</span><div class="chips" role="group" aria-label="' + esc(title) + '">' +
+          chip(dim, '', 'All') + items.map(function (x) { return chip(dim, x[0], x[1]); }).join('') + '</div></div>';
+      };
+      var days = sc.days != null ? sc.days : sc.own;
+      var looks = LOOK_BACK.slice();
+      if (looks.indexOf(sc.own) < 0) looks.push(sc.own);
+      if (looks.indexOf(days) < 0) looks.push(days);
+      looks.sort(function (a, b) { return a - b; });
+      box.innerHTML = '<div class="sg-scan-h"><b>Ready setups</b> <span class="sub">- pick a setup, a chart and the day your daily scan found it</span>' +
+        '<label class="sg-scan-look">Look back <select class="sel" id="sg-look" aria-label="Look back">' + looks.map(function (d) {
+          return '<option value="' + d + '"' + (d === days ? ' selected' : '') + '>' + (d === 0 ? 'today only' : d === 1 ? '1 trading day' : d + ' trading days') +
+            (d === sc.own ? ' (your strategy)' : '') + '</option>';
+        }).join('') + '</select></label>' + (scanOn(sc) ? '<button type="button" class="btn sm" id="sg-scan-clear">Show every setup</button>' : '') + '</div>' +
+        row('Setup', 'pat', pats.map(function (p) { return [p, p]; })) +
+        row('Chart', 'tf', tfs.map(function (t) { return [t, t === 'D' ? 'Daily' : t === 'W' ? 'Weekly' : t === 'M' ? 'Monthly' : t]; })) +
+        row('Found', 'age', ages.map(function (a) { return [String(a), ageShort(a)]; })) +
+        (days !== sc.own ? '<p class="sub sg-scan-note">Looking back ' + esc(days === 0 ? 'today only' : days + ' trading day' + (days === 1 ? '' : 's')) +
+          ' on this page - your strategy says ' + F.int(sc.own) + ' (change it for good in <a href="#strategy">Strategy settings</a>).</p>' : '');
+    }
     function paint() {
-      var host = $('#sg-list', body), list = rows();
-      $('#sg-count', body).textContent = F.int(list.length) + ' stocks';
+      var host = $('#sg-list', body), base = baseRows(), list = rows();
+      paintScan(base);
+      $('#sg-count', body).textContent = F.int(list.length) + ' stocks' + (list.length !== base.length ? ' of ' + F.int(base.length) : '');
       $('#sg-help', body).innerHTML = '<b>' + esc((LISTS.filter(function (l) { return l[0] === ST.list; })[0] || ['', ''])[1]) + ':</b> ' + esc(LIST_HELP[ST.list] || '');
       body.querySelectorAll('[data-funnel]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-funnel') === ST.list)); });
       if (!list.length) {
@@ -240,21 +353,39 @@
     }
     ui.bindChips(body, 'sgl', function (v) { ST.list = v; ST.shown = 20; paint(); });
     body.addEventListener('click', function (e) {
+      var f = e.target.closest('[data-scanf]');
+      if (f && sc) {
+        sc[f.getAttribute('data-scanf')] = f.getAttribute('data-v');
+        ST.shown = 20; scanSave(); paint();
+        return;
+      }
+      if (e.target.closest('#sg-scan-clear') && sc) { sc.pat = ''; sc.tf = ''; sc.age = ''; ST.shown = 20; scanSave(); paint(); return; }
       var b = e.target.closest('[data-funnel]');
       if (!b) return;
       ST.list = b.getAttribute('data-funnel'); ST.shown = 20;
       body.querySelectorAll('[data-chip="sgl"]').forEach(function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-v') === ST.list)); });
       paint();
     });
+    body.addEventListener('change', function (e) {
+      if (!sc || !e.target || e.target.id !== 'sg-look') return;
+      var d = Number(e.target.value);
+      sc.days = d === sc.own ? null : d;
+      if (sc.age !== '' && Number(sc.age) > d) sc.age = '';
+      scanSave();
+      SB.route(true);
+    });
     $('#sg-q', body).addEventListener('input', function (e) { ST.q = e.target.value.trim(); ST.shown = 20; paint(); });
     $('#sg-cat', body).addEventListener('change', function (e) { ST.cat = e.target.value; ST.shown = 20; paint(); });
     $('#sg-csv', el).onclick = function () {
       var list = rows();
       var out = [['List', 'Symbol', 'Company', 'Exchange', 'Category', 'Basic industry', 'Price', 'Price state', 'Price as of', 'Status', 'Score %', 'Confluence', 'Entry ref', 'Stop', 'Target', 'R:R', 'Signals', 'Not qualified because', 'Warnings', 'Strategy', 'Version', 'Candles as of']];
+      if (sc) out[0].splice(17, 0, 'Setups found');
       list.forEach(function (r) {
         var s = ctx.bySym[r.sym];
-        out.push([ST.list, r.sym, s.name, s.exchange, s.catName, s.ind, s.price, s.priceState, s.priceAsOf, r.statusLabel, r.score, r.confluence, r.entry, r.stop, r.target, isNum(r.rr) ? r.rr.toFixed(2) : '',
-          (r.triggersPassed || []).join(' + '), (r.failed || []).join('; '), (r.warnings || []).join('; '), run.config.name, run.config.version, r.asOf]);
+        var line = [ST.list, r.sym, s.name, s.exchange, s.catName, s.ind, s.price, s.priceState, s.priceAsOf, r.statusLabel, r.score, r.confluence, r.entry, r.stop, r.target, isNum(r.rr) ? r.rr.toFixed(2) : '',
+          (r.triggersPassed || []).join(' + '), (r.failed || []).join('; '), (r.warnings || []).join('; '), run.config.name, run.config.version, r.asOf];
+        if (sc) line.splice(17, 0, hitsOf(r).map(function (h) { return h.tf + ' ' + h.pattern + ' ' + h.candle + ' (' + ageWords(h.age) + ')'; }).join('; '));
+        out.push(line);
       });
       ui.download('suggestions-' + ST.list + '.csv', ui.toCsv(out));
     };

@@ -138,12 +138,23 @@
     }
     return candleMap;
   }
-  /** Promise<run result> for the active (or given) strategy. */
-  function runActive(id) {
+  /** The strategy with every daily-scan rule's look-back (`days`) set to `days` - Daily Suggestions' "Look back" choice
+   *  (owner, 26-Nov-2026); the saved strategy is not changed. */
+  function withScanDays(cfg, days) {
+    var c = S.clone(cfg);
+    (c.triggers || []).forEach(function (t) { if (t.id === 'dailyScan') t.params = Object.assign({}, t.params || {}, { days: days }); });
+    return c;
+  }
+  /** Promise<run result> for the active (or given) strategy; opts.days = another look-back for its daily-scan rule (a run of
+   *  its own, kept apart from the strategy's - lastRun() stays the strategy's own run). */
+  function runActive(id, opts) {
     var cfg = get(id || activeId());
     if (!cfg) return Promise.reject(new Error('unknown strategy ' + id));
+    var days = opts && isFinite(opts.days) && opts.days >= 0 ? Math.floor(Number(opts.days)) : null;
+    var slot = cfg.id;
+    if (days != null) { cfg = withScanDays(cfg, days); slot = cfg.id + '|d' + days; }
     var key = cfg.id + '@' + cfg.version + '@' + (cfg.updatedAt || '') + '@' + (SB.ctx.market.asOf || '') + '@' + SB.ctx.market.state;
-    var c = cache[cfg.id], rn = running[cfg.id];
+    var c = cache[slot], rn = running[slot];
     if (c && c.key === key) return Promise.resolve(c.result);
     if (rn && rn.key === key) return rn.p;
     var p = SB.loadHistory().then(function (H) {
@@ -153,11 +164,12 @@
       r.dataSource = H.source;
       r.confirmed = isConfirmed(cfg.id);
       r.ranAt = istNow();
-      cache[cfg.id] = { key: key, result: r };
-      delete running[cfg.id];
+      r.scanDays = days;
+      cache[slot] = { key: key, result: r };
+      delete running[slot];
       return r;
-    }, function (e) { delete running[cfg.id]; throw e; });
-    running[cfg.id] = { key: key, p: p };
+    }, function (e) { delete running[slot]; throw e; });
+    running[slot] = { key: key, p: p };
     return p;
   }
   /** Last run of the given (default: ACTIVE) strategy, or null. */

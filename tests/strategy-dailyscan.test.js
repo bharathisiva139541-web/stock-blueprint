@@ -77,6 +77,12 @@ test('the rule: any ticked setup on a ticked timeframe found today / yesterday q
   const r2 = S.run(cfg, stocks, hist, { refDate: '2026-11-17' });
   ['ABC', 'DEF', 'GHI', 'JKL'].forEach((s) => assert.strictEqual(r2.bySym[s].checks.find((c) => c.id === 'dailyScan').res.pass, true, s));
   assert.match(r2.bySym.ABC.checks.find((c) => c.id === 'dailyScan').res.detail, /4H Gap-up FVG \+ Spring 2026-11-13 13:15 \(2 trading days ago\)/);
+  // owner, 26-Nov-2026: every setup found in the window comes with its chart / day, for Daily Suggestions' filters
+  const hits = (res) => res.checks.find((c) => c.id === 'dailyScan').res.hits.map((h) => [h.tf, h.pattern, h.candle, h.age]);
+  assert.deepStrictEqual(hits(r.bySym.ABC), [['D', 'CHoCH + FVG', '2026-11-16', 1], ['D', 'Spring in FVG', '2026-11-16', 1]]);
+  assert.deepStrictEqual(hits(r2.bySym.ABC), [['D', 'CHoCH + FVG', '2026-11-16', 1], ['D', 'Spring in FVG', '2026-11-16', 1], ['4H', 'Gap-up FVG + Spring', '2026-11-13 13:15', 2]]);
+  assert.deepStrictEqual(hits(r2.bySym.JKL), [['W', 'BOS + FVG', '2026-11-02', 8]]);
+  assert.strictEqual(chk('JKL').hits, undefined, 'no hits on a failed check');
 });
 
 test('Kite prices (site feed format 16, 17-Nov-2026): the trade plan\'s stop 0.5% under the setup\'s zone bottom', () => {
