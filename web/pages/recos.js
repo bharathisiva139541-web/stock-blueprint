@@ -55,6 +55,7 @@
 
   // ---------- data ----------
   function fetchAll(ctx) {
+    if (SB.recosData) return SB.recosData();            // web/app.js - one read a visit, shared with the marks beside every stock
     if (MEMO) return MEMO;
     var p = (ctx.site.apiBase == null ? Promise.reject(new Error('local')) : SB.api('api/recos', 35000))
       .then(function (r) {

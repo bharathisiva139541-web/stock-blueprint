@@ -177,6 +177,25 @@ test('owner 25-Nov-2026: a target reached on day 10 counts at once, the scorecar
   assert.ok(!R.needsCandles(R.objects({ cols: R.COLS, rows: [row('A')] })));
 });
 
+test('owner 26-Nov-2026: one summary per stock for the mark beside its name and the stock window\'s line', () => {
+  const rows = R.objects({ cols: R.COLS, rows: [
+    row('JLHL', { at: '2026-10-27 09:15' }),                                                      // reached on 40
+    row('JLHL', { br: 'Choice', tgt: 340, at: '2026-10-27 09:05', kp: [12, 20, 30, null, null, null] }),
+    row('JLHL', { br: 'Choice', tgt: 360, at: '2026-11-10 10:00', kp: [null, null, null, null, null, null] }),   // Choice's newer call wins
+    row('BBB', { br: 'Kotak Securities', call: 'SELL', tgt: 80, ep: 100, at: '2026-11-01' }),
+    row('CCC', { br: 'X', call: 'HOLD', tgt: 120, ep: 100, at: '2026-11-02' }),
+    row('', { co: 'Not In Main', st: 'x', why: 'nosym' })
+  ] });
+  const ix = R.index(rows);
+  assert.deepStrictEqual(Object.keys(ix).sort(), ['BBB', 'CCC', 'JLHL'], 'no summary without a symbol');
+  const j = ix.JLHL;
+  assert.deepStrictEqual([j.calls, j.brokers, j.buys, j.sells, j.holds, j.avg, j.hi, j.lo, j.reached, j.tone, j.newest.br, j.newest.tgt],
+    [3, 2, 2, 0, 0, 345, 360, 330, 1, 'buy', 'Choice', 360]);
+  assert.deepStrictEqual(j.latest.map((r) => r.br + ' ' + r.tgt), ['Choice 360', 'Prabhudas Lilladher 330']);
+  assert.ok(Math.abs(R.upside(j, 300) - 15) < 1e-9 && R.upside(j, 0) === null && R.upside(ix.BBB, 90) === null, 'upside from the average Buy target');
+  assert.deepStrictEqual([ix.BBB.tone, ix.BBB.sells, ix.CCC.tone, ix.CCC.holds], ['sell', 1, 'hold', 1]);
+});
+
 test('a list packed by the laptop\'s own code reads the same through the sheet, the api and the page', { skip: !py && 'python3 not installed' }, async () => {
   const code = 'import sys, json; sys.path.insert(0, sys.argv[1]); import analyst_recos as A\n' +
     'r = {k: None for k in A.COLS}; r.update(sym="JLHL", co="Jupiter Life Line Hospitals", br="Prabhudas Lilladher", call="BUY", tgt=330.0, at="2026-10-27 09:15",\n' +

@@ -144,9 +144,33 @@
     return rows.filter(function (r) { return r.day > from; }).sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
   }
 
+  /** owner, 26-Nov-2026 ("Show small Icon for Analytics signal near the Stock Name ... on every stock window, add this signal with
+   *  upside target"): every stock's calls -> {SYM: {calls, brokers, buys, holds, sells, latest (each broker's newest call, newest
+   *  first), newest, avg / hi / lo (targets of the brokers' newest Buy-type calls), reached (of those, already at their target),
+   *  tone buy | hold | sell}} - a broker's older call on the stock is replaced by its newer one. */
+  function index(rows) {
+    var by = {}, out = {};
+    rows.forEach(function (r) { if (r.sym) (by[r.sym] = by[r.sym] || []).push(r); });
+    Object.keys(by).forEach(function (sym) {
+      var list = by[sym].slice().sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+      var seen = {}, latest = [];
+      list.forEach(function (r) { if (!seen[r.br]) { seen[r.br] = 1; latest.push(r); } });
+      var buys = latest.filter(function (r) { return r.buy; });
+      var sells = latest.filter(function (r) { return r.call === 'SELL' || r.call === 'REDUCE'; });
+      var t = buys.map(function (r) { return r.tgt; }).filter(isNum);
+      out[sym] = { calls: list.length, brokers: latest.length, buys: buys.length, sells: sells.length, holds: latest.length - buys.length - sells.length,
+        latest: latest, newest: list[0], avg: mean(t), hi: t.length ? Math.max.apply(null, t) : null, lo: t.length ? Math.min.apply(null, t) : null,
+        reached: buys.filter(function (r) { return E.reachK(r, 100) != null; }).length,
+        tone: buys.length && buys.length >= sells.length ? 'buy' : sells.length ? 'sell' : 'hold' };
+    });
+    return out;
+  }
+  /** % from the price to the average Buy target (null without either) */
+  function upside(info, price) { return info && isNum(info.avg) && price > 0 ? (info.avg / price - 1) * 100 : null; }
+
   var api = { COLS: COLS, BUYS: BUYS, CALL: CALL, SRC: SRC, WHY: WHY, STATUS: STATUS, DSTATUS: DSTATUS, objects: objects, pick: pick,
     kind: kind, rets: rets, stats: stats, scorecard: scorecard, callPrice: callPrice, fillPrice: fillPrice, needsCandles: needsCandles,
-    consensus: consensus, fresh: fresh, mean: mean };
+    consensus: consensus, fresh: fresh, mean: mean, index: index, upside: upside };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) { root.SB = root.SB || {}; root.SB.recos = api; }
 })(typeof window !== 'undefined' ? window : null);

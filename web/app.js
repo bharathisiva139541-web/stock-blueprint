@@ -761,19 +761,97 @@
     document.addEventListener('click', function (e) { if (!e.target.closest('.global-search')) close(); });
   }
 
+  // ---------- analyst calls everywhere (owner, 26-Nov-2026: "Show small Icon for Analytics signal near the Stock Name ... if i see
+  // the watchlist or anyother table, i can easily know which stocks have analyst signals. Also on every stock window, add this
+  // signal with upside target on any area on the top") - the laptop's list (api/recos, the Analyst Targets page's own), read
+  // once after the page is up; a mark beside every stock name (ui.stockCell, cards, the stock window) + a line at the top of
+  // the stock window. ----------
+  var recosLoad = null;
+  /** Promise<{res, kept} | {error}> - api/recos once per visit (the Analyst Targets page shares it); a failed read -> the copy
+   *  this device kept */
+  SB.recosData = function () {
+    if (recosLoad) return recosLoad;
+    var p = (ctx.site.apiBase == null ? Promise.reject(new Error('local')) : apiGet('api/recos', 35000))
+      .then(function (r) {
+        if (!r || !r.ok) throw new Error((r && r.message) || 'the sheet did not answer');
+        if (r.rows && r.rows.length) keepPut('recos', { ok: true, readAt: r.fetchedAt || '', data: r });
+        return { res: r };
+      })
+      .catch(function (e) {
+        recosLoad = null;
+        return keepGet('recos').then(function (k) {
+          return k ? { res: k.data, kept: k.readAt || true } : { error: e && e.message === 'local' ? 'local' : (e && e.message) || 'failed' };
+        });
+      });
+    recosLoad = p;
+    return p;
+  };
+  function loadRecos() {
+    if (ctx.site.apiBase == null || !SB.recos) return;
+    SB.recosData().then(function (got) {
+      if (!got || !got.res || !Array.isArray(got.res.rows) || !got.res.rows.length) return;
+      ctx.recos = SB.recos.index(SB.recos.objects(got.res));
+      rerender();
+    }, function () { /* no marks */ });
+  }
+  var RC_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+    '<path d="M8 11.6V4.6M5.2 7.3L8 4.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function recosOf(sym) { return ctx.recos ? ctx.recos[String(sym || '').toUpperCase()] || null : null; }
+  /** buy (a Buy call, its average target above the price) / done (at or above the target already) / hold / sell */
+  function recosTone(info, px) {
+    if (info.tone !== 'buy') return info.tone;
+    var up = SB.recos.upside(info, px);
+    return up != null && up <= 0 ? 'done' : 'buy';
+  }
+  function recosCallWord(r) { var c = SB.recos.CALL[r.call]; return c ? c[0] : r.call || 'Call'; }
+  /** the mark's words (its tooltip) */
+  function recosWords(info, px) {
+    var up = SB.recos.upside(info, px), n = info.newest;
+    var mix = [info.buys ? info.buys + ' Buy' : '', info.holds ? info.holds + ' Hold' : '', info.sells ? info.sells + ' Sell' : ''].filter(Boolean).join(', ');
+    return 'Analyst calls: ' + info.brokers + ' broker' + (info.brokers === 1 ? '' : 's') + (mix ? ' (' + mix + ')' : '') +
+      (isNum(info.avg) ? ' · average target ' + F.price(info.avg) + (up != null ? ' (' + (up > 0 ? '+' : '') + up.toFixed(1) + '% from the price now)' : '') : '') +
+      (n ? ' · newest: ' + n.br + ' ' + recosCallWord(n) + (isNum(n.tgt) ? ' ' + F.price(n.tgt) : '') + ' on ' + F.date(String(n.at || '').slice(0, 10)) : '') +
+      (info.reached ? ' · ' + info.reached + ' target' + (info.reached === 1 ? '' : 's') + ' already reached' : '') + ' - tap for every call';
+  }
+  /** the small mark beside a stock's name (nothing for a stock without calls) */
+  SB.recosMark = function (sym) {
+    var info = recosOf(sym);
+    if (!info) return '';
+    var s = ctx.bySym[info.newest ? info.newest.sym : sym], px = s && s.price > 0 ? s.price : null;
+    var words = recosWords(info, px);
+    return '<a class="rc-mark rc-' + recosTone(info, px) + '" href="#recos/' + encodeURIComponent(sym) + '" data-tip="' + esc(words) + '" aria-label="' +
+      esc(words) + '">' + RC_ICON + '</a>';
+  };
+  /** the stock window's line: the analysts' target and the upside from the price now */
+  function recosLine(s) {
+    var info = recosOf(s.sym);
+    if (!info) return '';
+    var px = s.price > 0 ? s.price : null, up = SB.recos.upside(info, px), n = info.newest, tone = recosTone(info, px);
+    var mix = [info.buys ? info.buys + ' Buy' : '', info.holds ? info.holds + ' Hold' : '', info.sells ? info.sells + ' Sell' : ''].filter(Boolean).join(' · ');
+    var head = isNum(info.avg) ? 'Analyst target <b>' + F.price(info.avg) + '</b>' + (up == null ? '' : up > 0 ? ' <span class="up">+' + up.toFixed(1) + '%</span> upside'
+      : ' <span class="sub">- the price is already ' + (-up).toFixed(1) + '% past it</span>') : 'Analyst calls';
+    var sub = info.brokers + ' broker' + (info.brokers === 1 ? '' : 's') + (mix ? ' (' + mix + ')' : '') +
+      (isNum(info.hi) && info.hi !== info.lo ? ' · targets ' + F.price(info.lo) + ' to ' + F.price(info.hi) : '') +
+      (n ? ' · newest: ' + esc(n.br) + ' ' + esc(recosCallWord(n)) + (isNum(n.tgt) ? ' ' + F.price(n.tgt) : '') + ' on ' + F.date(String(n.at || '').slice(0, 10)) : '') +
+      (info.reached ? ' · ' + info.reached + ' target' + (info.reached === 1 ? '' : 's') + ' already reached' : '');
+    return '<a class="rc-line rc-' + tone + '" id="drawer-recos" href="#recos/' + encodeURIComponent(s.sym) + '"><span class="rc-line-ic">' + RC_ICON + '</span>' +
+      '<span class="rc-line-t"><span class="rc-line-h">' + head + '</span><span class="sub">' + sub + '</span></span><span class="rc-line-go">Every call →</span></a>';
+  }
+
   // ---------- stock drawer ----------
   function openStock(sym, opener) {
     var s = ctx.bySym[sym];
     var body = $('#drawer-body');
     var h;
     if (!s) {
-      h = '<h2 id="drawer-title" class="sym-line">' + esc(sym) + (SB.wlStar ? SB.wlStar(sym) : '') + '</h2><p class="sub">Not in the Main watchlist.</p>';
+      h = '<h2 id="drawer-title" class="sym-line">' + esc(sym) + (SB.wlStar ? SB.wlStar(sym) : '') + SB.recosMark(sym) + '</h2><p class="sub">Not in the Main watchlist.</p>';
     } else {
       var tags = [s.sig ? 'TTM Signal: ' + s.sig : '', s.pat, s.fvg, s.e10, s.e21, s.zone].filter(Boolean);
-      h = '<div class="stock" style="padding-right:44px">' + ui.logoHtml(s.sym, 'lg') + '<div><h2 id="drawer-title" class="sym-line">' + esc(s.sym) + (SB.wlStar ? SB.wlStar(s.sym) : '') + '</h2>' +
+      h = '<div class="stock" style="padding-right:44px">' + ui.logoHtml(s.sym, 'lg') + '<div><h2 id="drawer-title" class="sym-line">' + esc(s.sym) + (SB.wlStar ? SB.wlStar(s.sym) : '') +
+        SB.recosMark(s.sym) + '</h2>' +
         '<p class="sub">' + esc(s.name || '') + ' · ' + esc(s.exchange) + '</p></div></div>' +
         '<div style="display:flex;align-items:baseline;gap:12px;margin-top:12px;flex-wrap:wrap"><span style="font-size:28px;font-weight:600">' + F.price(s.price) +
-        '</span>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div>' +
+        '</span>' + ui.deltaHtml(s.chg, 2) + ui.stateBadge(s.priceState, s.priceAsOf) + '</div>' + recosLine(s) +
         (tags.length ? '<div class="tags" style="margin-top:10px">' + tags.map(function (t, i) { return ui.badge(t, i === 0 && s.sig ? (s.sig === 'Buy' ? 's-good' : s.sig === 'Avoid' ? 's-bad' : '') : ''); }).join('') + '</div>' : '') +
         '<div id="drawer-strategy"></div>';
       var kv = [
@@ -1273,6 +1351,7 @@
     route();
     window.setInterval(checkExpiry, 30000);
     initMarket();
+    window.setTimeout(loadRecos, 1200);
   }
   function boot() {
     var base = ctx.site.apiBase = apiBase();
