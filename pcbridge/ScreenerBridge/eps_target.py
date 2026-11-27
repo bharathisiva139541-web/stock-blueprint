@@ -38,7 +38,10 @@ ANN_PATH = os.path.join(HERE, 'eps_target_ann.json')
 ENGINE = 3                  # the rules' version (sent with every post; a change sends every quarter again) - 2: 80 / 90 / 100 %
                             # of the way to the target, downside targets, per-stock NSE list dates (24-Nov-2026); 3: 50 / 60 / 70 %
                             # too + the window up to the next quarter's results (24-Nov-2026)
-QUARTERS = 8                # quarter ends worked out (config.json eps_target_quarters, 2..16)
+QUARTERS = 32               # quarter ends worked out (config.json eps_target_quarters, 2..QUARTERS_MAX) - owner, 27-Nov-2026:
+                            # "backtest ku inum neraya quarterly tables thevapaduthu" -> 10 years of NSE filings (xbrl_history
+                            # YEARS) = 40 quarters = 33 quarters with 8 before them; it was 8
+QUARTERS_MAX = 36
 WINDOWS = (30, 60, 90, 120, 180)    # sessions after the entry (about 1.5 / 3 / 4.5 / 6 / 9 months)
 THRESH = (50, 60, 70, 80, 90, 100)  # reached = a daily high (a target under the entry: a daily low) covered this % of the way
                             # from the entry to the target (owner, 24-Nov-2026: "if a stock hit atleast 80% of the target price,
@@ -744,7 +747,7 @@ def step(cfg, api, lab, inputs, screener, xbrl_changed=0.0, peh_changed=0.0, for
         return None
     try:
         today = today or date.today()
-        n = max(2, min(16, int(cfg.get('eps_target_quarters') or QUARTERS)))
+        n = max(2, min(QUARTERS_MAX, int(cfg.get('eps_target_quarters') or QUARTERS)))
         qends = quarter_ends(today, n)
         limit = ANN_PER_ROUND if backfill is None else backfill
         if limit > 0 and cfg.get('announcements', True):

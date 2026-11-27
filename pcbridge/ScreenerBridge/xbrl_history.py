@@ -40,8 +40,11 @@ import ltf_data
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, 'xbrl_data')          # set by screener_bridge to the data folder (data_place.py - the D: drive)
 VERSION = 9                                    # the reading rules: a change reads the kept files again (no NSE)
-LIST_VERSION = 4                               # which files a stock reads: a change reads every stock's lists again
-YEARS = 5
+LIST_VERSION = 5                               # which files a stock reads: a change reads every stock's lists again
+# 10 years of quarterly results (owner, 27-Nov-2026: "EPS target la limited Quarters table matum irukurathunala backtest ku
+# inum neraya quarterly tables thevapaduthu ... can we go further back" -> "10 years"; it was 5 = 20 quarters). The sheet's
+# Financials keeps 40 quarters (Code2.gs ab_finClean_), api/financials.js the same.
+YEARS = 10
 LISTS = (   # NSE's lists of a company's result filings (both: the integrated one starts in 2025)
     ('integrated filing', 'https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol={s}&period=Quarterly'),
     ('financial results', 'https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol={s}&period=Quarterly'),
@@ -56,6 +59,7 @@ INT_DATED = ('integrated filing (dated)', 'https://www.nseindia.com/api/integrat
              '&period=Quarterly&from_date={f}&to_date={t}')
 INT_FROM = date(2024, 10, 1)
 PAGE_FULL = 20
+DATED_YEARS = 2        # the older list's dated answer cut short (NSE's count says more): asked again 2 years at a time
 GAP_S = 6.0            # between two NSE requests (owner, 18-Nov-2026: "5-10 seconds", a day's limit, never in market hours)
 CMD_GAP_S = GAP_S      # ... XbrlHistoryNow.bat the same (it was 1.2 s)
 MIN_GAP_S = 5.0        # config.json `xbrl_history_gap_s` is never taken below this
@@ -75,7 +79,14 @@ SAY_EVERY = 25
 CMD_SAY_EVERY = 5          # XbrlHistoryNow.bat's window: a line every 5 stocks (owner, 18-Nov-2026)
 WAIT_SAY_S = 300           # ... and, while it waits for the laptop's round, a line every 5 minutes
 LOCK_STALE_S = 10 * 60
-SC_GAP_S = 20.0            # between two screener.in pages of this job (screener.in lets ~12 through every 3 minutes)
+SC_GAP_S = 15.0            # between two screener.in pages of this job (screener.in lets ~12 through every 3 minutes);
+                           # config.json `xbrl_history_screener_gap_s`, never under SC_MIN_GAP_S (owner, 27-Nov-2026:
+                           # "evlo fast ah remaining pages complete pana mudiumo" - it was 20 s)
+SC_MIN_GAP_S = 12.0
+SC_SLOW_S = 180            # screener.in said "slow down" twice (fetch_page waited 90 s once): this long, then on ...
+SC_SLOW_TRIES = 3          # ... at most this many times for one stock, then its pages next time
+SC_WAIT_MAX_S = 90 * 60    # the screener.in pages wait for the laptop's round (it reads screener.in itself) at most this long
+SC_REST_S = 10 * 60        # pages still wanted at the end (a round came, screener.in refused): the job starts again this soon
 SC_REFRESH_DAYS = 45       # a stock's screener.in tables read again after this many days
 SC_RETRY_DAYS = 2          # ... a stock whose pages were just read is not asked again sooner (a page still behind)
 SC_DUE_LAG_DAYS = 60       # a quarter's results are out by its end + this many days (a page without it = behind)
@@ -1501,7 +1512,33 @@ def list_filings(nse, sym, say=None, since=''):
     if since and ends and ends[0] > (date.fromisoformat(since) + timedelta(days=120)).isoformat():
         t = date.today()
         f = date.fromisoformat(since)
-        add(_list(nse, DATED[0], DATED[1].format(s=q, f=f.strftime('%d-%m-%Y'), t=t.strftime('%d-%m-%Y')), say)[0])
+        metas, _, n, total = _list(nse, DATED[0], DATED[1].format(s=q, f=f.strftime('%d-%m-%Y'), t=t.strftime('%d-%m-%Y')),
+                                   say, with_total=True)
+        add(metas)
+        # one page of a longer list (NSE's count says more - 10 years can be ~40 records): two years at a time, oldest first
+        if total is not None and n < total:
+            got = 0
+            for a, b in year_windows(f, t, DATED_YEARS):
+                if got >= total:
+                    break
+                more, _, m = _list(nse, '%s %s..%s' % (DATED[0], a.strftime('%d-%m-%y'), b.strftime('%d-%m-%y')),
+                                   DATED[1].format(s=q, f=a.strftime('%d-%m-%Y'), t=b.strftime('%d-%m-%Y')), say)
+                got += m
+                add(more)
+    return out
+
+
+def year_windows(start, end, years):
+    """[(from, to)] windows of `years` years from `start` until the one holding `end` (the last one ends on `end`)."""
+    out, a = [], start
+    while a <= end:
+        try:
+            b = date(a.year + years, a.month, a.day) - timedelta(days=1)
+        except ValueError:                     # 29 Feb
+            b = date(a.year + years, a.month, 28)
+        b = min(b, end)
+        out.append((a, b))
+        a = b + timedelta(days=1)
     return out
 
 
@@ -1734,6 +1771,15 @@ def gap_of(cfg):
         return GAP_S
 
 
+def screener_gap(cfg):
+    """The seconds between two screener.in pages of this job: config.json `xbrl_history_screener_gap_s`, at least
+    SC_MIN_GAP_S."""
+    try:
+        return max(SC_MIN_GAP_S, float((cfg or {}).get('xbrl_history_screener_gap_s') or SC_GAP_S))
+    except (TypeError, ValueError):
+        return SC_GAP_S
+
+
 def stocks_per_day(cfg):
     try:
         return max(1, int((cfg or {}).get('xbrl_history_stocks_per_day') or DAY_STOCKS))
@@ -1771,9 +1817,11 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             sleep=time.sleep, every=SAY_EVERY, what='background', screener_busy=None):
     """Every Main stock that is due: lists + files of the last YEARS years -> tables -> the sheet; and the screener.in
     pages a table still wants (screener_wants - before the listing, the quarters NSE has no filing for, a consolidated
-    page that stopped). It waits only while the laptop's round asks NSE (`round_busy`, a few minutes - owner, 23-Nov-2026:
-    "it takes 25 minutes ... it is annoying"); no screener.in page while a round runs (`screener_busy` - the round reads
-    screener.in itself). -> {'done', 'files', 'pages', 'left', 'blocked', 'sent'} or None (another program is at it)."""
+    page that stopped) - those pages FIRST (owner, 27-Nov-2026: 545 stocks waited for days), waiting while a round runs
+    (`screener_busy` - the round reads screener.in itself; at most SC_WAIT_MAX_S), then NSE's filings. NSE waits only while
+    the laptop's round asks NSE (`round_busy`, a few minutes - owner, 23-Nov-2026: "it takes 25 minutes ... it is
+    annoying"). -> {'done', 'files', 'pages', 'left', 'blocked', 'sent'[, 'paused'][, 'scLeft', 'scWhy' round|refused]} or
+    None (another program is at it)."""
     out = out or log
     today = today or date.today()
     screener_busy = screener_busy or (lambda: False)
@@ -1819,120 +1867,194 @@ def run_all(cfg, api, round_busy=lambda: False, gap=GAP_S, out=None, stop=None, 
             save_state(state)
             return res
         cap = stocks_per_day(cfg)
+        sc_gap = screener_gap(cfg)
+        sc_list = [s_ for s_ in syms if s_ in sc_todo]
         if todo:
-            out('NSE XBRL history: %d of %d stock(s) to read (5 years of quarterly results, one file a quarter) - one '
+            out('NSE XBRL history: %d of %d stock(s) to read (%d years of quarterly results, one file a quarter) - one '
                 'request every %g s, at most %d stocks a day; it waits only while the laptop\'s round asks NSE.'
-                % (len(todo), len(syms), gap, cap))
-        if sc_todo:
+                % (len(todo), len(syms), YEARS, gap, cap))
+        if sc_list:
             out('NSE XBRL history: %d stock(s) want screener.in\'s tables (the years before the listing, the quarters NSE '
-                'has no filing for) - one page every %g s, none while the laptop\'s round runs.' % (len(sc_todo), SC_GAP_S))
+                'has no filing for) - read first, one page every %g s; while the laptop\'s round runs (it reads '
+                'screener.in itself) they wait for it.' % (len(sc_list), sc_gap))
         nse = Nse(gap, sleep)
         last_post, pend = clock(), 0
-        t0, paused, last_page = clock(), 0.0, 0.0
-        nse_on, done_n = True, 0
-        todo_set = set(todo)
-        order = todo + [s_ for s_ in syms if s_ in sc_todo and s_ not in todo_set]
-        for k, sym in enumerate(order):
+        sc = {'on': sc_on, 'last': 0.0, 'paused': 0.0, 'why': ''}
+        sc_missed = set()
+
+        def flush(force=False):
+            nonlocal last_post, pend
+            if pend >= POST_N or (pend and (force or clock() - last_post >= POST_EVERY_S)):
+                res['sent'] += post(cfg, api, state) or 0
+                last_post, pend = clock(), 0
+                save_state(state)
+
+        def wait_round():
+            """While the laptop's round runs: wait (at most SC_WAIT_MAX_S). -> True = go on with the pages."""
+            if not screener_busy():
+                return True
+            waited = 0
+            while screener_busy():
+                if stop is not None and stop.is_set():
+                    return False
+                if waited >= SC_WAIT_MAX_S:
+                    sc['on'], sc['why'] = False, 'round'
+                    out('NSE XBRL history: the laptop\'s round has run %d min - the screener.in pages go on next time.'
+                        % (waited // 60))
+                    return False
+                if waited % WAIT_SAY_S == 0:
+                    out('NSE XBRL history: screener.in pages wait - the laptop\'s round is running (%s); they go on by '
+                        'themselves when it finishes.' % ('just started' if not waited else '%d min so far' % (waited // 60)))
+                lock_beat(what)
+                sleep(20)
+                waited += 20
+            sc['paused'] += waited
+            out('NSE XBRL history: the round finished - screener.in pages again.')
+            return True
+
+        def sc_page(sym, st, wait):
+            """screener.in's pages of one stock when its table still wants them. -> True when read."""
+            nonlocal pend
+            if not sc['on']:
+                return False
+            st = st or load_stock(sym)
+            if not screener_wants(sym, st, today, clock(), tried):
+                return False
+            if screener_busy() and (not wait or not wait_round()):
+                sc_missed.add(sym)
+                return False
+            wait_s = sc_gap - (clock() - sc['last'])
+            if wait_s > 0:
+                sleep(wait_s)
+            newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r']
+            newest.append(listed_newest(st))
+            newest = max([m for m in newest if m] or [0]) or None
+            n = 0
+            for attempt in range(SC_SLOW_TRIES + 1):
+                try:
+                    n = fetch_screener(cfg, sym, today, newest, pause=lambda: sleep(sc_gap))
+                except Exception as e:                # screener.in refused / no internet
+                    if '429' in str(e) and attempt < SC_SLOW_TRIES:
+                        out('NSE XBRL history: screener.in said "slow down" - waiting %d min, then on.' % (SC_SLOW_S // 60))
+                        lock_beat(what)
+                        sleep(SC_SLOW_S)
+                        continue
+                    sc['on'], sc['why'] = False, 'refused'
+                    sc_missed.add(sym)
+                    sc['last'] = clock()
+                    out('NSE XBRL history: screener.in did not answer (%s) - its pages next time.' % e)
+                    return False
+                break
+            res['pages'] += n
+            tried[sym] = clock()
+            t = build(st, today)
+            if t != st.get('table'):
+                st['table'] = t
+                if 'files' not in st:
+                    st['sym'], st['files'] = sym, {}
+                save_stock(st)
+                pend += 1
+                state['changed'] = clock()
+            try:
+                state.setdefault('scSeen', {})[sym] = os.path.getmtime(_sc_path(sym))
+            except OSError:
+                pass
+            sc['last'] = clock()
+            return True
+
+        # 1. the screener.in pages first - quick, one site (owner, 27-Nov-2026: 545 stocks waited for days - the pages were
+        #    skipped whenever a round ran and the job then rested 6 hours)
+        ta, sc_done = clock(), 0
+        for k, sym in enumerate(sc_list):
             if stop is not None and stop.is_set():
                 break
-            work_nse = nse_on and sym in todo_set
-            if work_nse:
-                waited = 0
-                while round_busy():
-                    if stop is not None and stop.is_set():
-                        break
-                    if waited % WAIT_SAY_S == 0:
-                        out('NSE XBRL history: waiting - the laptop\'s round is asking NSE right now (%s); it goes on by '
-                            'itself in a few minutes.' % ('just started' if not waited else '%d min so far' % (waited // 60)))
-                    sleep(20)
-                    waited += 20
-                if waited:
-                    paused += waited
-                    out('NSE XBRL history: the round is done with NSE - reading again.')
+            if not sc['on']:
+                sc_missed.update(sc_list[k:])
+                break
+            sc_page(sym, None, True)
+            sc_done = k + 1
+            lock_beat(what)
+            if sc_done % every == 0:
+                save_state(state)
+                per = max(0.0, clock() - ta - sc['paused']) / sc_done
+                out('NSE XBRL history: screener.in - %d of %d stock(s) looked at, %d page(s) read%s.'
+                    % (sc_done, len(sc_list), res['pages'], _left_words(per * (len(sc_list) - sc_done))))
+            flush()
+        if stop is not None and stop.is_set():
+            sc_missed.update(sc_list[sc_done:])
+
+        # 2. NSE's filings (a stock just read is looked at on screener.in again: its newest filing may be newer than its
+        #    page - owner, 23-Nov-2026, MTARTECH: Sep 2026 standalone only - the standalone page the same run)
+        t0, paused, done_n = clock(), 0.0, 0
+        for k, sym in enumerate(todo):
+            if stop is not None and stop.is_set():
+                break
+            waited = 0
+            while round_busy():
                 if stop is not None and stop.is_set():
                     break
-                day = _day_count(state, clock())
-                if market_open(clock()):
-                    res['paused'] = 'market'
-                    out('NSE XBRL history: market hours - it goes on after the close.')
-                    nse_on = work_nse = False
-                elif day['stocks'] >= cap:
-                    res['paused'] = 'cap'
-                    left = len(todo) - done_n
-                    out('NSE XBRL history: today\'s %d stocks are done - the rest tomorrow (%d stock(s) left, about %d '
-                        'more day(s) at %d a day).' % (day['stocks'], left, int(math.ceil(left / float(cap))), cap))
-                    nse_on = work_nse = False
-            st = None
-            if work_nse:
-                try:
-                    st, got = process_stock(nse, sym, today)
-                except Blocked as e:
-                    res['blocked'] = str(e)
-                    out('NSE XBRL history: NSE stopped answering (%s) - the rest later.' % e)
-                    nse_on = False
-                except Exception as e:                    # one strange stock never stops the job
-                    out('NSE XBRL history: %s skipped (%s)' % (sym, e))
-                else:
-                    done_n += 1
-                    res['done'] += 1
-                    res['files'] += got
-                    day['stocks'] += 1
-                    day['files'] += got
-                    res['left'] = len(todo) - done_n
-                    if st.get('table'):
-                        pend += 1
-                    state['changed'] = clock()
-            # a stock just read from NSE is looked at again: its newest filing may be newer than its screener.in page
-            # (owner, 23-Nov-2026, MTARTECH: Sep 2026 standalone only - the standalone page the same run, not a day later)
-            if sc_on and (sym in sc_todo or st is not None) and not screener_busy():
-                st = st or load_stock(sym)
-                if screener_wants(sym, st, today, clock(), tried):
-                    wait_s = SC_GAP_S - (clock() - last_page)
-                    if wait_s > 0:
-                        sleep(wait_s)
-                    newest = [_mi_label(r[0]) for r in (st.get('table') or {}).get('q') or [] if r[-1] != 'r']
-                    newest.append(listed_newest(st))
-                    try:
-                        res['pages'] += fetch_screener(cfg, sym, today, max([m for m in newest if m] or [0]) or None,
-                                                       pause=lambda: sleep(SC_GAP_S))
-                    except Exception as e:                # screener.in refused / no internet: its pages next time
-                        sc_on = False
-                        out('NSE XBRL history: screener.in did not answer (%s) - its pages next time.' % e)
-                    else:
-                        tried[sym] = clock()
-                        t = build(st, today)
-                        if t != st.get('table'):
-                            st['table'] = t
-                            if 'files' not in st:
-                                st['sym'], st['files'] = sym, {}
-                            save_stock(st)
-                            pend += 1
-                            state['changed'] = clock()
-                        try:
-                            state.setdefault('scSeen', {})[sym] = os.path.getmtime(_sc_path(sym))
-                        except OSError:
-                            pass
-                    last_page = clock()
-            if not nse_on and not sc_on:
+                if waited % WAIT_SAY_S == 0:
+                    out('NSE XBRL history: waiting - the laptop\'s round is asking NSE right now (%s); it goes on by '
+                        'itself in a few minutes.' % ('just started' if not waited else '%d min so far' % (waited // 60)))
+                lock_beat(what)
+                sleep(20)
+                waited += 20
+            if waited:
+                paused += waited
+                out('NSE XBRL history: the round is done with NSE - reading again.')
+            if stop is not None and stop.is_set():
                 break
+            day = _day_count(state, clock())
+            if market_open(clock()):
+                res['paused'] = 'market'
+                out('NSE XBRL history: market hours - it goes on after the close.')
+                break
+            if day['stocks'] >= cap:
+                res['paused'] = 'cap'
+                left = len(todo) - done_n
+                out('NSE XBRL history: today\'s %d stocks are done - the rest tomorrow (%d stock(s) left, about %d '
+                    'more day(s) at %d a day).' % (day['stocks'], left, int(math.ceil(left / float(cap))), cap))
+                break
+            st = None
+            try:
+                st, got = process_stock(nse, sym, today)
+            except Blocked as e:
+                res['blocked'] = str(e)
+                out('NSE XBRL history: NSE stopped answering (%s) - the rest later.' % e)
+                break
+            except Exception as e:                    # one strange stock never stops the job
+                out('NSE XBRL history: %s skipped (%s)' % (sym, e))
+            else:
+                done_n += 1
+                res['done'] += 1
+                res['files'] += got
+                day['stocks'] += 1
+                day['files'] += got
+                res['left'] = len(todo) - done_n
+                if st.get('table'):
+                    pend += 1
+                state['changed'] = clock()
+                sc_page(sym, st, False)
             lock_beat(what)
             if (k + 1) % every == 0:
                 save_state(state)
                 day = _day_count(state, clock())
                 per = max(0.0, clock() - t0 - paused) / max(1, done_n)
                 out('NSE XBRL history: %d of %d stock(s) looked at (today %d of %d stocks from NSE, %d file(s) downloaded, '
-                    '%d screener.in page(s)%s).' % (k + 1, len(order), day['stocks'], cap, day['files'], res['pages'],
+                    '%d screener.in page(s)%s).' % (k + 1, len(todo), day['stocks'], cap, day['files'], res['pages'],
                                                     _left_words(per * min(len(todo) - done_n, max(0, cap - day['stocks'])))
-                                                    if done_n and nse_on else ''))
-            if pend >= POST_N or (pend and clock() - last_post >= POST_EVERY_S):
-                res['sent'] += post(cfg, api, state) or 0
-                last_post, pend = clock(), 0
-                save_state(state)
+                                                    if done_n else ''))
+            flush()
+        if sc_missed:
+            res['scLeft'], res['scWhy'] = len(sc_missed), sc['why'] or 'round'
         res['sent'] += post(cfg, api, state) or 0
         save_state(state)
         out('NSE XBRL history: %d stock(s) read now, %d file(s) downloaded, %d screener.in page(s), %d table(s) sent to the '
-            'sheet%s.' % (res['done'], res['files'], res['pages'], res['sent'],
-                          (', %d still to read' % res['left']) if res['left'] else ''))
+            'sheet%s%s.' % (res['done'], res['files'], res['pages'], res['sent'],
+                            (', %d still to read' % res['left']) if res['left'] else '',
+                            (', %d stock(s) still want screener.in\'s pages - the next run reads them (the background '
+                             'program starts it again within %d min)' % (res['scLeft'], Worker.rest(res) // 60))
+                            if res.get('scLeft') else ''))
         return res
     finally:
         lock_drop()
@@ -1950,15 +2072,20 @@ class Worker:
     @staticmethod
     def rest(res, now=None):
         """Seconds until the next start: the day's files done -> just after IST midnight; market hours -> 30 min;
-        NSE refused / an error -> BLOCK_PAUSE_S; everything read -> REST_S."""
+        NSE refused / an error -> BLOCK_PAUSE_S; everything read -> REST_S. screener.in pages still wanted (a round came,
+        screener.in refused) -> at most SC_REST_S (BLOCK_PAUSE_S after a refusal) - the pages need no NSE."""
         now = time.time() if now is None else now
         if res and res.get('paused') == 'cap':
             t = datetime.fromtimestamp(now, IST)
             nxt = datetime(t.year, t.month, t.day, tzinfo=IST) + timedelta(days=1, minutes=5)
-            return max(60.0, nxt.timestamp() - now)
-        if res and res.get('paused') == 'market':
-            return 30 * 60.0
-        return REST_S if res and not res.get('blocked') else BLOCK_PAUSE_S
+            wait = max(60.0, nxt.timestamp() - now)
+        elif res and res.get('paused') == 'market':
+            wait = 30 * 60.0
+        else:
+            wait = REST_S if res and not res.get('blocked') else BLOCK_PAUSE_S
+        if res and res.get('scLeft'):
+            wait = min(wait, float(BLOCK_PAUSE_S if res.get('scWhy') == 'refused' else SC_REST_S))
+        return wait
 
     def maybe_start(self, cfg, api, round_busy, now=None, screener_busy=None):
         if not cfg.get('xbrl_history', True) or not cfg.get('url') or not D:
@@ -2092,7 +2219,7 @@ def file_shape(sym, name, limit=10):
 
 
 def coverage(st, t, out):
-    """Which quarters of the 5 years the table has (up to the newest results quarter in NSE's lists); a missing one with
+    """Which quarters of the YEARS years the table has (up to the newest results quarter in NSE's lists); a missing one with
     the reason its files could not be used."""
     q = t.get('q') or []
     if not q:

@@ -23,6 +23,8 @@ LOGS = []
 sb.log = LOGS.append
 X = sb.XH
 X.DIR = os.path.join(TMP, 'xbrl_data')
+assert X.YEARS == 10, 'owner, 27-Nov-2026: 10 years of quarterly results'
+X.YEARS = 5           # sections 1-14 were written for the first 5 years; section 15 checks the 10
 X.MARKET = None                                  # the market-hours rule has its own test (section 12)
 X.log = LOGS.append
 assert X.D.get('facts') is sb.XBRL_FACTS and X.D.get('records') is sb.ipo_records, 'screener_bridge binds its helpers'
@@ -1092,6 +1094,79 @@ assert [p_['items'][0]['sym'] for p_ in CALLS2 if p_['op'] == 'put'] == ['SCO'],
 assert X.load_state()['scTry'].get('SCO'), 'remembered'
 del FETCH[:]
 assert X.run_all({'url': 'x'}, api2, gap=0, sleep=nap, today=T23)['pages'] == 0 and FETCH == [], 'not again'
+
+# owner, 27-Nov-2026 ("evlo fast ah remaining pages complete pana mudiumo"): 545 stocks waited for days - a round started,
+# the pages were skipped in seconds and the job rested 6 hours. Now the pages come FIRST, wait for the round, a "slow down"
+# is a wait (not the end), and the job starts again within 10 minutes while pages are left
+assert X.SC_GAP_S == 15.0 and X.screener_gap({}) == 15.0 and X.screener_gap({'xbrl_history_screener_gap_s': 5}) == X.SC_MIN_GAP_S
+assert X.screener_gap({'xbrl_history_screener_gap_s': 30}) == 30.0 and X.screener_gap({'xbrl_history_screener_gap_s': 'x'}) == 15.0
+
+
+def api_of(names):
+    return lambda cfg, action, payload=None, tries=3, timeout=120: (
+        {'ok': True, 'syms': list(names)} if payload['op'] == 'syms' else {'ok': True, 'stored': len(payload['items'])})
+
+
+busy_n = [3]
+
+
+def busy_a_while():
+    busy_n[0] -= 1
+    return busy_n[0] >= 0
+
+
+OUT = []
+X.save_state({})
+del FETCH[:]
+del SLEEPS[:]
+r = X.run_all({'url': 'x'}, api_of(['SCW1']), gap=0, sleep=nap, today=T23, screener_busy=busy_a_while, out=OUT.append)
+assert r['pages'] == 2 and FETCH == [('SCW1', True), ('SCW1', False)] and not r.get('scLeft'), (r, OUT)
+assert any('screener.in pages wait - the laptop\'s round is running' in l for l in OUT), OUT
+assert any('the round finished - screener.in pages again' in l for l in OUT), OUT
+assert X.Worker.rest(r) == X.REST_S, 'nothing left: the usual rest'
+# a round that does not end within SC_WAIT_MAX_S: the pages next time, the job on again in 10 minutes
+OUT[:] = []
+X.save_state({})
+del FETCH[:]
+r = X.run_all({'url': 'x'}, api_of(['SCW2', 'SCW3']), gap=0, sleep=nap, today=T23, screener_busy=lambda: True, out=OUT.append)
+assert r['pages'] == 0 and FETCH == [] and r['scLeft'] == 2 and r['scWhy'] == 'round', r
+assert X.Worker.rest(r) == X.SC_REST_S and any('has run 90 min' in l for l in OUT), OUT
+assert 'still want screener.in\'s pages' in OUT[-1], OUT[-1]
+assert X.Worker.rest({'paused': 'cap', 'scLeft': 1, 'scWhy': 'round'}) == X.SC_REST_S, 'pages need no NSE: not until midnight'
+# screener.in refused: 30 minutes; "slow down": a wait, then the same stock again
+X.bind(screener=lambda cfg, sym, cons=True: (_ for _ in ()).throw(RuntimeError('HTTP 403')))
+X.save_state({})
+r = X.run_all({'url': 'x'}, api_of(['SCW2', 'SCW3']), gap=0, sleep=nap, today=T23)
+assert r['scLeft'] == 2 and r['scWhy'] == 'refused' and X.Worker.rest(r) == X.BLOCK_PAUSE_S, r
+slow = [2]
+
+
+def sc_slow(cfg, sym, cons=True):
+    if slow[0] > 0:
+        slow[0] -= 1
+        raise RuntimeError('HTTP 429')
+    return sc_fetch(cfg, sym, cons)
+
+
+X.bind(screener=sc_slow)
+X.save_state({})
+del FETCH[:]
+del SLEEPS[:]
+r = X.run_all({'url': 'x'}, api_of(['SCW2']), gap=0, sleep=nap, today=T23)
+assert r['pages'] == 2 and FETCH == [('SCW2', True), ('SCW2', False)] and SLEEPS.count(X.SC_SLOW_S) == 2 and not r.get('scLeft'), r
+# the pages before NSE's filings
+EV = []
+X.bind(screener=lambda cfg, sym, cons=True: (EV.append(('sc', sym)), sc_fetch(cfg, sym, cons))[1])
+real_ps, real_due = X.process_stock, X.due
+X.process_stock = lambda nse, sym, today=None, say=None: (EV.append(('nse', sym)), ({'sym': sym, 'files': {}, 'table': None}, 0))[1]
+X.due = lambda sym, st, today, now: sym == 'SCN1'
+try:
+    X.save_state({})
+    r = X.run_all({'url': 'x'}, api_of(['SCN1', 'SCN2']), gap=0, sleep=nap, today=T23)
+finally:
+    X.process_stock, X.due = real_ps, real_due
+assert [e for e in EV if e[0] == 'nse'] == [('nse', 'SCN1')] and EV.index(('nse', 'SCN1')) > EV.index(('sc', 'SCN2')), EV
+X.bind(screener=sc_fetch)
 # a stock read from NSE in the same run whose new filing (Sep 2026) is newer than its kept page: both pages read now
 QH[:] = QH_OLD[:-1] + ['Jun 2026']
 X.keep_screener('MTN', sc_page('Consolidated'), time.time())            # a page of today, ending Jun 2026
@@ -1116,9 +1191,9 @@ finally:
 assert r13['done'] == 1 and FETCH == [('MTN', True), ('MTN', False)], (r13, FETCH)
 X.bind(screener=lambda cfg, sym, cons=True: ('ok', screener_page([('Jun 2026', 122, 18.75, 1.88, 20), ('Sep 2026', 130, 18.75, 1.88, 19)])))
 
-# LIST_VERSION 4: every stock's lists read once more - the stocks never read go first
-assert X.LIST_VERSION == 4
-X.save_stock({'sym': 'OLDREAD', 'files': {}, 'listed': time.time(), 'lv': 3})
+# LIST_VERSION 4 (now 5): every stock's lists read once more - the stocks never read go first
+assert X.LIST_VERSION >= 4
+X.save_stock({'sym': 'OLDREAD', 'files': {}, 'listed': time.time(), 'lv': X.LIST_VERSION - 1})
 for s_ in ('NEVER1', 'NEVER2'):
     if os.path.exists(X._stock_path(s_)):
         os.remove(X._stock_path(s_))
@@ -1304,4 +1379,78 @@ assert tv['b'] == 'C' and [(r[0], r[1]) for r in tv['q']] == [('Sep 2024', 400),
 assert [(r[0], r[1]) for r in tv['y']] == [('Mar 2021', 900), ('Mar 2022', 1000), ('Mar 2023', 1200), ('Mar 2024', 1400), ('Mar 2025', 1650), ('Mar 2026', 2100)], tv['y']
 assert tv['o']['b'] == 'S' and tv['o']['q'][-1][1] == 440, 'the standalone table on its own'
 print('OK 14')
+
+# ------------------------------------------------------------------ 15. ten years (owner, 27-Nov-2026: the EPS Target Lab's
+# backtest wants more quarters - "can we go further back" -> "10 years")
+import re as _re
+X.YEARS = 10
+assert X.LIST_VERSION == 5, 'every stock\'s lists read once more for the older years'
+assert X.since_iso(date(2026, 11, 27)) == (date(2026, 11, 27) - timedelta(days=int(365.25 * 10) + 100)).isoformat()
+
+
+def q_end(y, m):
+    return (date(y + (m == 12), 1 if m == 12 else m + 1, 1) - timedelta(days=1)).isoformat()
+
+
+ten = []
+for y in range(2016, 2027):
+    for mth in (3, 6, 9, 12):
+        e = q_end(y, mth)
+        if e > '2026-09-30':
+            continue
+        ten.append({'name': 'TEN_%s_C.xml' % e, 'url': 'https://x/TEN_%s_C.xml' % e, 'end': e, 'basis': 'C', 'rev': False,
+                    'cum': False, 'stamp': e.replace('-', '') + '180000', 'gov': False})
+pk = X.pick(ten, X.since_iso(date(2026, 11, 27)))
+assert len(pk) == 41 and pk[0][0]['end'] == '2026-09-30' and pk[-1][0]['end'] == '2016-09-30', [c[0]['end'] for c in pk]
+# the table keeps the newest 40 quarters (the sheet's Financials keeps 40)
+files = {}
+for k, e in enumerate(sorted(c[0]['end'] for c in pk)):
+    files['f%d' % k] = vfile(e, 'C', 100.0 + k, e.replace('-', '') + '180000')
+t10 = X.build({'sym': 'TEN', 'files': files}, date(2026, 11, 27), sc={})
+assert len(t10['q']) == 40 and t10['q'][0][0] == 'Dec 2016' and t10['q'][-1][0] == 'Sep 2026', (len(t10['q']), t10['q'][0][0])
+# the older list's dated answer cut short (NSE's count says more): asked again two years at a time, oldest first
+assert X.year_windows(date(2016, 8, 19), date(2026, 11, 27), 2)[0] == (date(2016, 8, 19), date(2018, 8, 18))
+assert X.year_windows(date(2016, 8, 19), date(2026, 11, 27), 2)[-1] == (date(2026, 8, 19), date(2026, 11, 27))
+assert X.year_windows(date(2016, 2, 29), date(2017, 1, 1), 2) == [(date(2016, 2, 29), date(2017, 1, 1))]
+ASKED = []
+FULL = [{'n': q_end(y, m)} for y in range(2017, 2027) for m in (3, 6, 9, 12) if q_end(y, m) <= '2026-09-30']
+
+
+def rec_of(e):
+    return {'symbol': 'TEN', 'xbrl': 'https://x/TEN_FR_%s_%s180000.xml' % (e, e[8:10] + e[5:7] + e[:4]), 'toDate': e,
+            'consolidated': 'Consolidated'}
+
+
+def list_get(opener, url, referer=None, timeout=60):
+    ASKED.append(url)
+    if 'integrated-filing' in url:
+        return 200, json.dumps({'data': []}).encode()
+    if 'from_date' not in url:
+        return 200, json.dumps({'data': [rec_of(x['n']) for x in FULL[-8:]]}).encode()     # the plain list: 2 years
+    f = _dt.strptime(_re.search(r'from_date=([\d-]+)', url).group(1), '%d-%m-%Y').date().isoformat()
+    t = _dt.strptime(_re.search(r'to_date=([\d-]+)', url).group(1), '%d-%m-%Y').date().isoformat()
+    inside = [x['n'] for x in FULL if f <= x['n'] <= t]
+    if f < '2017-01-01' and t >= '2026-01-01':                                            # the whole span: one page of 20
+        return 200, json.dumps({'data': [rec_of(e) for e in inside[-20:]], 'totalCount': len(inside)}).encode()
+    return 200, json.dumps({'data': [rec_of(e) for e in inside]}).encode()
+
+
+X.bind(get=list_get)
+try:
+    got = X.list_filings(X.Nse(0, nap), 'TEN', since=X.since_iso(date.today()))
+finally:
+    X.bind(get=fake_get)
+got_ends = sorted({m['end'] for m in got if m['end']})
+assert got_ends[0] == '2017-03-31' and len(got_ends) == len(FULL), (got_ends[:3], len(got_ends), len(FULL))
+assert sum('from_date' in u and 'corporates-financial' in u for u in ASKED) >= 5, ASKED
+# a dated answer with everything: no windows
+ASKED[:] = []
+FULL[:] = FULL[-10:]
+X.bind(get=list_get)
+try:
+    X.list_filings(X.Nse(0, nap), 'TEN', since=X.since_iso(date.today()))
+finally:
+    X.bind(get=fake_get)
+assert sum('from_date' in u and 'corporates-financial' in u for u in ASKED) == 1, ASKED
+print('OK 15')
 print('OK')

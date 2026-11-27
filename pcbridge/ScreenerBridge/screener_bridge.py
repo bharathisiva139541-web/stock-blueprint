@@ -54,8 +54,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py pricebands download NSE's price band changes and send them now
   python screener_bridge.py ipos       read NSE's IPO lists and update the IPO Tracker tab now
   python screener_bridge.py eod        send NSE's end-of-day files (Delivery %, 52-week highs) now
-  python screener_bridge.py xbrlhistcheck SYMBOL ...  5 years of a stock's NSE XBRL result filings: the table + screener.in side by side (nothing sent)
-  python screener_bridge.py xbrlhistory  the NSE XBRL result filings of every Main stock (5 years) now, then the tables -> the sheet
+  python screener_bridge.py xbrlhistcheck SYMBOL ...  10 years of a stock's NSE XBRL result filings: the table + screener.in side by side (nothing sent)
+  python screener_bridge.py xbrlhistory  the NSE XBRL result filings of every Main stock (10 years) now, then the tables -> the sheet
   python screener_bridge.py epstarget [SYMBOL ...]  EPS Growth Target Lab now: every results season's dates from NSE, the target (TTM EPS x EPS growth %) of every quarter and whether the price reached it -> the sheet; SYMBOL = that stock's quarters printed
   python screener_bridge.py analysts [SYMBOL ...]   Analyst targets now: the brokers' recommendations of Moneycontrol / Business Standard / DSIJ back to 1-Oct-2026, what the price did after each -> the sheet; SYMBOL = that stock's recommendations printed
   python screener_bridge.py analystcheck            Analyst targets check: page 1 of every list, what came back and the recommendations found (nothing sent)
@@ -128,7 +128,7 @@ DEFAULTS = {
     'nse_pe': True,            # NSE's daily PE file: Main's PE where there is no TTM EPS, Industry PE medians
     'pe_history': True,        # median PE 1Y / 3Y / 5Y + the 5-year peak (Kite closes / screener.in EPS) -> Main's columns
     'pe_history_pages_per_run': 40,  # extra screener.in pages a full round for the EPS history (stocks not read yet)
-    'xbrl_history': True,      # 5 years of NSE XBRL result filings per stock (kept in xbrl_data) -> the website's results table
+    'xbrl_history': True,      # 10 years of NSE XBRL result filings per stock (kept in xbrl_data) -> the website's results table
     'xbrl_history_gap_s': 6,         # seconds between two NSE requests of it (at least 5)
     'xbrl_history_stocks_per_day': 100,  # stocks it reads from NSE a day at most (any hour)
     'history60': True,         # NSE daily candles for the sheet's History60 tab (60 days for FVG + Results Performance)
@@ -4734,7 +4734,7 @@ def main(argv):
         return 0 if n is not None else 1
     if cmd == 'xbrlhistcheck':
         syms = [a for a in argv[2:] if a.strip()] or ['TCS']
-        print('NSE XBRL history check - 5 years of result filings, the table and screener.in side by side (the table is sent to the sheet)')
+        print('NSE XBRL history check - %d years of result filings, the table and screener.in side by side (the table is sent to the sheet)' % XH.YEARS)
         rc = XH.check(cfg, syms, out=print, api=api)
         histpe_check(cfg, syms)
         return rc
@@ -4742,7 +4742,7 @@ def main(argv):
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
             return 1
-        print('NSE XBRL history: 5 years of quarterly results of every Main stock (files kept in %s).' % XH.DIR)
+        print('NSE XBRL history: %d years of quarterly results of every Main stock (files kept in %s).' % (XH.YEARS, XH.DIR))
         print('Stop any time with Ctrl+C or by closing this window - the next run carries on where it stopped.')
         res = XH.run_all(dict(cfg, xbrl_history=True), api, nse_busy, XH.gap_of(cfg), out=log, what='XbrlHistoryNow',
                          every=XH.CMD_SAY_EVERY, screener_busy=round_running)

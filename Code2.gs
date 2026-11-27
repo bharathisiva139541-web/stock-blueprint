@@ -14903,7 +14903,7 @@ const AB_EPST_SHEET = 'EPS_Target';
 const AB_EPST_HEADERS = ['Quarter', 'Quarter End', 'FY Quarter', 'Made', 'Prices Up To', 'Summary (JSON)', 'Parts', 'Data'];
 const AB_EPST_PART = 45000;
 const AB_EPST_MAX_PARTS = 60;
-const AB_EPST_KEEP = 16;
+const AB_EPST_KEEP = 40;      // quarters kept (the laptop sends 32 - owner, 27-Nov-2026: 10 years of results for the backtest)
 const AB_EPST_Q_RE = /^(Mar|Jun|Sep|Dec) \d{4}$/;
 const AB_EPST_BLOB_RE = /^[A-Za-z0-9+\/]+={0,2}$/;
 const AB_EPST_ENGINE = 3;      // 2 (24-Nov-2026): 80 / 90 / 100 % of the way, downside targets apart; 3: 50 / 60 / 70 % too + the

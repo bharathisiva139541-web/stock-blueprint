@@ -41,7 +41,7 @@ const SUM = { stocks: 3, ok: 2, target: 2, down: 1, why: { fell: 1, nofiling: 2,
   win: { 30: W14([2, 0]), 60: W14([2, 0, 1, 1, 1, 1]), 90: W14([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]), next: W14([1, 1, 1]), x: [1] }, dwin: { 30: W14([1, 0, 1, 1, 1, 1]) },
   medG: 114.62, medUp: 43.0, medN: 85, ready: true, ann: { nse: 2, evil: 1 } };
 
-test('op put: a quarter a row (replaced, newest 16 by quarter end), checked; op list; refusals', () => {
+test('op put: a quarter a row (replaced, newest 40 by quarter end), checked; op list; refusals', () => {
   const e = env();
   const blob = pack([row('LAURUSLABS'), row('FLAT', { st: 'x', why: 'fell', tgt: null, g: -5 })]);
   const r = e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00',
@@ -59,17 +59,17 @@ test('op put: a quarter a row (replaced, newest 16 by quarter end), checked; op 
   assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Sep 2026', end: '2026-09-30', blob: 'QUJD', engine: 3 }).parts, 1);
   const s = e.post({ token: FEED, action: 'site', part: 'epst', q: 'Sep 2026' });
   assert.strictEqual(s.blob, 'QUJD', 'only the new part');
-  // 18 quarters -> the newest 16 by quarter end
-  for (let y = 2021; y <= 2025; y++) {
+  // 50 quarters -> the newest 40 by quarter end
+  for (let y = 2014; y <= 2025; y++) {
     for (const m of ['Mar', 'Jun', 'Sep', 'Dec']) {
       const end = { Mar: '03-31', Jun: '06-30', Sep: '09-30', Dec: '12-31' }[m];
       e.post({ token: TOKEN, action: 'epst', op: 'put', q: m + ' ' + y, end: y + '-' + end, blob: 'QUJD', engine: 3 });
     }
   }
   const qs = e.post({ token: TOKEN, action: 'epst', op: 'list' }).quarters.map((x) => x.q);
-  assert.strictEqual(qs.length, 16);
+  assert.strictEqual(qs.length, 40);
   assert.deepStrictEqual(qs.slice(0, 3), ['Sep 2026', 'Jun 2026', 'Dec 2025']);
-  assert.ok(qs.indexOf('Mar 2021') < 0 && qs.indexOf('Dec 2022') >= 0, qs.join(','));
+  assert.ok(qs.indexOf('Jun 2016') < 0 && qs.indexOf('Sep 2016') >= 0, qs.join(','));
 });
 
 test('site part epst: the quarters + one quarter\'s blob (asked, else the newest ready one); the feed token only', () => {
