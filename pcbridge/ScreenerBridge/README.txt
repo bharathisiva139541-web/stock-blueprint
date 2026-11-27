@@ -262,6 +262,17 @@ Exceptional items, Interest, Depreciation, Profit before tax, Tax %, Net Profit,
  - Historical PE (Median PE 1Y / 3Y / 5Y, Peak PE 5Y, the website's Own median PE / PE check) now also uses the same
    results table (NSE filings + screener.in, up to 12 years) when the screener.in page record gives fewer medians.
    XbrlHistoryCheck.bat makes Historical PE of every stock again at its end, sends it, and prints the checked stocks'.
+ - 27-Nov-2026 (your bridge.log: 545 stocks still waiting for their screener.in tables):
+     * the screener.in pages are now read FIRST, one page every 15 seconds (config.json
+       "xbrl_history_screener_gap_s", never under 12); while the laptop's own round runs they WAIT for it (they used
+       to be skipped, and the job then rested 6 hours); screener.in's "slow down" = a 3-minute wait, then on;
+       pages still left at the end -> the job starts again within 10 minutes. About 3 hours for the 545 stocks;
+     * 10 YEARS of NSE filings now (40 quarters; it was 5 years = 20 quarters) - for the EPS Target Lab's backtest.
+       Every stock's lists are read once more by itself; the older files come at the usual pace (about 3 to 5 days
+       with the laptop on, at your 800 stocks a day / 5 seconds). NSE's older XBRL files probably start around
+       2016-17 - a stock without older files simply keeps what NSE has;
+     * the EPS Target Lab works out the newest 32 quarters (was 8; config.json "eps_target_quarters", 2 to 36).
+       EpsTargetNow.bat reads every results season's dates at once.
  - bridge.log: "NSE XBRL history: N of M stock(s) looked at ..." and "... table(s) sent to the sheet".
  - To switch it off: in config.json add  "xbrl_history": false   (only its screener.in pages: "xbrl_history_screener": false)
 
@@ -704,7 +715,7 @@ EPS TARGET LAB (since 23-Nov-2026)
    minutes, one request every 5 seconds). EpsTargetNow.bat LAURUSLABS also prints that stock's quarters:
    its 8 EPS, the growth, the target, the results time, the entry and when (or whether) the price reached it.
  - bridge.log: "EPS target (prices up to ...): N stock(s) with 8 quarters of EPS, Q quarter(s) sent to the sheet".
- - To switch it off: in config.json add  "eps_target": false   (quarters worked out: "eps_target_quarters": 8)
+ - To switch it off: in config.json add  "eps_target": false   (quarters worked out: "eps_target_quarters": 32)
  - Since 24-Nov-2026: reached = the price covered 80% of the way from the entry to the target (the page can also show
    90% / the target itself); a target under the entry price is a downside target (did the price FALL to it?), kept
    apart from the long ones. A stock still without a results date after the announcements: its own NSE XBRL filing

@@ -223,17 +223,19 @@
     var done = 0;
     var say = function () { var p = $('#et-th-load', el); if (p) p.textContent = 'Reading the other quarters… ' + done + ' of ' + others.length; };
     say();
-    // one quarter at a time (lite = without the charts' paths) - kept on the device like the rest
-    var chain = Promise.resolve();
-    others.forEach(function (q) {
-      chain = chain.then(function () {
-        return fetchQ(ctx, q, true).then(function (got) {
-          done++;
-          if (got.res) byQ[q] = prepare(got.res, ctx);
-          say();
-        });
-      });
-    });
+    // three quarters at a time (lite = without the charts' paths; up to 32 quarters since 27-Nov-2026) - kept on the
+    // device like the rest
+    var queue = others.slice();
+    var worker = function () {
+      if (!queue.length || !el.isConnected) return Promise.resolve();
+      var q = queue.shift();
+      return fetchQ(ctx, q, true).then(function (got) {
+        done++;
+        if (got.res) byQ[q] = prepare(got.res, ctx);
+        say();
+      }, function () { done++; say(); }).then(worker);
+    };
+    var chain = Promise.all([worker(), worker(), worker()]);
     chain.then(function () {
       if (!el.isConnected) return;
       var W = ST.opt.W, Tt = ST.opt.T;
