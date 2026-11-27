@@ -157,7 +157,7 @@
   function serverKey() {
     var base = SB.apiBase ? SB.apiBase() : null;
     if (base == null) return Promise.reject(new Error('this site has no server for pop-ups'));
-    return fetch(base + 'api/push', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+    return fetch(base + (SB.access ? SB.access.url('api/push') : 'api/push'), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       if (!j || !j.ok || !j.publicKey) throw new Error((j && j.message) || 'the site\'s push sender is not set up');
       return j.publicKey;
     });

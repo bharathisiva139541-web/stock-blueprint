@@ -92,7 +92,7 @@
       }
       http.sendJson(res, 200, { ok: true, sym: sym, fin: fin || null, cols: COLS, fetchedAt: cal.istDateTimeStr(now()) },
         { env: env, cacheControl: 'public, max-age=0, s-maxage=' + TTL_S + ', stale-while-revalidate=' + (TTL_S * 2) });
-    }, ['GET']);
+    }, ['GET'], true);
   }
 
   module.exports = createHandler();

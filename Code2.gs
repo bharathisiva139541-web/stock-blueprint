@@ -15103,3 +15103,267 @@ function ab_recosForSite_() {
   out.blob = n ? sh.getRange(2, 5, 1, n).getValues()[0].map(function (v) { return String(v || ''); }).join('') : '';
   return out;
 }
+
+/*****************************************************************
+ * WEBSITE ACCESS - ONLY THE PERSONS THE OWNER ADDS (28-Nov-2026)
+ * -----------------------------------------------------------------
+ * Owner, 28-Nov-2026: "I need a control for how many persons uses my website. I don't want this website public now.
+ * i want to give access to only authorized persons" - choices: an access code per person, 3 devices a person, the old
+ * data copy off the website. Tab 'Website Access' (row 1 note, row 2 headers, a person a row): Name / Access Code /
+ * Active / Max Devices / Devices / Last Used / Days Used / Added / Reset Devices / Device Data (hidden JSON). Vercel's
+ * api/access asks here (doPost action 'access', the site feed's token): 'login' {code, dev, label} -> the person and
+ * this device (a new device only while fewer than Max Devices), 'renew' {pid, dev} (every few minutes while the website
+ * is open - an untick / a reset / a new code closes it), 'logout' {pid, dev} (frees the device). pid = a hash of the
+ * code, so a new code signs the person out everywhere. Wrong codes counted: AB_ACC_FAILS_MAX in an hour lock every
+ * login AB_ACC_LOCK_MIN minutes (renewals go on).
+ *****************************************************************/
+const AB_ACC_SHEET = 'Website Access';
+const AB_ACC_HEADERS = ['Name', 'Access Code', 'Active', 'Max Devices', 'Devices', 'Last Used', 'Days Used', 'Added',
+  'Reset Devices', 'Device Data'];
+const AB_ACC_MAX_DEVICES = 3;
+const AB_ACC_CODE_RE = /^[A-Za-z0-9]{6,20}$/;
+const AB_ACC_DEV_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const AB_ACC_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0 / O / 1 / I / L - read out over the phone
+const AB_ACC_FAILS_PROP = 'AB_ACC_FAILS';
+const AB_ACC_FAILS_MAX = 30;
+const AB_ACC_LOCK_MIN = 30;
+const AB_ACC_TOUCH_MS = 10 * 60 * 1000;                     // Last Used written at most this often per device
+
+function ab_accNote_() {
+  return 'Website access (owner, 28-Nov-2026): only the access codes here open the website. Add a person: menu ' +
+    '3. Quarterly Results & Trend Tags > Website access: add a person. Turn a person off: untick Active (closed within ' +
+    '10 minutes). Free their devices: tick Reset Devices. A new code (6-20 letters / digits) signs them out everywhere. ' +
+    'Each code works on up to "Max Devices" devices.';
+}
+
+/** The tab (made when missing, `create`), its header map and its person rows. */
+function ab_accRead_(create, again) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(AB_ACC_SHEET);
+  if (!sh) {
+    if (!create) return null;
+    sh = ss.insertSheet(AB_ACC_SHEET);
+    sh.getRange(1, 1).setValue(ab_accNote_());
+    sh.getRange(2, 1, 1, AB_ACC_HEADERS.length).setValues([AB_ACC_HEADERS]).setFontWeight('bold');
+    try { sh.setFrozenRows(2); } catch (e) { /* ignore */ }
+    try { sh.hideColumns(AB_ACC_HEADERS.length); } catch (e) { /* ignore */ }
+  }
+  const last = Math.max(sh.getLastRow(), 2), width = Math.max(sh.getLastColumn(), AB_ACC_HEADERS.length);
+  const vals = sh.getRange(1, 1, last, width).getValues();
+  const head = (vals[1] || []).map(function (h) { return String(h || '').trim(); });
+  const col = {};
+  AB_ACC_HEADERS.forEach(function (h) { col[h] = head.indexOf(h); });
+  const missing = AB_ACC_HEADERS.filter(function (h) { return col[h] < 0; });
+  if (missing.length && !again) {                  // a column the owner deleted: put it back after the last header
+    let at = head.length;
+    while (at > 0 && !head[at - 1]) at--;
+    missing.forEach(function (h) { sh.getRange(2, at + 1).setValue(h).setFontWeight('bold'); at++; });
+    return ab_accRead_(false, true);
+  }
+  if (missing.length) throw new Error('the Website Access tab lost its ' + missing.join(' / ') + ' column');
+  const rows = [];
+  for (let r = 2; r < vals.length; r++) {
+    const v = vals[r];
+    const name = String(v[col['Name']] || '').trim(), code = String(v[col['Access Code']] || '').trim();
+    if (!name && !code) continue;                  // blank rows inside the list are skipped, never a stop
+    let devs = [];
+    try { devs = JSON.parse(String(v[col['Device Data']] || '[]')); } catch (e) { devs = []; }
+    if (!Array.isArray(devs)) devs = [];
+    devs = devs.filter(function (d) { return d && AB_ACC_DEV_RE.test(String(d.d || '')); });
+    const max = Number(v[col['Max Devices']]);
+    rows.push({ row: r + 1, name: name || code, code: code, active: ab_accYes_(v[col['Active']]),
+      max: isFinite(max) && max >= 1 ? Math.min(20, Math.floor(max)) : AB_ACC_MAX_DEVICES,
+      reset: ab_accYes_(v[col['Reset Devices']]), devs: devs, last: v[col['Last Used']], days: Number(v[col['Days Used']]) || 0 });
+  }
+  return { sh: sh, col: col, rows: rows };
+}
+
+function ab_accYes_(v) {
+  return v === true || /^(y|yes|true|1|✓|✔)$/i.test(String(v === undefined || v === null ? '' : v).trim());
+}
+
+/** pid = the first 16 hex of SHA-256 of the code (upper case): a new code = a new pid = signed out everywhere. */
+function ab_accPid_(code) {
+  const b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'sb-access:' + String(code).trim().toUpperCase(),
+    Utilities.Charset.UTF_8);
+  return b.slice(0, 8).map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
+}
+
+function ab_accDevWords_(p) {
+  const tz = Session.getScriptTimeZone() || 'Asia/Kolkata';
+  const when = function (iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && isFinite(d.getTime()) ? Utilities.formatDate(d, tz, 'dd-MM HH:mm') : '';
+  };
+  if (!p.devs.length) return 'none yet (0 of ' + p.max + ')';
+  return p.devs.length + ' of ' + p.max + ': ' + p.devs.map(function (d) {
+    return (String(d.l || 'a device').slice(0, 40)) + (d.t ? ' (last ' + when(d.t) + ')' : '');
+  }).join('; ');
+}
+
+/** Writes one person's Devices / Device Data / Last Used / Days Used (+ Reset Devices back to unticked). */
+function ab_accSave_(t, p, now, used) {
+  const c = t.col, tz = Session.getScriptTimeZone() || 'Asia/Kolkata';
+  const set = function (h, v) { t.sh.getRange(p.row, c[h] + 1).setValue(v); };
+  set('Device Data', JSON.stringify(p.devs));
+  set('Devices', ab_accDevWords_(p));
+  if (p.resetDone) set('Reset Devices', false);
+  if (used) {
+    const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+    const lastDay = p.last instanceof Date ? Utilities.formatDate(p.last, tz, 'yyyy-MM-dd') : String(p.last || '').slice(0, 10);
+    if (lastDay !== today) set('Days Used', (p.days || 0) + 1);
+    set('Last Used', now);
+  }
+}
+
+function ab_accFails_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(AB_ACC_FAILS_PROP) || 'null') || null; } catch (e) { return null; }
+}
+
+function ab_accFind_(t, pred) {
+  for (let i = 0; i < t.rows.length; i++) if (pred(t.rows[i])) return t.rows[i];
+  return null;
+}
+
+/** doPost action 'access' (Vercel api/access, the site feed's token). */
+function ab_accessFromSite_(req) {
+  const real = ab_feedToken_(false);
+  if (!real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
+  try {
+    return ab_bridgeJson_(ab_accessOp_(req, new Date()));
+  } catch (err) {
+    return ab_bridgeJson_({ ok: false, error: String(err && err.message || err).slice(0, 200) });
+  }
+}
+
+function ab_accessOp_(req, now) {
+  const op = String(req.op || '');
+  if (['login', 'renew', 'logout'].indexOf(op) < 0) return { ok: false, error: 'unknown op' };
+  const dev = String(req.dev || '');
+  if (!AB_ACC_DEV_RE.test(dev)) return { ok: false, code: 'bad', error: 'bad device id' };
+  const lock = ab_labLock_();
+  const locked = lock.tryLock(10000);
+  if (!locked && op === 'login') return { ok: false, code: 'busy', error: 'the sheet is busy - try again in a moment' };
+  try {
+    const t = ab_accRead_(false);
+    if (!t) return { ok: false, code: op === 'login' ? 'wrong' : 'gone', error: 'no access list yet' };
+    const props = PropertiesService.getScriptProperties();
+    if (op === 'login') {
+      const f = ab_accFails_();
+      if (f && f.until > now.getTime()) {
+        return { ok: false, code: 'locked', error: 'too many wrong codes - try again in ' + Math.ceil((f.until - now.getTime()) / 60000) + ' min' };
+      }
+      const code = String(req.code || '').trim();
+      const p = AB_ACC_CODE_RE.test(code) ? ab_accFind_(t, function (x) { return x.code.toUpperCase() === code.toUpperCase(); }) : null;
+      if (!p) {
+        const n = f && now.getTime() - f.at < 3600000 ? f.n + 1 : 1;
+        props.setProperty(AB_ACC_FAILS_PROP, JSON.stringify({ n: n, at: f && now.getTime() - f.at < 3600000 ? f.at : now.getTime(),
+          until: n >= AB_ACC_FAILS_MAX ? now.getTime() + AB_ACC_LOCK_MIN * 60000 : 0 }));
+        return { ok: false, code: 'wrong', error: 'this access code is not known' };
+      }
+      if (!p.active) return { ok: false, code: 'off', error: 'this access code is turned off' };
+      if (p.reset) { p.devs = []; p.resetDone = true; }
+      const label = String(req.label || 'a device').replace(/[^A-Za-z0-9 ,.()/+-]/g, '').slice(0, 40) || 'a device';
+      let d = ab_accFind_({ rows: p.devs }, function (x) { return x.d === dev; });
+      if (!d) {
+        if (p.devs.length >= p.max) {
+          if (p.resetDone) ab_accSave_(t, p, now, false);
+          return { ok: false, code: 'devices', error: 'this code is already used on ' + p.devs.length + ' device(s) - ' +
+            'ask the owner to reset its devices', max: p.max };
+        }
+        d = { d: dev, l: label, f: now.toISOString(), t: now.toISOString() };
+        p.devs.push(d);
+      } else {
+        d.t = now.toISOString();
+        d.l = label;
+      }
+      ab_accSave_(t, p, now, true);
+      return { ok: true, pid: ab_accPid_(p.code), name: p.name.slice(0, 60), max: p.max, used: p.devs.length };
+    }
+    const pid = String(req.pid || '');
+    const p = /^[0-9a-f]{16}$/.test(pid) ? ab_accFind_(t, function (x) { return x.code && ab_accPid_(x.code) === pid; }) : null;
+    if (!p) return { ok: false, code: 'gone', error: 'this access code is no longer in the list' };
+    if (op === 'logout') {
+      const before = p.devs.length;
+      p.devs = p.devs.filter(function (x) { return x.d !== dev; });
+      if (p.devs.length !== before) ab_accSave_(t, p, now, false);
+      return { ok: true };
+    }
+    if (!p.active) return { ok: false, code: 'off', error: 'this access code is turned off' };
+    if (p.reset) {
+      p.devs = [];
+      p.resetDone = true;
+      ab_accSave_(t, p, now, false);
+      return { ok: false, code: 'reset', error: 'the owner reset this code\'s devices - type the code again' };
+    }
+    const d = ab_accFind_({ rows: p.devs }, function (x) { return x.d === dev; });
+    if (!d) return { ok: false, code: 'gone', error: 'this device was removed from the access code' };
+    const lastT = Date.parse(d.t || '') || 0;
+    if (now.getTime() - lastT >= AB_ACC_TOUCH_MS) {
+      d.t = now.toISOString();
+      ab_accSave_(t, p, now, true);
+    }
+    return { ok: true, name: p.name.slice(0, 60) };
+  } finally {
+    if (locked) lock.releaseLock();
+  }
+}
+
+/** A new code nobody has yet (8 characters of AB_ACC_ALPHABET). */
+function ab_accNewCode_(t) {
+  const used = {};
+  (t ? t.rows : []).forEach(function (p) { used[p.code.toUpperCase()] = 1; });
+  for (let tries = 0; tries < 50; tries++) {
+    const b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + ':' + tries, Utilities.Charset.UTF_8);
+    let s = '';
+    for (let i = 0; i < 8; i++) s += AB_ACC_ALPHABET.charAt((b[i] & 255) % AB_ACC_ALPHABET.length);
+    if (!used[s]) return s;
+  }
+  throw new Error('could not make a new code');
+}
+
+/** Adds a person (name, a new code, Active, Max Devices) -> {name, code, row}. */
+function ab_accAdd_(name, now) {
+  const t = ab_accRead_(true);
+  const code = ab_accNewCode_(t);
+  const c = t.col;
+  const row = Math.max(t.sh.getLastRow(), 2) + 1;
+  const vals = [];
+  for (let i = 0; i < AB_ACC_HEADERS.length; i++) vals.push('');
+  vals[c['Name']] = String(name).trim().slice(0, 60);
+  vals[c['Access Code']] = code;
+  vals[c['Active']] = true;
+  vals[c['Max Devices']] = AB_ACC_MAX_DEVICES;
+  vals[c['Devices']] = 'none yet (0 of ' + AB_ACC_MAX_DEVICES + ')';
+  vals[c['Days Used']] = 0;
+  vals[c['Added']] = now;
+  vals[c['Reset Devices']] = false;
+  vals[c['Device Data']] = '[]';
+  t.sh.getRange(row, 1, 1, vals.length).setValues([vals]);
+  try {
+    t.sh.getRange(row, c['Active'] + 1).insertCheckboxes();
+    t.sh.getRange(row, c['Reset Devices'] + 1).insertCheckboxes();
+    t.sh.getRange(row, c['Access Code'] + 1).setNumberFormat('@');
+  } catch (e) { /* plain cells still work */ }
+  return { name: vals[c['Name']], code: code, row: row };
+}
+
+/** Menu 3 > Website access: add a person. */
+function runWebsiteAccessAdd() {
+  const ui = SpreadsheetApp.getUi();
+  const title = 'Website access - add a person';
+  const t0 = ab_accRead_(true);
+  const n = t0.rows.filter(function (p) { return p.active; }).length;
+  const r = ui.prompt(title, 'Persons who can open the website now: ' + n + '.\n\nName of the new person (e.g. your own name, ' +
+    'or a friend\'s):', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const name = String(r.getResponseText() || '').trim();
+  if (!name) { ui.alert(title, 'Nothing added: no name typed.', ui.ButtonSet.OK); return; }
+  const a = ab_accAdd_(name, new Date());
+  ui.alert(title,
+    'Added: ' + a.name + '\n\nAccess code:  ' + a.code + '\n\n' +
+    'Send this code to ' + a.name + '. On the website they type it once on each device - up to ' + AB_ACC_MAX_DEVICES +
+    ' devices (change the number in the tab\'s Max Devices column).\n\n' +
+    'Tab "' + AB_ACC_SHEET + '": untick Active to close the website for them (within 10 minutes), tick Reset Devices to ' +
+    'free their devices, or type a new code to sign them out everywhere.', ui.ButtonSet.OK);
+}

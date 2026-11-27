@@ -116,7 +116,13 @@
     const data = resp.data && typeof resp.data === 'object' ? resp.data : {};
     if (data.ok !== true) {
       const m = mapSheetError(data.error, body);
-      return Object.assign({ ok: false }, m);
+      const out = Object.assign({ ok: false }, m);
+      // the sheet's own short code (website access: wrong / off / devices / locked / gone / reset / busy) and the minutes
+      // of a lock - never its text
+      if (typeof data.code === 'string' && /^[a-z-]{1,20}$/.test(data.code)) out.sheetCode = data.code;
+      const mins = /in (\d{1,4}) min/.exec(String(data.error || ''));
+      if (mins) out.sheetMin = Number(mins[1]);
+      return out;
     }
     return { ok: true, data: data };
   }

@@ -8,7 +8,7 @@ const path = require('path');
 const R = require('../web/lib/results.js');
 
 const w = {};
-new Function('window', fs.readFileSync(path.join(__dirname, '..', 'web', 'data', 'dashboard.js'), 'utf8'))(w);
+new Function('window', fs.readFileSync(path.join(__dirname, 'fixtures', 'saved-copy', 'dashboard.js'), 'utf8'))(w);
 const D = w.SB_DATA;
 const perf = D.resultsPerf;
 const season = R.seasonOf(perf);

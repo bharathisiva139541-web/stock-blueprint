@@ -20,10 +20,19 @@ try { chromium = require('playwright').chromium; } catch (e) {
 }
 
 const WEB = path.join(__dirname, '..', '..', 'web');
+// the saved copy of the sheet (20-Oct) is no longer on the website (owner, 28-Nov-2026: the website private) - the tests
+// serve it from tests/fixtures/saved-copy/ at the address the page asks for (data/dashboard.js ...)
+const SAVED_DIR = path.join(__dirname, '..', 'fixtures', 'saved-copy');
+const SAVED_FILES = ['dashboard.js', 'history.js', 'history60.js', 'workbook-analysis.js'];
+function webFile(pathname) {
+  const m = /^\/data\/([a-z0-9-]+\.js)$/.exec(pathname);
+  if (m && SAVED_FILES.indexOf(m[1]) >= 0) return path.join(SAVED_DIR, m[1]);
+  return path.join(WEB, pathname.replace(/^\/$/, '/index.html'));
+}
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 const server = http.createServer((req, res) => {
-  const p = path.join(WEB, decodeURIComponent(req.url.split('?')[0]).replace(/^\/$/, '/index.html'));
-  if (!p.startsWith(WEB) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
+  const p = webFile(decodeURIComponent(req.url.split('?')[0]));
+  if (!(p.startsWith(WEB) || p.startsWith(SAVED_DIR)) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream' });
   fs.createReadStream(p).pipe(res);
 });
@@ -33,8 +42,8 @@ function windowVar(file, name) { const w = {}; new Function('window', fs.readFil
 const CFG = windowVar(path.join(WEB, 'config.js'), 'SB_CONFIG');
 const REMOTE = new URL(CFG.remoteApi);                    // the API the Firebase copy uses (mocked, never contacted)
 const FIREBASE = 'http://stock-blueprint.web.app/';      // served from web/ by a route: no DNS, no network
-const SAVED = windowVar(path.join(WEB, 'data', 'dashboard.js'), 'SB_DATA');
-const HIST = windowVar(path.join(WEB, 'data', 'history.js'), 'SB_HISTORY');
+const SAVED = windowVar(path.join(SAVED_DIR, 'dashboard.js'), 'SB_DATA');
+const HIST = windowVar(path.join(SAVED_DIR, 'history.js'), 'SB_HISTORY');
 // part history60: five older weekdays for the first three stocks (History60 via the PC)
 const HIST60 = (function () {
   const first = new Date(HIST.dates[0] + 'T00:00:00Z'), dates = [];
@@ -222,6 +231,7 @@ function liveApi(o) {
       return { json: { ok: true, configured: true, part, readAt: READ_AT, fetchedAt: istAgo(1), stale: false,
         session: { state: o.session, lastCompletedSession: '2026-10-20' }, priceState: o.priceState, data: part === 'history' ? HIST : part === 'history60' ? HIST60 : LIVE_MAIN } };
     }
+    if (u.pathname === '/api/access') return { json: { ok: true, open: true } };   // the private-website check runs its own mock
     if (u.pathname === '/api/market-status') {
       return { json: o.provider === 'sheet'
         ? { provider: { name: 'sheet', configured: true, requires: ['SHEET_FEED_URL', 'SHEET_FEED_TOKEN'], licensing: 'mock licensing note' },
@@ -263,8 +273,8 @@ async function routeAll(context, siteBase, api, calls) {
     }
     if (u.origin !== site.origin) return route.abort('blockedbyclient');   // nothing leaves the machine
     if (site.hostname !== '127.0.0.1') {                                   // the fake Firebase host: serve web/
-      const f = path.join(WEB, decodeURIComponent(u.pathname).replace(/^\/$/, '/index.html'));
-      if (!f.startsWith(WEB) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
+      const f = webFile(decodeURIComponent(u.pathname));
+      if (!(f.startsWith(WEB) || f.startsWith(SAVED_DIR)) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
       return route.fulfill({ path: f, contentType: TYPES[path.extname(f)] || 'application/octet-stream' });
     }
     return route.continue();
@@ -277,7 +287,7 @@ function watchlistBackend(now) {
   gs.call('runWatchlistPinSetup');
   const bodies = [];
   const handler = require('../../api/watchlists').createHandler({
-    env: { SHEET_FEED_URL: 'https://sheet.invalid/exec', SHEET_FEED_TOKEN: 'feed-token' },
+    env: { SHEET_FEED_URL: 'https://sheet.invalid/exec', SHEET_FEED_TOKEN: 'feed-token', SITE_ACCESS: 'open' },
     fetch: async (url, init) => new Response(JSON.stringify(gs.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } })
   });
   gs.setProp = (k, v) => gs.run('PropertiesService.getScriptProperties().setProperty(' + JSON.stringify(k) + ', ' + JSON.stringify(v) + ')');
@@ -1852,9 +1862,25 @@ function check(name, fn) {
     assert.ok(st.overflow <= 0, 'horizontal page overflow ' + st.overflow + 'px');
   });
 
-  await check('live feed unreachable (network error): saved copy + banner', async () => {
+  await check('live feed unreachable (network error): saved copy + banner (a signed-in device); a new device: the sign-in screen says why', async () => {
+    // a device that never signed in (the website is private since 28-Nov-2026): no data, the reason on the sign-in screen
+    const c0 = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c0.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await routeAll(c0, base, () => 'abort', []);
+    const p0 = await c0.newPage();
+    await p0.goto(base + '#overview', { waitUntil: 'load' });
+    await p0.waitForSelector('#acc-gate', { timeout: 15000 });
+    const why = await p0.textContent('#acc-msg');
+    await c0.close();
+    assert.match(why, /No internet connection/);
+    // a signed-in device (its key still valid): the page goes on to the data as before
     const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
-    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await c.addInitScript(() => {
+      try {
+        localStorage.setItem('sb:api', 'true');
+        localStorage.setItem('sb:access', JSON.stringify({ token: 'v1.t.' + 'x'.repeat(43), k: 'k'.repeat(22), ks: 1, until: Date.now() + 3600e3, name: 'Siva', at: Date.now() }));
+      } catch (e) { /* ignore */ }
+    });
     await routeAll(c, base, () => 'abort', []);
     const p = await c.newPage(), errors = watchErrors(p);
     await p.goto(base + '#overview', { waitUntil: 'load' });
@@ -1904,6 +1930,86 @@ function check(name, fn) {
     assert.ok(got.itd > 0 && got.z4, 'the Zerodha tables are filled: ' + JSON.stringify(got));
     assert.ok(H.live && H.kept && H.readAt === READ_AT && H.older === 5 && !H.reason60, 'the kept candles + older days: ' + JSON.stringify(H));
     assert.ok(!calls.slice(before).some((u) => /part=history/.test(u)), 'no second wait for the candles: ' + calls.slice(before).join(' '));
+  });
+
+  await check('a private website (owner, 28-Nov-2026): no data before an access code; a wrong code / a good one / renewals / an untick / sign out', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [], bodies = [];
+    const KEY1 = 'k'.repeat(22), KEY2 = 'K'.repeat(22);
+    let person = 'on', key = KEY1;
+    const site = liveApi({ priceState: 'DELAYED', session: 'open' });
+    const api = (u, req) => {
+      if (u.pathname === '/api/access') {
+        const b = JSON.parse(req.postData() || '{}');
+        bodies.push(b);
+        const grant = (name) => ({ json: { ok: true, token: 'v1.tok-' + name + '.' + 'x'.repeat(43), k: key, ks: 1, until: Date.now() + 6 * 3600e3, name } });
+        if (b.op === 'hello') return { json: { ok: true, open: false } };
+        if (b.op === 'login') return b.code === 'GOOD2026' ? grant('Siva') : { json: { ok: false, code: 'wrong', message: 'This access code is not known - check it and type it again.' } };
+        if (b.op === 'renew') return person === 'on' ? grant('Siva') : { json: { ok: false, code: 'off', message: 'This access code is turned off - ask the owner of the website.' } };
+        if (b.op === 'logout') return { json: { ok: true } };
+      }
+      // the real guard: data only with the key of this device
+      if (u.searchParams.get('k') !== key && u.pathname !== '/api/market-status') return { status: 401, json: { ok: false, code: 'access', error: 'private' } };
+      return site(u, req);
+    };
+    await routeAll(c, base, api, calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#overview', { waitUntil: 'load' });
+    await p.waitForSelector('#acc-gate', { timeout: 15000 });
+    const locked = await p.evaluate(() => ({ cls: document.body.classList.contains('sb-locked'), nav: getComputedStyle(document.querySelector('.tabs')).display,
+      data: !!(window.SB.ctx && window.SB.ctx.D), text: document.querySelector('#acc-gate').textContent }));
+    assert.ok(locked.cls && locked.nav === 'none' && !locked.data, 'nothing before the code: ' + JSON.stringify(locked));
+    assert.ok(/Stock Blueprint is private/.test(locked.text) && /up to 3 devices/.test(locked.text), locked.text);
+    assert.ok(!calls.some((x) => /\/api\/site/.test(x)), 'no data asked before the code: ' + calls.join(' '));
+    await guideShot(p, 'access-gate', '#acc-gate');
+    // a too short code: said at once, nothing asked
+    await p.fill('#acc-code', 'abc');
+    await p.click('#acc-go');
+    assert.match(await p.textContent('#acc-msg'), /6 to 20 letters or digits/);
+    // a wrong code: the sheet's words
+    await p.fill('#acc-code', 'WRONG123');
+    await p.click('#acc-go');
+    await p.waitForFunction(() => /not known/.test(document.querySelector('#acc-msg').textContent), null, { timeout: 10000 });
+    // the right one: the page opens, every data call carries the key, the footer names the person
+    await p.fill('#acc-code', 'GOOD2026');
+    await p.click('#acc-go');
+    await p.waitForFunction(dataReady, null, { timeout: 15000 });
+    const login = bodies.find((b) => b.op === 'login' && b.code === 'GOOD2026');
+    assert.ok(login && /^[A-Za-z0-9_-]{16,64}$/.test(login.dev) && login.label, 'device id + label: ' + JSON.stringify(login));
+    const dataCalls = calls.filter((x) => /\/api\/(site|financials|epstarget|recos|quotes)/.test(x));
+    assert.ok(dataCalls.length && dataCalls.every((x) => x.indexOf('k=' + KEY1) > 0), 'the key on every data call: ' + dataCalls.join(' '));
+    assert.match(await p.textContent('#acc-who'), /Signed in as Siva · Sign out of this device/);
+    assert.strictEqual(await p.evaluate(() => document.body.classList.contains('sb-locked')), false);
+    // a reload: no code asked again (renewed in the background)
+    await p.reload({ waitUntil: 'load' });
+    await p.waitForFunction(dataReady, null, { timeout: 15000 });
+    assert.strictEqual(await p.$('#acc-gate'), null, 'signed in stays signed in');
+    // the key ran out on the server: a data call says 401, the page renews and asks once more with the new key
+    key = KEY2;
+    const fin = await p.evaluate((sym) => window.SB.api('api/financials?sym=' + sym).then((r) => r.ok, (e) => 'err ' + e.message), FLAG_SYM);
+    assert.strictEqual(fin, true, 'renewed after a 401');
+    assert.strictEqual(await p.evaluate(() => window.SB.access.k()), KEY2);
+    // the owner unticks Active: the next renewal shows the sign-in screen with the reason
+    person = 'off';
+    await p.evaluate(() => window.SB.access.renew(true));
+    await p.waitForSelector('#acc-gate', { timeout: 15000 });
+    assert.match(await p.textContent('#acc-msg'), /turned off/);
+    // in again, then sign out of this device
+    person = 'on';
+    await p.fill('#acc-code', 'GOOD2026');
+    await p.click('#acc-go');
+    await p.waitForFunction(dataReady, null, { timeout: 15000 });
+    await p.click('#acc-out');
+    await p.waitForSelector('#acc-gate', { timeout: 15000 });
+    assert.ok(bodies.some((b) => b.op === 'logout' && /^v1\.tok-Siva/.test(b.token)), 'the sheet frees the device');
+    assert.strictEqual(await p.evaluate(() => localStorage.getItem('sb:access')), null);
+    // 360 px: the screen fits
+    await p.setViewportSize({ width: 360, height: 760 });
+    const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    await c.close();
+    assert.ok(over <= 0, 'no sideways scroll at 360 px: ' + over);
+    assert.deepStrictEqual(errors, [], 'console/page errors');
   });
 
   await check('the owner\'s Kite live prices: with the PIN, price + Today % come from Kite with the LIVE label; without it nothing changes', async () => {

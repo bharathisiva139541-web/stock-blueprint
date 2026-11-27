@@ -32,7 +32,7 @@
       }
       const cc = payload.state === 'UNAVAILABLE' ? cacheLib.unavailableCacheControl() : cacheLib.historyCacheControl();
       http.sendJson(res, 200, payload, { env: env, cacheControl: cc });
-    });
+    }, ['GET'], true);
   }
 
   module.exports = createHandler();

@@ -170,17 +170,39 @@ All three use the PIN of step 8 and the same `SHEET_FEED_URL` + `SHEET_FEED_TOKE
   Activity of the Vercel site; `web/.well-known/assetlinks.json` = its signing
   key's SHA-256, so Chrome shows no address bar).
 
-## 2. Saved copy (optional, on your PC)
+### Step 10 - Only the persons you add can open the website (28-Nov-2026)
 
-Only needed for localhost, the single-file preview, or as a newer fallback:
+The website is private: it asks for an **access code** before it shows anything,
+and every data `api/` refuses a request without the key of a signed-in device.
+
+1. In the sheet: **menu 3. Quarterly Results & Trend Tags → Website access: add a
+   person** → type a name → the alert shows the code. Add yourself first.
+2. Send the code to the person. On the website they type it once on each device
+   (up to **Max Devices**, 3 by default).
+3. Tab **Website Access**: untick **Active** = closed for them within ~10 minutes;
+   tick **Reset Devices** = their devices are freed (they type the code again);
+   type a new code = signed out everywhere. **Days Used** / **Last Used** /
+   **Devices** show who uses it.
+4. Emergency switch: Vercel → Settings → Environment Variables → `SITE_ACCESS` =
+   `open` (then Redeploy) makes the website public again; delete it to lock again.
+
+How it works: `api/access` (login / renew / logout) asks the sheet (doPost action
+`access`, Code2.gs `ab_accessFromSite_`) and signs the device's session with a key
+derived from `SHEET_FEED_TOKEN` (no new setting); every data api wants the 6-hour
+content key `?k=...` (`api/_lib/access.js`, `http.endpoint` guard). The sheet's saved
+copy is no longer part of the website (`web/data/dashboard.js` ... are git-ignored).
+
+## 2. Saved copy (optional, on your PC - never on the website)
+
+Only for localhost or the single-file preview (the website is private since
+28-Nov-2026 and never serves it):
 
 1. In the Google Sheet: **File → Download → Microsoft Excel (.xlsx)**.
 2. Drag the downloaded file onto **`UpdateWebsiteData.bat`**. It writes
    `web/data/dashboard.js`, `web/data/history.js` and (when Node.js is
-   installed) `web/data/workbook-analysis.js`.
+   installed) `web/data/workbook-analysis.js` - git-ignored, they stay on your PC.
    Personal tabs (Portfolio, Risk Manager, Control Panel, Trade Log, Trade
    Dashboard, Entry alerts) are never exported.
-3. Commit and push the changed files (GitHub Desktop or `git push`).
 
 ## 3. Localhost
 

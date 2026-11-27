@@ -14,7 +14,7 @@ const flat = tool.flatten(master);
 const I = IND.createIndex(flat);
 
 function loadDash() {
-  const f = path.join(__dirname, '..', 'web', 'data', 'dashboard.js');
+  const f = path.join(__dirname, 'fixtures', 'saved-copy', 'dashboard.js');
   if (!fs.existsSync(f)) return null;
   const w = {}; new Function('window', fs.readFileSync(f, 'utf8'))(w);
   const m = w.SB_DATA.main;

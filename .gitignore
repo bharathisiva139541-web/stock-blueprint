@@ -67,3 +67,10 @@ pcbridge/ScreenerBridge/analyst_recos_state.json
 pcbridge/ScreenerBridge/analyst_check/
 # NSE XBRL result filings of 5 years (18-Nov-2026) - kept on the laptop
 pcbridge/ScreenerBridge/xbrl_data/
+
+# the website is private (owner, 28-Nov-2026): the sheet's saved copy never goes on it again - tools/export_xlsx.py may
+# write these for a local preview; the tests keep their copy in tests/fixtures/saved-copy/
+web/data/dashboard.js
+web/data/history.js
+web/data/history60.js
+web/data/workbook-analysis.js

@@ -19,7 +19,7 @@
   // Fake secrets (never real values).
   const SHEET_URL = 'https://script.google.com/macros/s/AKfy_SECRET_DEPLOYMENT/exec';
   const SHEET_TOKEN = 'sheet_SECRET_987654';
-  const ENV = { SHEET_FEED_URL: SHEET_URL, SHEET_FEED_TOKEN: SHEET_TOKEN };
+  const ENV = { SHEET_FEED_URL: SHEET_URL, SHEET_FEED_TOKEN: SHEET_TOKEN, SITE_ACCESS: 'open' };
 
   const IST = function (s) { return cal.parseIstDateTime(s); };
   const IN_SESSION = '2026-10-14 11:00';   // Wednesday, market open
@@ -185,7 +185,7 @@
     const cases = [
       [{}, /set SHEET_FEED_URL and SHEET_FEED_TOKEN in Vercel/],
       [{ MARKET_DATA_PROVIDER: 'sheet', SHEET_FEED_URL: SHEET_URL }, /set SHEET_FEED_TOKEN in Vercel/],
-      [{ SHEET_FEED_URL: 'http://insecure.example/exec', SHEET_FEED_TOKEN: SHEET_TOKEN }, /https:\/\//]
+      [{ SHEET_FEED_URL: 'http://insecure.example/exec', SHEET_FEED_TOKEN: SHEET_TOKEN, SITE_ACCESS: 'open' }, /https:\/\//]
     ];
     for (const c of cases) {
       const h = siteApi.createHandler({ env: c[0], fetch: f, now: clockAt(IN_SESSION).now, cache: cacheLib.createCache() });

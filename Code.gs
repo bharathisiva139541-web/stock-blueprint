@@ -967,6 +967,7 @@ function onOpen() {
         .addItem('Website feed: rebuild now', 'runSiteFeedRebuildNow')
         .addItem('Website feed: stop auto-refresh', 'runSiteFeedStopAutoRefresh')
         .addItem('My Watchlists sync: set / change PIN', 'runWatchlistPinSetup')
+        .addItem('Website access: add a person', 'runWebsiteAccessAdd')
         .addSeparator()
         .addItem('Selected row(s)', 'runQuarterlyTrendForSelection')
         .addItem('Paste symbol list...', 'runQuarterlyTrendForSymbolPrompt')
@@ -8975,6 +8976,8 @@ function doPost(e) {
   if (req && req.action === 'site') return ab_feedSite_(req);
   // the website's My Watchlists: the same token, plus the owner's PIN (checked in ab_wlFromSite_, Code2.gs)
   if (req && req.action === 'watchlists') return ab_wlFromSite_(req);
+  // who may open the website (owner, 28-Nov-2026: only the persons with an access code - Code2.gs ab_accessFromSite_)
+  if (req && req.action === 'access') return ab_accessFromSite_(req);
   const real = ab_bridgeToken_(false);
   if (!req || !real || req.token !== real) return ab_bridgeJson_({ ok: false, error: 'bad token' });
   // Kite live prices (Code2.gs, every minute from LiveNow.bat): writes only its own "Kite Live" tab, so it never waits

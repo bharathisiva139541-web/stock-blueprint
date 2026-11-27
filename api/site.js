@@ -162,7 +162,7 @@
       body.priceState = stale ? 'CACHED' : sheetProvider.sheetPriceState(readAtMs, nowMs);
       body.data = entry.data;
       http.sendJson(res, 200, body, { env: env, cacheControl: cacheLib.siteCacheControl(part, stale) });
-    });
+    }, ['GET'], true);
   }
 
   module.exports = createHandler();

@@ -102,7 +102,7 @@
       }
       http.sendJson(res, 200, { ok: true, made: got.made, upto: got.upto, sum: got.sum, cols: COLS, rows: got.rows, fetchedAt: cal.istDateTimeStr(now()) },
         { env: env, cacheControl: 'public, max-age=0, s-maxage=' + TTL_S + ', stale-while-revalidate=' + (TTL_S * 2) });
-    }, ['GET']);
+    }, ['GET'], true);
   }
 
   module.exports = createHandler();

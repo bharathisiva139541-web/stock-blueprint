@@ -108,7 +108,7 @@
         }
       }));
       http.sendJson(res, 200, { ok: true, sent: sent, failed: failed, gone: gone }, { env: env, cacheControl: noStore, cors: false });
-    }, ['GET', 'POST']);
+    }, ['GET', 'POST'], 'GET');
   }
 
   module.exports = createHandler();

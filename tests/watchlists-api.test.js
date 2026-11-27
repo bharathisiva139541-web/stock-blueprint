@@ -15,7 +15,7 @@
 
   const SHEET_URL = 'https://script.google.com/macros/s/AKfy_SECRET_DEPLOYMENT/exec';
   const SHEET_TOKEN = 'sheet_SECRET_987654';
-  const ENV = { SHEET_FEED_URL: SHEET_URL, SHEET_FEED_TOKEN: SHEET_TOKEN };
+  const ENV = { SHEET_FEED_URL: SHEET_URL, SHEET_FEED_TOKEN: SHEET_TOKEN, SITE_ACCESS: 'open' };
   const LISTS = [{ id: 'w1', name: 'Swing', syms: ['TCS', 'INFY'], created: '2026-10-27T10:00:00.000Z', updated: '2026-10-28T10:00:00.000Z' }];
 
   const json = (status, obj) => new Response(typeof obj === 'string' ? obj : JSON.stringify(obj),
