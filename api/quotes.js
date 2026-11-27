@@ -39,7 +39,7 @@
       const cc = payload.state === 'UNAVAILABLE' || payload.partial
         ? cacheLib.unavailableCacheControl() : cacheLib.quotesCacheControl(session);
       http.sendJson(res, 200, payload, { env: env, cacheControl: cc });
-    });
+    }, ['GET'], true);
   }
 
   module.exports = createHandler();

@@ -39,7 +39,7 @@ const read = function (f) { return fs.readFileSync(path.join(ROOT, f), 'utf8'); 
 const FEED_TOKEN = 'feed_FAKE_TOKEN_0123456789';
 const BRIDGE_TOKEN = 'bridge_FAKE_TOKEN_9876543210';
 const EXEC_URL = 'https://script.google.com/macros/s/AKfycbFAKEdeploymentIdForTests0123456789/exec';
-const ENV = { SHEET_FEED_URL: EXEC_URL, SHEET_FEED_TOKEN: FEED_TOKEN };
+const ENV = { SHEET_FEED_URL: EXEC_URL, SHEET_FEED_TOKEN: FEED_TOKEN, SITE_ACCESS: 'open' };
 const PROPS = { AB_FEED_TOKEN: FEED_TOKEN, AB_BRIDGE_TOKEN: BRIDGE_TOKEN };
 const OWNER_MAIL = 'owner@example.com';
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
@@ -52,8 +52,8 @@ const STALE_CC = 'public, max-age=0, s-maxage=60';
 
 // The saved copy (made by tools/export_xlsx.py) that the pages were written against.
 function windowVar(file, name) { const w = {}; new Function('window', read(file))(w); return w[name]; }
-const SAVED = windowVar('web/data/dashboard.js', 'SB_DATA');
-const SAVED_HISTORY = windowVar('web/data/history.js', 'SB_HISTORY');
+const SAVED = windowVar('tests/fixtures/saved-copy/dashboard.js', 'SB_DATA');
+const SAVED_HISTORY = windowVar('tests/fixtures/saved-copy/history.js', 'SB_HISTORY');
 
 // ---------- synthetic workbook ----------
 // [key, Main header, kind] exactly as Code.gs publishes them

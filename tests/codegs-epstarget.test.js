@@ -108,7 +108,7 @@ test('api/epstarget: unpacks + checks the rows, caches on the CDN; bad quarter 4
     calls.push(JSON.parse(init.body));
     return new Response(JSON.stringify(e.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } });
   };
-  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET_X/exec', SHEET_FEED_TOKEN: FEED };
+  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET_X/exec', SHEET_FEED_TOKEN: FEED, SITE_ACCESS: 'open' };
   const h = api.createHandler({ env: ENV, fetch, now: () => NOW, cache: require('../api/_lib/cache').createCache() });
   const res = () => {
     const r = { headers: {}, statusCode: 200 };
@@ -271,7 +271,7 @@ test('a quarter packed by the laptop\'s own code reads the same through the shee
   assert.strictEqual(e.post({ token: TOKEN, action: 'epst', op: 'put', q: 'Jun 2026', end: '2026-06-30', fy: 'Q1 FY27', made: '2026-11-23T10:00:00',
     upto: '2026-11-20', sum: got.sum, blob: got.blob, engine: 3 }).ok, true);
   const fetch = async (url, init) => new Response(JSON.stringify(e.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } });
-  const h = api.createHandler({ env: { SHEET_FEED_URL: 'https://script.google.com/macros/s/X/exec', SHEET_FEED_TOKEN: FEED }, fetch, now: () => NOW,
+  const h = api.createHandler({ env: { SHEET_FEED_URL: 'https://script.google.com/macros/s/X/exec', SHEET_FEED_TOKEN: FEED, SITE_ACCESS: 'open' }, fetch, now: () => NOW,
     cache: require('../api/_lib/cache').createCache() });
   const r = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.statusCode = c; return this; }, json(o) { this.body = o; }, end() {} };
   await h({ method: 'GET', query: {} }, r);

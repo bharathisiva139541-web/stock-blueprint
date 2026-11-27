@@ -355,12 +355,24 @@
     if (base == null) return Promise.reject(new Error('no API on this host'));
     var ctl = window.AbortController ? new AbortController() : null, timedOut = false;
     var to = setTimeout(function () { timedOut = true; if (ctl) ctl.abort(); }, ms || 12000);
-    return fetch(base + path, { signal: ctl ? ctl.signal : undefined, cache: 'no-store', headers: { Accept: 'application/json' } })
-      .then(function (r) {
-        var ct = r.headers.get('content-type') || '';
-        if (ct.indexOf('json') < 0) throw new Error(r.ok ? 'no API on this host' : 'HTTP ' + r.status + ' from the API');
-        return r.json().then(function (j) { if (!r.ok) throw new Error((j && (j.error || j.message)) || ('HTTP ' + r.status)); return j; });
-      })
+    var once = function (again) {
+      // the website's content key (SB.access, 28-Nov-2026: only persons with an access code) rides in the URL
+      var url = base + (SB.access ? SB.access.url(path) : path);
+      return fetch(url, { signal: ctl ? ctl.signal : undefined, cache: 'no-store', headers: { Accept: 'application/json' } })
+        .then(function (r) {
+          var ct = r.headers.get('content-type') || '';
+          if (ct.indexOf('json') < 0) throw new Error(r.ok ? 'no API on this host' : 'HTTP ' + r.status + ' from the API');
+          return r.json().then(function (j) {
+            if (r.status === 401 && j && j.code === 'access' && !again && SB.access) {
+              // the key of this device ran out: a new one from api/access, then once more
+              return SB.access.denied().then(function (ok) { if (!ok) throw new Error('this device is not signed in'); return once(true); });
+            }
+            if (!r.ok) throw new Error((j && (j.error || j.message)) || ('HTTP ' + r.status));
+            return j;
+          });
+        });
+    };
+    return once(false)
       .then(function (j) { clearTimeout(to); return j; }, function (e) {
         clearTimeout(to);
         if (timedOut) throw new Error('no answer within ' + Math.round((ms || 12000) / 1000) + ' s');
@@ -1355,6 +1367,13 @@
   }
   function boot() {
     var base = ctx.site.apiBase = apiBase();
+    // the website only for the persons the owner added (28-Nov-2026): the access code first, then the data
+    var gate = base == null || !SB.access ? Promise.resolve(null) : SB.access.ready(base);
+    gate.then(function () { bootData(base); }, function (e) {
+      $('#app').innerHTML = '<div class="note bad">The site could not start: ' + esc(e && e.message || String(e)) + '</div>';
+    });
+  }
+  function bootData(base) {
     try { kitePre = base == null ? null : kiteAsk(); } catch (e) { kitePre = null; }
     if (kitePre) kitePre.catch(function () { /* handled when the page is ready */ });
     $('#app').innerHTML = '<section class="card" aria-busy="true"><h2>Loading…</h2><p class="sub" style="margin-top:4px">' +
@@ -1378,8 +1397,11 @@
           ctx.market.state = 'UNAVAILABLE';
           ctx.market.message = 'No data could be loaded.';
           setStatus();
-          $('#app').innerHTML = '<div class="note bad">No data file found (data/dashboard.js). Run tools/export_xlsx.py first.' +
-            (o.reason ? ' Live data could not be loaded either: ' + esc(o.reason) + '.' : '') + '</div>';
+          $('#app').innerHTML = base == null
+            ? '<div class="note bad">No data file found (data/dashboard.js). Run tools/export_xlsx.py first.' +
+              (o.reason ? ' Live data could not be loaded either: ' + esc(o.reason) + '.' : '') + '</div>'
+            : '<div class="note bad">The live data could not be loaded just now' + (o.reason ? ' (' + esc(o.reason) + ')' : '') +
+              ' - please try again in a minute. <button class="btn" type="button" onclick="location.reload()">Try again</button></div>';
         });
       });
     }).catch(function (e) {

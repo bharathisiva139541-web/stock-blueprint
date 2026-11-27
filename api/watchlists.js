@@ -229,7 +229,7 @@
         ok: true, result: a.result, rev: a.rev, savedAt: typeof a.savedAt === 'string' ? a.savedAt.slice(0, 30) : '',
         state: M.strip(a.state)
       }, { env: env, cacheControl: noStore });
-    }, ['POST']);
+    }, ['POST'], true);
   }
 
   module.exports = createHandler();

@@ -5,6 +5,7 @@
   'use strict';
 
   const cacheLib = require('./cache');
+  const access = require('./access');
 
   // Env vars whose VALUES must never appear in a response or a log line.
   const SECRET_ENV_KEYS = ['DHAN_ACCESS_TOKEN', 'DHAN_CLIENT_ID', 'SHEET_FEED_TOKEN', 'SHEET_FEED_URL'];
@@ -120,12 +121,22 @@
   /**
    * Wraps an endpoint: (req, res, env) => Promise. Method guard (GET, or `methods`) +
    * crash guard (500 JSON with a generic message).
+   * `guard` (owner, 28-Nov-2026 - the website only for persons with an access code): true = every request, 'GET' = GET /
+   * HEAD only, falsy = none - wants the content key ?k=... of api/access (_lib/access.js) while access is on; else 401.
    */
-  function endpoint(label, getEnv, fn, methods) {
+  function endpoint(label, getEnv, fn, methods, guard) {
     return async function (req, res) {
       const env = getEnv();
       try {
         if (rejectMethod(req, res, methods)) return;
+        if (guard && access.enabled(env)) {
+          const m = String((req && req.method) || 'GET').toUpperCase();
+          if ((guard === true || m === guard || (guard === 'GET' && m === 'HEAD')) &&
+              !access.keyOk(env, getQuery(req).k, Date.now())) {
+            sendJson(res, 401, access.DENIED, { env: env, cacheControl: cacheLib.noStore() });
+            return;
+          }
+        }
         await fn(req, res, env);
       } catch (err) {
         logError(label, err, env);

@@ -60,7 +60,7 @@ test('the lists: back above now, after 2+ weeks, close to it', () => {
 
 test('the saved copy: every "back above" stock really fell 3% and closes above its pre-result close', () => {
   const w = {};
-  ['dashboard.js', 'history.js'].forEach((f) => new Function('window', fs.readFileSync(path.join(__dirname, '..', 'web', 'data', f), 'utf8'))(w));
+  ['dashboard.js', 'history.js'].forEach((f) => new Function('window', fs.readFileSync(path.join(__dirname, 'fixtures', 'saved-copy', f), 'utf8'))(w));
   const perf = w.SB_DATA.resultsPerf;
   const P = R.perfRows(perf, R.seasonOf(perf));
   const rc = R.reclaimRows(P, w.SB_HISTORY);

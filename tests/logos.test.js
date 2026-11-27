@@ -52,7 +52,7 @@ test('web/data/logos.js: pinned, loads, and covers the saved copy\'s Main stocks
   const set = new Set(w.SB_LOGO_TICKERS.split(' '));
   assert.ok(set.size > 3000, String(set.size));
   const d = {};
-  new Function('window', fs.readFileSync(path.join(ROOT, 'web', 'data', 'dashboard.js'), 'utf8'))(d);
+  new Function('window', fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'saved-copy', 'dashboard.js'), 'utf8'))(d);
   const i = d.SB_DATA.main.cols.indexOf('sym');
   const syms = [...new Set(d.SB_DATA.main.rows.map((r) => String(r[i] || '').toUpperCase()).filter(Boolean))];
   const found = syms.filter((s) => set.has(s) || set.has(s.replace(/-/g, '_')) || set.has(w.SB_LOGO_ALIASES[s]));

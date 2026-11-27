@@ -17,7 +17,7 @@
 
   globalThis.fetch = function () { return Promise.reject(new TypeError('network disabled in tests')); };
   const TOKEN = 'sheet_SECRET_987654';
-  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET/exec', SHEET_FEED_TOKEN: TOKEN };
+  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET/exec', SHEET_FEED_TOKEN: TOKEN, SITE_ACCESS: 'open' };
   const b64u = W.b64u, fromB64u = W.fromB64u;
 
   const fakeRes = function () {

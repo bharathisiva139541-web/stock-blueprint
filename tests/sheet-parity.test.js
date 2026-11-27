@@ -8,7 +8,7 @@ const path = require('path');
 const P = require('../web/lib/patterns.js');
 const FVG = require('../web/lib/fvg.js');
 
-const file = path.join(__dirname, '..', 'web', 'data', 'history.js');
+const file = path.join(__dirname, 'fixtures', 'saved-copy', 'history.js');
 const H = fs.existsSync(file) ? (() => { const w = {}; new Function('window', fs.readFileSync(file, 'utf8'))(w); return w.SB_HISTORY; })() : null;
 
 function candlesOf(sym) {

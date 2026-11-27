@@ -48,7 +48,7 @@
     var ctl = window.AbortController ? new AbortController() : null;
     var to = setTimeout(function () { if (ctl) ctl.abort(); }, TIMEOUT_MS);
     body.pin = m.pin;
-    return fetch(b + 'api/watchlists', {
+    return fetch(b + (SB.access ? SB.access.url('api/watchlists') : 'api/watchlists'), {
       method: 'POST', cache: 'no-store', signal: ctl ? ctl.signal : undefined,
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body)
     }).then(function (r) {

@@ -193,9 +193,9 @@ test('no edge where there is none: random candles and figures give no "real" fig
 
 test('the saved copy of the sheet: every Results Performance row gets an entry from its own candles', () => {
   global.window = {};
-  require('../web/data/dashboard.js');
-  require('../web/data/history.js');
-  require('../web/data/history60.js');
+  require('./fixtures/saved-copy/dashboard.js');
+  require('./fixtures/saved-copy/history.js');
+  require('./fixtures/saved-copy/history60.js');
   const D = global.window.SB_DATA;
   const H = require('../web/lib/history.js').merge(global.window.SB_HISTORY, global.window.SB_HISTORY60);
   const objRows = (t) => t.rows.map((r) => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));

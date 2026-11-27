@@ -70,7 +70,7 @@ test('api/recos: unpacks + checks every column, no chart paths, caches; no secre
     calls.push(JSON.parse(init.body));
     return new Response(JSON.stringify(e.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } });
   };
-  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET_X/exec', SHEET_FEED_TOKEN: FEED };
+  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET_X/exec', SHEET_FEED_TOKEN: FEED, SITE_ACCESS: 'open' };
   const h = api.createHandler({ env: ENV, fetch, now: () => NOW, cache: require('../api/_lib/cache').createCache() });
   const res = () => {
     const r = { headers: {}, statusCode: 200 };
@@ -209,7 +209,7 @@ test('a list packed by the laptop\'s own code reads the same through the sheet, 
   const e = env();
   assert.strictEqual(e.post({ token: TOKEN, action: 'recos', op: 'put', made: '2026-11-24T10:00:00', upto: '2026-11-21', sum: got.sum, blob: got.blob, engine: 1 }).ok, true);
   const fetch = async (url, init) => new Response(JSON.stringify(e.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } });
-  const h = api.createHandler({ env: { SHEET_FEED_URL: 'https://script.google.com/macros/s/X/exec', SHEET_FEED_TOKEN: FEED }, fetch, now: () => NOW,
+  const h = api.createHandler({ env: { SHEET_FEED_URL: 'https://script.google.com/macros/s/X/exec', SHEET_FEED_TOKEN: FEED, SITE_ACCESS: 'open' }, fetch, now: () => NOW,
     cache: require('../api/_lib/cache').createCache() });
   const r = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.statusCode = c; return this; }, json(o) { this.body = o; }, end() {} };
   await h({ method: 'GET', query: {} }, r);

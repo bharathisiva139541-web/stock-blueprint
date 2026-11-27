@@ -45,9 +45,17 @@ ok(refs.length + ' local references');
 
 console.log('3. data files');
 const PERSONAL = [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/, /script\.google\.com\/macros/, /AKfyc[A-Za-z0-9_-]{20,}/, /"tradeStats"/, /"trades"\s*:/];
+// the saved copy of the sheet (dashboard / history / history60 / workbook-analysis) is NOT on the website since
+// 28-Nov-2026 (owner: the website only for persons with an access code) - tools/export_xlsx.py may still write it to
+// web/data for a local preview (git-ignored there); the tests keep theirs in tests/fixtures/saved-copy/
+const SAVED_DIR = path.join(ROOT, 'tests', 'fixtures', 'saved-copy');
+const LOCAL_ONLY = ['dashboard.js', 'history.js', 'history60.js', 'workbook-analysis.js'];
 for (const f of ['dashboard.js', 'history.js', 'history60.js', 'logos.js', 'industries.js', 'industry-profiles.js']) {
   const p = path.join(WEB, 'data', f);
-  if (!fs.existsSync(p)) { fail('web/data/' + f + ' missing (run tools/export_xlsx.py)'); continue; }
+  if (!fs.existsSync(p)) {
+    if (LOCAL_ONLY.indexOf(f) < 0) fail('web/data/' + f + ' missing');
+    continue;
+  }
   const s = fs.readFileSync(p, 'utf8');
   try { const w = {}; new Function('window', s)(w); } catch (e) { fail('web/data/' + f + ' does not load: ' + e.message); continue; }
   PERSONAL.forEach((re) => { if (re.test(s)) fail('web/data/' + f + ' contains a personal-data marker ' + re); });
@@ -68,7 +76,8 @@ try {
   // data files (loaded on demand on the site) are inlined so the preview also works
   // offline from file:// - window.SB_DATA present means app.js uses it as the saved copy
   for (const f of ['dashboard.js', 'history.js', 'history60.js', 'workbook-analysis.js', 'industries.js', 'industry-profiles.js']) {
-    const p = path.join(WEB, 'data', f);
+    let p = path.join(WEB, 'data', f);
+    if (!fs.existsSync(p) && LOCAL_ONLY.indexOf(f) >= 0) p = path.join(SAVED_DIR, f);     // the preview (dist/, local only)
     if (!fs.existsSync(p)) continue;
     const body = fs.readFileSync(p, 'utf8').replace(/<\/script/gi, '<\\/script');
     page = page.replace('<script>\n', () => '<script>\n' + body + '\n</script>\n<script>\n');

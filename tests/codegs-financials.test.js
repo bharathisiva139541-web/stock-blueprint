@@ -72,7 +72,7 @@ test('api/financials: one stock from the sheet, checked again, cached on the CDN
     calls.push(JSON.parse(init.body));
     return new Response(JSON.stringify(e.post(JSON.parse(init.body))), { status: 200, headers: { 'content-type': 'application/json' } });
   };
-  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET_X/exec', SHEET_FEED_TOKEN: FEED };
+  const ENV = { SHEET_FEED_URL: 'https://script.google.com/macros/s/AKfy_SECRET_X/exec', SHEET_FEED_TOKEN: FEED, SITE_ACCESS: 'open' };
   const h = api.createHandler({ env: ENV, fetch, now: () => NOW });
   const res = () => {
     const r = { headers: {}, statusCode: 200 };
