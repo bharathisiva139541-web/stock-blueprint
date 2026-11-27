@@ -195,7 +195,7 @@
     }
     return post({ op: 'hello' }).then(function (j) {
       if (j && j.ok && j.open) { open = true; return started(); }
-      return gate(msg).then(started);
+      return gate(msg || (j && !j.ok && j.message) || '').then(started);    // no internet: said on the sign-in screen
     });
   }
 

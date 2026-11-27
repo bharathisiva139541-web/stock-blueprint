@@ -1862,9 +1862,25 @@ function check(name, fn) {
     assert.ok(st.overflow <= 0, 'horizontal page overflow ' + st.overflow + 'px');
   });
 
-  await check('live feed unreachable (network error): saved copy + banner', async () => {
+  await check('live feed unreachable (network error): saved copy + banner (a signed-in device); a new device: the sign-in screen says why', async () => {
+    // a device that never signed in (the website is private since 28-Nov-2026): no data, the reason on the sign-in screen
+    const c0 = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c0.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await routeAll(c0, base, () => 'abort', []);
+    const p0 = await c0.newPage();
+    await p0.goto(base + '#overview', { waitUntil: 'load' });
+    await p0.waitForSelector('#acc-gate', { timeout: 15000 });
+    const why = await p0.textContent('#acc-msg');
+    await c0.close();
+    assert.match(why, /No internet connection/);
+    // a signed-in device (its key still valid): the page goes on to the data as before
     const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
-    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    await c.addInitScript(() => {
+      try {
+        localStorage.setItem('sb:api', 'true');
+        localStorage.setItem('sb:access', JSON.stringify({ token: 'v1.t.' + 'x'.repeat(43), k: 'k'.repeat(22), ks: 1, until: Date.now() + 3600e3, name: 'Siva', at: Date.now() }));
+      } catch (e) { /* ignore */ }
+    });
     await routeAll(c, base, () => 'abort', []);
     const p = await c.newPage(), errors = watchErrors(p);
     await p.goto(base + '#overview', { waitUntil: 'load' });
