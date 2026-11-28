@@ -314,6 +314,30 @@ assert ('2026-11-28', '106') not in C.pdf_todo(syms, TODAY, now_s=_t.time() + 7 
 C.read_pdf('2026-11-28', '105', reader, get=lambda u: (404, b''))
 C.read_pdf('2026-11-28', '105', reader, get=lambda u: (404, b''))
 assert C.load_day('2026-11-28')['105']['pdfTries'] == 3 and ('2026-11-28', '105') not in C.pdf_todo(syms, TODAY, now_s=_t.time() + 7 * 3600)
+# the same file would give the same answer: a too-big PDF / a whole PDF the reader cannot open = not downloaded again;
+# a cut-off download (no %%EOF at the end) is tried again
+base105 = dict(C.load_day('2026-11-28')['105'], pdfSt='', pdfTries=0, sym='TMPPDF')   # a stock outside Main: no later list sees it
+C.save_day('2026-11-28', {k: dict(base105, id=k) for k in ('x07', 'x08', 'x09')})
+tsyms = dict(syms, TMPPDF=['Tmp', 0])
+assert C.read_pdf('2026-11-28', 'x07', reader, get=lambda u: (200, b'%PDF-' + b'x' * (C.PDF_MAX_BYTES + 1))) == 'err:too big'
+bad = b'%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 9 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n'
+rx08 = C.read_pdf('2026-11-28', 'x08', reader, get=lambda u: (200, bad))
+rx09 = C.read_pdf('2026-11-28', 'x09', reader, get=lambda u: (200, make_pdf(['Some text that is long enough to count here.'])[:120]))
+assert C.pdf_whole(bad) and not C.pdf_whole(make_pdf(['x'])[:120]) and C.pdf_whole(make_pdf(['x']))
+later = C.pdf_todo(tsyms, TODAY, now_s=_t.time() + 7 * 3600)
+d28 = C.load_day('2026-11-28')
+assert d28['x07']['pdfTries'] == C.PDF_TRIES and ('2026-11-28', 'x07') not in later, d28['x07']
+if rx08.startswith('err:'):
+    assert d28['x08']['pdfTries'] == C.PDF_TRIES and ('2026-11-28', 'x08') not in later, (rx08, d28['x08'])
+assert rx09.startswith('err:') and d28['x09']['pdfTries'] == 1 and ('2026-11-28', 'x09') in later, (rx09, d28['x09'])
+C.save_day('2026-11-28', {k: dict(d28[k], pdfSt='none', pdfTries=1) for k in ('x07', 'x08', 'x09')})
+# pypdf's console notes about damaged files are switched off
+import logging as _lg
+assert _lg.getLogger('pypdf._reader').getEffectiveLevel() > _lg.CRITICAL
+# 'strike price' (options) / a company 'struck off' is not a strike at a plant
+assert C.classify('Allotment of ESOPs', 'options at a strike price of Rs 120 each')['ev'] != 'disrupt'
+assert C.classify('Disclosure', 'workers strike at the Hosur plant; production affected')['ev'] == 'disrupt'
+assert C.classify('Disclosure', "employees' strike at the Pune factory")['ev'] == 'disrupt'
 # the routine kinds are not downloaded; every other kind is
 C.take([rec('202', 'ABC', 'Trading Window', 'Closure of trading window', '27-Nov-2026 09:00:00', PDF_URL.replace('order', 'tw')),
         rec('203', 'ABC', 'Copy of Newspaper Publication', 'Newspaper publication', '27-Nov-2026 09:05:00', PDF_URL.replace('order', 'np')),

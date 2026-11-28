@@ -28,6 +28,7 @@ import hashlib
 import importlib
 import io
 import json
+import logging
 import os
 import re
 import site
@@ -35,6 +36,7 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 from datetime import date, datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -230,7 +232,9 @@ TEXT_RULES = (
               r'\boai\b|enforcement directorate|\bcbi\b|summons|\bfir\b'),
     ('insolv', r'insolvency|\bibc\b|\bcirp\b|resolution professional|winding up|\bliquidation\b'),
     ('disrupt', r'\bfire\b (broke|incident|accident|at|in)|fire (incident|accident)|\bexplosion\b|\bblast\b|accident at|'
-                r'\bfloods?\b|cyber[- ]?(attack|security incident)|ransomware|\bstrike\b|lock[- ]?out|shut ?down (of|at)|'
+                r'\bfloods?\b|cyber[- ]?(attack|security incident)|ransomware|lock[- ]?out|shut ?down (of|at)|'
+                r'(workers?|labou?r|employees?|unions?|staff)\W{0,2}\s*strike|\bon strike\b|strike notice|'
+                r'strike (by|at) (the )?(workers|employees|union|plant|factory)|'
                 r'suspension of (operations|production)|force majeure'),
     ('update', r'monthly (business )?update|business update|sales (update|volumes?|numbers|figures)|(total|domestic|export) '
                r'sales|units sold|production (update|volumes?|numbers)|operational update|quarterly update|business performance|'
@@ -1265,7 +1269,7 @@ def pdf_reader(st=None, out=None, install=None, force=False):
     """pypdf, installed for this user the first time (pip --user; tried again after PIP_RETRY_S). -> the module or None."""
     out = out or log
     try:
-        return importlib.import_module('pypdf')
+        return _quiet(importlib.import_module('pypdf'))
     except ImportError:
         pass
     st = st if st is not None else load_state()
@@ -1286,12 +1290,23 @@ def pdf_reader(st=None, out=None, install=None, force=False):
         pass
     importlib.invalidate_caches()
     try:
-        mod = importlib.import_module('pypdf')
+        mod = _quiet(importlib.import_module('pypdf'))
         out('Corporate Intelligence: pypdf installed - the PDFs are read from now on.')
         return mod
     except ImportError as e:
         out('Corporate Intelligence: pypdf was installed but cannot be loaded yet (%s) - it works after the next restart.' % e)
         return None
+
+
+def _quiet(mod):
+    """pypdf writes its repairs of a damaged file ('incorrect startxref pointer', 'Object 285 0 not defined', 'fontTools is
+    required ...') to the console - harmless, the text is read anyway; kept off the screen and the log."""
+    try:
+        logging.getLogger('pypdf').setLevel(logging.CRITICAL + 1)
+        warnings.filterwarnings('ignore', module=r'pypdf(\.|$)')
+    except Exception:
+        pass
+    return mod
 
 
 def pip_install(show=False):
@@ -1333,6 +1348,11 @@ def pdf_text(raw, reader):
         if sum(len(p) for p in parts) > PT_MAX * 2:
             break
     return re.sub(r'[ \t\r\f\v]+', ' ', '\n'.join(parts)).strip()[:PT_MAX], n
+
+
+def pdf_whole(raw):
+    """A complete PDF file: '%PDF-' at the start and its '%%EOF' end mark in the last 2 KB."""
+    return bool(raw) and raw[:5] == b'%PDF-' and b'%%EOF' in raw[-2048:]
 
 
 def _pdf_due(r, now_s):
@@ -1385,9 +1405,10 @@ def read_pdf(day, rid, reader, get=None):
         return 'retry'
     st = 'err:HTTP %s' % status
     upd = {'pdfAt': datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}
+    final = False                                  # the same file next time = the same answer: not downloaded again
     if status == 200:
         if len(raw or b'') > PDF_MAX_BYTES:
-            st = 'err:too big'
+            st, final = 'err:too big', True
         else:
             try:
                 text, pages = pdf_text(raw, reader)
@@ -1395,8 +1416,9 @@ def read_pdf(day, rid, reader, get=None):
                 upd.update(pt=text, pdfPages=pages)
             except Exception as e:
                 st = 'err:%s' % str(e)[:80]
+                final = pdf_whole(raw)             # a whole PDF the reader cannot open; a cut-off one is tried again
     upd['pdfSt'] = st
-    upd['pdfTries'] = int(r.get('pdfTries') or 0) + 1
+    upd['pdfTries'] = PDF_TRIES if final else int(r.get('pdfTries') or 0) + 1
     save_day(day, {rid: dict(r, **upd)})
     return st
 
