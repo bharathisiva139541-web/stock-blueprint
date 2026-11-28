@@ -49,9 +49,26 @@
   }
   function pdfLink(r) {
     if (!r.pdf) return '<span class="sub">–</span>';
-    var w = r.pg === 'r' ? 'PDF ↗' : r.pg === 'x' ? 'PDF ↗ (scanned)' : 'PDF ↗';
-    var tip = r.pg === 'r' ? 'The laptop read this PDF - its numbers are in the scores' : r.pg === 'x' ? 'A scanned PDF - no text to read' : 'Not read by the laptop (NSE\'s text only)';
-    return '<a href="' + esc(r.pdf) + '" target="_blank" rel="noopener" data-tip="' + esc(tip) + '">' + esc(w) + '</a>';
+    var tip = r.pg === 'r' ? 'Your laptop read this PDF - its lines and numbers are shown and scored' : r.pg === 'x'
+      ? 'A scanned PDF (a picture of the pages) - no text to read' : 'Not read by your laptop yet - it reads every filing\'s PDF, a few a minute';
+    return '<a href="' + esc(r.pdf) + '" target="_blank" rel="noopener" data-tip="' + esc(tip) + '">PDF ↗</a>' +
+      (r.pg === 'r' ? ' <span class="badge s-good ci-pg">read</span>' : r.pg === 'x' ? ' <span class="badge ci-pg">scanned</span>'
+        : ' <span class="badge s-info ci-pg">not yet</span>');
+  }
+  /** the PDF's own lines the laptop picked (its subject, the sentences with an amount / a % / the event's words) */
+  function psHtml(r, n) {
+    if (!r.ps.length) return '';
+    var shown = r.ps.slice(0, n || 5);
+    return '<ul class="ci-ps">' + shown.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+      (r.ps.length > shown.length ? '<span class="sub">+ ' + (r.ps.length - shown.length) + ' more line' + (r.ps.length - shown.length === 1 ? '' : 's') + '</span>' : '');
+  }
+  function pdfNote(rows) {
+    var c = C.counts(rows);
+    if (!c.pdfs) return rows.length ? '<p class="sub ci-pdfnote">NSE gave no PDF with these filings.</p>' : '';
+    var left = c.pdfs - c.read - c.scanned;
+    return '<p class="sub ci-pdfnote" id="ci-pdfnote"><b>PDFs read by your laptop: ' + F.int(c.read) + ' of ' + F.int(c.pdfs) + '</b>' +
+      (c.scanned ? ' · ' + F.int(c.scanned) + ' scanned (no text)' : '') + (left > 0 ? ' · ' + F.int(left) + ' still to read - your laptop reads about 10 a minute ' +
+      'while it is on; their lines and numbers appear here then' : '') + '.</p>';
   }
   function dayWords(d) { return F.date ? F.date(d) : d; }
 
@@ -190,6 +207,7 @@
       meter('Impact', r.bi, 'bi') + meter('Risk', r.gr, 'gr') + meter('Surprise', r.su, 'su') + '</div>' +
       (nums.length ? '<div class="ci-nums">' + nums.map(function (w) { return '<span>' + esc(w) + '</span>'; }).join('') + '</div>' : '') +
       '<p class="ci-sub"><b>' + esc(r.sub) + '</b>' + (r.tx && r.tx !== r.sub ? ' - ' + esc(r.tx.length > 220 ? r.tx.slice(0, 220) + '…' : r.tx) : '') + '</p>' +
+      (r.ps.length ? '<div class="ci-pdf"><span class="ci-pdf-h">From the PDF</span>' + psHtml(r, 4) + '</div>' : '') +
       '<div class="ci-links">' + pdfLink(r) + '</div></article>';
   }
   function topHtml(rows) {
@@ -215,7 +233,9 @@
       '(below BB+ more), a default / fraud / insolvency (85-90), a tax or regulatory demand by its share of revenue.</li>' +
       '<li><b>Information Surprise</b> (0-100): how unexpected it is - routine filings (trading window, newspaper notices, compliance certificates) near 0, ' +
       'an unscheduled order / deal / fundraising high, bigger for bigger sizes.</li><li><b>Priority</b>: High = impact or risk 60+, Medium 35+, Low 15+, else Routine. ' +
-      '<b>Risk alert</b> = category E or risk 50+.</li><li>The numbers come from NSE\'s text and the first pages of the PDF (read on your laptop with pypdf). ' +
+      '<b>Risk alert</b> = category E or risk 50+.</li><li>Every filing\'s PDF (all but trading-window / newspaper / meeting-schedule notices) is read by your laptop with pypdf (the first 8 pages). ' +
+      '<b>From the PDF</b> = its own subject line and the sentences with an amount, a % or the event\'s words - not the letter\'s greetings, addresses ' +
+      'or legal lines. The numbers come from NSE\'s text and the PDF. ' +
       'Amounts in another currency are turned into rupees roughly (USD 88, EUR 95, GBP 112) - only for the size.</li></ul></details>';
   }
 
@@ -239,7 +259,7 @@
     var none = !all.length ? '<section class="card"><p class="empty">' + (ST.opt.range === 'today' && !ST.older
       ? 'No announcement of your stocks yet today' + (MEM.days.length ? ' - the newest are of ' + esc(dayWords(MEM.days[0].day)) + ' (Last 3 days).' : '.')
       : picked && !keptDay(picked) && !ST.older ? 'Not in the sheet\'s 30 days - asking your laptop…' : 'No announcement here.') + '</p></section>' : '';
-    body.innerHTML = headHtml() + rangeHtml() + olderNote + tilesHtml(all) + filtersHtml(all) + none + (all.length ? topHtml(rowsOf(all)) : '') + allHtml() + howHtml();
+    body.innerHTML = headHtml() + rangeHtml() + olderNote + tilesHtml(all) + pdfNote(all) + filtersHtml(all) + none + (all.length ? topHtml(rowsOf(all)) : '') + allHtml() + howHtml();
     bind(body, ctx, all);
   }
   function rowsOf(all) {
@@ -260,6 +280,9 @@
       { key: 'nums', label: 'Key numbers', get: function (r) { return C.numWords(r).join(' · '); } },
       { key: 'sub', label: 'What the filing says', get: function (r) { return r.sub + (r.tx && r.tx !== r.sub ? ' - ' + r.tx : ''); },
         html: function (r) { return '<b>' + esc(r.sub) + '</b>' + (r.tx && r.tx !== r.sub ? ' <span class="sub">' + esc(r.tx.length > 160 ? r.tx.slice(0, 160) + '…' : r.tx) + '</span>' : ''); } },
+      { key: 'ps', label: 'From the PDF', title: 'The PDF\'s own lines your laptop picked: its subject, the sentences with an amount, a % or the event\'s words',
+        get: function (r) { return r.ps.join(' · '); },
+        html: function (r) { return r.ps.length ? '<div class="ci-ps-cell" data-tip="' + esc(r.ps.join(' · ')) + '">' + psHtml(r, 2) + '</div>' : '<span class="sub">–</span>'; } },
       { key: 'pdf', label: 'PDF', get: function (r) { return r.pdf; }, html: pdfLink },
       { key: 'why', label: 'Sorted by', title: 'The rule that decided the event' }
     ], hide: ['why'] }).mount($('#ci-all-t', body));

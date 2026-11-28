@@ -271,6 +271,58 @@ assert C.read_pdf('2026-11-28', '106', reader, get=lambda u: (200, make_pdf(['']
 assert C.site_row(C.load_day('2026-11-28')['106'], syms)['pg'] == 'x'
 # only NSE's own addresses are fetched / passed on
 assert not C.PDF_HOSTS.match('https://evil.example/x.pdf') and C.PDF_HOSTS.match(PDF_URL)
+# owner, 28-Nov-2026: his RATNAVEER press release was on nsearchives.nseindia.IN - the first version allowed .com only, so
+# no PDF was read and the website showed no link. Both now; a path on NSE's archive gets its address.
+RAT_URL = 'https://nsearchives.nseindia.in/corporate/RATNAVEER_26112026163619_Press_release_signed.pdf'
+assert C.PDF_HOSTS.match(RAT_URL) and C.PDF_HOSTS.match('https://www.nseindia.in/x.pdf')
+assert not C.PDF_HOSTS.match('https://nseindia.in.evil.example/x.pdf') and not C.PDF_HOSTS.match('http://nsearchives.nseindia.in/x.pdf')
+assert C.record({'symbol': 'ABC', 'desc': 'x', 'an_dt': '27-Nov-2026 10:00:00', 'attchmntFile': '/corporate/ABC_1.pdf'})['pdf'] == \
+    'https://nsearchives.nseindia.com/corporate/ABC_1.pdf'
+assert after['ps'] and any('Rs. 400 crore' in x for x in after['ps']), after['ps']
+RAT_PDF = make_pdf(['RATNAVEER PRECISION ENGINEERING LIMITED', 'Date: November 26, 2026', 'To,', 'The Manager, Listing Department,',
+                    'National Stock Exchange of India Limited, Exchange Plaza, Bandra Kurla Complex, Mumbai - 400051', 'Symbol: RATNAVEER',
+                    'Sub: Press Release - Update on Copper Cladded Steel Wire project', 'Dear Sir/Madam,',
+                    'Pursuant to Regulation 30 of SEBI LODR Regulations, 2015, please find enclosed the press release.',
+                    'Kindly take the same on record.', 'Thanking you,', 'Yours faithfully,', 'For Ratnaveer Precision Engineering Limited',
+                    'Company Secretary & Compliance Officer', 'PRESS RELEASE',
+                    'Ratnaveer Precision Engineering Limited commences commercial production of Copper Cladded Steel',
+                    'Wire at its Waghodia plant in Gujarat. The new line has an installed capacity of 6,000 MTPA and was built with a capex of',
+                    'Rs. 45 crore funded through internal accruals. The company expects incremental revenue of about Rs 120 crore from this',
+                    'line in FY28, with EBITDA margins of 12-14%.',
+                    'Commenting on the development, Mr. Vijay Sanghavi, Managing Director said, this marks our entry into power transmission.',
+                    'Safe Harbour: This release may contain forward-looking statements.'])
+RAT_TX = ('Ratnaveer Precision Engineering Limited has informed the Exchange regarding a press release dated November 26, 2026, titled '
+          'Press Release - Update on Copper Cladded Steel Wire project.')
+C.take([rec('201', 'ABC', 'Press Release', RAT_TX, '27-Nov-2026 16:36:19', RAT_URL)])
+assert ('2026-11-27', '201') in C.pdf_todo(syms, TODAY), 'a press release on nseindia.in is read'
+assert C.site_row(C.load_day('2026-11-27')['201'], syms)['pdf'] == RAT_URL, 'and its link is shown'
+assert C.read_pdf('2026-11-27', '201', reader, get=lambda u: (200, RAT_PDF)) == 'ok'
+rat = C.site_row(C.load_day('2026-11-27')['201'], syms)
+assert rat['ev'] == 'capex' and rat['pg'] == 'r' and rat['num']['val'] == 45.0 and rat['num']['cap'] == '6,000 MTPA', rat
+assert rat['ps'][0] == 'Subject: Press Release - Update on Copper Cladded Steel Wire project', rat['ps']
+assert any(x.startswith('Ratnaveer Precision Engineering Limited commences commercial production') for x in rat['ps']), rat['ps']
+assert any('capex of Rs. 45 crore' in x for x in rat['ps']) and any('Rs 120 crore' in x and '12-14%' in x for x in rat['ps']), rat['ps']
+assert not any(re_w in ' '.join(rat['ps']).lower() for re_w in ('dear sir', 'compliance officer', 'exchange plaza', 'take the same on record',
+                                                                 'safe harbour')), rat['ps']
+assert len(rat['ps']) <= C.HL_MAX and all(len(x) <= C.HL_CHARS for x in rat['ps'])
+assert C.highlights('', 'x') == [] and C.site_row(C.load_day('2026-11-28')['106'], syms)['ps'] == [], 'no text, no lines'
+# a PDF that failed is tried again 6 hours later, 3 times in all; a scanned one never again
+import time as _t
+assert ('2026-11-28', '105') not in C.pdf_todo(syms, TODAY), 'failed just now'
+assert ('2026-11-28', '105') in C.pdf_todo(syms, TODAY, now_s=_t.time() + 7 * 3600), '6 hours later'
+assert ('2026-11-28', '106') not in C.pdf_todo(syms, TODAY, now_s=_t.time() + 7 * 3600), 'scanned = done'
+C.read_pdf('2026-11-28', '105', reader, get=lambda u: (404, b''))
+C.read_pdf('2026-11-28', '105', reader, get=lambda u: (404, b''))
+assert C.load_day('2026-11-28')['105']['pdfTries'] == 3 and ('2026-11-28', '105') not in C.pdf_todo(syms, TODAY, now_s=_t.time() + 7 * 3600)
+# the routine kinds are not downloaded; every other kind is
+C.take([rec('202', 'ABC', 'Trading Window', 'Closure of trading window', '27-Nov-2026 09:00:00', PDF_URL.replace('order', 'tw')),
+        rec('203', 'ABC', 'Copy of Newspaper Publication', 'Newspaper publication', '27-Nov-2026 09:05:00', PDF_URL.replace('order', 'np')),
+        rec('204', 'ABC', 'Board Meeting Intimation', 'to consider and approve the financial results', '27-Nov-2026 09:10:00',
+            PDF_URL.replace('order', 'bm'))])
+td = [x[1] for x in C.pdf_todo(syms, TODAY)]
+assert '204' in td and '202' not in td and '203' not in td, td
+for rid in ('202', '203', '204'):
+    C.save_day('2026-11-27', {rid: dict(C.load_day('2026-11-27')[rid], pdfSt='none', pdfTries=1)})
 # pypdf missing: installed once, not again within a day
 calls = []
 real = C.importlib.import_module

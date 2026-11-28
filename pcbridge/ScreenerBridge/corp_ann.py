@@ -15,8 +15,8 @@ How it works (standard library + pypdf for the PDFs):
   - `classify` = rules only: NSE's own subject first (`SUBJECTS`), then words in the details text and the PDF's text
     (`TEXT_RULES`); the event (`EVENTS`: its category, base scores), other events in the same filing (`ex`), the numbers
     (`numbers`), the scores and the priority (`score`).
-  - `Worker` (the background program's thread): the PDFs of the Main stocks' filings whose numbers matter (`PDF_EVENTS`),
-    newest first, one every PDF_GAP_S seconds, never while the round asks NSE (nse_busy), at most PDF_PER_DAY a day ->
+  - `Worker` (the background program's thread): the PDF of every Main-stock filing but the routine kinds (`PDF_SKIP`),
+    on NSE's own addresses (nseindia.com / .in), newest first, one every PDF_GAP_S seconds, never while the round asks NSE (nse_busy), at most PDF_PER_DAY a day ->
     pypdf's text of the first PDF_PAGES pages (pypdf is installed by the program itself the first time: pip --user);
     and the website's questions about older days / one company's whole history (op 'ask' -> 'older').
   - The sheet keeps the last SHEET_DAYS days of the Main stocks' filings (op 'put', one packed blob a day); the website
@@ -43,12 +43,16 @@ STATE_PATH = os.path.join(HERE, 'corp_state.json')
 IST = timezone(timedelta(hours=5, minutes=30))
 
 ENGINE = 1
-RULES_VERSION = 1
+RULES_VERSION = 2          # 2 (28-Nov-2026): NSE's PDFs on nseindia.in read too, the PDF's highlights ('ps') sent
 BACK_DAYS = 7              # the first run: the past week (owner: "start from Past 1week announcement")
 SHEET_DAYS = 30            # the sheet keeps this many days (owner: "30 days sheet vachurukalam")
 POST_MAX_DAYS = 5          # days in one post
-PDF_GAP_S = 6.0            # between two PDF downloads (NSE's archive - gently, like the XBRL history)
-PDF_PER_DAY = 400          # PDFs a day at most
+PDF_GAP_S = 5.0            # between two PDF downloads (NSE's archive - gently, like the XBRL history)
+PDF_PER_DAY = 2000         # PDFs a day at most (a busy results day of the Main stocks fits)
+PDF_TRIES = 3              # a PDF that failed is tried again (6 hours apart) this many times in all
+PDF_RETRY_S = 6 * 3600
+HL_MAX = 5                 # the PDF's highlights sent to the website
+HL_CHARS = 320
 PDF_BACK_DAYS = 30         # PDFs of filings at most this old
 PDF_MAX_BYTES = 15 * 1024 * 1024
 PDF_PAGES = 8              # pages read of each PDF
@@ -62,7 +66,10 @@ POST_EVERY_S = 10 * 60     # PDFs read -> the changed days sent at most this oft
 PIP_RETRY_S = 20 * 3600
 OLDER_MAX = 3000           # rows of one answer to the website
 FX = {'USD': 88.0, 'EUR': 95.0, 'GBP': 112.0}   # rupees a unit, roughly - only for the size of an order / deal
-PDF_HOSTS = re.compile(r'^https://(nsearchives|archives|www1?)\.nseindia\.com/[^\s"<>]{1,400}$', re.I)
+# NSE's own addresses only - nseindia.com AND nseindia.in (owner, 28-Nov-2026: his RATNAVEER press release was on
+# https://nsearchives.nseindia.in/corporate/... - the first version allowed .com only, so no PDF was read and no link shown)
+PDF_HOSTS = re.compile(r'^https://([a-z0-9-]+\.)*nseindia\.(com|in)/[^\s"<>]{1,400}$', re.I)
+PDF_BASE = 'https://nsearchives.nseindia.com'
 
 log = print
 D = {}                     # bind(): get (url -> (status, bytes)), api, nse_busy, revenue (sym -> TTM revenue in crore)
@@ -123,10 +130,9 @@ FILTERS = (('all', 'All announcements'), ('high', 'High-impact events'), ('order
            ('actions', 'Corporate actions'))
 FILTER_EVENTS = {'orders': ('order',), 'mgmt': ('kmp', 'director', 'auditor'), 'fund': ('fund',), 'results': ('results',),
                  'calls': ('call', 'present'), 'actions': ('dividend', 'bonus', 'split', 'buyback', 'record')}
-# PDFs read for these (their numbers are in the PDF); a filing's other events count too
-PDF_EVENTS = ('order', 'capex', 'acq', 'merger', 'jv', 'approval', 'dividend', 'fund', 'buyback', 'bonus', 'split', 'rating',
-              'divest', 'update', 'ops', 'pledge', 'default', 'legal', 'insolv', 'disrupt', 'clarify', 'press', 'other', 'kmp',
-              'auditor')
+# PDFs read for every filing of the Main stocks except these routine ones (owner, 28-Nov-2026: "pdf la neraiya informations
+# iruku" - a press release / update says what it is only in its PDF)
+PDF_SKIP = ('comp', 'paper', 'call')
 # a meeting notice / compliance filing lists only these as its other events (the agenda) - never results / calls
 AGENDA = ('fund', 'buyback', 'bonus', 'split', 'merger', 'acq', 'divest', 'dividend')
 RISK_EX = ('default', 'insolv')        # other events that make a filing a risk alert by themselves
@@ -855,6 +861,8 @@ def record(rec):
     sub = re.sub(r'\s+', ' ', str(field(rec, 'sub') or '')).strip()[:200]
     tx = re.sub(r'\s+', ' ', str(field(rec, 'tx') or '')).strip()[:TX_MAX]
     pdf = str(field(rec, 'pdf') or '').strip()
+    if pdf.startswith('/') and not pdf.startswith('//'):
+        pdf = PDF_BASE + pdf                   # a path on NSE's archive
     if pdf and not pdf.lower().startswith('http'):
         pdf = ''
     rid = str(field(rec, 'id') or '').strip()
@@ -1015,7 +1023,8 @@ def ttm_revenue(table):
 
 
 # ------------------------------------------------------------------ what the website gets
-COLS = ('id', 'sym', 'co', 'at', 'cat', 'ev', 'ex', 'pr', 'bi', 'gr', 'su', 'risk', 'num', 'sub', 'tx', 'pdf', 'pg', 'why')
+COLS = ('id', 'sym', 'co', 'at', 'cat', 'ev', 'ex', 'pr', 'bi', 'gr', 'su', 'risk', 'num', 'sub', 'tx', 'pdf', 'pg', 'why', 'ps')
+COLS_V1 = COLS[:-1]        # the first version's rows (no PDF highlights)
 
 
 _MEMO = {}
@@ -1041,7 +1050,93 @@ def site_row(r, syms):
     return {'id': r['id'], 'sym': r['sym'], 'co': co, 'at': r['at'], 'cat': c['cat'], 'ev': c['ev'], 'ex': c['ex'], 'pr': c['pr'],
             'bi': c['bi'], 'gr': c['gr'], 'su': c['su'], 'risk': 1 if c['risk'] else 0, 'num': c['num'], 'sub': r.get('sub', ''),
             'tx': (r.get('tx') or '')[:SITE_TX], 'pdf': r.get('pdf') if PDF_HOSTS.match(r.get('pdf') or '') else '', 'pg': pg,
-            'why': c['why'][:120]}
+            'why': c['why'][:120], 'ps': highlights(r.get('pt') or '', r.get('tx') or '', c['ev'], c['ex']) if pg == 'r' else []}
+
+
+# ------------------------------------------------------------------ what the PDF says (fixed rules - no AI)
+_BOILER = re.compile(
+    r'dear sir|dear madam|sir\s*/\s*madam|pursuant to|regulation 30|listing obligations|sebi \(lodr\)|for your information|'
+    r'take (the same|this|it) on (your )?record|kindly take|please take|thanking you|yours (faithfully|truly|sincerely)|'
+    r'for and on behalf|company secretary|compliance officer|\bcin\b|registered office|regd\.? office|corporate office|'
+    r'\btel\b|\bfax\b|e-?mail|website|www\.|scrip code|\bsymbol\b|bse limited|national stock exchange|phiroze|dalal street|'
+    r'bandra|listing department|membership no|\bencl|\bdin\b|disclaimer|forward[- ]looking|safe harbou?r|the manager|'
+    r'exchange plaza|\bisin\b|this is to inform|we wish to inform|in continuation of|we hereby inform|this intimation|'
+    r'is enclosed|are enclosed|enclosed herewith|attached herewith|annexure|signature|digitally signed|page \d+ of \d+',
+    re.I)
+_SUBJ = re.compile(r'\b(?:sub(?:ject)?|re)\s*[:.\-\u2013]\s*(.{8,240}?)(?=\s+(?:dear|ref\b|sir|madam|this|we |pursuant|with reference)|$)',
+                   re.I)
+_NUMBERISH = re.compile(r'\d')
+
+
+_ABBR = re.compile(r'\b(?:Rs|Mr|Mrs|Ms|Dr|No|Nos|Ltd|Pvt|Co|Inc|St|Sr|Jr|viz|approx|vs|Govt|Dept|Sec|Reg|Cr|Corp)\.$', re.I)
+
+
+def _sentences(text):
+    """A PDF's text -> sentences: a short line (a heading, an address line, a signature) ends its own piece - PDF text keeps
+    the letter's lines; a wrapped sentence's lines are joined; no break after 'Rs.' / 'Mr.' / 'Ltd.' ..."""
+    t = str(text or '').replace('\u20b9', ' Rs ').replace('\xa0', ' ')
+    t = re.sub(r'`\s*(?=\d)', 'Rs ', t)
+    paras, cur = [], []
+    for line in t.split('\n'):
+        line = re.sub(r'\s+', ' ', line).strip()
+        if not line:
+            if cur:
+                paras.append(' '.join(cur))
+                cur = []
+            continue
+        cur.append(line)
+        if len(line) < 55 and not re.search(r'(,|-|\b(?:of|and|the|to|in|for|with|by|at|on|a|an|Rs\.?))$', line, re.I):
+            paras.append(' '.join(cur))
+            cur = []
+    if cur:
+        paras.append(' '.join(cur))
+    out = []
+    for para in paras:
+        merged = []
+        for x in re.split(r'(?<=[.!?])\s+(?=[A-Z"(\u2018\u201c])', para):
+            if merged and _ABBR.search(merged[-1]):
+                merged[-1] += ' ' + x
+            else:
+                merged.append(x)
+        out.extend(y.strip(' -\u2022*') for y in merged if y.strip(' -\u2022*'))
+    return out
+
+
+def highlights(pt, tx='', ev='other', ex=()):
+    """The PDF's most telling lines (no AI): its own subject line, then the sentences with an amount, a % or the event's words
+    (not the letter's greetings / addresses / legal lines, not what NSE's text already says), in the PDF's order."""
+    if not pt:
+        return []
+    out = []
+    m = _SUBJ.search(re.sub(r'\s+', ' ', pt)[:3000])
+    subj = m.group(1).strip(' .:-') if m else ''
+    if subj and not _BOILER.search(subj):
+        out.append('Subject: ' + subj[:HL_CHARS - 9])
+    seen = set(re.sub(r'\W+', ' ', (tx or '').lower()).split())
+    rx = [r for e, r in _TEXT if e in ([ev] + list(ex))]
+    cand = []
+    for k, sent in enumerate(_sentences(pt[:PT_MAX])):
+        if len(sent) < 40 or len(sent) > 600 or _BOILER.search(sent):
+            continue
+        low = sent.lower()
+        words = set(re.sub(r'\W+', ' ', low).split())
+        if words and len(words & seen) / len(words) > 0.8:
+            continue                                  # NSE's own text says it already
+        sc = 0
+        if amounts(sent):
+            sc += 3
+        if '%' in sent:
+            sc += 2
+        if any(r.search(low) for r in rx):
+            sc += 2
+        if _NUMBERISH.search(sent):
+            sc += 1
+        if sc:
+            cand.append((sc, k, sent))
+    best = sorted(sorted(cand, key=lambda x: (-x[0], x[1]))[:HL_MAX - len(out)], key=lambda x: x[1])
+    for _, _, sent in best:
+        out.append(sent if len(sent) <= HL_CHARS else sent[:HL_CHARS - 1].rsplit(' ', 1)[0] + '\u2026')
+    return out[:HL_MAX]
 
 
 def day_rows(day, syms):
@@ -1240,19 +1335,35 @@ def pdf_text(raw, reader):
     return re.sub(r'[ \t\r\f\v]+', ' ', '\n'.join(parts)).strip()[:PT_MAX], n
 
 
-def pdf_todo(syms, today=None, limit=50):
-    """The Main stocks' filings whose PDF is worth reading and not read yet, newest first -> [(day, id)]."""
+def _pdf_due(r, now_s):
+    """Not read yet, or failed (not a scanned page) fewer than PDF_TRIES times and the last try PDF_RETRY_S ago."""
+    st = r.get('pdfSt') or ''
+    if not st:
+        return True
+    if not st.startswith('err:') or int(r.get('pdfTries') or 1) >= PDF_TRIES:
+        return False
+    try:
+        at = datetime.strptime(r.get('pdfAt') or '', '%Y-%m-%d %H:%M:%S').replace(tzinfo=IST).timestamp()
+    except ValueError:
+        return True
+    return now_s - at >= PDF_RETRY_S
+
+
+def pdf_todo(syms, today=None, limit=50, now_s=None):
+    """The Main stocks' filings whose PDF is not read yet (every one but the routine kinds `PDF_SKIP`), newest first ->
+    [(day, id)]."""
     today = today or ist_today()
+    now_s = time.time() if now_s is None else now_s
     out = []
     for k in range(PDF_BACK_DAYS):
         day = (today - timedelta(days=k)).isoformat()
         recs = load_day(day)
         for r in sorted(recs.values(), key=lambda x: x['at'], reverse=True):
-            if r.get('sym') not in syms or r.get('pdfSt') or not PDF_HOSTS.match(r.get('pdf') or '') or \
+            if r.get('sym') not in syms or not _pdf_due(r, now_s) or not PDF_HOSTS.match(r.get('pdf') or '') or \
                     not r['pdf'].lower().split('?')[0].endswith('.pdf'):
                 continue
             c = classify_rec({'sub': r.get('sub'), 'tx': r.get('tx')}, {})
-            if c['ev'] in PDF_EVENTS or any(e in PDF_EVENTS for e in c['ex']):
+            if c['ev'] not in PDF_SKIP:
                 out.append((day, r['id']))
                 if len(out) >= limit:
                     return out
@@ -1284,9 +1395,17 @@ def read_pdf(day, rid, reader, get=None):
                 upd.update(pt=text, pdfPages=pages)
             except Exception as e:
                 st = 'err:%s' % str(e)[:80]
-    upd['pdfSt'] = st if st in ('ok', 'none') else st
+    upd['pdfSt'] = st
+    upd['pdfTries'] = int(r.get('pdfTries') or 0) + 1
     save_day(day, {rid: dict(r, **upd)})
     return st
+
+
+PDF_WORDS = (('ok', 'with text'), ('none', 'scanned (no text)'), ('err', 'failed'), ('retry', 'NSE busy - again later'))
+
+
+def pdf_words(tally):
+    return ', '.join('%d %s' % (tally[k], w) for k, w in PDF_WORDS if tally.get(k)) or 'none'
 
 
 def pdf_day_count(st, today=None):
@@ -1346,6 +1465,7 @@ class Worker:
         self.next_ask, self.next_post, self.dirty = 0.0, 0.0, set()
         self.queue, self.next_queue = [], 0.0
         self.next_start, self.said = 0.0, ''
+        self.tally, self.why = {}, ''
 
     def busy(self):
         return bool(self.thread and self.thread.is_alive())
@@ -1389,6 +1509,7 @@ class Worker:
                 else:
                     pdf_count_up(st)
                     self.dirty.add(day)
+                self.count(res)
                 save_state(st)
             else:
                 wait = 60.0
@@ -1399,6 +1520,16 @@ class Worker:
             self.next_post = self.clock() + POST_EVERY_S
             save_state(st)
         return min(wait, max(1.0, self.next_ask - self.clock()))
+
+    def count(self, res):
+        """bridge.log: a line every 25 PDFs (read / scanned / failed + the first reason)."""
+        k = res.split(':')[0]
+        self.tally[k] = self.tally.get(k, 0) + 1
+        if k == 'err' and not self.why:
+            self.why = res[4:]
+        if sum(self.tally.values()) >= 25:
+            log('Corporate Intelligence: 25 announcement PDFs read - %s%s.' % (pdf_words(self.tally), (' (e.g. %s)' % self.why) if self.why else ''))
+            self.tally, self.why = {}, ''
 
     def loop(self, cfg, api, nse_busy):
         st = load_state()
@@ -1445,20 +1576,28 @@ def now(cfg, api, fetch, syms_filter=(), pdfs=200, out=print, today=None):
         out(refused)
         save_state(st)
         return 1
+    mine = [x for x in (record(r) for r in recs) if x and x['sym'] in syms]
+    links = [x['pdf'] for x in mine if x['pdf']]
+    out('Your stocks: %d announcement(s), %d with a PDF link%s%s.' % (
+        len(mine), len(links), (' (e.g. %s)' % links[0]) if links else '',
+        '' if not links or all(PDF_HOSTS.match(u) for u in links) else
+        ' - %d link(s) not on NSE\'s own address, left alone' % sum(1 for u in links if not PDF_HOSTS.match(u))))
     reader = pdf_reader(st, out)
     if reader and pdfs:
         todo = pdf_todo(syms, today, limit=pdfs)
         out('PDFs to read: %d (one every %g s - about %d min) ...' % (len(todo), PDF_GAP_S, round(len(todo) * PDF_GAP_S / 60)))
-        done = {}
+        done, why = {}, []
         for k, (day, rid) in enumerate(todo):
             res = read_pdf(day, rid, reader)
             done[res.split(':')[0]] = done.get(res.split(':')[0], 0) + 1
+            if res.startswith('err:') and len(why) < 3:
+                why.append(res[4:])
             if (k + 1) % 20 == 0:
-                out('   %d of %d PDFs read (%s)' % (k + 1, len(todo), ', '.join('%s %d' % kv for kv in sorted(done.items()))))
+                out('   %d of %d PDFs read (%s)' % (k + 1, len(todo), pdf_words(done)))
             if k + 1 < len(todo):
                 time.sleep(PDF_GAP_S)
         if todo:
-            out('PDFs: %s.' % ', '.join('%s %d' % kv for kv in sorted(done.items())))
+            out('PDFs: %s%s.' % (pdf_words(done), (' - why: %s' % '; '.join(why)) if why else ''))
     n = post_days(cfg, api, {(today - timedelta(days=k)).isoformat() for k in range(SHEET_DAYS)}, st, syms, force=True, out=out)
     st['rules'] = [ENGINE, RULES_VERSION]
     save_state(st)
@@ -1476,4 +1615,6 @@ def now(cfg, api, fetch, syms_filter=(), pdfs=200, out=print, today=None):
             nm = ', '.join('%s %s' % (k, v) for k, v in r['num'].items())
             out('  %s  %s / %s  %s  impact %d risk %d surprise %d  %s%s' % (r['at'][:16], r['cat'], EVENTS[r['ev']][0], r['pr'], r['bi'],
                                                                       r['gr'], r['su'], r['sub'][:60], ('  [' + nm + ']') if nm else ''))
+            for h in r.get('ps') or []:
+                out('        PDF: %s' % h[:160])
     return 0
