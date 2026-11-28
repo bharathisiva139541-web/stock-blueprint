@@ -15367,3 +15367,269 @@ function runWebsiteAccessAdd() {
     'Tab "' + AB_ACC_SHEET + '": untick Active to close the website for them (within 10 minutes), tick Reset Devices to ' +
     'free their devices, or type a new code to sign them out everywhere.', ui.ButtonSet.OK);
 }
+
+/*****************************************************************
+ * CORPORATE INTELLIGENCE - EVERY NSE ANNOUNCEMENT, SORTED AND SCORED (28-Nov-2026)
+ * -----------------------------------------------------------------
+ * Owner, 28-Nov-2026: a "Today's Corporate Intelligence" page - NSE's corporate announcements of his stocks in 6 categories
+ * (Business Growth / Financial & Capital / Management & Governance / Operational / Risk & Negative / Investor Communication),
+ * the numbers in each filing, three scores (Business Impact, Governance / Risk, Information Surprise), filters and a company
+ * search; "No AI involvment here. use python library to extract information from pdf"; "30 days sheet vachurukalam, but all
+ * announcmenet should be stored in laptop, laptop on la iruntha all announment um website kaatanum"; alerts: website only.
+ * The laptop (pcbridge/ScreenerBridge/corp_ann.py) reads every announcement with its results check, keeps them all, reads
+ * the PDFs and sends the Main stocks' filings of the last 30 days, one packed blob a day:
+ *   op 'syms'  -> Main's stocks {SYMBOL: [StockName, MCAP(CR)]} (the market cap sizes a fundraising / buyback)
+ *   op 'put'   {days: [{day, n, sum, blob}], engine, keep} -> hidden tab Corp_Announcements (a row a day, the blob in
+ *              45,000-character cells; days older than the newest - 30 dropped)
+ *   op 'ask'   (before the script lock) the website's questions the laptop answers from its archive: 'day:yyyy-mm-dd' (a day the
+ *              sheet no longer keeps) / 'sym:SYMBOL' (every filing of a company); waits up to 25 s while the page was read in
+ *              the last 10 minutes
+ *   op 'older' {key, n, blob, from} -> hidden tab Corp_Older (newest 30 answers, 6 hours)
+ * The website asks doPost action 'site' part 'corp' (the read-only feed token) through Vercel api/corp, which unpacks and checks
+ * the rows.
+ *****************************************************************/
+const AB_CORP_SHEET = 'Corp_Announcements';
+const AB_CORP_HEADERS = ['Day', 'Filings', 'Made', 'Summary (JSON)', 'Parts', 'Data'];
+const AB_CORP_ENGINE = 1;
+const AB_CORP_KEEP_DAYS = 30;
+const AB_CORP_MAX_PARTS = 40;            // per day (40 x 45,000 characters)
+const AB_CORP_MAX_DAYS_POST = 10;
+const AB_CORP_SITE_MAX_DAYS = 10;        // days in one answer to the website
+const AB_CORP_OLDER_SHEET = 'Corp_Older';
+const AB_CORP_OLDER_HEADERS = ['Key', 'Received', 'Filings', 'Archive From', 'Parts', 'Data'];
+const AB_CORP_OLDER_KEEP = 30;
+const AB_CORP_OLDER_FRESH_MS = 6 * 3600 * 1000;
+const AB_CORP_ASK_PROP = 'AB_CORP_ASK';     // {key: asked at (ms)} - the website's questions waiting for the laptop
+const AB_CORP_SEEN_PROP = 'AB_CORP_SEEN';   // the laptop's last look for questions (ms)
+const AB_CORP_PAGE_PROP = 'AB_CORP_PAGE';   // the website's last read (ms) - the laptop then looks within seconds
+const AB_CORP_WAKE_KEY = 'AB_CORP_WAKE';
+const AB_CORP_FAST_MS = 10 * 60 * 1000;
+const AB_CORP_WAIT_MAX_S = 25;
+const AB_CORP_ASK_MAX = 5;
+const AB_CORP_ASK_TTL_MS = 15 * 60 * 1000;
+const AB_CORP_KEY_RE = /^(day:\d{4}-\d{2}-\d{2}|sym:[A-Z0-9&_.-]{1,30})$/;
+const AB_CORP_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const AB_CORP_CATS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+function ab_corpFromBridge_(req) {
+  const op = String(req.op || '');
+  if (op === 'syms') return { ok: true, syms: ab_corpMain_() };
+  if (op === 'ask') return ab_corpAsk_(req);
+  if (!(Number(req.engine) >= AB_CORP_ENGINE)) return { ok: false, error: 'an older laptop program sent the announcements - not kept' };
+  if (op === 'put') return ab_corpPut_(req);
+  if (op === 'older') return ab_corpOlderPut_(req);
+  return { ok: false, error: 'unknown op' };
+}
+
+/** Main's stocks: {SYMBOL: [StockName, MCAP(CR) or null]} (first row of a symbol). */
+function ab_corpMain_() {
+  const out = {};
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AB_MAIN_SHEET);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const head = sh.getRange(1, 1, Math.min(10, sh.getLastRow()), sh.getLastColumn()).getValues();
+  let hr = -1, si = -1, ni = -1, mi = -1;
+  for (let r = 0; r < head.length && hr === -1; r++) {
+    const row = head[r].map(function (v) { return String(v).trim(); });
+    if (row.indexOf('SYMBOL') !== -1) { hr = r; si = row.indexOf('SYMBOL'); ni = row.indexOf('StockName'); mi = row.indexOf('MCAP(CR)'); }
+  }
+  if (hr === -1 || sh.getLastRow() <= hr + 1) return out;
+  const width = Math.max(si, ni, mi) + 1;
+  sh.getRange(hr + 2, 1, sh.getLastRow() - hr - 1, width).getValues().forEach(function (v) {
+    const sym = ab_cellText_(v[si]).toUpperCase();
+    if (!sym || out[sym] !== undefined || !/^[A-Z0-9&_.-]{1,30}$/.test(sym)) return;
+    const mc = mi >= 0 ? Number(v[mi]) : NaN;
+    out[sym] = [ni >= 0 ? ab_cellText_(v[ni]).slice(0, 120) : '', isFinite(mc) && mc > 0 ? Math.round(mc * 100) / 100 : null];
+  });
+  return out;
+}
+
+/** A day's figures from the laptop (numbers / known codes only). */
+function ab_corpSumClean_(s) {
+  s = s && typeof s === 'object' ? s : {};
+  const int = function (v) { const n = Math.round(Number(v)); return isFinite(n) && n >= 0 ? n : 0; };
+  const out = { n: int(s.n), stocks: int(s.stocks), high: int(s.high), risk: int(s.risk), cats: {}, evs: {} };
+  AB_CORP_CATS.forEach(function (k) { out.cats[k] = int(s.cats && s.cats[k]); });
+  Object.keys(s.evs && typeof s.evs === 'object' ? s.evs : {}).slice(0, 60).forEach(function (k) {
+    if (/^[a-z]{2,10}$/.test(k)) out.evs[k] = int(s.evs[k]);
+  });
+  return out;
+}
+
+function ab_corpTab_(name, headers, make) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(name);
+  if (!sh && make) {
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    try { sh.hideSheet(); } catch (e) { /* cosmetic */ }
+  }
+  return sh;
+}
+
+function ab_corpParts_(blob) {
+  const parts = [];
+  for (let i = 0; i < blob.length; i += AB_EPST_PART) parts.push(blob.slice(i, i + AB_EPST_PART));
+  return parts;
+}
+
+/** Writes one row (every cell text; a shorter row leaves no old parts behind). */
+function ab_corpWriteRow_(sh, r, row) {
+  const width = Math.max(sh.getLastColumn(), row.length);
+  const full = row.concat(new Array(width - row.length).fill(''));
+  sh.getRange(r, 1, 1, width).setNumberFormat('@').setValues([full.map(function (v) { return String(v); })]);
+}
+
+/** The laptop's days -> Corp_Announcements (a day's row replaced; days older than the newest - 30 dropped). */
+function ab_corpPut_(req) {
+  const days = Array.isArray(req.days) ? req.days.slice(0, AB_CORP_MAX_DAYS_POST) : [];
+  if (!days.length) return { ok: false, error: 'no days' };
+  const made = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(String(req.made || '')) ? String(req.made) : '';
+  const rows = [];
+  for (let i = 0; i < days.length; i++) {
+    const d = days[i] || {};
+    const day = String(d.day || ''), blob = String(d.blob || '');
+    if (!AB_CORP_DAY_RE.test(day) || !blob || !AB_EPST_BLOB_RE.test(blob)) return { ok: false, error: 'no data for ' + day.slice(0, 10) };
+    const parts = ab_corpParts_(blob);
+    if (parts.length > AB_CORP_MAX_PARTS) return { ok: false, error: day + ' too big (' + blob.length + ' characters)' };
+    rows.push([day, Math.max(0, Math.round(Number(d.n) || 0)), made, JSON.stringify(ab_corpSumClean_(d.sum)), parts.length].concat(parts));
+  }
+  const sh = ab_corpTab_(AB_CORP_SHEET, AB_CORP_HEADERS, true);
+  const last = sh.getLastRow();
+  const have = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getValues().map(function (v) { return ab_cellText_(v[0]); }) : [];
+  rows.forEach(function (row) {
+    const k = have.indexOf(row[0]);
+    if (k >= 0) ab_corpWriteRow_(sh, k + 2, row);
+    else { ab_corpWriteRow_(sh, sh.getLastRow() + 1, row); have.push(row[0]); }
+  });
+  // keep the newest AB_CORP_KEEP_DAYS days
+  const newest = have.filter(function (d) { return AB_CORP_DAY_RE.test(d); }).sort().pop() || '';
+  let dropped = 0;
+  if (newest) {
+    const first = Utilities.formatDate(new Date(new Date(newest + 'T12:00:00Z').getTime() - (AB_CORP_KEEP_DAYS - 1) * 86400000), 'UTC', 'yyyy-MM-dd');
+    for (let k = have.length - 1; k >= 0; k--) {
+      if (!AB_CORP_DAY_RE.test(have[k]) || have[k] < first) { sh.deleteRow(k + 2); dropped++; }
+    }
+  }
+  return { ok: true, days: rows.length, dropped: dropped };
+}
+
+/** The laptop's answer to the website's question -> Corp_Older (the same key replaced; the newest 30 kept). */
+function ab_corpOlderPut_(req) {
+  const key = String(req.key || ''), blob = String(req.blob || '');
+  if (!AB_CORP_KEY_RE.test(key)) return { ok: false, error: 'bad key' };
+  if (!blob || !AB_EPST_BLOB_RE.test(blob)) return { ok: false, error: 'no data' };
+  const parts = ab_corpParts_(blob);
+  if (parts.length > 60) return { ok: false, error: 'too big (' + blob.length + ' characters)' };
+  const from = AB_CORP_DAY_RE.test(String(req.from || '')) ? String(req.from) : '';
+  const sh = ab_corpTab_(AB_CORP_OLDER_SHEET, AB_CORP_OLDER_HEADERS, true);
+  const row = [key, String(Date.now()), Math.max(0, Math.round(Number(req.n) || 0)), from, parts.length].concat(parts);
+  const last = sh.getLastRow();
+  const vals = last >= 2 ? sh.getRange(2, 1, last - 1, 2).getValues() : [];
+  const k = vals.map(function (v) { return ab_cellText_(v[0]); }).indexOf(key);
+  ab_corpWriteRow_(sh, k >= 0 ? k + 2 : last + 1, row);
+  if (k < 0) vals.push([key, row[1]]);
+  // the newest AB_CORP_OLDER_KEEP answers
+  if (vals.length > AB_CORP_OLDER_KEEP) {
+    const order = vals.map(function (v, i) { return { i: i, at: Number(v[1]) || 0 }; }).sort(function (a, b) { return b.at - a.at; });
+    order.slice(AB_CORP_OLDER_KEEP).map(function (o) { return o.i; }).sort(function (a, b) { return b - a; })
+      .forEach(function (i) { sh.deleteRow(i + 2); });
+  }
+  const props = PropertiesService.getScriptProperties();
+  const asks = ab_corpAsks_(props);
+  if (asks[key]) { delete asks[key]; props.setProperty(AB_CORP_ASK_PROP, JSON.stringify(asks)); }
+  return { ok: true, n: row[2] };
+}
+
+function ab_corpAsks_(props) {
+  let a = {};
+  try { a = JSON.parse(props.getProperty(AB_CORP_ASK_PROP) || '{}') || {}; } catch (e) { a = {}; }
+  const now = Date.now(), out = {};
+  Object.keys(a).forEach(function (k) { if (AB_CORP_KEY_RE.test(k) && now - Number(a[k]) <= AB_CORP_ASK_TTL_MS) out[k] = Number(a[k]); });
+  return out;
+}
+
+/** The laptop asks for the website's questions (doPost routes it before the script lock: it may wait up to 25 s). */
+function ab_corpAsk_(req) {
+  const props = PropertiesService.getScriptProperties();
+  const t0 = Date.now();
+  props.setProperty(AB_CORP_SEEN_PROP, String(t0));
+  const fast = t0 - (Number(props.getProperty(AB_CORP_PAGE_PROP)) || 0) <= AB_CORP_FAST_MS;
+  const take = function () {
+    const asks = ab_corpAsks_(props);
+    const keys = Object.keys(asks);
+    if (keys.length) props.setProperty(AB_CORP_ASK_PROP, '{}');      // handed out (the website asks again while it waits)
+    return keys;
+  };
+  let keys = take();
+  const wait = fast ? Math.max(0, Math.min(AB_CORP_WAIT_MAX_S, Math.floor(Number(req && req.wait) || 0))) : 0;
+  if (!keys.length && wait) {
+    let cache = null;
+    try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+    for (let n = 1; n <= wait && !keys.length; n++) {
+      Utilities.sleep(1000);
+      let wake = null;
+      try { wake = cache ? cache.get(AB_CORP_WAKE_KEY) : null; } catch (e) { wake = null; }
+      if (wake || n % 5 === 0) {
+        keys = take();
+        try { if (wake && cache) cache.remove(AB_CORP_WAKE_KEY); } catch (e) { /* only a hint */ }
+      }
+    }
+  }
+  return { ok: true, asks: keys, next: fast ? 0 : 120 };
+}
+
+/** Corp_Announcements' rows -> [{day, n, made, sum, row, parts}] newest first. */
+function ab_corpDays_(sh) {
+  const last = sh ? sh.getLastRow() : 0;
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, 5).getValues().map(function (v, i) {
+    let sum = {};
+    try { sum = JSON.parse(String(v[3] || '{}')); } catch (e) { sum = {}; }
+    return { day: ab_cellText_(v[0]), n: Math.max(0, Math.round(Number(v[1]) || 0)), made: ab_cellText_(v[2]), sum: ab_corpSumClean_(sum),
+      row: i + 2, parts: Math.max(0, Math.min(AB_CORP_MAX_PARTS, Math.round(Number(v[4]) || 0))) };
+  }).filter(function (d) { return AB_CORP_DAY_RE.test(d.day); }).sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : 0; });
+}
+
+/** doPost action 'site' part 'corp': {from, to} -> the kept days' list + the blobs of those days (newest 7 kept days when none
+ *  given); {older: 'day:...' | 'sym:...'} -> the laptop's answer when it came, else the question is left for the laptop. */
+function ab_corpForSite_(req) {
+  const props = PropertiesService.getScriptProperties();
+  const now = Date.now();
+  props.setProperty(AB_CORP_PAGE_PROP, String(now));
+  const seen = Number(props.getProperty(AB_CORP_SEEN_PROP)) || 0;
+  const laptop = seen ? Math.max(0, Math.round((now - seen) / 1000)) : -1;       // seconds since the laptop last looked
+  if (req.older != null) {
+    const key = String(req.older);
+    if (!AB_CORP_KEY_RE.test(key)) return { ok: false, error: 'bad key' };
+    const sh = ab_corpTab_(AB_CORP_OLDER_SHEET, AB_CORP_OLDER_HEADERS, false);
+    const last = sh ? sh.getLastRow() : 0;
+    if (last >= 2) {
+      const vals = sh.getRange(2, 1, last - 1, 5).getValues();
+      for (let i = 0; i < vals.length; i++) {
+        if (ab_cellText_(vals[i][0]) !== key || now - (Number(vals[i][1]) || 0) > AB_CORP_OLDER_FRESH_MS) continue;
+        const n = Math.max(0, Math.min(60, Math.round(Number(vals[i][4]) || 0)));
+        const blob = n ? sh.getRange(i + 2, 6, 1, n).getValues()[0].map(function (v) { return String(v || ''); }).join('') : '';
+        return { ok: true, older: { key: key, at: Number(vals[i][1]) || 0, n: Number(vals[i][2]) || 0, from: ab_cellText_(vals[i][3]), blob: blob }, laptop: laptop };
+      }
+    }
+    const asks = ab_corpAsks_(props);
+    asks[key] = asks[key] || now;
+    const keep = Object.keys(asks).sort(function (a, b) { return asks[b] - asks[a]; }).slice(0, AB_CORP_ASK_MAX);
+    const out = {};
+    keep.forEach(function (k) { out[k] = asks[k]; });
+    props.setProperty(AB_CORP_ASK_PROP, JSON.stringify(out));
+    try { CacheService.getScriptCache().put(AB_CORP_WAKE_KEY, '1', 120); } catch (e) { /* only a hint */ }
+    return { ok: true, pending: true, key: key, laptop: laptop };
+  }
+  const sh = ab_corpTab_(AB_CORP_SHEET, AB_CORP_HEADERS, false);
+  const list = ab_corpDays_(sh);
+  const from = AB_CORP_DAY_RE.test(String(req.from || '')) ? String(req.from) : '';
+  const to = AB_CORP_DAY_RE.test(String(req.to || '')) ? String(req.to) : '';
+  const want = (from || to ? list.filter(function (d) { return (!from || d.day >= from) && (!to || d.day <= to); }) : list.slice(0, 7))
+    .slice(0, AB_CORP_SITE_MAX_DAYS);
+  const blobs = want.map(function (d) {
+    return { day: d.day, blob: d.parts ? sh.getRange(d.row, 6, 1, d.parts).getValues()[0].map(function (v) { return String(v || ''); }).join('') : '' };
+  });
+  return { ok: true, days: list.map(function (d) { return { day: d.day, n: d.n, made: d.made, sum: d.sum }; }), blobs: blobs, laptop: laptop };
+}

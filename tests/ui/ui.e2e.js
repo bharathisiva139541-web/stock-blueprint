@@ -171,6 +171,29 @@ const RECOS_ROWS = [
   recoRow(EPST_SYMS[1], { co: 'Stock B', br: 'Emkay', tgt: 9999, at: '2026-10-15 11:00', st: 'x', why: 'wait', ed: '', ep: null, n: null, kp: [], kd: [], pg: [], hh: [],
     dd: [], cl: [], ix: [] })];
 const RECOS_SUM = { recos: 10, ok: 7, brokers: 8, stocks: 6, buy: 9, why: { nosym: 1, wait: 2 }, src: { mc: 10 }, from: '2026-10-10', to: '2026-11-21' };
+// Corporate Intelligence (owner, 28-Nov-2026): api/corp = NSE's announcements of the Main stocks, sorted + scored by the laptop
+const CORP = require('../../web/lib/corp.js');
+const istDay = (k) => new Date(Date.now() + 330 * 60000 - k * 86400000).toISOString().slice(0, 10);
+function corpRow(id, sym, k, o) {
+  const r = Object.assign({ id: String(id), sym, co: sym + ' Ltd', at: istDay(k) + ' 12:00:00', cat: 'A', ev: 'order', ex: [], pr: 'high', bi: 75, gr: 0, su: 80,
+    risk: 0, num: { val: 400, mo: 24, pct: 50 }, sub: 'Bagging/Receiving of orders/contracts', tx: 'received an order worth Rs 400 crore from the railways',
+    pdf: 'https://nsearchives.nseindia.com/corporate/' + sym + '_order.pdf', pg: 'r', why: 'NSE subject "Bagging"' }, o || {});
+  return CORP.COLS.map((c) => r[c]);
+}
+const CORP_ROWS = () => [
+  corpRow(1, FLAG_SYM, 0),
+  corpRow(2, EPST_SYMS[0], 0, { at: istDay(0) + ' 10:05:00', cat: 'B', ev: 'rating', pr: 'high', bi: 10, gr: 80, su: 60, risk: 1,
+    num: { rag: 'CRISIL', rfrom: 'BBB', rrt: 'BB', ract: 'down' }, sub: 'Credit Rating', tx: 'CRISIL has downgraded the rating to CRISIL BB' }),
+  corpRow(3, EPST_SYMS[1], 0, { at: istDay(0) + ' 15:40:00', cat: 'B', ev: 'results', ex: ['dividend'], pr: 'med', bi: 45, gr: 0, su: 40,
+    num: { dps: 5, dty: 'interim', rd: istDay(-10) }, sub: 'Outcome of Board Meeting', tx: 'Financial results and an interim dividend of Rs 5 a share' }),
+  corpRow(4, EPST_SYMS[2], 0, { at: istDay(0) + ' 09:30:00', cat: 'C', ev: 'kmp', pr: 'high', bi: 15, gr: 65, su: 60, risk: 1, num: { role: 'CFO', act: 'out' },
+    sub: 'Change in Directors/ Key Managerial Personnel', tx: 'Resignation of the CFO with immediate effect' }),
+  corpRow(5, EPST_SYMS[3], 0, { at: istDay(0) + ' 08:00:00', cat: 'F', ev: 'comp', pr: 'routine', bi: 0, gr: 0, su: 0, num: {}, sub: 'Trading Window', tx: 'Closure of trading window', pdf: '', pg: '' }),
+  corpRow(6, EPST_SYMS[4], 1, { cat: 'B', ev: 'fund', pr: 'med', bi: 55, gr: 15, su: 62, num: { val: 1000, ins: 'QIP', mc: 12.5 }, sub: 'Fund Raising',
+    tx: 'raising of funds up to Rs 1,000 crore through QIP' })];
+const CORP_OLD = () => [corpRow(9, EPST_SYMS[0], 12, { ev: 'jv', pr: 'med', bi: 35, su: 45, num: {}, sub: 'Joint Venture', tx: 'Joint venture agreement' })];
+const CORP_DAYS = () => [0, 1, 2, 3, 4, 5, 6, 12].map((k) => ({ day: istDay(k), n: 1, made: istDay(0) + ' 16:00:00', sum: {} }));
+const CORP_ASKED = {};
 const RECO_OPEN = (() => { const i = HIST.dates.indexOf('2026-10-15'), b = (HIST.bars[EPST_SYMS[1]] || []).find((x) => x[0] === i); return b ? b[1] : null; })();
 // the sheet's 'Result Day %' = the result day's intraday move (owner, 03-Nov-2026: VRLLOG 14.5% where it closed +6%)
 const RPT = LIVE_MAIN.resultsPerf.table;
@@ -248,6 +271,21 @@ function liveApi(o) {
       const rows = (q === 'Sep 2026' ? EPST_SEP : EPST_JUN).map((r) => u.searchParams.get('lite') === '1'
         ? r.map((v, i) => (EPST.COLS[i] === 'ph' || EPST.COLS[i] === 'pc' ? [] : v)) : r);
       return { json: { ok: true, quarters: EPST_QS, q, cols: EPST.COLS, rows, fetchedAt: istAgo(1) } };
+    }
+    if (u.pathname === '/api/corp') {
+      const older = u.searchParams.get('older');
+      if (older) {
+        CORP_ASKED[older] = (CORP_ASKED[older] || 0) + 1;
+        if (CORP_ASKED[older] < 2) return { json: { ok: true, pending: true, key: older, laptop: 30, fetchedAt: istAgo(1) } };
+        const rows = older.indexOf('sym:') === 0 ? [corpRow(21, older.slice(4), 200, { ev: 'acq', sub: 'Acquisition', tx: 'Acquisition of 51% stake' }),
+          corpRow(22, older.slice(4), 400, { ev: 'dividend', cat: 'B', pr: 'low', bi: 25, sub: 'Dividend', tx: 'Final dividend' })]
+          : [corpRow(23, FLAG_SYM, 60, { at: older.slice(4) + ' 11:00:00', sub: 'Press Release', tx: 'An older press release' })];
+        return { json: { ok: true, older: { key: older, at: Date.now(), n: rows.length, from: '2024-01-01' }, cols: CORP.COLS, rows, laptop: 30, fetchedAt: istAgo(1) } };
+      }
+      const from = u.searchParams.get('from');
+      const rows = from ? CORP_OLD() : CORP_ROWS();
+      return { json: { ok: true, days: CORP_DAYS(), shown: from ? [istDay(12)] : CORP_DAYS().slice(0, 7).map((d) => d.day), cols: CORP.COLS, rows, laptop: 30,
+        fetchedAt: istAgo(1) } };
     }
     if (u.pathname === '/api/recos') {
       return { json: { ok: true, made: '2026-11-23T10:00:00', upto: '2026-11-20', sum: RECOS_SUM, cols: RECOS.COLS, rows: RECOS_ROWS, fetchedAt: istAgo(1) } };
@@ -332,7 +370,7 @@ async function pageState(page) {
 
 const PAGES = ['overview', 'daystats/advances', 'watchlist', 'lists', 'suggestions', 'industries', 'industries/companies', 'industries/groups', 'industries/macro/financial-services',
   'industries/sector/capital-goods', 'industries/industry/banks', 'industries/basic/public-sector-bank', 'industries/it', 'industries/review',
-  'strategy', 'signals', 'results', 'today', 'edge', 'epst', 'recos', 'markets'];
+  'strategy', 'signals', 'results', 'today', 'edge', 'epst', 'recos', 'corp', 'markets'];
 let failures = 0;
 // tools/lab-guide/build.js (the Backtest Lab guide, 12-Nov-2026) runs only the Lab check (E2E_ONLY) and keeps its screenshots (GUIDE_SHOTS)
 const GUIDE = process.env.GUIDE_SHOTS || '';
@@ -1805,6 +1843,79 @@ function check(name, fn) {
     const st = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:recos:opts')));
     assert.deepStrictEqual([st.W, st.T, st.calls], [60, 100, 'all']);
     await p.evaluate(() => localStorage.removeItem('sb:recos:opts'));
+    await p.setViewportSize({ width: 360, height: 780 });
+    await p.waitForTimeout(300);
+    assert.ok(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'no horizontal overflow at 360 px');
+    await c.close();
+    assert.deepStrictEqual(errors, [], 'console/page errors');
+  });
+
+  await check('Corporate Intelligence: today\'s filings, the filters, categories, search, the last 30 days and the laptop\'s archive', async () => {
+    const c = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    await c.addInitScript(() => { try { localStorage.setItem('sb:api', 'true'); } catch (e) { /* ignore */ } });
+    const calls = [];
+    await routeAll(c, base, liveApi({ priceState: 'DELAYED', session: 'open', provider: 'sheet' }), calls);
+    const p = await c.newPage(), errors = watchErrors(p);
+    await p.goto(base + '#corp', { waitUntil: 'load' });
+    await p.waitForSelector('#ci-all-t tbody tr', { timeout: 15000 });
+    if (process.env.CI_SHOT) await p.screenshot({ path: process.env.CI_SHOT + '/corp-1366.png', fullPage: true });
+    const tiles = async () => p.$$eval('.ci-tiles .tile', (t) => t.map((x) => x.querySelector('.label').innerText.trim() + ' = ' + x.querySelector('.value').innerText.trim()));
+    let tl = await tiles();
+    assert.deepStrictEqual(tl, ['Filings today = 5', 'High-impact events = 3', 'Risk alerts = 2', 'Order wins = 1', 'Fundraising = 0'], tl.join(' | '));
+    assert.ok(calls.some((u) => /\/api\/corp\?days=7$/.test(u)), calls.join(' '));
+    assert.ok(/your laptop is on/.test(await p.$eval('.ci-status', (x) => x.innerText)));
+    // the strongest events: high first, with the three scores and the numbers in words
+    const cards = await p.$$eval('#ci-top .ci-card', (cs) => cs.map((x) => x.innerText.replace(/\s+/g, ' ')));
+    assert.strictEqual(cards.length, 4, cards.join(' || '));
+    assert.ok(/Credit rating High/.test(cards[0]) && /CRISIL BBB → BB downgraded/.test(cards[0]) && /Risk 80/.test(cards[0]), cards[0]);
+    assert.ok(cards.some((x) => /Order win High/.test(x) && /Order Rs 400 Cr/.test(x) && /50% of revenue \(TTM\)/.test(x) && /over 2 years/.test(x)), cards.join(' || '));
+    const rowsN = async () => p.$$eval('#ci-all-t tbody tr', (r) => r.filter((x) => !x.querySelector('.empty')).length);
+    // the owner's filters
+    await p.click('.ci-filters [data-cif="risk"]');
+    await p.waitForFunction(() => document.querySelector('.ci-filters [data-cif="risk"]').getAttribute('aria-pressed') === 'true');
+    assert.strictEqual(await rowsN(), 2);
+    await p.click('.ci-filters [data-cif="actions"]');
+    await p.waitForFunction(() => document.querySelector('.ci-filters [data-cif="actions"]').getAttribute('aria-pressed') === 'true');
+    assert.strictEqual(await rowsN(), 1, 'the board outcome\'s dividend');
+    await p.click('.ci-tiles [data-cif="all"]');
+    await p.waitForFunction(() => document.querySelector('.ci-filters [data-cif="all"]').getAttribute('aria-pressed') === 'true');
+    // a category
+    await p.click('.ci-cats [data-cic="C"]');
+    await p.waitForFunction(() => document.querySelector('.ci-cats [data-cic="C"]').getAttribute('aria-pressed') === 'true');
+    assert.strictEqual(await rowsN(), 1);
+    assert.ok(/CFO left/.test(await p.$eval('#ci-all-t tbody', (x) => x.innerText)));
+    await p.click('.ci-cats [data-cic=""]');
+    // the last 7 days: yesterday's QIP
+    await p.click('[data-cir="7"]');
+    await p.waitForFunction(() => /Filings in last 7 days/.test((document.querySelector('.ci-tiles') || {}).innerText || ''));
+    tl = await tiles();
+    assert.ok(tl.indexOf('Filings in last 7 days = 6') >= 0 && tl.indexOf('Fundraising = 1') >= 0, tl.join(' | '));
+    // the last 30 days: the 12-day-old kept day is read (from / to)
+    await p.click('[data-cir="30"]');
+    await p.waitForFunction(() => /Filings in last 30 days\s*7/.test(((document.querySelector('.ci-tiles') || {}).innerText || '').replace(/\s+/g, ' ')), null, { timeout: 15000 });
+    assert.ok(calls.some((u) => /\/api\/corp\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/.test(u)), calls.join(' '));
+    // a company: every filing of it from the laptop's archive (asked again until the laptop answered)
+    await p.fill('#ci-q', FLAG_SYM);
+    await p.waitForFunction(() => !document.querySelector('#ci-arch').hidden);
+    assert.ok(new RegExp('Every filing of ' + FLAG_SYM).test(await p.$eval('#ci-arch', (x) => x.textContent)));
+    await p.click('#ci-arch');
+    await p.waitForFunction(() => /from your laptop's archive/.test(document.body.innerText), null, { timeout: 45000 });
+    assert.ok(calls.filter((u) => u.indexOf('older=sym%3A' + encodeURIComponent(FLAG_SYM)) >= 0).length >= 2, 'asked again while pending');
+    assert.ok(/Filings from your laptop = 2/.test((await tiles()).join(' | ')), (await tiles()).join(' | '));
+    assert.ok(/since 1 Jan 2024|since 01-01-2024|2024/.test(await p.$eval('.note', (x) => x.innerText)));
+    await p.click('#ci-back');
+    await p.waitForFunction(() => !/from your laptop's archive/.test(document.body.innerText));
+    // one older day (not in the sheet's 30): asked of the laptop
+    const old = await p.evaluate(() => new Date(Date.now() + 330 * 60000 - 60 * 86400000).toISOString().slice(0, 10));
+    await p.fill('#ci-day', old);
+    await p.dispatchEvent('#ci-day', 'change');
+    await p.waitForFunction(() => /from your laptop's archive/.test(document.body.innerText), null, { timeout: 45000 });
+    assert.ok(/An older press release/.test(await p.$eval('#ci-all-t', (x) => x.innerText)));
+    const st = await p.evaluate(() => JSON.parse(localStorage.getItem('sb:corp:opts')));
+    assert.deepStrictEqual(st, { range: old, filter: 'all' });
+    await p.evaluate(() => localStorage.removeItem('sb:corp:opts'));
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#ci-csv')]);
+    assert.strictEqual(dl.suggestedFilename(), 'corporate-intelligence.csv');
     await p.setViewportSize({ width: 360, height: 780 });
     await p.waitForTimeout(300);
     assert.ok(await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'no horizontal overflow at 360 px');

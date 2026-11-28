@@ -738,3 +738,22 @@ ANALYST TARGETS (since 24-Nov-2026)
    websites (they could not be reached from where it was written): if the website page stays empty, run
    AnalystCheck.bat and send what it prints - the pages it read are kept in the folder analyst_check.
  - To switch it off: in config.json add  "analyst_targets": false
+
+CORPORATE INTELLIGENCE (since 28-Nov-2026)
+ - Every results check (every 30 minutes) already reads NSE's corporate announcements of the last days in one request;
+   now EVERY announcement of that answer is kept on this laptop (folder corp_data in the data folder - never deleted),
+   and the ones of your Main stocks are sorted into 6 categories (A Business Growth, B Financial & Capital,
+   C Management & Governance, D Operational, E Risk & Negative, F Investor Communication) and scored 0-100 for
+   Business Impact, Governance / Risk and Information Surprise - by fixed rules, no AI. The first time it also reads
+   the days back to a week ago (one more request).
+ - The numbers (order value, execution period, rating, dividend, pledge, deal value, fundraising amount, monthly
+   sales ...) come from NSE's text and from the filing's PDF: the background program downloads the PDFs worth reading,
+   one every 6 seconds, never while the round asks NSE, at most 400 a day, and reads their text with pypdf.
+ - pypdf: the program installs it by itself the first time (python -m pip install --user pypdf). If bridge.log says
+   it could not, double-click InstallPdfReader.bat once.
+ - The sheet keeps the last 30 days (hidden tab Corp_Announcements) -> the website's page "Corporate Intelligence".
+   Older days, or every filing of one company, come from this laptop while it is on (the page asks, this program
+   answers within seconds; when the laptop is off the page says so).
+ - CorpNow.bat = the past week now (+ up to 200 PDFs), everything sent; CorpNow.bat RELIANCE also prints that
+   company's announcements with their category, event, scores and numbers.
+ - To switch it off: in config.json add  "corp_intel": false

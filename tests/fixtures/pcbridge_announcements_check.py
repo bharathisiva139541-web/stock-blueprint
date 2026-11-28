@@ -19,6 +19,8 @@ spec.loader.exec_module(sb)
 TMP = tempfile.mkdtemp()
 sb.LOG_PATH = os.path.join(TMP, 'bridge.log')
 sb.ANN_STATE_PATH = os.path.join(TMP, 'announcements_state.json')
+sb.CI.DIR = os.path.join(TMP, 'corp_data')            # Corporate Intelligence (28-Nov-2026): never the real folder
+sb.CI.STATE_PATH = os.path.join(TMP, 'corp_state.json')
 
 # ---------------------------------------------------------------- times and the result filter
 assert sb.ann_time('29-Oct-2026 17:05:25') == '2026-10-29 17:05:25'
@@ -84,7 +86,7 @@ def fake_api(cfg, action, payload=None, timeout=120, tries=3):
 
 sb.api = fake_api
 sb.log = LOGS.append
-CFG = {'url': 'x', 'token': 'y'}
+CFG = {'url': 'x', 'token': 'y', 'corp_intel': False}     # Corporate Intelligence: its own check at the end
 sb.ann_step(CFG, today=date(2026, 10, 30), back_chunks=0)
 assert any('from_date=27-10-2026&to_date=30-10-2026' in h for h in HITS), HITS
 assert POSTS[0]['ann'] == rows and POSTS[0]['from'] == '2026-10-27' and POSTS[0]['to'] == '2026-10-30', POSTS
@@ -153,4 +155,32 @@ assert len(POSTS) == 4 and any('catching up 28-10 .. 31-10 - could not read NSE 
 assert '2026-10-31' not in sb.ann_state_load(date(2026, 11, 16))['days']
 # a new season starts afresh
 assert sb.ann_state_load(date(2027, 1, 5)) == {'season': '2027-01-01', 'days': []}
+
+# Corporate Intelligence (28-Nov-2026): EVERY announcement of the same NSE answer goes to corp_ann (no extra request), the first
+# week once with one more request; the Main stocks' days to the sheet (action 'corp')
+CORP = []
+
+
+def corp_api(cfg, action, payload=None, timeout=120, tries=3):
+    if action == 'corp':
+        CORP.append(payload)
+        return {'ok': True, 'syms': {'BOROLTD': ['Borosil Ltd', 4000.0], 'TCS': ['TCS Ltd', 1.5e6]}} if payload['op'] == 'syms' else {'ok': True}
+    return {'ok': True, 'received': len(payload['ann']), 'main': 2, 'fresh': 0}
+
+
+sb.api = corp_api
+sb.ANN_STATE_PATH = os.path.join(TMP, 'announcements_state2.json')
+sb.CI.ist_today = lambda: date(2026, 10, 30)
+HITS.clear()
+BODY['v'] = json.dumps(ANN).encode()
+sb.ann_step({'url': 'x', 'token': 'y'}, today=date(2026, 10, 30), back_chunks=0)
+assert len([h for h in HITS if h.startswith('/api/corporate-announcements')]) == 2, HITS        # today + 3 back, then the first week
+assert any('from_date=23-10-2026&to_date=26-10-2026' in h for h in HITS), HITS
+assert sorted(sb.CI.load_day('2026-10-29')) and len(sb.CI.load_day('2026-10-29')) == 3, 'every announcement of the day kept'
+days = [d['day'] for b in CORP if b['op'] == 'put' for d in b['days']]
+assert days == ['2026-10-30', '2026-10-29', '2026-10-27'], days
+assert any('Corporate Intelligence' in m and 'kept on this laptop' in m for m in LOGS), LOGS[-3:]
+HITS.clear()
+sb.ann_step({'url': 'x', 'token': 'y'}, today=date(2026, 10, 30), back_chunks=0)
+assert len([h for h in HITS if h.startswith('/api/corporate-announcements')]) == 1, 'the first week only once'
 print('OK')

@@ -14,6 +14,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 spec = importlib.util.spec_from_file_location('screener_bridge', os.path.join(ROOT, 'pcbridge', 'ScreenerBridge', 'screener_bridge.py'))
 sb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sb)
+import tempfile as _tf  # noqa: E402
+_CI_TMP = _tf.mkdtemp()
+sb.CI.DIR = os.path.join(_CI_TMP, 'corp_data')      # Corporate Intelligence (28-Nov-2026): never the real folder
+sb.CI.STATE_PATH = os.path.join(_CI_TMP, 'corp_state.json')
 
 # ---------------------------------------------------------------- quarter names, row names, field names
 Q = sb._qlabel
