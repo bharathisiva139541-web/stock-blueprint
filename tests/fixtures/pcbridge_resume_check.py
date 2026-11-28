@@ -21,6 +21,8 @@ TMP = tempfile.mkdtemp()
 sb.LOCK_PATH = os.path.join(TMP, 'bridge.lock')
 sb.RUN_STATE_PATH = os.path.join(TMP, 'run_state.json')
 sb.LOG_PATH = os.path.join(TMP, 'bridge.log')
+sb.CI.DIR = os.path.join(TMP, 'corp_data')            # Corporate Intelligence (28-Nov-2026): never the real folder
+sb.CI.STATE_PATH = os.path.join(TMP, 'corp_state.json')
 
 # ---------------------------------------------------------------- the lock
 dead = subprocess.Popen([sys.executable, '-c', 'pass'])

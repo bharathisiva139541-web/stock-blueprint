@@ -59,6 +59,8 @@ Commands (Setup.bat / RunNow.bat call these for you):
   python screener_bridge.py epstarget [SYMBOL ...]  EPS Growth Target Lab now: every results season's dates from NSE, the target (TTM EPS x EPS growth %) of every quarter and whether the price reached it -> the sheet; SYMBOL = that stock's quarters printed
   python screener_bridge.py analysts [SYMBOL ...]   Analyst targets now: the brokers' recommendations of Moneycontrol / Business Standard / DSIJ back to 1-Oct-2026, what the price did after each -> the sheet; SYMBOL = that stock's recommendations printed
   python screener_bridge.py analystcheck            Analyst targets check: page 1 of every list, what came back and the recommendations found (nothing sent)
+  python screener_bridge.py corp [SYMBOL ...]      Corporate Intelligence now: NSE's announcements of the past week sorted + scored (fixed rules, no AI), the PDFs worth reading, the last 30 days -> the sheet; SYMBOL = that company's filings printed
+  python screener_bridge.py installpdf      install the PDF reader (pypdf) the announcements' PDFs are read with
   python screener_bridge.py histpe [PAGES]  Historical PE now: up to PAGES (200) more screener.in pages for the EPS history, then the median PE 1Y / 3Y / 5Y + 5-year peak of every stock -> the sheet
   python screener_bridge.py history    send the daily candles the sheet's History60 tab is missing now
   python screener_bridge.py announcements  send NSE's result filing times of the last days now
@@ -184,6 +186,8 @@ import eps_target as ET       # noqa: E402  (owner, 23-Nov-2026: the EPS Growth 
 ET.log = lambda m: log(m)
 import analyst_recos as AR    # noqa: E402  (owner, 24-Nov-2026: the brokers' Buy calls + targets and what the price did after them)
 AR.log = lambda m: log(m)
+import corp_ann as CI         # noqa: E402  (owner, 28-Nov-2026: Corporate Intelligence - every NSE announcement sorted + scored)
+CI.log = lambda m: log(m)
 
 
 def nse_holidays():
@@ -2022,6 +2026,9 @@ def ann_step(cfg, today=None, back_chunks=ANN_BACK_PER_ROUND):
         if recs and not timed:
             log('Result announcements: NSE\'s dates were not recognised - its fields: %s' % ', '.join(sorted(recs[0].keys())[:20]))
             return
+        # Corporate Intelligence (28-Nov-2026): EVERY announcement of the same answer -> this laptop's archive + the sheet's
+        # 30 days; the first time also the days up to a week back (one more request)
+        CI.step(cfg, api, recs, fetch_back=lambda a, b: ann_fetch(opener, b, a)[0])
         start = today - timedelta(days=ANN_DAYS)
         try:
             ET.remember(rows, start, today, today)       # the EPS Target Lab's results dates (no extra request)
@@ -4348,6 +4355,7 @@ def use_data_place(cfg):
     base, pending = DP.current(cfg, HERE)
     DP.apply(base, itd)
     XH.DIR = os.path.join(base, 'xbrl_data')       # the NSE XBRL files (kept) live with the other big data
+    CI.DIR = os.path.join(base, 'corp_data')       # every NSE announcement (Corporate Intelligence, 28-Nov-2026)
     return base, pending
 
 
@@ -4362,7 +4370,8 @@ def data_start(cfg):
     return use_data_place(cfg)[0]
 
 
-DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck', 'epstarget', 'analysts')    # the commands that read / write the big data
+DATA_CMDS = ('intraday', 'intradaycheck', 'backtest', 'kitehistory', 'lab', 'xbrlhistory', 'xbrlhistcheck', 'epstarget', 'analysts',
+             'corp')    # the commands that read / write the big data
 
 
 def cmd_datafolder(cfg, args=(), ask=input, out=print):
@@ -4438,6 +4447,7 @@ def run_after_login(cfg):
     lab.scan_save = itd.save_scan
     updater = UPD.Updater(HERE)  # GitHub's newest version -> this folder + the sheet's code (16-Nov-2026), its own thread
     xhist = XH.Worker()          # 5 years of NSE XBRL result filings, a little at a time (18-Nov-2026), its own thread
+    corp = CI.Worker()           # Corporate Intelligence (28-Nov-2026): the announcements' PDFs + the website's questions
 
     def busy():
         return bool(runner.busy() or runner.live_busy() or lab.running.is_set() or lab.pdf_jobs or
@@ -4487,6 +4497,12 @@ def run_after_login(cfg):
             xhist.maybe_start(cfg, api, nse_busy, screener_busy=round_running)
         except Exception as e:
             log('NSE XBRL history: could not start - %s' % e)
+        # Corporate Intelligence (owner, 28-Nov-2026): the PDFs of the announcements, one at a time, and the website's
+        # questions about older days / a company's whole history (this laptop keeps every announcement)
+        try:
+            corp.maybe_start(cfg, api, nse_busy)
+        except Exception as e:
+            log('Corporate Intelligence: could not start - %s' % e)
         # Kite live prices on trading days 09:10-15:35 (owner, 08-Nov-2026: start it every day by itself) -> the "Kite Live" tab
         try:
             runner.maybe_start_live(cfg, api, nse_holidays(), online=internet_ok)
@@ -4773,6 +4789,19 @@ def main(argv):
             return 1
         ann_step(dict(cfg, announcements=True), back_chunks=99)     # the whole season's missing days at once
         return 0
+    if cmd == 'corp':
+        if not cfg.get('url') or not cfg.get('token'):
+            log('Not set up yet - run Setup.bat first.')
+            return 1
+        print('Corporate Intelligence: NSE\'s announcements of the past week, sorted and scored (no AI - fixed rules), the PDFs '
+              'of the ones whose numbers matter, everything sent to the sheet ...')
+        opener = ann_session()
+        return CI.now(cfg, api, lambda a, b: ann_fetch(opener, b, a)[0], [a for a in argv[2:] if a.strip()])
+    if cmd == 'installpdf':
+        print('Installing the PDF reader (pypdf) for Corporate Intelligence ...')
+        ok, why = CI.pip_install(show=True)
+        print('Done - pypdf is installed.' if ok else 'Not installed: %s' % why)
+        return 0 if ok else 1
     if cmd == 'calendar':
         if not cfg.get('url') or not cfg.get('token'):
             log('Not set up yet - run Setup.bat first.')
@@ -4875,6 +4904,22 @@ def main(argv):
 
 
 ET.bind(session=ann_session, fetch=lambda opener, a, b: ann_fetch(opener, b, a), rows=ann_rows, nse_part=nse_part, xh=XH)
+_CI_OPENER = []
+
+
+def ci_get(url):
+    """One announcement PDF from NSE's archive (the NSE session's cookies, made once)."""
+    if not _CI_OPENER:
+        _CI_OPENER.append(nse_session())
+    return nse_get(_CI_OPENER[0], url, referer=ANN_PAGE, timeout=60)
+
+
+def ci_revenue(sym):
+    """TTM revenue (crore) from the stock's results table (NSE XBRL + screener.in, xbrl_history)."""
+    return CI.ttm_revenue((XH.load_stock(sym) or {}).get('table'))
+
+
+CI.bind(get=ci_get, revenue=ci_revenue)
 XH.bind(session=nse_session, get=nse_get, records=ipo_records, facts=XBRL_FACTS, texts=XBRL_TEXTS, page=XBRL_PAGE,
         pid_alive=_pid_alive, screener=lambda cfg, sym, cons=True: fetch_page(cfg, sym, cons), screener_q=screener_quarters)
 

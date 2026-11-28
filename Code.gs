@@ -8992,6 +8992,10 @@ function doPost(e) {
   // the PC's auto update (owner, 16-Nov-2026: "here after i won't do this job"): which Apps Script project this web app is - the
   // PC puts new code into it through the Apps Script API with its own Google login (pcbridge self_update.py)
   if (req.action === 'scriptid') return ab_bridgeJson_({ ok: true, scriptId: ScriptApp.getScriptId() });
+  // Corporate Intelligence (28-Nov-2026): the laptop waits here for the website's questions - never under the script lock
+  if (req.action === 'corp' && req.op === 'ask') {
+    try { return ab_bridgeJson_(ab_corpAsk_(req)); } catch (askErr) { return ab_bridgeJson_({ ok: false, error: askErr.message }); }
+  }
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(120000)) return ab_bridgeJson_({ ok: false, error: 'sheet busy - try again' });
@@ -9070,6 +9074,9 @@ function doPost(e) {
     }
     if (req.action === 'recos') {
       return ab_bridgeJson_(ab_recosFromBridge_(req));     // the Analyst Targets: Main's names / the brokers' recommendations (Code2.gs)
+    }
+    if (req.action === 'corp') {
+      return ab_bridgeJson_(ab_corpFromBridge_(req));      // Corporate Intelligence: NSE's announcements of 30 days (Code2.gs)
     }
     if (req.action === 'hist') {
       return ab_bridgeJson_(ab_h60FromBridge_(req));
@@ -9281,6 +9288,8 @@ function ab_feedSite_(req) {
   if (part === 'epst') return ab_bridgeJson_(ab_epstForSite_(req.q));
   // the Analyst Targets (24-Nov-2026): every broker recommendation since 1-Oct-2026, packed (api/recos unpacks them)
   if (part === 'recos') return ab_bridgeJson_(ab_recosForSite_());
+  // Corporate Intelligence (28-Nov-2026): the last 30 days of NSE announcements + the laptop's answers about older ones
+  if (part === 'corp') return ab_bridgeJson_(ab_corpForSite_(req));
   if (AB_SITE_FEED_PARTS.indexOf(part) === -1) return ab_bridgeJson_({ ok: false, error: 'unknown part' });
   try { ab_siteFeedTriggerCheck_(); } catch (e) { /* never break the answer over the trigger */ }
   try {

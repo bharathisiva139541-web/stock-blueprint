@@ -64,6 +64,8 @@ pcbridge/ScreenerBridge/eps_target_ann.json
 pcbridge/ScreenerBridge/eps_target_xbrl.json
 pcbridge/ScreenerBridge/analyst_recos.json
 pcbridge/ScreenerBridge/analyst_recos_state.json
+pcbridge/ScreenerBridge/corp_state.json
+pcbridge/ScreenerBridge/corp_data/
 pcbridge/ScreenerBridge/analyst_check/
 # NSE XBRL result filings of 5 years (18-Nov-2026) - kept on the laptop
 pcbridge/ScreenerBridge/xbrl_data/

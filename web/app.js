@@ -17,7 +17,7 @@
   var NAV = [
     ['overview', 'Overview'], ['watchlist', 'Watchlist'], ['lists', 'My Watchlists'], ['suggestions', 'Daily Suggestions'],
     ['industries', 'Industries & Sectors'], ['strategy', 'Strategy Settings'], ['signals', 'Patterns & FVG'],
-    ['results', 'Results & Events'], ['today', 'Results Today'], ['edge', 'Results Edge'], ['epst', 'EPS Target Lab'], ['recos', 'Analyst Targets'], ['lab', 'Backtest Lab'], ['markets', 'IPOs & Markets']
+    ['results', 'Results & Events'], ['today', 'Results Today'], ['edge', 'Results Edge'], ['epst', 'EPS Target Lab'], ['recos', 'Analyst Targets'], ['corp', 'Corporate Intelligence'], ['lab', 'Backtest Lab'], ['markets', 'IPOs & Markets']
   ];
 
   // section icons (16 px line drawings, currentColor) - drawn for this site
@@ -34,6 +34,7 @@
     edge: '<path d="M3 20h18"/><path d="M5 16l4.5-5 3.5 3 6-7"/><path d="M15 7h4v4"/><circle cx="9.5" cy="11" r="1.2"/>',
     epst: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/><path d="M15.5 8.5L21 3M17.5 3H21v3.5"/>',
     recos: '<path d="M4 20V10M10 20V4M16 20v-7"/><path d="M14 7l3-3 3 3M17 4v7"/><path d="M3 20h18"/>',
+    corp: '<path d="M4 21V5a2 2 0 0 1 2-2h8l6 6v12"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/><circle cx="18" cy="18" r="3"/>',
     lab: '<path d="M9 3h6M10 3v6.5L4.6 18.2A1.9 1.9 0 0 0 6.2 21h11.6a1.9 1.9 0 0 0 1.6-2.8L14 9.5V3"/><path d="M7.2 14.5h9.6"/>',
     markets: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9M12 3c-2.6 2.6-3.8 5.6-3.8 9s1.2 6.4 3.8 9"/>',
     palette: '<path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.3-1-1.7-1-3 0-1.1.9-2 2-2h2.2A3.8 3.8 0 0 0 21 10.2C21 6.2 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.1"/><circle cx="10" cy="7" r="1.1"/><circle cx="14.5" cy="7" r="1.1"/>'

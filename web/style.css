@@ -958,6 +958,37 @@ h2 .rc-mark svg { width: 19px; height: 19px; }
 .rc-line.rc-done .rc-line-ic, .rc-line.rc-hold .rc-line-ic { color: var(--neutral-mark); }
 .rc-line.rc-sell .rc-line-ic { color: var(--down); }
 .rc-line-ic svg { width: 26px; height: 26px; }
+/* Corporate Intelligence (#corp, owner 28-Nov-2026; web/pages/corp.js) */
+button.tile.ci-tile { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+button.tile.ci-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ci-status { margin: 0 0 10px; }
+.ci-range { flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ci-tiles { margin-bottom: 12px; }
+.ci-filters, .ci-cats { margin-bottom: 8px; }
+.ci-cats .chip b:first-child { color: var(--accent-text); }
+.ci-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.ci-card { border: 1px solid var(--border); border-left: 4px solid var(--border-strong); border-radius: 12px; padding: 12px 14px; background: var(--surface);
+  display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ci-card.ci-c-A { border-left-color: var(--up); }
+.ci-card.ci-c-B { border-left-color: var(--accent); }
+.ci-card.ci-c-C { border-left-color: var(--warn-mark); }
+.ci-card.ci-c-D { border-left-color: var(--info-mark); }
+.ci-card.ci-c-E { border-left-color: var(--down); }
+.ci-card.ci-c-F { border-left-color: var(--neutral-mark); }
+.ci-card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ci-meters { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-sc { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-2); }
+.ci-sc i { position: absolute; left: 0; top: 0; bottom: 0; opacity: 0.22; background: var(--accent); pointer-events: none; }
+.ci-sc-bi i { background: var(--up); }
+.ci-sc-gr i { background: var(--down); }
+.ci-sc-su i { background: var(--warn-mark); }
+.ci-sc b { position: relative; font-weight: 600; }
+.ci-nums { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-nums span { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--accent-wash); color: var(--accent-text); }
+.ci-sub { margin: 0; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.ci-links { font-size: 13px; }
+.badge.ci-cat { min-width: 1.6em; text-align: center; font-weight: 700; }
 .rc-line-t { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .rc-line-h { font-size: 15px; }
 .rc-line-t .sub { font-size: 12px; }
