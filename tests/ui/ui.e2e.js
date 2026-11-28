@@ -181,7 +181,8 @@ function corpRow(id, sym, k, o) {
   return CORP.COLS.map((c) => r[c]);
 }
 const CORP_ROWS = () => [
-  corpRow(1, FLAG_SYM, 0),
+  corpRow(1, FLAG_SYM, 0, { pdf: 'https://nsearchives.nseindia.in/corporate/' + FLAG_SYM + '_26112026163619_Press_release_signed.pdf',
+    ps: ['Subject: Press Release - Order from Indian Railways', 'The order worth Rs 400 crore is to be executed within 24 months.'] }),
   corpRow(2, EPST_SYMS[0], 0, { at: istDay(0) + ' 10:05:00', cat: 'B', ev: 'rating', pr: 'high', bi: 10, gr: 80, su: 60, risk: 1,
     num: { rag: 'CRISIL', rfrom: 'BBB', rrt: 'BB', ract: 'down' }, sub: 'Credit Rating', tx: 'CRISIL has downgraded the rating to CRISIL BB' }),
   corpRow(3, EPST_SYMS[1], 0, { at: istDay(0) + ' 15:40:00', cat: 'B', ev: 'results', ex: ['dividend'], pr: 'med', bi: 45, gr: 0, su: 40,
@@ -1869,6 +1870,12 @@ function check(name, fn) {
     assert.strictEqual(cards.length, 4, cards.join(' || '));
     assert.ok(/Credit rating High/.test(cards[0]) && /CRISIL BBB → BB downgraded/.test(cards[0]) && /Risk 80/.test(cards[0]), cards[0]);
     assert.ok(cards.some((x) => /Order win High/.test(x) && /Order Rs 400 Cr/.test(x) && /50% of revenue \(TTM\)/.test(x) && /over 2 years/.test(x)), cards.join(' || '));
+    // owner, 28-Nov-2026 (RATNAVEER): the PDF's own lines on the card + in the table, its nseindia.in link, how many PDFs are read
+    assert.ok(cards.some((x) => /From the PDF Subject: Press Release - Order from Indian Railways The order worth Rs 400 crore/i.test(x) && /PDF ↗ read/.test(x)),
+      cards.join(' || '));
+    assert.ok(await p.$eval('#ci-top .ci-card a[href*="nseindia.in/corporate/"]', (a) => /PDF/.test(a.textContent)), 'the nseindia.in link');
+    assert.match(await p.$eval('#ci-pdfnote', (x) => x.textContent), /PDFs read by your laptop: 4 of 4/);
+    assert.ok(/Subject: Press Release - Order from Indian Railways/.test(await p.$eval('#ci-all-t tbody', (x) => x.innerText)), 'the table\'s From the PDF column');
     const rowsN = async () => p.$$eval('#ci-all-t tbody tr', (r) => r.filter((x) => !x.querySelector('.empty')).length);
     // the owner's filters
     await p.click('.ci-filters [data-cif="risk"]');

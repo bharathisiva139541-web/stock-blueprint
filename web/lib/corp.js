@@ -5,7 +5,7 @@
    this file only names, counts and filters what it sent. Node-testable (no DOM). */
 (function (root) {
   'use strict';
-  var COLS = ['id', 'sym', 'co', 'at', 'cat', 'ev', 'ex', 'pr', 'bi', 'gr', 'su', 'risk', 'num', 'sub', 'tx', 'pdf', 'pg', 'why'];
+  var COLS = ['id', 'sym', 'co', 'at', 'cat', 'ev', 'ex', 'pr', 'bi', 'gr', 'su', 'risk', 'num', 'sub', 'tx', 'pdf', 'pg', 'why', 'ps'];
   var CATS = [['A', 'Business Growth & Opportunities'], ['B', 'Financial & Capital'], ['C', 'Management & Governance'], ['D', 'Operational'],
     ['E', 'Risk & Negative'], ['F', 'Investor Communication & Market']];
   var CAT = {};
@@ -46,6 +46,7 @@
       cols.forEach(function (k, i) { r[k] = a[i]; });
       r.ex = Array.isArray(r.ex) ? r.ex : [];
       r.num = r.num && typeof r.num === 'object' ? r.num : {};
+      r.ps = Array.isArray(r.ps) ? r.ps : [];          // the PDF's own lines (subject, amounts, % ...) the laptop picked
       r.day = String(r.at || '').slice(0, 10);
       r.time = String(r.at || '').slice(11, 16);
       r.top = Math.max(r.bi || 0, r.gr || 0);
@@ -77,7 +78,9 @@
       r.fl.forEach(function (k) { f[k] = (f[k] || 0) + 1; });
       c[r.cat] = (c[r.cat] || 0) + 1;
     });
-    return { filters: f, cats: c, stocks: Object.keys(rows.reduce(function (o, r) { o[r.sym] = 1; return o; }, {})).length };
+    return { filters: f, cats: c, stocks: Object.keys(rows.reduce(function (o, r) { o[r.sym] = 1; return o; }, {})).length,
+      pdfs: rows.filter(function (r) { return r.pdf; }).length, read: rows.filter(function (r) { return r.pg === 'r'; }).length,
+      scanned: rows.filter(function (r) { return r.pg === 'x'; }).length };
   }
 
   /** newest first, then the bigger score */
@@ -132,7 +135,7 @@
   function matches(r, q) {
     var w = String(q || '').trim().toLowerCase();
     if (!w) return true;
-    return [r.sym, r.co, r.name, r.sub].some(function (v) { return String(v || '').toLowerCase().indexOf(w) >= 0; });
+    return [r.sym, r.co, r.name, r.sub].concat(r.ps || []).some(function (v) { return String(v || '').toLowerCase().indexOf(w) >= 0; });
   }
 
   /** the day keys of a range ending on `today` ('today' / '1' yesterday .. / N days) */

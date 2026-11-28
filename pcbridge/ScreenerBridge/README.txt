@@ -747,8 +747,9 @@ CORPORATE INTELLIGENCE (since 28-Nov-2026)
    Business Impact, Governance / Risk and Information Surprise - by fixed rules, no AI. The first time it also reads
    the days back to a week ago (one more request).
  - The numbers (order value, execution period, rating, dividend, pledge, deal value, fundraising amount, monthly
-   sales ...) come from NSE's text and from the filing's PDF: the background program downloads the PDFs worth reading,
-   one every 6 seconds, never while the round asks NSE, at most 400 a day, and reads their text with pypdf.
+   sales ...) come from NSE's text and from the filing's PDF: the background program downloads every filing's PDF (not the
+   trading-window / newspaper / meeting-schedule notices), one every 5 seconds, never while the round asks NSE, and reads
+   their text with pypdf; the website shows each PDF's own subject line and its sentences with amounts / % ("From the PDF").
  - pypdf: the program installs it by itself the first time (python -m pip install --user pypdf). If bridge.log says
    it could not, double-click InstallPdfReader.bat once.
  - The sheet keeps the last 30 days (hidden tab Corp_Announcements) -> the website's page "Corporate Intelligence".

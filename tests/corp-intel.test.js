@@ -135,6 +135,11 @@ test('api/corp: unpacks + checks every column, e-mails / markup out, guarded, pe
   const odd = row({ id: '201', sym: 'XYZ', co: 'XYZ <script>alert(1)</script>', sub: 'Mail cs@xyz.co.in now', tx: 'contact investor@xyz.com', pdf: 'https://evil.example/x.pdf',
     num: { val: 'x', pct: 12, evil: 1, ract: 'up', rrt: 'AA+', role: 'Hacker', fv: [10, 2] }, ex: ['order', 'nope', 'fund'], pr: 'zz', bi: 500, pg: 'q' });
   const rows = [row(), odd, row({ id: 'BAD ID' }), row({ sym: 'bad sym' }), row({ ev: 'party' }), row({ at: 'soon' }), 'junk'];
+  // owner, 28-Nov-2026: NSE's PDF on nseindia.in + the PDF's own lines
+  rows.push(row({ id: '301', sym: 'ABC', pdf: 'https://nsearchives.nseindia.in/corporate/RATNAVEER_26112026163619_Press_release_signed.pdf',
+    ps: ['Subject: Press Release - Update on Copper Cladded Steel Wire project', 'The new line cost Rs. 45 crore; mail ir@abc.com',
+      '<b>x</b> 3', '4', '5', 'six', 'seven', 12, null] }));
+  rows.push(row({ id: '302', sym: 'ABC', pdf: 'https://nsearchives.nseindia.in.evil.example/x.pdf', ps: 'not a list' }));
   if (py) rows.push(pyOut().row ? C.COLS.map((k) => pyOut().row[k]) : 'junk');
   put(e, [day('2026-11-28', rows)]);
   const calls = [];
@@ -149,7 +154,12 @@ test('api/corp: unpacks + checks every column, e-mails / markup out, guarded, pe
   assert.strictEqual(r.body.ok, true, JSON.stringify(r.body));
   assert.deepStrictEqual(r.body.cols, C.COLS);
   const ci = (k) => C.COLS.indexOf(k);
-  assert.deepStrictEqual(r.body.rows.map((x) => x[ci('id')]), ['101', '201'].concat(py ? ['101'] : []), 'bad id / symbol / event / time / junk left out');
+  assert.deepStrictEqual(r.body.rows.map((x) => x[ci('id')]), ['101', '201', '301', '302'].concat(py ? ['101'] : []), 'bad id / symbol / event / time / junk left out');
+  const ps = r.body.rows[2];
+  assert.strictEqual(ps[ci('pdf')], 'https://nsearchives.nseindia.in/corporate/RATNAVEER_26112026163619_Press_release_signed.pdf', 'nseindia.in passes');
+  assert.deepStrictEqual(ps[ci('ps')], ['Subject: Press Release - Update on Copper Cladded Steel Wire project', 'The new line cost Rs. 45 crore; mail (e-mail)',
+    'b x /b 3', '4', '5'], 'at most 5 lines, words only, no e-mail');
+  assert.deepStrictEqual([r.body.rows[3][ci('pdf')], r.body.rows[3][ci('ps')]], ['', []], 'another host / not a list: nothing');
   const o = r.body.rows[1];
   assert.deepStrictEqual([o[ci('pdf')], o[ci('pr')], o[ci('bi')], o[ci('pg')], o[ci('ex')]], ['', 'low', 100, '', ['fund']], 'the event itself is not one of its other events');
   assert.deepStrictEqual(o[ci('num')], { pct: 12, ract: 'up', rrt: 'AA+', fv: [10, 2] }, 'known figures only');
@@ -159,8 +169,9 @@ test('api/corp: unpacks + checks every column, e-mails / markup out, guarded, pe
   assert.match(r.headers['cache-control'], /s-maxage=300/);
   assert.deepStrictEqual(calls[0], { action: 'site', part: 'corp', token: FEED });
   if (py) {
-    const p = r.body.rows[2];
+    const p = r.body.rows[4];
     assert.deepStrictEqual([p[ci('ev')], p[ci('cat')], p[ci('pg')], p[ci('num')].val], ['order', 'A', 'r', 400], 'the laptop\'s own row passes');
+    assert.ok(p[ci('ps')].some((x) => /Rs\. 400 crore/.test(x)), p[ci('ps')].join(' | '));
   }
   const text = JSON.stringify(r.body) + JSON.stringify(r.headers);
   assert.ok(text.indexOf(FEED) < 0 && text.indexOf('AKfy_SECRET') < 0 && text.indexOf('@') < 0 && text.indexOf('<script') < 0, 'no token / address / mail / markup');
@@ -193,6 +204,11 @@ test('api/corp: unpacks + checks every column, e-mails / markup out, guarded, pe
   await api.createHandler({ env: Object.assign({}, ENV, { SITE_ACCESS: '' }), fetch, cache: require('../api/_lib/cache').createCache() })({ method: 'GET', query: { k } }, r);
   assert.strictEqual(r.body.ok, true);
   assert.throws(() => api.unpack(zlib.gzipSync(Buffer.from(JSON.stringify({ cols: ['id'], rows: [] }))).toString('base64')), /CorpNow\.bat/);
+  // the first laptop version's rows (no PDF lines) are still read
+  const v1 = zlib.gzipSync(Buffer.from(JSON.stringify({ cols: C.COLS.slice(0, -1), rows: [row().slice(0, -1)] }))).toString('base64');
+  const r1 = api.unpack(v1);
+  assert.strictEqual(r1.length, 1);
+  assert.deepStrictEqual(r1[0][C.COLS.indexOf('ps')], []);
   r = res();
   await api.createHandler({ env: {}, fetch })({ method: 'GET', query: {} }, r);
   assert.strictEqual(r.body.ok, false, 'not configured');
@@ -211,6 +227,7 @@ test('web/lib/corp.js: filters, counts, the strongest, the numbers in words', ()
   const c = C.counts(rows);
   assert.deepStrictEqual(c.filters, { all: 7, high: 3, orders: 1, mgmt: 1, fund: 1, results: 1, calls: 1, risk: 2, actions: 1 });
   assert.deepStrictEqual(c.cats, { A: 1, B: 2, C: 2, D: 0, E: 0, F: 2 });
+  assert.deepStrictEqual([c.pdfs, c.read, c.scanned], [7, 7, 0], 'every made row has a read PDF');
   assert.strictEqual(c.stocks, 2);
   assert.deepStrictEqual(rows.filter((r) => C.inFilter(r, 'results')).map((r) => r.id), ['3'], 'a meeting notice is no result');
   assert.deepStrictEqual(rows.filter((r) => C.inFilter(r, 'actions')).map((r) => r.id), ['3'], 'its dividend is a corporate action');

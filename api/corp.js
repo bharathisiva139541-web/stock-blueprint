@@ -23,7 +23,8 @@
   const MAX_BLOB = 4000000;
   const MAX_ROWS = 8000;
   // = corp_ann.py COLS / EVENTS / CATS
-  const COLS = ['id', 'sym', 'co', 'at', 'cat', 'ev', 'ex', 'pr', 'bi', 'gr', 'su', 'risk', 'num', 'sub', 'tx', 'pdf', 'pg', 'why'];
+  const COLS = ['id', 'sym', 'co', 'at', 'cat', 'ev', 'ex', 'pr', 'bi', 'gr', 'su', 'risk', 'num', 'sub', 'tx', 'pdf', 'pg', 'why', 'ps'];
+  const COLS_V1 = COLS.slice(0, -1);      // the first laptop version's rows (no PDF highlights) - read with ps []
   const CATS = ['A', 'B', 'C', 'D', 'E', 'F'];
   const EVENTS = ['order', 'capex', 'acq', 'merger', 'jv', 'approval', 'results', 'dividend', 'fund', 'buyback', 'bonus', 'split',
     'rating', 'allot', 'record', 'divest', 'kmp', 'director', 'auditor', 'meeting', 'sast', 'update', 'ops', 'sub', 'pledge', 'default',
@@ -38,7 +39,8 @@
     role: /^(Auditor|CEO|MD|CFO|Chairman|COO|Whole-time Director|Chief Officer|Company Secretary|Independent Director|Director|KMP)$/,
     act: /^(in|out|change|re|)$/, pact: /^(invoke|release|create)$/
   };
-  const PDF_RE = /^https:\/\/(nsearchives|archives|www1?)\.nseindia\.com\/[A-Za-z0-9/_.~%+=&?#:,-]{1,400}$/;
+  // NSE's own addresses (.com and .in - the owner's RATNAVEER press release, 28-Nov-2026, was on nsearchives.nseindia.in)
+  const PDF_RE = /^https:\/\/([a-z0-9-]+\.)*nseindia\.(com|in)\/[A-Za-z0-9/_.~%+=&?#:,-]{1,400}$/;
   const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
   const KEY_RE = /^(day:\d{4}-\d{2}-\d{2}|sym:[A-Z0-9&_.-]{1,30})$/;
   const memo = cacheLib.createCache({ maxEntries: 40 });
@@ -71,7 +73,8 @@
     const ex = (Array.isArray(o.ex) ? o.ex : []).filter(function (e) { return EVENTS.indexOf(e) >= 0 && e !== o.ev; }).slice(0, 4);
     return [String(o.id), sym, words(o.co, 120) || sym, String(o.at), o.cat, o.ev, ex, PRI.indexOf(o.pr) >= 0 ? o.pr : 'low',
       int100(o.bi), int100(o.gr), int100(o.su), o.risk ? 1 : 0, cleanNum(o.num), words(o.sub, 200), words(o.tx, 600),
-      typeof o.pdf === 'string' && PDF_RE.test(o.pdf) ? o.pdf : '', o.pg === 'r' || o.pg === 'x' ? o.pg : '', words(o.why, 120)];
+      typeof o.pdf === 'string' && PDF_RE.test(o.pdf) ? o.pdf : '', o.pg === 'r' || o.pg === 'x' ? o.pg : '', words(o.why, 120),
+      (Array.isArray(o.ps) ? o.ps : []).slice(0, 5).map(function (x) { return words(x, 340); }).filter(Boolean)];
   }
 
   function unpack(blob) {
@@ -79,8 +82,9 @@
     if (typeof blob !== 'string' || blob.length > MAX_BLOB || !/^[A-Za-z0-9+/]+={0,2}$/.test(blob)) throw new Error('the stored data is not readable');
     const d = JSON.parse(zlib.gunzipSync(Buffer.from(blob, 'base64')).toString('utf8'));
     if (!d || !Array.isArray(d.cols) || !Array.isArray(d.rows)) throw new Error('the stored data is not readable');
-    if (d.cols.join(',') !== COLS.join(',')) throw new Error('your laptop has not sent the new announcements yet - run UpdateNow.bat, then CorpNow.bat');
-    return d.rows.slice(0, MAX_ROWS).map(cleanRow).filter(Boolean);
+    const v1 = d.cols.join(',') === COLS_V1.join(',');
+    if (!v1 && d.cols.join(',') !== COLS.join(',')) throw new Error('your laptop has not sent the new announcements yet - run UpdateNow.bat, then CorpNow.bat');
+    return d.rows.slice(0, MAX_ROWS).map(function (r) { return v1 && Array.isArray(r) ? r.concat([[]]) : r; }).map(cleanRow).filter(Boolean);
   }
 
   function cleanSum(s) {
